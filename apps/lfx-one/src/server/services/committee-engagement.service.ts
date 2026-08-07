@@ -76,10 +76,22 @@ export class CommitteeEngagementService {
    * a missing-object degrade) has nothing to join against regardless of whether member ids resolve,
    * so skipping it avoids paying the bridge's worst-case NATS exposure (concurrency-batched, but still
    * many seconds under a slow/down responder) on every request for a committee this data can't help.
+   *
+   * Both branches also fetch the committee itself via `getCommitteeById` (no options — settings are
+   * fetched unconditionally regardless of the options object) alongside their existing reads, in the
+   * same `Promise.all`, purely to read `show_meeting_attendees` (LFXV2-3004): a chair's explicit
+   * opt-out composes with `buildResponse`'s existing `usableData` zeroing via
+   * `effectiveDataAvailable`, applied even to `committee#auditor`-tier callers who'd otherwise be
+   * granted this data by role — defense-in-depth over the FGA read gate in
+   * `committee-read-access.helper.ts`, not a fix for a leak.
    */
   public async getCommitteeEngagement(req: Request, committeeUid: string, window: CommitteeEngagementWindow): Promise<CommitteeEngagementResponse> {
     if (isEngagementMockBackend()) {
-      const members = await this.committeeService.getCommitteeMembers(req, committeeUid);
+      const [members, committee] = await Promise.all([
+        this.committeeService.getCommitteeMembers(req, committeeUid),
+        this.committeeService.getCommitteeById(req, committeeUid),
+      ]);
+      const showMeetingAttendees = committee.show_meeting_attendees !== false;
       const rows = generateMockEngagementRows(committeeUid, members);
       // The ops-side signal that a response is fabricated — `data_source: 'mock'` on the response
       // body (below) is the in-band one any consumer must check; this is the log-side counterpart
@@ -98,13 +110,15 @@ export class CommitteeEngagementService {
         resolved: new Map(members.map((member) => [member.uid, member.uid])),
         indeterminateUids: new Set(),
       };
-      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberMapping);
+      return this.buildResponse(req, committeeUid, members, { rows, dataAvailable: true }, window, 'mock', identityMemberMapping, showMeetingAttendees);
     }
 
-    const [members, queryResult] = await Promise.all([
+    const [members, queryResult, committee] = await Promise.all([
       this.committeeService.getCommitteeMembers(req, committeeUid),
       this.queryEngagementRows(req, committeeUid),
+      this.committeeService.getCommitteeById(req, committeeUid),
     ]);
+    const showMeetingAttendees = committee.show_meeting_attendees !== false;
 
     const memberMapping: MemberV1MappingResult =
       queryResult.rows.length > 0
@@ -115,7 +129,7 @@ export class CommitteeEngagementService {
           )
         : { resolved: new Map(), indeterminateUids: new Set() };
 
-    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberMapping);
+    return this.buildResponse(req, committeeUid, members, queryResult, window, 'live', memberMapping, showMeetingAttendees);
   }
 
   /**
@@ -269,6 +283,15 @@ export class CommitteeEngagementService {
    * degrades the whole committee via `usableData` above, rather than silently joining as "no row".
    * TODO(LFXV2-2973): this member-ID bridge is temporary — remove once the model carries v2 keys
    * directly (LFXV2-2968).
+   *
+   * `showMeetingAttendees` (LFXV2-3004, the caller-resolved `committee.show_meeting_attendees !==
+   * false`) composes with `usableData` via `effectiveDataAvailable` — a chair's explicit opt-out
+   * zeroes every member's row the same way a join failure does, applied on top of (not instead of)
+   * the existing join-level check, and even to a caller who does hold `committee#auditor`. Unlike
+   * `usableData`, `showMeetingAttendees` has nothing to do with data quality, so it's reported back
+   * verbatim on the response (`show_meeting_attendees`) for the UI to distinguish "hidden by the
+   * committee" from `usableData`'s "not available yet" causes — see
+   * `CommitteeEngagementResponse.show_meeting_attendees`'s doc comment.
    */
   private buildResponse(
     req: Request,
@@ -277,7 +300,8 @@ export class CommitteeEngagementService {
     queryResult: CommitteeEngagementQueryResult,
     window: CommitteeEngagementWindow,
     dataSource: CommitteeEngagementDataSource,
-    memberMapping: MemberV1MappingResult
+    memberMapping: MemberV1MappingResult,
+    showMeetingAttendees: boolean
   ): CommitteeEngagementResponse {
     const { rows, dataAvailable } = queryResult;
 
@@ -306,6 +330,10 @@ export class CommitteeEngagementService {
       return v1MemberId ? rowsByUid.has(v1MemberId) : false;
     });
     const usableData = dataAvailable && anyRowMatched && memberMapping.indeterminateUids.size === 0;
+    // A chair's `show_meeting_attendees: false` composes with the join-level `usableData` check
+    // above (LFXV2-3004) — either cause zeroes every member's row identically; `show_meeting_attendees`
+    // stays a separate response field so the UI can tell them apart. See this method's doc comment.
+    const effectiveDataAvailable = usableData && showMeetingAttendees;
 
     const windowStart = this.windowStartDate(window);
 
@@ -330,7 +358,7 @@ export class CommitteeEngagementService {
       // still read from the raw `row`, not `effectiveRow` — the doc contract explicitly permits those
       // roster-passthrough fields (including the Emeritus classification they drive) to stay populated
       // regardless of `data_available`, unlike the count/rate/classification fields this gates.
-      const effectiveRow = usableData ? row : undefined;
+      const effectiveRow = effectiveDataAvailable ? row : undefined;
 
       const counts = effectiveRow ? this.countsForWindow(effectiveRow, window) : { invited: 0, attended: 0, committeeMeetings: 0 };
       // Clamped to `invited`: the finalized model's own dbt tests are expected to enforce
@@ -372,7 +400,8 @@ export class CommitteeEngagementService {
       // `row?.`) for the first term too: a matched row's own join date is real engagement data, and
       // must be zeroed out the same way its counts are whenever `usableData` is false.
       const joinedWithinWindow =
-        isJoinedWithinWindow(effectiveRow?.MEMBER_JOINED_AT ?? null, windowStart) || (usableData && isJoinedWithinWindow(member.created_at, windowStart));
+        isJoinedWithinWindow(effectiveRow?.MEMBER_JOINED_AT ?? null, windowStart) ||
+        (effectiveDataAvailable && isJoinedWithinWindow(member.created_at, windowStart));
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
       totalAttended += attended;
@@ -407,10 +436,12 @@ export class CommitteeEngagementService {
       roster_size: members.length,
       matched_count: matchedCount,
       // Named distinctly: `data_available` here would collide with the *response* field of that
-      // name (which now reports `usableData`, not this raw query-level flag) while carrying a
-      // different value in exactly the broken-join case this field exists to help diagnose.
+      // name (which now reports `effectiveDataAvailable`, not this raw query-level flag) while
+      // carrying a different value in exactly the broken-join case this field exists to help
+      // diagnose.
       query_data_available: dataAvailable,
-      data_available: usableData,
+      data_available: effectiveDataAvailable,
+      show_meeting_attendees: showMeetingAttendees,
     });
 
     return {
@@ -424,8 +455,9 @@ export class CommitteeEngagementService {
       // Always null: the real model doesn't expose a freshness column yet (a separate follow-up).
       // `formatCommitteeEngagementFreshness` gives the UI a "Updated daily" label for this case.
       computed_at: null,
-      data_available: usableData,
+      data_available: effectiveDataAvailable,
       data_source: dataSource,
+      show_meeting_attendees: showMeetingAttendees,
     };
   }
 

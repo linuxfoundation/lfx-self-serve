@@ -15,7 +15,9 @@ import { TooltipModule } from 'primeng/tooltip';
  * Overview-tab engagement summary card (LFXV2-1705, behind wg-engagement-metrics): attendance
  * rate, active members, and at-risk count for the selected window, sharing window state with the
  * Members tab via the page-level parent. Renders calm non-error states when the rollup is degraded
- * (`data_available: false` — the dbt model not deployed yet) or the fetch failed entirely (403 for
+ * (`data_available: false` — the dbt model not deployed yet), a chair has hidden attendance data
+ * (`show_meeting_attendees: false`, LFXV2-3004 — checked before the generic degraded state, since
+ * a hidden committee also reports `data_available: false`), or the fetch failed entirely (403 for
  * non-auditors, network) — the rest of the overview is unaffected either way.
  */
 @Component({
@@ -37,6 +39,7 @@ export class CommitteeEngagementSummaryComponent {
 
   // Computed signals — inline per component-organization.md (all simple projections)
   public readonly dataAvailable: Signal<boolean> = computed(() => this.engagement()?.data_available === true);
+  public readonly attendeesHidden: Signal<boolean> = computed(() => this.engagement()?.show_meeting_attendees === false);
   public readonly isMock: Signal<boolean> = computed(() => this.engagement()?.data_source === 'mock');
   public readonly freshnessLabel: Signal<string> = computed(() => formatCommitteeEngagementFreshness(this.engagement()?.computed_at ?? null));
   public readonly windowLabel: Signal<string> = computed(() => {

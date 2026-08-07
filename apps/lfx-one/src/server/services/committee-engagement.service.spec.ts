@@ -12,6 +12,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   execute,
   getCommitteeMembers,
+  getCommitteeById,
   generateMockEngagementRows,
   resolveCommitteeV2UidsToV1Ids,
   resolveMemberV2UidsToV1Ids,
@@ -24,6 +25,11 @@ const {
 } = vi.hoisted(() => ({
   execute: vi.fn(),
   getCommitteeMembers: vi.fn(),
+  // Defaults to `show_meeting_attendees: true` so every existing test (written before LFXV2-3004's
+  // settings gate) keeps passing unchanged; the gating tests override this explicitly. Typed with
+  // the field optional (matching the real `Committee.show_meeting_attendees?: boolean`) so a test
+  // can resolve `{}` to exercise the "setting genuinely unset" case.
+  getCommitteeById: vi.fn<(req: unknown, uid: string) => Promise<{ show_meeting_attendees?: boolean }>>(async () => ({ show_meeting_attendees: true })),
   generateMockEngagementRows: vi.fn(),
   // Defaults to a 1:1 v2-uid -> "warehouse-<uid>" mapping so existing 'committee-1'-based tests
   // don't need per-test setup; tests exercising an unresolved uid override this explicitly.
@@ -68,6 +74,7 @@ vi.mock('../helpers/member-v1-mapping.helper', () => ({ resolveMemberV2UidsToV1I
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeMembers = getCommitteeMembers;
+    public getCommitteeById = getCommitteeById;
   },
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
@@ -140,6 +147,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
   beforeEach(() => {
     execute.mockReset();
     getCommitteeMembers.mockReset();
+    getCommitteeById.mockReset().mockResolvedValue({ show_meeting_attendees: true });
     generateMockEngagementRows.mockReset();
     resolveCommitteeV2UidsToV1Ids
       .mockReset()
@@ -412,6 +420,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
         computed_at: null,
         data_available: false,
         data_source: 'live',
+        show_meeting_attendees: true,
       });
     });
 
@@ -728,6 +737,88 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result.data_available).toBe(false);
       expect(setJson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('show_meeting_attendees gating (LFXV2-3004)', () => {
+    it('mock backend: zeroes every member and reports data_available:false, show_meeting_attendees:false when the committee has hidden attendance', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'mock';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeById.mockResolvedValueOnce({ show_meeting_attendees: false });
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.show_meeting_attendees).toBe(false);
+      expect(result.data_available).toBe(false);
+      expect(result.members[0]).toMatchObject({ attended: 0, invited: 0, classification: 'Inactive' });
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 });
+    });
+
+    it('live backend: zeroes an otherwise-usable (usableData:true) response when the committee has hidden attendance, even for a real matched row', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeById.mockResolvedValueOnce({ show_meeting_attendees: false });
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.show_meeting_attendees).toBe(false);
+      expect(result.data_available).toBe(false);
+      expect(result.members[0]).toMatchObject({ attended: 0, invited: 0, classification: 'Inactive' });
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 });
+    });
+
+    it('live backend: an Emeritus member still classifies Emeritus even when the committee has hidden attendance — a seat-type fact, not a computed metric', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeById.mockResolvedValueOnce({ show_meeting_attendees: false });
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { voting: { status: 'Emeritus' } as never })]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', MEMBER_VOTING_STATUS: 'Emeritus', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ classification: 'Emeritus', voting_status: 'Emeritus' });
+    });
+
+    it('live backend: show_meeting_attendees true behaves exactly as today — data_available reflects the join, not the setting', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeById.mockResolvedValueOnce({ show_meeting_attendees: true });
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.show_meeting_attendees).toBe(true);
+      expect(result.data_available).toBe(true);
+      expect(result.members[0]).toMatchObject({ attended: 9, invited: 10, classification: 'High' });
+    });
+
+    it('live backend: an unset show_meeting_attendees setting defaults to true (shown), matching pre-LFXV2-3004 behavior', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeById.mockResolvedValueOnce({}); // no show_meeting_attendees field at all
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.show_meeting_attendees).toBe(true);
+      expect(result.data_available).toBe(true);
+    });
+
+    it('fetches the committee alongside the roster/query reads, not serially', async () => {
+      process.env[ENGAGEMENT_BACKEND_KEY] = 'live';
+      delete process.env[NODE_ENV_KEY];
+      getCommitteeMembers.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(getCommitteeById).toHaveBeenCalledWith(req, 'committee-1');
     });
   });
 
