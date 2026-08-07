@@ -7,6 +7,7 @@ import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invi
 import {
   AcceptInviteOrganizationDialogData,
   AcceptInviteOrganizationDialogResult,
+  CommitteeOrganizationReference,
   InvitationAcceptContext,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
@@ -40,18 +41,16 @@ export class InvitationAcceptFlowService {
       return this.invitationService.acceptInvitation(context.committeeUid, context.inviteUid, { fromLfidInvite: context.fromLfidInvite });
     }
 
-    // Resolve the pre-fill org: use the invite's org when present, otherwise fall back to
-    // the user's current employer from their profile (fails silently — dialog opens blank).
+    // Resolve the pre-fill org:
+    // - Invite supplied an org → pre-resolve its domain (may be missing id/website).
+    // - No invite org → employer fallback via resolveCurrentEmployer(), which already calls
+    //   resolveOrgDomain() internally; skip preResolveOrganization to avoid a duplicate
+    //   CDP lookup that doubles latency and can repeat a find-or-create POST.
     const contextReady$: Observable<InvitationAcceptContext> = context.organization
-      ? of(context)
-      : this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
-          take(1),
-          map((experiences) => ({ ...context, organization: currentEmployerFromWorkExperiences(experiences) })),
-          catchError(() => of(context))
-        );
+      ? of(context).pipe(switchMap((ctx) => this.preResolveOrganization(ctx)))
+      : this.resolveCurrentEmployer().pipe(map((org) => ({ ...context, organization: org ?? undefined })));
 
     return contextReady$.pipe(
-      switchMap((ctx) => this.preResolveOrganization(ctx)),
       switchMap((ctx) =>
         from(this.openOrganizationDialog(ctx)).pipe(
           switchMap((result) => {
@@ -69,48 +68,79 @@ export class InvitationAcceptFlowService {
   }
 
   /**
-   * Attempts to resolve an org name to a CDP id before the dialog opens so a pre-filled
-   * name with no id is not treated as a brand-new org requiring a manual website entry.
+   * Resolves the current user's employer from their profile work experiences, including
+   * a best-effort domain lookup via CDP so the website field is populated.
    *
-   * Uses a two-step read-only approach to avoid the find-or-create side effect of calling
-   * resolveOrganization directly with an empty or unverified domain:
-   *  1. Search by name (read-only GET) to find the CDP-canonical domain.
-   *  2. Resolve only on an exact name match, using the canonical domain so the CDP call
-   *     is almost certainly a find (not a create).
+   * Used by open-group and application join flows to pre-fill the "Confirm Organization"
+   * dialog the same way the invite accept flow does.
    *
-   * Times out after 2 s and silently falls through — the dialog handles the unresolved case.
+   * Emits null and never throws — callers open the dialog with a blank org on any failure.
    */
-  private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
-    const org = ctx.organization;
-    if (!org?.name?.trim() || org.id) {
-      return of(ctx);
-    }
-    return this.organizationService.searchOrganizations(org.name).pipe(
+  public resolveCurrentEmployer(): Observable<CommitteeOrganizationReference | null> {
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
       take(1),
-      switchMap((suggestions) => {
-        const match = suggestions.find((s) => s.name.toLowerCase() === org.name!.toLowerCase().trim());
+      timeout(2000),
+      map((experiences) => currentEmployerFromWorkExperiences(experiences)),
+      switchMap((org) => (org ? this.resolveOrgDomain(org) : of(null))),
+      // Only prefill when a domain was actually resolved — an org with name but no website
+      // would cause the dialog to open with the URL field empty yet show a red validation
+      // warning immediately (orgInvalid=true + hasName=true → showOrgWarning=true).
+      map((org) => (org?.website?.trim() ? org : null)),
+      catchError((error) => {
+        console.warn('[InvitationAcceptFlowService] resolveCurrentEmployer failed; opening dialog blank', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Attempts to resolve the website/domain for an org reference via CDP so the dialog can
+   * pre-fill the URL field and prevent the "name and domain required" rejection from
+   * committee-service (which always needs the domain since organization_id is stripped from
+   * the payload before forwarding).
+   *
+   * Skips the search only when both id AND website are already present.
+   * Times out after 2 s and silently returns the unmodified org on any failure.
+   * (resolveCurrentEmployer's preceding 2 s GET timeout means the total worst-case
+   * prefill window is ~4 s, not 2 s.)
+   */
+  private resolveOrgDomain(org: CommitteeOrganizationReference): Observable<CommitteeOrganizationReference> {
+    const name = (org?.name ?? '').trim();
+    if (!name || (org.id && org.website?.trim())) {
+      return of(org);
+    }
+    return this.organizationService.searchOrganizations(name).pipe(
+      take(1),
+      map((suggestions) => {
+        const match = suggestions.find((s) => s.name.toLowerCase() === name.toLowerCase());
         if (!match) {
-          return of(ctx);
+          return org;
         }
-        return this.organizationService.resolveOrganization(match.name, match.domain).pipe(
-          take(1),
-          map((resolved) => ({
-            ...ctx,
-            organization: {
-              ...org,
-              id: resolved.id || null,
-              name: resolved.name || org.name,
-              website: normalizeToUrl(match.domain) ?? org.website,
-            },
-          }))
-        );
+        // Build the prefill directly from the search result — the canonical name and
+        // normalised domain are all committee-service needs (organization_id is stripped
+        // before forwarding). Avoids an unnecessary find-or-create POST.
+        return {
+          ...org,
+          id: null,
+          name: match.name,
+          website: normalizeToUrl(match.domain) ?? org.website,
+        };
       }),
       timeout(2000),
       catchError((error) => {
-        console.warn('[InvitationAcceptFlowService] Org pre-resolution failed; opening dialog with unresolved context', error);
-        return of(ctx);
+        console.warn('[InvitationAcceptFlowService] Org domain resolution failed; proceeding with unresolved org', error);
+        return of(org);
       })
     );
+  }
+
+  /** Adapts resolveOrgDomain to the invite-accept-context shape, threading the resolved org back into ctx. */
+  private preResolveOrganization(ctx: InvitationAcceptContext): Observable<InvitationAcceptContext> {
+    const org = ctx.organization;
+    if (!org) {
+      return of(ctx);
+    }
+    return this.resolveOrgDomain(org).pipe(map((resolvedOrg) => ({ ...ctx, organization: resolvedOrg })));
   }
 
   private openOrganizationDialog(context: InvitationAcceptContext): Promise<AcceptInviteOrganizationDialogResult | null> {
