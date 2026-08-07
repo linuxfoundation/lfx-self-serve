@@ -362,10 +362,16 @@
                       </ng-template>
                       <ng-template #body let-row>
                         <tr
-                          class="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
+                          class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null"
-                          (click)="openLeaderboardDetail('technical', row)">
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          (click)="openLeaderboardDetail('technical', row)"
+                          (keydown.enter)="openLeaderboardDetail('technical', row)"
+                          (keydown.space)="openLeaderboardDetail('technical', row); $event.preventDefault()">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
@@ -492,10 +498,16 @@
                       </ng-template>
                       <ng-template #body let-row>
                         <tr
-                          class="cursor-pointer border-b border-gray-100 hover:bg-blue-50"
+                          class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null"
-                          (click)="openLeaderboardDetail('ecosystem', row)">
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          (click)="openLeaderboardDetail('ecosystem', row)"
+                          (keydown.enter)="openLeaderboardDetail('ecosystem', row)"
+                          (keydown.space)="openLeaderboardDetail('ecosystem', row); $event.preventDefault()">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">

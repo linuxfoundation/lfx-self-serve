@@ -6,7 +6,7 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="org-leaderboard-detail-drawer">
   <ng-template #header>
     <div class="flex w-full items-start justify-between gap-4">
@@ -28,9 +28,7 @@
   @if (hasData()) {
     <div class="flex flex-col gap-6 pb-2" data-testid="org-leaderboard-detail-content">
       <!-- Summary sentence -->
-      <div
-        class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800"
-        data-testid="org-leaderboard-detail-summary">
+      <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800" data-testid="org-leaderboard-detail-summary">
         <span class="font-semibold">{{ orgName() }}</span> has a
         <span class="font-semibold" [class]="levelTextClass()">{{ level() }}</span>
         {{ dimension() }} influence in {{ projectName() }} due to contributing

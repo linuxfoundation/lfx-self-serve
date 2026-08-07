@@ -330,7 +330,7 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
 
     await expect(page.getByTestId('org-leaderboard-detail-title')).toBeVisible();
     await expect(page.getByTestId('org-leaderboard-detail-title')).toHaveText(orgName);
-    await expect(page.getByText('Technical Influence')).toBeVisible();
+    await expect(page.getByTestId('org-leaderboard-detail-title').locator('..').getByText('Technical Influence')).toBeVisible();
     await expect(page.getByTestId('org-leaderboard-detail-content').or(page.getByTestId('org-leaderboard-detail-empty'))).toBeVisible();
   });
 
@@ -342,7 +342,7 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
 
     await expect(page.getByTestId('org-leaderboard-detail-title')).toBeVisible();
     await expect(page.getByTestId('org-leaderboard-detail-title')).toHaveText(orgName);
-    await expect(page.getByText('Ecosystem Influence')).toBeVisible();
+    await expect(page.getByTestId('org-leaderboard-detail-title').locator('..').getByText('Ecosystem Influence')).toBeVisible();
     await expect(page.getByTestId('org-leaderboard-detail-content').or(page.getByTestId('org-leaderboard-detail-empty'))).toBeVisible();
   });
 

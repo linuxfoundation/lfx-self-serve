@@ -424,8 +424,9 @@ export class OrgProjectDetailComponent {
     if (!visible) this.closeCardDetail();
   }
 
-  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. */
+  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op in activity mode — the breakdown is influence-score only. */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
+    if (this.isActivityMode()) return;
     this.leaderboardDetailDimension.set(dimension);
     this.leaderboardDetailOrgName.set(row.orgName);
     this.leaderboardDetailOpen.set(true);
