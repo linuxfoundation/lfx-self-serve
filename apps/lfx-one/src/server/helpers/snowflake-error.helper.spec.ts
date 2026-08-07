@@ -39,6 +39,16 @@ describe('isInvalidIdentifierError', () => {
     expect(isInvalidIdentifierError(error)).toBe(true);
   });
 
+  it('matches only the expected identifier when one is provided', () => {
+    const error = new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'");
+    expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(true);
+    expect(isInvalidIdentifierError(error, 'CONV')).toBe(false);
+  });
+
+  it('does not accept an identifier-specific fallback from error code alone', () => {
+    expect(isInvalidIdentifierError(new Error('SQL compilation error: error code: 904'), 'LAST_TOUCH_CONVERSIONS')).toBe(false);
+  });
+
   it('does not match missing-object errors', () => {
     const error = new Error("Object 'ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_ATTRIBUTION' does not exist or not authorized.");
     expect(isInvalidIdentifierError(error)).toBe(false);

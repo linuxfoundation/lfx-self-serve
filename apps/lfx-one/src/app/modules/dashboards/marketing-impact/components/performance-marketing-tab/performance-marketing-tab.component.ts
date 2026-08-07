@@ -356,7 +356,7 @@ export class PerformanceMarketingTabComponent {
               impressions: formatNumber(st.impressions),
               ctr: `${(st.ctr ?? 0).toFixed(2)}%`,
               cpc: formatCurrency(st.cpc),
-              conversions: formatNumber(st.conversions),
+              conversions: st.conversions == null ? '—' : formatNumber(st.conversions),
             })
           ),
         })

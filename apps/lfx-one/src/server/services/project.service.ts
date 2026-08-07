@@ -142,8 +142,6 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 import { SnowflakeService } from './snowflake.service';
 
-type KeywordPerformanceTrafficRow = Omit<KeywordPerformanceRow, 'CONVERSIONS' | 'CONVERSIONS_VALUE' | 'CONVERSION_RATE'>;
-
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
 
@@ -2878,11 +2876,12 @@ export class ProjectService {
             SESSIONS: number;
             IMPRESSIONS: number;
             CLICKS: number;
-          }>(projectPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams)
+          }>(projectPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams, { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' })
           .catch(async (error) => {
-            if (isInvalidIdentifierError(error)) {
+            if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
               logger.warning(undefined, 'get_social_reach', 'Retrying project breakdown with legacy conversion column', {
                 foundation_slug: foundationSlug,
+                err: error,
               });
               const legacyResult = await this.snowflakeService.execute(projectPerfQuery('CONV'), breakdownParams);
               return { rows: legacyResult.rows };
@@ -2921,11 +2920,12 @@ export class ProjectService {
             CPC: number;
             CONV_RATE: number;
             CONVERSIONS: number;
-          }>(platformPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams)
+          }>(platformPerfQuery('LAST_TOUCH_CONVERSIONS'), breakdownParams, { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' })
           .catch(async (error) => {
-            if (isInvalidIdentifierError(error)) {
+            if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
               logger.warning(undefined, 'get_social_reach', 'Retrying platform breakdown with legacy conversion column', {
                 foundation_slug: foundationSlug,
+                err: error,
               });
               const legacyResult = await this.snowflakeService.execute(platformPerfQuery('CONV'), breakdownParams);
               return { rows: legacyResult.rows };
@@ -6853,7 +6853,7 @@ export class ProjectService {
       `;
 
       const [perfResult, attrResult] = await Promise.all([
-        this.snowflakeService.execute<KeywordPerformanceTrafficRow>(perfQuery, [
+        this.snowflakeService.execute<KeywordPerformanceRow>(perfQuery, [
           resolved.startDate,
           resolved.endDate,
           ...foundationParams,
@@ -6861,13 +6861,7 @@ export class ProjectService {
           resolved.endDate,
           ...foundationParams,
         ]),
-        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]).catch((error) => {
-          logger.warning(undefined, 'get_keyword_performance', 'Attribution query failed, degrading gracefully', {
-            foundation_slug: foundationSlug,
-            err: error,
-          });
-          return { rows: [] as KeywordAttributionRow[] };
-        }),
+        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]),
       ]);
 
       const attrMap = new Map<string, KeywordAttributionRow>();
@@ -6876,7 +6870,7 @@ export class ProjectService {
       }
 
       const keywordMap = new Map<string, KeywordSummary>();
-      const searchTermRows: KeywordPerformanceTrafficRow[] = [];
+      const searchTermRows: KeywordPerformanceRow[] = [];
       let totalClicks = 0;
       let totalSpend = 0;
       let totalImpressions = 0;
@@ -6931,7 +6925,7 @@ export class ProjectService {
             impressions: row.IMPRESSIONS ?? 0,
             ctr: Math.round((row.CTR ?? 0) * 100) / 100,
             cpc: Math.round((row.CPC ?? 0) * 100) / 100,
-            conversions: 0,
+            conversions: null,
           });
         }
       }
