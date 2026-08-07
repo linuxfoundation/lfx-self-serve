@@ -152,6 +152,7 @@ export class PublicGroupsController {
         cadence: cadence !== 'No recurring meetings scheduled' ? cadence : undefined,
         calendar_url: links.calendar ?? undefined,
         member_visibility: visibility,
+        // Passthrough of committee-service's ExternalSource[] contract (committee-service PR #175).
         external_sources: committee.external_sources,
       };
 

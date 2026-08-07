@@ -465,6 +465,7 @@ export interface CommitteeExternalSource {
   provider: 'ocg';
   entity_type: 'community' | 'group' | 'event';
   label: string;
+  /** Unique per committee within `external_sources` — safe to use as a list track key. */
   url: string;
   external_id?: string;
   external_category?: string;
