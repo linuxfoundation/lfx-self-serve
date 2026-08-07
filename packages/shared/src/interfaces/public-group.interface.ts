@@ -3,7 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 
-import { BehavioralClassDisplayConfig, JoinMode } from './committee.interface';
+import { BehavioralClassDisplayConfig, CommitteeExternalSource, JoinMode } from './committee.interface';
 
 export interface PublicGroupMember {
   name: string;
@@ -41,16 +41,7 @@ export interface PublicGroupContext {
 }
 
 /** OCG or other external source linked to this group. */
-export interface PublicGroupExternalSource {
-  provider: 'ocg';
-  entity_type: 'community' | 'group' | 'event';
-  label: string;
-  url: string;
-  external_id?: string;
-  external_category?: string;
-  external_region?: string;
-  external_event_category?: string;
-}
+export type PublicGroupExternalSource = CommitteeExternalSource;
 
 /** Public-safe group summary returned by the directory endpoints. */
 export interface PublicGroupSummary {
