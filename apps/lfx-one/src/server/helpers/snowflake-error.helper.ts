@@ -21,6 +21,7 @@ export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: st
     return isInvalidIdentifier;
   }
 
-  const escapedIdentifier = expectedIdentifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`invalid identifier\\s+['"]?${escapedIdentifier}['"]?`, 'i').test(message);
+  const identifierMatch = /invalid identifier\s+(?:'([^']+)'|"([^"]+)"|([^\s,;]+))/i.exec(message);
+  const actualIdentifier = identifierMatch?.[1] ?? identifierMatch?.[2] ?? identifierMatch?.[3];
+  return actualIdentifier?.toUpperCase() === expectedIdentifier.toUpperCase();
 }

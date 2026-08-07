@@ -119,7 +119,7 @@ export class SnowflakeService {
     this.checkCircuit();
 
     // Generate query hash for deduplication
-    const queryHash = this.lockManager.hashQuery(sqlText, binds);
+    const queryHash = this.lockManager.hashQuery(sqlText, binds, options);
 
     const sqlOp = sqlText.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY';
     // Strip string literals from SQL for span attributes to avoid PII leaks

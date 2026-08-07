@@ -45,6 +45,11 @@ describe('isInvalidIdentifierError', () => {
     expect(isInvalidIdentifierError(error, 'CONV')).toBe(false);
   });
 
+  it('does not match a longer identifier that shares the expected prefix', () => {
+    const error = new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS_VALUE'");
+    expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(false);
+  });
+
   it('does not accept an identifier-specific fallback from error code alone', () => {
     expect(isInvalidIdentifierError(new Error('SQL compilation error: error code: 904'), 'LAST_TOUCH_CONVERSIONS')).toBe(false);
   });
