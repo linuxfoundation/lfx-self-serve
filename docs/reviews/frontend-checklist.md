@@ -250,17 +250,18 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 
 ## 12. Additional rules
 
-| Rule                                                                     | Severity   |
-| ------------------------------------------------------------------------ | ---------- |
-| No `console.log` — use `console.warn` or `console.error`                 | SHOULD FIX |
-| No nested ternaries                                                      | SHOULD FIX |
-| Selector prefix must be `lfx-`                                           | SHOULD FIX |
-| Use `inject()` for DI — never constructor-based injection                | SHOULD FIX |
-| Use `@if`/`@for` template syntax — not `*ngIf`/`*ngFor`                  | SHOULD FIX |
-| Use `ReactiveFormsModule` always — never `[(ngModel)]` for forms         | SHOULD FIX |
-| Use `yarn` — never `npm` or `npx` in scripts/docs/CI                     | SHOULD FIX |
-| Signals cannot use RxJS pipes (TypeScript compile error — rarely manual) | SHOULD FIX |
-| Always use `templateUrl`, never inline `template: '…'` strings           | SHOULD FIX |
+| Rule                                                                                                                                                                                                                                                                                  | Severity   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| No `console.log` — use `console.warn` or `console.error`                                                                                                                                                                                                                              | SHOULD FIX |
+| No nested ternaries                                                                                                                                                                                                                                                                   | SHOULD FIX |
+| Selector prefix must be `lfx-`                                                                                                                                                                                                                                                        | SHOULD FIX |
+| Use `inject()` for DI — never constructor-based injection                                                                                                                                                                                                                             | SHOULD FIX |
+| Use `@if`/`@for` template syntax — not `*ngIf`/`*ngFor`                                                                                                                                                                                                                               | SHOULD FIX |
+| Use `ReactiveFormsModule` always — never `[(ngModel)]` for forms                                                                                                                                                                                                                      | SHOULD FIX |
+| Use `yarn` — never `npm` or `npx` in scripts/docs/CI                                                                                                                                                                                                                                  | SHOULD FIX |
+| Signals cannot use RxJS pipes (TypeScript compile error — rarely manual)                                                                                                                                                                                                              | SHOULD FIX |
+| Always use `templateUrl`, never inline `template: '…'` strings                                                                                                                                                                                                                        | SHOULD FIX |
+| Do not define metrics in embedded Snowflake SQL — retrieve modeled `lf-dbt` columns; parameterized filters and narrow display-scope roll-ups are allowed; see [shared-and-sql-checklist §10](./shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix) | SHOULD FIX |
 
 ---
 
@@ -271,6 +272,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 - GET requests use `catchError(() => of(defaultValue))` to prevent error propagation
 - POST/PUT/DELETE use `take(1)` for one-shot subscriptions
 - **Every `HttpClient` call targets a real `/api/...` endpoint** that exists in the backend routes — no mock data, placeholder URLs, or fabricated paths. API paths are relative (`/api/...`); the proxy handles routing.
+- **Snowflake metric definitions belong in `lf-dbt`.** LFX One server services own retrieval and may use parameterized filters, sorting, pagination, and the narrow display-scope roll-up allowed by the canonical rule. Do not define metrics with `CASE`, arithmetic, or transformations in embedded SQL. Full rule: [shared-and-sql-checklist §10](./shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix).
 
 **Violation:**
 
