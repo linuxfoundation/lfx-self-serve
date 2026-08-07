@@ -130,7 +130,7 @@ import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyString
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -6903,10 +6903,11 @@ export class ProjectService {
         },
       };
     } catch (error) {
-      logger.debug(undefined, 'get_keyword_performance', 'Propagating keyword performance failure', {
-        foundation_slug: foundationSlug,
+      throw new MicroserviceError('Keyword attribution data is temporarily unavailable', 503, 'KEYWORD_ATTRIBUTION_UNAVAILABLE', {
+        operation: 'get_keyword_performance',
+        service: 'snowflake',
+        originalError: error instanceof Error ? error : new Error(String(error)),
       });
-      throw error;
     }
   }
 

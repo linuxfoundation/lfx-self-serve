@@ -277,7 +277,7 @@ describe('ProjectService — paid ads compatibility', () => {
     execute.mockReset();
   });
 
-  it('propagates keyword attribution failures instead of reporting measured zeroes', async () => {
+  it('translates keyword attribution failures without exposing Snowflake details', async () => {
     const attributionError = new Error('keyword attribution unavailable');
     execute.mockImplementation((sql: string) => {
       if (sql.includes('PAID_ADS_KEYWORD_ATTRIBUTION')) {
@@ -286,7 +286,12 @@ describe('ProjectService — paid ads compatibility', () => {
       return Promise.resolve({ rows: [], metadata: [] });
     });
 
-    await expect(new ProjectService().getKeywordPerformance('cncf', period)).rejects.toThrow(attributionError);
+    await expect(new ProjectService().getKeywordPerformance('cncf', period)).rejects.toMatchObject({
+      message: 'Keyword attribution data is temporarily unavailable',
+      code: 'KEYWORD_ATTRIBUTION_UNAVAILABLE',
+      statusCode: 503,
+      originalError: attributionError,
+    });
   });
 
   it('retries only the missing last-touch conversion column with the legacy query', async () => {
