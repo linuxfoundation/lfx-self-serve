@@ -9,6 +9,7 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
 } from '@lfx-one/shared/constants';
 import {
@@ -25,6 +26,7 @@ import {
   LinuxAliasData,
   ProfileAuthStatus,
   ProfileUpdateRequest,
+  ProfileVisibilityUpdateRequest,
   UpdateForwardRequest,
   UserEmail,
   UserMetadata,
@@ -2035,6 +2037,61 @@ export class ProfileController {
 
       logger.success(req, 'verify_and_link_email', startTime, { email });
       res.json({ success: true, message: 'Email identity verified and linked successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/visibility — resolve the current user's public-profile visibility (master
+   * IsPublic flag + section-level `visibility` preference).
+   */
+  public async getVisibility(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_profile_visibility');
+
+    try {
+      const visibility = await this.userService.getProfileVisibility(req);
+
+      logger.success(req, 'get_profile_visibility', startTime, { is_public: visibility.isPublic });
+      res.json(visibility);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /api/profile/visibility — update the current user's public-profile visibility. Blocked
+   * during impersonation by route middleware.
+   */
+  public async updateVisibility(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_profile_visibility');
+
+    try {
+      const { isPublic, sections }: ProfileVisibilityUpdateRequest = req.body ?? {};
+
+      // Require a fully-resolved map (the client always sends every key). A partial/empty map is
+      // malformed: silently zero-filling missing keys would erase settings the caller didn't intend
+      // to touch, so reject it here rather than fail closed to all-private downstream.
+      const sectionsResolved =
+        Boolean(sections) &&
+        typeof sections === 'object' &&
+        !Array.isArray(sections) &&
+        PROFILE_VISIBILITY_KEYS.every((key) => typeof (sections as Record<string, unknown>)[key] === 'boolean');
+
+      if (typeof isPublic !== 'boolean' || !sectionsResolved) {
+        return next(
+          ServiceValidationError.forField('body', 'isPublic (boolean) and a fully-resolved sections map (every visibility key a boolean) are required', {
+            operation: 'update_profile_visibility',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const visibility = await this.userService.updateProfileVisibility(req, { isPublic, sections });
+
+      logger.success(req, 'update_profile_visibility', startTime, { is_public: visibility.isPublic });
+      res.json(visibility);
     } catch (error) {
       next(error);
     }

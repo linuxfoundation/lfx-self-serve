@@ -36,6 +36,14 @@ router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req,
 // PATCH /api/profile - Update user metadata via NATS (replaces separate user and details endpoints)
 router.patch('/', blockDuringImpersonation, (req, res, next) => profileController.updateUserMetadata(req, res, next));
 
+// Public-profile visibility (LFXV2-2629) — master IsPublic flag + section-level `visibility` preference
+
+// GET /api/profile/visibility - Resolve the current user's public-profile visibility
+router.get('/visibility', (req, res, next) => profileController.getVisibility(req, res, next));
+
+// PATCH /api/profile/visibility - Update the current user's public-profile visibility
+router.patch('/visibility', blockDuringImpersonation, (req, res, next) => profileController.updateVisibility(req, res, next));
+
 // Email management routes (backed by auth-service via NATS)
 
 // GET /api/profile/emails - Get current user's email management data
