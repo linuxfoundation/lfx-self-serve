@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col items-center gap-4 rounded-lg border border-gray-200 bg-white px-6 py-14 text-center" data-testid="org-roi-empty-state">
+  <div class="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+    <i class="fa-light fa-chart-mixed-up-circle-dollar text-2xl" aria-hidden="true"></i>
+  </div>
+
+  @if (isUnmapped()) {
+    <div class="flex max-w-xl flex-col gap-3" data-testid="org-roi-empty-state-unmapped">
+      <h2 class="text-lg font-semibold text-gray-900">ROI metrics aren't available for this organization</h2>
+      <p class="text-sm text-gray-600">
+        ROI is estimated from open source contribution activity, and this organization isn't linked to a contributor community record. Without that link there's
+        no activity to price, so there are no figures to show.
+      </p>
+      <p class="text-sm text-gray-500">
+        This is how the data stands today rather than a problem with your account — most organizations across the Linux Foundation are in the same position.
+      </p>
+    </div>
+  } @else {
+    <div class="flex max-w-xl flex-col gap-3" data-testid="org-roi-empty-state-not-estimated">
+      <h2 class="text-lg font-semibold text-gray-900">We couldn't produce ROI figures for this organization</h2>
+      <p class="text-sm text-gray-600">
+        This organization is linked to a contributor community record, but the model didn't produce ROI figures for it. That usually means there wasn't enough
+        contribution activity attributed to it to estimate a return.
+      </p>
+      <!-- Must not promise the figures may appear later. ROI is estimated at organization-NAME
+           grain upstream, so where several accounts share a name the figures land wholly on one of
+           them and a later pipeline run reproduces that rather than correcting it. -->
+
+      <p class="text-sm text-gray-500">
+        Activity recorded under a differently-named or related organization is counted there instead, so it won't roll up to this one. If you think that's
+        what's happened, contact us and we can look at how your organization's activity is attributed.
+      </p>
+    </div>
+  }
+</section>

@@ -1,0 +1,99 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-roi-page">
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="org-roi-header">
+    <div class="flex flex-col gap-2">
+      <h1 class="font-display font-light text-2xl" data-testid="org-roi-title">ROI Metrics</h1>
+      <p class="text-sm text-gray-500" data-testid="org-roi-subtitle">
+        A modelled view of what your organization invested in open source and what came back.
+        @if (windowLabel()) {
+          <span data-testid="org-roi-window">Covering {{ windowLabel() }}.</span>
+        }
+      </p>
+    </div>
+    <!-- Shown on the empty state too: the drawer holds the only method control, and coverage is
+         method-scoped, so hiding it there would strand a viewer on a method that has no rows. -->
+    @if (canChooseMethod()) {
+      <button
+        type="button"
+        (click)="drawerVisible.set(true)"
+        class="inline-flex items-center gap-2 self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
+        data-testid="org-roi-assumptions-trigger">
+        <i class="fa-light fa-sliders" aria-hidden="true"></i>
+        Model assumptions
+      </button>
+    }
+  </header>
+
+  @if (hasNoOrgAccess()) {
+    <section
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+      data-testid="org-roi-no-access-state">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-base font-semibold text-gray-900" data-testid="org-roi-no-access-title">Organization Lens is not available</h2>
+      <p class="max-w-md text-sm text-gray-600" data-testid="org-roi-no-access-description">
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+      </p>
+    </section>
+  } @else if (!loaded()) {
+    <section class="flex flex-col gap-4" data-testid="org-roi-loading">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="4rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </section>
+  } @else if (!hasCompany()) {
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company via Impersonate to view ROI metrics." data-testid="org-roi-no-company-empty-state" />
+  } @else if (!hasAnalyticsId()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="ROI metrics aren't available for this company right now. Please try again."
+      data-testid="org-roi-no-analytics-id-state" />
+  } @else if (portfolioLoading()) {
+    <section class="flex flex-col gap-4" data-testid="org-roi-portfolio-loading">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="4rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </section>
+  } @else if (portfolioForbidden()) {
+    <div
+      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
+      data-testid="org-roi-forbidden">
+      <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+      <span>You do not have Org Lens access for this organization.</span>
+    </div>
+  } @else if (portfolioFailed()) {
+    <!-- Separate from the forbidden branch: a 503 must not read as a permissions message. -->
+    <div class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600" data-testid="org-roi-error">
+      <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
+      <span>ROI metrics couldn't be loaded. Please try again.</span>
+    </div>
+  } @else if (!hasRoiData()) {
+    <lfx-org-roi-empty-state [reason]="coverage().coverageReason" />
+  } @else {
+    <lfx-org-roi-kpi-cards [summary]="summary()" />
+
+    <lfx-org-roi-annual-trend [method]="method()" />
+  }
+
+  <!-- Mounted outside the branches above, on the same condition as its trigger. Inside the
+       success branch it would not exist on the empty state — the trigger would set `visible`
+       and nothing would open, which is the state the method control has to rescue. -->
+  @if (canChooseMethod()) {
+    <lfx-org-roi-assumptions-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
+  }
+</main>
