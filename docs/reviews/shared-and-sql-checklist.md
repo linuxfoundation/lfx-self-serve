@@ -242,7 +242,7 @@ const params = { page_size: 50 };
 
 ---
 
-### 10. No business logic in embedded Snowflake SQL (CRITICAL)
+### 10. No business logic in embedded Snowflake SQL (SHOULD FIX)
 
 Metric definitions, derived values, and transformation logic belong in the [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt) repo — typically in silver, gold, or platinum models — not in LFX One server services. Embedded Snowflake queries may **select precomputed columns** and apply **parameterized retrieval** only: explicit column lists, `WHERE` filters with `?` binds, `ORDER BY`, and `LIMIT`.
 
