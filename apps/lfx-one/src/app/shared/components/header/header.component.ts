@@ -30,7 +30,7 @@ export class HeaderComponent {
   private readonly appService = inject(AppService);
   public readonly userService = inject(UserService);
 
-  public readonly showMyMeetings = input(true);
+  public readonly showMyMeetings = input<boolean>(true);
 
   // Mobile search state
   public showMobileSearch: WritableSignal<boolean> = signal(false);
