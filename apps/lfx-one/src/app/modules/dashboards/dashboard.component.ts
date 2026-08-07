@@ -51,7 +51,13 @@ export class DashboardComponent {
     return this.personaService.allPersonas().length > 1;
   });
 
+  // Returns 'executive-director' for LF Staff too — they share the ED dashboard route, but
+  // downstream components (e.g. MarketingImpactComponent) gate their own content by persona,
+  // not by this value, so LF Staff still only see their restricted view.
   protected readonly foundationDashboardType = computed(() => {
+    if (this.personaService.canViewExecutiveDashboards()) {
+      return 'executive-director';
+    }
     const persona = this.personaService.currentPersona();
     return isBoardScopedPersona(persona) ? persona : 'board-member';
   });

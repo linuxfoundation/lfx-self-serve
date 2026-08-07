@@ -6,6 +6,7 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
+import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -38,18 +39,18 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Foundation Lens — Health Metrics page (ED-only)
+      // Foundation Lens — Health Metrics page (ED + LF Staff)
       {
         path: 'foundation/health-metrics',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Marketing Impact page (ED-only)
+      // Foundation Lens — Marketing Impact page (ED + LF Staff; LF Staff see only the Social Listening tab)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
       // Foundation Lens — Campaigns page (ED-only)
