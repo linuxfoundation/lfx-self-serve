@@ -307,3 +307,6 @@ export * from './committee-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
+
+// Brand Kit generation contract interfaces
+export * from './brand-kit.interface';
