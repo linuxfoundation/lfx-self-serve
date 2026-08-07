@@ -144,7 +144,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(kpi).toContainText('$5.6B');
     await expect(kpi).toContainText('$147.9M');
     await expect(kpi).toContainText('3669.5%');
-    await expect(kpi).toContainText('36.7×');
+    await expect(kpi).toContainText('37.7×');
     await expect(kpi).toContainText('407 projects');
   });
 
