@@ -46,6 +46,16 @@ export interface EmailManagementData {
 }
 
 /**
+ * Preferred meeting-invitation email from the meeting-service.
+ * Both fields are null when the user has no explicit override (i.e. meeting invitations
+ * fall back to the primary email).
+ */
+export interface MeetingInviteEmail {
+  email_id: string | null;
+  email: string | null;
+}
+
+/**
  * Request to send an OTP to a new email address (step 1 of add-email flow)
  */
 export interface AddEmailRequest {
