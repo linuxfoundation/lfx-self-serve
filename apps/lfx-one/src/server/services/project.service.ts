@@ -6903,9 +6903,8 @@ export class ProjectService {
         },
       };
     } catch (error) {
-      logger.warning(undefined, 'get_keyword_performance', 'Failed to fetch keyword performance', {
+      logger.debug(undefined, 'get_keyword_performance', 'Propagating keyword performance failure', {
         foundation_slug: foundationSlug,
-        err: error,
       });
       throw error;
     }

@@ -60,6 +60,7 @@ export class PerformanceMarketingTabComponent {
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly keywordLoading = signal(false);
+  protected readonly keywordError = signal(false);
   protected readonly expandedProjects = signal<Set<string>>(new Set());
   protected readonly expandedPlatforms = signal<Set<string>>(new Set());
   protected readonly expandedKeywords = signal<Set<string>>(new Set());
@@ -314,13 +315,17 @@ export class PerformanceMarketingTabComponent {
       combineLatest([slug$, period$]).pipe(
         switchMap(([slug, period]) => {
           this.expandedKeywords.set(new Set());
+          this.keywordError.set(false);
           if (!slug) {
             this.keywordLoading.set(false);
             return of(null);
           }
           this.keywordLoading.set(true);
           return this.analyticsService.getKeywordPerformance(slug, period || undefined).pipe(
-            catchError(() => of(null)),
+            catchError(() => {
+              this.keywordError.set(true);
+              return of(null);
+            }),
             finalize(() => this.keywordLoading.set(false))
           );
         })
