@@ -3216,24 +3216,16 @@ export class ProjectService {
         platformBreakdown,
       };
     } catch (error) {
-      logger.warning(undefined, 'get_social_reach', 'Failed to fetch social reach data, returning defaults', {
+      // Rethrow rather than returning zero-filled defaults. Zero spend, zero impressions
+      // and 0.0x ROAS are legitimate measurements, so a defaults response would reach the
+      // dashboard as a 200 and render "this foundation spent nothing" — a fabricated
+      // figure the caller has no way to distinguish from real data. Surfacing the failure
+      // lets each caller render an explicit unavailable state instead.
+      logger.warning(undefined, 'get_social_reach', 'Failed to fetch social reach data', {
         foundation_slug: foundationSlug,
         err: error,
       });
-      return {
-        totalReach: 0,
-        roas: 0,
-        totalSpend: 0,
-        totalRevenue: 0,
-        changePercentage: 0,
-        trend: 'up',
-        monthlyData: [],
-        monthlyLabels: [],
-        monthlyRoas: [],
-        channelGroups: [],
-        projectBreakdown: [],
-        platformBreakdown: [],
-      };
+      throw error;
     }
   }
 

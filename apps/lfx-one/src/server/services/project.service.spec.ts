@@ -9,10 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService` — none of the methods
 // under test here touch them, so they're stubbed to trivial classes to keep construction cheap.
-const { proxyRequest, addAccessToResources, checkAccess } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, checkAccess, snowflakeExecute } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
+  snowflakeExecute: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -65,7 +66,7 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
-vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({}) } }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute: snowflakeExecute }) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -261,5 +262,28 @@ describe('ProjectService — create picker methods', () => {
     for (const params of calls) {
       expect(params['filter_grants'] === 'direct' || typeof params['parent'] === 'string' || typeof params['name'] === 'string').toBe(true);
     }
+  });
+});
+
+describe('ProjectService — Snowflake-backed marketing reads', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    snowflakeExecute.mockReset();
+    service = new ProjectService();
+  });
+
+  describe('getSocialReach', () => {
+    // Regression guard for the zero-fill bug: this method used to swallow Snowflake failures and
+    // resolve a defaults object, which reached the dashboard as a 200 and rendered "zero spend,
+    // 0.0x ROAS" — indistinguishable from a genuine measurement of zero. The rethrow is the whole
+    // contract the callers' unavailable states depend on, so it needs coverage of its own;
+    // otherwise a later refactor could reinstate the fallback with every test still green.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      snowflakeExecute.mockRejectedValue(failure);
+
+      await expect(service.getSocialReach('tlf', undefined, { start: '2026-01-01', end: '2026-07-01', label: 'test' } as any)).rejects.toBe(failure);
+    });
   });
 });

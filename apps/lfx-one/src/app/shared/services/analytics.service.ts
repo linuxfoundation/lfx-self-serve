@@ -947,29 +947,21 @@ export class AnalyticsService {
 
   /**
    * Get paid social reach metrics
+   *
+   * Errors propagate to the caller rather than resolving to an all-zeros response.
+   * Spend, impressions and ROAS of 0 are legitimate measurements, so a zero-filled
+   * error fallback here would render a failed request as "this foundation spent
+   * nothing" — indistinguishable from the real thing. Every caller already handles
+   * the error stream and renders its own unavailable state.
+   *
    * @param foundationSlug - Foundation slug used to filter metrics
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Social reach response with ROAS, impressions, and monthly trends
    */
   public getSocialReach(foundationSlug: string, classification?: string, period?: string): Observable<SocialReachResponse> {
-    return this.http
-      .get<SocialReachResponse>('/api/analytics/social-reach', { params: this.buildFoundationParams(foundationSlug, classification, period) })
-      .pipe(
-        catchError(() => {
-          return of({
-            totalReach: 0,
-            roas: 0,
-            totalSpend: 0,
-            totalRevenue: 0,
-            changePercentage: 0,
-            trend: 'up' as const,
-            monthlyData: [],
-            monthlyLabels: [],
-            monthlyRoas: [],
-            channelGroups: [],
-          });
-        })
-      );
+    return this.http.get<SocialReachResponse>('/api/analytics/social-reach', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   public getKeywordPerformance(foundationSlug: string, period?: string): Observable<KeywordPerformanceResponse> {
@@ -1305,30 +1297,21 @@ export class AnalyticsService {
 
   /**
    * Get revenue impact metrics for the ED dashboard (attribution + paid media + event registration).
+   *
+   * Errors propagate to the caller rather than resolving to an all-zeros response.
+   * $0 attributed revenue is a legitimate measurement, so a zero-filled error fallback
+   * here would render a failed request as "this foundation won nothing" —
+   * indistinguishable from the real thing. Every caller already handles the error
+   * stream and renders its own unavailable state.
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable emitting pipeline/revenue totals, attribution breakdowns, and event registration data (or zeroed defaults on error)
+   * @returns Observable emitting pipeline/revenue totals, attribution breakdowns, and event registration data
    */
   public getRevenueImpact(foundationSlug: string, classification?: string, period?: string): Observable<RevenueImpactResponse> {
-    return this.http
-      .get<RevenueImpactResponse>('/api/analytics/revenue-impact', { params: this.buildFoundationParams(foundationSlug, classification, period) })
-      .pipe(
-        catchError(() =>
-          of({
-            pipelineInfluenced: 0,
-            revenueAttributed: 0,
-            matchRate: 0,
-            changePercentage: 0,
-            trend: 'up' as const,
-            attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
-            engagementTypes: [],
-            paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
-            attributionChannels: [],
-            projectBreakdown: [],
-            eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
-          })
-        )
-      );
+    return this.http.get<RevenueImpactResponse>('/api/analytics/revenue-impact', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**
