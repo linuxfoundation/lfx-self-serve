@@ -89,7 +89,7 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Generic not-found page — public so anonymous users land on a branded 404 instead of a login
   // prompt when redirected here from an unrecognized URL. Anchored regex prevents startsWith
   // semantics from matching /not-found-admin or similar future paths.
-  { pattern: /^\/not-found$/, type: 'ssr', auth: 'public' },
+  { pattern: /^\/not-found\/?$/, type: 'ssr', auth: 'public' },
 
   // All other routes - Angular SSR routes requiring authentication
   { pattern: '/', type: 'ssr', auth: 'required' },
