@@ -136,7 +136,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     await expect(page.getByTestId('org-roi-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'ROI Metrics' })).toBeVisible();
-    await expect(page.getByTestId('org-roi-window')).toContainText('2010–2026');
+    // Derived from the same CURRENT_YEAR the fixture uses; a hardcoded end year would fail every January.
+    await expect(page.getByTestId('org-roi-window')).toContainText(`2010–${CURRENT_YEAR}`);
 
     const kpi = page.getByTestId('org-roi-kpi-cards');
     await expect(kpi).toBeVisible();
@@ -273,6 +274,47 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(empty).not.toContainText('later run');
     await expect(empty).not.toContainText('may appear');
     await expect(page.getByTestId('org-roi-empty-state-unmapped')).toHaveCount(0);
+  });
+
+  test('keeps the method control reachable on the empty state', async ({ page }) => {
+    // Coverage is method-scoped, so a method with no rows lands on the empty state. If the drawer
+    // holding the only method control were hidden there, that state would be a dead end — the
+    // viewer could not switch back and previously visible figures would stay unreachable until
+    // browser storage was cleared.
+    await stubOrgLensContext(page, {
+      summary: { ...MOCK_SUMMARY, hasData: false, totalExpenditure: null, totalReturn: null, profit: null, roi: null, bcr: null },
+      coverage: { orgUid: MOCK_ACCOUNT_ID, hasData: false, coverageReason: 'not_estimated' },
+    });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-empty-state')).toBeVisible();
+    const trigger = page.getByTestId('org-roi-assumptions-trigger');
+    await expect(trigger).toBeVisible();
+
+    await trigger.click();
+    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toBeVisible();
+    await expect(page.getByTestId('org-roi-assumptions-method-direct')).toBeVisible();
+  });
+
+  test('exposes the yearly series to assistive technology, not only as a canvas', async ({ page }) => {
+    // The chart is a canvas, so without this table the per-year values are unavailable to a screen
+    // reader. `sr-only` keeps it out of the visual layout while leaving it in the accessibility
+    // tree, so assert on its contents rather than its visibility.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const table = page.getByTestId('org-roi-annual-trend-table');
+    await expect(table).toBeAttached();
+    await expect(table).toContainText('Year');
+    await expect(table).toContainText('Investment');
+    await expect(table).toContainText('Return');
+    // Same figures as the chart, through the same formatter.
+    await expect(table).toContainText(`${CURRENT_YEAR}`);
+    await expect(table).toContainText('$620M');
+    await expect(table).toContainText('$17M');
+    await expect(table).toContainText('partial year');
+
+    await expect(page.getByTestId('org-roi-annual-trend-chart')).toHaveAttribute('aria-label', /investment and return by year/i);
   });
 
   test('renders the no-value indicator rather than zero when there is no investment to divide by', async ({ page }) => {

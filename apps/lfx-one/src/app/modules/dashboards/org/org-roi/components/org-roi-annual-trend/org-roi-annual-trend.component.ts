@@ -42,6 +42,27 @@ export class OrgRoiAnnualTrendComponent {
     return lastYear !== null && lastYear === new Date().getFullYear() ? lastYear : null;
   });
 
+  /**
+   * Screen-reader equivalent of the canvas. Pre-formatted here rather than in the template so the
+   * table and the chart tooltips read the same figures through the same formatter.
+   */
+  protected readonly tableRows: Signal<{ year: number; investment: string; return: string; isPartial: boolean }[]> = computed(() => {
+    const partial = this.partialYear();
+    return this.annual().rows.map((row) => ({
+      year: row.year,
+      investment: formatCurrency(row.expenditure),
+      return: formatCurrency(row.totalReturn),
+      isPartial: row.year === partial,
+    }));
+  });
+
+  /** Names what the canvas depicts; the per-year values live in the adjacent table. */
+  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
+    const rows = this.annual().rows;
+    if (rows.length === 0) return 'Investment and return by year';
+    return `Line chart of investment and return by year, ${rows[0].year} to ${rows[rows.length - 1].year}. The same figures follow in a table.`;
+  });
+
   protected readonly chartData: Signal<ChartData<'line'>> = computed(() => {
     const rows = this.annual().rows;
     return {

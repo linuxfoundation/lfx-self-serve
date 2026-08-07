@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ORG_LENS_ROI_CONTRIBUTION_TYPES, ORG_LENS_ROI_METHODS } from '../constants/org-lens-roi.constants';
+import type { ORG_LENS_ROI_CONTRIBUTION_TYPES, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS } from '../constants/org-lens-roi.constants';
 
 export type OrgLensRoiMethod = (typeof ORG_LENS_ROI_METHODS)[number];
 
 export type OrgLensRoiContributionType = (typeof ORG_LENS_ROI_CONTRIBUTION_TYPES)[number];
 
 /** `unmapped` — no crowd.dev organization to key on; `not_estimated` — mapped but the estimation produced no rows. */
-export type OrgLensRoiCoverageReason = 'covered' | 'unmapped' | 'not_estimated';
+export type OrgLensRoiCoverageReason = (typeof ORG_LENS_ROI_COVERAGE_REASONS)[number];
 
 export interface OrgLensRoiSummary {
   orgUid: string;

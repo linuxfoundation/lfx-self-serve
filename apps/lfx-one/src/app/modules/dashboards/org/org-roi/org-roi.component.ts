@@ -87,6 +87,23 @@ export class OrgRoiComponent {
 
   protected readonly hasRoiData: Signal<boolean> = computed(() => this.summary().hasData);
 
+  /**
+   * The method control has to stay reachable on the empty state, not just alongside figures.
+   * Coverage is method-scoped, so a method with no rows renders the empty state — and if the only
+   * way to change method lived in the success branch, that state would be unrecoverable without
+   * clearing storage, including on a stale method restored from a previous visit.
+   */
+  protected readonly canChooseMethod: Signal<boolean> = computed(
+    () =>
+      this.loaded() &&
+      !this.hasNoOrgAccess() &&
+      this.hasCompany() &&
+      this.hasAnalyticsId() &&
+      !this.portfolioLoading() &&
+      !this.portfolioForbidden() &&
+      !this.portfolioFailed()
+  );
+
   protected readonly windowLabel: Signal<string> = computed(() => {
     const { yearMin, yearMax } = this.summary();
     if (yearMin === null || yearMax === null) return '';

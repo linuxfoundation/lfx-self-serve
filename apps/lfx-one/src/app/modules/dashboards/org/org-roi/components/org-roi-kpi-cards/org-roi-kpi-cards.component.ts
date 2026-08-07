@@ -51,16 +51,26 @@ export class OrgRoiKpiCardsComponent {
     ];
   });
 
+  /**
+   * A measure is renderable only if it is actually a finite number. `=== null` is not enough: an
+   * absent key is `undefined`, which slips past it and reaches `toFixed()`. The measures are
+   * nullable by design — the warehouse returns NULL rather than zero when there is no investment to
+   * divide by — so anything non-numeric renders as the no-value indicator, never as 0.
+   */
+  private isRenderable(value: number | null | undefined): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
   private money(value: number | null): string {
-    return value === null ? ORG_LENS_ROI_NO_VALUE : formatCurrency(value);
+    return this.isRenderable(value) ? formatCurrency(value) : ORG_LENS_ROI_NO_VALUE;
   }
 
   private ratioAsPercent(value: number | null): string {
-    return value === null ? ORG_LENS_ROI_NO_VALUE : `${formatPercent(value * 100)}%`;
+    return this.isRenderable(value) ? `${formatPercent(value * 100)}%` : ORG_LENS_ROI_NO_VALUE;
   }
 
   /** A ratio, not a percentage, so it does not go through the percentage formatter. */
   private multiple(value: number | null): string {
-    return value === null ? ORG_LENS_ROI_NO_VALUE : `${value.toFixed(1)}×`;
+    return this.isRenderable(value) ? `${value.toFixed(1)}×` : ORG_LENS_ROI_NO_VALUE;
   }
 }

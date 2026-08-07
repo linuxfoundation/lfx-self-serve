@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_LENS_ROI_CACHE_KEY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_LENS_ROI_CACHE_KEY, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgLensRoiAnnual,
   OrgLensRoiAnnualRow,
@@ -166,22 +166,56 @@ export class OrgLensRoiService {
     };
   }
 
+  /**
+   * A key that is absent is not the same as one holding null, and the difference reaches the UI: a
+   * nullable measure renders as the no-value indicator, while an absent one used to reach
+   * `toFixed()`. So these check presence explicitly rather than accepting `undefined` as null.
+   */
+  private static isNullableNumber(record: Record<string, unknown>, key: string): boolean {
+    if (!(key in record)) return false;
+    const value = record[key];
+    return value === null || (typeof value === 'number' && Number.isFinite(value));
+  }
+
+  private static isNullableString(record: Record<string, unknown>, key: string): boolean {
+    if (!(key in record)) return false;
+    const value = record[key];
+    return value === null || typeof value === 'string';
+  }
+
   private static isSummary(value: unknown): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const summary = value as Record<string, unknown>;
-    return typeof summary['hasData'] === 'boolean' && typeof summary['nProjects'] === 'number' && typeof summary['method'] === 'string';
+    if (typeof summary['hasData'] !== 'boolean') return false;
+    if (typeof summary['nProjects'] !== 'number') return false;
+    if (!(ORG_LENS_ROI_METHODS as readonly string[]).includes(summary['method'] as string)) return false;
+    const nullableNumbers = ['totalExpenditure', 'totalReturn', 'profit', 'roi', 'bcr', 'yearMin', 'yearMax'];
+    if (!nullableNumbers.every((key) => OrgLensRoiService.isNullableNumber(summary, key))) return false;
+    return ['dateMin', 'dateMax'].every((key) => OrgLensRoiService.isNullableString(summary, key));
   }
 
   private static isCoverage(value: unknown): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const coverage = value as Record<string, unknown>;
-    return typeof coverage['hasData'] === 'boolean' && typeof coverage['coverageReason'] === 'string';
+    if (typeof coverage['hasData'] !== 'boolean') return false;
+    return (ORG_LENS_ROI_COVERAGE_REASONS as readonly string[]).includes(coverage['coverageReason'] as string);
   }
 
   private static isAnnual(value: unknown): boolean {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const annual = value as Record<string, unknown>;
-    return Array.isArray(annual['rows']) && typeof annual['apportioned'] === 'boolean' && typeof annual['method'] === 'string';
+    if (typeof annual['apportioned'] !== 'boolean') return false;
+    if (!(ORG_LENS_ROI_METHODS as readonly string[]).includes(annual['method'] as string)) return false;
+    if (!Array.isArray(annual['rows'])) return false;
+    // Rows are what the chart maps over, so a malformed one is as bad as a malformed envelope.
+    return annual['rows'].every((row) => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+      const entry = row as Record<string, unknown>;
+      if (typeof entry['year'] !== 'number') return false;
+      const required = ['totalReturn', 'expenditure', 'profit'];
+      if (!required.every((key) => typeof entry[key] === 'number' && Number.isFinite(entry[key] as number))) return false;
+      return ['roi', 'bcr'].every((key) => OrgLensRoiService.isNullableNumber(entry, key));
+    });
   }
 
   private toFiniteNumber(value: unknown): number {

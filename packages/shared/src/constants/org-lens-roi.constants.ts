@@ -5,6 +5,12 @@ export const ORG_LENS_ROI_METHODS = ['logit', 'direct'] as const;
 
 export const ORG_LENS_ROI_DEFAULT_METHOD = 'logit';
 
+/**
+ * Why an organization has or hasn't got figures. `unmapped` is permanent; `not_estimated` is
+ * mapped-but-unestimated and must not be described to viewers as arriving on a later run.
+ */
+export const ORG_LENS_ROI_COVERAGE_REASONS = ['covered', 'unmapped', 'not_estimated'] as const;
+
 export const ORG_LENS_ROI_METHOD_LABELS: Record<(typeof ORG_LENS_ROI_METHODS)[number], string> = {
   logit: 'Logistic markup',
   direct: 'Direct markup',

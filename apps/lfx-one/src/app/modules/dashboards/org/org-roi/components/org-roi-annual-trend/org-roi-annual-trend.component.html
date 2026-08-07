@@ -24,9 +24,34 @@
       <span>No yearly breakdown is available for this organization.</span>
     </div>
   } @else {
-    <div class="h-[280px]" data-testid="org-roi-annual-trend-chart">
+    <div class="h-[280px]" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-annual-trend-chart">
       <lfx-chart type="line" [data]="chartData()" [options]="chartOptions" height="100%" />
     </div>
+
+    <!-- The canvas is otherwise the only presentation of these values, so it is unreadable to a
+         screen reader. This table carries the same series; `sr-only` keeps it out of the visual
+         layout without hiding it from assistive technology (`hidden`/`display:none` would). -->
+    <table class="sr-only" data-testid="org-roi-annual-trend-table">
+      <caption>
+        Investment and return by year
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Year</th>
+          <th scope="col">Investment</th>
+          <th scope="col">Return</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of tableRows(); track row.year) {
+          <tr>
+            <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
+            <td>{{ row.investment }}</td>
+            <td>{{ row.return }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
 
     <div class="flex flex-col gap-1 border-t border-gray-100 pt-3">
       @if (apportioned()) {

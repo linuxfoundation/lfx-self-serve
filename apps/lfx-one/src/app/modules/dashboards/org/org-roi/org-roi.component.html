@@ -12,8 +12,9 @@
         }
       </p>
     </div>
-    <!-- Only offered alongside real figures — it explains how they were produced. -->
-    @if (hasRoiData()) {
+    <!-- Shown on the empty state too: the drawer holds the only method control, and coverage is
+         method-scoped, so hiding it there would strand a viewer on a method that has no rows. -->
+    @if (canChooseMethod()) {
       <button
         type="button"
         (click)="drawerVisible.set(true)"
