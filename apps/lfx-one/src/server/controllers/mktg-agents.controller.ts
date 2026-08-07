@@ -2,11 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_AGENTS } from '@lfx-one/shared/constants';
-import { MktgChatRequest, MktgChatResponse, MktgHistoryResponse } from '@lfx-one/shared/interfaces';
+import {
+  BrandKitGenerateRequest,
+  BrandKitGenerateResponse,
+  BrandKitResultRequest,
+  BrandKitResultResponse,
+  MktgChatRequest,
+  MktgChatResponse,
+  MktgHistoryResponse,
+} from '@lfx-one/shared/interfaces';
+import { validateBrandKitIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { getStringQueryParam } from '../helpers/validation.helper';
+import { BrandKitService } from '../services/brand-kit.service';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -14,6 +24,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 
 export class MktgAgentsController {
   private readonly guildService = new GuildService();
+  private readonly brandKitService = new BrandKitService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -136,6 +147,121 @@ export class MktgAgentsController {
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
       const response: MktgHistoryResponse = { messages };
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/brand-kit/generate
+   * Starts a one-shot form-mode Brand Kit generation from the one-page
+   * intake form (all 7 answers, dec-brand-kit-intake-form). Returns the
+   * session id + creator-binding owner token for polling the result.
+   */
+  public async generateBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { answers } = req.body as BrandKitGenerateRequest;
+
+    const answersResult = validateBrandKitIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      next(
+        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
+          operation: 'brand_kit_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'brand_kit_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'brand-kit');
+    if (!agent || agent.status !== 'active') {
+      next(
+        ServiceValidationError.forField('agentId', 'The Brand Kit agent is not available.', {
+          operation: 'brand_kit_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'brand_kit_generate', {});
+
+    try {
+      const trimmedAnswers = Object.fromEntries(Object.entries(answers).map(([key, value]) => [key, value.trim()]));
+      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, agent.guildAgentHandle);
+      logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
+      const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/brand-kit/result
+   * Polls a generation session for the validated Brand Kit document.
+   * Only the session's creator may read the result (owner-token proof).
+   */
+  public async brandKitResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { sessionId, ownerToken } = req.body as BrandKitResultRequest;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'brand_kit_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'brand_kit_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'brand_kit_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'brand_kit_result', {});
+
+    try {
+      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId);
+      logger.success(req, 'brand_kit_result', startTime, { status: result.status });
+      res.json(result);
     } catch (error) {
       next(error);
     }

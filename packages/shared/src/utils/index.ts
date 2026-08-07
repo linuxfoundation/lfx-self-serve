@@ -53,3 +53,4 @@ export * from './committee-engagement-classifier.utils';
 export * from './committee-engagement-display.utils';
 export * from './committee-engagement-freshness.utils';
 export * from './public-profile.utils';
+export * from './brand-kit.utils';
