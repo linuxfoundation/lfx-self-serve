@@ -46,6 +46,12 @@ export interface ActiveMktgAgent extends BaseMktgAgent {
    * messages so Guild routes them to this agent. Required for `active` agents.
    */
   guildAgentHandle: string;
+  /**
+   * In-page surface a tile click opens. Defaults to `chat` when unset.
+   * `brand-kit-form` opens the one-page Brand Kit intake form
+   * (dec-brand-kit-intake-form) instead of the chat panel.
+   */
+  surface?: 'chat' | 'brand-kit-form';
 }
 
 /**
