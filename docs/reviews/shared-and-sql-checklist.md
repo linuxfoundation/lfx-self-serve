@@ -239,3 +239,70 @@ const params = { limit: 50, offset: 0 };
 const params = { page_size: 50 };
 // For next page: { page_size: 50, page_token: previousResponse.nextPageToken }
 ```
+
+---
+
+### 10. No business logic in embedded Snowflake SQL (CRITICAL)
+
+Metric definitions, derived values, and transformation logic belong in the [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt) repo — typically in silver, gold, or platinum models — not in LFX One server services. Embedded Snowflake queries may **select precomputed columns** and apply **parameterized retrieval** only: explicit column lists, `WHERE` filters with `?` binds, `ORDER BY`, and `LIMIT`.
+
+**Do not embed in LFX One:**
+
+- `CASE` expressions that compute business metrics
+- Arithmetic on raw columns (percentages, rates, growth, ratios)
+- `SUM` / `AVG` / `COUNT` / window functions over fact columns
+- Joins, bucketing, or date/metric calculations that define what a number means
+
+If a dashboard needs a new derived field, add it to the appropriate dbt model, document and test it there, then select the named column from LFX One.
+
+**Violation:**
+
+```typescript
+const overviewQuery = `
+  SELECT
+    SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS,
+    MAX(PLATFORMS_ACTIVE) AS PLATFORMS_ACTIVE,
+    CASE
+      WHEN SUM(PRIOR_TOTAL_FOLLOWERS) > 0
+        THEN ROUND(
+          (SUM(TOTAL_FOLLOWERS) - SUM(PRIOR_TOTAL_FOLLOWERS))
+          / SUM(PRIOR_TOTAL_FOLLOWERS) * 100, 1
+        )
+    END AS FOLLOWER_GROWTH_PCT
+  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW
+  WHERE 1=1
+    ${foundationFilter}
+`;
+// Recomputes follower_growth_pct in the app — logic belongs in dbt
+```
+
+**Fix:**
+
+```sql
+-- lf-dbt: models/platinum/lfx_one/platinum_lfx_one_social_media_overview.sql
+-- Define follower_growth_pct once, with dbt tests in platinum_lfx_one_tests.yml
+CASE
+  WHEN SUM(prior_total_followers) > 0
+    THEN ROUND(
+      (SUM(CASE WHEN prior_total_followers IS NOT NULL THEN followers_count END)
+        - SUM(prior_total_followers))
+      / SUM(prior_total_followers) * 100,
+      1
+    )
+END AS follower_growth_pct
+```
+
+```typescript
+const overviewQuery = `
+  SELECT
+    total_followers,
+    platforms_active,
+    follower_growth_pct
+  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW
+  WHERE 1=1
+    ${foundationFilter}
+`;
+// Select only — no metric logic in the server
+```
+
+**Allowed in LFX One:** filtering by route params (foundation slug, date range), sorting, pagination, and simple `SUM`/`MAX` only when aggregating **already-modeled** rows for display scope (e.g. umbrella foundation roll-up) — and only if that roll-up is not already provided by a dbt model. When in doubt, push the logic to dbt.
