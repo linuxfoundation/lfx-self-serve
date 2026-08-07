@@ -24,6 +24,54 @@
     </p>
 
     <form [formGroup]="profileForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+      <!-- Profile Picture Section -->
+      <div data-testid="profile-edit-drawer-avatar-section">
+        <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-avatar-heading">Profile Picture</h3>
+
+        <div class="flex items-center gap-4">
+          <div class="relative h-16 w-16">
+            <div
+              class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-lg font-semibold text-white"
+              data-testid="profile-edit-drawer-avatar">
+              @if (showAvatarImage()) {
+                <img
+                  [src]="avatarUrl()"
+                  [alt]="avatarInitials()"
+                  (error)="onAvatarError()"
+                  class="h-full w-full rounded-2xl object-cover"
+                  data-testid="profile-edit-drawer-avatar-image" />
+              } @else {
+                {{ avatarInitials() }}
+              }
+            </div>
+
+            <button
+              type="button"
+              class="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+              [class.cursor-not-allowed]="avatarUploading() || busy()"
+              [class.cursor-pointer]="!avatarUploading() && !busy()"
+              [class.opacity-40]="avatarUploading() || busy()"
+              [disabled]="avatarUploading() || busy()"
+              [attr.aria-label]="avatarUploading() ? 'Uploading photo' : 'Change photo'"
+              (click)="triggerAvatarUpload()"
+              data-testid="profile-edit-drawer-avatar-upload-label">
+              <i class="fa-light text-xs" [class.fa-spinner]="avatarUploading()" [class.fa-spin]="avatarUploading()" [class.fa-pencil]="!avatarUploading()"></i>
+            </button>
+            <input
+              #avatarInput
+              type="file"
+              id="drawer-edit-avatar-input"
+              accept="image/png,image/jpeg,image/webp"
+              class="hidden"
+              [disabled]="avatarUploading() || busy()"
+              (change)="onAvatarFileSelected($event)"
+              data-testid="profile-edit-drawer-avatar-input" />
+          </div>
+
+          <p class="text-xs text-slate-500">PNG, JPEG, or WEBP. Max 20MB.</p>
+        </div>
+      </div>
+
       <!-- Personal Information Section -->
       <div data-testid="profile-edit-drawer-personal-section">
         <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-drawer-personal-heading">Personal Information</h3>
