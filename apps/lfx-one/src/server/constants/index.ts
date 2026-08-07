@@ -6,3 +6,4 @@ export * from './meta.constants';
 export * from './public-profile.constants';
 export * from './reddit.constants';
 export * from './rewards.constants';
+export * from './weekly-brief.constants';

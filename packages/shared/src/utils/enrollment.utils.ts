@@ -35,6 +35,15 @@ export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDi
   return 'Active';
 }
 
+// Composes an enrollment CTA URL via URL + URLSearchParams (not string concat), so it is robust to
+// a `base` with/without a trailing slash and a `ctaPath` with/without a leading `?`. `renew` adds renew=true.
+export function buildEnrollmentHref(base: string, ctaPath: string, renew = false): string {
+  const url = new URL(base);
+  new URLSearchParams(ctaPath).forEach((value, key) => url.searchParams.set(key, value));
+  if (renew) url.searchParams.set('renew', 'true');
+  return url.toString();
+}
+
 export function enrollmentStatusSeverity(status: EnrollmentDisplayStatus): 'success' | 'warn' | 'danger' | 'secondary' {
   switch (status) {
     case 'Active':

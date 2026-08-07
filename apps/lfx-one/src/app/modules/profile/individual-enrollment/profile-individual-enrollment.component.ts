@@ -7,7 +7,7 @@ import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DisplayEnrollment, EnrollmentsState } from '@lfx-one/shared/interfaces';
-import { deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
+import { buildEnrollmentHref, deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
@@ -69,8 +69,8 @@ export class ProfileIndividualEnrollmentComponent {
                 ...item,
                 displayStatus,
                 severity: enrollmentStatusSeverity(displayStatus),
-                enrollHref: `${base}${item.ctaPath}`,
-                renewHref: `${base}${item.ctaPath}&renew=true`,
+                enrollHref: buildEnrollmentHref(base, item.ctaPath),
+                renewHref: buildEnrollmentHref(base, item.ctaPath, true),
                 pending: false,
               };
             })

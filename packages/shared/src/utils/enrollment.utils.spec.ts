@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { EnrollmentMembership, IndividualEnrollment } from '../interfaces';
-import { deriveEnrollmentStatus, enrollmentStatusSeverity } from './enrollment.utils';
+import { buildEnrollmentHref, deriveEnrollmentStatus, enrollmentStatusSeverity } from './enrollment.utils';
 
 /** Formats a Date as YYYY-MM-DD, matching the EndDate shape the member-service returns. */
 function isoDate(date: Date): string {
@@ -165,5 +165,29 @@ describe('enrollmentStatusSeverity', () => {
 
   it('maps Not Enrolled to secondary', () => {
     expect(enrollmentStatusSeverity('Not Enrolled')).toBe('secondary');
+  });
+});
+
+describe('buildEnrollmentHref', () => {
+  const CTA = '?product=prod-1&project=tlf';
+
+  it('composes the base and query-only ctaPath into an absolute URL', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', CTA)).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
+  });
+
+  it('appends renew=true when renew is set', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', CTA, true)).toBe('https://enroll.example.org/?product=prod-1&project=tlf&renew=true');
+  });
+
+  it('tolerates a base without a trailing slash', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org', CTA)).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
+  });
+
+  it('tolerates a base that carries a path segment (no trailing slash)', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/join', CTA)).toBe('https://enroll.example.org/join?product=prod-1&project=tlf');
+  });
+
+  it('tolerates a ctaPath without a leading question mark', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', 'product=prod-1&project=tlf')).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
   });
 });

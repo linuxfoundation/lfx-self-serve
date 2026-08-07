@@ -26,7 +26,8 @@
       [tshirtSize]="tshirtSizeLabel()"
       [aboutMe]="aboutMe()"
       [githubHandle]="githubHandle()"
-      (editRequested)="openEditDrawer()" />
+      (editRequested)="openEditDrawer()"
+      (visibilityRequested)="openVisibilityDrawer()" />
   </div>
 
   <!-- Left column -->
@@ -76,3 +77,6 @@
 
 <!-- Profile edit drawer — opened via ProfileEditDrawerService when the panel emits editRequested -->
 <lfx-profile-edit-drawer (saved)="onProfileSaved($event)" />
+
+<!-- Public-profile visibility drawer — opened via ProfileVisibilityDrawerService (panel visibilityRequested) -->
+<lfx-profile-visibility-drawer />

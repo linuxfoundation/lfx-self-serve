@@ -307,3 +307,6 @@ export * from './committee-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
+
+// Public-profile section visibility (LFXV2-2629)
+export * from './profile-visibility.interface';
