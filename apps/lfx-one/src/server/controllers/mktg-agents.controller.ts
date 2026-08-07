@@ -246,7 +246,13 @@ export class MktgAgentsController {
     // Type-gate body fields — never rely on downstream defensive coercion.
     const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
     if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
-      next(new AuthorizationError('You do not have permission to read this session.', { operation: 'brand_kit_result', service: 'mktg_agents_controller' }));
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'brand_kit_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
       return;
     }
 

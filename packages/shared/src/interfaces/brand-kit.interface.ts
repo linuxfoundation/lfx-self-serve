@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Brand Kit output envelope contract (brand-kit-output/v1) shared between the
-// Express BFF session-consumer and any future Angular surfaces. Transcribed
+// Express BFF session-consumer and the Angular intake-form surface. Transcribed
 // from marketing-os-agents docs/contracts/brand-kit-output.schema.json — the
 // JSON Schema file is normative; this must stay in sync (reviewed at PR).
 
@@ -42,7 +42,8 @@ export interface BrandKitAgentProvenance {
 /**
  * The Brand Kit output envelope — the typed output of the
  * linux-foundation~brand-kit agent and the exact payload the BFF validates
- * before persisting (dec-brand-kit-storage-v1).
+ * before surfacing the document (persistence per dec-brand-kit-storage-v1
+ * is deferred; this iteration displays the document only).
  */
 export interface BrandKitEnvelope {
   /** Contract discriminator + version; consumers reject unknown majors. */

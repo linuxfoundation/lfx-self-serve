@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Brand Kit persistence constants (brand-kit-output/v1) — shared between the
-// BFF session-consumer validation gates and tests. Mirrors the normative
+// Brand Kit contract constants (brand-kit-output/v1) — shared between the
+// BFF session-consumer validation gates, the intake form UI, and tests. Mirrors the normative
 // contract in marketing-os-agents docs/contracts/brand-kit-output.md §1/§3.
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
