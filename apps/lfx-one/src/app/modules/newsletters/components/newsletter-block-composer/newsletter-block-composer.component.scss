@@ -1,0 +1,175 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Styling is Tailwind-first in the template. CDK drag-drop preview / placeholder
+// states need a little structural polish that utility classes can't express
+// cleanly, so they live here.
+
+.cdk-drag-preview {
+  @apply rounded-md border border-gray-200 bg-white opacity-95 shadow-lg;
+}
+
+.cdk-drag-placeholder {
+  @apply opacity-40;
+}
+
+.cdk-drag-animating {
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Rendered-email preview classes.
+// ---
+// Ported from the gatewaze declarative renderer's shared style objects
+// (`blocks/_shared.ts` in newsletter-aaif-user-community's platform) so the
+// canvas preview matches the real email's look: the 650px centred column, the
+// #4086c6 brand-blue bordered card, the small uppercase eyebrow, the 24px
+// title, the muted body, and the brand-blue underlined link. These are
+// DELIBERATELY hard-coded values lifted from the email template's own inline
+// styles — they describe the *rendered email*, not LFX app chrome, so they
+// don't reference lfxColors/Tailwind (the component's own UI chrome does).
+// ---
+// The renderer maps the declarative `class="card|eyebrow|…"` names onto these
+// `nl-*` classes (see newsletter-renderer.service.ts CLASS_MAP). The blocks are
+// injected via [innerHTML], which does NOT receive the component's emulated
+// encapsulation attribute — so these rules MUST pierce encapsulation with
+// `:host ::ng-deep` or they silently never match. `:host` keeps them scoped to
+// this component (no global leak); `.nl-preview` scopes them to the preview.
+// ---------------------------------------------------------------------------
+
+:host ::ng-deep .nl-preview {
+  // The authored email column width; the preview frame scales it down to fit.
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #000;
+
+  // The email body sits on a light page; the white bordered cards read against
+  // it just like a real inbox render. (Editor chrome around this stays Tailwind.)
+  .nl-chrome,
+  .nl-card {
+    background: #ffffff;
+  }
+
+  // 650px centred column with the inter-block 20px gap (BORDERED_CARD/COLUMN).
+  // box-sizing + overflow:hidden keep the 15px corners clipping inner content.
+  .nl-card {
+    width: 650px;
+    max-width: 100%;
+    margin: 0 auto 20px;
+    border: 1px solid #4086c6;
+    border-radius: 15px;
+    color: #000;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  // Small uppercase brand-blue label above a heading (EYEBROW).
+  .nl-eyebrow {
+    margin: 0 0 4px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: #4086c6;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  // Section heading (TITLE).
+  .nl-title {
+    margin: 0 0 8px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #000;
+    line-height: 1.2;
+  }
+
+  // Body / rich-text container (BODY).
+  .nl-body {
+    font-size: 16px;
+    color: #555;
+    line-height: 1.5;
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    a {
+      color: #4086c6;
+      text-decoration: underline;
+    }
+  }
+
+  // Brand-blue underlined link (LINK).
+  .nl-link {
+    text-decoration: underline;
+    color: #4086c6;
+  }
+
+  // Brick heading — community sub-items (BRICK_TITLE).
+  .nl-brick-title {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: bold;
+    color: #000;
+    line-height: 1.2;
+  }
+
+  // Thin divider between bricks (DIVIDER).
+  .nl-divider {
+    border: 0;
+    border-top: 1px solid #bbb;
+    margin: 10px 0;
+  }
+
+  // Row → flex so columns sit side-by-side like the email's table layout.
+  // flex-wrap keeps the two-up columns from overflowing the scaled-down
+  // preview frame on narrow editor widths (the sent email stays a table).
+  .nl-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  // Column → flex child that shares the row width.
+  .nl-column {
+    flex: 1;
+    min-width: 0;
+  }
+
+  // Button → anchor styled as the brand pill (matches the templates' inline
+  // poll/CTA button styles; templates may still override via inline style).
+  .nl-button {
+    display: inline-block;
+    background-color: #4086c6;
+    color: #ffffff;
+    font-weight: bold;
+    padding: 10px 18px;
+    border-radius: 6px;
+    text-decoration: none;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  // Inline-edit placeholders. In edit mode the renderer keeps EMPTY editable
+  // fields rendered and tags them `data-nl-placeholder="Title|Body|…"`. While the
+  // field is empty, show that hint as muted italic text via ::before; the moment
+  // the author types, the element is no longer `:empty` and the hint disappears
+  // (no JS). `pointer-events: none` lets a click land the caret in the field, not
+  // the pseudo-element. The min-height keeps an empty field tall enough to click.
+  [data-nl-field][data-nl-placeholder]:empty {
+    min-height: 1.2em;
+
+    &::before {
+      content: attr(data-nl-placeholder);
+      color: #9ca3af;
+      font-style: italic;
+      pointer-events: none;
+    }
+  }
+}
