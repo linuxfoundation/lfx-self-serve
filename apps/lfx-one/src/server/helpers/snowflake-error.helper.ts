@@ -16,7 +16,12 @@ export function isMissingObjectError(error: unknown): boolean {
 /** True when Snowflake rejects a column reference, optionally for one expected identifier. */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  const isInvalidIdentifier = /invalid identifier/i.test(message) || /\berror code:\s*0*904\b/i.test(message);
+  let errorCode = '';
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    errorCode = String((error as { code?: unknown }).code ?? '');
+  }
+  const normalizedErrorCode = errorCode.replace(/^0+/, '');
+  const isInvalidIdentifier = /invalid identifier/i.test(message) || /\berror code:\s*0*904\b/i.test(message) || normalizedErrorCode === '904';
   if (!isInvalidIdentifier || !expectedIdentifier) {
     return isInvalidIdentifier;
   }

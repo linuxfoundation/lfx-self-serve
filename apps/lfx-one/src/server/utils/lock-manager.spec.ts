@@ -3,6 +3,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { SnowflakeQueryOptions } from '@lfx-one/shared/interfaces';
+
 vi.mock('../services/logger.service', () => ({
   logger: {
     debug: vi.fn(),
@@ -22,11 +24,18 @@ describe('LockManager.hashQuery', () => {
 
   it('includes execution and expected-error options in the deduplication key', () => {
     lockManager = new LockManager();
-    const baseKey = lockManager.hashQuery('SELECT 1', [], { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' });
+    const baseOptions: SnowflakeQueryOptions = {
+      timeout: 1_000,
+      fetchAsString: ['Number'],
+      expectMissingObject: true,
+      expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS',
+    };
+    const baseKey = lockManager.hashQuery('SELECT 1', [], baseOptions);
 
-    expect(lockManager.hashQuery('SELECT 1', [], { expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS' })).toBe(baseKey);
-    expect(lockManager.hashQuery('SELECT 1', [], { expectInvalidIdentifier: 'CONV' })).not.toBe(baseKey);
-    expect(lockManager.hashQuery('SELECT 1', [], { expectMissingObject: true })).not.toBe(baseKey);
-    expect(lockManager.hashQuery('SELECT 1', [], { timeout: 1_000 })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions })).toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, timeout: 2_000 })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, fetchAsString: ['Date'] })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectMissingObject: false })).not.toBe(baseKey);
+    expect(lockManager.hashQuery('SELECT 1', [], { ...baseOptions, expectInvalidIdentifier: 'CONV' })).not.toBe(baseKey);
   });
 });
