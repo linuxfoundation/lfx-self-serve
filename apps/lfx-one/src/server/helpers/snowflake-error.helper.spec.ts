@@ -45,10 +45,8 @@ describe('isInvalidIdentifierError', () => {
   });
 
   it('matches the canonical Snowflake SDK code property', () => {
-    const error = Object.assign(new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'"), {
-      code: '000904',
-    });
-    expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(true);
+    const error = Object.assign(new Error('SQL compilation error'), { code: '000904' });
+    expect(isInvalidIdentifierError(error)).toBe(true);
   });
 
   it('matches only the expected identifier when one is provided', () => {
