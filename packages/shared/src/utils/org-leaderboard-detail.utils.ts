@@ -55,6 +55,9 @@ export function orgLeaderboardDetailCategoryRows(
     }))
     .sort((a, b) => {
       if (a.masked !== b.masked) return a.masked ? 1 : -1;
+      // Masked-to-masked pairs keep their original category order (stable sort) — sorting by the
+      // soon-to-be-zeroed points here would leak the withheld relative ranking via row position.
+      if (a.masked) return 0;
       return b.points - a.points;
     });
   return rows.map((row) => {

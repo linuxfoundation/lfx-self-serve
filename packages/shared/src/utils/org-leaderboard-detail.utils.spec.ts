@@ -65,4 +65,11 @@ describe('orgLeaderboardDetailCategoryRows', () => {
     const unmasked = rows.find((r) => r.key === 'a');
     expect(unmasked).toMatchObject({ masked: false, count: 1, points: 10 });
   });
+
+  it('preserves original category order among masked rows instead of sorting by their withheld points', () => {
+    // c (5 pts) would sort ahead of b (2 pts) if masked rows were still ranked by points — that
+    // would leak the relative ranking the masking contract is supposed to withhold.
+    const rows = orgLeaderboardDetailCategoryRows(categories, { a: 100, b: 2, c: 5 }, { a: 1, b: 1, c: 1 }, 107, ['b', 'c']);
+    expect(rows.map((r) => r.key)).toEqual(['a', 'b', 'c']);
+  });
 });
