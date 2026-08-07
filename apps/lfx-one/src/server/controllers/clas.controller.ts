@@ -51,9 +51,12 @@ export class ClasController {
       const signatureId = (req.params['signatureId'] ?? '').trim();
 
       // EasyCLA's /v4/my-clas/{id}/pdf enforces ownership + ICLA eligibility against the
-      // session's identity and returns 404 for unknown, not-owned and ECLA IDs (never 403),
-      // so it never leaks whether an ID exists. SS just resolves the session identity and
-      // passes it through — no separate ownership pre-check needed.
+      // session's identity and returns a uniform 404 for unknown, not-owned and ECLA IDs,
+      // so a well-formed ID never reveals whether it exists. SS just resolves the session
+      // identity and passes it through — no separate ownership pre-check needed.
+      // Note this holds for well-formed IDs only: a malformed ID is rejected before the
+      // upstream handler runs (422 from schema validation, 403 from the gateway on path
+      // traversal), and getPdfUrl normalizes only 404, so those statuses reach the client.
       const identity = await this.claService.resolveIdentity(req);
       const pdf = await this.claService.getPdfUrl(req, signatureId, identity);
       if (!pdf) {
