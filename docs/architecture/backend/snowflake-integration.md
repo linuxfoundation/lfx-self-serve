@@ -422,13 +422,13 @@ WITH updated AS (
 )
 SELECT * FROM updated;
 
--- ✅ ALLOWED: Read-only CTE
-WITH user_stats AS (
-  SELECT user_id, COUNT(*) as activity_count
-  FROM activities
-  GROUP BY user_id
+-- ✅ ALLOWED: Read-only retrieval CTE
+WITH active_users AS (
+  SELECT user_id, display_name
+  FROM users
+  WHERE is_active = TRUE
 )
-SELECT * FROM user_stats WHERE activity_count > 10;
+SELECT user_id, display_name FROM active_users;
 ```
 
 The validation uses word boundaries (`\b`) to avoid false positives while catching write operations anywhere in the query text.
@@ -659,21 +659,25 @@ export class AnalyticsController {
 4. **Type Safety**: Define TypeScript interfaces for query result rows
 5. **Error Handling**: Catch and handle Snowflake-specific errors appropriately
 6. **Query Optimization**: Use specific column selection, appropriate WHERE clauses, and leverage Snowflake features
+7. **Logic Ownership**: Define metrics and reusable transformations in [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt); application queries retrieve the modeled columns
 
-### Example with Advanced Features
+### Example with Dynamic Retrieval Filters
+
+Application services own retrieval concerns, not metric definitions. Columns such as `event_count` and `total_value` must already be defined and tested in an `lf-dbt` model. Embedded SQL may add parameterized filters, sorting, and pagination without recalculating those values. See the canonical [Snowflake SQL review rule](../../reviews/shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix) for the narrow display-scope roll-up exception.
 
 ```typescript
 async getAggregatedMetrics(filters: MetricFilters) {
   const binds: (Bind | Date)[] = [filters.startDate, filters.endDate];
 
-  // Build dynamic query with parameterized filters
+  // Retrieve metrics already modeled at daily project grain in lf-dbt
   let sql = `
     SELECT
-      DATE_TRUNC('day', recorded_at) as date,
-      COUNT(*) as event_count,
-      SUM(metric_value) as total_value
-    FROM analytics_events
-    WHERE recorded_at BETWEEN ? AND ?
+      metric_date,
+      project_id,
+      event_count,
+      total_value
+    FROM analytics_db.platinum_lfx_one.daily_metrics
+    WHERE metric_date BETWEEN ? AND ?
   `;
 
   // Add optional filters with proper parameterization
@@ -682,7 +686,7 @@ async getAggregatedMetrics(filters: MetricFilters) {
     binds.push(...filters.projectIds);
   }
 
-  sql += " GROUP BY DATE_TRUNC('day', recorded_at) ORDER BY date";
+  sql += ' ORDER BY metric_date';
 
   // Execute with type-safe result
   const result = await this.getSnowflakeService().execute<AggregatedMetric>(sql, binds);

@@ -244,7 +244,9 @@ const params = { page_size: 50 };
 
 ### 10. No business logic in embedded Snowflake SQL (SHOULD FIX)
 
-Metric definitions, derived values, and transformation logic belong in the [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt) repo — typically in silver, gold, or platinum models — not in LFX One server services. Embedded Snowflake queries may **select precomputed columns** and apply **parameterized retrieval** only: explicit column lists, `WHERE` filters with `?` binds, `ORDER BY`, and `LIMIT`.
+Metric definitions, derived values, and reusable transformations belong in the [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt) repo — typically in silver, gold, or platinum models — not in LFX One server services. Embedded Snowflake queries own retrieval concerns: selecting modeled columns and applying parameterized `WHERE` filters, `ORDER BY`, and `LIMIT`.
+
+A narrow `SUM`/`MAX` over already-modeled measures may be used only to combine rows for a display scope that dbt does not yet provide, such as an umbrella foundation. It must not redefine a metric. Prefer adding the exact consumption grain to dbt so the application can select one row.
 
 **Do not embed in LFX One:**
 
@@ -253,7 +255,7 @@ Metric definitions, derived values, and transformation logic belong in the [`lf-
 - `SUM` / `AVG` / `COUNT` / window functions over fact columns
 - Joins, bucketing, or date/metric calculations that define what a number means
 
-If a dashboard needs a new derived field, add it to the appropriate dbt model, document and test it there, then select the named column from LFX One.
+If a dashboard needs a new derived field or queryable scope, add it to the appropriate dbt model, document and test it there, then select the named columns from LFX One.
 
 **Violation:**
 
@@ -278,31 +280,64 @@ const overviewQuery = `
 
 **Fix:**
 
+Add a dbt model at the exact consumption grain. This example preserves the original growth calculation while producing one row for every supported scope, including the `tlf` umbrella. Add `unique` and `not_null` tests for `scope_slug` in the model YAML.
+
 ```sql
--- lf-dbt: models/platinum/lfx_one/platinum_lfx_one_social_media_overview.sql
--- Define follower_growth_pct once, with dbt tests in platinum_lfx_one_tests.yml
-CASE
-  WHEN SUM(prior_total_followers) > 0
-    THEN ROUND(
-      (SUM(CASE WHEN prior_total_followers IS NOT NULL THEN followers_count END)
-        - SUM(prior_total_followers))
-      / SUM(prior_total_followers) * 100,
-      1
-    )
-END AS follower_growth_pct
+-- lf-dbt: platinum_lfx_one_social_media_overview_by_scope.sql
+WITH foundation_scopes AS (
+  SELECT
+    foundation_slug AS scope_slug,
+    total_followers,
+    platforms_active,
+    prior_total_followers
+  FROM {{ ref('platinum_lfx_one_social_media_overview') }}
+),
+
+all_scopes AS (
+  SELECT
+    scope_slug,
+    total_followers,
+    platforms_active,
+    prior_total_followers
+  FROM foundation_scopes
+  WHERE scope_slug <> 'tlf'
+
+  UNION ALL
+
+  SELECT
+    'tlf' AS scope_slug,
+    SUM(total_followers) AS total_followers,
+    MAX(platforms_active) AS platforms_active,
+    SUM(prior_total_followers) AS prior_total_followers
+  FROM foundation_scopes
+)
+
+SELECT
+  scope_slug,
+  total_followers,
+  platforms_active,
+  CASE
+    WHEN prior_total_followers > 0
+      THEN ROUND(
+        (total_followers - prior_total_followers)
+        / prior_total_followers * 100,
+        1
+      )
+  END AS follower_growth_pct
+FROM all_scopes
 ```
 
 ```typescript
 const overviewQuery = `
   SELECT
-    total_followers,
-    platforms_active,
-    follower_growth_pct
-  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW
-  WHERE 1=1
-    ${foundationFilter}
+    TOTAL_FOLLOWERS,
+    PLATFORMS_ACTIVE,
+    FOLLOWER_GROWTH_PCT
+  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW_BY_SCOPE
+  WHERE SCOPE_SLUG = ?
 `;
-// Select only — no metric logic in the server
+const result = await snowflakeService.execute(overviewQuery, [foundationSlug]);
+// Exactly one modeled row for both foundation and umbrella scopes
 ```
 
-**Allowed in LFX One:** filtering by route params (foundation slug, date range), sorting, pagination, and simple `SUM`/`MAX` only when aggregating **already-modeled** rows for display scope (e.g. umbrella foundation roll-up) — and only if that roll-up is not already provided by a dbt model. When in doubt, push the logic to dbt.
+**Allowed in LFX One:** filtering by route params (foundation slug, date range), sorting, pagination, and a narrow `SUM`/`MAX` only when combining **already-modeled** measures for a display scope that dbt does not provide. When in doubt, add the scope or logic to dbt.
