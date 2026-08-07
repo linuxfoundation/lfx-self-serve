@@ -87,6 +87,7 @@ export interface PublicGroupDirectoryVm extends PublicGroupSummary {
 export interface PublicGroupDetail {
   uid: string;
   name: string;
+  sso_group_name?: string;
   description?: string;
   category: string;
   join_mode?: JoinMode;
