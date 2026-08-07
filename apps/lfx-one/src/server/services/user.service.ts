@@ -1081,12 +1081,16 @@ export class UserService {
     }
 
     const baseUrl = getUserServiceBaseUrl('update_profile_visibility', 'user_service');
+    const currentIsPublic = Boolean(profile.IsPublic);
     const nextIsPublic = Boolean(body?.isPublic);
+    const isPublicChanged = nextIsPublic !== currentIsPublic;
+    const becomingPublic = nextIsPublic && !currentIsPublic;
     // Trust the client's resolved section map (sanitized to known keys) — the basic-group cascade is
     // client-side (myprofile-style), so the server persists exactly what it is sent.
     const sections = this.sanitizeVisibilitySections(body?.sections);
+    const value = JSON.stringify(sections);
 
-    if (nextIsPublic !== Boolean(profile.IsPublic)) {
+    const applyIsPublic = async (): Promise<void> => {
       logger.debug(req, 'update_profile_visibility', 'Updating IsPublic flag', { is_public: nextIsPublic });
       await gatewayFetch<unknown>(req, `${baseUrl}/me`, {
         operation: 'update_profile_visibility',
@@ -1096,12 +1100,29 @@ export class UserService {
         method: 'PATCH',
         body: { IsPublic: nextIsPublic, AccountID: profile.Account?.ID },
       });
-    }
+    };
 
     // Read-first upsert: only the preference's Value changes; AppName/Name/Type/System are preserved.
-    const existing = await this.fetchVisibilityPreference(req, sfid, 'update_profile_visibility');
-    const value = JSON.stringify(sections);
-    const preferenceId = await this.upsertVisibilityPreference(req, sfid, existing, value);
+    const applySections = async (): Promise<string | null> => {
+      const existing = await this.fetchVisibilityPreference(req, sfid, 'update_profile_visibility');
+      return this.upsertVisibilityPreference(req, sfid, existing, value);
+    };
+
+    // Order the two upstream writes so a partial failure never leaves sections exposed:
+    // - becoming public: persist the section map BEFORE opening the gate, so a failed section write
+    //   leaves the profile private (no unintended sections in a regenerated artifact).
+    // - becoming private (or unchanged): flip/keep the gate first (hide-first), then persist sections,
+    //   so a failed section write leaves the profile already hidden.
+    let preferenceId: string | null;
+    if (becomingPublic) {
+      preferenceId = await applySections();
+      await applyIsPublic();
+    } else {
+      if (isPublicChanged) {
+        await applyIsPublic();
+      }
+      preferenceId = await applySections();
+    }
 
     return { isPublic: nextIsPublic, sections, preferenceId };
   }
