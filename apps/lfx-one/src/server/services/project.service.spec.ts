@@ -277,51 +277,16 @@ describe('ProjectService — paid ads compatibility', () => {
     execute.mockReset();
   });
 
-  it('keeps keyword traffic metrics when attribution fails', async () => {
+  it('propagates keyword attribution failures instead of reporting measured zeroes', async () => {
+    const attributionError = new Error('keyword attribution unavailable');
     execute.mockImplementation((sql: string) => {
       if (sql.includes('PAID_ADS_KEYWORD_ATTRIBUTION')) {
-        return Promise.reject(new Error('keyword attribution unavailable'));
-      }
-      if (sql.includes('PAID_ADS_KEYWORD_PERFORMANCE') && sql.includes('RECORD_TYPE')) {
-        return Promise.resolve({
-          rows: [
-            {
-              KEYWORD_TEXT: 'kubernetes',
-              KEYWORD_MATCH_TYPE: 'EXACT',
-              RECORD_TYPE: 'keyword',
-              SEARCH_TERM: null,
-              SEARCH_TERM_MATCH_TYPE: null,
-              CLICKS: 40,
-              SPEND: 20,
-              IMPRESSIONS: 400,
-              CTR: 10,
-              CPC: 0.5,
-            },
-          ],
-          metadata: [],
-        });
+        return Promise.reject(attributionError);
       }
       return Promise.resolve({ rows: [], metadata: [] });
     });
 
-    const result = await new ProjectService().getKeywordPerformance('cncf', period);
-
-    expect(result.keywords).toHaveLength(1);
-    expect(result.keywords[0]).toMatchObject({
-      keyword: 'kubernetes',
-      clicks: 40,
-      spend: 20,
-      impressions: 400,
-      conversions: 0,
-      attributedRevenue: 0,
-    });
-    expect(result.totals).toMatchObject({
-      clicks: 40,
-      spend: 20,
-      impressions: 400,
-      conversions: 0,
-      attributedRevenue: 0,
-    });
+    await expect(new ProjectService().getKeywordPerformance('cncf', period)).rejects.toThrow(attributionError);
   });
 
   it('retries only the missing last-touch conversion column with the legacy query', async () => {

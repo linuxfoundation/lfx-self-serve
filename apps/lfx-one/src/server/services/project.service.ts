@@ -6816,15 +6816,7 @@ export class ProjectService {
           resolved.endDate,
           ...foundationParams,
         ]),
-        this.snowflakeService
-          .execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams])
-          .catch((error) => {
-            logger.warning(undefined, 'get_keyword_performance', 'Optional keyword attribution query failed, degrading attributed fields', {
-              foundation_slug: foundationSlug,
-              err: error,
-            });
-            return { rows: [] as KeywordAttributionRow[] };
-          }),
+        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]),
       ]);
 
       const attrMap = new Map<string, KeywordAttributionRow>();
