@@ -47,6 +47,7 @@ export class ProfilePanelComponent {
 
   // Outputs
   public readonly editRequested = output<void>();
+  public readonly visibilityRequested = output<void>();
 
   // The avatar URL that failed to load, if any. Tracking the URL (rather than a plain boolean)
   // lets a newly-set/refreshed picture re-attempt to load without an effect(): once avatarUrl
@@ -68,6 +69,17 @@ export class ProfilePanelComponent {
       return;
     }
     this.editRequested.emit();
+  }
+
+  /**
+   * Request the public-profile visibility flow from the parent. No-op while impersonating, since
+   * visibility changes act on the real account and are blocked server-side.
+   */
+  public onVisibility(): void {
+    if (this.impersonating()) {
+      return;
+    }
+    this.visibilityRequested.emit();
   }
 
   /**
