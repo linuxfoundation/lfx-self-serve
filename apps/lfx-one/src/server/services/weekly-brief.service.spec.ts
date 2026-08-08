@@ -17,7 +17,15 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valk
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
     isEnabled: vi.fn(() => true),
-    getJson: vi.fn(async (key: string) => (valkeyStore.has(key) ? valkeyStore.get(key) : null)),
+    // Honors the `accept` shape guard like the real ValkeyService.getJson does — a stored value
+    // that fails the guard degrades to a miss (null), not a pass-through. Without this, a corrupt/
+    // legacy rating entry would surface verbatim instead of exercising the "degrade to a miss"
+    // path `isStoredRating` exists for.
+    getJson: vi.fn(async (key: string, accept?: (value: unknown) => boolean) => {
+      if (!valkeyStore.has(key)) return null;
+      const value = valkeyStore.get(key);
+      return accept && !accept(value) ? null : value;
+    }),
     setJson: vi.fn(async (key: string, value: unknown) => {
       valkeyStore.set(key, value);
       return true;
@@ -582,6 +590,18 @@ describe('WeeklyBriefService', () => {
       const anonReq = {} as unknown as Request;
       const result = await service.getCurrentBrief(anonReq, 'committee-1');
       expect(result.caller_rating).toBeUndefined();
+    });
+
+    it('getCurrentBrief treats a corrupt/legacy cache entry as a miss rather than surfacing it verbatim', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      // 'alice' is never the 'unsafe' sentinel, so the mock key builder never returns null here.
+      const key = buildWeeklyBriefRatingCacheKeyMock(brief.uid, brief.revision, 'alice')!;
+      valkeyStore.set(key, { rating: 'sideways' });
+
+      const result = await service.getCurrentBrief(userReq, 'committee-1');
+
+      expect(result.caller_rating).toBeNull();
     });
   });
 });

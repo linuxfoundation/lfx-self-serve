@@ -660,9 +660,10 @@ export class WeeklyBriefService {
   /**
    * Resolves and validates the brief a rate/clear-rating call targets. Re-fetches the current
    * brief (rather than trusting anything client-supplied beyond `briefUid`) so `revision`/
-   * `prompt_version`/`model` in the rating log are always the server's own values — the caller
-   * never supplies a revision at all, so there's no client-side value that could ever go stale;
-   * a rating always lands on whatever revision is current at write time. Guards that `briefUid`
+   * `prompt_version`/`model` in the rating log are always the server's own values — `rateBrief`'s
+   * caller-supplied `revision` (see its doc comment) is never used to select the target here, only
+   * logged separately as `client_revision`; a rating always lands on whatever revision is current
+   * at write time. Guards that `briefUid`
    * still names the committee's current brief — e.g. a window rollover produced a new brief_uid
    * between page load and tap — same "existence, not the write itself" gap this closes as
    * `assertCommitteeRead` closes for reads. Also requires the brief be in a shareable state

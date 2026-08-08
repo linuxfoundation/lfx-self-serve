@@ -7,17 +7,24 @@ import { AuthorizationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { isImpersonating } from '../utils/auth-helper';
 
-// Profile / account-settings mutations act on the real user's account via the impersonator's
-// Flow C management token — there is no Custom Token Exchange equivalent for the Auth0 Management
-// API, so a write during impersonation would modify the WRONG account (the impersonator's, not the
-// target's). Block every such write while impersonating; impersonated profile viewing is read-only.
+// Guards two distinct classes of "wrong-account write" during impersonation, both of which land
+// on an account other than the one that actually authenticated:
+// 1. Profile / account-settings mutations act on the real user's account via the impersonator's
+//    Flow C management token — there is no Custom Token Exchange equivalent for the Auth0
+//    Management API, so a write here would modify the impersonator's own account, not the
+//    target's (profile.route.ts, enrollment.route.ts).
+// 2. Writes that resolve identity via `getEffectiveUsername`/`getEffectiveSub` (impersonation-aware
+//    helpers that return the *target's* identity) land directly in the target's own store — the
+//    opposite mistake, writing into the wrong account in the other direction (e.g. weekly-brief
+//    rating.route.ts).
+// Block every such write while impersonating; impersonated viewing/reads stay unaffected.
 export function blockDuringImpersonation(req: Request, _res: Response, next: NextFunction): void {
   if (!isImpersonating(req)) {
     next();
     return;
   }
 
-  logger.warning(req, 'impersonation_readonly', 'Blocked profile write during impersonation', {
+  logger.warning(req, 'impersonation_readonly', 'Blocked write during impersonation', {
     path: req.path,
     method: req.method,
     impersonator_sub: req.appSession?.['impersonator']?.sub,
