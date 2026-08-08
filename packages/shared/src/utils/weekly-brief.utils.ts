@@ -46,6 +46,14 @@ function resolveSourceRefAction(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChi
     case 'vote':
       // The drawer, not the generic Votes tab: ref.id carries the vote's own uid, and
       // committee-overview.component.ts already owns vote-drawer lookup/toast handling.
+      //
+      // Deliberately NOT gated on committee.enable_voting the way the activity feed's
+      // mapActivityEventsToFeedItems filters out vote events for a voting-disabled committee
+      // — that gate hides a *live* feature area the committee currently doesn't have turned
+      // on. A brief's source_refs describe a specific past window that can predate voting
+      // being disabled, and the drawer here is read-only (allowCastFromDrawer=false in
+      // committee-overview.component.html), so surfacing a historical vote a brief already
+      // referenced isn't the same class of exposure as offering to cast a new one.
       return { kind: 'vote-drawer', voteUid: ref.id };
     case 'members':
       return { kind: 'tab', tab: 'members' };

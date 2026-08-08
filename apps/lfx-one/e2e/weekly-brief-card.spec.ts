@@ -46,7 +46,15 @@
 import { expect, Page, Route, test } from '@playwright/test';
 import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
-import { Committee, ShareWeeklyBriefResult, Vote, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  ShareWeeklyBriefResult,
+  Vote,
+  VoteResultsResponse,
+  WeeklyBrief,
+  WeeklyBriefCurrentResponse,
+  WeeklyBriefThrottle,
+} from '@lfx-one/shared/interfaces';
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
 // Committees are mounted under /groups, not /committees (see committee-about.helper.ts's
@@ -552,12 +560,19 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
 
     // `/meetings/:id` is MeetingJoinComponent (app.routes.ts), not a details route — it
     // resolves the id via getPublicMeeting (GET /public/api/meetings/:id), falling back to
-    // getPublicPastMeeting (GET /public/api/meetings/past/:id) on a 404. Asserting one of
-    // those requests fires for the exact source-ref id is a deterministic proof the click
-    // issued the right navigation target, without depending on whether this synthetic,
-    // otherwise-unmocked id actually resolves — that's meeting-join's own e2e surface, not
-    // this spec's, and letting it hit the live dev backend un-intercepted would violate this
-    // file's own mocking convention (see mockCommitteeShell's past-meetings note above).
+    // getPublicPastMeeting (GET /public/api/meetings/past/:id) on a 404. Mocked to a
+    // deterministic 404 here rather than left to the live dev backend (this synthetic id's
+    // resolution isn't this spec's concern — that's meeting-join's own e2e surface) — matches
+    // this file's own mocking convention (see mockCommitteeShell's past-meetings note above).
+    // waitForRequest is registered before the click so it can't miss a request that fires
+    // synchronously with the router push.
+    await page.route('**/public/api/meetings/**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+        return;
+      }
+      await route.fallback();
+    });
     const meetingRequest = page.waitForRequest((req) => req.method() === 'GET' && /\/public\/api\/meetings\/(past\/)?src-meeting-1(\?|$)/.test(req.url()), {
       timeout: DATA_LOAD_TIMEOUT,
     });
@@ -585,6 +600,33 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
         return;
       }
       await route.fallback();
+    });
+    // '**/api/votes*' above only matches the list endpoint — Playwright's `*` doesn't cross
+    // `/`, so it can't also cover the drawer's own by-id fetches (getVoteById, getVoteResults)
+    // once it opens; without this, those escape to the live dev backend.
+    await page.route('**/api/votes/src-vote-1*', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      const url = route.request().url();
+      if (url.includes('/results')) {
+        const results: VoteResultsResponse = {
+          poll_results: [],
+          comment_results: [],
+          num_recipients: 0,
+          num_votes_cast: 0,
+          num_abstained: 0,
+          poll_end_time: voteFixture.end_time,
+        };
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+        return;
+      }
+      if (url.includes('/my-response')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteFixture) });
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
