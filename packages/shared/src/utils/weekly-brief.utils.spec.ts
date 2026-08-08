@@ -40,9 +40,22 @@ describe('mapWeeklyBriefSourceRefsToChips', () => {
     expect(chips[0]).toEqual({ id: 'doc-1', label: 'Charter.pdf', icon: 'fa-light fa-file-lines', action: { kind: 'tab', tab: 'documents' } });
   });
 
+  it('maps a vote ref to the votes tab action', () => {
+    const chips = mapWeeklyBriefSourceRefsToChips([sourceRef({ id: 'vote-1', kind: 'vote', title: 'Q1 Budget' })]);
+    expect(chips[0]).toEqual({ id: 'vote-1', label: 'Q1 Budget', icon: 'fa-light fa-check-to-slot', action: { kind: 'tab', tab: 'votes' } });
+  });
+
   it('maps a members ref to the members tab action', () => {
-    const chips = mapWeeklyBriefSourceRefsToChips([sourceRef({ id: 'members-1', kind: 'members' })]);
-    expect(chips[0]).toEqual({ id: 'members-1', label: 'Members', icon: 'fa-light fa-users', action: { kind: 'tab', tab: 'members' } });
+    // Upstream (group_weekly_brief_generator.go) always sets Title: "Member roster changes"
+    // for this kind — the "Members" default label below is a defensive fallback, not what
+    // production actually renders.
+    const chips = mapWeeklyBriefSourceRefsToChips([sourceRef({ id: 'members-1', kind: 'members', title: 'Member roster changes' })]);
+    expect(chips[0]).toEqual({ id: 'members-1', label: 'Member roster changes', icon: 'fa-light fa-users', action: { kind: 'tab', tab: 'members' } });
+  });
+
+  it('falls back to the "Members" default label if a members ref ever arrives with no title', () => {
+    const chips = mapWeeklyBriefSourceRefsToChips([sourceRef({ id: 'members-2', kind: 'members' })]);
+    expect(chips[0].label).toBe('Members');
   });
 
   it('renders a mailing-list ref unlinked — no archive URL exists in this contract to resolve', () => {

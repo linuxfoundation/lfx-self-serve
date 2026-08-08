@@ -89,16 +89,20 @@ const USED_THROTTLE_AFTER_GENERATE: WeeklyBriefThrottle = {
   generates_used: 1,
 };
 
-// Covers every documented kind ("meeting" | "mailing-list" | "doc"), the real observed
-// "members" kind, and an unrecognized kind — the open-string fallback a future upstream
-// value must not break.
+// Covers every kind lfx-v2-committee-service's group_weekly_brief_generator.go actually
+// emits today (meeting, mailing-list, vote, members), the "doc" kind documented only as a
+// Goa design example (never emitted, mapped defensively anyway), and an unrecognized kind —
+// the open-string fallback a future upstream value must not break.
 const BRIEF_WITH_SOURCES: WeeklyBrief = {
   ...GENERATED_BRIEF,
   source_refs: [
     { id: 'src-meeting-1', kind: 'meeting', title: 'Weekly Sync' },
     { id: 'src-doc-1', kind: 'doc', title: 'Charter.pdf' },
     { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
-    { id: 'src-members-1', kind: 'members' },
+    { id: 'src-vote-1', kind: 'vote', title: 'Q1 Budget' },
+    // Upstream always sets this exact title for "members" — asserted verbatim below rather
+    // than the SOURCE_REF_DEFAULT_LABELS fallback, which production never actually renders.
+    { id: 'src-members-1', kind: 'members', title: 'Member roster changes' },
     { id: 'src-unknown-1', kind: 'some_future_kind' },
   ],
 };
@@ -522,7 +526,9 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-meeting-1')).toContainText('Weekly Sync');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-doc-1')).toContainText('Charter.pdf');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-ml-1')).toContainText('tsc-discuss');
-    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-members-1')).toContainText('Members');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toContainText('Q1 Budget');
+    // Upstream always sets this exact title for a "members" ref — never the "Members" default.
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-members-1')).toContainText('Member roster changes');
     // Unrecognized kind with no title falls back to the raw kind string, not a blank chip.
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-unknown-1')).toContainText('some_future_kind');
 
@@ -535,16 +541,35 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(page.getByTestId('members-tab-bar')).toHaveCount(0);
   });
 
-  test('clicking a meeting chip navigates to the past-meeting details route', async ({ page }) => {
+  test('clicking a meeting chip pushes a navigation to the meeting join route for that id', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-meeting-1').click();
-    await page.waitForURL((url) => url.pathname.startsWith('/meetings/src-meeting-1'));
-    expect(page.url()).toContain('/meetings/src-meeting-1');
+    // `/meetings/:id` is MeetingJoinComponent (app.routes.ts), not a details route — it
+    // resolves the id via getPublicMeeting/getPublicPastMeeting and redirects to
+    // `/meetings/not-found` on a miss, which this synthetic unmocked id will hit. waitForURL
+    // only proves the click issued the correct navigation target (the thing this commit
+    // owns) — it resolves on the router's first URL push, before any such redirect can fire,
+    // so it can't be misread as proof the destination page resolved successfully; that's
+    // meeting-join's own e2e surface, not this spec's.
+    await page.waitForURL((url) => url.pathname.startsWith('/meetings/src-meeting-1'), { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('clicking a vote chip switches the committee page to the Votes tab', async ({ page }) => {
+    await mockCommitteeShell(page, { enable_voting: true });
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await expect(page.getByTestId('committee-votes-tab')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {
@@ -552,6 +577,7 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-members-1').click();

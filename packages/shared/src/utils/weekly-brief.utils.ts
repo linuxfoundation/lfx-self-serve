@@ -7,12 +7,17 @@ import type { WeeklyBriefSourceChip, WeeklyBriefSourceChipAction, WeeklyBriefSou
  * Font Awesome icon per `WeeklyBriefSourceRef.kind`. `kind` is an open string (not a literal
  * union — see the interface's doc comment), so this is a lookup table with a `??` fallback
  * rather than an exhaustive switch, mirroring `COMMITTEE_DOCUMENT_TYPE_ICONS`'s pattern in
- * `committee-documents.constants.ts`.
+ * `committee-documents.constants.ts`. Covers every kind `lfx-v2-committee-service`'s
+ * `group_weekly_brief_generator.go` actually emits (`meeting`, `mailing-list`, `vote`,
+ * `members`) plus `doc` — documented on `WeeklyBriefSourceRef` but not currently emitted;
+ * kept mapped in case upstream starts sending it, same as any other future kind would fall
+ * to the fallback below instead of breaking.
  */
 const SOURCE_REF_ICONS: Record<string, string> = {
   meeting: 'fa-light fa-clock-rotate-left',
   doc: 'fa-light fa-file-lines',
   'mailing-list': 'fa-light fa-envelope',
+  vote: 'fa-light fa-check-to-slot',
   members: 'fa-light fa-users',
 };
 const SOURCE_REF_FALLBACK_ICON = 'fa-light fa-circle-question';
@@ -22,6 +27,7 @@ const SOURCE_REF_DEFAULT_LABELS: Record<string, string> = {
   meeting: 'Meeting',
   doc: 'Document',
   'mailing-list': 'Mailing List',
+  vote: 'Vote',
   members: 'Members',
 };
 
@@ -37,6 +43,8 @@ function resolveSourceRefAction(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChi
       return { kind: 'past-meeting', meetingId: ref.id, password: null };
     case 'doc':
       return { kind: 'tab', tab: 'documents' };
+    case 'vote':
+      return { kind: 'tab', tab: 'votes' };
     case 'members':
       return { kind: 'tab', tab: 'members' };
     default:

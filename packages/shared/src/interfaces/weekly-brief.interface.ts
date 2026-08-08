@@ -11,12 +11,19 @@ export type WeeklyBriefErrorReason = (typeof WEEKLY_BRIEF_ERROR_REASON)[keyof ty
 
 /**
  * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
- * string (not an enum; documented values include "meeting", "mailing-list",
- * "doc"), not the invented `source_type` shape this used to have. Upstream
- * marks nothing Required on this type, and the committee-service converter
- * omits `title`/`excerpt` when empty — the BFF forwards this object
- * unchanged, so both stay optional here rather than promising a string that
- * may not be present on the wire.
+ * string (not an enum; the Goa design's prose documents "meeting",
+ * "mailing-list", "doc" as examples), not the invented `source_type` shape
+ * this used to have. Upstream marks nothing Required on this type, and the
+ * committee-service converter omits `title`/`excerpt` when empty — the BFF
+ * forwards this object unchanged, so both stay optional here rather than
+ * promising a string that may not be present on the wire.
+ *
+ * What `lfx-v2-committee-service`'s `group_weekly_brief_generator.go`
+ * (`buildClaimsAndRefs`) actually emits today: "meeting", "mailing-list",
+ * "vote", and "members" — never "doc" (a design-doc example only). Kept
+ * mapped in `weekly-brief.utils.ts` anyway in case upstream starts sending
+ * it; any other unrecognized `kind` — present or future — renders unlinked
+ * rather than breaking.
  */
 export interface WeeklyBriefSourceRef {
   excerpt?: string;
