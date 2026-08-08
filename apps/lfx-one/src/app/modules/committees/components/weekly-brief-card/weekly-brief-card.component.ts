@@ -3,11 +3,13 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
@@ -16,8 +18,16 @@ import {
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
+import {
+  Committee,
+  ShareWeeklyBriefResult,
+  WeeklyBrief,
+  WeeklyBriefCurrentResponse,
+  WeeklyBriefSourceChip,
+  WeeklyBriefSourceChipAction,
+  WeeklyBriefThrottle,
+} from '@lfx-one/shared/interfaces';
+import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -45,7 +55,7 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule],
+  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule, TagComponent],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -57,10 +67,16 @@ export class WeeklyBriefCardComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
 
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // Outputs — 'tab' source-ref actions bubble up so the parent can drive its own tab
+  // state (mirrors committee-overview.component.ts's identically-shaped tabNavigated
+  // output for its activity feed, which this binds straight through to).
+  public readonly tabNavigated = output<string>();
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
@@ -116,6 +132,12 @@ export class WeeklyBriefCardComponent {
     const b = this.brief();
     return b && b.state !== 'empty' ? b : null;
   });
+
+  // "Sources" chip row view-model — precomputed here rather than resolved per-chip in
+  // the template (repo rule: docs/reviews/frontend-checklist.md §4). Empty when the
+  // brief has no source_refs, which the template uses to skip rendering the row/header
+  // entirely.
+  public readonly sourceChips: Signal<WeeklyBriefSourceChip[]> = computed(() => mapWeeklyBriefSourceRefsToChips(this.renderableBrief()?.source_refs ?? []));
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -347,6 +369,21 @@ export class WeeklyBriefCardComponent {
 
   public onRetry(): void {
     this.refresh$.next();
+  }
+
+  // Mirrors committee-overview.component.ts's handleActivityItemClick for these same two
+  // action kinds — 'past-meeting' navigates directly (no drawer for this action, unlike
+  // vote/survey), 'tab' bubbles up via tabNavigated for the parent to drive its own tab
+  // state, same as that component's own navigateToTab.
+  public onSourceChipAction(action: WeeklyBriefSourceChipAction): void {
+    switch (action.kind) {
+      case 'past-meeting':
+        void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
+        break;
+      case 'tab':
+        this.tabNavigated.emit(action.tab);
+        break;
+    }
   }
 
   // Private initializer functions

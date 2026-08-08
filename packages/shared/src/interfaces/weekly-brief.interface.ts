@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { WEEKLY_BRIEF_ERROR_REASON } from '../constants/weekly-brief.constants';
+import type { PastMeetingActivityFeedAction, TabActivityFeedAction } from './activity-feed.interface';
 
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
 
@@ -22,6 +23,29 @@ export interface WeeklyBriefSourceRef {
   id: string;
   kind: string;
   title?: string;
+}
+
+/**
+ * What clicking a "Sources" chip does, for a `WeeklyBriefSourceRef` that resolves to a real
+ * target. Reuses `ActivityFeedAction`'s `past-meeting`/`tab` variants exactly (LFXV2-3009's
+ * committee Overview activity feed already navigates through these same two mechanisms) rather
+ * than a narrower union that duplicates their shape — vote-drawer/survey-drawer/external-url
+ * don't apply to any documented or observed `source_refs` kind.
+ */
+export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | TabActivityFeedAction;
+
+/**
+ * Precomputed display view-model for one "Sources" chip under a weekly brief — built from a
+ * `WeeklyBriefSourceRef` by `mapWeeklyBriefSourceRefsToChips` (`../utils/weekly-brief.utils`).
+ * `action: null` means the chip renders unlinked (no resolvable click target for that `kind` —
+ * e.g. "mailing-list", which has no archive URL anywhere in this contract, or an unrecognized
+ * future `kind`).
+ */
+export interface WeeklyBriefSourceChip {
+  id: string;
+  label: string;
+  icon: string;
+  action: WeeklyBriefSourceChipAction | null;
 }
 
 export interface WeeklyBrief {

@@ -17,6 +17,9 @@
  * - A page load landing directly on an already-`generating` brief (no POST from this
  *   tab) also polls to terminal on its own
  * - Read-failure → retryable unavailable state → recovery
+ * - Sources chips (LFXV2-3044): no row when source_refs is empty; one chip per ref with a
+ *   kind-appropriate label/icon; meeting/members chips click through (past-meeting route /
+ *   Members tab); mailing-list and unrecognized-kind chips render unlinked (no click target)
  *
  * Architecture notes (mirrors repo convention):
  * - API mocking is per-spec via `page.route()` (see org-membership-documentation.spec.ts
@@ -84,6 +87,20 @@ const GENERATED_BRIEF: WeeklyBrief = {
 const USED_THROTTLE_AFTER_GENERATE: WeeklyBriefThrottle = {
   ...DEFAULT_THROTTLE,
   generates_used: 1,
+};
+
+// Covers every documented kind ("meeting" | "mailing-list" | "doc"), the real observed
+// "members" kind, and an unrecognized kind — the open-string fallback a future upstream
+// value must not break.
+const BRIEF_WITH_SOURCES: WeeklyBrief = {
+  ...GENERATED_BRIEF,
+  source_refs: [
+    { id: 'src-meeting-1', kind: 'meeting', title: 'Weekly Sync' },
+    { id: 'src-doc-1', kind: 'doc', title: 'Charter.pdf' },
+    { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
+    { id: 'src-members-1', kind: 'members' },
+    { id: 'src-unknown-1', kind: 'some_future_kind' },
+  ],
 };
 
 function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
@@ -477,6 +494,70 @@ test.describe('WG Weekly Brief card — generated state (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-regenerate-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-edit-button')).toBeVisible();
     await expect(page.getByTestId('weekly-brief-card-copy-button')).toBeVisible();
+  });
+});
+
+test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
+  test('no Sources row renders when source_refs is empty', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('weekly-brief-card-body')).toHaveText(GENERATED_BRIEF.brief_text, { timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-sources')).toHaveCount(0);
+  });
+
+  test('renders one chip per source ref, and mailing-list/unrecognized-kind chips are unlinked', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    const sources = page.getByTestId('weekly-brief-card-sources');
+    await expect(sources).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-meeting-1')).toContainText('Weekly Sync');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-doc-1')).toContainText('Charter.pdf');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-ml-1')).toContainText('tsc-discuss');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-members-1')).toContainText('Members');
+    // Unrecognized kind with no title falls back to the raw kind string, not a blank chip.
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-unknown-1')).toContainText('some_future_kind');
+
+    // mailing-list has no resolvable archive URL in this contract, and the unrecognized kind
+    // has no route mapping — both render as a plain (non-interactive) chip, not a <button>.
+    // Clicking either must not navigate or change the active committee tab.
+    await sources.getByTestId('weekly-brief-card-source-chip-src-ml-1').click({ force: true });
+    await sources.getByTestId('weekly-brief-card-source-chip-src-unknown-1').click({ force: true });
+    await expect(page).toHaveURL(new RegExp(COMMITTEE_URL.replace(/\//g, '\\/')));
+    await expect(page.getByTestId('members-tab-bar')).toHaveCount(0);
+  });
+
+  test('clicking a meeting chip navigates to the past-meeting details route', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-meeting-1').click();
+    await page.waitForURL((url) => url.pathname.startsWith('/meetings/src-meeting-1'));
+    expect(page.url()).toContain('/meetings/src-meeting-1');
+  });
+
+  test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-members-1').click();
+    // committee-view's activeTab flips locally (no route change) — the Members tab's own
+    // panel rendering is the observable proof, not a URL change.
+    await expect(page.getByTestId('members-tab-bar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 });
 
