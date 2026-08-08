@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { WeeklyBriefController } from '../controllers/weekly-brief.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 
@@ -22,9 +23,16 @@ router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBrie
 router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
 
 // POST /committees/:committeeId/weekly-briefs/:briefUid/rating - rate (or re-rate) the current brief
-router.post('/:committeeId/weekly-briefs/:briefUid/rating', (req, res, next) => weeklyBriefController.rateBrief(req, res, next));
+// Blocked during impersonation: unlike generate/save/share (which proxy through untouched and are
+// therefore attributed to whoever actually authenticated), rateBrief resolves the caller's identity
+// via getEffectiveUsername for the Valkey write itself — during impersonation that writes into the
+// TARGET user's rating key, not the impersonator's, the same class of wrong-account write
+// blockDuringImpersonation already guards for profile/enrollment mutations.
+router.post('/:committeeId/weekly-briefs/:briefUid/rating', blockDuringImpersonation, (req, res, next) => weeklyBriefController.rateBrief(req, res, next));
 
 // DELETE /committees/:committeeId/weekly-briefs/:briefUid/rating - clear the caller's rating
-router.delete('/:committeeId/weekly-briefs/:briefUid/rating', (req, res, next) => weeklyBriefController.clearBriefRating(req, res, next));
+router.delete('/:committeeId/weekly-briefs/:briefUid/rating', blockDuringImpersonation, (req, res, next) =>
+  weeklyBriefController.clearBriefRating(req, res, next)
+);
 
 export default router;

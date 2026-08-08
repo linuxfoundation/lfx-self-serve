@@ -954,13 +954,13 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
 
-    let capturedBody: { rating?: string } | null = null;
+    let capturedBody: { rating?: string; revision?: number } | null = null;
     await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
       if (route.request().method() !== 'POST') {
         await route.fallback();
         return;
       }
-      capturedBody = route.request().postDataJSON() as { rating?: string };
+      capturedBody = route.request().postDataJSON() as { rating?: string; revision?: number };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rating: 'down' }) });
     });
 
@@ -974,7 +974,7 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     await downBtn.click();
     await postPromise;
 
-    expect(capturedBody).toEqual({ rating: 'down' });
+    expect(capturedBody).toEqual({ rating: 'down', revision: GENERATED_BRIEF.revision });
     await expect(page.getByRole('button', { name: 'Rate this brief not helpful', pressed: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 

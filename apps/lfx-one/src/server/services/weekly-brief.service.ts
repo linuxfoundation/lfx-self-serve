@@ -26,7 +26,7 @@ import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveEmail, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -216,12 +216,24 @@ export class WeeklyBriefService {
   /**
    * POST /committees/:committeeId/weekly-briefs/:briefUid/rating
    *
-   * BFF-only feature (LFXV2-3042) — no upstream endpoint. The caller never supplies a revision —
-   * a rating always targets whatever revision is *currently* stored for `briefUid`, resolved
-   * server-side via `getCurrentBrief`, so it's impossible to submit a rating against a stale
-   * revision. Upserts (re-rating, including switching up↔down, overwrites the same Valkey key —
-   * no duplicate row); a later regenerate produces a new `revision` and therefore a new key, so
-   * the new revision starts unrated (never carries the old rating forward).
+   * BFF-only feature (LFXV2-3042) — no upstream endpoint. A rating always *lands* on whatever
+   * revision is currently stored for `briefUid`, resolved server-side via `getCurrentBrief` — the
+   * write itself can never target a stale revision. `clientRevision` is the revision the caller
+   * actually saw when they tapped (captured client-side at render time); it is never used to
+   * reject the write, only logged alongside the server-resolved `revision` on `rating_recorded` —
+   * if a co-chair's edit or regenerate lands between the rater's page load and their tap, the two
+   * values diverge, and offline rating-by-prompt_version analysis can identify and drop a vote
+   * attributed to content the rater never actually reviewed. Upserts (re-rating, including
+   * switching up↔down, overwrites the same Valkey key — no duplicate row); a later regenerate
+   * produces a new `revision` and therefore a new key, so the new revision starts unrated (never
+   * carries the old rating forward).
+   *
+   * Blocked entirely during impersonation (`blockDuringImpersonation` in `weekly-brief.route.ts`):
+   * `requireUsername`/`getEffectiveUsername` resolves the *impersonated* user's identity, and
+   * unlike generate/save/share (which proxy the caller's bearer token through untouched, so the
+   * upstream write is attributed to whoever actually authenticated) this write lands directly in
+   * the target user's own Valkey key — the same wrong-account-write class the profile/enrollment
+   * routes already guard against.
    *
    * Valkey is a fail-soft, TTL cache, not a system of record — a lost write here only degrades
    * the "you already rated this" UI indicator on a future load. Logged as a warning, but only
@@ -229,15 +241,17 @@ export class WeeklyBriefService {
    * supported deployment mode (direct-fetch fallback), not a fault, and warning on every rating
    * in that mode would bury the genuine-fault signal this exists to surface. The durable
    * analytics signal is the `rating_recorded` log line below (carrying `username` and the prior
-   * value, so re-rates/switches can be deduplicated per caller during offline
-   * rating-by-prompt_version analysis instead of each toggle over-counting as a distinct vote),
-   * which flows through the existing Pino → CloudWatch pipeline. Also carries `impersonated`
-   * (`getEffectiveUsername` resolves to the *impersonated* user's identity during an
-   * impersonation session — `isImpersonating`/`auth-helper.ts`) so offline analysis can exclude
-   * votes an LF staff member cast while exploring a committee on someone else's behalf, rather
-   * than silently misattributing them as the real user's opinion of brief quality.
+   * value, so re-rates/switches can be deduplicated per caller during offline analysis instead of
+   * each toggle over-counting as a distinct vote), which flows through the existing Pino →
+   * CloudWatch pipeline.
    */
-  public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<RateWeeklyBriefResponse> {
+  public async rateBrief(
+    req: Request,
+    committeeId: string,
+    briefUid: string,
+    rating: WeeklyBriefRating,
+    clientRevision: number
+  ): Promise<RateWeeklyBriefResponse> {
     const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
     const username = this.requireUsername(req, 'rate_weekly_brief');
     const key = this.requireRatingKey(brief.uid, brief.revision, username, 'rate_weekly_brief');
@@ -254,10 +268,10 @@ export class WeeklyBriefService {
       committee_id: committeeId,
       brief_uid: brief.uid,
       revision: brief.revision,
+      client_revision: clientRevision,
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
-      impersonated: isImpersonating(req),
       previous_rating: previousRating,
       rating,
     });
@@ -268,8 +282,8 @@ export class WeeklyBriefService {
   /**
    * DELETE /committees/:committeeId/weekly-briefs/:briefUid/rating
    *
-   * Clears the caller's rating on the current brief revision. Same current-revision resolution
-   * and fail-soft/durable-log split as `rateBrief` — see its doc comment.
+   * Clears the caller's rating on the current brief revision. Same current-revision resolution,
+   * impersonation block, and fail-soft/durable-log split as `rateBrief` — see its doc comment.
    */
   public async clearBriefRating(req: Request, committeeId: string, briefUid: string): Promise<void> {
     const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'clear_weekly_brief_rating');
@@ -291,7 +305,6 @@ export class WeeklyBriefService {
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
-      impersonated: isImpersonating(req),
       previous_rating: previousRating,
     });
   }

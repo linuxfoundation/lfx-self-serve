@@ -386,7 +386,7 @@ export class WeeklyBriefCardComponent {
     const request$: Observable<unknown> =
       next === null
         ? this.weeklyBriefService.clearWeeklyBriefRating(committeeUid, current.uid)
-        : this.weeklyBriefService.rateWeeklyBrief(committeeUid, current.uid, next);
+        : this.weeklyBriefService.rateWeeklyBrief(committeeUid, current.uid, next, current.revision);
     request$
       .pipe(
         take(1),

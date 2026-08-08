@@ -74,11 +74,13 @@ export class WeeklyBriefService {
    * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
    *
    * Upserts the caller's rating on the brief's current revision (also handles switching
-   * up↔down — same request, new value). No `catchError` — the caller rolls back its own
-   * optimistic UI state on failure.
+   * up↔down — same request, new value). `revision` is the revision the caller actually saw when
+   * they tapped — the BFF never rejects on it (it always rates whatever revision is current at
+   * write time), it's only logged server-side for offline attribution-drift detection. No
+   * `catchError` — the caller rolls back its own optimistic UI state on failure.
    */
-  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating): Observable<RateWeeklyBriefResponse> {
-    const body: RateWeeklyBriefRequest = { rating };
+  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating, revision: number): Observable<RateWeeklyBriefResponse> {
+    const body: RateWeeklyBriefRequest = { rating, revision };
     return this.http
       .post<RateWeeklyBriefResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, body)
       .pipe(take(1));

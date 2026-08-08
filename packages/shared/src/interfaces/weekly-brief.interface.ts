@@ -87,9 +87,18 @@ export interface WeeklyBriefCurrentResponse {
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
 export type WeeklyBriefRating = 'up' | 'down';
 
-/** Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. */
+/**
+ * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is
+ * the revision the caller actually saw when they tapped — the server always rates whatever
+ * revision is current at write time (see `weekly-brief.service.ts#rateBrief`'s doc comment), so
+ * this is never used to reject the write, only logged alongside the server-resolved revision on
+ * `rating_recorded` so a rating attributed to content the rater never saw (a co-chair's edit or
+ * regenerate landing between page load and tap) can be identified and excluded during offline
+ * rating-by-prompt_version analysis.
+ */
 export interface RateWeeklyBriefRequest {
   rating: WeeklyBriefRating;
+  revision: number;
 }
 
 /**

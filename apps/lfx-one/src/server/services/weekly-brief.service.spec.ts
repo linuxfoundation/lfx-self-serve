@@ -405,10 +405,10 @@ describe('WeeklyBriefService', () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const briefUid = initial.brief!.uid;
 
-      await service.rateBrief(userReq, 'committee-1', briefUid, 'up');
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'up', 1);
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('up');
 
-      await service.rateBrief(userReq, 'committee-1', briefUid, 'down');
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'down', 1);
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('down');
 
       await service.clearBriefRating(userReq, 'committee-1', briefUid);
@@ -418,7 +418,7 @@ describe('WeeklyBriefService', () => {
     it('a new revision (regenerate) starts unrated — the prior rating is never carried forward', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const briefUid = initial.brief!.uid;
-      await service.rateBrief(userReq, 'committee-1', briefUid, 'up');
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'up', 1);
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('up');
 
       await service.generateBrief(userReq, 'committee-1', { force: true });
@@ -430,7 +430,7 @@ describe('WeeklyBriefService', () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
 
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
       expect(logger.info).toHaveBeenCalledWith(
         userReq,
@@ -443,41 +443,35 @@ describe('WeeklyBriefService', () => {
           prompt_version: brief.prompt_version,
           model: brief.model,
           username: 'alice',
-          impersonated: false,
+          client_revision: 1,
           previous_rating: null,
           rating: 'up',
         })
       );
     });
 
-    it('rateBrief logs impersonated: true and the impersonated (not impersonator) username during an impersonation session', async () => {
-      const impersonatingReq = {
-        oidc: { user: { nickname: 'admin-user' } },
-        appSession: {
-          impersonationToken: 'impersonation-token',
-          impersonationExpiresAt: Date.now() + 60_000,
-          impersonationUser: { username: 'target-user', sub: 'auth0|target', email: 'target@example.com' },
-        },
-      } as unknown as Request;
-      const initial = await service.getCurrentBrief(impersonatingReq, 'committee-1');
+    it('rateBrief logs a divergent client_revision alongside the server-resolved revision, so offline analysis can drop a vote cast against content the rater never actually saw (e.g. a co-chair edited between page load and tap)', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
+      const staleClientRevision = brief.revision; // what the rater's page still shows...
+      await service.saveBrief(userReq, 'committee-1', { brief_text: 'edited by a co-chair', revision: brief.revision }); // ...but the brief has since moved on
 
-      await service.rateBrief(impersonatingReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', staleClientRevision);
 
       expect(logger.info).toHaveBeenCalledWith(
-        impersonatingReq,
+        userReq,
         'rating_recorded',
         expect.any(String),
-        expect.objectContaining({ username: 'target-user', impersonated: true })
+        expect.objectContaining({ revision: brief.revision + 1, client_revision: staleClientRevision })
       );
     });
 
     it('rateBrief logs the prior value as previous_rating when switching (so offline analysis can net re-rates instead of over-counting)', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'down');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'down', 1);
 
       expect(logger.info).toHaveBeenCalledWith(
         userReq,
@@ -490,7 +484,7 @@ describe('WeeklyBriefService', () => {
     it('clearBriefRating logs a rating_cleared event carrying username and the previous rating', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
       await service.clearBriefRating(userReq, 'committee-1', brief.uid);
 
@@ -507,7 +501,7 @@ describe('WeeklyBriefService', () => {
       const brief = initial.brief!;
       valkeyServiceMock.setJson.mockResolvedValueOnce(false);
 
-      const result = await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      const result = await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
       expect(result).toEqual({ rating: 'up' });
       expect(logger.warning).toHaveBeenCalledWith(
@@ -521,7 +515,7 @@ describe('WeeklyBriefService', () => {
     it('logs a rating_persist_failed warning when an enabled Valkey clear faults', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
       valkeyServiceMock.del.mockResolvedValueOnce(false);
 
       await service.clearBriefRating(userReq, 'committee-1', brief.uid);
@@ -540,7 +534,7 @@ describe('WeeklyBriefService', () => {
       valkeyServiceMock.isEnabled.mockReturnValue(false);
       valkeyServiceMock.setJson.mockResolvedValueOnce(false);
 
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
       expect(logger.warning).not.toHaveBeenCalledWith(userReq, 'rating_persist_failed', expect.any(String), expect.anything());
     });
@@ -548,7 +542,7 @@ describe('WeeklyBriefService', () => {
     it('does not log rating_persist_failed on clear when the cache is simply disabled', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
       valkeyServiceMock.isEnabled.mockReturnValue(false);
       valkeyServiceMock.del.mockResolvedValueOnce(false);
 
@@ -558,14 +552,14 @@ describe('WeeklyBriefService', () => {
     });
 
     it('rateBrief rejects a briefUid that no longer matches the current brief with a 404, not a silent no-op', async () => {
-      await expect(service.rateBrief(userReq, 'committee-1', 'stale-uid', 'up')).rejects.toMatchObject({ statusCode: 404 });
+      await expect(service.rateBrief(userReq, 'committee-1', 'stale-uid', 'up', 1)).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it('rateBrief rejects a brief that is not in a shareable state (generating/error/empty) — LFXV2-3042 scope is generated/edited/approved only', async () => {
       const initial = await service.getCurrentBrief(userReq, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID);
       expect(initial.brief?.state).toBe('error');
 
-      await expect(service.rateBrief(userReq, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, initial.brief!.uid, 'up')).rejects.toMatchObject({
+      await expect(service.rateBrief(userReq, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, initial.brief!.uid, 'up', 1)).rejects.toMatchObject({
         statusCode: 404,
       });
     });
@@ -574,14 +568,14 @@ describe('WeeklyBriefService', () => {
       const anonReq = {} as unknown as Request;
       const initial = await service.getCurrentBrief(anonReq, 'committee-1');
 
-      await expect(service.rateBrief(anonReq, 'committee-1', initial.brief!.uid, 'up')).rejects.toMatchObject({ statusCode: 401 });
+      await expect(service.rateBrief(anonReq, 'committee-1', initial.brief!.uid, 'up', 1)).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it('rateBrief throws (400) when the resolved identity cannot build a safe rating key (defense-in-depth — not reachable via normal auth)', async () => {
       const unsafeReq = { oidc: { user: { nickname: 'unsafe' } } } as unknown as Request;
       const initial = await service.getCurrentBrief(unsafeReq, 'committee-1');
 
-      await expect(service.rateBrief(unsafeReq, 'committee-1', initial.brief!.uid, 'up')).rejects.toMatchObject({ statusCode: 400 });
+      await expect(service.rateBrief(unsafeReq, 'committee-1', initial.brief!.uid, 'up', 1)).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it('getCurrentBrief omits caller_rating when no user identity is resolvable (fails soft, not with an error)', async () => {

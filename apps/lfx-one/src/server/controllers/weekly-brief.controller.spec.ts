@@ -286,7 +286,7 @@ describe('WeeklyBriefController', () => {
     it('rejects a missing rating', async () => {
       const next = vi.fn();
 
-      await controller.rateBrief(buildRatingReq({}), buildRes(), next);
+      await controller.rateBrief(buildRatingReq({ revision: 1 }), buildRes(), next);
 
       expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledOnce();
@@ -295,7 +295,25 @@ describe('WeeklyBriefController', () => {
     it('rejects a rating value outside the closed up/down type (LFXV2-3042: not a free string)', async () => {
       const next = vi.fn();
 
-      await controller.rateBrief(buildRatingReq({ rating: 'love it' }), buildRes(), next);
+      await controller.rateBrief(buildRatingReq({ rating: 'love it', revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up' }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-integer revision', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1.5 }), buildRes(), next);
 
       expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledOnce();
@@ -304,17 +322,17 @@ describe('WeeklyBriefController', () => {
     it('accepts "up"', async () => {
       weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'up' });
 
-      await controller.rateBrief(buildRatingReq({ rating: 'up' }), buildRes(), vi.fn());
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), vi.fn());
 
-      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'up');
+      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'up', 1);
     });
 
     it('accepts "down"', async () => {
       weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'down' });
 
-      await controller.rateBrief(buildRatingReq({ rating: 'down' }), buildRes(), vi.fn());
+      await controller.rateBrief(buildRatingReq({ rating: 'down', revision: 2 }), buildRes(), vi.fn());
 
-      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'down');
+      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'down', 2);
     });
   });
 
@@ -322,7 +340,7 @@ describe('WeeklyBriefController', () => {
     it('checks committee read access before rating (a rating is a personal reaction, not a committee edit)', async () => {
       weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'up' });
 
-      await controller.rateBrief(buildRatingReq({ rating: 'up' }), buildRes(), vi.fn());
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), vi.fn());
 
       expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'rate_weekly_brief');
       const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
@@ -335,7 +353,7 @@ describe('WeeklyBriefController', () => {
       assertCommitteeRead.mockRejectedValueOnce(forbidden);
       const next = vi.fn();
 
-      await controller.rateBrief(buildRatingReq({ rating: 'up' }), buildRes(), next);
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), next);
 
       expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);

@@ -97,10 +97,17 @@ function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBrie
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
+  const fieldErrors: Record<string, string> = {};
   if (b['rating'] !== 'up' && b['rating'] !== 'down') {
-    return { ok: false, fieldErrors: { rating: 'rating is required and must be "up" or "down"' } };
+    fieldErrors['rating'] = 'rating is required and must be "up" or "down"';
   }
-  return { ok: true, value: { rating: b['rating'] } };
+  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+    fieldErrors['revision'] = 'revision is required and must be an integer of at least 1';
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return { ok: false, fieldErrors };
+  }
+  return { ok: true, value: { rating: b['rating'] as 'up' | 'down', revision: b['revision'] as number } };
 }
 
 /**
@@ -355,7 +362,7 @@ export class WeeklyBriefController {
 
       await assertCommitteeRead(req, committeeId, 'rate_weekly_brief');
 
-      const result = await this.weeklyBriefService.rateBrief(req, committeeId, briefUid, validation.value.rating);
+      const result = await this.weeklyBriefService.rateBrief(req, committeeId, briefUid, validation.value.rating, validation.value.revision);
 
       logger.success(req, 'rate_weekly_brief', startTime, {
         committee_id: committeeId,
