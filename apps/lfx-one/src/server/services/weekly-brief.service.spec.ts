@@ -11,18 +11,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // against the real constants module here — `vi.importActual` on a real, unmocked
 // `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
 // mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
-const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  proxyRequestWithResponse: vi.fn(),
-  MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
-}));
+// A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
+// upsert/clear round-trip behavior through the public API, not just "was called with X".
+const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, buildWeeklyBriefRatingCacheKeyMock } = vi.hoisted(() => {
+  const valkeyStore = new Map<string, unknown>();
+  return {
+    proxyRequest: vi.fn(),
+    proxyRequestWithResponse: vi.fn(),
+    MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
+    valkeyStore,
+    buildWeeklyBriefRatingCacheKeyMock: vi.fn((briefUid: string, revision: number, username: string) => `${briefUid}:${revision}:${username}`),
+  };
+});
 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
+  VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000 },
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
+}));
+vi.mock('./valkey.service', () => ({
+  buildWeeklyBriefRatingCacheKey: buildWeeklyBriefRatingCacheKeyMock,
+  valkeyService: {
+    getJson: vi.fn(async (key: string) => (valkeyStore.has(key) ? valkeyStore.get(key) : null)),
+    setJson: vi.fn(async (key: string, value: unknown) => {
+      valkeyStore.set(key, value);
+      return true;
+    }),
+    del: vi.fn(async (key: string) => valkeyStore.delete(key)),
+  },
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -54,9 +73,11 @@ import type { Request } from 'express';
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { MicroserviceError } from '../errors';
 
+import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
+const userReq = { oidc: { user: { nickname: 'alice' } } } as unknown as Request;
 
 describe('briefWindow', () => {
   afterEach(() => {
@@ -96,6 +117,7 @@ describe('WeeklyBriefService', () => {
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
     __resetMockBriefStateForTesting();
+    valkeyStore.clear();
   });
 
   afterEach(() => {
@@ -350,6 +372,91 @@ describe('WeeklyBriefService', () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
       await service.getCurrentBrief(req, 'a/b c');
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/a%2Fb%20c/weekly-briefs/current', 'GET');
+    });
+  });
+
+  describe('weekly-brief rating (LFXV2-3042)', () => {
+    beforeEach(() => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      delete process.env['NODE_ENV'];
+    });
+
+    it('rate → re-rate (switch) → clear round-trips through getCurrentBrief().caller_rating', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const briefUid = initial.brief!.uid;
+
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'up');
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('up');
+
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'down');
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('down');
+
+      await service.clearBriefRating(userReq, 'committee-1', briefUid);
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBeNull();
+    });
+
+    it('a new revision (regenerate) starts unrated — the prior rating is never carried forward', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const briefUid = initial.brief!.uid;
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'up');
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('up');
+
+      await service.generateBrief(userReq, 'committee-1', { force: true });
+
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBeNull();
+    });
+
+    it('rateBrief logs a rating_recorded event carrying prompt_version/model/revision attribution', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      expect(logger.info).toHaveBeenCalledWith(
+        userReq,
+        'rating_recorded',
+        expect.any(String),
+        expect.objectContaining({
+          committee_id: 'committee-1',
+          brief_uid: brief.uid,
+          revision: brief.revision,
+          prompt_version: brief.prompt_version,
+          model: brief.model,
+          rating: 'up',
+        })
+      );
+    });
+
+    it('clearBriefRating logs a rating_cleared event', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
+
+      expect(logger.info).toHaveBeenCalledWith(
+        userReq,
+        'rating_cleared',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid, revision: brief.revision })
+      );
+    });
+
+    it('rateBrief rejects a briefUid that no longer matches the current brief with a 404, not a silent no-op', async () => {
+      await expect(service.rateBrief(userReq, 'committee-1', 'stale-uid', 'up')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('rateBrief throws (401) when no resolvable user identity is available, instead of writing an unscoped rating', async () => {
+      const anonReq = {} as unknown as Request;
+      const initial = await service.getCurrentBrief(anonReq, 'committee-1');
+
+      await expect(service.rateBrief(anonReq, 'committee-1', initial.brief!.uid, 'up')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('getCurrentBrief omits caller_rating when no user identity is resolvable (fails soft, not with an error)', async () => {
+      const anonReq = {} as unknown as Request;
+      const result = await service.getCurrentBrief(anonReq, 'committee-1');
+      expect(result.caller_rating).toBeUndefined();
     });
   });
 });

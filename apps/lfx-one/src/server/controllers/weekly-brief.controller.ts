@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { WEEKLY_BRIEF_TEXT_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { GenerateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/shared/interfaces';
+import { GenerateWeeklyBriefRequest, RateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -85,6 +85,22 @@ function validateShareBriefBody(body: unknown): { ok: true; value: { revision: n
     return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
   }
   return { ok: true, value: { revision: b['revision'] as number } };
+}
+
+/**
+ * Narrow `req.body` to a RateWeeklyBriefRequest for the rating endpoint. `rating` is a
+ * closed two-value type, not a free string — whitelisted explicitly like every other
+ * body-narrowing function in this file, rather than forwarding req.body verbatim.
+ */
+function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBriefRequest } | { ok: false; fieldErrors: Record<string, string> } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  if (b['rating'] !== 'up' && b['rating'] !== 'down') {
+    return { ok: false, fieldErrors: { rating: 'rating is required and must be "up" or "down"' } };
+  }
+  return { ok: true, value: { rating: b['rating'] } };
 }
 
 /**
@@ -299,6 +315,90 @@ export class WeeklyBriefController {
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * BFF-only feature (LFXV2-3042) — no upstream endpoint, no committee-write involved. Gated by
+   * `assertCommitteeRead`, same as `getCurrentBrief`/`shareBrief`: a rating is a personal
+   * read-time reaction to a brief the caller can already see, not a committee edit.
+   */
+  public async rateBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId, briefUid } = req.params;
+    const startTime = logger.startOperation(req, 'rate_weekly_brief', {
+      committee_id: committeeId,
+      brief_uid: briefUid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, { operation: 'rate_weekly_brief', service: 'weekly_brief_controller' }) ||
+        !validateUidParameter(briefUid, req, next, { operation: 'rate_weekly_brief', service: 'weekly_brief_controller' })
+      ) {
+        return;
+      }
+
+      const validation = validateRateBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid rate-weekly-brief request body', {
+            operation: 'rate_weekly_brief',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      await assertCommitteeRead(req, committeeId, 'rate_weekly_brief');
+
+      const result = await this.weeklyBriefService.rateBrief(req, committeeId, briefUid, validation.value.rating);
+
+      logger.success(req, 'rate_weekly_brief', startTime, {
+        committee_id: committeeId,
+        brief_uid: briefUid,
+        rating: result.rating,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Clears the caller's own rating on the brief's current revision. Same gate as `rateBrief`.
+   */
+  public async clearBriefRating(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId, briefUid } = req.params;
+    const startTime = logger.startOperation(req, 'clear_weekly_brief_rating', {
+      committee_id: committeeId,
+      brief_uid: briefUid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, { operation: 'clear_weekly_brief_rating', service: 'weekly_brief_controller' }) ||
+        !validateUidParameter(briefUid, req, next, { operation: 'clear_weekly_brief_rating', service: 'weekly_brief_controller' })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'clear_weekly_brief_rating');
+
+      await this.weeklyBriefService.clearBriefRating(req, committeeId, briefUid);
+
+      logger.success(req, 'clear_weekly_brief_rating', startTime, {
+        committee_id: committeeId,
+        brief_uid: briefUid,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

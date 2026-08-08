@@ -6,10 +6,12 @@ import { inject, Injectable } from '@angular/core';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
+  RateWeeklyBriefRequest,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
+  WeeklyBriefRating,
 } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
@@ -65,5 +67,29 @@ export class WeeklyBriefService {
    */
   public shareWeeklyBrief(committeeId: string, revision: number): Observable<ShareWeeklyBriefResult> {
     return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share`, { revision }).pipe(take(1));
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Upserts the caller's rating on the brief's current revision (also handles switching
+   * up↔down — same request, new value). No `catchError` — the caller rolls back its own
+   * optimistic UI state on failure.
+   */
+  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating): Observable<{ rating: WeeklyBriefRating }> {
+    const body: RateWeeklyBriefRequest = { rating };
+    return this.http
+      .post<{ rating: WeeklyBriefRating }>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, body)
+      .pipe(take(1));
+  }
+
+  /**
+   * DELETE /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Clears the caller's rating on the brief's current revision. No `catchError` — the caller
+   * rolls back its own optimistic UI state on failure.
+   */
+  public clearWeeklyBriefRating(committeeId: string, briefUid: string): Observable<void> {
+    return this.http.delete<void>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`).pipe(take(1));
   }
 }

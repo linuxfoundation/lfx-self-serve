@@ -16,7 +16,7 @@ import {
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -31,6 +31,7 @@ import {
   filter,
   finalize,
   map,
+  Observable,
   of,
   skip,
   switchMap,
@@ -82,11 +83,22 @@ export class WeeklyBriefCardComponent {
   public readonly saving = signal(false);
   public readonly sharing = signal(false);
   public readonly editMode = signal(false);
+  // True while a rate/clear-rating request is in flight — guards against a second tap
+  // racing the first before the optimistic state has settled.
+  public readonly ratingPending = signal(false);
 
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
   private readonly briefResponse = signal<WeeklyBriefCurrentResponse | null>(null);
+
+  // Optimistic rating overlay, keyed to the revision it applies to — a plain
+  // `WeeklyBriefRating | null` overlay (with no revision key) would keep overriding
+  // `brief()?.caller_rating` forever, including after a regenerate/save moves to a new
+  // revision that was never actually rated. Keying to `revision` makes the override
+  // self-invalidating: `callerRating` below only applies it while it still matches the
+  // brief currently on screen.
+  private readonly optimisticRating = signal<{ revision: number; value: WeeklyBriefRating | null } | null>(null);
 
   // Refresh trigger consumed by initBriefResponseSubscription — declared here (not
   // further down with the other private helpers) because @typescript-eslint/member-ordering
@@ -124,6 +136,17 @@ export class WeeklyBriefCardComponent {
   public readonly isQuietWeek: Signal<boolean> = computed(() => {
     const b = this.brief();
     return b?.state === 'error' && b?.error_reason === WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES;
+  });
+
+  // The caller's own rating on the brief currently on screen — the optimistic overlay
+  // when it's for this exact revision, otherwise whatever the last server load reported.
+  // `caller_rating` is BFF enrichment on the response envelope, not on `WeeklyBrief`
+  // itself (there's no upstream field for it) — read from `briefResponse`, not `brief()`.
+  public readonly callerRating: Signal<WeeklyBriefRating | null> = computed(() => {
+    const b = this.brief();
+    const override = this.optimisticRating();
+    if (b && override && override.revision === b.revision) return override.value;
+    return this.briefResponse()?.caller_rating ?? null;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {
@@ -341,6 +364,43 @@ export class WeeklyBriefCardComponent {
     }
   }
 
+  // Tapping the currently-active thumb clears the rating; tapping the other one switches.
+  // Optimistic: the overlay is set before the request fires and rolled back on failure —
+  // this is a one-tap, low-stakes action, so waiting on a round-trip before showing
+  // feedback isn't worth the click feeling unresponsive.
+  public onRate(value: WeeklyBriefRating): void {
+    const committeeUid = this.committee()?.uid;
+    const current = this.brief();
+    if (!committeeUid || !current || this.ratingPending()) return;
+    const previous = this.callerRating();
+    const next = previous === value ? null : value;
+    this.optimisticRating.set({ revision: current.revision, value: next });
+    this.ratingPending.set(true);
+    // Explicit `Observable<unknown>` — without it, the ternary's two branches (`Observable<void>`
+    // vs `Observable<{ rating: WeeklyBriefRating }>`) infer a union type whose `.pipe()` overload
+    // resolution TypeScript can't cleanly unify, breaking the `.subscribe()` call below.
+    const request$: Observable<unknown> =
+      next === null
+        ? this.weeklyBriefService.clearWeeklyBriefRating(committeeUid, current.uid)
+        : this.weeklyBriefService.rateWeeklyBrief(committeeUid, current.uid, next);
+    request$
+      .pipe(
+        take(1),
+        // Same guard as onSave/performShare: a rate/clear started on committee A whose
+        // response arrives after the user has already navigated to committee B must not
+        // touch B's rating state.
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.ratingPending.set(false))
+      )
+      .subscribe({
+        error: () => {
+          this.optimisticRating.set({ revision: current.revision, value: previous });
+          this.messageService.add({ severity: 'error', summary: 'Rating failed', detail: 'Failed to save your rating. Please try again.' });
+        },
+      });
+  }
+
   public onCancelEdit(): void {
     this.editMode.set(false);
   }
@@ -373,6 +433,8 @@ export class WeeklyBriefCardComponent {
       this.sharing.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
+      this.ratingPending.set(false);
+      this.optimisticRating.set(null);
     });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(

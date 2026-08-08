@@ -21,4 +21,10 @@ router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBrie
 // POST /committees/:committeeId/weekly-briefs/share - share the current brief to the committee mailing list
 router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
 
+// POST /committees/:committeeId/weekly-briefs/:briefUid/rating - rate (or re-rate) the current brief
+router.post('/:committeeId/weekly-briefs/:briefUid/rating', (req, res, next) => weeklyBriefController.rateBrief(req, res, next));
+
+// DELETE /committees/:committeeId/weekly-briefs/:briefUid/rating - clear the caller's rating
+router.delete('/:committeeId/weekly-briefs/:briefUid/rating', (req, res, next) => weeklyBriefController.clearBriefRating(req, res, next));
+
 export default router;

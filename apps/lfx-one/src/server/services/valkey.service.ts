@@ -319,6 +319,17 @@ export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
   return `${keyPrefix()}:${VALKEY_CACHE.MEMBER_V1_MAPPING_NAMESPACE}:${memberUid}`;
 }
 
+/**
+ * Per-caller weekly-brief rating cache key (LFXV2-3042) — one entry per (brief_uid, revision,
+ * username), so a new revision (post-regenerate) never inherits the prior revision's rating.
+ * Null (fail-closed → skip cache) when the brief uid isn't filter-safe or the username isn't
+ * filter-safe, so neither can corrupt the `:`-delimited key.
+ */
+export function buildWeeklyBriefRatingCacheKey(briefUid: string, revision: number, username: string): string | null {
+  if (!isFilterSafeIdentifier(briefUid) || !isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_RATING_NAMESPACE}:${briefUid}:${revision}:${username}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

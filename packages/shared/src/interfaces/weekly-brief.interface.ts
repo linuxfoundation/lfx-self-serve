@@ -75,6 +75,21 @@ export interface WeeklyBriefCurrentResponse {
   brief: WeeklyBrief | null;
   /** Null alongside a null `brief` on a genuine miss — upstream's `GET /current` never fabricates counters. */
   throttle: WeeklyBriefThrottle | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
+   * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
+   * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
+   * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
+   */
+  caller_rating?: WeeklyBriefRating | null;
+}
+
+/** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
+export type WeeklyBriefRating = 'up' | 'down';
+
+/** Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. */
+export interface RateWeeklyBriefRequest {
+  rating: WeeklyBriefRating;
 }
 
 /**

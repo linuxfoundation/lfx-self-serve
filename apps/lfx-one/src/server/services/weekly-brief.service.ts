@@ -4,6 +4,7 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  VALKEY_CACHE,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
@@ -17,19 +18,21 @@ import {
   ShareWeeklyBriefResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
+  WeeklyBriefRating,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NewsletterService } from './newsletter.service';
+import { buildWeeklyBriefRatingCacheKey, valkeyService } from './valkey.service';
 
 /**
  * HTML-escapes a plain-text string, then converts blank-line-separated
@@ -180,9 +183,10 @@ export class WeeklyBriefService {
    * over.
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
+    let response: WeeklyBriefCurrentResponse;
     if (!this.isLive(req)) {
       const brief = currentMockBrief(committeeId);
-      return {
+      response = {
         brief,
         throttle: {
           ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
@@ -191,15 +195,70 @@ export class WeeklyBriefService {
           window_resets_at: nextSundayIso(),
         },
       };
+    } else {
+      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
+      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
+        'GET'
+      );
     }
+    return this.withCallerRating(req, response);
+  }
 
-    logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-    return this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
-      'GET'
-    );
+  /**
+   * POST /committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * BFF-only feature (LFXV2-3042) — no upstream endpoint. The caller never supplies a revision —
+   * a rating always targets whatever revision is *currently* stored for `briefUid`, resolved
+   * server-side via `getCurrentBrief`, so it's impossible to submit a rating against a stale
+   * revision. Upserts (re-rating, including switching up↔down, overwrites the same Valkey key —
+   * no duplicate row); a later regenerate produces a new `revision` and therefore a new key, so
+   * the new revision starts unrated (never carries the old rating forward).
+   *
+   * Valkey is a fail-soft, TTL cache, not a system of record — a lost write here only degrades
+   * the "you already rated this" UI indicator on a future load. The durable analytics signal is
+   * the `rating_recorded` log line below, which flows through the existing Pino → CloudWatch
+   * pipeline for offline rating-by-prompt_version analysis.
+   */
+  public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<{ rating: WeeklyBriefRating }> {
+    const brief = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
+    const username = this.requireUsername(req, 'rate_weekly_brief');
+    const key = this.requireRatingKey(brief.uid, brief.revision, username, 'rate_weekly_brief');
+
+    await valkeyService.setJson(key, { rating }, VALKEY_CACHE.WEEKLY_BRIEF_RATING_TTL_SECONDS);
+    logger.info(req, 'rating_recorded', 'Weekly brief rating recorded', {
+      committee_id: committeeId,
+      brief_uid: brief.uid,
+      revision: brief.revision,
+      prompt_version: brief.prompt_version,
+      model: brief.model,
+      rating,
+    });
+
+    return { rating };
+  }
+
+  /**
+   * DELETE /committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Clears the caller's rating on the current brief revision. Same current-revision resolution
+   * and fail-soft/durable-log split as `rateBrief` — see its doc comment.
+   */
+  public async clearBriefRating(req: Request, committeeId: string, briefUid: string): Promise<void> {
+    const brief = await this.resolveRatableBrief(req, committeeId, briefUid, 'clear_weekly_brief_rating');
+    const username = this.requireUsername(req, 'clear_weekly_brief_rating');
+    const key = this.requireRatingKey(brief.uid, brief.revision, username, 'clear_weekly_brief_rating');
+
+    await valkeyService.del(key);
+    logger.info(req, 'rating_cleared', 'Weekly brief rating cleared', {
+      committee_id: committeeId,
+      brief_uid: brief.uid,
+      revision: brief.revision,
+      prompt_version: brief.prompt_version,
+      model: brief.model,
+    });
   }
 
   /**
@@ -532,6 +591,62 @@ export class WeeklyBriefService {
     }
     logger.warning(req, 'weekly_brief_mock_mode', 'Serving mock weekly-brief data — WEEKLY_BRIEF_BACKEND is not "live"', {});
     return false;
+  }
+
+  /**
+   * Enriches a `getCurrentBrief` result with the caller's own rating on that exact brief
+   * revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable username, or a
+   * cache miss/fault all resolve to `caller_rating: null` rather than throwing — this is a
+   * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
+   */
+  private async withCallerRating(req: Request, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
+    if (!response.brief) return response;
+    const username = getEffectiveUsername(req);
+    if (!username) return response;
+    const key = buildWeeklyBriefRatingCacheKey(response.brief.uid, response.brief.revision, username);
+    if (!key) return response;
+    const stored = await valkeyService.getJson<{ rating: WeeklyBriefRating }>(
+      key,
+      (value): value is { rating: WeeklyBriefRating } =>
+        !!value && typeof value === 'object' && ((value as { rating?: unknown }).rating === 'up' || (value as { rating?: unknown }).rating === 'down')
+    );
+    return { ...response, caller_rating: stored?.rating ?? null };
+  }
+
+  /**
+   * Resolves and validates the brief a rate/clear-rating call targets. Re-fetches the current
+   * brief (rather than trusting anything client-supplied beyond `briefUid`) so `revision`/
+   * `prompt_version`/`model` in the rating log are always the server's own values — the caller
+   * never supplies a revision at all, so there's no client-side value that could ever go stale;
+   * a rating always lands on whatever revision is current at write time. Only guards that
+   * `briefUid` still names the committee's current brief — e.g. a window rollover produced a new
+   * brief_uid between page load and tap — same "existence, not the write itself" gap this closes
+   * as `assertCommitteeRead` closes for reads.
+   */
+  private async resolveRatableBrief(req: Request, committeeId: string, briefUid: string, operation: string): Promise<WeeklyBrief> {
+    const { brief } = await this.getCurrentBrief(req, committeeId);
+    if (!brief || brief.uid !== briefUid) {
+      throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });
+    }
+    return brief;
+  }
+
+  /** Resolves the effective username for a rating write, or throws — a rating with no identity to scope it to is a genuine failure, not something to degrade silently (unlike the read-side `withCallerRating`). */
+  private requireUsername(req: Request, operation: string): string {
+    const username = getEffectiveUsername(req);
+    if (!username) {
+      throw new AuthenticationError('Unable to resolve your account for this action', { operation, service: 'weekly_brief_service' });
+    }
+    return username;
+  }
+
+  /** Resolves the rating cache key, or throws if the brief uid/username aren't filter-safe — `assertCommitteeRead` + `validateUidParameter` make this practically unreachable, but a rating write must not silently no-op against a null key. */
+  private requireRatingKey(briefUid: string, revision: number, username: string, operation: string): string {
+    const key = buildWeeklyBriefRatingCacheKey(briefUid, revision, username);
+    if (!key) {
+      throw ServiceValidationError.forField('briefUid', 'Unable to build a rating key for this brief/user', { operation, service: 'weekly_brief_service' });
+    }
+    return key;
   }
 
   /**
