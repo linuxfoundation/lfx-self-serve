@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { WEEKLY_BRIEF_ERROR_REASON } from '../constants/weekly-brief.constants';
-import type { PastMeetingActivityFeedAction, TabActivityFeedAction } from './activity-feed.interface';
+import type { PastMeetingActivityFeedAction, TabActivityFeedAction, VoteDrawerActivityFeedAction } from './activity-feed.interface';
 
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
 
@@ -34,12 +34,16 @@ export interface WeeklyBriefSourceRef {
 
 /**
  * What clicking a "Sources" chip does, for a `WeeklyBriefSourceRef` that resolves to a real
- * target. Reuses `ActivityFeedAction`'s `past-meeting`/`tab` variants exactly (LFXV2-3009's
- * committee Overview activity feed already navigates through these same two mechanisms) rather
- * than a narrower union that duplicates their shape — vote-drawer/survey-drawer/external-url
- * don't apply to any documented or observed `source_refs` kind.
+ * target. Reuses `ActivityFeedAction`'s `past-meeting`/`vote-drawer`/`tab` variants exactly
+ * (LFXV2-3009's committee Overview activity feed already navigates through these same
+ * mechanisms) rather than a narrower union that duplicates their shape. `vote-drawer` carries
+ * the vote's own uid (`ref.id` for a "vote" kind) straight to `committee-overview.component.ts`'s
+ * existing drawer-opening logic — including its own "Vote unavailable, try the Votes tab
+ * instead" toast on a lookup miss — rather than dropping the id and routing to the generic
+ * Votes tab. `survey-drawer`/`external-url` still don't apply to any documented or observed
+ * `source_refs` kind.
  */
-export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | TabActivityFeedAction;
+export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDrawerActivityFeedAction | TabActivityFeedAction;
 
 /**
  * Precomputed display view-model for one "Sources" chip under a weekly brief — built from a

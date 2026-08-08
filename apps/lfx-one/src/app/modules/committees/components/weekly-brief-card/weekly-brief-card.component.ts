@@ -73,10 +73,12 @@ export class WeeklyBriefCardComponent {
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
 
-  // Outputs — 'tab' source-ref actions bubble up so the parent can drive its own tab
-  // state (mirrors committee-overview.component.ts's identically-shaped tabNavigated
-  // output for its activity feed, which this binds straight through to).
+  // Outputs — 'tab'/'vote-drawer' source-ref actions bubble up so the parent can drive its
+  // own tab/drawer state (mirrors committee-overview.component.ts's identically-shaped
+  // tabNavigated output and openVoteDrawer method for its activity feed, both of which this
+  // binds straight through to).
   public readonly tabNavigated = output<string>();
+  public readonly voteDrawerRequested = output<string>();
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
@@ -371,14 +373,17 @@ export class WeeklyBriefCardComponent {
     this.refresh$.next();
   }
 
-  // Mirrors committee-overview.component.ts's handleActivityItemClick for these same two
-  // action kinds — 'past-meeting' navigates directly (no drawer for this action, unlike
-  // vote/survey), 'tab' bubbles up via tabNavigated for the parent to drive its own tab
-  // state, same as that component's own navigateToTab.
+  // Mirrors committee-overview.component.ts's handleActivityItemClick for these same action
+  // kinds — 'past-meeting' navigates directly (no drawer for this action), 'vote-drawer' and
+  // 'tab' bubble up via voteDrawerRequested/tabNavigated for the parent to drive its own
+  // drawer/tab state, same as that component's own openVoteDrawer/navigateToTab.
   public onSourceChipAction(action: WeeklyBriefSourceChipAction): void {
     switch (action.kind) {
       case 'past-meeting':
         void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
+        break;
+      case 'vote-drawer':
+        this.voteDrawerRequested.emit(action.voteUid);
         break;
       case 'tab':
         this.tabNavigated.emit(action.tab);

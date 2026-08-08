@@ -18,8 +18,9 @@
  *   tab) also polls to terminal on its own
  * - Read-failure → retryable unavailable state → recovery
  * - Sources chips (LFXV2-3044): no row when source_refs is empty; one chip per ref with a
- *   kind-appropriate label/icon; meeting/members chips click through (past-meeting route /
- *   Members tab); mailing-list and unrecognized-kind chips render unlinked (no click target)
+ *   kind-appropriate label/icon; meeting/vote/members chips click through (meeting-join route /
+ *   vote drawer / Members tab); mailing-list and unrecognized-kind chips render unlinked (no
+ *   click target)
  *
  * Architecture notes (mirrors repo convention):
  * - API mocking is per-spec via `page.route()` (see org-membership-documentation.spec.ts
@@ -44,8 +45,8 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
-import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
+import { Committee, ShareWeeklyBriefResult, Vote, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 
 const TEST_COMMITTEE_UID = 'wb-card-e2e-committee-uid';
 // Committees are mounted under /groups, not /committees (see committee-about.helper.ts's
@@ -541,7 +542,7 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(page.getByTestId('members-tab-bar')).toHaveCount(0);
   });
 
-  test('clicking a meeting chip pushes a navigation to the meeting join route for that id', async ({ page }) => {
+  test('clicking a meeting chip requests the meeting by its source-ref id', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
@@ -549,27 +550,50 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-source-chip-src-meeting-1').click();
     // `/meetings/:id` is MeetingJoinComponent (app.routes.ts), not a details route — it
-    // resolves the id via getPublicMeeting/getPublicPastMeeting and redirects to
-    // `/meetings/not-found` on a miss, which this synthetic unmocked id will hit. waitForURL
-    // only proves the click issued the correct navigation target (the thing this commit
-    // owns) — it resolves on the router's first URL push, before any such redirect can fire,
-    // so it can't be misread as proof the destination page resolved successfully; that's
-    // meeting-join's own e2e surface, not this spec's.
-    await page.waitForURL((url) => url.pathname.startsWith('/meetings/src-meeting-1'), { timeout: DATA_LOAD_TIMEOUT });
+    // resolves the id via getPublicMeeting (GET /public/api/meetings/:id), falling back to
+    // getPublicPastMeeting (GET /public/api/meetings/past/:id) on a 404. Asserting one of
+    // those requests fires for the exact source-ref id is a deterministic proof the click
+    // issued the right navigation target, without depending on whether this synthetic,
+    // otherwise-unmocked id actually resolves — that's meeting-join's own e2e surface, not
+    // this spec's, and letting it hit the live dev backend un-intercepted would violate this
+    // file's own mocking convention (see mockCommitteeShell's past-meetings note above).
+    const meetingRequest = page.waitForRequest((req) => req.method() === 'GET' && /\/public\/api\/meetings\/(past\/)?src-meeting-1(\?|$)/.test(req.url()), {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    await page.getByTestId('weekly-brief-card-source-chip-src-meeting-1').click();
+    await meetingRequest;
   });
 
-  test('clicking a vote chip switches the committee page to the Votes tab', async ({ page }) => {
-    await mockCommitteeShell(page, { enable_voting: true });
+  test('clicking a vote chip opens the vote results drawer for that vote', async ({ page }) => {
+    await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    // Overrides mockCommitteeShell's default empty /api/votes* mock so the drawer's
+    // uid lookup (committee-overview.component.ts's openVoteDrawer) actually resolves,
+    // rather than exercising only its "Vote unavailable" toast fallback.
+    const voteFixture: Vote = {
+      uid: 'src-vote-1',
+      name: 'Q1 Budget',
+      end_time: '2026-06-01T00:00:00.000Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid-wb',
+    };
+    await page.route('**/api/votes*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [voteFixture] }) });
+        return;
+      }
+      await route.fallback();
+    });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByTestId('committee-votes-tab')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-results-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
   });
 
   test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {

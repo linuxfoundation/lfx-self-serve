@@ -40,9 +40,9 @@ describe('mapWeeklyBriefSourceRefsToChips', () => {
     expect(chips[0]).toEqual({ id: 'doc-1', label: 'Charter.pdf', icon: 'fa-light fa-file-lines', action: { kind: 'tab', tab: 'documents' } });
   });
 
-  it('maps a vote ref to the votes tab action', () => {
+  it('maps a vote ref to the vote-drawer action, carrying its id as voteUid', () => {
     const chips = mapWeeklyBriefSourceRefsToChips([sourceRef({ id: 'vote-1', kind: 'vote', title: 'Q1 Budget' })]);
-    expect(chips[0]).toEqual({ id: 'vote-1', label: 'Q1 Budget', icon: 'fa-light fa-check-to-slot', action: { kind: 'tab', tab: 'votes' } });
+    expect(chips[0]).toEqual({ id: 'vote-1', label: 'Q1 Budget', icon: 'fa-light fa-check-to-slot', action: { kind: 'vote-drawer', voteUid: 'vote-1' } });
   });
 
   it('maps a members ref to the members tab action', () => {

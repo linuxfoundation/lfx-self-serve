@@ -205,6 +205,7 @@
             [committee]="committee()"
             [canEdit]="canEdit()"
             (tabNavigated)="navigateToTab($event)"
+            (voteDrawerRequested)="openVoteDrawer($event)"
             data-testid="committee-overview-weekly-brief-card" />
         }
 

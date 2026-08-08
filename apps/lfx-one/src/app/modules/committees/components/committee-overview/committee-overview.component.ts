@@ -285,6 +285,32 @@ export class CommitteeOverviewComponent {
     this.tabNavigated.emit(tab);
   }
 
+  // Shared by handleActivityItemClick's 'vote-drawer' case and weekly-brief-card's
+  // voteDrawerRequested output (LFXV2-3044) — both need the same lookup-or-toast behavior,
+  // not two copies of it.
+  //
+  // this.votes() and the caller's own source (the activity feed, or a weekly brief's
+  // source_refs) are independent server fetches (the former page_size=100 by updated_at) — a
+  // vote recent enough to appear in either isn't guaranteed to be within this fetch's window,
+  // so this lookup can miss.
+  //
+  // A miss here is recoverable in principle — VoteResultsDrawerComponent's own initVote()
+  // re-fetches by voteId with a startWith(listVote) fallback, so opening the drawer with just
+  // voteId set (no local seed) would still resolve. Not done here: the drawer's template has
+  // no `@else` on `@if (vote(); as voteData)`, so a null seed renders an empty drawer with no
+  // loading or not-found state until (or unless) that fetch settles — worse than this toast
+  // for the genuinely-missing case, and out of this component's scope to add. Toast instead.
+  public openVoteDrawer(voteUid: string): void {
+    const vote = this.votes().find((v) => v.uid === voteUid);
+    if (vote) {
+      this.selectedVoteId.set(vote.uid);
+      this.selectedVote.set(vote);
+      this.voteDrawerVisible.set(true);
+    } else {
+      this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
+    }
+  }
+
   public handlePendingActionClick(item: PendingActionItem): void {
     if (item.type === 'Vote') {
       const vote = this.pendingVotes().find((v) => v.uid === item.buttonLink);
@@ -317,29 +343,9 @@ export class CommitteeOverviewComponent {
         void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
         break;
       }
-      case 'vote-drawer': {
-        // this.votes() and the activity feed are two independent server fetches (the former
-        // page_size=100 by updated_at; the latter defaults to ACTIVITY_FEED_DEFAULT_PAGE_SIZE most
-        // recent by occurred_at, unless this call ever starts passing page_size) — a vote recent
-        // enough to appear in the feed isn't guaranteed to be within the former's window, so this
-        // lookup can miss.
-        //
-        // A miss here is recoverable in principle — VoteResultsDrawerComponent's own initVote()
-        // re-fetches by voteId with a startWith(listVote) fallback, so opening the drawer with just
-        // voteId set (no local seed) would still resolve. Not done here: the drawer's template has
-        // no `@else` on `@if (vote(); as voteData)`, so a null seed renders an empty drawer with no
-        // loading or not-found state until (or unless) that fetch settles — worse than this toast
-        // for the genuinely-missing case, and out of this component's scope to add. Toast instead.
-        const vote = this.votes().find((v) => v.uid === action.voteUid);
-        if (vote) {
-          this.selectedVoteId.set(vote.uid);
-          this.selectedVote.set(vote);
-          this.voteDrawerVisible.set(true);
-        } else {
-          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
-        }
+      case 'vote-drawer':
+        this.openVoteDrawer(action.voteUid);
         break;
-      }
       case 'survey-drawer': {
         // Different failure mode than the vote-drawer case above, same toast-instead remedy.
         // Unlike votes (a genuine window-size mismatch — getVotesByCommittee pins page_size=100),

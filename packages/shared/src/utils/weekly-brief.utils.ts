@@ -44,7 +44,9 @@ function resolveSourceRefAction(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChi
     case 'doc':
       return { kind: 'tab', tab: 'documents' };
     case 'vote':
-      return { kind: 'tab', tab: 'votes' };
+      // The drawer, not the generic Votes tab: ref.id carries the vote's own uid, and
+      // committee-overview.component.ts already owns vote-drawer lookup/toast handling.
+      return { kind: 'vote-drawer', voteUid: ref.id };
     case 'members':
       return { kind: 'tab', tab: 'members' };
     default:
