@@ -18,7 +18,7 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, extractBriefActio
   extractBriefActionItems: vi.fn(),
   valkeyGetJson: vi.fn(),
   valkeySetJson: vi.fn(),
-  buildCacheKey: vi.fn((briefUid: string, revision: number) => `weekly-brief-action-items:${briefUid}:${revision}`),
+  buildCacheKey: vi.fn((briefUid: string, revision: number): string | null => `weekly-brief-action-items:${briefUid}:${revision}`),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -305,14 +305,22 @@ describe('WeeklyBriefService', () => {
       expect(valkeySetJson).toHaveBeenCalledWith(expect.any(String), [], 604800);
     });
 
-    it('degrades to {items: []} when AiService throws, logging via warning, not error', async () => {
+    it('degrades to {items: []} when AiService throws, logging via warning (with err), not error — and does NOT cache the failure', async () => {
       extractBriefActionItems.mockRejectedValue(new Error('AI service not configured'));
 
       const result = await service.getActionItems(req, 'committee-1');
 
       expect(result).toEqual({ items: [] });
-      expect(logger.warning).toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
       expect(logger.error).not.toHaveBeenCalled();
+      // A transient failure must not be cached as if it were a legitimate empty extraction —
+      // that would pin this brief revision to zero items for the full TTL.
+      expect(valkeySetJson).not.toHaveBeenCalled();
     });
 
     it('returns {items: []} without calling AiService when the brief is not in a shareable (terminal readable) state', async () => {
@@ -321,6 +329,17 @@ describe('WeeklyBriefService', () => {
       expect(result).toEqual({ items: [] });
       expect(extractBriefActionItems).not.toHaveBeenCalled();
       expect(buildCacheKey).not.toHaveBeenCalled();
+    });
+
+    it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid)', async () => {
+      buildCacheKey.mockReturnValueOnce(null);
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(valkeyGetJson).not.toHaveBeenCalled();
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      expect(valkeySetJson).not.toHaveBeenCalled();
     });
 
     it('truncates an extraction with more than WEEKLY_BRIEF_ACTION_ITEMS_MAX items to the cap', async () => {

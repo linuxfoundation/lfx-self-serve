@@ -158,6 +158,11 @@ export class CommitteeOverviewComponent {
   // reads recompute — mirrors pending-actions.component.ts's hiddenActionsVersion pattern.
   private readonly hiddenActionsVersion = signal(0);
 
+  // Loading state for the weekly-brief action-items fetch (LFXV2-3043) — folded into the "My
+  // Pending Actions" section's loading gate alongside votesLoading/surveysLoading so the section
+  // doesn't render empty-then-pop-in while a cache-miss AI extraction is in flight.
+  public briefActionItemsLoading = signal(true);
+
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
   // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
   // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a
@@ -203,6 +208,12 @@ export class CommitteeOverviewComponent {
   // util (also used by committee-members.component.ts's votingRepCount).
   public votingRepsCount: Signal<number> = computed(() => countVotingReps(this.members()));
 
+  // Feature flag: WG Weekly Brief AI Assistant card. Declared ahead of briefActionItems below,
+  // which reads it as part of its fetch trigger — toObservable's async first emission means field
+  // order doesn't matter for correctness today, but a future synchronous source would throw on
+  // reading an as-yet-undeclared field, so this stays ahead of its first reader.
+  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
+
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
@@ -227,9 +238,6 @@ export class CommitteeOverviewComponent {
   // allows signal reads, computed values, and pipes in templates. Mirrors
   // my-groups-card-grid.component.ts's initCards() precomputed-view-model pattern.
   public activityFeedRows: Signal<ActivityFeedRow[]> = this.initActivityFeedRows();
-
-  // Feature flag: WG Weekly Brief AI Assistant card
-  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
@@ -571,15 +579,27 @@ export class CommitteeOverviewComponent {
   // Only fetched when weeklyBriefEnabled() — the same 'wg-weekly-brief' flag gating the brief card
   // itself. getActionItems() already degrades any transport failure to `{items: []}` internally, so
   // there's no separate error branch to handle here.
+  //
+  // The flag is folded into the source stream (not just read inside switchMap) so a flag
+  // transition re-triggers this pipeline — weeklyBriefEnabled() is a computed signal that only
+  // resolves once FeatureFlagService finishes initializing; if committee()'s first emission landed
+  // before that resolution, reading the flag only inside switchMap would take the disabled branch
+  // once and never re-evaluate, since committee() itself doesn't change again.
   private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
     return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        switchMap((c) => {
-          if (!this.weeklyBriefEnabled()) {
+      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() }))).pipe(
+        filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
+        switchMap(({ uid, enabled }) => {
+          if (!enabled) {
+            this.briefActionItemsLoading.set(false);
             return of<WeeklyBriefActionItem[]>([]);
           }
-          return this.weeklyBriefService.getActionItems(c.uid).pipe(map((response) => response.items));
+          this.briefActionItemsLoading.set(true);
+          return this.weeklyBriefService.getActionItems(uid).pipe(
+            map((response) => response.items),
+            finalize(() => this.briefActionItemsLoading.set(false))
+          );
         })
       ),
       { initialValue: [] }

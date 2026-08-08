@@ -9,10 +9,13 @@ import {
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
   NEWSLETTER_AI_MAX_TOKENS,
+  WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
+  WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
+  ExtractActionItemsRequest,
   ExtractActionItemsResponse,
   GenerateAgendaRequest,
   GenerateAgendaResponse,
@@ -190,11 +193,11 @@ export class AiService {
    * other AiService caller. The "extraction failures degrade silently" requirement (LFXV2-3043)
    * is the caller's (WeeklyBriefService.getActionItems) responsibility, not AiService's.
    */
-  public async extractBriefActionItems(req: Request, briefText: string): Promise<ExtractActionItemsResponse> {
+  public async extractBriefActionItems(req: Request, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse> {
     this.assertConfigured();
 
     const startTime = logger.startOperation(req, 'extract_brief_action_items', {
-      briefTextLength: briefText.length,
+      briefTextLength: request.brief_text.length,
     });
 
     try {
@@ -202,7 +205,7 @@ export class AiService {
         model: this.model,
         messages: [
           { role: 'system', content: AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT },
-          { role: 'user', content: `Weekly committee brief:\n"""\n${briefText.trim()}\n"""` },
+          { role: 'user', content: `Weekly committee brief:\n"""\n${request.brief_text.trim()}\n"""` },
         ],
         max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
         temperature: AI_REQUEST_CONFIG.TEMPERATURE,
@@ -223,11 +226,12 @@ export class AiService {
                       text: {
                         type: 'string',
                         description: 'Concise, actionable follow-up item text',
-                        maxLength: 300,
+                        maxLength: WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
                       },
                       suggested_owner_role: {
                         type: 'string',
                         description: 'Suggested owner role/persona for the item, when inferable (e.g. "chair", "maintainer")',
+                        maxLength: WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
                       },
                     },
                     required: ['text'],
@@ -274,11 +278,15 @@ export class AiService {
       throw new Error('Invalid items array in brief action items response');
     }
 
+    // The schema's maxLength values are a request to the model, not a guarantee about its
+    // response — clamp defensively here too, since these strings get cached for the full TTL
+    // and rendered into a fixed-layout Pending Actions row.
     const items = parsed.items
       .filter((item: unknown): item is { text: string; suggested_owner_role?: string } => !!item && typeof (item as { text?: unknown }).text === 'string')
       .map((item: { text: string; suggested_owner_role?: string }) => ({
-        text: item.text.trim(),
-        suggested_owner_role: typeof item.suggested_owner_role === 'string' ? item.suggested_owner_role.trim() : undefined,
+        text: item.text.trim().slice(0, WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH),
+        suggested_owner_role:
+          typeof item.suggested_owner_role === 'string' ? item.suggested_owner_role.trim().slice(0, WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH) : undefined,
       }))
       .slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX);
 

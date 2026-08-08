@@ -8,6 +8,7 @@ const COMMITTEE_ID = 'a0000000-0000-0000-0000-000000000001';
 const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted(() => ({
   weeklyBriefSvc: {
     getCurrentBrief: vi.fn(),
+    getActionItems: vi.fn(),
     generateBrief: vi.fn(),
     saveBrief: vi.fn(),
   },
@@ -272,6 +273,61 @@ describe('WeeklyBriefController', () => {
 
       expect(weeklyBriefSvc.getCurrentBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);
+    });
+  });
+
+  describe('getActionItems (LFXV2-3043)', () => {
+    it('propagates a service error via next instead of swallowing it', async () => {
+      const upstreamError = new Error('extraction failed');
+      weeklyBriefSvc.getActionItems.mockRejectedValue(upstreamError);
+      const next = vi.fn();
+
+      await controller.getActionItems(buildReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(upstreamError);
+    });
+
+    it('checks committee read access before fetching action items — same gate as getCurrentBrief, run before the service call', async () => {
+      weeklyBriefSvc.getActionItems.mockResolvedValue({ items: [] });
+
+      await controller.getActionItems(buildReq(), buildRes(), vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'get_weekly_brief_action_items');
+      const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
+      const fetchOrder = weeklyBriefSvc.getActionItems.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(fetchOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeRead via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeRead.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.getActionItems(buildReq(), buildRes(), next);
+
+      expect(weeklyBriefSvc.getActionItems).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
+    });
+
+    it('stops after validateUidParameter rejects an invalid committeeId, without checking access or calling the service', async () => {
+      const next = vi.fn();
+      const req = { params: { committeeId: '' }, body: {}, path: '/test', log: {} } as any;
+
+      await controller.getActionItems(req, buildRes(), next);
+
+      expect(assertCommitteeRead).not.toHaveBeenCalled();
+      expect(weeklyBriefSvc.getActionItems).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('returns the service result as JSON', async () => {
+      const items = [{ uid: 'a', text: 'Onboard the new member', source_brief_uid: 'b1', committee_uid: COMMITTEE_ID }];
+      weeklyBriefSvc.getActionItems.mockResolvedValue({ items });
+      const res = buildRes();
+
+      await controller.getActionItems(buildReq(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ items });
     });
   });
 });

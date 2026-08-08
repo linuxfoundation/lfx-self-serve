@@ -44,11 +44,16 @@ export class WeeklyBriefService {
    * The BFF already degrades extraction failures to an empty list (LFXV2-3043) — this
    * `catchError` is defense in depth against a transport-level failure (network error, 5xx)
    * reaching the widget, which per the ticket must never surface as an error on the page.
+   * Still logged (not silently swallowed) so a broken deploy is distinguishable from a
+   * genuinely quiet week in the browser console.
    */
   public getActionItems(committeeId: string): Observable<GetWeeklyBriefActionItemsResponse> {
-    return this.http
-      .get<GetWeeklyBriefActionItemsResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/action-items`)
-      .pipe(catchError(() => of({ items: [] })));
+    return this.http.get<GetWeeklyBriefActionItemsResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/action-items`).pipe(
+      catchError((err) => {
+        console.error('Failed to load weekly-brief action items', err);
+        return of({ items: [] });
+      })
+    );
   }
 
   /**

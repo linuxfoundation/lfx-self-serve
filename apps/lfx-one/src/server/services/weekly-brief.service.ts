@@ -216,10 +216,12 @@ export class WeeklyBriefService {
    * committee Overview page's "My Pending Actions" widget. Extraction runs lfx-one-side,
    * once per `(brief.uid, brief.revision)` pair, cached in Valkey — a cache hit skips the
    * AI call entirely. A brief that hasn't reached a terminal readable state
-   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet, or extraction itself failing (AI misconfigured,
-   * proxy error, malformed response), both degrade to an empty list — never an error. Per
-   * the ticket, an empty extraction (a genuinely quiet week) is also cached, so a quiet
-   * week doesn't re-hit the AI proxy on every page view either.
+   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet degrades to an empty list without calling the AI
+   * service at all. Extraction itself failing (AI misconfigured, proxy error, malformed
+   * response) also degrades to an empty list for THIS response — but is deliberately never
+   * cached (see the catch block below), so a transient failure doesn't pin the brief revision
+   * to zero items for the full TTL. Per the ticket, a legitimate empty extraction (a genuinely
+   * quiet week) IS cached, so a quiet week doesn't re-hit the AI proxy on every page view.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
@@ -228,16 +230,21 @@ export class WeeklyBriefService {
     }
 
     const cacheKey = buildWeeklyBriefActionItemsCacheKey(brief.uid, brief.revision);
-    if (cacheKey) {
-      const cached = await valkeyService.getJson<WeeklyBriefActionItem[]>(cacheKey, (value) => Array.isArray(value));
-      if (cached) {
-        return { items: cached };
-      }
+    if (!cacheKey) {
+      // brief.uid failed isFilterSafeIdentifier — should never happen for a real upstream uid.
+      // Fails closed by skipping extraction entirely rather than hitting the AI proxy uncached
+      // on every single read for a committee whose brief can never be cached.
+      return { items: [] };
     }
 
-    let items: WeeklyBriefActionItem[] = [];
+    const cached = await valkeyService.getJson<WeeklyBriefActionItem[]>(cacheKey, (value) => Array.isArray(value));
+    if (cached) {
+      return { items: cached };
+    }
+
+    let items: WeeklyBriefActionItem[];
     try {
-      const extraction = await this.aiService.extractBriefActionItems(req, brief.brief_text);
+      const extraction = await this.aiService.extractBriefActionItems(req, { brief_text: brief.brief_text });
       items = extraction.items.slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX).map((item, index) => ({
         uid: `${brief.uid}-${brief.revision}-${index}`,
         text: item.text,
@@ -248,17 +255,18 @@ export class WeeklyBriefService {
     } catch (error) {
       // Graceful degradation, not a system failure — WARN, not logger.error (logging-patterns.md).
       // The brief page must render normally with zero brief-sourced actions and no error toast.
+      // Returns directly instead of falling through to the setJson below — caching this failure
+      // as if it were a legitimate empty extraction would pin the brief revision to zero items
+      // for the full TTL, with no invalidation path short of the brief itself regenerating.
       logger.warning(req, 'get_weekly_brief_action_items', 'Action-item extraction failed, degrading to empty list', {
         committee_id: committeeId,
         brief_uid: brief.uid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
-      items = [];
+      return { items: [] };
     }
 
-    if (cacheKey) {
-      await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
-    }
+    await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
 
     return { items };
   }

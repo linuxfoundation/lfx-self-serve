@@ -2,7 +2,7 @@
 
 ## 🤖 Overview
 
-The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information) and **newsletter content** generation. The two public entry points are `generateMeetingAgenda` and `generateNewsletter`, and the service is consumed by the meetings, newsletters, and campaigns flows.
+The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
 
 ## 🏗 Architecture
 
@@ -19,7 +19,7 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 ### Core Components
 
-- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda` and `generateNewsletter`
+- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`
 - **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features; the campaigns flow consumes the same service
 - **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
@@ -81,6 +81,10 @@ export interface GenerateAgendaResponse {
 #### Generate Newsletter
 
 The service also exposes `generateNewsletter(req, request: GenerateNewsletterRequest): Promise<GenerateNewsletterResponse>` for AI newsletter drafting, consumed by `newsletter.controller.ts`. Its request/response contracts live in `@lfx-one/shared`, and the implementation mirrors the agenda path: the same `isAiConfigured()` guard, JSON-schema-validated response, and the parse → fallback strategy described below (with its own `buildNewsletterPrompt`/`extractNewsletter`).
+
+#### Extract Brief Action Items
+
+`extractBriefActionItems(req, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse>` (LFXV2-3043) reads a weekly brief's `brief_text` and extracts up to `WEEKLY_BRIEF_ACTION_ITEMS_MAX` concrete follow-up items (`{text, suggested_owner_role?}`), consumed by `WeeklyBriefService.getActionItems` — never called directly from a controller. It follows the same `isAiConfigured()`/structured-JSON-schema/throw-on-failure skeleton as the two methods above; unlike them, its caller (`WeeklyBriefService`) deliberately catches the throw and degrades to an empty item list rather than propagating an error to the brief page, and caches successful (including legitimately empty) extractions in Valkey per `(brief.uid, brief.revision)` so repeated reads of the same brief revision don't re-invoke the AI proxy.
 
 ### JSON Schema Validation
 
