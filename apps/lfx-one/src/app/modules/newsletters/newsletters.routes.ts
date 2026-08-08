@@ -47,4 +47,13 @@ export const NEWSLETTER_ROUTES: Routes = [
     loadComponent: () => import('./newsletter-analytics/newsletter-analytics.component').then((m) => m.NewsletterAnalyticsComponent),
     data: { preload: false },
   },
+  {
+    // Public "View Online" page for a sent newsletter edition (LFXV2-2579).
+    // No canActivate — unauthenticated visitors reach this route, matching
+    // its `auth: 'public'` classification in auth.middleware.ts. Access is
+    // gated entirely by the Go service (project_uid match + status=sent).
+    path: ':projectUid/:id/view',
+    loadComponent: () => import('./newsletter-public-view/newsletter-public-view.component').then((m) => m.NewsletterPublicViewComponent),
+    data: { preload: false },
+  },
 ];

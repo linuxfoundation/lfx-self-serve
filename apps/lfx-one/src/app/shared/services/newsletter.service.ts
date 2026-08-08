@@ -18,6 +18,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
+  PublicNewsletterView,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take } from 'rxjs';
@@ -68,6 +69,16 @@ export class NewsletterService {
 
   public getAnalytics(projectUid: string, newsletterUid: string): Observable<NewsletterAnalytics> {
     return this.http.get<NewsletterAnalytics>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics`).pipe(take(1));
+  }
+
+  /**
+   * Public "View Online" projection of a sent newsletter (LFXV2-2579). Hits the
+   * unauthenticated `/public/api/newsletters/:projectUid/:newsletterUid` route —
+   * no bearer token is attached or required, matching the route's `auth:
+   * 'public'` classification in auth.middleware.ts.
+   */
+  public getPublicView(projectUid: string, newsletterUid: string): Observable<PublicNewsletterView> {
+    return this.http.get<PublicNewsletterView>(`/public/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}`).pipe(take(1));
   }
 
   public listOptOuts(projectUid: string): Observable<NewsletterOptOutListResponse> {
