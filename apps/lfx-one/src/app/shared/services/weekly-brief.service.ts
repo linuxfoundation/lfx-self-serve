@@ -7,6 +7,7 @@ import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
   RateWeeklyBriefRequest,
+  RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
@@ -76,10 +77,10 @@ export class WeeklyBriefService {
    * up↔down — same request, new value). No `catchError` — the caller rolls back its own
    * optimistic UI state on failure.
    */
-  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating): Observable<{ rating: WeeklyBriefRating }> {
+  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating): Observable<RateWeeklyBriefResponse> {
     const body: RateWeeklyBriefRequest = { rating };
     return this.http
-      .post<{ rating: WeeklyBriefRating }>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, body)
+      .post<RateWeeklyBriefResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, body)
       .pipe(take(1));
   }
 

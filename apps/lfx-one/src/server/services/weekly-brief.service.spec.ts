@@ -13,14 +13,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
 // A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
 // upsert/clear round-trip behavior through the public API, not just "was called with X".
-const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, buildWeeklyBriefRatingCacheKeyMock } = vi.hoisted(() => {
+const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valkeyServiceMock, buildWeeklyBriefRatingCacheKeyMock } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
+  const valkeyServiceMock = {
+    getJson: vi.fn(async (key: string) => (valkeyStore.has(key) ? valkeyStore.get(key) : null)),
+    setJson: vi.fn(async (key: string, value: unknown) => {
+      valkeyStore.set(key, value);
+      return true;
+    }),
+    del: vi.fn(async (key: string) => valkeyStore.delete(key)),
+  };
   return {
     proxyRequest: vi.fn(),
     proxyRequestWithResponse: vi.fn(),
     MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
     valkeyStore,
-    buildWeeklyBriefRatingCacheKeyMock: vi.fn((briefUid: string, revision: number, username: string) => `${briefUid}:${revision}:${username}`),
+    valkeyServiceMock,
+    // 'unsafe' is a sentinel this spec uses to exercise the fail-closed null-key branch —
+    // mirrors session-store.service.spec.ts's 'unsafe' → null convention.
+    buildWeeklyBriefRatingCacheKeyMock: vi.fn((briefUid: string, revision: number, username: string) =>
+      username === 'unsafe' ? null : `${briefUid}:${revision}:${username}`
+    ),
   };
 });
 
@@ -34,14 +47,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 }));
 vi.mock('./valkey.service', () => ({
   buildWeeklyBriefRatingCacheKey: buildWeeklyBriefRatingCacheKeyMock,
-  valkeyService: {
-    getJson: vi.fn(async (key: string) => (valkeyStore.has(key) ? valkeyStore.get(key) : null)),
-    setJson: vi.fn(async (key: string, value: unknown) => {
-      valkeyStore.set(key, value);
-      return true;
-    }),
-    del: vi.fn(async (key: string) => valkeyStore.delete(key)),
-  },
+  valkeyService: valkeyServiceMock,
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -406,7 +412,7 @@ describe('WeeklyBriefService', () => {
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBeNull();
     });
 
-    it('rateBrief logs a rating_recorded event carrying prompt_version/model/revision attribution', async () => {
+    it('rateBrief logs a rating_recorded event carrying username/prompt_version/model/revision attribution and no prior rating on a first-time rate', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
 
@@ -422,12 +428,29 @@ describe('WeeklyBriefService', () => {
           revision: brief.revision,
           prompt_version: brief.prompt_version,
           model: brief.model,
+          username: 'alice',
+          previous_rating: null,
           rating: 'up',
         })
       );
     });
 
-    it('clearBriefRating logs a rating_cleared event', async () => {
+    it('rateBrief logs the prior value as previous_rating when switching (so offline analysis can net re-rates instead of over-counting)', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'down');
+
+      expect(logger.info).toHaveBeenCalledWith(
+        userReq,
+        'rating_recorded',
+        expect.any(String),
+        expect.objectContaining({ username: 'alice', previous_rating: 'up', rating: 'down' })
+      );
+    });
+
+    it('clearBriefRating logs a rating_cleared event carrying username and the previous rating', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
@@ -438,7 +461,39 @@ describe('WeeklyBriefService', () => {
         userReq,
         'rating_cleared',
         expect.any(String),
-        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid, revision: brief.revision })
+        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid, revision: brief.revision, username: 'alice', previous_rating: 'up' })
+      );
+    });
+
+    it('logs a rating_persist_failed warning (but still succeeds) when the Valkey write does not persist — e.g. VALKEY_URL unset in this deployment', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      valkeyServiceMock.setJson.mockResolvedValueOnce(false);
+
+      const result = await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      expect(result).toEqual({ rating: 'up' });
+      expect(logger.warning).toHaveBeenCalledWith(
+        userReq,
+        'rating_persist_failed',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid })
+      );
+    });
+
+    it('logs a rating_persist_failed warning when the Valkey clear does not persist', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      valkeyServiceMock.del.mockResolvedValueOnce(false);
+
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
+
+      expect(logger.warning).toHaveBeenCalledWith(
+        userReq,
+        'rating_persist_failed',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid })
       );
     });
 
@@ -446,11 +501,27 @@ describe('WeeklyBriefService', () => {
       await expect(service.rateBrief(userReq, 'committee-1', 'stale-uid', 'up')).rejects.toMatchObject({ statusCode: 404 });
     });
 
+    it('rateBrief rejects a brief that is not in a shareable state (generating/error/empty) — LFXV2-3042 scope is generated/edited/approved only', async () => {
+      const initial = await service.getCurrentBrief(userReq, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID);
+      expect(initial.brief?.state).toBe('error');
+
+      await expect(service.rateBrief(userReq, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, initial.brief!.uid, 'up')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+
     it('rateBrief throws (401) when no resolvable user identity is available, instead of writing an unscoped rating', async () => {
       const anonReq = {} as unknown as Request;
       const initial = await service.getCurrentBrief(anonReq, 'committee-1');
 
       await expect(service.rateBrief(anonReq, 'committee-1', initial.brief!.uid, 'up')).rejects.toMatchObject({ statusCode: 401 });
+    });
+
+    it('rateBrief throws (400) when the resolved identity cannot build a safe rating key (defense-in-depth — not reachable via normal auth)', async () => {
+      const unsafeReq = { oidc: { user: { nickname: 'unsafe' } } } as unknown as Request;
+      const initial = await service.getCurrentBrief(unsafeReq, 'committee-1');
+
+      await expect(service.rateBrief(unsafeReq, 'committee-1', initial.brief!.uid, 'up')).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it('getCurrentBrief omits caller_rating when no user identity is resolvable (fails soft, not with an error)', async () => {

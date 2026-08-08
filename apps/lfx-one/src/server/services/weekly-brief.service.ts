@@ -14,6 +14,7 @@ import {
   GenerateWeeklyBriefResponse,
   Newsletter,
   NewsletterSendResult,
+  RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
@@ -33,6 +34,11 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NewsletterService } from './newsletter.service';
 import { buildWeeklyBriefRatingCacheKey, valkeyService } from './valkey.service';
+
+/** Shape guard for a stored rating cache entry — shared by the read (`withCallerRating`) and write (`rateBrief`/`clearBriefRating`, for the `previous_rating` log field) paths so a corrupt/legacy entry degrades to a miss in both. */
+function isStoredRating(value: unknown): value is RateWeeklyBriefResponse {
+  return !!value && typeof value === 'object' && ((value as { rating?: unknown }).rating === 'up' || (value as { rating?: unknown }).rating === 'down');
+}
 
 /**
  * HTML-escapes a plain-text string, then converts blank-line-separated
@@ -218,22 +224,35 @@ export class WeeklyBriefService {
    * the new revision starts unrated (never carries the old rating forward).
    *
    * Valkey is a fail-soft, TTL cache, not a system of record — a lost write here only degrades
-   * the "you already rated this" UI indicator on a future load. The durable analytics signal is
-   * the `rating_recorded` log line below, which flows through the existing Pino → CloudWatch
-   * pipeline for offline rating-by-prompt_version analysis.
+   * the "you already rated this" UI indicator on a future load, logged as a warning so it's
+   * operator-visible rather than silent. The durable analytics signal is the `rating_recorded`
+   * log line below (carrying `username` and the prior value, so re-rates/switches can be
+   * deduplicated per caller during offline rating-by-prompt_version analysis instead of each
+   * toggle over-counting as a distinct vote), which flows through the existing Pino → CloudWatch
+   * pipeline.
    */
-  public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<{ rating: WeeklyBriefRating }> {
+  public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<RateWeeklyBriefResponse> {
     const brief = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
     const username = this.requireUsername(req, 'rate_weekly_brief');
     const key = this.requireRatingKey(brief.uid, brief.revision, username, 'rate_weekly_brief');
 
-    await valkeyService.setJson(key, { rating }, VALKEY_CACHE.WEEKLY_BRIEF_RATING_TTL_SECONDS);
+    const previous = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
+    const persisted = await valkeyService.setJson(key, { rating }, VALKEY_CACHE.WEEKLY_BRIEF_RATING_TTL_SECONDS);
+    if (!persisted) {
+      logger.warning(req, 'rating_persist_failed', 'Weekly brief rating was accepted but not persisted to Valkey — will not survive a reload', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        revision: brief.revision,
+      });
+    }
     logger.info(req, 'rating_recorded', 'Weekly brief rating recorded', {
       committee_id: committeeId,
       brief_uid: brief.uid,
       revision: brief.revision,
       prompt_version: brief.prompt_version,
       model: brief.model,
+      username,
+      previous_rating: previous?.rating ?? null,
       rating,
     });
 
@@ -251,13 +270,23 @@ export class WeeklyBriefService {
     const username = this.requireUsername(req, 'clear_weekly_brief_rating');
     const key = this.requireRatingKey(brief.uid, brief.revision, username, 'clear_weekly_brief_rating');
 
-    await valkeyService.del(key);
+    const previous = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
+    const persisted = await valkeyService.del(key);
+    if (!persisted) {
+      logger.warning(req, 'rating_persist_failed', 'Weekly brief rating clear was accepted but not persisted to Valkey', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        revision: brief.revision,
+      });
+    }
     logger.info(req, 'rating_cleared', 'Weekly brief rating cleared', {
       committee_id: committeeId,
       brief_uid: brief.uid,
       revision: brief.revision,
       prompt_version: brief.prompt_version,
       model: brief.model,
+      username,
+      previous_rating: previous?.rating ?? null,
     });
   }
 
@@ -605,11 +634,7 @@ export class WeeklyBriefService {
     if (!username) return response;
     const key = buildWeeklyBriefRatingCacheKey(response.brief.uid, response.brief.revision, username);
     if (!key) return response;
-    const stored = await valkeyService.getJson<{ rating: WeeklyBriefRating }>(
-      key,
-      (value): value is { rating: WeeklyBriefRating } =>
-        !!value && typeof value === 'object' && ((value as { rating?: unknown }).rating === 'up' || (value as { rating?: unknown }).rating === 'down')
-    );
+    const stored = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     return { ...response, caller_rating: stored?.rating ?? null };
   }
 
@@ -618,14 +643,18 @@ export class WeeklyBriefService {
    * brief (rather than trusting anything client-supplied beyond `briefUid`) so `revision`/
    * `prompt_version`/`model` in the rating log are always the server's own values — the caller
    * never supplies a revision at all, so there's no client-side value that could ever go stale;
-   * a rating always lands on whatever revision is current at write time. Only guards that
-   * `briefUid` still names the committee's current brief — e.g. a window rollover produced a new
-   * brief_uid between page load and tap — same "existence, not the write itself" gap this closes
-   * as `assertCommitteeRead` closes for reads.
+   * a rating always lands on whatever revision is current at write time. Guards that `briefUid`
+   * still names the committee's current brief — e.g. a window rollover produced a new brief_uid
+   * between page load and tap — same "existence, not the write itself" gap this closes as
+   * `assertCommitteeRead` closes for reads. Also requires the brief be in a shareable state
+   * (`generated`/`edited`/`approved`), same set and same 404 shape `shareBrief` already uses for
+   * "no reviewable content to act on" — the UI only ever renders the rating control in those
+   * states, but a direct API call must not be able to record a rating against a brief that's
+   * still `generating`, `error`, or `empty`.
    */
   private async resolveRatableBrief(req: Request, committeeId: string, briefUid: string, operation: string): Promise<WeeklyBrief> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
-    if (!brief || brief.uid !== briefUid) {
+    if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });
     }
     return brief;

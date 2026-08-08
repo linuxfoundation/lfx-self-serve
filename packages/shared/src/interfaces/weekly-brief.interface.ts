@@ -93,6 +93,16 @@ export interface RateWeeklyBriefRequest {
 }
 
 /**
+ * Response body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating` — also the
+ * shape persisted in the caller's Valkey rating-cache entry (`buildWeeklyBriefRatingCacheKey`
+ * / `weekly-brief.service.ts`'s `isStoredRating` guard), since the two are structurally the same
+ * "what did they rate it" record.
+ */
+export interface RateWeeklyBriefResponse {
+  rating: WeeklyBriefRating;
+}
+
+/**
  * Matches upstream's `GenerateWeeklyBriefRequestBody` exactly — `force` is
  * the only field the Go service accepts. There is no client-supplied
  * revision: conflict detection is entirely server-side (409
