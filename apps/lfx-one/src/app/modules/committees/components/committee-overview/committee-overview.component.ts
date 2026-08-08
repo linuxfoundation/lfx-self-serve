@@ -54,7 +54,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -163,6 +163,17 @@ export class CommitteeOverviewComponent {
   // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a
   // context switch that briefly empties the list doesn't trigger a spurious fade before the new data arrives.
   // Template-only state — protected, matching pending-actions.component.ts.
+  //
+  // This machinery was built around votes/surveys resolving together as a unit. brief action
+  // items (LFXV2-3043) are a third, independently-timed source feeding the same
+  // pendingActionItems() computed, with no dedicated loading gate of its own (see
+  // initBriefActionItems() — deliberately silent per the ticket's "extraction failures degrade
+  // silently" framing). Two known, accepted consequences: (1) brief items can pop in without a
+  // skeleton if votes/surveys have already settled empty; (2) in the rare case where the section
+  // has already faded out (last vote/survey just resolved) and a slow AI extraction resolves with
+  // items afterward, the section reappears rather than staying collapsed. Both are narrow,
+  // low-frequency, and cosmetic (no data-correctness impact) — not worth the added state-machine
+  // complexity of gating fade commitment on all three sources.
   protected readonly isSectionFading = signal(false);
   protected readonly isSectionHidden = signal(false);
   protected readonly isSectionGracePending = signal(false);
@@ -580,13 +591,26 @@ export class CommitteeOverviewComponent {
   // resolves once FeatureFlagService finishes initializing; if committee()'s first emission landed
   // before that resolution, reading the flag only inside switchMap would take the disabled branch
   // once and never re-evaluate, since committee() itself doesn't change again.
+  //
+  // startWith([]) clears the previous committee's items synchronously on every uid change —
+  // without it, toSignal retains the last-emitted array until the new fetch resolves, so a
+  // committee switch could briefly re-badge committee A's AI-extracted items with committee B's
+  // name (initPendingActionItems() stamps `badge: this.committee().name` onto whatever
+  // briefActionItems() currently holds). Safe against a spurious fade: votesLoading()/surveysLoading()
+  // are already true for the new committee at this point (both reset synchronously in their own
+  // switchMap), so the section's outer visibility gate stays satisfied through this transition.
   private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
     return toSignal(
       toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() }))).pipe(
         filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
         distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
         switchMap(({ uid, enabled }) =>
-          enabled ? this.weeklyBriefService.getActionItems(uid).pipe(map((response) => response.items)) : of<WeeklyBriefActionItem[]>([])
+          enabled
+            ? this.weeklyBriefService.getActionItems(uid).pipe(
+                map((response) => response.items),
+                startWith<WeeklyBriefActionItem[]>([])
+              )
+            : of<WeeklyBriefActionItem[]>([])
         )
       ),
       { initialValue: [] }
