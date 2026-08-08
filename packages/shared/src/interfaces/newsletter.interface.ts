@@ -99,9 +99,45 @@ export interface NewsletterSendResult {
   failures?: NewsletterSendFailure[];
 }
 
+export interface NewsletterPublication {
+  id: string;
+  project_uid: string;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  wrapper_content: unknown;
+  template_set_id: string | null;
+  view_online_base: string | null;
+  created_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePublicationRequest {
+  slug: string;
+  name: string;
+  wrapper_content?: unknown;
+  template_set_id?: string | null;
+  view_online_base?: string | null;
+}
+
+export interface UpdatePublicationRequest {
+  name?: string;
+  wrapper_content?: unknown;
+  template_set_id?: string | null;
+  view_online_base?: string | null;
+}
+
+export interface NewsletterPublicationListResponse {
+  publications: NewsletterPublication[];
+  next_page_token?: string;
+}
+
 export interface Newsletter {
   id: string;
   project_uid: string;
+  publication_id: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -117,6 +153,7 @@ export interface Newsletter {
 }
 
 export interface CreateNewsletterRequest {
+  publication_id?: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -137,6 +174,7 @@ export interface NewsletterListItem extends Newsletter {
   // inline them.
   unique_opens?: number;
   open_rate?: number;
+  // publication_id is inherited from Newsletter
 }
 
 export interface NewsletterListResponse {
@@ -180,6 +218,7 @@ export interface MyNewsletter extends CommitteeNewsletter {
 export interface NewsletterListParams {
   status?: NewsletterStatus;
   page_token?: string;
+  publication_id?: string;
 }
 
 export interface NewsletterDailyOpens {
