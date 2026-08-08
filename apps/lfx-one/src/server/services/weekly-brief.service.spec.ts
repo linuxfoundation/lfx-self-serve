@@ -453,13 +453,13 @@ describe('WeeklyBriefService', () => {
           username: 'alice',
           client_revision: 1,
           previous_rating: null,
-          previous_rating_known: true,
+          rating_cache_enabled: true,
           rating: 'up',
         })
       );
     });
 
-    it('logs previous_rating_known: false when the cache is disabled, so offline dedup does not mistake "unknowable" for "genuinely unrated"', async () => {
+    it('logs rating_cache_enabled: false when the cache is disabled — the one case previous_rating: null can be confidently read as "unknowable", not "genuinely unrated"', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       valkeyServiceMock.isEnabled.mockReturnValue(false);
@@ -470,7 +470,7 @@ describe('WeeklyBriefService', () => {
         userReq,
         'rating_recorded',
         expect.any(String),
-        expect.objectContaining({ previous_rating: null, previous_rating_known: false })
+        expect.objectContaining({ previous_rating: null, rating_cache_enabled: false })
       );
     });
 

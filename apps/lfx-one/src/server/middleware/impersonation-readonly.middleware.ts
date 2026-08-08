@@ -16,7 +16,7 @@ import { isImpersonating } from '../utils/auth-helper';
 // 2. Writes that resolve identity via `getEffectiveUsername`/`getEffectiveSub` (impersonation-aware
 //    helpers that return the *target's* identity) land directly in the target's own store — the
 //    opposite mistake, writing into the wrong account in the other direction (e.g. weekly-brief
-//    rating.route.ts).
+//    rating — weekly-brief.route.ts).
 // Block every such write while impersonating; impersonated viewing/reads stay unaffected.
 export function blockDuringImpersonation(req: Request, _res: Response, next: NextFunction): void {
   if (!isImpersonating(req)) {
