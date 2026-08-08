@@ -209,12 +209,7 @@
           Hide the whole section when there are no pending actions (and nothing loading) so it doesn't steal page space.
           Stay mounted through the fade (isSectionFading) so the collapse animation can play before removal.
         -->
-        @if (
-          votesLoading() ||
-          surveysLoading() ||
-          briefActionItemsLoading() ||
-          (!isSectionHidden() && (pendingActionItems().length > 0 || isSectionGracePending() || isSectionFading()))
-        ) {
+        @if (votesLoading() || surveysLoading() || (!isSectionHidden() && (pendingActionItems().length > 0 || isSectionGracePending() || isSectionFading()))) {
           <section class="pending-actions-section" [class.is-fading]="isSectionFading()" data-testid="committee-overview-pending-actions-section">
             <div class="flex items-center gap-3 mb-6">
               <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
@@ -231,7 +226,7 @@
                   data-testid="committee-overview-pending-actions-view-all" />
               }
             </div>
-            @if (votesLoading() || surveysLoading() || (briefActionItemsLoading() && !pendingActionItems().length)) {
+            @if (votesLoading() || surveysLoading()) {
               <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200">
                 @for (i of [1, 2]; track i) {
                   <div class="flex items-center gap-4 px-4 py-3">
