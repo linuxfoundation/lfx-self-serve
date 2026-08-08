@@ -22,7 +22,14 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valk
       valkeyStore.set(key, value);
       return true;
     }),
-    del: vi.fn(async (key: string) => valkeyStore.delete(key)),
+    // Matches the real ValkeyService.del contract (valkey.service.ts): returns `true` for any
+    // non-throwing delete, regardless of whether the key existed — a DEL of an already-expired/
+    // absent key is still a success, not a fault. `mockResolvedValueOnce(false)` is how tests
+    // inject a genuine fault.
+    del: vi.fn(async (key: string) => {
+      valkeyStore.delete(key);
+      return true;
+    }),
   };
   return {
     proxyRequest: vi.fn(),
@@ -119,16 +126,14 @@ describe('WeeklyBriefService', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    // Resets call history (not implementations) on every vi.fn() in the file, including the
-    // `logger` spies and `valkeyServiceMock` — without this, a `logger.warning`/`.info` assertion
-    // in a later test can pass vacuously against a call an *earlier* test already recorded
-    // (general-code-reviewer + self-serve-code-reviewer, LFXV2-3042 fix-commit review: verified
-    // by mutation testing that the rating_persist_failed/clear test passed even with the
-    // production `if` branch stubbed out).
-    vi.clearAllMocks();
-    proxyRequest.mockReset();
-    proxyRequestWithResponse.mockReset();
-    valkeyServiceMock.isEnabled.mockReturnValue(true);
+    // Resets call history, drains any leftover `mockResolvedValueOnce` queue, and restores every
+    // vi.fn() in the file to its originally-given implementation (including the `logger` spies,
+    // `valkeyServiceMock`, and `isEnabled`'s default `true`) — without this, a `logger.warning`/
+    // `.info` assertion in a later test can pass vacuously against a call an *earlier* test
+    // already recorded, or inherit a leftover one-time override a prior test queued but never
+    // consumed. `vi.clearAllMocks()` alone resets call history but leaves both of those hazards
+    // open — verified empirically against this repo's Vitest version.
+    vi.resetAllMocks();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
     __resetMockBriefStateForTesting();
@@ -474,7 +479,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('logs a rating_persist_failed warning (but still succeeds) when the Valkey write does not persist — e.g. VALKEY_URL unset in this deployment', async () => {
+    it('logs a rating_persist_failed warning (but still succeeds) when an enabled Valkey write faults', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       valkeyServiceMock.setJson.mockResolvedValueOnce(false);
@@ -490,7 +495,7 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('logs a rating_persist_failed warning when the Valkey clear does not persist', async () => {
+    it('logs a rating_persist_failed warning when an enabled Valkey clear faults', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
@@ -506,13 +511,25 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('does not log rating_persist_failed when the cache is simply disabled (VALKEY_URL unset) rather than genuinely faulting — avoids alert fatigue on a documented supported mode', async () => {
+    it('does not log rating_persist_failed on rate when the cache is simply disabled (VALKEY_URL unset) rather than genuinely faulting — avoids alert fatigue on a documented supported mode', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       valkeyServiceMock.isEnabled.mockReturnValue(false);
       valkeyServiceMock.setJson.mockResolvedValueOnce(false);
 
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      expect(logger.warning).not.toHaveBeenCalledWith(userReq, 'rating_persist_failed', expect.any(String), expect.anything());
+    });
+
+    it('does not log rating_persist_failed on clear when the cache is simply disabled', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+      valkeyServiceMock.isEnabled.mockReturnValue(false);
+      valkeyServiceMock.del.mockResolvedValueOnce(false);
+
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
 
       expect(logger.warning).not.toHaveBeenCalledWith(userReq, 'rating_persist_failed', expect.any(String), expect.anything());
     });
