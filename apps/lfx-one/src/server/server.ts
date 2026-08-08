@@ -49,6 +49,7 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicNewslettersRouter from './routes/public-newsletters.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -311,6 +312,7 @@ app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
+app.use('/public/api/newsletters', publicNewslettersRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
 

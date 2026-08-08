@@ -54,4 +54,10 @@ export const NEWSLETTER_ROUTES: Routes = [
   // newsletterAccessGuard) — either mount would break the any-authenticated-user
   // access model. The reader is mounted directly in app.routes.ts, ahead of the
   // flat mount.
+  //
+  // The public "View Online" page (/newsletters/:projectUid/:id/view, LFXV2-2579)
+  // is likewise NOT a child here — it is mounted directly in app.routes.ts ahead
+  // of the authGuard root so anonymous recipients reach it without a login
+  // bounce. This mount sits behind lensRedirectGuard/newsletterAccessGuard, which
+  // would defeat that.
 ];

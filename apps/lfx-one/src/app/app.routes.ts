@@ -20,6 +20,17 @@ import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirec
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
 export const routes: Routes = [
+  // Public "View Online" newsletter edition (LFXV2-2579). Sibling of the
+  // authGuard'd root — and placed AHEAD of it — so an anonymous recipient who
+  // clicks the permalink from their mail client reaches it without being
+  // bounced to /login. It must NOT live under NEWSLETTER_ROUTES (which is
+  // mounted behind lensRedirectGuard/newsletterAccessGuard) nor the authGuard
+  // root. The exact 4-segment path wins over the greedy empty-path root; the Go
+  // service gates access (project_uid match + status=sent), so no client guard.
+  {
+    path: 'newsletters/:projectUid/:id/view',
+    loadComponent: () => import('./modules/newsletters/newsletter-public-view/newsletter-public-view.component').then((m) => m.NewsletterPublicViewComponent),
+  },
   {
     path: '',
     canActivate: [authGuard],

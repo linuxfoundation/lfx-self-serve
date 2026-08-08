@@ -18,6 +18,7 @@ import {
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTestSendPayload,
+  PublicNewsletterView,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -42,6 +43,22 @@ export class NewsletterServiceClient {
 
   public async getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
     return this.microserviceProxy.proxyRequest<Newsletter>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}`, 'GET');
+  }
+
+  /**
+   * Unauthenticated projection of a sent newsletter for the public "View
+   * Online" page. Backed entirely by the Go service's own gating (project_uid
+   * match + status=sent, else 404) — this call must never carry a bearer
+   * token; that is enforced by classifying the calling route as `auth:
+   * 'public'` in auth.middleware.ts, not by anything here.
+   */
+  public async getPublicView(req: Request, projectUid: string, newsletterUid: string): Promise<PublicNewsletterView> {
+    return this.microserviceProxy.proxyRequest<PublicNewsletterView>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/public`,
+      'GET'
+    );
   }
 
   public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {

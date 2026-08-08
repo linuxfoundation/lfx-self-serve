@@ -23,6 +23,13 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   { pattern: '/livez', type: 'api', auth: 'public' },
   { pattern: '/readyz', type: 'api', auth: 'public' },
 
+  // Public "View Online" newsletter projection (LFXV2-2579) — `public` (not `optional`) skips bearer
+  // extraction entirely, since the Go service alone gates access (project_uid match + status=sent).
+  // Must come BEFORE the broad `/public/api` row below, which would otherwise classify this as
+  // `optional` and still attempt token extraction. Anchored regex so `startsWith`-style matching
+  // can't fail-open onto an unrelated future `/public/api/newsletters-admin` route.
+  { pattern: /^\/public\/api\/newsletters\/[^/]+\/[^/]+\/?$/, type: 'api', auth: 'public' },
+
   // Public API routes - optional authentication with token benefits
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },
 
@@ -99,6 +106,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // or `/robots.txt-foo` (per `classifyRoute`'s string-pattern semantics on Line 84).
   { pattern: /^\/sitemap\.xml$/, type: 'ssr', auth: 'public' },
   { pattern: /^\/robots\.txt$/, type: 'ssr', auth: 'public' },
+
+  // Public "View Online" newsletter page (LFXV2-2579) — unauthenticated access to a sent newsletter
+  // edition. Anchored regex bounds the match to exactly `/newsletters/:projectUid/:id/view` so
+  // `startsWith` semantics can't fail-open onto `/newsletters/:projectUid/:id/edit` or the
+  // authenticated `/newsletters` list/manage routes, which must still require login.
+  { pattern: /^\/newsletters\/[^/]+\/[^/]+\/view\/?$/, type: 'ssr', auth: 'public' },
 
   // All other routes - Angular SSR routes requiring authentication
   { pattern: '/', type: 'ssr', auth: 'required' },

@@ -207,4 +207,62 @@ describe('authMiddleware route classification', () => {
 
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
+
+  // LFXV2-2579 — public "View Online" newsletter page and its backing API route.
+  // Both must be public (no login redirect / no 401) and must not fail-open onto
+  // sibling authenticated newsletter routes.
+
+  it('allows an anonymous GET to the public newsletter "View Online" SSR page', async () => {
+    const req = buildReq({ path: '/newsletters/project-123/nl-456/view' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('allows an anonymous GET to the public newsletter "View Online" API route', async () => {
+    const req = buildReq({ path: '/public/api/newsletters/project-123/nl-456' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('still redirects an anonymous GET to the authenticated newsletter edit route (no fail-open)', async () => {
+    const req = buildReq({ path: '/newsletters/project-123/nl-456/edit' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('still redirects an anonymous GET to the authenticated newsletter analytics route (no fail-open)', async () => {
+    const req = buildReq({ path: '/newsletters/project-123/nl-456/analytics' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('still redirects an anonymous GET to the authenticated "my newsletters" route (no fail-open)', async () => {
+    const req = buildReq({ path: '/newsletters/my' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
 });
