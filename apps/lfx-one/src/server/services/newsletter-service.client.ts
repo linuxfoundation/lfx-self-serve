@@ -52,6 +52,9 @@ export class NewsletterServiceClient {
     if (params.page_token) {
       query['page_token'] = params.page_token;
     }
+    if (params.publication_id) {
+      query['publication_id'] = params.publication_id;
+    }
     return this.microserviceProxy.proxyRequest<NewsletterListResponse>(
       req,
       'LFX_V2_SERVICE',
