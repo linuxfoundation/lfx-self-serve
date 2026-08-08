@@ -6,12 +6,13 @@ import { inject, Injectable } from '@angular/core';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
+  GetWeeklyBriefActionItemsResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { catchError, Observable, of, take } from 'rxjs';
 
 /**
  * Angular client for the WG Weekly Brief BFF (`/api/committees/:id/weekly-briefs/*`).
@@ -35,6 +36,19 @@ export class WeeklyBriefService {
    */
   public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
     return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`);
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs/action-items
+   *
+   * The BFF already degrades extraction failures to an empty list (LFXV2-3043) — this
+   * `catchError` is defense in depth against a transport-level failure (network error, 5xx)
+   * reaching the widget, which per the ticket must never surface as an error on the page.
+   */
+  public getActionItems(committeeId: string): Observable<GetWeeklyBriefActionItemsResponse> {
+    return this.http
+      .get<GetWeeklyBriefActionItemsResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/action-items`)
+      .pipe(catchError(() => of({ items: [] })));
   }
 
   /**

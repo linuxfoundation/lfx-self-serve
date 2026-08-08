@@ -36,6 +36,9 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 /** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
 
+/** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
+export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
+
 /**
  * Generation is async upstream (202/generating; the LLM call runs out-of-band) — the
  * card polls GET /current on this interval, up to this many attempts, until the brief

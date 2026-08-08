@@ -319,6 +319,17 @@ export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
   return `${keyPrefix()}:${VALKEY_CACHE.MEMBER_V1_MAPPING_NAMESPACE}:${memberUid}`;
 }
 
+/**
+ * Per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null (fail-closed → skip
+ * cache, extract directly) when the brief uid isn't filter-safe. Revision is part of the key
+ * (not a sub-resource) so a regenerated/re-edited brief naturally misses and re-extracts —
+ * there is no explicit invalidation path for this namespace.
+ */
+export function buildWeeklyBriefActionItemsCacheKey(briefUid: string, revision: number): string | null {
+  if (!isFilterSafeIdentifier(briefUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE}:${briefUid}:${revision}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

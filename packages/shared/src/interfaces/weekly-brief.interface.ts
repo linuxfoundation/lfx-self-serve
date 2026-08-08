@@ -110,3 +110,26 @@ export interface ShareWeeklyBriefResult {
   committee_name: string;
   total_recipients: number;
 }
+
+/**
+ * An AI-extracted follow-up item from a brief's `brief_text` (LFXV2-3043). Extraction runs
+ * lfx-one-side, once per `(source_brief_uid, revision)` pair, cached by the BFF — this record
+ * has no independent `revision` field because a new revision produces an entirely new cached
+ * set (and new `uid`s), not an update to this one.
+ */
+export interface WeeklyBriefActionItem {
+  /** Deterministic per cached revision: `${source_brief_uid}-${revision}-${index}` */
+  uid: string;
+  /** Short, actionable follow-up text */
+  text: string;
+  /** Suggested owner role/persona, when the model could infer one */
+  suggested_owner_role?: string;
+  /** The brief this item was extracted from */
+  source_brief_uid: string;
+  /** The committee the brief belongs to */
+  committee_uid: string;
+}
+
+export interface GetWeeklyBriefActionItemsResponse {
+  items: WeeklyBriefActionItem[];
+}

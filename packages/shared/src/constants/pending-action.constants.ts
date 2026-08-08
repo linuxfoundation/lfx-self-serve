@@ -15,6 +15,7 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   Agenda: 'secondary', // gray — informational read-before-meeting cue
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
+  BriefAction: 'secondary', // gray — AI-suggested follow-up, not a deadline-bound obligation
 };
 
 /** Per-type CTA button icon — conveys the action rather than the category. */
@@ -25,6 +26,7 @@ export const PENDING_ACTION_BUTTON_ICON: Record<PendingActionType, string> = {
   Agenda: 'fa-light fa-list',
   Submitted: 'fa-light fa-circle-check',
   Invitation: 'fa-light fa-user-plus',
+  BriefAction: 'fa-light fa-list-check',
 };
 
 /** Human-friendly display labels for the pending-action category tag. */
@@ -35,6 +37,7 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
   Agenda: 'Agenda',
   Submitted: 'Submitted',
   Invitation: 'Invitation',
+  BriefAction: 'From Weekly Brief',
 };
 
 /**

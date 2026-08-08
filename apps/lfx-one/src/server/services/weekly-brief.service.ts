@@ -4,6 +4,8 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  VALKEY_CACHE,
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
@@ -11,11 +13,13 @@ import {
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
+  GetWeeklyBriefActionItemsResponse,
   Newsletter,
   NewsletterSendResult,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
+  WeeklyBriefActionItem,
   WeeklyBriefCurrentResponse,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
@@ -26,10 +30,12 @@ import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundE
 import { getEffectiveEmail } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
+import { AiService } from './ai.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NewsletterService } from './newsletter.service';
+import { buildWeeklyBriefActionItemsCacheKey, valkeyService } from './valkey.service';
 
 /**
  * HTML-escapes a plain-text string, then converts blank-line-separated
@@ -170,6 +176,7 @@ export class WeeklyBriefService {
   private committeeService: CommitteeService = new CommitteeService();
   private newsletterService: NewsletterService = new NewsletterService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private aiService: AiService = new AiService();
 
   /**
    * GET /committees/:committeeId/weekly-briefs/current
@@ -200,6 +207,60 @@ export class WeeklyBriefService {
       `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
       'GET'
     );
+  }
+
+  /**
+   * GET /committees/:committeeId/weekly-briefs/action-items (LFXV2-3043)
+   *
+   * AI-extracted follow-up items from the current brief's `brief_text`, surfaced in the
+   * committee Overview page's "My Pending Actions" widget. Extraction runs lfx-one-side,
+   * once per `(brief.uid, brief.revision)` pair, cached in Valkey — a cache hit skips the
+   * AI call entirely. A brief that hasn't reached a terminal readable state
+   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet, or extraction itself failing (AI misconfigured,
+   * proxy error, malformed response), both degrade to an empty list — never an error. Per
+   * the ticket, an empty extraction (a genuinely quiet week) is also cached, so a quiet
+   * week doesn't re-hit the AI proxy on every page view either.
+   */
+  public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
+    const { brief } = await this.getCurrentBrief(req, committeeId);
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
+      return { items: [] };
+    }
+
+    const cacheKey = buildWeeklyBriefActionItemsCacheKey(brief.uid, brief.revision);
+    if (cacheKey) {
+      const cached = await valkeyService.getJson<WeeklyBriefActionItem[]>(cacheKey, (value) => Array.isArray(value));
+      if (cached) {
+        return { items: cached };
+      }
+    }
+
+    let items: WeeklyBriefActionItem[] = [];
+    try {
+      const extraction = await this.aiService.extractBriefActionItems(req, brief.brief_text);
+      items = extraction.items.slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX).map((item, index) => ({
+        uid: `${brief.uid}-${brief.revision}-${index}`,
+        text: item.text,
+        suggested_owner_role: item.suggested_owner_role,
+        source_brief_uid: brief.uid,
+        committee_uid: committeeId,
+      }));
+    } catch (error) {
+      // Graceful degradation, not a system failure — WARN, not logger.error (logging-patterns.md).
+      // The brief page must render normally with zero brief-sourced actions and no error toast.
+      logger.warning(req, 'get_weekly_brief_action_items', 'Action-item extraction failed, degrading to empty list', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      items = [];
+    }
+
+    if (cacheKey) {
+      await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
+    }
+
+    return { items };
   }
 
   /**

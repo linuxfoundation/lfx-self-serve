@@ -32,6 +32,7 @@ import {
   PendingActionItem,
   Survey,
   Vote,
+  WeeklyBriefActionItem,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
@@ -47,6 +48,8 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
+import { WeeklyBriefService } from '@services/weekly-brief.service';
+import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -92,6 +95,8 @@ export class CommitteeOverviewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly weeklyBriefService = inject(WeeklyBriefService);
+  private readonly hiddenActionsService = inject(HiddenActionsService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -149,6 +154,10 @@ export class CommitteeOverviewComponent {
   // server-merged fetch, no longer derived from four separate source-loading signals.
   public activityFeedLoading = signal(true);
 
+  // Bumped after a BriefAction dismiss (LFXV2-3043) so initPendingActionItems()'s isActionHidden()
+  // reads recompute — mirrors pending-actions.component.ts's hiddenActionsVersion pattern.
+  private readonly hiddenActionsVersion = signal(0);
+
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
   // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
   // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a
@@ -199,6 +208,10 @@ export class CommitteeOverviewComponent {
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
+  // AI-extracted weekly-brief action items (LFXV2-3043) — fetched only when weeklyBriefEnabled();
+  // the BFF itself degrades extraction failures to an empty list, and getActionItems() (the
+  // Angular client) adds a catchError fallback on top for transport-level failures.
+  public briefActionItems: Signal<WeeklyBriefActionItem[]> = this.initBriefActionItems();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
@@ -293,6 +306,11 @@ export class CommitteeOverviewComponent {
         this.selectedVote.set(vote);
         this.voteDrawerVisible.set(true);
       }
+    } else if (item.type === 'BriefAction') {
+      // Personal, per-user dismissal only (no cross-user state, no backend write) — same
+      // cookie-based mechanism the dashboard's pending-actions widget already uses.
+      this.hiddenActionsService.dismissAction(item);
+      this.hiddenActionsVersion.update((v) => v + 1);
     } else {
       this.tabNavigated.emit('surveys');
     }
@@ -550,6 +568,24 @@ export class CommitteeOverviewComponent {
     );
   }
 
+  // Only fetched when weeklyBriefEnabled() — the same 'wg-weekly-brief' flag gating the brief card
+  // itself. getActionItems() already degrades any transport failure to `{items: []}` internally, so
+  // there's no separate error branch to handle here.
+  private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
+    return toSignal(
+      toObservable(this.committee).pipe(
+        filter((c) => !!c?.uid),
+        switchMap((c) => {
+          if (!this.weeklyBriefEnabled()) {
+            return of<WeeklyBriefActionItem[]>([]);
+          }
+          return this.weeklyBriefService.getActionItems(c.uid).pipe(map((response) => response.items));
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
   private initPendingActionItems(): Signal<CommitteePendingActionRow[]> {
     return computed(() => {
       const voteItems: PendingActionItem[] = this.pendingVotes().map((vote) => ({
@@ -599,7 +635,21 @@ export class CommitteeOverviewComponent {
         buttonText: 'View',
         date: undefined,
       }));
-      return [...voteItems, ...surveyItems, ...respondedSurveyItems].map((item, index) => {
+      // Read hiddenActionsVersion() so a dismiss (handlePendingActionClick's BriefAction branch)
+      // forces this computed to recompute — isActionHidden() itself reads a cookie, not a signal.
+      this.hiddenActionsVersion();
+      const briefActionItems: PendingActionItem[] = this.briefActionItems()
+        .map((item) => ({
+          type: 'BriefAction' as const,
+          badge: this.committee().name,
+          text: item.text,
+          icon: 'fa-light fa-list-check',
+          severity: PENDING_ACTION_SEVERITY.BriefAction,
+          buttonText: 'Dismiss',
+          briefActionUid: item.uid,
+        }))
+        .filter((item) => !this.hiddenActionsService.isActionHidden(item));
+      return [...voteItems, ...surveyItems, ...respondedSurveyItems, ...briefActionItems].map((item, index) => {
         const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
         return { ...item, rowKey };
       });

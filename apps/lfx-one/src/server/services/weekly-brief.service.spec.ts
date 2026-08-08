@@ -11,18 +11,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // against the real constants module here — `vi.importActual` on a real, unmocked
 // `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
 // mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
-const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, extractBriefActionItems, valkeyGetJson, valkeySetJson, buildCacheKey } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
+  extractBriefActionItems: vi.fn(),
+  valkeyGetJson: vi.fn(),
+  valkeySetJson: vi.fn(),
+  buildCacheKey: vi.fn((briefUid: string, revision: number) => `weekly-brief-action-items:${briefUid}:${revision}`),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
+  AI_MODEL: 'mock-ai-model',
+  VALKEY_CACHE: { WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -48,12 +55,23 @@ vi.mock('./logger.service', () => ({
 vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
 vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
 vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
+// getActionItems' (LFXV2-3043) two collaborators — controlled per-test below.
+vi.mock('./ai.service', () => ({
+  AiService: class {
+    public extractBriefActionItems = extractBriefActionItems;
+  },
+}));
+vi.mock('./valkey.service', () => ({
+  buildWeeklyBriefActionItemsCacheKey: buildCacheKey,
+  valkeyService: { getJson: valkeyGetJson, setJson: valkeySetJson },
+}));
 
 import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { MicroserviceError } from '../errors';
 
+import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
@@ -93,6 +111,10 @@ describe('WeeklyBriefService', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
+    extractBriefActionItems.mockReset();
+    valkeyGetJson.mockReset().mockResolvedValue(null); // cache miss by default
+    valkeySetJson.mockReset().mockResolvedValue(true);
+    buildCacheKey.mockClear();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
     __resetMockBriefStateForTesting();
@@ -235,6 +257,78 @@ describe('WeeklyBriefService', () => {
         expect(error).toBeInstanceOf(MicroserviceError);
         expect((error as MicroserviceError).message).not.toMatch(/WEEKLY_BRIEF_BACKEND/);
       }
+    });
+  });
+
+  describe('getActionItems (LFXV2-3043)', () => {
+    beforeEach(() => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      delete process.env['NODE_ENV'];
+    });
+
+    it('caches extraction per revision — a second call for the same revision does not re-invoke AiService (cache hit)', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Onboard the new member' }] });
+
+      const first = await service.getActionItems(req, 'committee-1');
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(1);
+      expect(first.items).toHaveLength(1);
+
+      // Simulate the cache now holding what setJson was just called with.
+      const [, cachedValue] = valkeySetJson.mock.calls[0];
+      valkeyGetJson.mockResolvedValueOnce(cachedValue);
+
+      const second = await service.getActionItems(req, 'committee-1');
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(1); // still 1 — no re-extraction
+      expect(second.items).toEqual(first.items);
+    });
+
+    it('a new revision (regeneration) re-invokes AiService and returns new items', async () => {
+      extractBriefActionItems.mockResolvedValueOnce({ items: [{ text: 'Revision 1 item' }] });
+      const before = await service.getActionItems(req, 'committee-1');
+      expect(before.items[0].text).toBe('Revision 1 item');
+
+      await service.saveBrief(req, 'committee-1', { brief_text: 'edited text', revision: 1 }); // bumps revision 1 -> 2
+
+      extractBriefActionItems.mockResolvedValueOnce({ items: [{ text: 'Revision 2 item' }] });
+      const after = await service.getActionItems(req, 'committee-1');
+
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(2);
+      expect(after.items[0].text).toBe('Revision 2 item');
+    });
+
+    it('an empty extraction is cached and returned as {items: []} — not an error', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [] });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(valkeySetJson).toHaveBeenCalledWith(expect.any(String), [], 604800);
+    });
+
+    it('degrades to {items: []} when AiService throws, logging via warning, not error', async () => {
+      extractBriefActionItems.mockRejectedValue(new Error('AI service not configured'));
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(logger.warning).toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('returns {items: []} without calling AiService when the brief is not in a shareable (terminal readable) state', async () => {
+      const result = await service.getActionItems(req, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID);
+
+      expect(result).toEqual({ items: [] });
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      expect(buildCacheKey).not.toHaveBeenCalled();
+    });
+
+    it('truncates an extraction with more than WEEKLY_BRIEF_ACTION_ITEMS_MAX items to the cap', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: Array.from({ length: 8 }, (_, i) => ({ text: `Item ${i}` })) });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items).toHaveLength(5);
     });
   });
 

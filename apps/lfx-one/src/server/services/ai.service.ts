@@ -3,14 +3,17 @@
 
 import {
   AI_AGENDA_SYSTEM_PROMPT,
+  AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT,
   AI_MODEL,
   AI_NEWSLETTER_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
   NEWSLETTER_AI_MAX_TOKENS,
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
+  ExtractActionItemsResponse,
   GenerateAgendaRequest,
   GenerateAgendaResponse,
   GenerateNewsletterRequest,
@@ -178,6 +181,108 @@ export class AiService {
       logger.error(req, 'generate_newsletter', startTime, error);
       throw new Error('Failed to generate newsletter');
     }
+  }
+
+  /**
+   * Extracts actionable follow-up items from a weekly brief's `brief_text`. Follows the same
+   * assertConfigured/startOperation/try-throw skeleton as generateMeetingAgenda and
+   * generateNewsletter — this method still throws on misconfiguration or failure like every
+   * other AiService caller. The "extraction failures degrade silently" requirement (LFXV2-3043)
+   * is the caller's (WeeklyBriefService.getActionItems) responsibility, not AiService's.
+   */
+  public async extractBriefActionItems(req: Request, briefText: string): Promise<ExtractActionItemsResponse> {
+    this.assertConfigured();
+
+    const startTime = logger.startOperation(req, 'extract_brief_action_items', {
+      briefTextLength: briefText.length,
+    });
+
+    try {
+      const chatRequest: OpenAIChatRequest = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT },
+          { role: 'user', content: `Weekly committee brief:\n"""\n${briefText.trim()}\n"""` },
+        ],
+        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
+        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'brief_action_items',
+            description: 'Actionable follow-up items extracted from a weekly committee brief',
+            schema: {
+              type: 'object',
+              properties: {
+                items: {
+                  type: 'array',
+                  maxItems: WEEKLY_BRIEF_ACTION_ITEMS_MAX,
+                  items: {
+                    type: 'object',
+                    properties: {
+                      text: {
+                        type: 'string',
+                        description: 'Concise, actionable follow-up item text',
+                        maxLength: 300,
+                      },
+                      suggested_owner_role: {
+                        type: 'string',
+                        description: 'Suggested owner role/persona for the item, when inferable (e.g. "chair", "maintainer")',
+                      },
+                    },
+                    required: ['text'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['items'],
+              additionalProperties: false,
+            },
+          },
+          strict: true,
+        },
+      };
+
+      const response = await this.makeAiRequest(chatRequest);
+      const result = this.extractBriefActionItemsFromResponse(response);
+
+      logger.success(req, 'extract_brief_action_items', startTime, {
+        itemCount: result.items.length,
+      });
+
+      return result;
+    } catch (error) {
+      logger.error(req, 'extract_brief_action_items', startTime, error);
+      throw new Error('Failed to extract brief action items');
+    }
+  }
+
+  private extractBriefActionItemsFromResponse(response: OpenAIChatResponse): ExtractActionItemsResponse {
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error('No brief action items response generated');
+    }
+
+    const content = response.choices[0].message.content;
+
+    if (!content || content.trim().length === 0) {
+      throw new Error('Empty brief action items response generated');
+    }
+
+    const parsed = JSON.parse(content.trim());
+
+    if (!Array.isArray(parsed.items)) {
+      throw new Error('Invalid items array in brief action items response');
+    }
+
+    const items = parsed.items
+      .filter((item: unknown): item is { text: string; suggested_owner_role?: string } => !!item && typeof (item as { text?: unknown }).text === 'string')
+      .map((item: { text: string; suggested_owner_role?: string }) => ({
+        text: item.text.trim(),
+        suggested_owner_role: typeof item.suggested_owner_role === 'string' ? item.suggested_owner_role.trim() : undefined,
+      }))
+      .slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX);
+
+    return { items };
   }
 
   private buildNewsletterPrompt(request: GenerateNewsletterRequest): string {

@@ -12,6 +12,9 @@ const weeklyBriefController = new WeeklyBriefController();
 // GET /committees/:committeeId/weekly-briefs/current - get the current WG weekly brief
 router.get('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.getCurrentBrief(req, res, next));
 
+// GET /committees/:committeeId/weekly-briefs/action-items - AI-extracted action items for the current brief
+router.get('/:committeeId/weekly-briefs/action-items', (req, res, next) => weeklyBriefController.getActionItems(req, res, next));
+
 // POST /committees/:committeeId/weekly-briefs/generate - generate (or regenerate) the current brief
 router.post('/:committeeId/weekly-briefs/generate', (req, res, next) => weeklyBriefController.generateBrief(req, res, next));
 

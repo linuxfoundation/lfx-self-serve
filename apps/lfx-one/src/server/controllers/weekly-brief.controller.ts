@@ -141,6 +141,45 @@ export class WeeklyBriefController {
   }
 
   /**
+   * GET /api/committees/:committeeId/weekly-briefs/action-items
+   *
+   * Gated by `assertCommitteeRead` (committee#auditor) — same gate as getCurrentBrief, since
+   * this is a read of brief-derived content, not a new privilege. Extraction failures degrade
+   * to an empty list inside `WeeklyBriefService.getActionItems` (LFXV2-3043) — this controller
+   * never sees an extraction error as distinct from "no items".
+   */
+  public async getActionItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'get_weekly_brief_action_items', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'get_weekly_brief_action_items',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'get_weekly_brief_action_items');
+
+      const result = await this.weeklyBriefService.getActionItems(req, committeeId);
+
+      logger.success(req, 'get_weekly_brief_action_items', startTime, {
+        committee_id: committeeId,
+        item_count: result.items.length,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/committees/:committeeId/weekly-briefs/generate
    *
    * Gated by `assertCommitteeWrite` (committee#writer) — same missing-authorization gap as

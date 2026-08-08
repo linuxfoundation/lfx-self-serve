@@ -126,6 +126,32 @@ Respond with a JSON object matching the provided schema exactly:
 Do not include any text outside the JSON object.`;
 
 /**
+ * System prompt for AI weekly-brief action-item extraction.
+ *
+ * Extraction runs once per brief revision (cached by the BFF) — empty extraction is a
+ * valid, common outcome for a quiet week, not a failure. The prompt asks for structured
+ * output (a JSON items array) matching ExtractActionItemsResponse, enforced via the
+ * request's response_format json_schema, not free text.
+ */
+export const AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT = `You are an assistant that reads a weekly committee brief and extracts concrete, actionable follow-up items for committee members — turning read-only prose into a short personal checklist.
+
+Key principles:
+- Only extract items that describe something a person could actually go do (e.g. "onboard the new member", "review the proposed charter change") — not summaries, announcements, or background context.
+- Each item should be a short, specific, imperative phrase (e.g. "Onboard the new member from Acme Corp"), not a restatement of a whole paragraph.
+- If you can infer who would naturally own an item (e.g. "chair", "maintainer", "ED"), include it as suggested_owner_role. Omit it when unclear — never guess a specific person's name.
+- Extract at most 5 items, prioritizing the most concrete and time-sensitive ones.
+- Many briefs — especially a quiet week with no notable activity — will have zero actionable items. Returning an empty items array is correct and expected; do not invent items to avoid an empty result.
+
+You must respond with a valid JSON object in this exact format:
+{
+  "items": [
+    { "text": "string, a concise actionable follow-up", "suggested_owner_role": "string, optional" }
+  ]
+}
+
+Do not include any text outside the JSON object.`;
+
+/**
  * AI model configuration
  */
 export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
