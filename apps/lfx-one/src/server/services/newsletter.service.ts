@@ -15,6 +15,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
+  PublicNewsletterView,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -112,6 +113,10 @@ export class NewsletterService {
 
   public getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid);
+  }
+
+  public getPublicView(req: Request, projectUid: string, newsletterUid: string): Promise<PublicNewsletterView> {
+    return this.newsletterClient.getPublicView(req, projectUid, newsletterUid);
   }
 
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {

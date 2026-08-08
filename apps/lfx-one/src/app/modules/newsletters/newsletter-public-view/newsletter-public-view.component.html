@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6" data-testid="newsletter-public-view">
+  @if (loading()) {
+    <div class="flex flex-col gap-4">
+      <p-skeleton width="60%" height="2rem"></p-skeleton>
+      <p-skeleton width="30%" height="1rem"></p-skeleton>
+      <p-skeleton width="100%" height="24rem"></p-skeleton>
+    </div>
+  } @else if (loadError(); as err) {
+    <lfx-empty-state icon="fa-light fa-envelope" title="Could not load newsletter" [subtitle]="err"></lfx-empty-state>
+  } @else if (view(); as v) {
+    <div class="flex flex-col gap-4">
+      <p class="text-sm text-gray-500" data-testid="newsletter-public-view-sent-at">Sent {{ v.sent_at | date: 'MMM d, y, h:mm a' }}</p>
+      <lfx-newsletter-preview [subject]="v.subject" [bodyHtml]="v.body_html" [displayName]="v.project_name" />
+    </div>
+  }
+</div>

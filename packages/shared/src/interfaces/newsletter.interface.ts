@@ -232,6 +232,18 @@ export interface NewsletterChartData {
   datasets: NewsletterChartDataset[];
 }
 
+/**
+ * Response of GET …/newsletters/{newsletter_uid}/public: a deliberately narrow,
+ * unauthenticated projection of a sent newsletter. Never includes `id`,
+ * `committee_uids`, `ed_reply_email`, `created_by`, or `version`.
+ */
+export interface PublicNewsletterView {
+  subject: string;
+  body_html: string;
+  project_name: string;
+  sent_at: string;
+}
+
 export interface NewsletterOptOut {
   id: string;
   email: string;
