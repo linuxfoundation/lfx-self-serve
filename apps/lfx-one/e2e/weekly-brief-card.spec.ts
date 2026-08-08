@@ -602,9 +602,10 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
       await route.fallback();
     });
     // '**/api/votes*' above only matches the list endpoint — Playwright's `*` doesn't cross
-    // `/`, so it can't also cover the drawer's own by-id fetches (getVoteById, getVoteResults)
-    // once it opens; without this, those escape to the live dev backend.
-    await page.route('**/api/votes/src-vote-1*', async (route) => {
+    // `/`, so it can't also cover the drawer's own by-id fetches (getVote, getVoteResults,
+    // getMyVoteResponse) once it opens; without a trailing `**` here (which does cross `/`),
+    // those would escape to the live dev backend.
+    await page.route('**/api/votes/src-vote-1**', async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;

@@ -312,15 +312,16 @@ export class CommitteeOverviewComponent {
   }
 
   public handlePendingActionClick(item: PendingActionItem): void {
-    if (item.type === 'Vote' && item.buttonLink) {
-      // Searches votes() (the broader fetch), not pendingVotes() (ACTIVE-only) — item.buttonLink
-      // was a valid pendingVotes() uid when this row was built, but the vote may have closed by
-      // the time it's clicked; routing through the shared lookup also gains the "Vote unavailable"
-      // toast on a genuine miss instead of a silent no-op.
-      this.openVoteDrawer(item.buttonLink);
-    } else if (item.type !== 'Vote') {
+    if (item.type !== 'Vote') {
       this.tabNavigated.emit('surveys');
+      return;
     }
+    // Searches votes() (the broader fetch), not pendingVotes() (ACTIVE-only) — item.buttonLink
+    // was a valid pendingVotes() uid when this row was built, but the vote may have closed by
+    // the time it's clicked. Falls back to '' rather than skipping the call on a missing
+    // buttonLink so that edge case still reaches openVoteDrawer's own "Vote unavailable" toast
+    // (a guaranteed miss) instead of a silent no-op.
+    this.openVoteDrawer(item.buttonLink ?? '');
   }
 
   public handleActivityItemClick(item: ActivityFeedItem): void {
