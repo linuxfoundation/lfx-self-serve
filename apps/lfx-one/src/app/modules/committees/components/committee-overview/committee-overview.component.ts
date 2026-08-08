@@ -158,12 +158,14 @@ export class CommitteeOverviewComponent {
   // reads recompute — mirrors pending-actions.component.ts's hiddenActionsVersion pattern.
   private readonly hiddenActionsVersion = signal(0);
 
-  // Loading state for the weekly-brief action-items fetch (LFXV2-3043) — folded into the
-  // section's OUTER visibility gate only (keeps the section mounted while a cache-miss AI
-  // extraction is in flight, so it can't collapse-then-reappear). Deliberately NOT part of the
-  // inner skeleton-vs-list gate: brief items append at the end of pendingActionItems(), so
-  // already-loaded votes/surveys render immediately rather than sitting behind a skeleton for
-  // the several-second AI round trip — brief items simply pop in at the bottom once ready.
+  // Loading state for the weekly-brief action-items fetch (LFXV2-3043). Folded into the
+  // section's OUTER visibility gate unconditionally (keeps the section mounted while a
+  // cache-miss AI extraction is in flight, so it can't collapse-then-reappear). In the INNER
+  // skeleton-vs-list gate it's conditioned on `!pendingActionItems().length`: once votes/surveys
+  // resolve with real rows, those render immediately rather than sitting behind a skeleton for
+  // the several-second AI round trip (brief items simply pop in at the bottom once ready) — but
+  // if there's nothing else to show yet, the skeleton still covers the wait instead of leaving a
+  // bare "My Pending Actions" heading with an empty body.
   public briefActionItemsLoading = signal(true);
 
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
