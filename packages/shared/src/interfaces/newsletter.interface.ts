@@ -137,9 +137,49 @@ export interface NewsletterCancelScheduleResult {
   newsletter: Newsletter;
 }
 
+export interface NewsletterPublication {
+  id: string;
+  project_uid: string;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  wrapper_content: unknown;
+  template_set_id: string | null;
+  view_online_base: string | null;
+  created_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePublicationRequest {
+  slug: string;
+  name: string;
+  wrapper_content?: unknown;
+  template_set_id?: string | null;
+  view_online_base?: string | null;
+}
+
+export interface UpdatePublicationRequest {
+  name?: string;
+  wrapper_content?: unknown;
+  template_set_id?: string | null;
+  view_online_base?: string | null;
+}
+
+export interface NewsletterPublicationListResponse {
+  publications: NewsletterPublication[];
+  next_page_token?: string;
+}
+
 export interface Newsletter {
   id: string;
   project_uid: string;
+  // Optional: a newsletter is created before it is assigned to a publication,
+  // and pre-migration / synthetic newsletters (e.g. weekly-brief) carry none.
+  // Publication scoping is applied via the NewsletterListParams filter, not by
+  // dereferencing this field, so it stays optional (LFXV2-2582).
+  publication_id?: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -177,6 +217,7 @@ export interface NewsletterReaderState {
 }
 
 export interface CreateNewsletterRequest {
+  publication_id?: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -209,6 +250,7 @@ export interface NewsletterListItem extends Newsletter {
   // inline them.
   unique_opens?: number;
   open_rate?: number;
+  // publication_id is inherited from Newsletter
 }
 
 export interface NewsletterListResponse {
@@ -261,6 +303,7 @@ export interface MyNewsletterRow extends MyNewsletter {
 export interface NewsletterListParams {
   status?: NewsletterStatus;
   page_token?: string;
+  publication_id?: string;
 }
 
 /**

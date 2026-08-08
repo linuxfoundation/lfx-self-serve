@@ -39,6 +39,7 @@ import meetingsRouter from './routes/meetings.route';
 import meetupsRouter from './routes/meetups.route';
 import navigationRouter from './routes/navigation.route';
 import newslettersRouter from './routes/newsletters.route';
+import newsletterPublicationsRouter from './routes/newsletter-publications.route';
 import organizationsRouter from './routes/organizations.route';
 import orgsRouter from './routes/orgs.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
@@ -349,6 +350,7 @@ app.use('/api/changelog', changelogRouter);
 // manager router below — different prefixes, no overlap.
 app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
+app.use('/api/projects/:projectUid/newsletter-publications', newsletterPublicationsRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.

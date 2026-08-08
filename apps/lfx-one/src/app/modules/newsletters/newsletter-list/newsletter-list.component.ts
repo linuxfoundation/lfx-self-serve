@@ -81,6 +81,12 @@ export class NewsletterListComponent {
 
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
+  // Read once from the route snapshot (mirrors `statusTab`). The `:pubId` editions
+  // route is only ever entered fresh from the publication list — there is no
+  // publication-to-publication navigation that would reuse this component instance
+  // — so a snapshot read is sufficient. If in-place pub switching is ever added,
+  // drive this from `route.paramMap` (subscribed) instead.
+  protected readonly publicationId = signal<string | undefined>(this.route.snapshot.paramMap.get('pubId') ?? undefined);
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
   // `status=sending` rows carrying `scheduled_at` — arms in progress. Populated
   // only while `statusTab() === 'scheduled'`; prepended to `newsletters` for
@@ -148,7 +154,7 @@ export class NewsletterListComponent {
     if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout' || tabFromQuery === 'scheduled') {
       this.statusTab.set(tabFromQuery);
     }
-    this.initLoadOnContextOrTab();
+    this.initLoadOnContextOrTabAndPublication();
   }
 
   protected onStatusTabChange(tab: string): void {
@@ -185,13 +191,14 @@ export class NewsletterListComponent {
     const token = this.nextPageToken();
     const uid = this.projectUid();
     const status = this.statusTab();
+    const pubId = this.publicationId();
     const generation = this.loadGeneration;
     // Opt-out has no pagination — canLoadMore() never yields true for it, so
     // this is just the type guard that lets `status` narrow below.
     if (!token || this.loadingMore() || !uid || status === 'optout') return;
     this.loadingMore.set(true);
     this.newsletterService
-      .listNewsletters(uid, { status, page_token: token })
+      .listNewsletters(uid, { status, page_token: token, publication_id: pubId })
       .pipe(
         take(1),
         finalize(() => this.loadingMore.set(false))
@@ -316,18 +323,18 @@ export class NewsletterListComponent {
     });
   }
 
-  // switchMap cancels the in-flight initial list request when the tab or project
-  // changes, so a slow response can never clobber the newer tab's rows or fan out
-  // analytics for rows that are no longer displayed. (loadMore requests are not
-  // cancelled — loadMore guards its own response against context changes instead.)
-  // Loading is cleared explicitly on every outcome path (empty uid, error, next)
-  // rather than via finalize, so cancellation can never produce a loading write
-  // regardless of operator teardown ordering.
-  private initLoadOnContextOrTab(): void {
-    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
+  // switchMap cancels the in-flight initial list request when the tab, project,
+  // or publication changes, so a slow response can never clobber the newer tab's
+  // rows or fan out analytics for rows that are no longer displayed. (loadMore
+  // requests are not cancelled — loadMore guards its own response against context
+  // changes instead.) Loading is cleared explicitly on every outcome path (empty
+  // uid, error, next) rather than via finalize, so cancellation can never produce
+  // a loading write regardless of operator teardown ordering.
+  private initLoadOnContextOrTabAndPublication(): void {
+    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab), toObservable(this.publicationId)])
       .pipe(
-        distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
-        switchMap(([uid, status]) => {
+        distinctUntilChanged(([prevUid, prevTab, prevPub], [uid, tab, pub]) => prevUid === uid && prevTab === tab && prevPub === pub),
+        switchMap(([uid, status, pubId]) => {
           this.loadGeneration++;
           this.previewVisible.set(false);
           this.selectedNewsletter.set(null);
@@ -365,8 +372,8 @@ export class NewsletterListComponent {
           // neither tab shows or hides the wrong rows.
           if (status === 'scheduled') {
             return forkJoin({
-              scheduled: this.newsletterService.listNewsletters(uid, { status: 'scheduled' }),
-              sending: this.newsletterService.listNewsletters(uid, { status: 'sending' }),
+              scheduled: this.newsletterService.listNewsletters(uid, { status: 'scheduled', publication_id: pubId }),
+              sending: this.newsletterService.listNewsletters(uid, { status: 'sending', publication_id: pubId }),
             }).pipe(
               map(
                 (results): NewsletterListLoadResult => ({
@@ -382,7 +389,7 @@ export class NewsletterListComponent {
               })
             );
           }
-          return this.newsletterService.listNewsletters(uid, { status }).pipe(
+          return this.newsletterService.listNewsletters(uid, { status, publication_id: pubId }).pipe(
             map(
               (response): NewsletterListLoadResult => ({
                 kind: 'newsletters',
