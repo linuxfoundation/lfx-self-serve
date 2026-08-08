@@ -138,18 +138,18 @@
                 icon="fa-light fa-thumbs-up"
                 [severity]="callerRating() === 'up' ? 'info' : 'secondary'"
                 [text]="true"
-                [disabled]="ratingPending()"
+                [disabled]="ratingPending() || impersonating()"
                 [ariaPressed]="callerRating() === 'up'"
-                ariaLabel="Rate this brief helpful"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Rate this brief helpful'"
                 (onClick)="onRate('up')"
                 data-testid="weekly-brief-card-rating-up-button" />
               <lfx-button
                 icon="fa-light fa-thumbs-down"
                 [severity]="callerRating() === 'down' ? 'info' : 'secondary'"
                 [text]="true"
-                [disabled]="ratingPending()"
+                [disabled]="ratingPending() || impersonating()"
                 [ariaPressed]="callerRating() === 'down'"
-                ariaLabel="Rate this brief not helpful"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Rate this brief not helpful'"
                 (onClick)="onRate('down')"
                 data-testid="weekly-brief-card-rating-down-button" />
             </div>

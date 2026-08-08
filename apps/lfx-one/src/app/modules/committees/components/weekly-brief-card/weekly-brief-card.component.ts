@@ -18,6 +18,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -58,10 +59,19 @@ export class WeeklyBriefCardComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
 
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // Rating is server-blocked during impersonation (rateBrief/clearBriefRating resolve the
+  // impersonated user's own identity for the write — see weekly-brief.route.ts's
+  // blockDuringImpersonation comment) — surfaced here too so the buttons render
+  // visible-but-disabled instead of firing a request that 403s into a misleading generic
+  // "Rating failed" toast. Matches the established pattern (profile-panel, account-settings,
+  // etc.) of gating on `userService.impersonating()` directly, not on module input plumbing.
+  public readonly impersonating = this.userService.impersonating;
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
@@ -375,7 +385,7 @@ export class WeeklyBriefCardComponent {
   public onRate(value: WeeklyBriefRating): void {
     const committeeUid = this.committee()?.uid;
     const current = this.brief();
-    if (!committeeUid || !current || this.ratingPending()) return;
+    if (!committeeUid || !current || this.ratingPending() || this.impersonating()) return;
     const previous = this.callerRating();
     const next = previous === value ? null : value;
     this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: next });
