@@ -92,13 +92,17 @@ export class WeeklyBriefCardComponent {
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
   private readonly briefResponse = signal<WeeklyBriefCurrentResponse | null>(null);
 
-  // Optimistic rating overlay, keyed to the revision it applies to — a plain
-  // `WeeklyBriefRating | null` overlay (with no revision key) would keep overriding
-  // `brief()?.caller_rating` forever, including after a regenerate/save moves to a new
-  // revision that was never actually rated. Keying to `revision` makes the override
-  // self-invalidating: `callerRating` below only applies it while it still matches the
-  // brief currently on screen.
-  private readonly optimisticRating = signal<{ revision: number; value: WeeklyBriefRating | null } | null>(null);
+  // Optimistic rating overlay, keyed to the exact brief (uid + revision) it applies to.
+  // `revision` alone isn't enough: a brand-new brief (new `uid`, e.g. after a window
+  // rollover) restarts at revision 1 same as the last one, so a revision-only key would
+  // wrongly light a fresh, never-rated brief just because it happens to share a revision
+  // number with a previously-rated one. Also explicitly cleared (see
+  // initBriefResponseSubscription / pollUntilTerminal) whenever a fresh authoritative GET
+  // lands — otherwise a silent server-side persist failure (rateBrief still returns 200
+  // while its Valkey write no-ops) would leave the thumb lit forever, surviving even a
+  // manual refresh, since the overlay would keep overriding the server's real (unrated)
+  // caller_rating.
+  private readonly optimisticRating = signal<{ briefUid: string; revision: number; value: WeeklyBriefRating | null } | null>(null);
 
   // Refresh trigger consumed by initBriefResponseSubscription — declared here (not
   // further down with the other private helpers) because @typescript-eslint/member-ordering
@@ -145,7 +149,7 @@ export class WeeklyBriefCardComponent {
   public readonly callerRating: Signal<WeeklyBriefRating | null> = computed(() => {
     const b = this.brief();
     const override = this.optimisticRating();
-    if (b && override && override.revision === b.revision) return override.value;
+    if (b && override && override.briefUid === b.uid && override.revision === b.revision) return override.value;
     return this.briefResponse()?.caller_rating ?? null;
   });
 
@@ -374,7 +378,7 @@ export class WeeklyBriefCardComponent {
     if (!committeeUid || !current || this.ratingPending()) return;
     const previous = this.callerRating();
     const next = previous === value ? null : value;
-    this.optimisticRating.set({ revision: current.revision, value: next });
+    this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: next });
     this.ratingPending.set(true);
     // Explicit `Observable<unknown>` — without it, the ternary's two branches (`Observable<void>`
     // vs `Observable<RateWeeklyBriefResponse>`) infer a union type whose `.pipe()` overload
@@ -395,7 +399,7 @@ export class WeeklyBriefCardComponent {
       )
       .subscribe({
         error: () => {
-          this.optimisticRating.set({ revision: current.revision, value: previous });
+          this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: previous });
           this.messageService.add({ severity: 'error', summary: 'Rating failed', detail: 'Failed to save your rating. Please try again.' });
         },
       });
@@ -458,6 +462,13 @@ export class WeeklyBriefCardComponent {
       )
       .subscribe((response) => {
         this.briefResponse.set(response);
+        // A fresh, authoritative GET always supersedes any optimistic rating overlay —
+        // otherwise a silent server-side persist failure (rateBrief/clearBriefRating
+        // return 200 while their Valkey write no-ops) would leave a stale thumb lit even
+        // across a manual refresh. `callerRating`'s brief-uid+revision key already makes
+        // the overlay self-invalidate on a genuinely different brief/revision; this covers
+        // the same-revision case too.
+        this.optimisticRating.set(null);
         // Covers a page reload, navigating back to this committee, or a co-chair's
         // generation already in flight — not just this tab's own onGenerate() call.
         // Without this, a card that *loads* into the generating state never polls and
@@ -529,6 +540,9 @@ export class WeeklyBriefCardComponent {
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
           this.briefResponse.set(response);
+          // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
+          // supersedes any optimistic overlay.
+          this.optimisticRating.set(null);
           if (isNewTerminal(response)) {
             observedTerminal = true;
           }

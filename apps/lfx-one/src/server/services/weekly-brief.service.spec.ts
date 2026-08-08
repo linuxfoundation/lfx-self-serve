@@ -443,9 +443,32 @@ describe('WeeklyBriefService', () => {
           prompt_version: brief.prompt_version,
           model: brief.model,
           username: 'alice',
+          impersonated: false,
           previous_rating: null,
           rating: 'up',
         })
+      );
+    });
+
+    it('rateBrief logs impersonated: true and the impersonated (not impersonator) username during an impersonation session', async () => {
+      const impersonatingReq = {
+        oidc: { user: { nickname: 'admin-user' } },
+        appSession: {
+          impersonationToken: 'impersonation-token',
+          impersonationExpiresAt: Date.now() + 60_000,
+          impersonationUser: { username: 'target-user', sub: 'auth0|target', email: 'target@example.com' },
+        },
+      } as unknown as Request;
+      const initial = await service.getCurrentBrief(impersonatingReq, 'committee-1');
+      const brief = initial.brief!;
+
+      await service.rateBrief(impersonatingReq, 'committee-1', brief.uid, 'up');
+
+      expect(logger.info).toHaveBeenCalledWith(
+        impersonatingReq,
+        'rating_recorded',
+        expect.any(String),
+        expect.objectContaining({ username: 'target-user', impersonated: true })
       );
     });
 

@@ -26,7 +26,7 @@ import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -231,7 +231,11 @@ export class WeeklyBriefService {
    * analytics signal is the `rating_recorded` log line below (carrying `username` and the prior
    * value, so re-rates/switches can be deduplicated per caller during offline
    * rating-by-prompt_version analysis instead of each toggle over-counting as a distinct vote),
-   * which flows through the existing Pino → CloudWatch pipeline.
+   * which flows through the existing Pino → CloudWatch pipeline. Also carries `impersonated`
+   * (`getEffectiveUsername` resolves to the *impersonated* user's identity during an
+   * impersonation session — `isImpersonating`/`auth-helper.ts`) so offline analysis can exclude
+   * votes an LF staff member cast while exploring a committee on someone else's behalf, rather
+   * than silently misattributing them as the real user's opinion of brief quality.
    */
   public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<RateWeeklyBriefResponse> {
     const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
@@ -253,6 +257,7 @@ export class WeeklyBriefService {
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
+      impersonated: isImpersonating(req),
       previous_rating: previousRating,
       rating,
     });
@@ -286,6 +291,7 @@ export class WeeklyBriefService {
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
+      impersonated: isImpersonating(req),
       previous_rating: previousRating,
     });
   }
