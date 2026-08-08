@@ -231,9 +231,14 @@ export class WeeklyBriefService {
 
     const cacheKey = buildWeeklyBriefActionItemsCacheKey(brief.uid, brief.revision);
     if (!cacheKey) {
-      // brief.uid failed isFilterSafeIdentifier — should never happen for a real upstream uid.
-      // Fails closed by skipping extraction entirely rather than hitting the AI proxy uncached
-      // on every single read for a committee whose brief can never be cached.
+      // brief.uid failed isFilterSafeIdentifier — should never happen for a real upstream uid, so
+      // this is worth a warning: it means this committee's brief will return zero action items on
+      // every read (fails closed by skipping extraction entirely rather than hitting the AI proxy
+      // uncached on every single read).
+      logger.warning(req, 'get_weekly_brief_action_items', 'Brief uid is not cache-key safe, skipping extraction', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
       return { items: [] };
     }
 

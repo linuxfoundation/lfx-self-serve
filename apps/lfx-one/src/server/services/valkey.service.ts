@@ -320,10 +320,12 @@ export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
 }
 
 /**
- * Per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null (fail-closed → skip
- * cache, extract directly) when the brief uid isn't filter-safe. Revision is part of the key
- * (not a sub-resource) so a regenerated/re-edited brief naturally misses and re-extracts —
- * there is no explicit invalidation path for this namespace.
+ * Per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null (fail-closed) when
+ * the brief uid isn't filter-safe. Unlike most `build*CacheKey` helpers, a null key here means
+ * the caller (`WeeklyBriefService.getActionItems`) skips extraction entirely rather than hitting
+ * the AI proxy uncached on every read — there is no cache-bypassed direct-extract fallback for
+ * this namespace. Revision is part of the key (not a sub-resource) so a regenerated/re-edited
+ * brief naturally misses and re-extracts — there is no explicit invalidation path either.
  */
 export function buildWeeklyBriefActionItemsCacheKey(briefUid: string, revision: number): string | null {
   if (!isFilterSafeIdentifier(briefUid)) return null;

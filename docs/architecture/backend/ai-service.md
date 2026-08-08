@@ -15,12 +15,12 @@ Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude Son
    Service      Controller     Logic           Proxy
 ```
 
-The "Feature API" is whichever controller fronts the request: `meeting.controller.ts` (agenda generation), `newsletter.controller.ts` (newsletter generation), and the campaigns flow, which also routes AI briefs through this layer.
+The "Feature API" is whichever controller fronts the request: `meeting.controller.ts` (agenda generation), `newsletter.controller.ts` (newsletter generation), `weekly-brief.controller.ts` (indirectly — its service layer, not the controller, calls `extractBriefActionItems`), and the campaigns flow, which also routes AI briefs through this layer.
 
 ### Core Components
 
 - **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`
-- **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features; the campaigns flow consumes the same service
+- **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features directly; `weekly-brief.controller.ts` never calls `AiService` itself — `WeeklyBriefService.getActionItems` does, on its behalf; the campaigns flow consumes the same service
 - **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 

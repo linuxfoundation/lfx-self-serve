@@ -331,7 +331,7 @@ describe('WeeklyBriefService', () => {
       expect(buildCacheKey).not.toHaveBeenCalled();
     });
 
-    it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid)', async () => {
+    it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid), logging a warning', async () => {
       buildCacheKey.mockReturnValueOnce(null);
 
       const result = await service.getActionItems(req, 'committee-1');
@@ -340,6 +340,12 @@ describe('WeeklyBriefService', () => {
       expect(valkeyGetJson).not.toHaveBeenCalled();
       expect(extractBriefActionItems).not.toHaveBeenCalled();
       expect(valkeySetJson).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
     });
 
     it('truncates an extraction with more than WEEKLY_BRIEF_ACTION_ITEMS_MAX items to the cap', async () => {
