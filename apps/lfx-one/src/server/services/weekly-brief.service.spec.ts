@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valkeyServiceMock, buildWeeklyBriefRatingCacheKeyMock } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
+    isEnabled: vi.fn(() => true),
     getJson: vi.fn(async (key: string) => (valkeyStore.has(key) ? valkeyStore.get(key) : null)),
     setJson: vi.fn(async (key: string, value: unknown) => {
       valkeyStore.set(key, value);
@@ -118,8 +119,16 @@ describe('WeeklyBriefService', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    // Resets call history (not implementations) on every vi.fn() in the file, including the
+    // `logger` spies and `valkeyServiceMock` — without this, a `logger.warning`/`.info` assertion
+    // in a later test can pass vacuously against a call an *earlier* test already recorded
+    // (general-code-reviewer + self-serve-code-reviewer, LFXV2-3042 fix-commit review: verified
+    // by mutation testing that the rating_persist_failed/clear test passed even with the
+    // production `if` branch stubbed out).
+    vi.clearAllMocks();
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
+    valkeyServiceMock.isEnabled.mockReturnValue(true);
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
     __resetMockBriefStateForTesting();
@@ -495,6 +504,17 @@ describe('WeeklyBriefService', () => {
         expect.any(String),
         expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid })
       );
+    });
+
+    it('does not log rating_persist_failed when the cache is simply disabled (VALKEY_URL unset) rather than genuinely faulting — avoids alert fatigue on a documented supported mode', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      valkeyServiceMock.isEnabled.mockReturnValue(false);
+      valkeyServiceMock.setJson.mockResolvedValueOnce(false);
+
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up');
+
+      expect(logger.warning).not.toHaveBeenCalledWith(userReq, 'rating_persist_failed', expect.any(String), expect.anything());
     });
 
     it('rateBrief rejects a briefUid that no longer matches the current brief with a 404, not a silent no-op', async () => {

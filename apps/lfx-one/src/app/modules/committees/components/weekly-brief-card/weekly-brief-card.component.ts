@@ -377,7 +377,7 @@ export class WeeklyBriefCardComponent {
     this.optimisticRating.set({ revision: current.revision, value: next });
     this.ratingPending.set(true);
     // Explicit `Observable<unknown>` — without it, the ternary's two branches (`Observable<void>`
-    // vs `Observable<{ rating: WeeklyBriefRating }>`) infer a union type whose `.pipe()` overload
+    // vs `Observable<RateWeeklyBriefResponse>`) infer a union type whose `.pipe()` overload
     // resolution TypeScript can't cleanly unify, breaking the `.subscribe()` call below.
     const request$: Observable<unknown> =
       next === null

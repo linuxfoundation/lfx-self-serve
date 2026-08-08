@@ -224,21 +224,22 @@ export class WeeklyBriefService {
    * the new revision starts unrated (never carries the old rating forward).
    *
    * Valkey is a fail-soft, TTL cache, not a system of record — a lost write here only degrades
-   * the "you already rated this" UI indicator on a future load, logged as a warning so it's
-   * operator-visible rather than silent. The durable analytics signal is the `rating_recorded`
-   * log line below (carrying `username` and the prior value, so re-rates/switches can be
-   * deduplicated per caller during offline rating-by-prompt_version analysis instead of each
-   * toggle over-counting as a distinct vote), which flows through the existing Pino → CloudWatch
-   * pipeline.
+   * the "you already rated this" UI indicator on a future load. Logged as a warning, but only
+   * when the cache is actually enabled (`VALKEY_URL` set): an unset `VALKEY_URL` is a documented
+   * supported deployment mode (direct-fetch fallback), not a fault, and warning on every rating
+   * in that mode would bury the genuine-fault signal this exists to surface. The durable
+   * analytics signal is the `rating_recorded` log line below (carrying `username` and the prior
+   * value, so re-rates/switches can be deduplicated per caller during offline
+   * rating-by-prompt_version analysis instead of each toggle over-counting as a distinct vote),
+   * which flows through the existing Pino → CloudWatch pipeline.
    */
   public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating): Promise<RateWeeklyBriefResponse> {
-    const brief = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
+    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
     const username = this.requireUsername(req, 'rate_weekly_brief');
     const key = this.requireRatingKey(brief.uid, brief.revision, username, 'rate_weekly_brief');
 
-    const previous = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     const persisted = await valkeyService.setJson(key, { rating }, VALKEY_CACHE.WEEKLY_BRIEF_RATING_TTL_SECONDS);
-    if (!persisted) {
+    if (!persisted && valkeyService.isEnabled()) {
       logger.warning(req, 'rating_persist_failed', 'Weekly brief rating was accepted but not persisted to Valkey — will not survive a reload', {
         committee_id: committeeId,
         brief_uid: brief.uid,
@@ -252,7 +253,7 @@ export class WeeklyBriefService {
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
-      previous_rating: previous?.rating ?? null,
+      previous_rating: previousRating,
       rating,
     });
 
@@ -266,13 +267,12 @@ export class WeeklyBriefService {
    * and fail-soft/durable-log split as `rateBrief` — see its doc comment.
    */
   public async clearBriefRating(req: Request, committeeId: string, briefUid: string): Promise<void> {
-    const brief = await this.resolveRatableBrief(req, committeeId, briefUid, 'clear_weekly_brief_rating');
+    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'clear_weekly_brief_rating');
     const username = this.requireUsername(req, 'clear_weekly_brief_rating');
     const key = this.requireRatingKey(brief.uid, brief.revision, username, 'clear_weekly_brief_rating');
 
-    const previous = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     const persisted = await valkeyService.del(key);
-    if (!persisted) {
+    if (!persisted && valkeyService.isEnabled()) {
       logger.warning(req, 'rating_persist_failed', 'Weekly brief rating clear was accepted but not persisted to Valkey', {
         committee_id: committeeId,
         brief_uid: brief.uid,
@@ -286,7 +286,7 @@ export class WeeklyBriefService {
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
-      previous_rating: previous?.rating ?? null,
+      previous_rating: previousRating,
     });
   }
 
@@ -651,13 +651,24 @@ export class WeeklyBriefService {
    * "no reviewable content to act on" — the UI only ever renders the rating control in those
    * states, but a direct API call must not be able to record a rating against a brief that's
    * still `generating`, `error`, or `empty`.
+   *
+   * Also returns the brief's `caller_rating` (already resolved by `getCurrentBrief` →
+   * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
+   * can use it as `previous_rating` in their log line without a second, identical Valkey read for
+   * a key this call already read.
    */
-  private async resolveRatableBrief(req: Request, committeeId: string, briefUid: string, operation: string): Promise<WeeklyBrief> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+  private async resolveRatableBrief(
+    req: Request,
+    committeeId: string,
+    briefUid: string,
+    operation: string
+  ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
+    const response = await this.getCurrentBrief(req, committeeId);
+    const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });
     }
-    return brief;
+    return { brief, callerRating: response.caller_rating ?? null };
   }
 
   /** Resolves the effective username for a rating write, or throws — a rating with no identity to scope it to is a genuine failure, not something to degrade silently (unlike the read-side `withCallerRating`). */
