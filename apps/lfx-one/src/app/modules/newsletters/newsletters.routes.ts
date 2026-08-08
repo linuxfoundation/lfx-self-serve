@@ -9,12 +9,8 @@ export const NEWSLETTER_ROUTES: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'list',
-  },
-  {
-    path: 'list',
     canActivate: [authGuard, newsletterAccessGuard],
-    loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
+    loadComponent: () => import('./newsletter-publication-list/newsletter-publication-list.component').then((m) => m.NewsletterPublicationListComponent),
     data: { preload: false },
   },
   {
@@ -33,9 +29,8 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
-    // projectUid is in the URL so edit/analytics survive a foundation-vs-project
-    // context switch — the owning project travels with the link rather than being
-    // re-derived from whatever context happens to be active when the route loads.
+    // Specific routes with two segments must come before the generic :pubId
+    // to avoid being caught by the :pubId matcher.
     path: ':projectUid/:id/edit',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-manage/newsletter-manage.component').then((m) => m.NewsletterManageComponent),
@@ -45,6 +40,14 @@ export const NEWSLETTER_ROUTES: Routes = [
     path: ':projectUid/:id/analytics',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-analytics/newsletter-analytics.component').then((m) => m.NewsletterAnalyticsComponent),
+    data: { preload: false },
+  },
+  {
+    // Publication editions list: /newsletters/:pubId shows all editions for that publication.
+    // This must come after the more specific two-segment routes.
+    path: ':pubId',
+    canActivate: [authGuard, newsletterAccessGuard],
+    loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
     data: { preload: false },
   },
 ];

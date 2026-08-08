@@ -1,0 +1,61 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <div class="mb-6">
+      <div class="flex justify-between items-center w-full gap-4">
+        <h1 class="font-display font-light text-2xl">Newsletter Publications</h1>
+      </div>
+      <p class="mt-1 text-sm text-gray-500">Manage your newsletter publications and editions.</p>
+    </div>
+
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="newsletter-publication-list-card">
+      <div class="px-5 py-5 flex flex-col gap-4">
+        @if (loading()) {
+          <div class="flex flex-col gap-3">
+            <p-skeleton height="2.5rem"></p-skeleton>
+            <p-skeleton height="2.5rem"></p-skeleton>
+            <p-skeleton height="2.5rem"></p-skeleton>
+          </div>
+        } @else if (!hasPublications()) {
+          <lfx-empty-state
+            [withCard]="false"
+            icon="fa-light fa-newspaper"
+            title="No publications yet"
+            subtitle="Create a publication to start organizing your newsletters.">
+          </lfx-empty-state>
+        } @else {
+          <div class="flex flex-col gap-3">
+            @for (publication of publications(); track publication.id) {
+              <div
+                class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                (click)="goToPublicationEditions(publication)"
+                [attr.data-testid]="'newsletter-publication-row-' + publication.id">
+                <div class="flex flex-col gap-1 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-gray-900">{{ publication.name }}</span>
+                    @if (publication.is_default) {
+                      <lfx-tag value="Default" severity="info" [attr.data-testid]="'publication-default-badge-' + publication.id"></lfx-tag>
+                    }
+                  </div>
+                  <span class="text-xs text-gray-500">{{ publication.slug }}</span>
+                </div>
+                <div class="flex items-center">
+                  <lfx-button
+                    icon="fa-light fa-chevron-right"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    [attr.aria-label]="'View editions for ' + publication.name"
+                    [attr.data-testid]="'publication-view-editions-' + publication.id">
+                  </lfx-button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </lfx-card>
+  </div>
+</div>

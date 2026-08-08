@@ -5,6 +5,7 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   CreateNewsletterRequest,
+  CreatePublicationRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
   MyNewsletter,
@@ -13,12 +14,15 @@ import {
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
+  NewsletterPublication,
+  NewsletterPublicationListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientsResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
+  UpdatePublicationRequest,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take } from 'rxjs';
 
@@ -62,6 +66,9 @@ export class NewsletterService {
     }
     if (params.page_token) {
       httpParams = httpParams.set('page_token', params.page_token);
+    }
+    if (params.publication_id) {
+      httpParams = httpParams.set('publication_id', params.publication_id);
     }
     return this.http.get<NewsletterListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters`, { params: httpParams }).pipe(take(1));
   }
@@ -109,6 +116,31 @@ export class NewsletterService {
     return this.http
       .post<NewsletterSendResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/send`, {}, { headers })
       .pipe(take(1));
+  }
+
+  // === Publication endpoints ===
+
+  public listPublications(projectUid: string): Observable<NewsletterPublicationListResponse> {
+    return this.http.get<NewsletterPublicationListResponse>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`).pipe(take(1));
+  }
+
+  public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {
+    return this.http.get<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications/${this.enc(publicationUid)}`).pipe(take(1));
+  }
+
+  public createPublication(projectUid: string, payload: CreatePublicationRequest): Observable<NewsletterPublication> {
+    return this.http.post<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`, payload).pipe(take(1));
+  }
+
+  public updatePublication(projectUid: string, publicationUid: string, version: number, payload: UpdatePublicationRequest): Observable<NewsletterPublication> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http
+      .put<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications/${this.enc(publicationUid)}`, payload, { headers })
+      .pipe(take(1));
+  }
+
+  public listPublicationEditions(projectUid: string, publicationUid: string): Observable<NewsletterPublicationListResponse> {
+    return this.http.get<NewsletterPublicationListResponse>(`/api/projects/${this.enc(projectUid)}/newsletter-publications/${this.enc(publicationUid)}/editions`).pipe(take(1));
   }
 
   private enc(value: string): string {
