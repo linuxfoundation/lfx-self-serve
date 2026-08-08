@@ -140,7 +140,7 @@
                 [text]="true"
                 [disabled]="ratingPending() || impersonating()"
                 [ariaPressed]="callerRating() === 'up'"
-                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Rate this brief helpful'"
+                [ariaLabel]="impersonating() ? 'Rate this brief helpful — unavailable while impersonating another user' : 'Rate this brief helpful'"
                 (onClick)="onRate('up')"
                 data-testid="weekly-brief-card-rating-up-button" />
               <lfx-button
@@ -149,7 +149,7 @@
                 [text]="true"
                 [disabled]="ratingPending() || impersonating()"
                 [ariaPressed]="callerRating() === 'down'"
-                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Rate this brief not helpful'"
+                [ariaLabel]="impersonating() ? 'Rate this brief not helpful — unavailable while impersonating another user' : 'Rate this brief not helpful'"
                 (onClick)="onRate('down')"
                 data-testid="weekly-brief-card-rating-down-button" />
             </div>

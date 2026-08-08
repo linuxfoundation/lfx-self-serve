@@ -408,8 +408,23 @@ export class WeeklyBriefCardComponent {
         finalize(() => this.ratingPending.set(false))
       )
       .subscribe({
-        error: () => {
+        error: (err: HttpErrorResponse) => {
           this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: previous });
+          // The server 404s when briefUid no longer names the committee's current brief (a
+          // window rollover) or the brief moved out of a ratable state (a co-chair regenerated
+          // in another tab) — see resolveRatableBrief. Retrying against the same stale card can
+          // never succeed; refresh$ pulls the real current state instead of leaving the user
+          // stuck tapping a button that will 404 forever (same dead-end onSave's 409 branch and
+          // onGenerate's 409 branch already close).
+          if (err?.status === 404) {
+            this.refresh$.next();
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Rating failed',
+              detail: 'This brief has changed. Reloaded the latest version — please rate again.',
+            });
+            return;
+          }
           this.messageService.add({ severity: 'error', summary: 'Rating failed', detail: 'Failed to save your rating. Please try again.' });
         },
       });

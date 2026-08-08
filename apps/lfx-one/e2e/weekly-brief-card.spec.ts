@@ -965,6 +965,7 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const downBtn = page.getByRole('button', { name: 'Rate this brief not helpful' });
@@ -993,6 +994,7 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const upBtn = page.getByRole('button', { name: 'Rate this brief helpful', pressed: true });
@@ -1021,6 +1023,7 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     });
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const upBtn = page.getByRole('button', { name: 'Rate this brief helpful' });

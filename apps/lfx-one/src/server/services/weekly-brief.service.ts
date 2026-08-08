@@ -273,6 +273,13 @@ export class WeeklyBriefService {
       model: brief.model,
       username,
       previous_rating: previousRating,
+      // `previous_rating: null` is ambiguous on its own — it means either "genuinely never
+      // rated" or "the prior value is unknowable" (Valkey disabled, evicted, or a transient
+      // read fault, all of which resolve to null via withCallerRating's fail-soft read). Offline
+      // dedup must not treat the unknowable case as a confident first-time vote, so the
+      // deployment-mode signal is surfaced separately rather than folded into previous_rating
+      // itself.
+      previous_rating_known: valkeyService.isEnabled(),
       rating,
     });
 
@@ -306,6 +313,7 @@ export class WeeklyBriefService {
       model: brief.model,
       username,
       previous_rating: previousRating,
+      previous_rating_known: valkeyService.isEnabled(),
     });
   }
 
