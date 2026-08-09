@@ -10,6 +10,7 @@ import { executiveDirectorGuard } from './shared/guards/executive-director.guard
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -126,11 +127,15 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
           },
           {
-            // INFO: Future Epic implementation — the ROI page is hidden; deep links fall
-            // back to the org overview until the org ROI feature is built.
             path: 'roi',
-            redirectTo: 'overview',
-            pathMatch: 'full',
+            canMatch: [orgLensRoiEnabledGuard],
+            data: {
+              lens: 'org',
+              title: 'ROI Metrics',
+              description: "Modelled return on your organization's open source investment.",
+              icon: 'fa-light fa-chart-mixed-up-circle-dollar',
+            },
+            loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
           },
           {
             // INFO: Future Epic implementation — the Governance page is hidden; deep links
@@ -483,5 +488,25 @@ export const routes: Routes = [
   {
     path: 'auth-error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
+  },
+  // Branded 404 page — public named route so the /not-found destination is reachable without a
+  // session (auth.middleware.ts classifies it as 'public'). Following the same pattern as
+  // auth-error and invite/error.
+  // Note: for authenticated users this page is reached directly via the ** wildcard below.
+  // For anonymous users the Express auth middleware classifies unrecognized paths as required-auth
+  // and redirects to login first; after login the returnTo URL is honoured and the ** wildcard
+  // then redirects here — so the branded 404 is always shown, just after authentication for
+  // anonymous deep-links rather than before.
+  {
+    path: 'not-found',
+    loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
+  },
+  // Generic catch-all — redirects unrecognized URLs to /not-found so authenticated users get a
+  // proper HTTP 404 status and a branded page. Also handles post-login returnTo redirects for
+  // anonymous users who followed a stale or mistyped URL (see /not-found comment above).
+  // Must be last so it never shadows real routes.
+  {
+    path: '**',
+    redirectTo: '/not-found',
   },
 ];

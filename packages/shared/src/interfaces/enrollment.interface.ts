@@ -57,4 +57,8 @@ export interface DisplayEnrollment extends IndividualEnrollment {
   pending: boolean;
 }
 
-export type EnrollmentsState = { kind: 'loading' } | { kind: 'loaded'; items: IndividualEnrollment[] } | { kind: 'error'; message: string };
+// One state machine (loading | loaded | error) reused for both the raw server items and the
+// component's display projection, so the two variants can't drift apart.
+export type EnrollmentsStateOf<T> = { kind: 'loading' } | { kind: 'loaded'; items: T[] } | { kind: 'error'; message: string };
+export type EnrollmentsState = EnrollmentsStateOf<IndividualEnrollment>;
+export type DisplayEnrollmentsState = EnrollmentsStateOf<DisplayEnrollment>;

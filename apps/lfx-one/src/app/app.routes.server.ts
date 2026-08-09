@@ -13,6 +13,13 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
     status: 404,
   },
+  // Branded 404 page — responds with HTTP 404 so crawlers, caches, and monitoring tools
+  // treat unrecognized URLs correctly instead of indexing/caching a soft 404 (HTTP 200).
+  {
+    path: 'not-found',
+    renderMode: RenderMode.Server,
+    status: 404,
+  },
   {
     path: '**',
     renderMode: RenderMode.Server,

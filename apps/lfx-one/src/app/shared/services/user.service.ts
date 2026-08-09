@@ -23,6 +23,8 @@ import {
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
   ProfileUpdateRequest,
+  ProfileVisibility,
+  ProfileVisibilityUpdateRequest,
   SalesforceIdResponse,
   SendEmailVerificationResponse,
   User,
@@ -127,6 +129,23 @@ export class UserService {
    */
   public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
     return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
+  }
+
+  // Public-profile visibility methods (LFXV2-2629)
+
+  /**
+   * Resolve the current user's public-profile visibility: the master IsPublic flag and the
+   * section-level `visibility` preference map.
+   */
+  public getProfileVisibility(): Observable<ProfileVisibility> {
+    return this.http.get<ProfileVisibility>('/api/profile/visibility');
+  }
+
+  /**
+   * Update the current user's public-profile visibility (master flag + section map).
+   */
+  public updateProfileVisibility(data: ProfileVisibilityUpdateRequest): Observable<ProfileVisibility> {
+    return this.http.patch<ProfileVisibility>('/api/profile/visibility', data).pipe(take(1));
   }
 
   // Email management methods

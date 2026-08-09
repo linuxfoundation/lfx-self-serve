@@ -16,6 +16,8 @@ import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchM
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
 import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
+import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
@@ -41,10 +43,10 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent],
-  // ProfileEditDrawerService is layout-scoped (not root) so its retained profile context is torn
-  // down when the hub is left; the drawer child shares this injector and resolves the same instance.
-  providers: [MessageService, ProfileEditDrawerService],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
+  // is left; each drawer child shares this injector instance via the providers below.
+  providers: [MessageService, ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -61,6 +63,7 @@ export class ProfileLayoutComponent {
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
+  private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -173,6 +176,11 @@ export class ProfileLayoutComponent {
   public openEditDrawer(): void {
     if (!this.combinedProfile) return;
     this.editDrawer.open(this.combinedProfile);
+  }
+
+  public openVisibilityDrawer(): void {
+    // The drawer fetches its own state; it only needs the username to build the public-profile URL.
+    this.visibilityDrawer.open(this.displayUsername() ?? '');
   }
 
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
