@@ -133,14 +133,16 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
  * This helper therefore scans the payload for JSON objects that carry the
  * contract discriminator, handling both direct envelopes and the
  * `envelope_json` double-encoding, and returns every parse that succeeds.
- * The caller validates each candidate and picks the last valid one.
+ * Candidates are returned as `unknown` — they carry the discriminator but are
+ * otherwise UNVALIDATED; callers must pass each through
+ * `validateBrandKitEnvelope` before treating it as a `BrandKitEnvelope`.
  */
-export function extractBrandKitEnvelopeCandidates(payload: string): BrandKitEnvelope[] {
+export function extractBrandKitEnvelopeCandidates(payload: string): unknown[] {
   if (!payload || !payload.includes(BRAND_KIT_CONTRACT_ID)) {
     return [];
   }
 
-  const candidates: BrandKitEnvelope[] = [];
+  const candidates: unknown[] = [];
 
   const consider = (value: unknown, depth: number): void => {
     if (depth > BRAND_KIT_EXTRACTION_MAX_DEPTH) {
@@ -165,7 +167,7 @@ export function extractBrandKitEnvelopeCandidates(payload: string): BrandKitEnve
     }
     const record = value as Record<string, unknown>;
     if (record['contract'] === BRAND_KIT_CONTRACT_ID) {
-      candidates.push(record as unknown as BrandKitEnvelope);
+      candidates.push(record);
       return;
     }
     if (typeof record['envelope_json'] === 'string') {
@@ -196,8 +198,8 @@ export function extractBrandKitEnvelopeCandidates(payload: string): BrandKitEnve
  * and parse each. Used when the payload is not itself valid JSON (e.g. an LLM
  * stream body with an embedded tool result).
  */
-function scanForEnvelopeObjects(text: string): BrandKitEnvelope[] {
-  const found: BrandKitEnvelope[] = [];
+function scanForEnvelopeObjects(text: string): unknown[] {
+  const found: unknown[] = [];
   let searchFrom = 0;
 
   for (;;) {
@@ -205,22 +207,40 @@ function scanForEnvelopeObjects(text: string): BrandKitEnvelope[] {
     if (marker === -1) {
       break;
     }
-    // Walk back to the opening brace of the object containing the marker.
-    const start = text.lastIndexOf('{', marker);
-    if (start === -1) {
-      searchFrom = marker + 1;
-      continue;
-    }
-    const objectText = readBalancedObject(text, start);
-    if (objectText) {
-      try {
-        const parsed = JSON.parse(objectText) as Record<string, unknown>;
-        if (parsed['contract'] === BRAND_KIT_CONTRACT_ID) {
-          found.push(parsed as unknown as BrandKitEnvelope);
+    // Walk back to the opening brace of the object containing the marker. The
+    // marker may sit inside a direct envelope OR inside an `envelope_json`
+    // string value — walk outward brace by brace until a parse succeeds.
+    let start = text.lastIndexOf('{', marker);
+    let matched = false;
+    while (start !== -1 && !matched) {
+      const objectText = readBalancedObject(text, start);
+      if (objectText) {
+        try {
+          const parsed = JSON.parse(objectText) as Record<string, unknown>;
+          if (parsed['contract'] === BRAND_KIT_CONTRACT_ID) {
+            found.push(parsed);
+            matched = true;
+            break;
+          }
+          if (typeof parsed['envelope_json'] === 'string' && parsed['envelope_json'].includes(BRAND_KIT_CONTRACT_ID)) {
+            // The authoritative tool-result wrapper embedded in free text:
+            // unwrap the double-encoded envelope.
+            try {
+              const inner = JSON.parse(parsed['envelope_json']) as Record<string, unknown>;
+              if (inner['contract'] === BRAND_KIT_CONTRACT_ID) {
+                found.push(inner);
+                matched = true;
+                break;
+              }
+            } catch {
+              // Malformed inner JSON — fall through to walk further out.
+            }
+          }
+        } catch {
+          // Malformed fragment — walk further out.
         }
-      } catch {
-        // Malformed fragment — keep scanning.
       }
+      start = start > 0 ? text.lastIndexOf('{', start - 1) : -1;
     }
     searchFrom = marker + BRAND_KIT_CONTRACT_ID.length;
   }

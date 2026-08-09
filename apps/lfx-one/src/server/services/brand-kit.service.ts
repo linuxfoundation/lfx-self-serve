@@ -92,8 +92,10 @@ export class BrandKitService {
         candidateCount++;
         const result = validateBrandKitEnvelope(candidate);
         if (result.valid) {
-          if (!best || candidate.version >= best.version) {
-            best = candidate;
+          // Safe: validateBrandKitEnvelope passed every schema gate.
+          const envelope = candidate as BrandKitEnvelope;
+          if (!best || envelope.version >= best.version) {
+            best = envelope;
           }
         } else {
           invalidCount++;

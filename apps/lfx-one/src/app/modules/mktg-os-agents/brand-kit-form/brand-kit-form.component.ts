@@ -11,6 +11,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
 
 /** Client-side poll cadence and cap for the generation session (~5 min). */
@@ -43,7 +44,9 @@ export class BrandKitFormComponent implements OnDestroy {
 
   // === Forms ===
   protected readonly intakeForm = new FormGroup(
-    Object.fromEntries(BRAND_KIT_INTAKE_QUESTIONS.map((q) => [q.key, new FormControl('', { nonNullable: true, validators: [Validators.required] })]))
+    Object.fromEntries(
+      BRAND_KIT_INTAKE_QUESTIONS.map((q) => [q.key, new FormControl('', { nonNullable: true, validators: [Validators.required, trimmedRequired()] })])
+    )
   );
 
   // === Signals ===
@@ -153,7 +156,7 @@ export class BrandKitFormComponent implements OnDestroy {
           }
           // Tolerate transient failures — a multi-minute generation should not be
           // lost to a single network blip; the attempt budget still applies.
-          if (consecutiveErrors + 1 >= RESULT_POLL_MAX_CONSECUTIVE_ERRORS || attempt >= RESULT_POLL_MAX_ATTEMPTS) {
+          if (consecutiveErrors + 1 > RESULT_POLL_MAX_CONSECUTIVE_ERRORS || attempt >= RESULT_POLL_MAX_ATTEMPTS) {
             this.failGeneration('Could not fetch the generation result. Please try again.');
             return;
           }

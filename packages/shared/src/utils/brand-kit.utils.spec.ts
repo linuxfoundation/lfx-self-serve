@@ -148,7 +148,7 @@ describe('extractBrandKitEnvelopeCandidates', () => {
     const envelope = buildEnvelope();
     const found = extractBrandKitEnvelopeCandidates(JSON.stringify(envelope));
     expect(found).toHaveLength(1);
-    expect(found[0].content_sha256).toBe(envelope.content_sha256);
+    expect((found[0] as BrandKitEnvelope).content_sha256).toBe(envelope.content_sha256);
   });
 
   it('extracts a tool-result envelope_json double-encoding (the A3 authoritative path)', () => {
@@ -156,7 +156,15 @@ describe('extractBrandKitEnvelopeCandidates', () => {
     const toolResult = JSON.stringify({ envelope_json: JSON.stringify(envelope) });
     const found = extractBrandKitEnvelopeCandidates(toolResult);
     expect(found).toHaveLength(1);
-    expect(found[0].project).toBe('testorbit');
+    expect((found[0] as BrandKitEnvelope).project).toBe('testorbit');
+  });
+
+  it('extracts an envelope_json wrapper embedded in a non-JSON stream body', () => {
+    const envelope = buildEnvelope();
+    const payload = `noise ${JSON.stringify({ envelope_json: JSON.stringify(envelope) })} trailing`;
+    const found = extractBrandKitEnvelopeCandidates(payload);
+    expect(found).toHaveLength(1);
+    expect((found[0] as BrandKitEnvelope).project).toBe('testorbit');
   });
 
   it('extracts an envelope embedded in a non-JSON stream body', () => {

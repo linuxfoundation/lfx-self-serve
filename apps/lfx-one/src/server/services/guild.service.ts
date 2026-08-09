@@ -142,7 +142,13 @@ export class GuildService {
    * rides system events (`llm_start`/`llm_done` stream bodies, task events)
    * that the filtered history path drops. Callers scan the serialized payloads
    * for the contract envelope; this method makes no shape assumptions beyond
-   * `{ items: [...] }`.
+   * `{ items: [...] }` with an optional `type` per item.
+   *
+   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
+   * intake answers are echoed verbatim into the trigger message, so a caller
+   * could otherwise plant a schema-valid envelope in an answer and have it
+   * selected as the agent's output. The authoritative envelope only ever rides
+   * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     this.assertConfigured('guild_get_raw_events');
@@ -154,8 +160,8 @@ export class GuildService {
     const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
     await this.assertOk(response, 'guild_get_raw_events', path);
 
-    const data = (await response.json()) as { items?: { created_at?: string }[] };
-    const items = data.items || [];
+    const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
+    const items = (data.items || []).filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.

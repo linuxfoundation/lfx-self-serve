@@ -159,7 +159,8 @@ export class MktgAgentsController {
    * session id + creator-binding owner token for polling the result.
    */
   public async generateBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { answers } = req.body as BrandKitGenerateRequest;
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers } = (req.body ?? {}) as Partial<BrandKitGenerateRequest>;
 
     const answersResult = validateBrandKitIntakeAnswers(answers);
     if (!answersResult.valid) {
@@ -201,7 +202,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_generate', {});
 
     try {
-      const trimmedAnswers = Object.fromEntries(Object.entries(answers).map(([key, value]) => [key, value.trim()]));
+      // Safe: validateBrandKitIntakeAnswers guaranteed a complete string record.
+      const trimmedAnswers = Object.fromEntries(Object.entries(answers as Record<string, string>).map(([key, value]) => [key, value.trim()]));
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, agent.guildAgentHandle);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
       const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
@@ -217,7 +219,8 @@ export class MktgAgentsController {
    * Only the session's creator may read the result (owner-token proof).
    */
   public async brandKitResult(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { sessionId, ownerToken } = req.body as BrandKitResultRequest;
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {

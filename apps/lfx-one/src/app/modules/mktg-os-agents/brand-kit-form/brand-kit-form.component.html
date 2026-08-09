@@ -74,9 +74,11 @@
             [control]="q.key"
             [rows]="2"
             [autoResize]="true"
+            [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
+            [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
             [dataTest]="'brand-kit-form-answer-' + q.key" />
           @if (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid) {
-            <span class="text-xs text-red-500">This answer is required.</span>
+            <span [id]="'brand-kit-q-' + q.questionNumber + '-error'" class="text-xs text-red-500">This answer is required.</span>
           }
         </div>
       }
