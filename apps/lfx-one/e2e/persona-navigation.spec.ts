@@ -128,7 +128,7 @@ const SIDEBAR = {
 
 // ─── Stub helpers ─────────────────────────────────────────────────────────────
 
-async function stubPersona(page: Page, personas: string[], isRootWriter = false): Promise<void> {
+async function stubPersona(page: Page, personas: string[], isRootWriter = false, isLFStaff = false): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
       status: 200,
@@ -139,6 +139,7 @@ async function stubPersona(page: Page, personas: string[], isRootWriter = false)
         projects: [],
         organizations: [],
         isRootWriter,
+        isLFStaff,
       }),
     })
   );
@@ -630,6 +631,40 @@ test.describe('S13: Settings lens redirect — me lens → /profile/settings', (
       /\/foundation\/settings\?project=test-foundation/,
       { timeout: ELEMENT_TIMEOUT }
     );
+  });
+});
+
+// ─── S15: LF Staff — foundation lens + Metrics + Marketing Impact, no Campaigns ──
+
+test.describe('S15: Foundation lens — LF Staff (isLFStaff: true, contributor persona)', () => {
+  test.beforeEach(async ({ page }) => {
+    // LF Staff detected as contributor persona but with isLFStaff flag set.
+    // The /api/user/personas response triggers a refreshEnrichedPersonas() call that sets isLFStaff.
+    // dashboardAccessGuard async path grants access via canViewExecutiveDashboards().
+    await stubPersona(page, ['contributor'], false, true);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['contributor']);
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+  });
+
+  test('sees Metrics section with Health Metrics (LF Staff gets canViewExecutiveDashboards)', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.metricsSection), 'persona=lf-staff lens=foundation section=metrics').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.healthMetrics), 'persona=lf-staff lens=foundation item=health-metrics').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+
+  test('sees Marketing section with Marketing Impact but NOT Campaigns (Campaigns is ED-only)', async ({ page }) => {
+    await expect(page.getByTestId(SIDEBAR.marketingSection), 'persona=lf-staff lens=foundation section=marketing').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.marketingImpact), 'persona=lf-staff lens=foundation item=marketing-impact').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=lf-staff lens=foundation item=campaigns should be hidden').toHaveCount(0);
   });
 });
 
