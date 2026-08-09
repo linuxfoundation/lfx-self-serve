@@ -161,7 +161,8 @@ export class GuildService {
     await this.assertOk(response, 'guild_get_raw_events', path);
 
     const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
-    const items = (data.items || []).filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+    const rawItems = data.items || [];
+    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.
@@ -170,8 +171,13 @@ export class GuildService {
     // Truncation guard: a full page means the session may have more events than
     // the cap, so the terminal envelope could be missing (or a stale draft could
     // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
-    if (items.length >= GUILD_RAW_EVENTS_LIMIT) {
-      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', { count: items.length, limit: GUILD_RAW_EVENTS_LIMIT });
+    // The limit applies to the UNFILTERED response — check the raw count, or a
+    // full page would slip under the threshold after user-event filtering.
+    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
+      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', {
+        count: rawItems.length,
+        limit: GUILD_RAW_EVENTS_LIMIT,
+      });
     }
 
     return sorted.map((item) => JSON.stringify(item));
