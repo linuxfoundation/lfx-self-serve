@@ -973,16 +973,9 @@ export class AnalyticsService {
   }
 
   public getKeywordPerformance(foundationSlug: string, period?: string): Observable<KeywordPerformanceResponse> {
-    return this.http
-      .get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', { params: this.buildFoundationParams(foundationSlug, undefined, period) })
-      .pipe(
-        catchError(() => {
-          return of({
-            keywords: [],
-            totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 },
-          });
-        })
-      );
+    return this.http.get<KeywordPerformanceResponse>('/api/analytics/keyword-performance', {
+      params: this.buildFoundationParams(foundationSlug, undefined, period),
+    });
   }
 
   // North Star Metrics

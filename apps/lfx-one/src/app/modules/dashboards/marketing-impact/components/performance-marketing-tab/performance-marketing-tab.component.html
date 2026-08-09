@@ -233,6 +233,10 @@
             <div class="h-10 animate-pulse rounded bg-gray-100"></div>
           }
         </div>
+      } @else if (keywordError()) {
+        <div class="flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8" role="alert" data-testid="keyword-performance-error">
+          <p class="text-sm text-red-700">Keyword attribution data is temporarily unavailable. Please try again later.</p>
+        </div>
       } @else if (hasKeywords()) {
         <div class="overflow-x-auto">
           <div class="min-w-[1000px]">

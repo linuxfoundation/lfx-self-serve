@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { WEEKLY_BRIEF_ERROR_REASON } from '../constants/weekly-brief.constants';
+
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
+
+/** Recognized values of `WeeklyBrief.error_reason` — see `WEEKLY_BRIEF_ERROR_REASON`. */
+export type WeeklyBriefErrorReason = (typeof WEEKLY_BRIEF_ERROR_REASON)[keyof typeof WEEKLY_BRIEF_ERROR_REASON];
 
 /**
  * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
@@ -38,6 +43,19 @@ export interface WeeklyBrief {
   last_edited_at?: string;
   /** LFX username of the caller who last edited the brief. */
   last_edited_by?: string;
+  /**
+   * Set when `state` is 'error' and upstream identified a specific cause. `error_reason`
+   * is a pinned part of the upstream contract (LFXV2-2989) — known values today are
+   * "no_sources" and "ai_error". `WeeklyBriefErrorReason` values are the only ones the UI
+   * treats specially; any other string or absence renders the generic failure state. The
+   * BFF forwards this field through unchanged — no server-side mapping needed.
+   *
+   * `& {}` is the "open enum" idiom: it keeps `WeeklyBriefErrorReason`'s
+   * literals as editor-suggested autocomplete without collapsing the whole
+   * union to plain `string`, which a bare `WeeklyBriefErrorReason | string`
+   * would do.
+   */
+  error_reason?: WeeklyBriefErrorReason | (string & {});
 }
 
 export interface WeeklyBriefThrottle {
@@ -45,6 +63,11 @@ export interface WeeklyBriefThrottle {
   generates_limit: number;
   regenerations_used: number;
   regenerations_limit: number;
+  /**
+   * Advisory display timestamp only (upstream `NextWindowReset()` — next Sunday 00:00 UTC).
+   * Counters actually reset at the Fri→Sat window rollover, since upstream keys the throttle
+   * entry on the same `window_start` as the brief itself.
+   */
   window_resets_at: string;
 }
 

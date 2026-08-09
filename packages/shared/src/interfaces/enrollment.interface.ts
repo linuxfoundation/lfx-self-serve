@@ -4,19 +4,19 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 export interface EnrollmentMembership {
-  Status: 'Active' | 'Purchased' | 'Expired';
-  AutoRenew: boolean;
-  PurchaseDate: string;
-  EndDate: string;
-  Price: number;
-  ID: string;
-  ExtPaymentType: string;
+  status: 'Active' | 'Purchased' | 'Expired';
+  autoRenew: boolean;
+  purchaseDate: string;
+  endDate: string;
+  price: number;
+  id: string;
+  extPaymentType: string;
 }
 
 export interface IndividualEnrollment {
   projectName: string;
   projectSlug: string;
-  ProductName: string;
+  productName: string;
   projectDesc: string;
   enrollButton: string;
   price?: number;
@@ -57,4 +57,8 @@ export interface DisplayEnrollment extends IndividualEnrollment {
   pending: boolean;
 }
 
-export type EnrollmentsState = { kind: 'loading' } | { kind: 'loaded'; items: IndividualEnrollment[] } | { kind: 'error'; message: string };
+// One state machine (loading | loaded | error) reused for both the raw server items and the
+// component's display projection, so the two variants can't drift apart.
+export type EnrollmentsStateOf<T> = { kind: 'loading' } | { kind: 'loaded'; items: T[] } | { kind: 'error'; message: string };
+export type EnrollmentsState = EnrollmentsStateOf<IndividualEnrollment>;
+export type DisplayEnrollmentsState = EnrollmentsStateOf<DisplayEnrollment>;

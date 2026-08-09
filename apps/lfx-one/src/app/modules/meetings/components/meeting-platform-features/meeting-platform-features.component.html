@@ -128,6 +128,68 @@
           </div>
         </div>
       }
+
+      <!-- Send Reminder Email (with nested timing inputs) -->
+      <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()">
+        @if (form().get('auto_email_reminder_enabled')?.value) {
+          <div class="mt-4 pt-4 border-t border-gray-200 flex flex-col gap-2">
+            <div class="flex items-center gap-x-2 gap-y-1 flex-wrap" role="group" aria-label="Send reminder before the meeting starts">
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderHours"
+                  size="small"
+                  id="email-reminder-hours"
+                  data-testid="email-reminder-hours-input"></lfx-input-number>
+                <label for="email-reminder-hours" class="text-sm text-neutral-950">hours</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderMinutes"
+                  size="small"
+                  id="email-reminder-minutes"
+                  data-testid="email-reminder-minutes-input"></lfx-input-number>
+                <label for="email-reminder-minutes" class="text-sm text-neutral-950">minutes</label>
+              </div>
+              <span class="text-sm text-neutral-950">before the meeting starts</span>
+              <i
+                class="fa-light fa-info-circle text-gray-400 cursor-help"
+                tabindex="0"
+                role="img"
+                [attr.aria-label]="emailReminderTooltip"
+                [pTooltip]="emailReminderTooltip"
+                tooltipEvent="both"
+                tooltipPosition="right"
+                tooltipStyleClass="text-xs max-w-xs"
+                data-testid="email-reminder-tooltip"></i>
+            </div>
+            @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-required-error">Reminder hours is required</p>
+            }
+            @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
+            }
+            @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-min-error">Reminder must be at least 2 hours before the meeting starts</p>
+            }
+            @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-hours-max-error">Reminder cannot be more than 24 hours before the meeting starts</p>
+            }
+            @if (
+              (form().get('reminderMinutes')?.errors?.['required'] ||
+                form().get('reminderMinutes')?.errors?.['pattern'] ||
+                form().get('reminderMinutes')?.errors?.['min'] ||
+                form().get('reminderMinutes')?.errors?.['max']) &&
+              form().get('reminderMinutes')?.touched
+            ) {
+              <p class="text-sm text-red-600" data-testid="email-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+            }
+          </div>
+        }
+      </lfx-feature-toggle>
     </div>
   </div>
 </div>

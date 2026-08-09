@@ -6,6 +6,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   CommitteeCreateData,
+  CommitteeOrganizationReference,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -816,7 +817,12 @@ export class CommitteeController {
         };
       }
 
-      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData);
+      // The LFID flow redirects to the committee page on success, so wait briefly for the
+      // membership to be readable. Translated into a server-side option rather than forwarded as
+      // a client claim; the strict `=== true` check matches the pre-check gate above. Safe as a
+      // client-influenced latency decision — the worst a caller can do is lengthen or skip their
+      // own bounded wait, and no authorization outcome depends on it.
+      await this.committeeService.acceptCommitteeInvite(req, id, inviteId, acceptData, { confirmMembership: body.from_lfid_invite === true });
 
       logger.success(req, 'accept_committee_invite', startTime, { committee_id: id, invite_id: inviteId });
       res.status(204).send();
@@ -1328,10 +1334,11 @@ export class CommitteeController {
    */
   public async joinCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
+    const { organization } = req.body as { organization?: CommitteeOrganizationReference };
     const startTime = logger.startOperation(req, 'join_committee', { committee_id: id });
 
     try {
-      const member = await this.committeeService.joinCommittee(req, id);
+      const member = await this.committeeService.joinCommittee(req, id, organization);
 
       logger.success(req, 'join_committee', startTime, { committee_id: id });
       res.status(201).json(member);
