@@ -30,7 +30,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 
 - **Uncommitted changes?** — Ask the contributor: commit now or stash?
 - **No commits ahead of main?** — The branch has nothing to validate. Ask if they're on the right branch.
-- **Commit messages missing JIRA ticket?** — Flag commits that don't include `LFXV2-` references in subject or body.
+- **Commit messages missing a ticket reference?** — Flag commits that don't include `LFXV2-XXX` (JIRA), `GH-XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`) in subject or body. See `.claude/rules/commit-workflow.md` § Ticket Tracking.
 - **Commits missing `--signoff`?** — Flag any commits without `Signed-off-by:` lines (visible in the full commit body above).
 
 Resolve any issues before proceeding to the checks below.
@@ -123,7 +123,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 - **All changes committed?** — If not, remind the contributor to commit remaining changes.
 - **Commit messages follow conventions?** — `type(scope): description` format per `commit-workflow.md`.
 - **`--signoff` on all commits?** — Every commit must have `Signed-off-by:` (check in the full body output above).
-- **JIRA ticket referenced?** — Commit messages should include `LFXV2-` references.
+- **Ticket referenced?** — Commit messages should include `LFXV2-XXX` (JIRA), `GH-XXX` (GitHub Issue), or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`).
 
 ## Check 7: Change Summary
 

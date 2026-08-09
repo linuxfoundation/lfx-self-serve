@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
@@ -29,6 +29,8 @@ export class HeaderComponent {
   private readonly projectService = inject(ProjectService);
   private readonly appService = inject(AppService);
   public readonly userService = inject(UserService);
+
+  public readonly showMyMeetings = input<boolean>(true);
 
   // Mobile search state
   public showMobileSearch: WritableSignal<boolean> = signal(false);

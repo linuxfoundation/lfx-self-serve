@@ -11,21 +11,21 @@ Each item lists its `rule:` ID (used in finding JSON), severity, the check, the 
 
 ## 1. `pr-shape/branch-name` — SHOULD_FIX
 
-**Check:** the current branch matches `<type>/LFXV2-<number>` per `.claude/rules/commit-workflow.md`.
+**Check:** the current branch matches `<type>/LFXV2-<number>` (JIRA) or `<type>/GH-<number>` (GitHub Issue) per `.claude/rules/commit-workflow.md`.
 
-Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/LFXV2-[0-9]+$`
+Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(LFXV2-[0-9]+|GH-[0-9]+)$`
 
-**Failure message:** `Branch name '<branch>' does not match '<type>/LFXV2-<number>'.`
+**Failure message:** `Branch name '<branch>' does not match '<type>/LFXV2-<number>' or '<type>/GH-<number>'.`
 
-**Suggestion:** `git branch -m <type>/LFXV2-<ticket>` — e.g. `git branch -m feat/LFXV2-1827`.
+**Suggestion:** `git branch -m <type>/LFXV2-<ticket>` or `git branch -m <type>/GH-<issue>` — e.g. `git branch -m feat/LFXV2-1827` or `git branch -m feat/GH-1331`.
 
 ## 2. `pr-shape/jira` — SHOULD_FIX
 
-**Check:** at least one commit subject, commit body, or PR body contains a `LFXV2-XXX` reference. Extract with `grep -oE 'LFXV2-[0-9]+'`.
+**Check:** at least one commit subject, commit body, or PR body contains a `LFXV2-XXX` reference, a `GH-XXX` GitHub Issue reference, or a fully-qualified `org/repo#XXX` GitHub Issue reference (e.g. `linuxfoundation/lfx-self-serve#1331`). Extract with `grep -oE 'LFXV2-[0-9]+|GH-[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'`.
 
-**Failure message:** `No LFXV2-XXX reference found in commit messages or PR body. All work must be tracked in JIRA.`
+**Failure message:** `No LFXV2-XXX, GH-XXX, or org/repo#XXX reference found in commit messages or PR body. All work must be tracked in JIRA or a GitHub Issue.`
 
-**Suggestion:** Add the ticket reference to a commit message (`git commit --amend`) or to the PR body (post-PR).
+**Suggestion:** Add the ticket reference to a commit message (`git commit --amend`) or to the PR body (post-PR) — `LFXV2-XXX` for JIRA, `GH-XXX` or `org/repo#XXX` for a GitHub Issue.
 
 ## 3. `pr-shape/conventional-commit` — SHOULD_FIX
 
@@ -90,9 +90,9 @@ Note: `U` is acceptable (good signature with an untrusted key); GitHub's "Verifi
 
 ## 8. `pr-shape/pr-title` — SHOULD_FIX
 
-**Check (post-PR only):** the PR title matches `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)(\([a-z0-9-]+\))?: .+$`, lowercase, MUST NOT include `LFXV2-XXX`. `chore` is invalid.
+**Check (post-PR only):** the PR title matches `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)(\([a-z0-9-]+\))?: .+$`, lowercase, MUST NOT include `LFXV2-XXX` or `GH-XXX`/`#XXX`. `chore` is invalid.
 
-**Failure message:** `PR title '<title>' violates conventional-commit format. Title must be lowercase, use a valid type (not 'chore'), and must NOT include the JIRA ticket (which lives in commits and PR body).`
+**Failure message:** `PR title '<title>' violates conventional-commit format. Title must be lowercase, use a valid type (not 'chore'), and must NOT include the ticket reference (JIRA or GitHub Issue — it lives in commits and PR body).`
 
 **Suggestion (example):**
 

@@ -32,6 +32,15 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public group detail - anonymous access with optional auth for membership enrichment
   { pattern: '/groups/', type: 'ssr', auth: 'optional' },
 
+  // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
+  // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
+  { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
+
+  // Public foundation and project group directories — unauthenticated discovery (LFXV2-2010)
+  // Regex-anchored to /:identifier/groups so the prefix cannot fail-open on unrelated paths
+  { pattern: /^\/foundations\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
+  { pattern: /^\/projects\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 
@@ -76,6 +85,11 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // or `/robots.txt-foo` (per `classifyRoute`'s string-pattern semantics on Line 84).
   { pattern: /^\/sitemap\.xml$/, type: 'ssr', auth: 'public' },
   { pattern: /^\/robots\.txt$/, type: 'ssr', auth: 'public' },
+
+  // Generic not-found page — public so anonymous users land on a branded 404 instead of a login
+  // prompt when redirected here from an unrecognized URL. Anchored regex prevents startsWith
+  // semantics from matching /not-found-admin or similar future paths.
+  { pattern: /^\/not-found\/?$/, type: 'ssr', auth: 'public' },
 
   // All other routes - Angular SSR routes requiring authentication
   { pattern: '/', type: 'ssr', auth: 'required' },

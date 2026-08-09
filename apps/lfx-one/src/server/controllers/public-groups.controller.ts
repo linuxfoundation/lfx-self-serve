@@ -9,12 +9,14 @@ import {
   GroupsIOMailingList,
   PublicGroupContext,
   PublicGroupDetail,
+  PublicGroupDirectoryResponse,
   PublicGroupLinks,
   PublicGroupMeeting,
   PublicGroupMember,
+  PublicGroupSummary,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils';
+import { buildCommitteeCadenceSummary, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
@@ -200,5 +202,203 @@ export class PublicGroupsController {
     } catch (error) {
       return next(error);
     }
+  }
+
+  public async getPublicGroupsByFoundation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { identifier } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_groups_by_foundation', { identifier });
+
+    try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      const foundationUid = await this.resolveProjectIdentifier(req, identifier);
+      const [foundation, childUids] = await Promise.all([
+        this.projectService.getProjectById(req, foundationUid, false),
+        this.projectService.getFoundationProjectUids(req, foundationUid),
+      ]);
+
+      const allCommittees = await this.fetchPublicCommitteesForProjects(req, childUids);
+      const projects = await this.resolveContextProjects(req, allCommittees);
+
+      const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
+
+      const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+
+      logger.success(req, 'get_public_groups_by_foundation', startTime, {
+        foundation_uid: foundationUid,
+        groups_count: groups.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getPublicGroupsByProject(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { identifier } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_groups_by_project', { identifier });
+
+    try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      const projectUid = await this.resolveProjectIdentifier(req, identifier);
+      const project = await this.projectService.getProjectById(req, projectUid, false);
+
+      let parentFoundation = null;
+      if (project.parent_uid) {
+        try {
+          const candidate = await this.projectService.getProjectById(req, project.parent_uid, false);
+          // ROOT is an administrative pseudo-project — treat its children as top-level foundations
+          if (candidate?.slug !== 'ROOT') {
+            parentFoundation = candidate;
+          }
+        } catch (error) {
+          logger.warning(req, 'get_public_groups_by_project', 'Parent foundation lookup failed, treating project as top-level', {
+            project_uid: projectUid,
+            parent_uid: project.parent_uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
+      const publicCommittees = committees.filter((c) => c.public);
+
+      const groups = publicCommittees
+        .map((c) => this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+
+      const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+
+      logger.success(req, 'get_public_groups_by_project', startTime, {
+        project_uid: projectUid,
+        groups_count: groups.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  private async resolveProjectIdentifier(req: Request, identifier: string): Promise<string> {
+    // UUID v4 pattern — treat as UID directly
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+      return identifier;
+    }
+    const result = await this.projectService.getProjectIdBySlug(req, identifier);
+    if (!result.exists || !result.uid) {
+      throw new ResourceNotFoundError('Project', identifier, {
+        operation: 'resolve_project_identifier',
+        service: 'public_groups_controller',
+        path: `/projects/${identifier}`,
+      });
+    }
+    return result.uid;
+  }
+
+  private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
+    const BATCH_SIZE = 10;
+    const seen = new Set<string>();
+    const result: Committee[] = [];
+    let successCount = 0;
+    let lastError: unknown;
+    for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
+      const batch = projectUids.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map((uid) =>
+          this.committeeService
+            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true })
+            .then((committees) => {
+              successCount++;
+              return committees;
+            })
+            .catch((error) => {
+              lastError = error;
+              logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
+                project_uid: uid,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return [] as Committee[];
+            })
+        )
+      );
+      for (const committees of batchResults) {
+        for (const c of committees) {
+          if (c.public && !seen.has(c.uid)) {
+            seen.add(c.uid);
+            result.push(c);
+          }
+        }
+      }
+    }
+    // If every call failed, the upstream is down — propagate rather than returning an empty directory
+    if (successCount === 0 && projectUids.length > 0) {
+      throw lastError;
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  }
+
+  private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
+    const uids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
+    const BATCH_SIZE = 10;
+    const map = new Map<string, any>();
+    for (let i = 0; i < uids.length; i += BATCH_SIZE) {
+      const batch = uids.slice(i, i + BATCH_SIZE);
+      const projects = await Promise.all(
+        batch.map((uid) =>
+          this.projectService.getProjectById(req, uid, false).catch((error) => {
+            logger.warning(req, 'resolve_context_projects', 'getProjectById failed for project, context will be incomplete', {
+              project_uid: uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          })
+        )
+      );
+      for (let j = 0; j < batch.length; j++) {
+        map.set(batch[j], projects[j]);
+      }
+    }
+    return map;
+  }
+
+  private buildGroupSummary(committee: Committee, projectMap: Map<string, any>, foundation: any, project: any): PublicGroupSummary {
+    const proj = project ?? projectMap.get(committee.project_uid) ?? null;
+    const isFoundationScope = !proj || proj.uid === foundation?.uid;
+
+    const context: PublicGroupContext = {
+      scope: isFoundationScope ? 'foundation' : 'project',
+      foundation_uid: foundation?.uid ?? committee.project_uid,
+      foundation_name: foundation?.name ?? '',
+      foundation_slug: foundation?.slug ?? '',
+      foundation_logo_url: foundation?.logo_url ?? undefined,
+      ...(!isFoundationScope &&
+        proj && {
+          project_uid: proj.uid,
+          project_name: proj.name,
+          project_slug: proj.slug,
+          project_logo_url: proj.logo_url ?? undefined,
+        }),
+    };
+
+    return {
+      uid: committee.uid,
+      name: committee.name,
+      display_name: committee.display_name,
+      description: committee.description ?? undefined,
+      category: committee.category,
+      behavioral_class: getGroupBehavioralClass(committee.category),
+      context,
+      join_mode: committee.join_mode,
+      total_members: committee.total_members,
+      website: committee.website,
+      has_public_calendar: committee.calendar?.public ?? false,
+    };
   }
 }

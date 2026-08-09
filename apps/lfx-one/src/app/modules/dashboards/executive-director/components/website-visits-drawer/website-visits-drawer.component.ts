@@ -154,7 +154,11 @@ export class WebsiteVisitsDrawerComponent {
     };
 
     const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || ''));
+    // Falls back to `tlf` to match how the overview loads the Web card
+    // (marketing-overview.component.ts) — the ED "all foundations" default. Mapping a
+    // missing selection to '' here instead would filter the request out entirely, so a
+    // populated card would open a permanently empty drawer.
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(

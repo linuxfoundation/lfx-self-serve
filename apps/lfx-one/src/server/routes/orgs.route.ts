@@ -16,6 +16,8 @@ import { OrgLensMembershipsController } from '../controllers/org-lens-membership
 import { OrgLensPeopleController } from '../controllers/org-lens-people.controller';
 import { OrgLensProjectDetailController } from '../controllers/org-lens-project-detail.controller';
 import { OrgLensProjectsController } from '../controllers/org-lens-projects.controller';
+import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
+import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 
 function buildOrgsRouter(): Router {
@@ -28,10 +30,12 @@ function buildOrgsRouter(): Router {
   const orgLensPeopleController = new OrgLensPeopleController();
   const orgLensKeyContactsController = new OrgLensKeyContactsController();
   const orgLensAccessController = new OrgLensAccessController();
+  const orgLensGroupsController = new OrgLensGroupsController();
   const orgLensTrainingController = new OrgLensTrainingController();
   const orgLensContributionsController = new OrgLensContributionsController();
   const orgLensMeetingsController = new OrgLensMeetingsController();
   const orgLensProjectsController = new OrgLensProjectsController();
+  const orgLensRoiController = new OrgLensRoiController();
   const orgLensProjectDetailController = new OrgLensProjectDetailController();
   const orgIdentityController = new OrgIdentityController();
 
@@ -119,11 +123,20 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/training/trainings/:courseId/employees', (req, res, next) => orgLensTrainingController.getTrainingEmployees(req, res, next));
   router.get('/:orgUid/lens/training/trainings', (req, res, next) => orgLensTrainingController.getOrgTrainings(req, res, next));
 
+  // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
+  router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
+
   // LFXV2-2735 — Org Lens Meetings insights. Unlike the sibling org-lens routes these carry an
   // org-membership read gate (`assertOrgLensRead`) inside each handler, ahead of any data access.
   router.get('/:orgUid/lens/meetings/kpi', (req, res, next) => orgLensMeetingsController.getKpi(req, res, next));
   router.get('/:orgUid/lens/meetings/spend', (req, res, next) => orgLensMeetingsController.getSpend(req, res, next));
   router.get('/:orgUid/lens/meetings/influence', (req, res, next) => orgLensMeetingsController.getInfluence(req, res, next));
+
+  // LFXV2-2980 — Org Lens ROI Metrics.
+  // Register literal segments before any `/roi/.../:projectSlug` matcher, or they get consumed as a slug.
+  router.get('/:orgUid/lens/roi/summary', (req, res, next) => orgLensRoiController.getSummary(req, res, next));
+  router.get('/:orgUid/lens/roi/coverage', (req, res, next) => orgLensRoiController.getCoverage(req, res, next));
+  router.get('/:orgUid/lens/roi/annual', (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

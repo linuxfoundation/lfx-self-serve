@@ -21,3 +21,17 @@ export const PUBLIC_PROFILE_FETCH_TIMEOUT_MS = 10_000;
  * interpolated into the S3 key without path traversal or probing unrelated keys.
  */
 export const PUBLIC_PROFILE_USERNAME_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+
+// Training `Type` values surfaced publicly (myprofile parity): exam/subscription/bundle rows are
+// dropped from trainings; completed certifications surface via `certification_activities`.
+export const PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST: ReadonlySet<string> = new Set(['E-Learning', 'Instructor-Led', 'edX']);
+
+/** Enrollment `Status` values kept on the public trainings list (myprofile parity). */
+export const PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST: ReadonlySet<string> = new Set(['Enrolled', 'Completed', 'Started', 'Not started']);
+
+/** Certification `Status` values kept on the public certifications list — completed only (myprofile parity). */
+export const PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST: ReadonlySet<string> = new Set(['Completed']);
+
+// Epoch-zero placeholder the artifact writes for a missing date. Training dates matching it are blanked
+// to ''; certifications with such a StartDate are dropped (myprofile's `!StartDate.includes('1970')`).
+export const PUBLIC_PROFILE_EPOCH_PLACEHOLDER = '1970';
