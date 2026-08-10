@@ -906,7 +906,10 @@ export class WeeklyBriefService {
       throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
-        errorBody: { reason: slackErrorText || 'unknown error' },
+        // status is log-only (MicroserviceError#toResponse never echoes errorBody to the client
+        // except via its details/errors sub-keys) — lets an operator tell a 429 rate-limit apart
+        // from a 403 revoked webhook even when the body itself is empty or unreadable.
+        errorBody: { status: response.status, reason: slackErrorText || 'unknown error' },
       });
     }
 
@@ -948,9 +951,11 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Reads at most `maxChars` characters of `response`'s body, cancelling the underlying stream
-   * as soon as the cap is hit instead of buffering the rest — unlike `response.text()`, which
-   * always materializes the entire body before any slicing can happen.
+   * Reads `response`'s body in chunks and returns at most `maxChars` characters, cancelling the
+   * underlying stream once that many have been read instead of continuing to buffer — unlike
+   * `response.text()`, which always buffers the entire body first regardless of how much of it
+   * ends up used. The accumulator may briefly hold up to one extra transport chunk beyond
+   * `maxChars` between reads; only the final, returned string is guaranteed capped.
    */
   private async readBoundedText(response: Response, maxChars: number): Promise<string> {
     const reader = response.body?.getReader();
