@@ -6,7 +6,6 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import {
   lfxColors,
-  ORG_LENS_ROI_DEFAULT_METHOD,
   ORG_LENS_ROI_DONUT_PALETTE,
   ORG_LENS_ROI_DONUT_REMAINDER_COLOR,
   ORG_LENS_ROI_KPI_EXPLANATION,
@@ -15,15 +14,13 @@ import {
   ORG_LENS_ROI_PROJECT_MEASURE_LABELS,
   ORG_LENS_ROI_PROJECT_MEASURES,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, OrgLensRoiProjects, OrgLensRoiProjectSlice } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, OrgLensRoiProjectSlice } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
-
-const EMPTY_PROJECTS: OrgLensRoiProjects = { method: ORG_LENS_ROI_DEFAULT_METHOD, rows: [] };
 
 /** Highest-contributing projects by a selectable measure. */
 @Component({
@@ -49,9 +46,14 @@ export class OrgRoiProjectsDonutComponent {
   protected readonly failed = signal(false);
   protected readonly forbidden = signal(false);
 
-  private readonly projects: Signal<OrgLensRoiProjects> = this.initProjects();
+  /**
+   * The rows alone, not the whole response. Holding the envelope meant inventing a `method` for the
+   * pre-fetch sentinel, which then disagreed with the bound input whenever a non-default method was
+   * restored — a contradiction with nothing to resolve it, since nothing here reads that field.
+   */
+  private readonly projectRows: Signal<OrgLensRoiProjectRow[]> = this.initProjectRows();
 
-  protected readonly hasRows: Signal<boolean> = computed(() => this.projects().rows.length > 0);
+  protected readonly hasRows: Signal<boolean> = computed(() => this.projectRows().length > 0);
 
   /**
    * The disclosure names the investment figure, but Net Return is `totalReturn - totalExpenditure`
@@ -65,8 +67,8 @@ export class OrgRoiProjectsDonutComponent {
   /** Ranked by the selected measure, signed values intact. */
   private readonly ranked: Signal<{ row: OrgLensRoiProjectRow; value: number }[]> = computed(() => {
     const measure = this.measure();
-    return this.projects()
-      .rows.map((row) => ({ row, value: this.measureValue(row, measure) }))
+    return this.projectRows()
+      .map((row) => ({ row, value: this.measureValue(row, measure) }))
       .filter((entry) => Number.isFinite(entry.value))
       .sort((a, b) => b.value - a.value || this.compareProjectIds(a.row.projectId, b.row.projectId));
   });
@@ -236,7 +238,7 @@ export class OrgRoiProjectsDonutComponent {
     return row.profit;
   }
 
-  private initProjects(): Signal<OrgLensRoiProjects> {
+  private initProjectRows(): Signal<OrgLensRoiProjectRow[]> {
     // Keyed by string, not the account object: that object is rewritten in place and would retrigger the fetch.
     const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}`));
 
@@ -252,18 +254,19 @@ export class OrgRoiProjectsDonutComponent {
         switchMap(([orgUid, method]) =>
           this.roiService.getProjects(orgUid, method).pipe(
             tap(() => this.loading.set(false)),
+            map((projects) => projects.rows),
             catchError((error: unknown) => {
               console.error('Failed to load ROI projects', error);
               this.loading.set(false);
               // Only a 403 may show the no-access message; a 503 must not.
               if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
               else this.failed.set(true);
-              return of(EMPTY_PROJECTS);
+              return of([] as OrgLensRoiProjectRow[]);
             })
           )
         )
       ),
-      { initialValue: EMPTY_PROJECTS }
+      { initialValue: [] as OrgLensRoiProjectRow[] }
     );
   }
 }
