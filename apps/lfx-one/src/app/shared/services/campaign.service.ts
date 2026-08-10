@@ -70,6 +70,12 @@ export class CampaignService {
           return {
             campaigns: status.result?.campaigns ?? [],
             errors: status.result?.errors ?? (status.error ? [status.error] : []),
+            // NOT coalesced to `[]`, unlike the two above, and the asymmetry is deliberate.
+            // `campaigns` and `errors` are non-optional on `CampaignJobOutcome`, so a caller
+            // may iterate them unguarded. `platformResults` is optional precisely so that
+            // "this path does not report per-platform outcomes" (the vendor-direct path)
+            // stays distinguishable from "it does, and every platform failed". Defaulting it
+            // to `[]` here would erase that distinction at the only place it is still visible.
             platformResults: status.platformResults,
           };
         }

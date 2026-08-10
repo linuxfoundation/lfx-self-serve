@@ -140,6 +140,11 @@ export class CampaignServiceClient {
  * campaigns that were really created.
  */
 export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): CampaignJobStatus {
+  // Stays `undefined` when campaign-service sent no `result` — it is NOT defaulted to `[]`.
+  // An empty array would assert "the job reported on zero platforms", which is a different
+  // claim from "the job reported nothing yet"; the poller reaches here for terminal states
+  // that legitimately carry no result (a job that failed before dispatch). The component
+  // coalesces to `[]` at the point of rendering, where the distinction no longer matters.
   const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => ({
     platform: r.platform,
     ok: r.ok,
