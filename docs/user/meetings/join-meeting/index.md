@@ -29,6 +29,32 @@ If you open a meeting link and see the **Meeting Not Found** page, it's usually 
 
 There's no passcode you enter manually. Instead, some meetings are marked **Restricted**, which means only people who submit an email or username matching an existing registrant record can see full join details. If you hit this, ask the meeting organizer to add you as a registrant. Note that the organizer's name and contact link are only shown on the join page to signed-in visitors — if you're not signed in, sign in or ask whoever shared the link with you to reach the organizer on your behalf.
 
+## Register for a meeting
+
+If a meeting is **public and not restricted**, and you haven't already been invited, the join page shows a **Register for Meeting** button. Selecting it opens a short form: First Name, Last Name, and Email are required; Job Title and Organization are optional. Submitting adds you as a registrant for that meeting — no LFX account needed. The button doesn't appear if you're already invited, or if the meeting is Restricted (for a Restricted meeting, ask the organizer to add you as a registrant instead).
+
+## Respond to an invitation (RSVP)
+
+If you've been invited to a meeting, the join page shows **Yes**, **No**, and **Maybe** buttons so you can respond. For a recurring meeting, responding asks you to choose a scope first:
+
+- **All occurrences** — applies your response to the entire series
+- **This occurrence only** — applies only to the specific meeting you're responding from
+- **This and following occurrences** — applies to this occurrence and every future one in the series
+
+## Meeting materials
+
+The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). Materials are visible to anyone who can view the meeting, with one exception: for a **Private** meeting, you need to sign in to see materials. Only the meeting organizer can add or update materials.
+
+## After the meeting: recording, transcript, and AI summary
+
+Once a meeting has ended, its join page can show a **Meeting Tools** panel with a recording link, an AI-generated summary, and a transcript — if the organizer enabled those features and content is available. This panel only appears if you're **signed in**, and only if you have access to the meeting:
+
+- If the meeting was **public and not restricted**, any signed-in visitor has access.
+- Otherwise, you have access if you're the organizer, a registrant, someone who actually attended, or a member of a committee linked to the meeting.
+- Unauthenticated visitors never see this panel for a non-public or restricted meeting.
+
+The AI summary shows an **Approved** or **Pending Review** status badge alongside its content.
+
 ## Related
 
 - [Meetings overview](../) — an overview of the Meetings section

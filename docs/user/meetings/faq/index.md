@@ -44,3 +44,19 @@ There's no passcode field you enter manually. **Private** meetings do have a pas
 ## Why can't I see a meeting I was invited to?
 
 Make sure you're in the right lens: your personal **My Meetings** view (Me lens) shows meetings across all your projects, while a project's **Meetings** page (Project lens) only shows that project's meetings. Use the lens switcher to move between them. If you only have the join link, you can open it directly in your browser — no account or project context needed, unless the meeting is restricted.
+
+## Can I register myself for a meeting I wasn't invited to?
+
+Yes, if the meeting is **public and not restricted**. Its join page shows a **Register for Meeting** button with a short form (name, email, and optionally job title and organization). Submitting it adds you as a registrant. This button isn't available for **Restricted** meetings — for those, ask the organizer to add you as a registrant.
+
+## Can I RSVP to a meeting I'm invited to?
+
+Yes. The join page shows **Yes**, **No**, and **Maybe** buttons for invited attendees. For a recurring meeting, you'll also choose whether your response applies to **all occurrences**, **this occurrence only**, or **this and following occurrences**.
+
+## Where can I find a meeting's recording, transcript, or AI summary?
+
+On the meeting's join page, after the meeting has ended, if the organizer enabled those features. You need to be signed in to see this section, and you also need access to the meeting itself: for a **public, non-restricted** meeting, any signed-in visitor has access; otherwise, you need to be the organizer, a registrant, an actual past attendee, or a member of a committee linked to the meeting. Unauthenticated visitors never see recordings, transcripts, or summaries for a non-public or restricted meeting.
+
+## Where can I find meeting materials?
+
+On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). Anyone who can view the meeting can see its materials, except that a **Private** meeting's materials require signing in first.

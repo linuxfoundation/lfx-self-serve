@@ -21,6 +21,21 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
+For a meeting that's part of a recurring series, saving your edit asks you to choose a scope: **Edit only this occurrence** or **Edit this and all future occurrences**. There's no option to edit the entire series at once — this scope choice is separate from the delete/cancel scope below.
+
+## Manage guests and registrants
+
+The **Invite Guests** step (in the create/edit meeting form) is where you control who's invited — and for a **Restricted** meeting, this list is exactly what determines who can get past the registrant check on the join page. There are two ways to add people:
+
+- **Direct add** — search for a person and add them as an individual guest.
+- **Committee-based** — link a project committee to the meeting, then filter its members by voting status before adding them as registrants. Everyone added this way is still tracked as an individual registrant.
+
+The invitation list shows a running count split as "X from committees" and "Y direct guests."
+
+## Manage meeting materials
+
+On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add are visible to anyone with access to the meeting, except that a **Private** meeting's materials require sign-in to view.
+
 ## Delete a meeting
 
 Select the delete (trash) icon on a meeting you organize.

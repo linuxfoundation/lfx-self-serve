@@ -24,10 +24,10 @@ Confirm you have the correct project selected. Meetings are associated with a sp
    - **Meeting Details** — title, date, time, and recurrence, if this is a recurring series
    - **Platform & Features** — choose your video platform and enable features like recording or transcripts
    - **Resources & Links**
-   - **Invite Guests**
+   - **Invite Guests** — add people directly by searching for them, or link a project committee and add its members (filterable by voting status) as registrants. This list also determines who can access a **Restricted** meeting's join details.
 5. Save the meeting.
 
-You can also use AI assistance to draft a starting agenda once you've filled in the title, meeting type, and a short prompt.
+You can also use AI assistance to draft a starting agenda once you've filled in the title, meeting type, and a short prompt. As an alternative (or a starting point to edit further), the **Agenda Templates** panel offers pre-built templates for your meeting type — pick one to use its structure instead of drafting from scratch.
 
 ## After scheduling
 
