@@ -195,8 +195,11 @@ if (!otlpEndpoint) {
         // request (it looks up a per-request record that's only populated when a span exists).
         // The 'hooks.slack.com' host below is intentionally duplicated from
         // SLACK_INCOMING_WEBHOOK_URL_PATTERN in packages/shared/src/constants/committees.constants.ts
-        // — this file runs via `node --import` before that package loads, so it can't import the
-        // constant. If the allowlisted host ever changes there, update it here too.
+        // rather than importing it: that constant is a full-URL regex, while this check compares
+        // against request.origin (scheme+host only), so it can't be reused as-is. This OTel
+        // bootstrap also deliberately avoids importing any app-side package, so no app code loads
+        // before instrumentations are registered. If the allowlisted host ever changes there,
+        // update it here too.
         ignoreRequestHook: (request) => request.origin === 'https://hooks.slack.com',
         headersToSpanAttributes: {
           requestHeaders: ['content-type'],
