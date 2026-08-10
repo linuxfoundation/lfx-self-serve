@@ -441,7 +441,15 @@ export class CommitteeService {
     const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
 
     // Step 2: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
+    // newCommittee?.uid, not newCommittee.uid: proxyRequest can return null for an empty upstream
+    // body (see stripChatWebhookUrl's doc comment below) — an unguarded deref here would throw
+    // before reaching that helper's own null tolerance, and a throw inside this catch block isn't
+    // caught by it, so the untyped 500 this whole null-tolerance effort exists to avoid would
+    // still happen on this path specifically.
+    if (
+      newCommittee?.uid &&
+      (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined)
+    ) {
       try {
         await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
       } catch {
@@ -1735,8 +1743,16 @@ export class CommitteeService {
    * updateCommittee's no-core-update branch both feed a raw `proxyRequest` result straight into
    * this helper, so an unguarded destructure here would turn that into an untyped 500 instead of
    * whatever typed handling (or lack thereof) the caller already has for a null response.
+   *
+   * Overloaded rather than a single `T | null` signature: the `.map()` call sites always pass a
+   * real, already-non-null `Committee` from an array upstream fetches guarantee non-null, and
+   * should keep getting `T` back — only createCommittee/updateCommittee, which feed a raw,
+   * possibly-null `proxyRequest` result straight in, need the nullable overload. A single
+   * `T | null` signature would force every call site to handle null it can't actually receive.
    */
-  private stripChatWebhookUrl<T extends Committee>(committee: T): T {
+  private stripChatWebhookUrl<T extends Committee>(committee: T): T;
+  private stripChatWebhookUrl<T extends Committee>(committee: T | null | undefined): T | null | undefined;
+  private stripChatWebhookUrl<T extends Committee>(committee: T | null | undefined): T | null | undefined {
     if (!committee) {
       return committee;
     }

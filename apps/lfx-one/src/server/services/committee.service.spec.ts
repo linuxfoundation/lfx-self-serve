@@ -587,5 +587,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       // this promise instead of resolving it — .resolves fails the test if that happens.
       await expect(service.createCommittee(req, { name: 'Test', category: 'general' })).resolves.toBeDefined();
     });
+
+    it('createCommittee resolves when upstream returns a null body AND a settings field was requested — the settings-update branch derefs newCommittee.uid before ever reaching stripChatWebhookUrl', async () => {
+      proxyRequest.mockResolvedValueOnce(null);
+
+      await expect(service.createCommittee(req, { name: 'Test', category: 'general', is_audit_enabled: true })).resolves.toBeDefined();
+
+      // The settings PUT itself must not have been attempted — there's no committee uid to target.
+      expect(updateWithETag).not.toHaveBeenCalled();
+    });
   });
 });

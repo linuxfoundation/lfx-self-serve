@@ -28,6 +28,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
   let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
   let component: CommitteeSettingsTabComponent;
   let updateCommittee: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
   let impersonating: WritableSignal<boolean>;
 
   const COMMITTEE: Committee = {
@@ -39,6 +40,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
 
   beforeEach(async () => {
     updateCommittee = vi.fn(() => of(COMMITTEE));
+    messageAdd = vi.fn();
     impersonating = signal(false);
 
     await TestBed.configureTestingModule({
@@ -57,7 +59,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
             updateMailingList: vi.fn(() => of({})),
           },
         },
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
         // Real service, not a fake: PrimeNG's <p-confirmDialog> in the template subscribes to
         // ConfirmationService's internal Subjects directly in its constructor — a useValue fake
         // without them throws "Cannot read properties of undefined (reading 'subscribe')" the
@@ -102,7 +104,13 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(component.form.controls.chat_webhook_url.value).toBe('https://hooks.slack.com/services/T1/B1/X');
   });
 
-  it('nulls chat_webhook_url on a committee refresh when the control is pristine (untouched)', async () => {
+  it('nulls chat_webhook_url on a committee refresh when the control is pristine — even if it holds a value (e.g. left over from a prior successful save reset)', async () => {
+    // Seeded via setValue + markAsPristine, not left at its initial null — a test asserting
+    // null-stays-null after a refresh would pass even if the constructor's
+    // `...(preserveWebhookEdit ? {} : { chat_webhook_url: null })` clause were deleted entirely.
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.markAsPristine();
+
     fixture.componentRef.setInput('committee', { ...COMMITTEE, name: 'Renamed' });
     await fixture.whenStable();
 
@@ -147,6 +155,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(component.form.controls.chat_webhook_url.dirty).toBe(true);
     expect(component.form.controls.chat_webhook_url.value).toBe('https://hooks.slack.com/services/T1/B1/X');
     expect(emitted).toHaveLength(1);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Could not store webhook' }));
   });
 
   it('surfaces IMPERSONATION_READ_ONLY (403) without emitting committeeUpdated', () => {
@@ -160,6 +169,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     component.saveSettings();
 
     expect(emitted).toHaveLength(0);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('impersonating') }));
   });
 
   it('surfaces NOT_PROJECT_WRITER (403) without emitting committeeUpdated — nothing on the save persisted', () => {
@@ -171,5 +181,18 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     component.saveSettings();
 
     expect(emitted).toHaveLength(0);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Only project writers') }));
+  });
+
+  it('surfaces a 400 field-validation error using the server-supplied message, without emitting committeeUpdated', () => {
+    updateCommittee.mockReturnValueOnce(throwError(() => ({ status: 400, error: { errors: [{ message: 'Must be a valid Slack Incoming Webhook URL' }] } })));
+
+    const emitted: void[] = [];
+    component.committeeUpdated.subscribe(() => emitted.push(undefined));
+
+    component.saveSettings();
+
+    expect(emitted).toHaveLength(0);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Must be a valid Slack Incoming Webhook URL' }));
   });
 });
