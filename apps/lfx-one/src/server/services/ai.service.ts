@@ -228,13 +228,18 @@ export class AiService {
                         description: 'Concise, actionable follow-up item text',
                         maxLength: WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
                       },
+                      // Nullable, not optional — OpenAI-style strict mode (strict: true +
+                      // additionalProperties: false below) requires every key in `properties` to
+                      // also appear in `required`; expressing "the model may not know this" via
+                      // omission (as the sibling agenda/newsletter schemas never needed to) rejects
+                      // every real call. See PR #1362 review — Cursor Bugbot + @dealako.
                       suggested_owner_role: {
-                        type: 'string',
-                        description: 'Suggested owner role/persona for the item, when inferable (e.g. "chair", "maintainer")',
+                        type: ['string', 'null'],
+                        description: 'Suggested owner role/persona for the item, when inferable (e.g. "chair", "maintainer"), or null if not inferable',
                         maxLength: WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
                       },
                     },
-                    required: ['text'],
+                    required: ['text', 'suggested_owner_role'],
                     additionalProperties: false,
                   },
                 },
@@ -284,9 +289,14 @@ export class AiService {
 
     // The schema's maxLength values are a request to the model, not a guarantee about its
     // response — clamp defensively here too, since these strings get cached for the full TTL
-    // and rendered into a fixed-layout Pending Actions row.
+    // and rendered into a fixed-layout Pending Actions row. Whitespace-only text is rejected
+    // (not just trimmed) — an empty-after-trim item would still cache and render as a blank
+    // row with a live Dismiss control (PR #1362 review — Cursor Bugbot + Copilot + @dealako).
     const items = parsed.items
-      .filter((item: unknown): item is { text: string; suggested_owner_role?: string } => !!item && typeof (item as { text?: unknown }).text === 'string')
+      .filter(
+        (item: unknown): item is { text: string; suggested_owner_role?: string } =>
+          !!item && typeof (item as { text?: unknown }).text === 'string' && (item as { text: string }).text.trim().length > 0
+      )
       .map((item: { text: string; suggested_owner_role?: string }) => ({
         text: item.text.trim().slice(0, WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH),
         suggested_owner_role:

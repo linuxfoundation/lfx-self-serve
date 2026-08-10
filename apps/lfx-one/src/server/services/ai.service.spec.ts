@@ -118,6 +118,34 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     expect(result.items).toEqual([{ text: 'Valid item', suggested_owner_role: undefined }]);
   });
 
+  it('drops whitespace-only text instead of caching a blank row (PR #1362 review)', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [{ text: '   ' }, { text: '\n\t' }, { text: 'Real item' }] })));
+
+    const result = await service.extractBriefActionItems(req, { brief_text: 'brief' });
+
+    expect(result.items).toEqual([{ text: 'Real item', suggested_owner_role: undefined }]);
+  });
+
+  it('normalizes a null suggested_owner_role (the strict-schema-required shape) to undefined', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [{ text: 'Item with no inferable owner', suggested_owner_role: null }] })));
+
+    const result = await service.extractBriefActionItems(req, { brief_text: 'brief' });
+
+    expect(result.items).toEqual([{ text: 'Item with no inferable owner', suggested_owner_role: undefined }]);
+  });
+
+  it('sends a schema where every property in the items schema is also in required (strict-mode requirement, PR #1362 review)', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+
+    await service.extractBriefActionItems(req, { brief_text: 'brief' });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    const itemSchema = body.response_format.json_schema.schema.properties.items.items;
+    expect(itemSchema.required).toEqual(expect.arrayContaining(Object.keys(itemSchema.properties)));
+    expect(itemSchema.properties.suggested_owner_role.type).toEqual(['string', 'null']);
+  });
+
   it('throws when AI_PROXY_URL/AI_API_KEY are unset (isAiConfigured() false) — never calls fetch', async () => {
     process.env['AI_PROXY_URL'] = '';
     process.env['AI_API_KEY'] = '';

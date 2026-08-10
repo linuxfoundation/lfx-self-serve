@@ -140,14 +140,14 @@ export const AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT = `You are an assistant that re
 Key principles:
 - Only extract items that describe something a person could actually go do (e.g. "onboard the new member", "review the proposed charter change") — not summaries, announcements, or background context.
 - Each item should be a short, specific, imperative phrase (e.g. "Onboard the new member from Acme Corp"), not a restatement of a whole paragraph.
-- If you can infer who would naturally own an item (e.g. "chair", "maintainer", "ED"), include it as suggested_owner_role. Omit it when unclear — never guess a specific person's name.
+- If you can infer who would naturally own an item (e.g. "chair", "maintainer", "ED"), set suggested_owner_role to that. When unclear, set it to null — never guess a specific person's name, and never omit the field.
 - Extract at most ${WEEKLY_BRIEF_ACTION_ITEMS_MAX} items, prioritizing the most concrete and time-sensitive ones.
 - Many briefs — especially a quiet week with no notable activity — will have zero actionable items. Returning an empty items array is correct and expected; do not invent items to avoid an empty result.
 
 You must respond with a valid JSON object in this exact format:
 {
   "items": [
-    { "text": "string, a concise actionable follow-up", "suggested_owner_role": "string, optional" }
+    { "text": "string, a concise actionable follow-up", "suggested_owner_role": "string or null — never omitted" }
   ]
 }
 
