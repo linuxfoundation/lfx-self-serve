@@ -53,8 +53,16 @@
       </lfx-card>
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Revenue / Enrollment</span>
+          <!--
+            Denominator is named explicitly: this divides by revenue-bearing enrollments only
+            (edX excluded), so it deliberately does not reconcile with the Enrollments card
+            whenever edX has enrollments. See revenuePerEnrollmentLabel in the component.
+          -->
+          <span class="text-sm text-gray-500">Revenue / Paid Enrollment</span>
           <span class="text-2xl font-semibold text-gray-900">{{ revenuePerEnrollmentLabel() }}</span>
+          @if (hasUntrackedRevenueEnrollments()) {
+            <span class="text-xs text-gray-400">Excludes edX (revenue untracked)</span>
+          }
         </div>
       </lfx-card>
     </div>

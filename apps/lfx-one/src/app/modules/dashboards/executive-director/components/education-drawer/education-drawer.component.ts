@@ -60,6 +60,13 @@ export class EducationDrawerComponent {
     return e.instructorLed + e.eLearning + e.certExams > 0;
   });
 
+  /**
+   * Whether edX enrollments make the Revenue / Paid Enrollment denominator diverge from the
+   * Enrollments card. Only then is the "excludes edX" caveat worth the space — without edX
+   * enrollments the two cards reconcile and the note would be noise.
+   */
+  protected readonly hasUntrackedRevenueEnrollments: Signal<boolean> = computed(() => this.data().enrollment.edx > 0);
+
   /** Revenue per enrollment across revenue-bearing categories only (edX excluded from both sides). */
   protected readonly revenuePerEnrollmentLabel: Signal<string> = computed(() => {
     const e = this.data().enrollment;
