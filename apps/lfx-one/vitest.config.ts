@@ -3,9 +3,12 @@
 
 import { defineConfig } from 'vitest/config';
 
-// Scoped to src/server: this app has no Angular test builder wired up (see angular.json),
-// so component/template specs aren't supported here. Server-side specs run under plain
-// Node with no Angular dependency, so they don't need one.
+// Scoped to src/server. App-side specs under src/app run through the `test` target in
+// angular.json (`@angular/build:unit-test`), which compiles templates and boots jsdom;
+// they are excluded here so each half runs in the environment it needs — plain Node for
+// the server, a DOM for the app. `yarn test` runs both. Keep the two sets disjoint: a
+// server spec picked up by the Angular builder pays for a browser it never uses, and an
+// app spec picked up here fails on the missing compiler.
 export default defineConfig({
   test: {
     include: ['src/server/**/*.spec.ts'],

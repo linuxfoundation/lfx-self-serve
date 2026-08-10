@@ -10,9 +10,13 @@ const angular = require('angular-eslint');
 module.exports = defineConfig([
   {
     ignores: [
+      // Build/runner configs sit outside tsconfig.app.json, so typed linting cannot parse
+      // them. They are not application code; `lint:check` never globs them, but lint-staged
+      // passes staged files by path, so they have to be ignored explicitly or a commit that
+      // touches one fails on a parser error rather than a lint finding.
       'vite.config.ts',
+      'vitest.config.ts',
       'projects/**/*',
-      '**/*.spec.ts',
       '**/*-routing.module.ts',
       'src/main.ts',
       'src/polyfills.ts',

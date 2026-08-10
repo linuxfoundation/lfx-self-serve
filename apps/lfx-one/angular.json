@@ -177,6 +177,17 @@
           "options": {
             "lintFilePatterns": ["src/**/*.ts", "src/**/*.html"]
           }
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "buildTarget": "lfx-one:build:development",
+            "tsConfig": "tsconfig.spec.json",
+            "runner": "vitest",
+            "providersFile": "src/test-providers.ts",
+            "include": ["src/app/**/*.spec.ts"],
+            "watch": false
+          }
         }
       }
     }
