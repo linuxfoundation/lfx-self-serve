@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult, ValidationError } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -95,7 +95,7 @@ export class CommitteeSettingsTabComponent {
   // with 409 SLACK_WEBHOOK_NOT_PERSISTED today. Rendering the card unconditionally would show
   // every user a dead end; this keeps it hidden until the upstream schema change lands and the
   // flag is flipped on.
-  public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief-slack', false);
+  public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);

@@ -107,6 +107,18 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(emitted).toHaveLength(1);
   });
 
+  it('labels the button "Clear" when no webhook is configured yet (nothing to cancel back to) and "Cancel" when one is (backing out of Replace)', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+
+    fixture.componentRef.setInput('slackWebhookConfigured', false);
+    await fixture.whenStable();
+    expect(button('settings-slack-webhook-cancel-button').textContent?.trim()).toBe('Clear');
+
+    fixture.componentRef.setInput('slackWebhookConfigured', true);
+    await fixture.whenStable();
+    expect(button('settings-slack-webhook-cancel-button').textContent?.trim()).toBe('Cancel');
+  });
+
   it('disables Cancel (like Remove and Replace) when the form is disabled — read-only Auditor access must not leave one live control in an otherwise disabled card', async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
     form.disable();

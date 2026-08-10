@@ -17,6 +17,7 @@ import {
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+  WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
 import {
   Committee,
@@ -29,6 +30,7 @@ import {
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -71,6 +73,7 @@ export class WeeklyBriefCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
 
   // Inputs
@@ -91,6 +94,12 @@ export class WeeklyBriefCardComponent {
   // "Rating failed" toast. Matches the established pattern (profile-panel, account-settings,
   // etc.) of gating on `userService.impersonating()` directly, not on module input plumbing.
   public readonly impersonating = this.userService.impersonating;
+
+  // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
+  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
+  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
+  // with a hint pointing at settings UI that's itself still flag-hidden.
+  public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
@@ -776,7 +785,14 @@ export class WeeklyBriefCardComponent {
           if (status === 404) {
             detail = 'No brief available to share.';
           } else if (status === 403) {
-            detail = 'Only project writers can share the weekly brief to Slack. Contact a project administrator.';
+            // IMPERSONATION_READ_ONLY (weekly-brief.route.ts's blockDuringImpersonation) is also
+            // a 403 — the button is already disabled during impersonation (see impersonating()),
+            // so this branch is mostly a defense-in-depth backstop, but it must not claim the
+            // impersonating caller lacks writer access, which is usually false.
+            detail =
+              code === 'IMPERSONATION_READ_ONLY'
+                ? 'Sharing to Slack is unavailable while impersonating another user.'
+                : 'Only project writers can share the weekly brief to Slack. Contact a project administrator.';
           } else if (status === 409) {
             if (code === 'NO_SLACK_WEBHOOK') {
               detail = 'No Slack webhook configured for this committee.';
