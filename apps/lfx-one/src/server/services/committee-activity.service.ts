@@ -915,37 +915,39 @@ export class CommitteeActivityService {
     _before: string | undefined,
     fetchSize: number
   ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
-    // Type and scope are paired here, not passed as two separate positional args at each call
-    // site — both fetchNoteAttachmentPage and buildNotesEventsForScope key their logging off
-    // `scope`, so a transposed pair (past type, upcoming scope) would previously compile and only
-    // show up as a wrong log line; pairing them removes that failure mode entirely.
-    const ATTACHMENT_SOURCES: { type: string; scope: 'upcoming' | 'past' }[] = [
+    // Type and scope are paired once here, and `scope` is carried all the way through
+    // fetchNoteAttachmentPage's own return value rather than re-stated positionally at each
+    // downstream call site — a transposed pair at the source list, or a re-stated literal below,
+    // would both compile silently otherwise. `scope` isn't just a log-correlation field once it
+    // reaches buildNotesEventsForScope: buildNotesEvent writes it into the user-visible
+    // `payload.meeting_scope`, which activity-feed.utils.ts uses to namespace the feed item's
+    // @for tracking key — a swapped scope there is payload-corrupting, not just a wrong log line.
+    // `as const` pins this to exactly a 2-tuple so `results` below can't silently grow a third,
+    // unhandled source if one is ever added without also updating the code that consumes it.
+    const ATTACHMENT_SOURCES = [
       { type: 'v1_meeting_attachment', scope: 'upcoming' },
       { type: 'v1_past_meeting_attachment', scope: 'past' },
-    ];
-    const [meetingResult, pastMeetingResult] = await Promise.all(
+    ] as const;
+    const results = await Promise.all(
       ATTACHMENT_SOURCES.map((source) => this.fetchNoteAttachmentPage(req, committeeUid, source.type, source.scope, fetchSize))
     );
 
-    const events = [
-      ...this.buildNotesEventsForScope(req, committeeUid, meetingResult.attachments, 'upcoming'),
-      ...this.buildNotesEventsForScope(req, committeeUid, pastMeetingResult.attachments, 'past'),
-    ];
+    const events = results.flatMap((result) => this.buildNotesEventsForScope(req, committeeUid, result.attachments, result.scope));
 
     // Both sub-legs are bounded to one upstream page_size-limited page (unlike
     // fetchDocumentEvents, where only the files sub-leg is bounded and folders/links are
     // excluded from saturation) — so either one's own page_token signals more data upstream.
-    return { events, saturated: !!meetingResult.pageToken || !!pastMeetingResult.pageToken };
+    return { events, saturated: results.some((result) => !!result.pageToken) };
   }
 
   /** One sub-leg's bounded query-service fetch, shared by both attachment types fetchNotesAddedEvents fans out to. */
   private async fetchNoteAttachmentPage(
     req: Request,
     committeeUid: string,
-    type: string,
+    type: 'v1_meeting_attachment' | 'v1_past_meeting_attachment',
     scope: 'upcoming' | 'past',
     fetchSize: number
-  ): Promise<{ attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
+  ): Promise<{ scope: 'upcoming' | 'past'; attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
     return this.microserviceProxy
       .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type,
@@ -954,7 +956,7 @@ export class CommitteeActivityService {
         page_size: fetchSize,
         sort: 'updated_desc',
       })
-      .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
+      .then((response) => ({ scope, attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
       .catch((err) => {
         // meeting_scope, matching buildNotesEventsForScope's own warning field — both logs
         // describe the same sub-leg and need to correlate on one field/value, not two vocabularies.
@@ -963,7 +965,7 @@ export class CommitteeActivityService {
           meeting_scope: scope,
           err,
         });
-        return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
+        return { scope, attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
       });
   }
 

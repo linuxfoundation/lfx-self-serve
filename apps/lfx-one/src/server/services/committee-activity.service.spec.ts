@@ -1150,6 +1150,39 @@ describe('CommitteeActivityService', () => {
       expect(notesEvent).toMatchObject({ payload: { meeting_scope: 'past' } });
     });
 
+    it('logs the upcoming-meeting sub-leg failure with meeting_scope: upcoming', async () => {
+      // Both sub-legs now share one warning message string (see fetchNoteAttachmentPage's own
+      // comment) — meeting_scope in the structured metadata is the only discriminator, mirroring
+      // how the survey/files legs' own failure tests pin their leg-identifying warning content.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') return Promise.reject(new Error('upstream down'));
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_committee_activity',
+        expect.stringContaining('Failed to fetch notes attachments'),
+        expect.objectContaining({ meeting_scope: 'upcoming' })
+      );
+    });
+
+    it('logs the past-meeting sub-leg failure with meeting_scope: past', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') return Promise.reject(new Error('upstream down'));
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_committee_activity',
+        expect.stringContaining('Failed to fetch notes attachments'),
+        expect.objectContaining({ meeting_scope: 'past' })
+      );
+    });
+
     it('merges all five sources including notes_added and sorts by occurred_at descending', async () => {
       getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-01T00:00:00Z' })] });
       getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
