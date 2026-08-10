@@ -5,32 +5,33 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
+// Deep relative import (not the `@lfx-one/shared/constants` barrel) — the barrel re-triggers the
+// Angular JIT-compilation failure this app's other server specs mock around (it re-exports
+// modules with transitive Angular imports elsewhere in the package); this single constants file
+// has no such transitive import, so importing it directly for real is safe here.
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '../../../../packages/shared/src/constants/committees.constants';
+
 /**
- * otel.mjs's ignoreRequestHook and SLACK_INCOMING_WEBHOOK_URL_PATTERN
- * (packages/shared/src/constants/committees.constants.ts) both hard-code the
- * 'hooks.slack.com' host — duplicated because otel.mjs runs as a dependency-free bootstrap and
+ * otel.mjs's ignoreRequestHook hard-codes the 'hooks.slack.com' host as a literal — duplicated
+ * from SLACK_INCOMING_WEBHOOK_URL_PATTERN because otel.mjs runs as a dependency-free bootstrap and
  * can't import the shared package (see both files' own comments for the full rationale). Until
- * now the only thing keeping them in sync was a prose comment on each side. Reads both files as
- * text (not as modules — importing otel.mjs would boot the OTel SDK, and importing the real
- * `@lfx-one/shared/constants` barrel here re-triggers the Angular JIT-compilation failure this
- * app's other server specs mock around) and asserts the host literal each one hard-codes is
- * identical, so a one-sided edit fails loudly instead of silently reopening the credential leak
- * this carve-out exists to close (LFXV2-3080).
+ * now the only thing keeping them in sync was a prose comment on each side.
+ *
+ * Reads otel.mjs as text (importing it would boot the OTel SDK) to extract the host it suppresses,
+ * then asserts that host is actually accepted by the real, imported SLACK_INCOMING_WEBHOOK_URL_PATTERN
+ * — a behavioral check, not a string-literal comparison, so it survives the regex being reformatted
+ * and still catches a one-sided host edit, instead of silently reopening the credential leak this
+ * carve-out exists to close (LFXV2-3080).
  */
 describe('otel.mjs Slack-webhook host stays in sync with SLACK_INCOMING_WEBHOOK_URL_PATTERN', () => {
-  it('hard-codes the same host in both places', () => {
+  it("otel.mjs's suppressed host is accepted by the real webhook URL allowlist", () => {
     const otelSource = readFileSync(new URL('../../otel.mjs', import.meta.url), 'utf8');
-    const constantsSource = readFileSync(new URL('../../../../packages/shared/src/constants/committees.constants.ts', import.meta.url), 'utf8');
+    // Anchored on `ignoreRequestHook:` so a future, unrelated `hostname === '...'` check added
+    // elsewhere in the file can't silently retarget this assertion.
+    const ignoreHookMatch = otelSource.match(/ignoreRequestHook:[\s\S]*?hostname === '([^']+)'/);
+    const otelHost = ignoreHookMatch?.[1];
 
-    const otelHostMatch = otelSource.match(/hostname === '([^']+)'/);
-    // The pattern's source is a regex literal, so its host segment is written with escaped
-    // slashes/dots (e.g. `\/\/hooks\.slack\.com\/services`) — capture everything between the
-    // scheme and `\/services`, then strip the backslash-escapes to get the plain host string.
-    const patternHostMatch = constantsSource.match(/SLACK_INCOMING_WEBHOOK_URL_PATTERN = \/\^https:\\\/\\\/([\s\S]+?)\\\/services/);
-    const patternHost = patternHostMatch?.[1]?.replace(/\\/g, '');
-
-    expect(otelHostMatch?.[1]).toBeTruthy();
-    expect(patternHost).toBeTruthy();
-    expect(otelHostMatch?.[1]).toBe(patternHost);
+    expect(otelHost).toBeTruthy();
+    expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(`https://${otelHost}/services/T1/B1/abc`)).toBe(true);
   });
 });

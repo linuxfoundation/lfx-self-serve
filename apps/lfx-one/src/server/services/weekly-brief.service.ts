@@ -930,10 +930,12 @@ export class WeeklyBriefService {
     // itself carries no caller identity (it's why /share-slack blocks during impersonation in the
     // first place — see impersonation-readonly.middleware.ts), and unlike shareBrief, a successful
     // send leaves no other persisted record (e.g. a newsletter draft) an operator could trace back
-    // to a user later.
+    // to a user later. The opaque OIDC sub, not the LFID username — mirrors rating_recorded above
+    // (getEffectiveSub, not getEffectiveUsername): this log line is retained indefinitely, and a
+    // human-readable username is PII this repo's logging convention avoids putting in log metadata.
     logger.info(req, 'share_weekly_brief_slack_sent', 'Weekly brief sent to the committee Slack channel', {
       committee_id: committeeId,
-      shared_by: getEffectiveUsername(req),
+      shared_by: getEffectiveSub(req),
     });
 
     return { committee_name: committee.name };

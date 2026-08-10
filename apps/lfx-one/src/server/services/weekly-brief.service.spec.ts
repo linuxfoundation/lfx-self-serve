@@ -1040,7 +1040,7 @@ describe('WeeklyBriefService', () => {
       expect(body.text).toContain('Hello committee');
     });
 
-    it('logs the sending user on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
+    it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
@@ -1048,7 +1048,7 @@ describe('WeeklyBriefService', () => {
 
       expect(logger.info).toHaveBeenCalledWith(userReq, 'share_weekly_brief_slack_sent', expect.any(String), {
         committee_id: 'committee-1',
-        shared_by: 'alice',
+        shared_by: 'auth0|alice-sub',
       });
     });
 
