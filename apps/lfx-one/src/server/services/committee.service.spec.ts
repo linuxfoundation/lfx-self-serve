@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
@@ -175,7 +176,11 @@ describe('CommitteeService — getCommitteeDocuments', () => {
 
 describe('CommitteeService.acceptCommitteeInvite — post-acceptance membership confirmation', () => {
   let service: CommitteeService;
-  let getCommitteeById: ReturnType<typeof vi.spyOn>;
+  // Typed from the method itself rather than `ReturnType<typeof vi.spyOn>`: the bare
+  // ReturnType picks up `vi.spyOn`'s unparameterised default signature
+  // (`(this: unknown, ...args: unknown[]) => unknown`), which the real spy is not
+  // assignable to.
+  let getCommitteeById: MockInstance<CommitteeService['getCommitteeById']>;
 
   const COMMITTEE_UID = 'committee-1';
   const INVITE_UID = 'invite-1';
