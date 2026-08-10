@@ -854,15 +854,19 @@ export class WeeklyBriefService {
     }
 
     const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
-    if (text.length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
-      throw ServiceValidationError.forField(
-        'brief_text',
-        `Brief is too long to share to Slack (must be ${SLACK_MESSAGE_TEXT_MAX_LENGTH} characters or fewer once formatted)`,
-        {
-          operation: 'share_weekly_brief_slack',
-          service: 'weekly_brief_service',
-        }
-      );
+    // [...text].length, not text.length — counts Unicode code points, not UTF-16 code units,
+    // matching how the controller validates this same brief_text field on save
+    // (weekly-brief.controller.ts's [...b['brief_text']].length check against
+    // WEEKLY_BRIEF_TEXT_MAX_LENGTH). A raw .length would disagree with that check for an
+    // emoji-heavy brief.
+    if ([...text].length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
+      // Phrased in terms of shortening the brief, not the post-escaping/post-header character
+      // ceiling above — that number (40,000) would be confusing next to the brief editor's own
+      // much smaller cap (WEEKLY_BRIEF_TEXT_MAX_LENGTH, 20,000).
+      throw ServiceValidationError.forField('brief_text', 'Brief is too long to share to Slack. Shorten the brief text and try again.', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
     }
 
     const response = await fetch(webhookUrl, {

@@ -195,6 +195,7 @@
                 severity="secondary"
                 [text]="true"
                 size="small"
+                [disabled]="form().disabled"
                 (onClick)="onCancelSlackWebhookEdit()"
                 data-testid="settings-slack-webhook-cancel-button" />
             </div>
