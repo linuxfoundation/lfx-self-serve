@@ -1762,16 +1762,19 @@ export class CommitteeService {
    * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
    * built from a raw upstream fetch (not routed through {@link getCommitteeById}'s own inline
    * strip) — `getCommittees`, `getDirectGrantCommittees`, `searchCreatableCommittees`,
-   * `createCommittee`, `getCommitteesByIds` (covers `getMyCommittees`) — so the "never returned by
-   * any read" invariant on {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not
-   * just the two hand-audited call sites. A no-op today (upstream doesn't store the field yet),
-   * but load-bearing the moment the schema change referenced in `updateCommittee` lands.
+   * `createCommittee`, `updateCommittee`, `getCommitteesByIds` (covers `getMyCommittees`) — so the
+   * "never returned by any read" invariant on {@link Committee.has_slack_webhook}'s doc comment
+   * holds everywhere, not just the two hand-audited call sites. A no-op today (upstream doesn't
+   * store the field yet), but load-bearing the moment the schema change referenced in
+   * `updateCommittee` lands.
    *
    * Deliberately not null-tolerant: `proxyRequest` can return `null` for an empty upstream body
    * (documented at committee-activity.service.ts's four guarded call sites), and both
    * `createCommittee` and `updateCommittee` feed a raw `proxyRequest`/`updateWithETag` result
-   * through this helper — but each throws its own typed `MicroserviceError` immediately after
-   * that fetch if the result is null/undefined, rather than letting a body-less response silently
+   * through this helper — but each throws its own typed `MicroserviceError` if the result is
+   * null/undefined before this helper ever runs (immediately after the fetch in createCommittee;
+   * in updateCommittee, deliberately after its settings-update step — see that guard's own
+   * comment for why), rather than letting a body-less response silently
    * become a 201/200 with a uid-less `Committee`. By the time either caller reaches this helper,
    * the value is guaranteed non-null.
    */
