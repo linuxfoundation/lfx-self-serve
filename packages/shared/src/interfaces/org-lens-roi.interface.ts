@@ -65,7 +65,7 @@ export interface OrgLensRoiCategoryRow {
 
 export interface OrgLensRoiInvestmentBreakdown {
   rows: OrgLensRoiCategoryRow[];
-  /** Equals `/summary.totalExpenditure` exactly (FR-026). A difference is a defect, not a caveat to render. */
+  /** Equals `/summary.totalExpenditure` exactly. A difference is a defect, not a caveat to render. */
   total: number;
 }
 
@@ -80,13 +80,13 @@ export interface OrgLensRoiProjectRow {
   roi: number | null;
   bcr: number | null;
   breakevenMarkup: number | null;
-  /** Sums to `totalExpenditure` by construction (FR-031); never rescale client-side. */
+  /** Sums to `totalExpenditure` by construction; never rescale client-side. */
   categories: OrgLensRoiCategoryRow[];
 }
 
 export interface OrgLensRoiProjects {
   method: OrgLensRoiMethod;
-  /** The complete, uncapped project set (DR-005). */
+  /** The complete, uncapped project set. */
   rows: OrgLensRoiProjectRow[];
 }
 

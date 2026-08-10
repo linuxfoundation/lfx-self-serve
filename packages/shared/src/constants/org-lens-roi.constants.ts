@@ -59,10 +59,10 @@ export const ORG_LENS_ROI_KPI_ICON_CLASS = {
 /** Rendered wherever a metric is undefined, so an absent value never reads as zero. */
 export const ORG_LENS_ROI_NO_VALUE = '—';
 
-/** Categories holding less than this share of total investment collapse into one labelled remainder (FR-025). */
+/** Categories holding less than this share of total investment collapse into one labelled remainder. */
 export const ORG_LENS_ROI_CATEGORY_REMAINDER_THRESHOLD = 0.02;
 
-/** Projects are drawn as slices until they cover this share of the measure; the rest collapse into one remainder (FR-027). */
+/** Projects are drawn as slices until they cover this share of the measure; the rest collapse into one remainder. */
 export const ORG_LENS_ROI_PROJECT_DONUT_COVERAGE = 0.8;
 
 /** A ceiling on slice count regardless of coverage — a flat distribution would otherwise draw hundreds of unreadable slivers. */

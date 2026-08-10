@@ -136,7 +136,7 @@ export class OrgLensRoiService {
    *
    * `total` is summed from the same rows the client renders, so the figure under the donut and the
    * slices in it can never disagree. It reconciles with `/summary.totalExpenditure` in the
-   * warehouse (FR-026), asserted by a dbt singular test — never reconciled here.
+   * warehouse, asserted by a dbt singular test — never reconciled here.
    */
   public async getInvestmentBreakdown(req: Request, accountId: string): Promise<OrgLensRoiInvestmentBreakdown> {
     return withOrgCache(
@@ -163,9 +163,9 @@ export class OrgLensRoiService {
   }
 
   /**
-   * The complete, uncapped project set with each project's category breakdown in one payload
-   * (DR-005, FR-033). Measured against production, the largest organization serializes to ~241 KB
-   * against the 1 MiB `VALKEY_CACHE.MAX_VALUE_BYTES` ceiling, so every organization caches.
+   * The complete, uncapped project set with each project's category breakdown in one payload.
+   * Measured against production, the largest organization serializes to ~241 KB against the 1 MiB
+   * `VALKEY_CACHE.MAX_VALUE_BYTES` ceiling, so every organization caches.
    *
    * One round-trip, not two: the projects and their breakdown are a single consistent fact, and
    * fetching them separately would let the pair drift between calls — the same reasoning that made
@@ -180,7 +180,10 @@ export class OrgLensRoiService {
       async () => {
         logger.debug(req, 'get_org_lens_roi_projects', 'Cache miss; querying Snowflake', { account_id: accountId, method });
         // The breakdown table carries no MARKUP_METHOD — category spend is method-invariant, so it
-        // joins on the project alone. PROFIT_SIGN_CHECK is deliberately not selected (DR-003, FR-041).
+        // joins on the project alone. PROFIT_SIGN_CHECK is deliberately left out: it is an internal
+        // model-consistency flag, not a figure any surface renders, and a loss-making project is a
+        // legitimate result already conveyed by its net return — filtering on it would hide real
+        // outcomes from the viewer.
         const sql = `
         SELECT
           p.PROJECT_ID,
@@ -201,8 +204,8 @@ export class OrgLensRoiService {
         WHERE p.ACCOUNT_ID = ? AND p.MARKUP_METHOD = ?
         -- PROJECT_ID keeps a project's category rows contiguous and makes ties deterministic;
         -- DISPLAY_ORDER fixes category order within a project. TOTAL_RETURN DESC is the payload's
-        -- default ranking: the donut re-sorts by the selected measure, but US5's table (FR-033a)
-        -- pages the set in this order and needs it stable across requests.
+        -- default ranking: the donut re-sorts by the selected measure, but the forthcoming projects
+        -- table will page the set in this order and needs it stable across requests.
         ORDER BY p.TOTAL_RETURN DESC, p.PROJECT_ID, b.DISPLAY_ORDER
       `;
         const result = await this.snowflakeService.execute<OrgLensRoiProjectWarehouseRow>(sql, [accountId, method]);
@@ -372,7 +375,7 @@ export class OrgLensRoiService {
    * contribution type before this constant did would write entries this guard then rejected on
    * every read — permanently defeating the cache for that organization and re-running the
    * ~1,200-row join on every request. Dropping the unknown row instead would be worse still: the
-   * category total would silently stop reconciling with the KPI figure (FR-026).
+   * category total would silently stop reconciling with the KPI figure.
    */
   private static isCategoryRows(value: unknown): boolean {
     if (!Array.isArray(value)) return false;
@@ -411,7 +414,19 @@ export class OrgLensRoiService {
       if (!['projectId', 'projectSlug', 'projectName'].every((key) => typeof entry[key] === 'string')) return false;
       if (!['totalExpenditure', 'totalReturn', 'profit'].every((key) => OrgLensRoiService.isFiniteNumber(entry[key]))) return false;
       if (!['roi', 'bcr', 'breakevenMarkup'].every((key) => OrgLensRoiService.isNullableNumber(entry, key))) return false;
-      return OrgLensRoiService.isCategoryRows(entry['categories']);
+      if (!OrgLensRoiService.isCategoryRows(entry['categories'])) return false;
+
+      // Same reconciliation the breakdown guard applies, per project: a project's categories sum to
+      // its own expenditure by warehouse construction, so an entry where they don't is corrupt.
+      // Measured across all 32,890 production project rows: none is off by more than 1.9e-09.
+      //
+      // Enforced only when categories are present. The read is a LEFT JOIN, so a project the
+      // breakdown has no rows for legitimately arrives empty; failing on that would reject the
+      // whole payload on every read and leave the organization permanently uncacheable.
+      const categories = entry['categories'] as { expenditure: number }[];
+      if (categories.length === 0) return true;
+      const summed = categories.reduce((sum, category) => sum + category.expenditure, 0);
+      return Math.abs(summed - (entry['totalExpenditure'] as number)) <= OrgLensRoiService.reconciliationEpsilonUsd;
     });
   }
 

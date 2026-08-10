@@ -25,7 +25,7 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_PROJECTS: OrgLensRoiProjects = { method: ORG_LENS_ROI_DEFAULT_METHOD, rows: [] };
 
-/** Highest-contributing projects by a selectable measure (US4, FR-027, FR-028). */
+/** Highest-contributing projects by a selectable measure. */
 @Component({
   selector: 'lfx-org-roi-projects-donut',
   imports: [ChartComponent, SkeletonModule],
@@ -40,7 +40,7 @@ export class OrgRoiProjectsDonutComponent {
   protected readonly measures = ORG_LENS_ROI_PROJECT_MEASURES;
   protected readonly measureLabels = ORG_LENS_ROI_PROJECT_MEASURE_LABELS;
 
-  /** FR-039a — the same wording the KPI band uses, shown only where an investment figure is (DR-015). */
+  /** The same wording the KPI band uses, shown only where an investment figure is. */
   protected readonly investmentExplanation = ORG_LENS_ROI_KPI_EXPLANATION.totalExpenditure;
 
   protected readonly measure = signal<OrgLensRoiProjectMeasure>('investment');
@@ -54,9 +54,9 @@ export class OrgRoiProjectsDonutComponent {
   protected readonly hasRows: Signal<boolean> = computed(() => this.projects().rows.length > 0);
 
   /**
-   * FR-039a names the investment figure, but Net Return is `totalReturn - totalExpenditure` — a
-   * direct function of the modelled cost — and the negative list below renders per-project money on
-   * that tab. Total Return alone owes no modelled-cost disclosure; the other two do.
+   * The disclosure names the investment figure, but Net Return is `totalReturn - totalExpenditure`
+   * — a direct function of the modelled cost — and the negative list below renders per-project
+   * money on that tab. Total Return alone owes no modelled-cost disclosure; the other two do.
    */
   protected readonly showsModelledCost: Signal<boolean> = computed(() => this.measure() !== 'return');
 
@@ -74,15 +74,15 @@ export class OrgRoiProjectsDonutComponent {
   /**
    * Net return is negative for 6.45% of project rows across 775 organizations — a mainline path,
    * not an edge case. A doughnut arc cannot be negative, so the geometry is clamped at zero while
-   * the label keeps the true signed figure (FR-028). The projects concerned are named explicitly
-   * below rather than silently vanishing into a zero-width arc.
+   * the label keeps the true signed figure. The projects concerned are named explicitly below
+   * rather than silently vanishing into a zero-width arc.
    */
   protected readonly negatives: Signal<{ count: number; total: number; rows: { key: string; label: string; amount: string }[] }> = computed(() => {
     const losing = this.ranked().filter((entry) => entry.value < 0);
     return {
       count: losing.length,
       total: losing.reduce((sum, entry) => sum + entry.value, 0),
-      // Each carries its own signed figure; a count alone would not satisfy FR-028.
+      // Each carries its own signed figure; a count alone would not disclose the losses.
       rows: losing.map((entry) => ({ key: entry.row.projectId, label: entry.row.projectName, amount: formatCurrency(entry.value) })),
     };
   });
@@ -96,9 +96,9 @@ export class OrgRoiProjectsDonutComponent {
   });
 
   /**
-   * FR-027 — slices cover the leading share of the measure and everything else collapses into one
-   * remainder labelled with its project count. The cap is a second stop condition: a flat portfolio
-   * would otherwise reach the coverage target only after hundreds of unreadable slivers.
+   * Slices cover the leading share of the measure and everything else collapses into one remainder
+   * labelled with its project count. The cap is a second stop condition: a flat portfolio would
+   * otherwise reach the coverage target only after hundreds of unreadable slivers.
    */
   protected readonly slices: Signal<OrgLensRoiProjectSlice[]> = computed(() => {
     // Partition once, at zero, and let the chart and the negative disclosure own disjoint halves.
@@ -136,7 +136,15 @@ export class OrgRoiProjectsDonutComponent {
       const only = rest[0];
       return [
         ...kept,
-        { key: only.row.projectId, label: only.row.projectName, value: only.value, weight: only.value, color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR },
+        {
+          key: only.row.projectId,
+          label: only.row.projectName,
+          value: only.value,
+          weight: only.value,
+          // A palette colour, not the remainder gray: this slice is a named project, and the gray
+          // reads as "everything else" to anyone matching the legend dot against the other arcs.
+          color: ORG_LENS_ROI_DONUT_PALETTE[kept.length % ORG_LENS_ROI_DONUT_PALETTE.length],
+        },
       ];
     }
 
@@ -156,7 +164,7 @@ export class OrgRoiProjectsDonutComponent {
   /**
    * The accessible equivalent of the canvas and its legend, in real text beside it. Each entry
    * carries the **signed** value, so a remainder that nets out negative reads as such rather than
-   * as the clamped magnitude its arc was drawn from (FR-028).
+   * as the clamped magnitude its arc was drawn from.
    */
   protected readonly legendRows: Signal<{ key: string; label: string; amount: string; color: string }[]> = computed(() =>
     this.slices().map((slice) => ({ key: slice.key, label: slice.label, amount: formatCurrency(slice.value), color: slice.color }))
@@ -221,7 +229,7 @@ export class OrgRoiProjectsDonutComponent {
     return Number(a > b) - Number(a < b);
   }
 
-  /** Never re-derived: profit is defined once in the metric layer and carried through (FR-007). */
+  /** Never re-derived: profit is defined once in the metric layer and carried through. */
   private measureValue(row: OrgLensRoiProjectRow, measure: OrgLensRoiProjectMeasure): number {
     if (measure === 'investment') return row.totalExpenditure;
     if (measure === 'return') return row.totalReturn;

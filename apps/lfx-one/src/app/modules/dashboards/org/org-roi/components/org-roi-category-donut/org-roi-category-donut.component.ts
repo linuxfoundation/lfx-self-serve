@@ -22,7 +22,6 @@ import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_BREAKDOWN: OrgLensRoiInvestmentBreakdown = { rows: [], total: 0 };
 
-/** Investment by contribution category (US3, FR-023 to FR-026). */
 @Component({
   selector: 'lfx-org-roi-category-donut',
   imports: [ChartComponent, SkeletonModule],
@@ -33,8 +32,8 @@ export class OrgRoiCategoryDonutComponent {
   private readonly roiService = inject(OrgLensRoiService);
 
   /**
-   * FR-039a. The same string the KPI band shows, not a paraphrase of it — the two surfaces state
-   * the same disclosure, so they cannot drift apart when either is edited (DR-015).
+   * The same string the KPI band shows, not a paraphrase of it — the two surfaces state the same
+   * disclosure, so they cannot drift apart when either is edited.
    */
   protected readonly investmentExplanation = ORG_LENS_ROI_KPI_EXPLANATION.totalExpenditure;
 
@@ -42,7 +41,7 @@ export class OrgRoiCategoryDonutComponent {
   protected readonly failed = signal(false);
   protected readonly forbidden = signal(false);
 
-  /** FR-024 — currency or share of total. Presentation only; the underlying values never change. */
+  /** Currency or share of total. Presentation only; the underlying values never change. */
   protected readonly asShare = signal(false);
 
   private readonly breakdown: Signal<OrgLensRoiInvestmentBreakdown> = this.initBreakdown();
@@ -57,10 +56,10 @@ export class OrgRoiCategoryDonutComponent {
   protected readonly hasSlices: Signal<boolean> = computed(() => this.slices().length > 0);
 
   /**
-   * The reconciliation anchor (FR-026, SC-011). It is the sum of exactly the rows drawn below, and
-   * the warehouse already guarantees it equals the KPI investment figure — a dbt singular test
-   * asserts it per account. Nothing here rescales to force the two to agree: if they ever differ,
-   * that is a defect to raise, not a discrepancy to paper over (FR-011b).
+   * The reconciliation anchor. It is the sum of exactly the rows drawn below, and the warehouse
+   * already guarantees it equals the KPI investment figure — a dbt singular test asserts it per
+   * account. Nothing here rescales to force the two to agree: if they ever differ, that is a defect
+   * to raise, not a discrepancy to paper over.
    */
   protected readonly totalLabel: Signal<string> = computed(() => {
     const total = this.total();
@@ -68,8 +67,8 @@ export class OrgRoiCategoryDonutComponent {
   });
 
   /**
-   * FR-025 — categories under the display threshold collapse into one labelled remainder, so a
-   * $1,190 education line does not render as an invisible sliver with an unreachable legend entry.
+   * Categories under the display threshold collapse into one labelled remainder, so a $1,190
+   * education line does not render as an invisible sliver with an unreachable legend entry.
    */
   protected readonly slices: Signal<OrgLensRoiCategorySlice[]> = computed(() => {
     const { rows, total } = this.breakdown();
@@ -106,7 +105,9 @@ export class OrgRoiCategoryDonutComponent {
           label: only.label,
           expenditure: only.expenditure,
           share: only.expenditure / total,
-          color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR,
+          // A palette colour, not the remainder gray: this slice is a named category, and the gray
+          // reads as "everything else" to anyone matching the legend dot against the other arcs.
+          color: ORG_LENS_ROI_DONUT_PALETTE[kept.length % ORG_LENS_ROI_DONUT_PALETTE.length],
         },
       ];
     }
@@ -126,10 +127,10 @@ export class OrgRoiCategoryDonutComponent {
 
   /**
    * The legend is rendered as real text beside the canvas rather than mirrored into an `sr-only`
-   * table as the annual trend does. Both satisfy "a canvas cannot be the only presentation of its
-   * data"; a visible list is the better fit here because there are at most nine categories, and
-   * because FR-024's currency/share toggle needs somewhere visible to take effect — switching only
-   * the tooltips would leave the choice invisible until the viewer hovered a slice.
+   * table as the annual trend does. Both keep the figures available outside the canvas; a visible
+   * list is the better fit here because there are at most nine categories, and
+   * because the currency/share toggle needs somewhere visible to take effect — switching only the
+   * tooltips would leave the choice invisible until the viewer hovered a slice.
    *
    * Pre-formatted so the legend and the tooltip cannot disagree.
    */

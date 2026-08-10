@@ -62,8 +62,8 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
   });
 
   test('reports the true signed value of a negative net return', async ({ page }) => {
-    // FR-028. An arc cannot be negative, so the geometry is clamped — but the figure must survive
-    // that clamp intact, or a loss-making project silently reads as costless.
+    // An arc cannot be negative, so the geometry is clamped — but the figure must survive that
+    // clamp intact, or a loss-making project silently reads as costless.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
@@ -143,8 +143,8 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
   });
 
   test('serves the complete project set rather than a capped subset', async ({ page }) => {
-    // DR-005 / FR-033. The donut summarises, but the payload behind it must carry every project —
-    // the projects section and table in US5 read the same response.
+    // The donut summarises, but the payload behind it must carry every project — the forthcoming
+    // projects section and its table read the same response.
     const payloads: { rows: unknown[] }[] = [];
     page.on('response', async (response) => {
       if (!/\/lens\/roi\/projects(\?|$)/.test(response.url())) return;

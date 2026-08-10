@@ -26,9 +26,9 @@ test.setTimeout(120_000);
 
 /**
  * Every expected string below is derived from the fixture through the same formatter the component
- * uses — never written out by hand. US2 shipped three defects to human review that this rule would
- * have caught on its own, including a benefit-cost expectation of `36.7×` for a fixture that
- * renders `37.7×`.
+ * uses — never written out by hand. Three defects reached human review that this rule would have
+ * caught on its own, including a benefit-cost expectation of `36.7×` for a fixture that renders
+ * `37.7×`.
  */
 const EXPECTED_INVESTMENT = formatCurrency(TOTAL_INVESTMENT);
 const EXPECTED_RETURN = formatCurrency(MOCK_SUMMARY.totalReturn);
@@ -311,7 +311,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     for (const body of responses) {
       expect(body).not.toContain('totalExpenditure');
       expect(body).not.toContain('totalReturn');
-      // US3 and US4 added two more payloads that carry investment; a refusal must leak neither.
+      // The category and project payloads also carry investment; a refusal must leak neither.
       expect(body).not.toContain('expenditure');
       expect(body).not.toContain('categories');
     }
@@ -384,15 +384,15 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     await expect(legend).toContainText(`Other (${SUB_THRESHOLD_CATEGORY_COUNT} categories)`);
 
     // The smallest category is $1,190 against a $148M total — a slice too thin to see and a legend
-    // entry too small to read, which is what FR-025's threshold exists to prevent.
+    // entry too small to read, which is what the display threshold exists to prevent.
     const smallest = MOCK_CATEGORY_ROWS.reduce((min, row) => (row.expenditure < min.expenditure ? row : min));
     await expect(legend).not.toContainText(smallest.label);
   });
 
   test('reports a category total identical to the KPI investment figure', async ({ page }) => {
-    // FR-026 / SC-011. The warehouse reconciles these by construction and a dbt singular test
-    // asserts it per account, so any difference here is a defect — never rescaled client-side to
-    // force agreement, which is what the reference implementation does (FR-011b).
+    // The warehouse reconciles these by construction and a dbt singular test asserts it per
+    // account, so any difference here is a defect — never rescaled client-side to force
+    // agreement, which is what the reference implementation does.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 

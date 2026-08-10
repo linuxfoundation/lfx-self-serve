@@ -9,7 +9,8 @@ export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 /**
  * Only the year still in progress is labelled partial, so every year-bearing fixture is anchored to
  * the current year rather than hardcoded — otherwise these assertions would quietly invert next
- * January. One of the three defects US2 shipped to review was a hardcoded end year.
+ * January. A hardcoded end year was one of three defects that reached review on the earlier
+ * portfolio-summary work.
  */
 export const CURRENT_YEAR = new Date().getFullYear();
 
@@ -42,7 +43,7 @@ export async function seedSelectedOrgCookie(page: Page): Promise<void> {
 /**
  * Real production proportions for Red Hat, with `code` carrying the balance so the eight categories
  * sum to a round-tripped total. Three of them (`meetings`, `membership_tlf`, `educ_courses`) sit
- * under the 2% display threshold, so this fixture also exercises the FR-025 remainder.
+ * under the 2% display threshold, so this fixture also exercises the collapsed remainder.
  */
 export const MOCK_CATEGORY_ROWS = [
   { type: 'code', label: 'Code Contribution', expenditure: 101_904_741.07 },
@@ -59,10 +60,10 @@ export const MOCK_CATEGORY_ROWS = [
 export const SUB_THRESHOLD_CATEGORY_COUNT = 3;
 
 /**
- * Summed from the rows rather than written down beside them. FR-026 requires the category total and
- * the KPI investment figure to be identical, so they must be the *same number* in the fixture —
+ * Summed from the rows rather than written down beside them. The category total and the KPI
+ * investment figure must be identical, so they must be the *same number* in the fixture —
  * two independently typed literals could drift by a cent and make the test assert the opposite of
- * the requirement.
+ * the invariant it exists to check.
  */
 export const TOTAL_INVESTMENT = MOCK_CATEGORY_ROWS.reduce((sum, row) => sum + row.expenditure, 0);
 
@@ -104,7 +105,7 @@ export const MOCK_ANNUAL = {
 
 /**
  * Splits a project's investment across three categories, with the last carrying the balance so the
- * parts sum to the whole exactly (FR-031). Nothing rescales this client-side.
+ * parts sum to the whole exactly. Nothing rescales this client-side.
  */
 function projectCategories(totalExpenditure: number): { type: string; label: string; expenditure: number }[] {
   const code = Math.round(totalExpenditure * 0.7 * 100) / 100;
@@ -118,7 +119,7 @@ function projectCategories(totalExpenditure: number): { type: string; label: str
 
 /**
  * `profit`, `roi` and `bcr` are derived once here, standing in for the metric layer that defines
- * them once (FR-007). The client must never re-derive them from the other fields.
+ * them once. The client must never re-derive them from the other fields.
  */
 function projectRow(projectSlug: string, projectName: string, totalExpenditure: number, totalReturn: number): unknown {
   const profit = totalReturn - totalExpenditure;
