@@ -38,9 +38,9 @@ export interface WeeklyBriefSourceRef {
  * (LFXV2-3009's committee Overview activity feed already navigates through these same
  * mechanisms) rather than a narrower union that duplicates their shape. `vote-drawer` carries
  * the vote's own uid (`ref.id` for a "vote" kind) straight to `committee-overview.component.ts`'s
- * existing drawer-opening logic — including its own "Vote unavailable, try the Votes tab
- * instead" toast on a lookup miss — rather than dropping the id and routing to the generic
- * Votes tab. `survey-drawer`/`external-url` still don't apply to any documented or observed
+ * existing drawer-opening logic — including its cache-miss fetch-by-uid fallback and its own
+ * "Vote unavailable, try the Votes tab instead" toast on a genuine fetch failure — rather than
+ * dropping the id and routing to the generic Votes tab. `survey-drawer`/`external-url` still don't apply to any documented or observed
  * `source_refs` kind.
  */
 export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDrawerActivityFeedAction | TabActivityFeedAction;

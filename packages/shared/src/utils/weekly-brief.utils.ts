@@ -45,7 +45,7 @@ function resolveSourceRefAction(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChi
       return { kind: 'tab', tab: 'documents' };
     case 'vote':
       // The drawer, not the generic Votes tab: ref.id carries the vote's own uid, and
-      // committee-overview.component.ts already owns vote-drawer lookup/toast handling.
+      // committee-overview.component.ts already owns vote-drawer lookup/fetch/toast handling.
       //
       // Deliberately NOT gated on committee.enable_voting the way the activity feed's
       // mapActivityEventsToFeedItems filters out vote events for a voting-disabled committee

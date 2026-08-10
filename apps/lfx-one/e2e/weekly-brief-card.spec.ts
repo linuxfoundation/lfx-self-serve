@@ -546,7 +546,10 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     // Clicking either must not navigate or change the active committee tab.
     await sources.getByTestId('weekly-brief-card-source-chip-src-ml-1').click({ force: true });
     await sources.getByTestId('weekly-brief-card-source-chip-src-unknown-1').click({ force: true });
-    await expect(page).toHaveURL(new RegExp(COMMITTEE_URL.replace(/\//g, '\\/')));
+    // Plain string, not a hand-built RegExp — COMMITTEE_URL has no metacharacters that need
+    // escaping today, but a regex built via string replacement is fragile if it ever does
+    // (CodeQL: incomplete escaping). toHaveURL resolves a relative string against baseURL.
+    await expect(page).toHaveURL(COMMITTEE_URL);
     await expect(page.getByTestId('members-tab-bar')).toHaveCount(0);
   });
 
@@ -580,13 +583,12 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await meetingRequest;
   });
 
-  test('clicking a vote chip opens the vote results drawer for that vote', async ({ page }) => {
+  test('clicking a vote chip opens the vote results drawer for that vote (cache hit)', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
-    // Overrides mockCommitteeShell's default empty /api/votes* mock so the drawer's
-    // uid lookup (committee-overview.component.ts's openVoteDrawer) actually resolves,
-    // rather than exercising only its "Vote unavailable" toast fallback.
+    // Overrides mockCommitteeShell's default empty /api/votes* mock so the vote is present in
+    // committee-overview's votes() signal — openVoteDrawer's fast path (no by-uid fetch needed).
     const voteFixture: Vote = {
       uid: 'src-vote-1',
       name: 'Q1 Budget',
@@ -637,6 +639,81 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
     await expect(page.getByTestId('vote-results-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
+  });
+
+  test("clicking a vote chip still opens the drawer when the vote is outside votes()'s cache (cache miss fallback)", async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    // Leaves mockCommitteeShell's default empty /api/votes* (list) mock in place — the vote is
+    // deliberately absent from committee-overview's votes() cache (page_size=100 by
+    // updated_at), matching a weekly-brief vote ref older than that window. Only the by-uid
+    // fetch is mocked, so the drawer opening at all proves openVoteDrawer's fetch-on-miss
+    // fallback fired (Copilot review, PR #1363) rather than the votes()-cache fast path.
+    const voteFixture: Vote = {
+      uid: 'src-vote-1',
+      name: 'Q1 Budget',
+      end_time: '2026-06-01T00:00:00.000Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid-wb',
+    };
+    await page.route('**/api/votes/src-vote-1**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      const url = route.request().url();
+      if (url.includes('/results')) {
+        const results: VoteResultsResponse = {
+          poll_results: [],
+          comment_results: [],
+          num_recipients: 0,
+          num_votes_cast: 0,
+          num_abstained: 0,
+          poll_end_time: voteFixture.end_time,
+        };
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+        return;
+      }
+      if (url.includes('/my-response')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteFixture) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await expect(page.getByTestId('vote-results-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
+  });
+
+  test('clicking a vote chip shows an unavailable toast when the by-uid fetch itself fails', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    // Both the list cache (mockCommitteeShell's default) and the by-uid fetch miss — a genuine
+    // fetch failure, not just a cache-window gap, so the toast fallback is the correct outcome.
+    await page.route('**/api/votes/src-vote-1**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await expect(page.getByText(/This vote could not be found\. Try the Votes tab instead\./i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // p-drawer's host element can remain in the DOM while closed (PrimeNG toggles visibility,
+    // not presence) — assert not-visible, not absent, so this holds regardless of that detail.
+    await expect(page.getByTestId('vote-results-drawer')).not.toBeVisible();
   });
 
   test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {
