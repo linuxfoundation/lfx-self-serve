@@ -362,6 +362,7 @@ export class SidebarNavService {
         },
       ];
 
+      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Marketing Impact but not Campaigns.
       if (this.personaService.currentPersona() === 'executive-director') {
         marketingItems.push({
           label: 'Campaigns',

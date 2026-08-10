@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { map } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
@@ -15,7 +15,7 @@ import { PersonaService } from '../services/persona.service';
  * OpenFGA check, not part of the persisted persona state), so the ED fast path stays
  * synchronous for SSR while the LF-staff fallback awaits the personas API.
  */
-export const dashboardAccessGuard: CanActivateFn = () => {
+export const dashboardAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
   const router = inject(Router);
 
@@ -28,7 +28,7 @@ export const dashboardAccessGuard: CanActivateFn = () => {
       if (personaService.canViewExecutiveDashboards()) {
         return true;
       }
-      return router.parseUrl('/foundation/overview');
+      return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
     })
   );
 };

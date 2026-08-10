@@ -24,6 +24,7 @@
  *   S12 Settings page — view-only banner hidden for writer
  *   S13 Settings lens redirect — me lens → /profile/settings (fragment preserved); foundation keeps prefixed route
  *   S14 Legacy transactions redirect — /me/transactions → /profile/transactions, embedded in the Profile shell
+ *   S15 Foundation lens — LF Staff gets canViewExecutiveDashboards, sidebar shows Metrics + Marketing Impact (no Campaigns), Marketing Impact page shows Social Listening only
  *
  * Failure messages include the persona × lens × page combination so CI output
  * pinpoints the exact regression without digging through traces.
@@ -665,6 +666,24 @@ test.describe('S15: Foundation lens — LF Staff (isLFStaff: true, contributor p
       timeout: ELEMENT_TIMEOUT,
     });
     await expect(page.getByTestId(SIDEBAR.campaigns), 'persona=lf-staff lens=foundation item=campaigns should be hidden').toHaveCount(0);
+  });
+
+  test('Marketing Impact page shows Social Listening only — no tabs or focus bar (LF Staff restricted view)', async ({ page }) => {
+    await page.goto(`/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    // LF Staff should see the Social Listening-only view (the !isExecutiveDirector() branch).
+    await expect(
+      page.getByTestId('marketing-impact-social-listening-only'),
+      'persona=lf-staff lens=foundation page=marketing-impact social-listening-only should be visible'
+    ).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // The ED-only tab bar and focus bar must be absent.
+    await expect(
+      page.getByTestId('marketing-impact-focus-bar'),
+      'persona=lf-staff lens=foundation page=marketing-impact focus-bar should be hidden'
+    ).toHaveCount(0);
+    await expect(page.getByTestId('marketing-impact-tabs'), 'persona=lf-staff lens=foundation page=marketing-impact tabs should be hidden').toHaveCount(0);
   });
 });
 

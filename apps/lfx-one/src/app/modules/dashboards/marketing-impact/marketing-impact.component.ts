@@ -107,6 +107,7 @@ export class MarketingImpactComponent {
     });
   }
 
+  // Uses currentPersona() not canViewExecutiveDashboards() — LF Staff keep their contributor persona and fall into the !isExecutiveDirector() Social-Listening-only branch.
   private initIsExecutiveDirector(): Signal<boolean> {
     return computed(() => this.personaService.currentPersona() === 'executive-director');
   }
