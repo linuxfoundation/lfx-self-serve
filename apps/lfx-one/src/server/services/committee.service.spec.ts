@@ -7,16 +7,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
-const { proxyRequest, addAccessToResources, addAccessToResource, fetchWithETag, updateWithETag, resolveAuditUserDisplayName } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  addAccessToResources: vi.fn(),
-  // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
-  // list-oriented addAccessToResources every other describe block in this file already uses.
-  addAccessToResource: vi.fn(),
-  fetchWithETag: vi.fn(),
-  updateWithETag: vi.fn(),
-  resolveAuditUserDisplayName: vi.fn(),
-}));
+const { proxyRequest, addAccessToResources, addAccessToResource, fetchWithETag, updateWithETag, resolveAuditUserDisplayName, isImpersonating } = vi.hoisted(
+  () => ({
+    proxyRequest: vi.fn(),
+    addAccessToResources: vi.fn(),
+    // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
+    // list-oriented addAccessToResources every other describe block in this file already uses.
+    addAccessToResource: vi.fn(),
+    fetchWithETag: vi.fn(),
+    updateWithETag: vi.fn(),
+    resolveAuditUserDisplayName: vi.fn(),
+    isImpersonating: vi.fn(() => false),
+  })
+);
 
 vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
@@ -47,7 +50,7 @@ vi.mock('../helpers/query-service.helper', async () => {
     fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
   };
 });
-vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn() }));
+vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -307,6 +310,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     fetchWithETag.mockReset();
     updateWithETag.mockReset();
     resolveAuditUserDisplayName.mockReset();
+    isImpersonating.mockReset().mockReturnValue(false);
     // Pass-through default — most tests here don't care about access-check enrichment itself.
     addAccessToResource.mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
     service = new CommitteeService();
@@ -384,6 +388,30 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
   });
 
   describe('updateCommittee', () => {
+    it('rejects any chat_webhook_url change during impersonation (403 IMPERSONATION_READ_ONLY), before touching upstream — even a well-formed URL, and even a clear (null)', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: null })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not block other fields during impersonation — only chat_webhook_url is guarded', async () => {
+      isImpersonating.mockReturnValue(true);
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+    });
+
     it('rejects a chat_webhook_url that does not match the hooks.slack.com pattern, before touching upstream', async () => {
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: 'https://evil.example.com/x' })).rejects.toMatchObject({
         statusCode: 400,

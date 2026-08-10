@@ -802,7 +802,11 @@ export class WeeklyBriefCardComponent {
               detail = 'This brief was updated since you last viewed it. Reload to review the latest version before sharing.';
               this.refresh$.next();
             } else {
-              detail = 'This brief is already being sent, or was already sent.';
+              // Unlike performShare's mailing-list fallback, shareToSlack has no "already sent"
+              // concept — it emits only the three codes above, so this branch is unreachable in
+              // practice today. Kept neutral (not copy-pasted from performShare) in case a future
+              // 409 code is added here without updating this switch.
+              detail = "This brief can't be shared to Slack right now. Reload and try again.";
             }
           } else if (status === 400) {
             const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;

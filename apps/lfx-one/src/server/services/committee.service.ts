@@ -40,7 +40,7 @@ import { AuthorizationError, ConflictError, ResourceNotFoundError, ServiceValida
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { resolveAuditUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -451,6 +451,21 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
+    // Scoped to this one field, not the whole route: an impersonator repointing chat_webhook_url
+    // to a channel they control, then leaving, would let a later legitimate share-slack (itself
+    // correctly blocked during impersonation — weekly-brief.route.ts) deliver brief content
+    // somewhere the real committee owner never chose. Every other field on this same request
+    // (name, chat_channel, business_email_required, etc.) stays writable during impersonation, as
+    // it already was before this field existed — this is not a blanket write-lock on the route.
+    if (data.chat_webhook_url !== undefined && isImpersonating(req)) {
+      throw new AuthorizationError('Configuring the Slack webhook is not available while impersonating a user', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+    }
+
     // Normalized once, up front: an empty string must behave identically to omission/null
     // everywhere below it's used (validation skip, the PUT payload, and the read-back
     // comparison) — otherwise a direct API caller sending '' would skip validation (falsy,
