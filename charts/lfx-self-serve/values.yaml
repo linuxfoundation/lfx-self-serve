@@ -344,9 +344,13 @@ environment:
   # `campaign_manager` on the project in front of campaign-service; the service's own token
   # check is an authentication check, not a project-scoped authorization one, so a base URL
   # pointing straight at a service instance would let any caller holding a valid token act on
-  # a project it has no grant for, by knowing a job id. Declaring the variable is what would
-  # make that a supported, documented deployment; not declaring it keeps the bypass out of the
-  # chart's surface. It is not needed for the cutover flag below, which is a separate variable.
+  # a project it has no grant for, by knowing a job id.
+  #
+  # Omitting them here is not the enforcement, though — `templates/deployment.yaml` emits every
+  # entry in this map, so an override adds the variable without touching the chart. All three
+  # are rejected at render time by `lfx-self-serve.environment.gatewayOnlyValidate`; a
+  # deployment that genuinely needs a direct address drops one from that list in a reviewed
+  # chart commit. None of this is needed for the cutover flag below, a separate variable.
 
   # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Serves
   # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job

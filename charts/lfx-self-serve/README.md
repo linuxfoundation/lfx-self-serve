@@ -206,10 +206,20 @@ Campaign traffic reaches campaign-service **through the gateway**, at `environme
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
 `LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
 `LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
-Leaving it undeclared is the point: Heimdall and OpenFGA enforce `campaign_manager` on the project
-in front of campaign-service, and the service's own token check authenticates the caller without
-authorizing them for that project. A base URL aimed at a service instance would therefore let any
-caller with a valid token act on a project it holds no grant for, given a job id.
+The fallback is what makes the gateway the default, and the gateway is where the authorization
+lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
+while the service's own token check authenticates the caller without authorizing them for that
+project. A base URL aimed at a service instance would therefore let any caller with a valid token
+act on a project it holds no grant for, given a job id.
+
+Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
+emits every entry in `.Values.environment`, so an override adds the variable without touching this
+chart. All three variables are therefore rejected at render time by
+`lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
+than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
+still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
+deployment that genuinely needs a direct address should drop the variable from that list in a
+reviewed chart commit — a values override is invisible to review, a chart change is not.
 
 #### AI Service Configuration
 
