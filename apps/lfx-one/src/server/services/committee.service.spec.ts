@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,7 +32,10 @@ const {
   isImpersonating: vi.fn(() => false),
 }));
 
-vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
+vi.mock('@lfx-one/shared/enums', () => ({
+  CommitteeMemberRole: {},
+  CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
+}));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', () => ({
   SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
@@ -437,7 +440,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         service.updateCommittee(req, COMMITTEE_UID, {
           chat_webhook_url: VALID_WEBHOOK_URL,
           chat_channel: '#general',
-          member_visibility: 'public' as CommitteeMemberVisibility,
+          member_visibility: CommitteeMemberVisibility.BASIC_PROFILE,
         })
       ).rejects.toMatchObject({
         statusCode: 403,
