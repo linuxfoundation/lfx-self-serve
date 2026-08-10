@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createBarChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { computeMomPct, formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
@@ -32,11 +33,28 @@ import type {
 @Component({
   selector: 'lfx-paid-social-reach-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, EmptyStateComponent, SkeletonModule, TagComponent],
   templateUrl: './paid-social-reach-drawer.component.html',
   styleUrl: './paid-social-reach-drawer.component.scss',
 })
 export class PaidSocialReachDrawerComponent {
+  /**
+   * Computation placeholder for the null (failed / not-yet-run) case. Rendered only behind
+   * the template's `dataUnavailable` guard, so these zeros never reach the viewer as data.
+   */
+  private static readonly emptyResponse: SocialReachResponse = {
+    totalReach: 0,
+    roas: 0,
+    totalSpend: 0,
+    totalRevenue: 0,
+    changePercentage: 0,
+    trend: 'up',
+    monthlyData: [],
+    monthlyLabels: [],
+    monthlyRoas: [],
+    channelGroups: [],
+  };
+
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -121,8 +139,28 @@ export class PaidSocialReachDrawerComponent {
   // === WritableSignals ===
   protected readonly drawerLoading = signal(false);
 
+  /**
+   * True only after a request has actually failed, so the template can render an unavailable
+   * state instead of zeros. Tracked explicitly rather than inferred from a null `drawerResult`,
+   * which is also null before the drawer has ever been opened — inferring would show an error
+   * for a request that never ran.
+   */
+  protected readonly dataUnavailable = signal(false);
+
   // === Computed Signals (lazy-loaded data) ===
-  protected readonly drawerData: Signal<SocialReachResponse> = this.initDrawerData();
+  /**
+   * Raw response, or null when the request failed / has not run yet. Everything downstream
+   * reads `drawerData`, which substitutes an empty response so the existing metric logic
+   * stays null-free.
+   */
+  private readonly drawerResult: Signal<SocialReachResponse | null> = this.initDrawerData();
+
+  /**
+   * Never null, so the derived metrics below keep their existing shape. The zeros here are
+   * only ever rendered behind the template's `dataUnavailable` guard — they are a
+   * placeholder for computation, never presented to the viewer as measured data.
+   */
+  protected readonly drawerData: Signal<SocialReachResponse> = computed(() => this.drawerResult() ?? PaidSocialReachDrawerComponent.emptyResponse);
   protected readonly formattedTotalReach: Signal<string> = computed(() => formatNumber(this.drawerData().totalReach));
   protected readonly formattedTotalRevenue: Signal<string> = computed(() => formatCurrency(this.drawerData().totalRevenue));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
@@ -315,20 +353,7 @@ export class PaidSocialReachDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<SocialReachResponse> {
-    const defaultValue: SocialReachResponse = {
-      totalReach: 0,
-      roas: 0,
-      totalSpend: 0,
-      totalRevenue: 0,
-      changePercentage: 0,
-      trend: 'up',
-      monthlyData: [],
-      monthlyLabels: [],
-      monthlyRoas: [],
-      channelGroups: [],
-    };
-
+  private initDrawerData(): Signal<SocialReachResponse | null> {
     const visible$ = toObservable(this.visible);
     // Match the parent's fallback: the ED overview loads this card's data with 'tlf'
     // when no foundation is selected, so an empty slug here would filter the request
@@ -339,23 +364,34 @@ export class PaidSocialReachDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        tap(() => this.drawerLoading.set(true)),
+        // Clear the previous failure as the retry starts, so a reopened drawer shows the
+        // skeleton rather than the stale unavailable state while the new request is in flight.
+        tap(() => {
+          this.drawerLoading.set(true);
+          this.dataUnavailable.set(false);
+        }),
         switchMap((foundationSlug) =>
           this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
+            // null, not a zero-filled response: 0 impressions and 0.0x ROAS are legitimate
+            // measurements, so returning them here would render a failed request as "this
+            // foundation spent nothing" — the exact ambiguity getSocialReach stopped
+            // producing when its own zero-fill fallback was removed. The template renders
+            // an explicit unavailable state on null instead.
             catchError(() => {
               this.drawerLoading.set(false);
+              this.dataUnavailable.set(true);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
                 detail: 'Failed to load paid social reach details.',
               });
-              return of(defaultValue);
+              return of(null);
             })
           )
         )
       ),
-      { initialValue: defaultValue }
+      { initialValue: null }
     );
   }
 
