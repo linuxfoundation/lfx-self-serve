@@ -139,6 +139,7 @@ vi.mock('./valkey.service', () => ({
   valkeyService: valkeyServiceMock,
 }));
 
+import { SLACK_ERROR_BODY_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
@@ -876,6 +877,12 @@ describe('WeeklyBriefService', () => {
         status,
         statusText: `status ${status}`,
         text: async () => body,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(body));
+            controller.close();
+          },
+        }),
       } as unknown as Response;
     }
 
@@ -1054,7 +1061,22 @@ describe('WeeklyBriefService', () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(400, 'invalid_payload'));
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 502, code: 'SLACK_SEND_FAILED' });
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        message: expect.stringContaining('invalid_payload'),
+      });
+    });
+
+    it('truncates an oversized Slack error body to SLACK_ERROR_BODY_MAX_LENGTH instead of buffering it in full', async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce(mockResponse(400, 'x'.repeat(10_000)));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+      });
     });
 
     it('throws 502 SLACK_UNREACHABLE instead of letting a raw network error escape', async () => {

@@ -897,12 +897,12 @@ export class WeeklyBriefService {
 
     if (!response.ok) {
       // Slack's incoming-webhook error responses are a plain-text body (e.g. `invalid_payload`,
-      // `channel_not_found`, `action_prohibited`), not JSON. Slicing before use, not just at
-      // display time: response.text() buffers the whole body in memory regardless, and while
-      // webhookUrl is pinned to hooks.slack.com by the allowlist above (not an attacker-chosen
-      // host), bounding this keeps one unexpectedly large Slack response from bloating the log
-      // line and the client-facing error message.
-      const slackErrorText = (await response.text().catch(() => '')).slice(0, SLACK_ERROR_BODY_MAX_LENGTH);
+      // `channel_not_found`, `action_prohibited`), not JSON. Read via a bounded stream reader
+      // rather than response.text() — text() buffers the entire body before any slicing can
+      // happen, so a single huge response (whether from a Slack bug or a misbehaving proxy)
+      // would still be fully materialized in memory even though only SLACK_ERROR_BODY_MAX_LENGTH
+      // characters of it are ever used.
+      const slackErrorText = await this.readBoundedText(response, SLACK_ERROR_BODY_MAX_LENGTH).catch(() => '');
       throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
@@ -945,6 +945,32 @@ export class WeeklyBriefService {
     }
     logger.warning(req, 'weekly_brief_mock_mode', 'Serving mock weekly-brief data — WEEKLY_BRIEF_BACKEND is not "live"', {});
     return false;
+  }
+
+  /**
+   * Reads at most `maxChars` characters of `response`'s body, cancelling the underlying stream
+   * as soon as the cap is hit instead of buffering the rest — unlike `response.text()`, which
+   * always materializes the entire body before any slicing can happen.
+   */
+  private async readBoundedText(response: Response, maxChars: number): Promise<string> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      while (text.length < maxChars) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    return text.slice(0, maxChars);
   }
 
   /**
