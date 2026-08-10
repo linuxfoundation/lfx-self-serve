@@ -241,10 +241,11 @@ export class CommitteeActivityService {
     // despite resolving to a different actual field once `data.` prefixing is applied; votes'
     // date_field name doesn't even coincide with `updated_at`. Surveys are the exception here: no
     // upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
-    // updated_desc` is the only upstream ordering that leg gets. Notes sits in between: it gets a
-    // `date_field`, but only ever as a `date_to` upper bound (see fetchNotesAddedEvents's own
-    // comment for why `date_from` specifically is never sent). Same class of approximation as the
-    // per-leg date_field (filter-dimension) caveats discussed next, just in the sort dimension
+    // updated_desc` is the only upstream ordering that leg gets. Notes sits in between: no
+    // `date_field` at all on page 1 (like surveys, since `before` is only set from a cursor), and
+    // from page 2 on only a `date_to` upper bound, never `date_from` (see fetchNotesAddedEvents's
+    // own comment for why the asymmetry). Same class of approximation as the per-leg date_field
+    // (filter-dimension) caveats discussed next, just in the sort dimension
     // instead.
     //
     // Filter dimension: votes/files each filter on a single upstream `date_field` that only
@@ -254,18 +255,27 @@ export class CommitteeActivityService {
     // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
     // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
     // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys are
-    // the exception where sending no `date_field` at all IS the right call, not the failure mode
-    // this paragraph describes: unlike votes/files, a survey's cutoff-driven occurred_at isn't
-    // bounded below by any field the row gets written to, so date_field narrowing there would
-    // systematically (not rarely) exclude exactly the rows `since` is meant to include — see
-    // fetchSurveyEvents. Notes has the same lower-bound risk (an attachment whose v1 source record
-    // had no parseable `updated_at` gets indexed with `modified_at` set to the Go zero-date
-    // sentinel, `0001-01-01T00:00:00Z` — lfx-v2-meeting-service's `parseTime` swallows that error
-    // rather than omitting the field, so `modified_at` is never actually absent, just sometimes
-    // wrong) but not the upper-bound one: a `date_to` on `modified_at` can only be over-inclusive
-    // for a sentinel row (year 1 is always `<=` any real cutoff), and over-inclusion is exactly what
-    // the in-memory pass already backstops — see fetchNotesAddedEvents for the full asymmetry.
+    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys
+    // send no `date_field` at all for a `date_from` reason: unlike votes/files, a survey's
+    // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
+    // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
+    // is meant to include — see fetchSurveyEvents. That reasoning only covers `date_from`, though;
+    // sending no `date_field` at all also means no `date_to`, which surveys does not opt back into
+    // the way notes does below — a real, pre-existing pagination-reachability gap (any committee
+    // with more than `fetchSize` surveys has every survey past the newest ones permanently
+    // unreachable, the same failure class notes had before this leg sent `date_to`), predates
+    // LFXV2-3077, and is out of scope for this ticket to fix. Notes has the same lower-bound risk
+    // (an attachment whose v1 source record had no parseable `updated_at` gets indexed with
+    // `modified_at` set to the Go zero-date sentinel, `0001-01-01T00:00:00Z` — lfx-v2-meeting-service's
+    // `parseTime` swallows that error rather than omitting the field, so `modified_at` is never
+    // actually absent, just sometimes wrong) but not the upper-bound one: a `date_to` on
+    // `modified_at` can only be over-inclusive for a sentinel row (year 1 is always `<=` any real
+    // cutoff) — see fetchNotesAddedEvents for the full asymmetry. Over-inclusion is a correctness
+    // no-op (the in-memory pass still trims it before anything is emitted), but not a reachability
+    // no-op: a sentinel row still consumes one of the leg's `fetchSize` upstream slots on every
+    // page (sort:updated_desc resolves to the index's own recently-written `updated_at`, so a
+    // sentinel row sorts near the top despite its `data.modified_at` passing every date_to), which
+    // is the same "bounded to a single upstream page" limitation documented next, not a new one.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files/notes
     // are each bounded to a single upstream page of `fetchSize` rows.
@@ -281,8 +291,10 @@ export class CommitteeActivityService {
     // paginable at the source.
 
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
-    // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
-    // inclusive), ceiled to the next whole second — see ceilToWholeSecond's doc comment for why:
+    // Sent as an inclusive upstream `date_to` to every leg that does upstream date filtering at all
+    // (meetings/past-meetings/votes/files/notes — surveys opts out entirely, folders/links have no
+    // upstream date param to send it to; see each leg's own comment), ceiled to the next whole
+    // second — see ceilToWholeSecond's doc comment for why:
     // upstream truncates sub-second precision, so the raw cursor.before could otherwise shrink the
     // boundary below the true cursor position. The in-memory isAfterCursor pass (which uses the
     // exact, un-ceiled cursor.before) is what actually enforces the boundary; the ceiled value here
