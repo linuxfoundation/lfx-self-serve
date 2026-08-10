@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
+
 export const ORG_LENS_ROI_METHODS = ['logit', 'direct'] as const;
 
 export const ORG_LENS_ROI_DEFAULT_METHOD = 'logit';
@@ -23,6 +25,9 @@ export const ORG_LENS_ROI_CACHE_KEY = {
   summary: 'roi-summary:v1',
   coverage: 'roi-coverage:v1',
   annual: 'roi-annual:v1',
+  /** Unlike its siblings this key carries no method suffix — see the read in `org-lens-roi.service.ts`. */
+  investmentBreakdown: 'roi-investment-breakdown:v1',
+  projects: 'roi-projects:v1',
 } as const;
 
 /** Order must match the warehouse seed's display order. */
@@ -53,6 +58,39 @@ export const ORG_LENS_ROI_KPI_ICON_CLASS = {
 
 /** Rendered wherever a metric is undefined, so an absent value never reads as zero. */
 export const ORG_LENS_ROI_NO_VALUE = '—';
+
+/** Categories holding less than this share of total investment collapse into one labelled remainder (FR-025). */
+export const ORG_LENS_ROI_CATEGORY_REMAINDER_THRESHOLD = 0.02;
+
+/** Projects are drawn as slices until they cover this share of the measure; the rest collapse into one remainder (FR-027). */
+export const ORG_LENS_ROI_PROJECT_DONUT_COVERAGE = 0.8;
+
+/** A ceiling on slice count regardless of coverage — a flat distribution would otherwise draw hundreds of unreadable slivers. */
+export const ORG_LENS_ROI_PROJECT_DONUT_MAX_SLICES = 10;
+
+export const ORG_LENS_ROI_PROJECT_MEASURES = ['investment', 'return', 'netReturn'] as const;
+
+export const ORG_LENS_ROI_PROJECT_MEASURE_LABELS = {
+  investment: 'Investment',
+  return: 'Return',
+  netReturn: 'Net Return',
+} as const;
+
+/** Ends in gray so the remainder slice reads as "everything else" rather than as another category. */
+export const ORG_LENS_ROI_DONUT_PALETTE: readonly string[] = [
+  lfxColors.blue[600],
+  lfxColors.emerald[500],
+  lfxColors.violet[500],
+  lfxColors.amber[500],
+  lfxColors.blue[400],
+  lfxColors.emerald[400],
+  lfxColors.violet[400],
+  lfxColors.amber[400],
+  lfxColors.blue[300],
+  lfxColors.emerald[300],
+];
+
+export const ORG_LENS_ROI_DONUT_REMAINDER_COLOR = lfxColors.gray[400];
 
 export const ORG_LENS_ROI_KPI_EXPLANATION = {
   totalExpenditure:

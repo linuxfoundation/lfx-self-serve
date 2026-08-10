@@ -133,10 +133,13 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/meetings/influence', (req, res, next) => orgLensMeetingsController.getInfluence(req, res, next));
 
   // LFXV2-2980 — Org Lens ROI Metrics.
-  // Register literal segments before any `/roi/.../:projectSlug` matcher, or they get consumed as a slug.
+  // Every literal /roi/* route below MUST stay registered before the /roi/projects/:projectSlug
+  // matcher, so 'investment-breakdown' isn't consumed as a project slug.
   router.get('/:orgUid/lens/roi/summary', (req, res, next) => orgLensRoiController.getSummary(req, res, next));
   router.get('/:orgUid/lens/roi/coverage', (req, res, next) => orgLensRoiController.getCoverage(req, res, next));
   router.get('/:orgUid/lens/roi/annual', (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
+  router.get('/:orgUid/lens/roi/investment-breakdown', (req, res, next) => orgLensRoiController.getInvestmentBreakdown(req, res, next));
+  router.get('/:orgUid/lens/roi/projects', (req, res, next) => orgLensRoiController.getProjects(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

@@ -18,8 +18,10 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 
 import { OrgRoiAnnualTrendComponent } from './components/org-roi-annual-trend/org-roi-annual-trend.component';
 import { OrgRoiAssumptionsDrawerComponent } from './components/org-roi-assumptions-drawer/org-roi-assumptions-drawer.component';
+import { OrgRoiCategoryDonutComponent } from './components/org-roi-category-donut/org-roi-category-donut.component';
 import { OrgRoiEmptyStateComponent } from './components/org-roi-empty-state/org-roi-empty-state.component';
 import { OrgRoiKpiCardsComponent } from './components/org-roi-kpi-cards/org-roi-kpi-cards.component';
+import { OrgRoiProjectsDonutComponent } from './components/org-roi-projects-donut/org-roi-projects-donut.component';
 
 const EMPTY_SUMMARY: OrgLensRoiSummary = {
   orgUid: '',
@@ -45,6 +47,8 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
   imports: [
     OrgRoiKpiCardsComponent,
     OrgRoiAnnualTrendComponent,
+    OrgRoiCategoryDonutComponent,
+    OrgRoiProjectsDonutComponent,
     OrgRoiAssumptionsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,

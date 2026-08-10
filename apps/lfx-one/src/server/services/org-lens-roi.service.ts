@@ -1,14 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_LENS_ROI_CACHE_KEY, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  ORG_LENS_ROI_CACHE_KEY,
+  ORG_LENS_ROI_CONTRIBUTION_TYPES,
+  ORG_LENS_ROI_COVERAGE_REASONS,
+  ORG_LENS_ROI_METHODS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   OrgLensRoiAnnual,
   OrgLensRoiAnnualRow,
   OrgLensRoiAnnualWarehouseRow,
+  OrgLensRoiCategoryRow,
+  OrgLensRoiContributionType,
   OrgLensRoiCoverage,
   OrgLensRoiCoverageWarehouseRow,
+  OrgLensRoiInvestmentBreakdown,
+  OrgLensRoiInvestmentBreakdownWarehouseRow,
   OrgLensRoiMethod,
+  OrgLensRoiProjectRow,
+  OrgLensRoiProjects,
+  OrgLensRoiProjectWarehouseRow,
   OrgLensRoiSummary,
   OrgLensRoiSummaryWarehouseRow,
 } from '@lfx-one/shared/interfaces';
@@ -109,6 +122,125 @@ export class OrgLensRoiService {
       },
       OrgLensRoiService.isAnnual
     );
+  }
+
+  /**
+   * Investment by contribution category.
+   *
+   * The cache key carries **no method suffix**, and unlike `/coverage` that is a property of the
+   * source rather than an assumption about it: `ORG_LENS_ROI_INVESTMENT_BREAKDOWN` has no
+   * `MARKUP_METHOD` column at all, because the levels table it derives from has none. The markup
+   * method scales return, not spend. `/coverage` looked similar but was only method-invariant in
+   * practice, so it was made method-scoped anyway; this one cannot vary by construction.
+   *
+   * `total` is summed from the same rows the client renders, so the figure under the donut and the
+   * slices in it can never disagree. It reconciles with `/summary.totalExpenditure` in the
+   * warehouse (FR-026), asserted by a dbt singular test — never reconciled here.
+   */
+  public async getInvestmentBreakdown(req: Request, accountId: string): Promise<OrgLensRoiInvestmentBreakdown> {
+    return withOrgCache(
+      accountId,
+      ORG_LENS_ROI_CACHE_KEY.investmentBreakdown,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        logger.debug(req, 'get_org_lens_roi_investment_breakdown', 'Cache miss; querying Snowflake', { account_id: accountId });
+        const sql = `
+        SELECT
+          CONTRIBUTION_TYPE,
+          CONTRIBUTION_LABEL,
+          EXPENDITURE
+        FROM ${this.investmentBreakdownTable()}
+        WHERE ACCOUNT_ID = ?
+        ORDER BY DISPLAY_ORDER
+      `;
+        const result = await this.snowflakeService.execute<OrgLensRoiInvestmentBreakdownWarehouseRow>(sql, [accountId]);
+        const rows = result.rows.map((row) => this.mapCategoryRow(row.CONTRIBUTION_TYPE, row.CONTRIBUTION_LABEL, row.EXPENDITURE));
+        return { rows, total: rows.reduce((sum, row) => sum + row.expenditure, 0) };
+      },
+      OrgLensRoiService.isInvestmentBreakdown
+    );
+  }
+
+  /**
+   * The complete, uncapped project set with each project's category breakdown in one payload
+   * (DR-005, FR-033). Measured against production, the largest organization serializes to ~241 KB
+   * against the 1 MiB `VALKEY_CACHE.MAX_VALUE_BYTES` ceiling, so every organization caches.
+   *
+   * One round-trip, not two: the projects and their breakdown are a single consistent fact, and
+   * fetching them separately would let the pair drift between calls — the same reasoning that made
+   * `/coverage` one query. The join fans out to one row per project × category (~1,200 rows at the
+   * largest), regrouped below.
+   */
+  public async getProjects(req: Request, accountId: string, method: OrgLensRoiMethod): Promise<OrgLensRoiProjects> {
+    return withOrgCache(
+      accountId,
+      `${ORG_LENS_ROI_CACHE_KEY.projects}:${method}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        logger.debug(req, 'get_org_lens_roi_projects', 'Cache miss; querying Snowflake', { account_id: accountId, method });
+        // The breakdown table carries no MARKUP_METHOD — category spend is method-invariant, so it
+        // joins on the project alone. PROFIT_SIGN_CHECK is deliberately not selected (DR-003, FR-041).
+        const sql = `
+        SELECT
+          p.PROJECT_ID,
+          p.PROJECT_SLUG,
+          p.PROJECT_NAME,
+          p.TOTAL_EXPENDITURE,
+          p.TOTAL_RETURN,
+          p.PROFIT,
+          p.ROI,
+          p.BCR,
+          p.BREAKEVEN_MARKUP,
+          b.CONTRIBUTION_TYPE,
+          b.CONTRIBUTION_LABEL,
+          b.EXPENDITURE AS CATEGORY_EXPENDITURE
+        FROM ${this.projectsTable()} p
+        LEFT JOIN ${this.projectsBreakdownTable()} b
+          ON b.ACCOUNT_ID = p.ACCOUNT_ID AND b.PROJECT_ID = p.PROJECT_ID
+        WHERE p.ACCOUNT_ID = ? AND p.MARKUP_METHOD = ?
+        ORDER BY p.TOTAL_RETURN DESC, p.PROJECT_ID, b.DISPLAY_ORDER
+      `;
+        const result = await this.snowflakeService.execute<OrgLensRoiProjectWarehouseRow>(sql, [accountId, method]);
+        return { method, rows: this.groupProjectRows(result.rows) };
+      },
+      OrgLensRoiService.isProjects
+    );
+  }
+
+  /** Collapses the fanned-out join back to one entry per project, preserving the SQL ordering. */
+  private groupProjectRows(rows: OrgLensRoiProjectWarehouseRow[]): OrgLensRoiProjectRow[] {
+    const byProject = new Map<string, OrgLensRoiProjectRow>();
+    for (const row of rows) {
+      let project = byProject.get(row.PROJECT_ID);
+      if (project === undefined) {
+        project = {
+          projectId: row.PROJECT_ID,
+          projectSlug: this.toNullableLabel(row.PROJECT_SLUG) ?? '',
+          projectName: this.toNullableLabel(row.PROJECT_NAME) ?? '',
+          totalExpenditure: this.toFiniteNumber(row.TOTAL_EXPENDITURE),
+          totalReturn: this.toFiniteNumber(row.TOTAL_RETURN),
+          profit: this.toFiniteNumber(row.PROFIT),
+          roi: this.toNullableNumber(row.ROI),
+          bcr: this.toNullableNumber(row.BCR),
+          breakevenMarkup: this.toNullableNumber(row.BREAKEVEN_MARKUP),
+          categories: [],
+        };
+        byProject.set(row.PROJECT_ID, project);
+      }
+      // Null for a project the breakdown has no rows for — the LEFT JOIN's unmatched side.
+      if (row.CONTRIBUTION_TYPE !== null && row.CONTRIBUTION_TYPE !== undefined) {
+        project.categories.push(this.mapCategoryRow(row.CONTRIBUTION_TYPE, row.CONTRIBUTION_LABEL, row.CATEGORY_EXPENDITURE));
+      }
+    }
+    return [...byProject.values()];
+  }
+
+  private mapCategoryRow(type: string, label: string | null, expenditure: unknown): OrgLensRoiCategoryRow {
+    return {
+      type: type as OrgLensRoiContributionType,
+      label: this.toNullableLabel(label) ?? type,
+      expenditure: this.toFiniteNumber(expenditure),
+    };
   }
 
   private mapSummary(accountId: string, method: OrgLensRoiMethod, row: OrgLensRoiSummaryWarehouseRow | null): OrgLensRoiSummary {
@@ -218,6 +350,44 @@ export class OrgLensRoiService {
     });
   }
 
+  private static isFiniteNumber(value: unknown): boolean {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  /** Per-row, not just per-envelope: the donut maps over these, so one malformed entry is enough to break a render. */
+  private static isCategoryRows(value: unknown): boolean {
+    if (!Array.isArray(value)) return false;
+    return value.every((row) => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+      const entry = row as Record<string, unknown>;
+      if (!(ORG_LENS_ROI_CONTRIBUTION_TYPES as readonly string[]).includes(entry['type'] as string)) return false;
+      if (typeof entry['label'] !== 'string') return false;
+      return OrgLensRoiService.isFiniteNumber(entry['expenditure']);
+    });
+  }
+
+  private static isInvestmentBreakdown(value: unknown): boolean {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const breakdown = value as Record<string, unknown>;
+    if (!OrgLensRoiService.isFiniteNumber(breakdown['total'])) return false;
+    return OrgLensRoiService.isCategoryRows(breakdown['rows']);
+  }
+
+  private static isProjects(value: unknown): boolean {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const projects = value as Record<string, unknown>;
+    if (!(ORG_LENS_ROI_METHODS as readonly string[]).includes(projects['method'] as string)) return false;
+    if (!Array.isArray(projects['rows'])) return false;
+    return projects['rows'].every((row) => {
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+      const entry = row as Record<string, unknown>;
+      if (!['projectId', 'projectSlug', 'projectName'].every((key) => typeof entry[key] === 'string')) return false;
+      if (!['totalExpenditure', 'totalReturn', 'profit'].every((key) => OrgLensRoiService.isFiniteNumber(entry[key]))) return false;
+      if (!['roi', 'bcr', 'breakevenMarkup'].every((key) => OrgLensRoiService.isNullableNumber(entry, key))) return false;
+      return OrgLensRoiService.isCategoryRows(entry['categories']);
+    });
+  }
+
   private toFiniteNumber(value: unknown): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -249,6 +419,18 @@ export class OrgLensRoiService {
 
   private annualTable(): string {
     return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_ANNUAL`;
+  }
+
+  private investmentBreakdownTable(): string {
+    return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_INVESTMENT_BREAKDOWN`;
+  }
+
+  private projectsTable(): string {
+    return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_PROJECTS`;
+  }
+
+  private projectsBreakdownTable(): string {
+    return `${resolveLfxOnePlatinumSchema()}.ORG_LENS_ROI_PROJECTS_BREAKDOWN`;
   }
 
   private mappingTable(): string {
