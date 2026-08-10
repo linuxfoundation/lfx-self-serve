@@ -1075,7 +1075,7 @@ describe('WeeklyBriefService', () => {
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
         statusCode: 502,
         code: 'SLACK_SEND_FAILED',
-        errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+        errorBody: { status: 400, reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
       });
     });
 
