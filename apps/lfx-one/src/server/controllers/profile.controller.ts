@@ -2114,54 +2114,6 @@ export class ProfileController {
   }
 
   /**
-   * Maps an auth-service `UserMetadataUpdateResponse` failure to the appropriate typed API error.
-   * Shared by every write path that persists through `userService.updateUserMetadata` (profile
-   * field updates, profile picture upload) so the error classification stays consistent.
-   */
-  private mapUserMetadataUpdateError(response: UserMetadataUpdateResponse, username: string, operation: string, path: string): unknown {
-    if (response.error === 'Service temporarily unavailable') {
-      return new MicroserviceError(response.message || 'Authentication service temporarily unavailable', 503, 'SERVICE_UNAVAILABLE', {
-        operation,
-        service: 'auth-service',
-        path,
-        errorBody: { error: response.error, message: response.message },
-      });
-    } else if (response.error?.includes('authentication') || response.error?.includes('token')) {
-      return new AuthenticationError(response.message || 'Authentication failed', {
-        operation,
-        service: 'profile_controller',
-        path,
-        metadata: { error: response.error },
-      });
-    } else if (response.error?.includes('permission') || response.error?.includes('forbidden')) {
-      return new AuthorizationError(response.message || 'Insufficient permissions to update user metadata', {
-        operation,
-        service: 'profile_controller',
-        path,
-      });
-    } else if (response.error?.includes('not found')) {
-      return new ResourceNotFoundError('User', username, {
-        operation,
-        service: 'profile_controller',
-        path,
-      });
-    } else if (response.error?.includes('validation') || response.error?.includes('invalid')) {
-      return ServiceValidationError.forField('user_metadata', response.message || response.error || 'Invalid user metadata', {
-        operation,
-        service: 'profile_controller',
-        path,
-      });
-    }
-
-    return new MicroserviceError(response.message || response.error || 'Failed to update user metadata', 500, 'INTERNAL_ERROR', {
-      operation,
-      service: 'auth-service',
-      path,
-      errorBody: { error: response.error, message: response.message },
-    });
-  }
-
-  /**
    * GET /api/profile/visibility — resolve the current user's public-profile visibility (master
    * IsPublic flag + section-level `visibility` preference).
    */
@@ -2214,6 +2166,54 @@ export class ProfileController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Maps an auth-service `UserMetadataUpdateResponse` failure to the appropriate typed API error.
+   * Shared by every write path that persists through `userService.updateUserMetadata` (profile
+   * field updates, profile picture upload) so the error classification stays consistent.
+   */
+  private mapUserMetadataUpdateError(response: UserMetadataUpdateResponse, username: string, operation: string, path: string): unknown {
+    if (response.error === 'Service temporarily unavailable') {
+      return new MicroserviceError(response.message || 'Authentication service temporarily unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        operation,
+        service: 'auth-service',
+        path,
+        errorBody: { error: response.error, message: response.message },
+      });
+    } else if (response.error?.includes('authentication') || response.error?.includes('token')) {
+      return new AuthenticationError(response.message || 'Authentication failed', {
+        operation,
+        service: 'profile_controller',
+        path,
+        metadata: { error: response.error },
+      });
+    } else if (response.error?.includes('permission') || response.error?.includes('forbidden')) {
+      return new AuthorizationError(response.message || 'Insufficient permissions to update user metadata', {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    } else if (response.error?.includes('not found')) {
+      return new ResourceNotFoundError('User', username, {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    } else if (response.error?.includes('validation') || response.error?.includes('invalid')) {
+      return ServiceValidationError.forField('user_metadata', response.message || response.error || 'Invalid user metadata', {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    }
+
+    return new MicroserviceError(response.message || response.error || 'Failed to update user metadata', 500, 'INTERNAL_ERROR', {
+      operation,
+      service: 'auth-service',
+      path,
+      errorBody: { error: response.error, message: response.message },
+    });
   }
 
   /**
