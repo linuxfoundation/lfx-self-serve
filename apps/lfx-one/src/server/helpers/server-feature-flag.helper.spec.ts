@@ -29,8 +29,10 @@ describe('isServerFeatureEnabled', () => {
     expect(isServerFeatureEnabled(FLAG)).toBe(false);
   });
 
-  // Read per call, not captured at module load: a flag frozen at import time cannot be rolled
-  // back without a restart, which is the point of putting it in an env var at all.
+  // Read per call, not captured at module load. This buys nothing operationally — changing a
+  // container's environment still means replacing the pod — and what it buys is exactly this
+  // test: a value frozen at import time could not be varied across cases without module-registry
+  // surgery. Pinned so a later "optimisation" to a module-level constant fails here.
   it('reflects a change made after the module was imported', () => {
     expect(isServerFeatureEnabled(FLAG)).toBe(false);
     process.env[FLAG] = 'true';

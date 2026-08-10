@@ -142,13 +142,27 @@ describe('CampaignServiceClient.getJobStatus', () => {
   // The flag-off path returns a `not_found` STATUS for an unknown job, and the poller has an
   // arm for it. A thrown 404 would take a different branch in the component, so the two sides
   // of the cutover would disagree on an outcome only the expired-job case reaches.
-  it('translates an upstream 404 into the not_found status the in-process path returns', async () => {
-    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
+  it('translates campaign-service own typed 404 into the not_found status the in-process path returns', async () => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'the resource was not found' } }));
 
     await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({
       status: 'not_found',
       error: JOB_LOST_MESSAGE,
     });
+  });
+
+  // The cutover's most likely first-deploy failure: the campaign-service route is absent or
+  // misrouted and the GATEWAY answers 404. `not_found` is terminal for the poller, so accepting
+  // that 404 would tell the user a running campaign was lost AND bury the misconfiguration.
+  // Traefik's 404 is plain text, which `api-client.service.ts` leaves as a null `errorBody`.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+    ['a 404 whose code is not the literal string', { code: 404, message: 'nope' }],
+  ])('rethrows %s rather than reporting the job lost', async (_label, errorBody) => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode: 404 });
   });
 
   // Only 404. Anything else means the status is UNKNOWN, and reporting unknown as `not_found`

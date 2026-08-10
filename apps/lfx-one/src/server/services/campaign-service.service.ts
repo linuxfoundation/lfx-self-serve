@@ -98,9 +98,21 @@ export class CampaignServiceClient {
    * second behaviour hidden behind an environment variable, and the difference would surface
    * only for the expired-job case nobody exercises before shipping.
    *
-   * ONLY 404. Every other failure — a 401, a 503, a gateway timeout — is rethrown, because
+   * ONLY campaign-service's OWN 404, and the distinction matters most during the cutover this
+   * flag gates. A bare `statusCode === 404` also catches a 404 the GATEWAY produced because the
+   * campaign-service route is absent or misrouted — the single most likely way the cutover fails
+   * on first deploy. Because `not_found` is terminal for the poller, that misconfiguration would
+   * be reported to the user as a lost campaign and the real fault would never surface. So the
+   * translation requires the typed body campaign-service returns for an unknown job,
+   * `{"code":"404","message":...}` (its Goa `not-found-error`, populated at
+   * `internal/service/brief.go`: `&briefs.NotFoundError{Code: "404", ...}`). Traefik's own 404 is
+   * plain text, which `api-client.service.ts` leaves as a null `errorBody`, so it cannot pass.
+   *
+   * Every other failure — a 401, a 503, a gateway timeout, an untyped 404 — is rethrown, because
    * those mean the status is UNKNOWN, and reporting unknown as `not_found` would tell the user
-   * their campaign creation was lost when it may be running perfectly well.
+   * their campaign creation was lost when it may be running perfectly well. Note the asymmetry is
+   * deliberate: if campaign-service ever changes that body shape, a real expired job surfaces as
+   * an error rather than as a false "lost" — loud instead of quietly wrong.
    */
   public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
     try {
@@ -112,12 +124,28 @@ export class CampaignServiceClient {
       );
       return adaptJobPollResponse(response);
     } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 404) {
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { status: 'not_found', error: JOB_LOST_MESSAGE };
       }
       throw error;
     }
   }
+}
+
+/**
+ * Whether a 404's body is campaign-service's own typed not-found rather than someone else's 404.
+ *
+ * Its Goa `not-found-error` requires both `code` and `message` as strings, and the service
+ * populates `code` with the literal `"404"`. Anything that fails this test — a null body from a
+ * plain-text Traefik 404, or a differently shaped JSON error from another hop — is NOT evidence
+ * that the job is gone. Exported for the spec.
+ */
+export function isCampaignServiceNotFound(errorBody: unknown): boolean {
+  if (typeof errorBody !== 'object' || errorBody === null) {
+    return false;
+  }
+  const body = errorBody as { code?: unknown; message?: unknown };
+  return body.code === '404' && typeof body.message === 'string';
 }
 
 /**

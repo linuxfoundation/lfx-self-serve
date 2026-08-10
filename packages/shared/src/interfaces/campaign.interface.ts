@@ -509,9 +509,14 @@ export interface CampaignPlatformResult {
  * What a finished creation job left behind, normalised across both sources.
  *
  * `campaigns` is populated by the vendor-direct path and `platformResults` by the
- * campaign-service path; exactly one of them is non-empty. Kept as one type so the caller has
- * a single "the job is over, here is what happened" value rather than a nullable
- * `CampaignCreateResponse` that reads as "nothing happened" on the campaign-service path.
+ * campaign-service path — never both. Neither is a guarantee of content: the vendor-direct path
+ * calls `completeJob` unconditionally (`campaign-proxy.service.ts`), so a run in which every
+ * platform failed finishes as `done` with an empty `campaigns` and a populated `errors`. Read
+ * `errors` and each result's own flag; do not treat "the job is over" as "a campaign exists".
+ *
+ * Kept as one type so the caller has a single "the job is over, here is what happened" value
+ * rather than a nullable `CampaignCreateResponse` that reads as "nothing happened" on the
+ * campaign-service path.
  */
 export interface CampaignJobOutcome {
   campaigns: CampaignCreateResult[];

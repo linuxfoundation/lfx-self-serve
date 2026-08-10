@@ -499,7 +499,7 @@
       reaches the page. An unconditionally green "Campaigns Created" panel would announce an
       all-failed result as a success.
     -->
-    @if (platformResults().length > 0) {
+    @if (platformOutcomes().length > 0) {
       <div
         class="rounded-lg border p-5"
         [class.border-green-200]="anyPlatformCreated()"
@@ -523,10 +523,12 @@
             red failure: an ORPHAN (the upstream paid campaign was created and only the database
             write failed — `campaignId` is populated on purpose so the id is not lost) and a SKIP
             (a concurrent request owns this platform, which campaign-service explicitly calls not
-            a failure). See `outcomeOf` for why the skip is not detected by matching its message.
+            a failure). The classification is computed in `platformOutcomes` — see it for why the
+            skip is not detected by matching its message.
           -->
-          @for (pr of platformResults(); track pr.platform) {
-            @let outcome = outcomeOf(pr);
+          @for (row of platformOutcomes(); track row.result.platform) {
+            @let pr = row.result;
+            @let outcome = row.outcome;
             <div
               class="rounded-md border bg-white p-3"
               [class.border-green-200]="outcome === 'created'"
