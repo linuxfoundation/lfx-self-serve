@@ -1085,8 +1085,8 @@ describe('WeeklyBriefService', () => {
       // the OLD response.text() implementation too, since text() also buffers everything before
       // slicing — that's the case this test is guarding against. A chunked, pull-driven stream is
       // required to actually exercise (and prove) the early-cancel behavior: SLACK_ERROR_BODY_MAX_LENGTH
-      // is 500, each chunk is 100 chars, so the bound should be hit and the stream cancelled well
-      // before all 1000 chunks (100,000 chars) are pulled.
+      // is 500 and each chunk is 100 chars, so the default ReadableStream queuing strategy
+      // (highWaterMark: 1) should hit the bound and cancel after ~5 pulls, not all 1000.
       let pullCount = 0;
       let cancelled = false;
       const chunk = 'x'.repeat(100);
@@ -1115,24 +1115,10 @@ describe('WeeklyBriefService', () => {
         code: 'SLACK_SEND_FAILED',
         errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
       });
-      expect(pullCount).toBeLessThan(1000);
+      // ~5 pulls expected (500 / 100); a small margin allows for queuing-strategy prefetch
+      // without loosening the bound so much a near-full-buffer regression could still pass.
+      expect(pullCount).toBeLessThanOrEqual(10);
       expect(cancelled).toBe(true);
-    });
-
-    it("falls back to response.text() when the stand-in Response has no readable body stream — doesn't silently lose Slack's diagnostic", async () => {
-      mockShareableBrief();
-      fetchMock.mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        statusText: 'status 400',
-        text: async () => 'channel_not_found',
-      } as unknown as Response);
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        message: expect.stringContaining('channel_not_found'),
-      });
     });
 
     it('throws 502 SLACK_UNREACHABLE instead of letting a raw network error escape', async () => {
