@@ -337,12 +337,16 @@ environment:
   LFX_V2_SERVICE:
     value:
 
-  # Base URL for lfx-v2-campaign-service. Leave empty to reach it through the gateway at
-  # LFX_V2_SERVICE, which is the normal deployment; set it only to pin campaign traffic at a
-  # specific instance. Declared here so the value is settable — an unwired variable makes the
-  # cutover flag below unreachable in the cluster.
-  LFX_V2_CAMPAIGN_SERVICE:
-    value:
+  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the sibling
+  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE`. Each one falls back in code to
+  # `LFX_V2_SERVICE`, so leaving it unset routes campaign traffic through the gateway — and
+  # the gateway is where the authorization lives. Heimdall and OpenFGA enforce
+  # `campaign_manager` on the project in front of campaign-service; the service's own token
+  # check is an authentication check, not a project-scoped authorization one, so a base URL
+  # pointing straight at a service instance would let any caller holding a valid token act on
+  # a project it has no grant for, by knowing a job id. Declaring the variable is what would
+  # make that a supported, documented deployment; not declaring it keeps the bypass out of the
+  # chart's surface. It is not needed for the cutover flag below, which is a separate variable.
 
   # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Set to "true" to serve
   # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job

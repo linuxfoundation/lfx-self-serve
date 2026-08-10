@@ -184,10 +184,18 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                       | Description                                                                                           | Required | Default          |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ---------------- |
-| `environment.LFX_V2_CAMPAIGN_SERVICE`           | Campaign-service base URL; falls back to the gateway                                                  | No       | `LFX_V2_SERVICE` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | `"true"` serves campaign job status from campaign-service; anything else keeps the in-process job map | No       | off              |
+| Parameter                                       | Description                                                                                           | Required | Default |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | `"true"` serves campaign job status from campaign-service; anything else keeps the in-process job map | No       | off     |
+
+Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
+There is deliberately no chart parameter for a campaign-service base URL. The application does read
+`LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
+`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+Leaving it undeclared is the point: Heimdall and OpenFGA enforce `campaign_manager` on the project
+in front of campaign-service, and the service's own token check authenticates the caller without
+authorizing them for that project. A base URL aimed at a service instance would therefore let any
+caller with a valid token act on a project it holds no grant for, given a job id.
 
 #### AI Service Configuration
 
