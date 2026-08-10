@@ -29,11 +29,17 @@
           {{ initials() }}
         }
       </div>
+      <!--
+        Decorative duplicate of the "Edit profile" pill below. Kept clickable for mouse users, but
+        removed from the a11y tree (aria-hidden) and tab order (tabindex=-1) so screen-reader and
+        keyboard users get a single actionable control (the labeled pill) for one destination.
+      -->
       <button
         type="button"
         (click)="onEdit()"
         [disabled]="impersonating()"
-        [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Edit profile'"
+        aria-hidden="true"
+        tabindex="-1"
         class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
         data-testid="profile-panel-edit-badge">
         <i class="fa-light fa-pencil text-xs"></i>
