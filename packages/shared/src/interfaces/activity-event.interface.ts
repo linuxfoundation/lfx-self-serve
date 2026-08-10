@@ -117,6 +117,15 @@ export interface NotesAddedActivityEvent extends BaseActivityEvent {
      * upstream uid namespaces, same reasoning as document_uploaded's document_type discriminant.
      * Drives eventKey's namespace (committee-activity.service.ts) and the client's tab-routing
      * action (activity-feed.utils.ts).
+     *
+     * Names the upstream resource type, not a time guarantee: v1_meeting_attachment rows hang off
+     * an active meeting record, which keeps existing after its occurrence passes — so a note on a
+     * one-off meeting that already happened, or on an ended recurring series, is still 'upcoming'
+     * here and still routes to the Meetings tab's upcoming view, which won't contain it. Known,
+     * accepted v1 limitation (same "route to the containing tab, not a precise deep link"
+     * trade-off document_uploaded already makes for file/folder rows) — not fixed for the same
+     * reason those aren't: there's no bounded-call way to know which sub-tab actually holds a
+     * given meeting without a per-event follow-up.
      */
     meeting_scope: 'upcoming' | 'past';
   };

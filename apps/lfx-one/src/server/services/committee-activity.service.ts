@@ -239,11 +239,13 @@ export class CommitteeActivityService {
     // files' `data.updated_at` (each auto-prefixed with `data.` by query-service, unlike `sort`).
     // Files happens to share a field NAME with the sort target (`updated_at` == `updated_at`)
     // despite resolving to a different actual field once `data.` prefixing is applied; votes'
-    // date_field name doesn't even coincide with `updated_at`. Surveys and notes are the exception
-    // here: neither has an upstream date_field at all (see fetchSurveyEvents's and
-    // fetchNotesAddedEvents's own comments for why, two different reasons) — `sort: updated_desc`
-    // is the only upstream ordering either leg gets. Same class of approximation as the per-leg
-    // date_field (filter-dimension) caveats discussed next, just in the sort dimension instead.
+    // date_field name doesn't even coincide with `updated_at`. Surveys are the exception here: no
+    // upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
+    // updated_desc` is the only upstream ordering that leg gets. Notes sits in between: it gets a
+    // `date_field`, but only ever as a `date_to` upper bound (see fetchNotesAddedEvents's own
+    // comment for why `date_from` specifically is never sent). Same class of approximation as the
+    // per-leg date_field (filter-dimension) caveats discussed next, just in the sort dimension
+    // instead.
     //
     // Filter dimension: votes/files each filter on a single upstream `date_field` that only
     // approximates their own multi-field occurred_at derivation (see each leg's own comment for
@@ -252,17 +254,18 @@ export class CommitteeActivityService {
     // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
     // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
     // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys and
-    // notes are the exception where "sending none at all" IS the right call, not the failure mode
-    // this paragraph describes — for two different reasons. Surveys: unlike votes/files, a survey's
-    // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
-    // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
-    // is meant to include — see fetchSurveyEvents. Notes: an attachment whose v1 source record had
-    // no parseable `updated_at` gets indexed with `modified_at` set to the Go zero-date sentinel
-    // (`0001-01-01T00:00:00Z`, lfx-v2-meeting-service's `parseTime` swallows that error rather than
-    // omitting the field — `modified_at` is never actually absent), which an upstream date_field
-    // filter would exclude even though `firstValidTimestamp` correctly treats the sentinel as
-    // invalid and falls back to `created_at` for `occurred_at` — see fetchNotesAddedEvents.
+    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys are
+    // the exception where sending no `date_field` at all IS the right call, not the failure mode
+    // this paragraph describes: unlike votes/files, a survey's cutoff-driven occurred_at isn't
+    // bounded below by any field the row gets written to, so date_field narrowing there would
+    // systematically (not rarely) exclude exactly the rows `since` is meant to include — see
+    // fetchSurveyEvents. Notes has the same lower-bound risk (an attachment whose v1 source record
+    // had no parseable `updated_at` gets indexed with `modified_at` set to the Go zero-date
+    // sentinel, `0001-01-01T00:00:00Z` — lfx-v2-meeting-service's `parseTime` swallows that error
+    // rather than omitting the field, so `modified_at` is never actually absent, just sometimes
+    // wrong) but not the upper-bound one: a `date_to` on `modified_at` can only be over-inclusive
+    // for a sentinel row (year 1 is always `<=` any real cutoff), and over-inclusion is exactly what
+    // the in-memory pass already backstops — see fetchNotesAddedEvents for the full asymmetry.
     //
     // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files/notes
     // are each bounded to a single upstream page of `fetchSize` rows.
@@ -892,27 +895,29 @@ export class CommitteeActivityService {
    *    more than the actual Notes volume warrants, and nothing would ever log it. If the bet ever
    *    proves wrong, the durable fix is an upstream request to add `category` to the attachment tag
    *    sets, not reverting to the client-side-only approach.
-   *  - No `date_field`/`date_from`/`date_to` narrowing, unlike the files leg above. `modified_at`
-   *    is never actually absent (`ModifiedAt time.Time` has no `omitempty`), but an attachment
-   *    whose v1 source record had no parseable `updated_at` gets indexed with `modified_at` set to
-   *    Go's zero-date sentinel (`0001-01-01T00:00:00Z` — `parseTime`'s error is swallowed rather
-   *    than the field being omitted). An upstream date range filter on `modified_at` would exclude
-   *    those sentinel rows even though `firstValidTimestamp` below correctly treats the sentinel as
-   *    invalid and falls back to `created_at` for `occurred_at` — the two would silently diverge on
-   *    exactly those rows. Same class of problem `fetchSurveyEvents` documents at length for its
-   *    own, different reason; this leg follows that same "drop the narrowing" precedent rather than
-   *    repeating the files leg's `date_field`, which is safe there only because `committee_document`
-   *    rows reliably carry a real, non-sentinel `updated_at`.
-   * `since`/`before` are still accepted (unused in the query itself) to keep this leg's call
-   * signature uniform with every other fetch* method — the in-memory since/cursor pass in
-   * getCommitteeActivity is what actually enforces the window for this leg, exactly as it already
-   * does for votes and surveys.
+   *  - `date_to` only, never `date_from`, unlike the files leg above (which sends both). The
+   *    zero-date-sentinel risk (`modified_at` is never actually absent — `ModifiedAt time.Time`
+   *    has no `omitempty` — but an attachment whose v1 source record had no parseable `updated_at`
+   *    gets indexed with `modified_at` set to Go's zero-date sentinel, `0001-01-01T00:00:00Z`,
+   *    since `parseTime`'s error is swallowed rather than the field being omitted) only bites in
+   *    one direction: a `date_from` lower bound would exclude a sentinel row even though
+   *    `firstValidTimestamp` below correctly falls back to `created_at` for its real `occurred_at`
+   *    — silent under-inclusion, the same class of problem `fetchSurveyEvents` documents at length
+   *    for its own, different reason. A `date_to` upper bound has no equivalent failure: the Go
+   *    zero-date sentinel (year 1) is always `<=` any real cutoff, so a sentinel row always passes
+   *    `date_to` (over-inclusive, never excluded), and over-inclusion is exactly what the in-memory
+   *    since/cursor pass below already exists to trim — the same "wider upstream window is always
+   *    safe, narrower one isn't" principle `ceilToWholeSecond`'s own doc comment states. Sending
+   *    `date_to` (not just `sort`) is what lets pagination actually walk backwards through more
+   *    than one upstream page of notes per scope — without it, every page after the first
+   *    re-fetches the same newest `fetchSize` rows and the in-memory cursor pass discards the ones
+   *    already emitted, so anything past the first page is permanently unreachable.
    */
   private async fetchNotesAddedEvents(
     req: Request,
     committeeUid: string,
     _since: string | undefined,
-    _before: string | undefined,
+    before: string | undefined,
     fetchSize: number
   ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
     // Type and scope are paired once here, and `scope` is carried all the way through
@@ -932,7 +937,7 @@ export class CommitteeActivityService {
       { type: 'v1_past_meeting_attachment', scope: 'past' },
     ] as const;
     const results = await Promise.all(
-      ATTACHMENT_SOURCES.map((source) => this.fetchNoteAttachmentPage(req, committeeUid, source.type, source.scope, fetchSize))
+      ATTACHMENT_SOURCES.map((source) => this.fetchNoteAttachmentPage(req, committeeUid, source.type, source.scope, fetchSize, before))
     );
 
     const events = results.flatMap((result) => this.buildNotesEventsForScope(req, committeeUid, result.attachments, result.scope));
@@ -949,7 +954,8 @@ export class CommitteeActivityService {
     committeeUid: string,
     type: 'v1_meeting_attachment' | 'v1_past_meeting_attachment',
     scope: 'upcoming' | 'past',
-    fetchSize: number
+    fetchSize: number,
+    before: string | undefined
   ): Promise<{ scope: 'upcoming' | 'past'; attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
     return this.microserviceProxy
       .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
@@ -958,6 +964,9 @@ export class CommitteeActivityService {
         filters: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
         page_size: fetchSize,
         sort: 'updated_desc',
+        // date_to only, never date_from — see fetchNotesAddedEvents's own doc comment for why the
+        // asymmetry is deliberate (the zero-date sentinel risk only bites a lower bound).
+        ...(before && { date_field: 'modified_at', date_to: before }),
       })
       .then((response) => ({ scope, attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
       .catch((err) => {

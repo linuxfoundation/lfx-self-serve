@@ -1034,7 +1034,7 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ payload: { document_uid: 'ma-1' } });
     });
 
-    it('queries both attachment types scoped by committee parent ref and the category filter, with no upstream date narrowing', async () => {
+    it('queries both attachment types scoped by committee parent ref and the category filter, with no date narrowing when there is no cursor', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
@@ -1067,6 +1067,20 @@ describe('CommitteeActivityService', () => {
       );
       expect(meetingCall[4]).not.toHaveProperty('date_field');
       expect(pastMeetingCall[4]).not.toHaveProperty('date_field');
+    });
+
+    it('sends date_to (never date_from) once a cursor is present — required for pagination to reach notes beyond the first page', async () => {
+      // Regression for the full-branch review finding: without date_to, every page after the
+      // first re-fetches the identical newest fetchSize rows and the in-memory cursor pass
+      // discards the ones already emitted, permanently hiding anything past page 1.
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor: { before: '2026-01-05T00:00:00Z', key: 'note:upcoming:none' }, limit: 8 });
+      const [meetingCall, pastMeetingCall] = proxyRequest.mock.calls.filter(
+        (call) => call[2] === '/query/resources' && (call[4]?.type === 'v1_meeting_attachment' || call[4]?.type === 'v1_past_meeting_attachment')
+      );
+      expect(meetingCall[4]).toMatchObject({ date_field: 'modified_at', date_to: '2026-01-05T00:00:00.000Z' });
+      expect(pastMeetingCall[4]).toMatchObject({ date_field: 'modified_at', date_to: '2026-01-05T00:00:00.000Z' });
+      expect(meetingCall[4]).not.toHaveProperty('date_from');
+      expect(pastMeetingCall[4]).not.toHaveProperty('date_from');
     });
 
     it('keeps upcoming-meeting and past-meeting notes as distinct events even when they share the same attachment uid', async () => {

@@ -28,8 +28,9 @@ export interface CommitteeActivityQuery {
    * correctness guarantee); additionally pushed upstream as `date_from` on several legs as
    * best-effort narrowing only — each leg's upstream `date_field` approximates a multi-field
    * fallback derivation it can't fully represent, so it narrows fetched volume but isn't relied
-   * on for correctness. Surveys and notes deliberately opt out of upstream date narrowing
-   * entirely — see their per-leg comments in `committee-activity.service.ts` for why.
+   * on for correctness. Surveys deliberately opt out of upstream `date_from` narrowing entirely;
+   * notes opts out of `date_from` specifically but still sends `date_to` — see their per-leg
+   * comments in `committee-activity.service.ts` for why.
    */
   since?: string;
   /**
