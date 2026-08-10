@@ -898,11 +898,13 @@ export class CommitteeActivityService {
    *    making anyway: this repo
    *    already ships an identical `term` filter on another `data.*` subfield of this same resource
    *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
-   *    and the failure mode if the bet is wrong is *visible*, not silent, at both ends of the
-   *    spectrum: a fully-failed filter shows up as `notes_count: 0` in `getCommitteeActivity`'s
-   *    completion log across every committee (trivially distinguishable from "this committee
-   *    genuinely has no notes"), and a partially-failed filter (matches, but doesn't narrow) shows
-   *    up as `buildNotesEventsForScope`'s own `dropped_count` warning below. Neither signal exists
+   *    and the failure mode if the bet is wrong is *observable*, not silent, at both ends of the
+   *    spectrum — though neither is a single-committee tripwire: a fully-failed filter shows up as
+   *    `notes_count: 0` in `getCommitteeActivity`'s completion log, but that line alone can't tell
+   *    a broken filter apart from a committee that genuinely has no notes; only a pattern of
+   *    `notes_count: 0` across every committee (not just this one) points at the filter itself.
+   *    A partially-failed filter (matches, but doesn't narrow) is the one with a real per-call
+   *    signal: `buildNotesEventsForScope`'s own `dropped_count` warning below. Neither signal exists
    *    for the alternative: dropping the filter and fetching `fetchSize` attachments of every
    *    category before filtering client-side trades both visible risks for one guaranteed, silent
    *    dilution instead — a committee whose meetings carry non-Notes attachments too would only

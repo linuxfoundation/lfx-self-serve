@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { AttachmentCategory } from './meeting-attachment.interface';
+
 /**
  * Server-internal shapes for the committee activity aggregation endpoint (LFXV2-1707) — not part
  * of the public `ActivityEvent` wire contract (`activity-event.interface.ts`). Kept in
@@ -88,7 +90,7 @@ export interface CommitteeActivityDocumentFile {
 export interface CommitteeActivityNoteAttachment {
   uid: string;
   type: 'file' | 'link';
-  category?: string;
+  category?: AttachmentCategory;
   name: string;
   link?: string;
   created_at?: string;
