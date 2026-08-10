@@ -158,6 +158,24 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Could not store webhook' }));
   });
 
+  it('surfaces the SLACK_WEBHOOK_UNVERIFIED 409 without resetting the dirty control, and still emits committeeUpdated', () => {
+    updateCommittee.mockReturnValueOnce(
+      throwError(() => ({ status: 409, error: { code: 'SLACK_WEBHOOK_UNVERIFIED', error: 'Could not confirm webhook status' } }))
+    );
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.markAsDirty();
+
+    const emitted: void[] = [];
+    component.committeeUpdated.subscribe(() => emitted.push(undefined));
+
+    component.saveSettings();
+
+    expect(component.form.controls.chat_webhook_url.dirty).toBe(true);
+    expect(component.form.controls.chat_webhook_url.value).toBe('https://hooks.slack.com/services/T1/B1/X');
+    expect(emitted).toHaveLength(1);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Could not confirm webhook status' }));
+  });
+
   it('surfaces IMPERSONATION_READ_ONLY (403) without emitting committeeUpdated', () => {
     updateCommittee.mockReturnValueOnce(throwError(() => ({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })));
     component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');

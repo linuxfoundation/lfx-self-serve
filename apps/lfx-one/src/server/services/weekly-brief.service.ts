@@ -860,14 +860,16 @@ export class WeeklyBriefService {
     }
 
     const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
-    // Math.max(text.length, [...text].length), not just one or the other: this guard's job is to
-    // pre-empt an opaque 502 from Slack, and Slack's own "40,000 characters" doc doesn't specify
-    // an encoding — text.length (UTF-16 code units) is >= code-point count for any text containing
-    // astral-plane characters (emoji), so using the smaller code-point-only count (as the
-    // controller's brief_text *save* validation does, for a different reason — matching upstream's
-    // own declared maxLength) would let an emoji-heavy brief past this guard only to still be
-    // rejected by Slack. Taking the max is the conservative choice for a pre-flight check.
-    if (Math.max(text.length, [...text].length) > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
+    // text.length (UTF-16 code units), deliberately not [...text].length (code points) — the
+    // latter is always <= the former for any string, so the two are never actually in tension;
+    // this is a one-sided choice, not a comparison. This guard's job is to pre-empt an opaque 502
+    // from Slack, and Slack's own "40,000 characters" doc doesn't specify an encoding, so the
+    // conservative (larger) count is used here — unlike the controller's brief_text *save*
+    // validation, which uses the code-point count for a different reason (matching upstream's own
+    // declared maxLength exactly, not being conservative). An emoji-heavy brief the editor accepts
+    // at the code-point-based save cap can therefore still be rejected by this UTF-16-based share
+    // guard — a real, if narrow, asymmetry between the two limits, not a bug in either.
+    if (text.length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
       // Phrased in terms of shortening the brief, not the post-escaping/post-header character
       // ceiling above — that number (40,000) would be confusing next to the brief editor's own
       // much smaller cap (WEEKLY_BRIEF_TEXT_MAX_LENGTH, 20,000).

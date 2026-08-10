@@ -193,6 +193,10 @@ if (!otlpEndpoint) {
         // no reach into the OTel pipeline. ignoreRequestHook returning true suppresses span
         // creation entirely, which also prevents responseHook below from ever seeing this
         // request (it looks up a per-request record that's only populated when a span exists).
+        // The 'hooks.slack.com' host below is intentionally duplicated from
+        // SLACK_INCOMING_WEBHOOK_URL_PATTERN in packages/shared/src/constants/committees.constants.ts
+        // — this file runs via `node --import` before that package loads, so it can't import the
+        // constant. If the allowlisted host ever changes there, update it here too.
         ignoreRequestHook: (request) => request.origin === 'https://hooks.slack.com',
         headersToSpanAttributes: {
           requestHeaders: ['content-type'],
