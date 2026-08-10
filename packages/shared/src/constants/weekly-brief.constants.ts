@@ -6,7 +6,8 @@ import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
  * with saved brief_text worth sending. Excludes `empty`, `generating`, and
- * `error`.
+ * `error`. Also reused (LFXV2-3042) as the states a brief may be rated in —
+ * both actions require reviewable saved content, so the same set applies.
  */
 export const WEEKLY_BRIEF_SHAREABLE_STATES: readonly WeeklyBriefState[] = ['generated', 'edited', 'approved'] as const;
 
