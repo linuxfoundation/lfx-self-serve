@@ -259,6 +259,10 @@ export class CommitteeOverviewComponent {
 
   public pendingActionItems: Signal<CommitteePendingActionRow[]> = this.initPendingActionItems();
   public pendingActionsViewAllTab: Signal<'votes' | 'surveys'> = this.initPendingActionsViewAllTab();
+  // "View All" only has two destinations (the Votes and Surveys tabs) — a list made up entirely
+  // of BriefAction rows has nowhere meaningful to route to, so the button hides rather than
+  // sending the user to a tab with none of what they just saw.
+  public hasNativePendingActions: Signal<boolean> = computed(() => this.pendingActionItems().some((item) => item.type !== 'BriefAction'));
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
   public nextMeeting: Signal<Meeting | null> = computed(() => {
@@ -673,18 +677,32 @@ export class CommitteeOverviewComponent {
         .map((item) => ({
           type: 'BriefAction' as const,
           badge: this.committee().name,
-          text: item.text,
+          // suggested_owner_role is informational context, not a separate UI slot — appended
+          // inline rather than adding a dedicated field/badge for a single extra word.
+          text: item.suggested_owner_role ? `${item.text} (${item.suggested_owner_role})` : item.text,
           icon: 'fa-light fa-list-check',
           severity: PENDING_ACTION_SEVERITY.BriefAction,
           buttonText: 'Dismiss',
           briefActionUid: item.uid,
         }))
         .filter((item) => !this.hiddenActionsService.isActionHidden(item));
-      return [...voteItems, ...surveyItems, ...respondedSurveyItems, ...briefActionItems].map((item, index) => {
-        const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
-        return { ...item, rowKey };
-      });
+      return [...voteItems, ...surveyItems, ...respondedSurveyItems, ...briefActionItems].map((item, index) => ({
+        ...item,
+        rowKey: this.buildPendingActionRowKey(item, index),
+      }));
     });
+  }
+
+  // Prefers the stable intrinsic id (briefActionUid) over the buttonLink/text fallback so
+  // dismissing one brief item doesn't shift the index-derived key of unrelated rows.
+  private buildPendingActionRowKey(item: PendingActionItem, index: number): string {
+    if (item.briefActionUid) {
+      return `${item.type}-${item.briefActionUid}`;
+    }
+    if (item.buttonLink) {
+      return `${item.type}-${item.buttonLink}`;
+    }
+    return `${item.type}-${item.text}-${index}`;
   }
 
   private initPendingActionsViewAllTab(): Signal<'votes' | 'surveys'> {

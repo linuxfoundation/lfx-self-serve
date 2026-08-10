@@ -320,16 +320,20 @@ export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
 }
 
 /**
- * Per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null (fail-closed) when
- * the brief uid isn't filter-safe. Unlike most `build*CacheKey` helpers, a null key here means
- * the caller (`WeeklyBriefService.getActionItems`) skips extraction entirely rather than hitting
- * the AI proxy uncached on every read — there is no cache-bypassed direct-extract fallback for
- * this namespace. Revision is part of the key (not a sub-resource) so a regenerated/re-edited
- * brief naturally misses and re-extracts — there is no explicit invalidation path either.
+ * Per-committee, per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null
+ * (fail-closed) when either identifier isn't filter-safe. Unlike most `build*CacheKey` helpers,
+ * a null key here means the caller (`WeeklyBriefService.getActionItems`) skips extraction
+ * entirely rather than hitting the AI proxy uncached on every read — there is no cache-bypassed
+ * direct-extract fallback for this namespace. `committeeId` is included even though `briefUid`
+ * is already globally unique upstream, because the mock-mode brief fixture (`buildMockBrief`)
+ * hardcodes the same `uid`/`revision` for every committee — without the committee segment, two
+ * committees would collide on one cache entry in mock mode. Revision is part of the key (not a
+ * sub-resource) so a regenerated/re-edited brief naturally misses and re-extracts — there is no
+ * explicit invalidation path either.
  */
-export function buildWeeklyBriefActionItemsCacheKey(briefUid: string, revision: number): string | null {
-  if (!isFilterSafeIdentifier(briefUid)) return null;
-  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE}:${briefUid}:${revision}`;
+export function buildWeeklyBriefActionItemsCacheKey(committeeId: string, briefUid: string, revision: number): string | null {
+  if (!isFilterSafeIdentifier(committeeId) || !isFilterSafeIdentifier(briefUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE}:${committeeId}:${briefUid}:${revision}`;
 }
 
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */

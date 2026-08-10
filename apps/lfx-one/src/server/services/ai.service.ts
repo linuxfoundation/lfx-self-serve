@@ -255,8 +255,12 @@ export class AiService {
       });
 
       return result;
-    } catch (error) {
-      logger.error(req, 'extract_brief_action_items', startTime, error);
+    } catch {
+      // Deliberately no logger.error() here, unlike the sibling generate* methods above — this
+      // method's only caller (WeeklyBriefService.getActionItems) always catches and degrades to
+      // an empty list, then logs the same error at WARN (the correct level per
+      // logging-patterns.md's "graceful degradation" guidance). Logging ERROR here too would
+      // double-log a routine AI-proxy hiccup as a false alarm.
       throw new Error('Failed to extract brief action items');
     }
   }
@@ -392,6 +396,12 @@ export class AiService {
   private async makeAiRequest(request: OpenAIChatRequest): Promise<OpenAIChatResponse> {
     this.assertConfigured();
 
+    // AbortSignal.timeout, not an unbounded fetch — a hung LiteLLM proxy would otherwise hold
+    // the request open for undici's ~300s default. Agenda/newsletter generation are
+    // user-initiated POSTs where a long wait is merely a bad UX; extractBriefActionItems runs on
+    // a GET page-load path (and, once weekly-brief SSR ships, potentially on the SSR critical
+    // path — see AI_REQUEST_CONFIG.TIMEOUT_MS's doc comment), so an unbounded call there is a
+    // latent availability risk, not just slowness.
     const response = await fetch(this.aiProxyUrl, {
       method: 'POST',
       headers: {
@@ -399,6 +409,7 @@ export class AiService {
         ['Authorization']: `Bearer ${this.aiKey}`,
       },
       body: JSON.stringify(request),
+      signal: AbortSignal.timeout(AI_REQUEST_CONFIG.TIMEOUT_MS),
     });
 
     if (!response.ok) {

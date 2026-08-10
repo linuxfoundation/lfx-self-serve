@@ -214,27 +214,41 @@ export class WeeklyBriefService {
    *
    * AI-extracted follow-up items from the current brief's `brief_text`, surfaced in the
    * committee Overview page's "My Pending Actions" widget. Extraction runs lfx-one-side,
-   * once per `(brief.uid, brief.revision)` pair, cached in Valkey — a cache hit skips the
-   * AI call entirely. A brief that hasn't reached a terminal readable state
-   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet degrades to an empty list without calling the AI
-   * service at all. Extraction itself failing (AI misconfigured, proxy error, malformed
-   * response) also degrades to an empty list for THIS response — but is deliberately never
-   * cached (see the catch block below), so a transient failure doesn't pin the brief revision
-   * to zero items for the full TTL. Per the ticket, a legitimate empty extraction (a genuinely
-   * quiet week) IS cached, so a quiet week doesn't re-hit the AI proxy on every page view.
+   * once per `(committeeId, brief.uid, brief.revision)` triple, cached in Valkey — a cache
+   * hit skips the AI call entirely. A brief that hasn't reached a terminal readable state
+   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet, or has no text yet, degrades to an empty list
+   * without calling the AI service at all. Extraction itself failing (AI misconfigured,
+   * proxy error, malformed response) also degrades to an empty list for THIS response — but
+   * is deliberately never cached (see the catch block below), so a transient failure doesn't
+   * pin the brief revision to zero items for the full TTL. Per the ticket, a legitimate empty
+   * extraction (a genuinely quiet week) IS cached, so a quiet week doesn't re-hit the AI proxy
+   * on every page view.
+   *
+   * The Valkey cache is the only thing bounding AI spend on this GET (unlike the agenda/
+   * newsletter paths, which are user-initiated POSTs) — if the cache is unavailable, this
+   * skips extraction entirely rather than firing an uncached AI call on every single read
+   * (full-branch review finding).
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
-    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
       return { items: [] };
     }
 
-    const cacheKey = buildWeeklyBriefActionItemsCacheKey(brief.uid, brief.revision);
+    if (!valkeyService.isEnabled()) {
+      logger.warning(req, 'get_weekly_brief_action_items', 'Cache unavailable, skipping extraction', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
+      return { items: [] };
+    }
+
+    const cacheKey = buildWeeklyBriefActionItemsCacheKey(committeeId, brief.uid, brief.revision);
     if (!cacheKey) {
-      // brief.uid failed isFilterSafeIdentifier — should never happen for a real upstream uid, so
-      // this is worth a warning: it means this committee's brief will return zero action items on
-      // every read (fails closed by skipping extraction entirely rather than hitting the AI proxy
-      // uncached on every single read).
+      // committeeId or brief.uid failed isFilterSafeIdentifier — should never happen for real
+      // upstream identifiers, so this is worth a warning: it means this committee's brief will
+      // return zero action items on every read (fails closed by skipping extraction entirely
+      // rather than hitting the AI proxy uncached on every single read).
       logger.warning(req, 'get_weekly_brief_action_items', 'Brief uid is not cache-key safe, skipping extraction', {
         committee_id: committeeId,
         brief_uid: brief.uid,

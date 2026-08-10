@@ -11,15 +11,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // against the real constants module here — `vi.importActual` on a real, unmocked
 // `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
 // mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
-const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, extractBriefActionItems, valkeyGetJson, valkeySetJson, buildCacheKey } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  proxyRequestWithResponse: vi.fn(),
-  MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
-  extractBriefActionItems: vi.fn(),
-  valkeyGetJson: vi.fn(),
-  valkeySetJson: vi.fn(),
-  buildCacheKey: vi.fn((briefUid: string, revision: number): string | null => `weekly-brief-action-items:${briefUid}:${revision}`),
-}));
+const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, extractBriefActionItems, valkeyGetJson, valkeySetJson, valkeyIsEnabled, buildCacheKey } =
+  vi.hoisted(() => ({
+    proxyRequest: vi.fn(),
+    proxyRequestWithResponse: vi.fn(),
+    MOCK_THROTTLE: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3 },
+    extractBriefActionItems: vi.fn(),
+    valkeyGetJson: vi.fn(),
+    valkeySetJson: vi.fn(),
+    valkeyIsEnabled: vi.fn(),
+    buildCacheKey: vi.fn(
+      (committeeId: string, briefUid: string, revision: number): string | null => `weekly-brief-action-items:${committeeId}:${briefUid}:${revision}`
+    ),
+  }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
@@ -63,7 +67,7 @@ vi.mock('./ai.service', () => ({
 }));
 vi.mock('./valkey.service', () => ({
   buildWeeklyBriefActionItemsCacheKey: buildCacheKey,
-  valkeyService: { getJson: valkeyGetJson, setJson: valkeySetJson },
+  valkeyService: { getJson: valkeyGetJson, setJson: valkeySetJson, isEnabled: valkeyIsEnabled },
 }));
 
 import type { Request } from 'express';
@@ -114,6 +118,7 @@ describe('WeeklyBriefService', () => {
     extractBriefActionItems.mockReset();
     valkeyGetJson.mockReset().mockResolvedValue(null); // cache miss by default
     valkeySetJson.mockReset().mockResolvedValue(true);
+    valkeyIsEnabled.mockReset().mockReturnValue(true); // Valkey available by default
     buildCacheKey.mockClear();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
@@ -354,6 +359,43 @@ describe('WeeklyBriefService', () => {
       const result = await service.getActionItems(req, 'committee-1');
 
       expect(result.items).toHaveLength(5);
+    });
+
+    it('skips extraction and returns {items: []} when Valkey is disabled, without ever building a cache key', async () => {
+      valkeyIsEnabled.mockReturnValue(false);
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(buildCacheKey).not.toHaveBeenCalled();
+      expect(valkeyGetJson).not.toHaveBeenCalled();
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it('returns {items: []} without calling AiService when brief_text is empty/whitespace-only', async () => {
+      await service.saveBrief(req, 'committee-1', { brief_text: 'x', revision: 1 }); // establish a tracked brief first
+      // Directly exercise the guard via a second save with whitespace-only text — mock-mode saveBrief
+      // doesn't itself validate brief_text (that's the controller's job), so this reaches the service.
+      await service.saveBrief(req, 'committee-1', { brief_text: '   ', revision: 2 });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+    });
+
+    it('scopes the cache key to the committee, not just the brief uid and revision (mock brief fixture reuses the same uid across committees)', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+
+      await service.getActionItems(req, 'committee-1');
+
+      expect(buildCacheKey).toHaveBeenCalledWith('committee-1', expect.any(String), expect.any(Number));
     });
   });
 

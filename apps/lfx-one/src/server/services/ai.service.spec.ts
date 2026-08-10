@@ -15,7 +15,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
   AI_MODEL: 'mock-model',
   AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
-  AI_REQUEST_CONFIG: { MAX_TOKENS: 4000, TEMPERATURE: 0.7 },
+  AI_REQUEST_CONFIG: { MAX_TOKENS: 4000, TEMPERATURE: 0.7, TIMEOUT_MS: 30_000 },
   DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
   NEWSLETTER_AI_MAX_TOKENS: 12_000,
   WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
@@ -30,6 +30,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 import type { Request } from 'express';
 
 import { AiService } from './ai.service';
+import { logger } from './logger.service';
 
 const req = {} as unknown as Request;
 
@@ -119,6 +120,23 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error', text: async () => 'boom' } as unknown as Response);
 
     await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/Failed to extract brief action items/);
+  });
+
+  it('bounds the fetch with an AbortSignal timeout, not an unbounded request', async () => {
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+
+    await service.extractBriefActionItems(req, { brief_text: 'brief' });
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('does not log at ERROR on failure — the only caller (WeeklyBriefService) always degrades and logs WARN itself', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: 'Internal Server Error', text: async () => 'boom' } as unknown as Response);
+
+    await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow();
+
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('throws when the response body is not a valid items array', async () => {

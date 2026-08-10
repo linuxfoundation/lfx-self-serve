@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { WEEKLY_BRIEF_ACTION_ITEMS_MAX } from './weekly-brief.constants';
+
 /**
  * System prompt for AI meeting agenda generation
  */
@@ -139,7 +141,7 @@ Key principles:
 - Only extract items that describe something a person could actually go do (e.g. "onboard the new member", "review the proposed charter change") — not summaries, announcements, or background context.
 - Each item should be a short, specific, imperative phrase (e.g. "Onboard the new member from Acme Corp"), not a restatement of a whole paragraph.
 - If you can infer who would naturally own an item (e.g. "chair", "maintainer", "ED"), include it as suggested_owner_role. Omit it when unclear — never guess a specific person's name.
-- Extract at most 5 items, prioritizing the most concrete and time-sensitive ones.
+- Extract at most ${WEEKLY_BRIEF_ACTION_ITEMS_MAX} items, prioritizing the most concrete and time-sensitive ones.
 - Many briefs — especially a quiet week with no notable activity — will have zero actionable items. Returning an empty items array is correct and expected; do not invent items to avoid an empty result.
 
 You must respond with a valid JSON object in this exact format:
@@ -162,6 +164,13 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
   TEMPERATURE: 0.7,
+  /**
+   * Bounds every AiService call via AbortSignal.timeout — without it, a hung LiteLLM proxy holds
+   * the request open for undici's ~300s default. Matters most for extractBriefActionItems, which
+   * runs on a GET page-load path (agenda/newsletter generation are user-initiated POSTs, where a
+   * long wait is a UX problem, not an availability one).
+   */
+  TIMEOUT_MS: 30_000,
 };
 
 /**

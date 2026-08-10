@@ -217,7 +217,7 @@
                 <span>My Pending Actions</span>
               </h2>
               <div class="flex-1 border-t border-gray-200 self-center"></div>
-              @if (pendingActionItems().length) {
+              @if (hasNativePendingActions()) {
                 <lfx-button
                   [text]="true"
                   severity="primary"
