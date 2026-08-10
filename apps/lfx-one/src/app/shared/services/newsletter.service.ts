@@ -15,6 +15,7 @@ import {
   NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
+  NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
@@ -68,6 +69,18 @@ export class NewsletterService {
 
   public getAnalytics(projectUid: string, newsletterUid: string): Observable<NewsletterAnalytics> {
     return this.http.get<NewsletterAnalytics>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics`).pipe(take(1));
+  }
+
+  /**
+   * Per-recipient engagement: who the newsletter went to, delivery outcome,
+   * and every recorded open. PII-gated upstream (requires the `auditor`
+   * relation) — callers should handle 403 distinctly from getAnalytics, which
+   * a broader set of users can reach.
+   */
+  public getRecipientEngagement(projectUid: string, newsletterUid: string): Observable<NewsletterRecipientEngagementResponse> {
+    return this.http
+      .get<NewsletterRecipientEngagementResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics/recipients`)
+      .pipe(take(1));
   }
 
   public listOptOuts(projectUid: string): Observable<NewsletterOptOutListResponse> {

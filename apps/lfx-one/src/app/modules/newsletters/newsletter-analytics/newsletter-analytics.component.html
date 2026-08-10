@@ -96,6 +96,8 @@
         </div>
       </lfx-card>
 
+      <lfx-newsletter-recipient-engagement [projectUid]="projectUid()" [newsletterUid]="newsletterId()" [status]="a.status" />
+
       <lfx-newsletter-failed-recipients-drawer [(visible)]="failedDrawerVisible" [failedRecipients]="a.failed_recipients ?? []" [failedCount]="a.failed" />
     </div>
   }

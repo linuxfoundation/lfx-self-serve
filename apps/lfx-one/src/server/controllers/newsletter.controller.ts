@@ -289,6 +289,27 @@ export class NewsletterController {
   }
 
   /**
+   * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics/recipients
+   */
+  public async getRecipientEngagement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const newsletterUid = this.requireNewsletterUid(req);
+    const startTime = logger.startOperation(req, 'newsletter_recipient_engagement', { project_uid: projectUid, newsletter_id: newsletterUid });
+
+    try {
+      const engagement = await this.newsletterService.getRecipientEngagement(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_recipient_engagement', startTime, {
+        newsletter_id: newsletterUid,
+        total_recipients: engagement.total_recipients,
+        complete: engagement.complete,
+      });
+      res.json(engagement);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/projects/:projectUid/newsletters/opt-outs
    */
   public async listOptOuts(req: Request, res: Response, next: NextFunction): Promise<void> {

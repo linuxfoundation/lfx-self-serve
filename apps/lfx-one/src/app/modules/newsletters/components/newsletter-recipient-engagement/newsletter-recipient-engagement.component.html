@@ -1,0 +1,166 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (loading()) {
+  <lfx-card>
+    <div class="flex justify-center items-center py-8">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-600"></i>
+    </div>
+  </lfx-card>
+} @else if (hidden()) {
+  <!-- No `auditor` access (403) or the endpoint doesn't exist yet (404) — hide
+       silently. The chart and stat cards above remain fully usable. -->
+} @else if (loadErrorMessage(); as errorMessage) {
+  <lfx-card data-testid="newsletter-recipient-engagement-error">
+    <div class="flex items-center gap-2 text-sm text-gray-500 py-2">
+      <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+      <span>{{ errorMessage }}</span>
+    </div>
+  </lfx-card>
+} @else if (rows().length > 0) {
+  <lfx-card data-testid="newsletter-recipient-engagement">
+    <div class="flex flex-col gap-4 p-2">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900">Recipient engagement</h2>
+        @if (showCompletenessNote()) {
+          <p class="text-xs text-gray-500" data-testid="newsletter-recipient-engagement-partial-note">
+            Showing {{ rows().length }} of {{ response()?.total_recipients }} recipients — some records are still processing.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2" data-testid="newsletter-recipient-engagement-chips">
+          @for (chip of chipConfig(); track chip.key) {
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              [attr.aria-pressed]="activeChip() === chip.key"
+              [class]="activeChip() === chip.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              (click)="selectChip(chip.key)"
+              [attr.data-testid]="'newsletter-recipient-engagement-segment-' + chip.key">
+              {{ chip.label }} ({{ chip.count }})
+            </button>
+          }
+        </div>
+        <div class="w-full md:w-64">
+          <lfx-input-text
+            [form]="filterForm"
+            control="search"
+            placeholder="Search recipients..."
+            icon="fa-light fa-search"
+            styleClass="w-full"
+            size="small"
+            data-testid="newsletter-recipient-engagement-search">
+          </lfx-input-text>
+        </div>
+      </div>
+
+      <lfx-table
+        [value]="filteredRows()"
+        [paginator]="true"
+        [rows]="10"
+        [rowsPerPageOptions]="[10, 25, 50]"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} recipients"
+        styleClass="p-datatable-sm"
+        dataKey="email"
+        data-testid="newsletter-recipient-engagement-table">
+        <!-- Header Template -->
+        <ng-template #header>
+          <tr>
+            <th class="w-8"></th>
+            <th>Recipient</th>
+            <th>Delivery</th>
+            <th>Engagement</th>
+            <th>Opens</th>
+            <th>Last opened</th>
+          </tr>
+        </ng-template>
+
+        <!-- Body Template -->
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'newsletter-recipient-engagement-row-' + row.email">
+            <td class="w-8">
+              @if (row.open_count > 0) {
+                <button
+                  type="button"
+                  class="text-gray-400 hover:text-gray-600"
+                  (click)="toggleTimeline(row.email)"
+                  [attr.aria-expanded]="expandedEmails().has(row.email)"
+                  [attr.data-testid]="'newsletter-recipient-engagement-expand-' + row.email">
+                  <i class="fa-light" [class.fa-chevron-down]="expandedEmails().has(row.email)" [class.fa-chevron-right]="!expandedEmails().has(row.email)"></i>
+                </button>
+              }
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <lfx-person-avatar [name]="row.displayName" [identity]="row.email" size="sm" />
+                <div class="flex flex-col">
+                  <span class="text-sm font-medium text-gray-900">{{ row.displayName }}</span>
+                  @if (row.name) {
+                    <a [href]="'mailto:' + row.email" class="text-xs text-blue-600 hover:underline">{{ row.email }}</a>
+                  }
+                </div>
+              </div>
+            </td>
+            <td>
+              @if (row.failed) {
+                <lfx-tag value="Failed" severity="danger" />
+              } @else if (row.delivered) {
+                <lfx-tag value="Delivered" severity="success" />
+              } @else {
+                <lfx-tag value="Pending" severity="secondary" />
+              }
+            </td>
+            <td>
+              @if (row.opened) {
+                <lfx-tag value="Opened" severity="success" />
+              } @else {
+                <lfx-tag value="Not opened" severity="secondary" />
+              }
+            </td>
+            <td>
+              <lfx-badge [value]="row.open_count" severity="info" />
+            </td>
+            <td>
+              @if (row.last_opened_at) {
+                <span class="text-sm text-gray-700" [title]="row.last_opened_at | date: 'MMM d, y, h:mm a'">{{ relativeOpened(row.last_opened_at) }}</span>
+              } @else {
+                <span class="text-sm text-gray-400">—</span>
+              }
+            </td>
+          </tr>
+          @if (expandedEmails().has(row.email)) {
+            <tr [attr.data-testid]="'newsletter-recipient-engagement-timeline-' + row.email">
+              <td></td>
+              <td colspan="5" class="bg-gray-50 py-3">
+                <div class="flex flex-col gap-1 pl-2">
+                  <span class="text-xs uppercase tracking-wide text-gray-500">Open timeline</span>
+                  <ul class="flex flex-col gap-1">
+                    @for (openedAt of row.opened_at_list; track openedAt) {
+                      <li class="text-sm text-gray-700">{{ openedAt | date: 'MMM d, y, h:mm a' }}</li>
+                    }
+                  </ul>
+                  @if (row.open_count > row.opened_at_list.length) {
+                    <span class="text-xs text-gray-400">+{{ row.open_count - row.opened_at_list.length }} earlier opens</span>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </ng-template>
+
+        <!-- Empty Message Template -->
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="6" class="text-center py-8">
+              <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
+              <p class="text-sm text-gray-500">No recipients match this filter</p>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+  </lfx-card>
+}
