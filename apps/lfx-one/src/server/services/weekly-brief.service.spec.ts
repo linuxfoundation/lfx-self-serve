@@ -1068,7 +1068,7 @@ describe('WeeklyBriefService', () => {
       });
     });
 
-    it('truncates an oversized Slack error body to SLACK_ERROR_BODY_MAX_LENGTH instead of buffering it in full', async () => {
+    it('truncates an oversized Slack error body to SLACK_ERROR_BODY_MAX_LENGTH', async () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(400, 'x'.repeat(10_000)));
 
@@ -1076,6 +1076,62 @@ describe('WeeklyBriefService', () => {
         statusCode: 502,
         code: 'SLACK_SEND_FAILED',
         errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+      });
+    });
+
+    it('stops reading the stream once SLACK_ERROR_BODY_MAX_LENGTH is reached, instead of pulling every chunk of an oversized body', async () => {
+      mockShareableBrief();
+      // A single mockResponse() enqueue-then-close body would satisfy this same assertion under
+      // the OLD response.text() implementation too, since text() also buffers everything before
+      // slicing — that's the case this test is guarding against. A chunked, pull-driven stream is
+      // required to actually exercise (and prove) the early-cancel behavior: SLACK_ERROR_BODY_MAX_LENGTH
+      // is 500, each chunk is 100 chars, so the bound should be hit and the stream cancelled well
+      // before all 1000 chunks (100,000 chars) are pulled.
+      let pullCount = 0;
+      let cancelled = false;
+      const chunk = 'x'.repeat(100);
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pullCount++;
+          if (pullCount > 1000) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(new TextEncoder().encode(chunk));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'status 400',
+        body: stream,
+      } as unknown as Response);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+      });
+      expect(pullCount).toBeLessThan(1000);
+      expect(cancelled).toBe(true);
+    });
+
+    it("falls back to response.text() when the stand-in Response has no readable body stream — doesn't silently lose Slack's diagnostic", async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'status 400',
+        text: async () => 'channel_not_found',
+      } as unknown as Response);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        message: expect.stringContaining('channel_not_found'),
       });
     });
 

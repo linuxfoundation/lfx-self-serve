@@ -950,12 +950,16 @@ export class WeeklyBriefService {
   /**
    * Reads at most `maxChars` characters of `response`'s body, cancelling the underlying stream
    * as soon as the cap is hit instead of buffering the rest — unlike `response.text()`, which
-   * always materializes the entire body before any slicing can happen.
+   * always materializes the entire body before any slicing can happen. The accumulator itself is
+   * re-sliced to `maxChars` after every chunk, so a single huge transport chunk still can't grow
+   * `text` past the cap before the next loop check runs.
    */
   private async readBoundedText(response: Response, maxChars: number): Promise<string> {
     const reader = response.body?.getReader();
     if (!reader) {
-      return '';
+      // No readable stream to bound — fall back to the unbounded read rather than silently
+      // losing Slack's diagnostic text, the only signal an operator gets for a failed share.
+      return (await response.text().catch(() => '')).slice(0, maxChars);
     }
     const decoder = new TextDecoder();
     let text = '';
@@ -965,12 +969,12 @@ export class WeeklyBriefService {
         if (done) {
           break;
         }
-        text += decoder.decode(value, { stream: true });
+        text = (text + decoder.decode(value, { stream: true })).slice(0, maxChars);
       }
     } finally {
       await reader.cancel().catch(() => undefined);
     }
-    return text.slice(0, maxChars);
+    return text;
   }
 
   /**
