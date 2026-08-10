@@ -102,6 +102,13 @@ export class CommitteeSettingsTabComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((c) => {
+        // A dirty chat_webhook_url means the user has an unsaved edit in progress (including
+        // "saved everything except the webhook" — see saveSettings' SLACK_WEBHOOK_NOT_PERSISTED
+        // branch, which emits committeeUpdated without resetting this control). Preserve it
+        // across the resulting refresh instead of silently discarding what they typed; a
+        // successful save already reset the control itself (see saveSettings' next handler), so
+        // this only ever preserves a genuinely unsaved value.
+        const preserveWebhookEdit = this.form.controls.chat_webhook_url.dirty;
         this.form.patchValue({
           member_visibility: c.member_visibility || 'hidden',
           join_mode: c.join_mode || 'invite_only',
@@ -113,14 +120,11 @@ export class CommitteeSettingsTabComponent {
           show_meeting_attendees: c.show_meeting_attendees || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
-          chat_webhook_url: null,
+          ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
         });
-        // patchValue does not clear dirty — without this, a control the user typed into once
-        // stays dirty for the rest of the component's life (this tab survives a committee
-        // refresh, it isn't destroyed/recreated), and every subsequent save re-sends the now-null
-        // patched value as an explicit "clear the webhook" instruction.
-        this.form.controls.chat_webhook_url.markAsPristine();
-        this.editingSlackWebhookUrl.set(false);
+        if (!preserveWebhookEdit) {
+          this.editingSlackWebhookUrl.set(false);
+        }
       });
 
     // Disable form fields for read-only (Auditor) access
@@ -236,6 +240,13 @@ export class CommitteeSettingsTabComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Settings saved' });
+          // Reset locally rather than relying on the refresh triggered by the emit below — that
+          // refresh is async (a refetch round-trip) and its timing shouldn't be what keeps this
+          // control's dirty/value state correct.
+          if (this.form.controls.chat_webhook_url.dirty) {
+            this.form.controls.chat_webhook_url.reset(null);
+          }
+          this.editingSlackWebhookUrl.set(false);
           this.committeeUpdated.emit();
         },
         error: (err: any) => {
@@ -244,13 +255,15 @@ export class CommitteeSettingsTabComponent {
           let detail = 'Failed to save settings';
           if (status === 409 && code === 'SLACK_WEBHOOK_NOT_PERSISTED') {
             detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook could not be stored.';
-            // Deliberately no committeeUpdated.emit() here (unlike the success path): this tab
-            // survives a committee refresh rather than being destroyed, and a refresh re-patches
-            // chat_webhook_url to null — wiping the URL the user just typed before they can even
-            // read the error. Everything else the user set (see committee.service.ts's
-            // updateCommittee — this check runs last, after the core PUT and settings update) did
-            // persist and already matches what the form shows locally; the toast is the
-            // confirmation, a visual refresh isn't needed to prove it.
+            // Everything else the user set did persist (see committee.service.ts's
+            // updateCommittee — this check runs last, after the core PUT and settings update), so
+            // still emit to refresh the rest of the page (e.g. the committee header's public/
+            // voting-enabled indicators) from that saved state. chat_webhook_url is deliberately
+            // left dirty here (not reset) — the constructor's committee-refresh subscription
+            // preserves a dirty control's current value instead of nulling it, so the URL the
+            // user just typed survives this refresh instead of vanishing before they can read
+            // the error.
+            this.committeeUpdated.emit();
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;

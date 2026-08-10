@@ -107,7 +107,6 @@ export class ConflictError extends BaseApiError {
       operation?: string;
       service?: string;
       path?: string;
-      metadata?: Record<string, any>;
     } = {}
   ) {
     super(message, 409, code, options);

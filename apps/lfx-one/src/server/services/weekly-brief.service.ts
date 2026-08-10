@@ -825,16 +825,20 @@ export class WeeklyBriefService {
     // both are equally unactionable.
     const webhookUrl = await this.committeeService.getSlackWebhookUrlStrict(req, committeeId);
     const isAllowedWebhook = !!webhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl);
+    if (webhookUrl && !isAllowedWebhook) {
+      // Logged, not put in the thrown error's `metadata` — BaseApiError.toResponse() serializes
+      // `metadata` straight into the client-facing JSON body, which would let the response leak
+      // "something is stored" vs. "nothing is configured" per committee. The caller-facing
+      // message/code must stay byte-identical either way; this operator-only signal (never the
+      // URL itself) is the one place that distinction is allowed to exist.
+      logger.warning(req, 'share_weekly_brief_slack', 'Stored chat_webhook_url failed the Slack allowlist — treating as unconfigured', {
+        committee_id: committeeId,
+      });
+    }
     if (!isAllowedWebhook) {
       throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
-        // Distinguishes "a value is stored but rejected by the allowlist" from "genuinely
-        // unconfigured" for operators reading logs — never the URL itself; apiErrorHandler logs
-        // this metadata on the single WARN it already emits for the thrown error, so this
-        // doesn't add a second log line. The caller-facing message/code are deliberately
-        // identical either way — both are equally unactionable from the caller's side.
-        ...(webhookUrl && { metadata: { webhook_state: 'stored_but_rejected' } }),
       });
     }
 

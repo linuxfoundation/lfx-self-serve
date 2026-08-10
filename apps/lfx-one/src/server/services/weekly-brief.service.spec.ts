@@ -948,19 +948,24 @@ describe('WeeklyBriefService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), tagged with metadata that distinguishes it from "genuinely unconfigured" for operators', async () => {
+    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), and logs (not returns) the distinction for operators', async () => {
       mockShareableBrief();
       getSlackWebhookUrlStrictMock.mockResolvedValue('https://evil.example.com/exfiltrate');
 
-      try {
-        await service.shareToSlack(req, 'committee-1', 1);
-        expect.fail('expected shareToSlack to throw');
-      } catch (error) {
-        expect(error).toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
-        // apiErrorHandler logs this metadata alongside the single WARN it already emits for the
-        // thrown error — no separate log call, and never the URL itself.
-        expect((error as { metadata?: unknown }).metadata).toEqual({ webhook_state: 'stored_but_rejected' });
-      }
+      // The response body must stay byte-identical to the "genuinely unconfigured" case — no
+      // `metadata` (BaseApiError.toResponse() serializes `metadata` straight into the client
+      // response, which would leak "something is stored" vs. "nothing configured" per committee).
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'NO_SLACK_WEBHOOK',
+        metadata: undefined,
+      });
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        req,
+        'share_weekly_brief_slack',
+        expect.stringContaining('failed the Slack allowlist'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
