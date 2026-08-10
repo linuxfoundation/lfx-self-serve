@@ -260,13 +260,17 @@ export class AiService {
       });
 
       return result;
-    } catch {
+    } catch (error) {
       // Deliberately no logger.error() here, unlike the sibling generate* methods above — this
       // method's only caller (WeeklyBriefService.getActionItems) always catches and degrades to
-      // an empty list, then logs the same error at WARN (the correct level per
-      // logging-patterns.md's "graceful degradation" guidance). Logging ERROR here too would
-      // double-log a routine AI-proxy hiccup as a false alarm.
-      throw new Error('Failed to extract brief action items');
+      // an empty list, then logs at WARN (the correct level per logging-patterns.md's "graceful
+      // degradation" guidance). The original error's message is folded into the thrown error's
+      // message below — a bare rethrow of a new generic Error would silently discard the real
+      // cause (network failure, non-2xx status, schema rejection, JSON parse failure), leaving
+      // every failure mode logged identically and undiagnosable from that WARN alone (PR #1362
+      // review — Cursor Bugbot).
+      const cause = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract brief action items: ${cause}`);
     }
   }
 

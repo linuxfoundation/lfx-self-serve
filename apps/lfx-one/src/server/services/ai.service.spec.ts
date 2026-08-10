@@ -161,6 +161,12 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/Failed to extract brief action items/);
   });
 
+  it('preserves the original failure cause in the thrown error message instead of discarding it (PR #1362 review — Cursor Bugbot)', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
+
+    await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/401 Unauthorized.*Invalid API key/);
+  });
+
   it('bounds the fetch with an AbortSignal timeout, not an unbounded request', async () => {
     fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
 
