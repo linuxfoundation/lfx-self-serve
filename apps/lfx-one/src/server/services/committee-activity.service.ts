@@ -862,27 +862,28 @@ export class CommitteeActivityService {
    * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
    * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
    *
-   * `filters: [\`category:${NOTES_ATTACHMENT_CATEGORY}\`]` IS sent upstream, with the unconditional
+   * `filters: ['category:' + NOTES_ATTACHMENT_CATEGORY]` IS sent upstream, with the unconditional
    * client-side `category === NOTES_ATTACHMENT_CATEGORY` filter below kept as a backstop, not a
    * substitute — both found in review and confirmed against lfx-v2-meeting-service's/
    * lfx-v2-indexer-service's/lfx-v2-query-service's contract docs:
-   *  - `filters` compiles to an OpenSearch `term` clause (exact match) on `data.category`.
-   *    lfx-v2-indexer-service's indexer-contract.md documents `data` as a schema-free
-   *    `flat_object` — every subfield is keyword-indexed with no analyzer, exactly what a `term`
-   *    clause needs, so this isn't the "might not be exact-match" risk it would be on an
-   *    arbitrarily-mapped field. This repo already ships an identical `term` filter on another
-   *    `data.*` subfield of this same resource type (`document.service.ts`'s
-   *    `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`), confirming the pattern
-   *    works in production, not just in the contract doc. The one residual gap: the live index
-   *    mapping itself wasn't inspected, only the documented mapping *type* — if that ever proves
-   *    wrong, the failure mode is a *visible*, all-or-nothing one (`notes_count: 0` in
-   *    `getCommitteeActivity`'s completion log across every committee, trivially distinguishable
-   *    from "this committee genuinely has no notes"), which is why the filter is worth keeping
-   *    over the alternative: dropping it and fetching `fetchSize` attachments of every category
-   *    before filtering client-side guarantees a *silent*, hard-to-detect dilution instead (a
-   *    committee whose meetings carry non-Notes attachments too would only ever surface notes
-   *    from its most recent handful of meetings, with `saturated` firing far more than the actual
-   *    Notes volume warrants).
+   *  - `filters` compiles to an OpenSearch `term` clause (exact match) on `data.category`. It's
+   *    the ONLY in-contract way to filter on `category` server-side — the attachment types' Tags
+   *    tables (lfx-v2-meeting-service's indexer-contract.md) don't include it, so it can't be
+   *    filtered via `tags` instead. `data` is documented as a schema-free `flat_object`, and the
+   *    same contract explicitly declines to guarantee per-field analyzer behavior inside `data` —
+   *    a caution, not a green light — so this is a deliberate bet on a `term` clause being exact
+   *    for a field the indexer can't promise that for. It's a bet worth making anyway: this repo
+   *    already ships an identical `term` filter on another `data.*` subfield of this same resource
+   *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
+   *    and the failure mode if the bet is wrong is a *visible*, all-or-nothing one (`notes_count: 0`
+   *    in `getCommitteeActivity`'s completion log across every committee, trivially distinguishable
+   *    from "this committee genuinely has no notes") — not a silent one. The alternative (dropping
+   *    the filter and fetching `fetchSize` attachments of every category before filtering
+   *    client-side) trades that visible risk for a guaranteed, silent dilution instead: a committee
+   *    whose meetings carry non-Notes attachments too would only ever surface notes from its most
+   *    recent handful of meetings, with `saturated` firing far more than the actual Notes volume
+   *    warrants. If the bet ever proves wrong, the durable fix is an upstream request to add
+   *    `category` to the attachment tag sets, not reverting to the client-side-only approach.
    *  - No `date_field`/`date_from`/`date_to` narrowing, unlike the files leg above. `modified_at`
    *    is never actually absent (`ModifiedAt time.Time` has no `omitempty`), but an attachment
    *    whose v1 source record had no parseable `updated_at` gets indexed with `modified_at` set to
