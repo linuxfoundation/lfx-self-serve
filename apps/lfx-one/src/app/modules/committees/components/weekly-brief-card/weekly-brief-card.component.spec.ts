@@ -177,4 +177,25 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('not available in this environment') }));
   });
+
+  it('shows the disabled hint (not the impersonating hint) when no webhook is configured and the caller is not impersonating', async () => {
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, has_slack_webhook: false });
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).toBeNull();
+  });
+
+  it('shows the impersonating hint (not the disabled hint) when impersonating, even if a webhook is configured', async () => {
+    impersonating.set(true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).toBeNull();
+  });
+
+  it('shows neither Slack hint when a webhook is configured and the caller is not impersonating', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).toBeNull();
+  });
 });
