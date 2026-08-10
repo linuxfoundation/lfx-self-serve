@@ -971,7 +971,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('warns with a dropped_count when the client-side backstop excludes rows the upstream filter should have already excluded', async () => {
-      // Tripwire for the "upstream filters term clause might not narrow" bet — a non-narrowing
+      // Tripwire for the "upstream filters_all term clause might not narrow" bet — a non-narrowing
       // filter is otherwise invisible: the backstop silently absorbs it and the leg looks healthy.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {

@@ -658,7 +658,7 @@ export const PAST_MEETING_SORT = {
 
 /**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
- * notes_added leg treats as a note. A single source of truth for both the upstream `filters`
+ * notes_added leg treats as a note. A single source of truth for both the upstream `filters_all`
  * term-clause value and the client-side re-filter comparison — see fetchNotesAddedEvents's own
  * comment for why both need to agree on the exact same string (LFXV2-3077).
  */

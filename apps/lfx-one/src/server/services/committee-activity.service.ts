@@ -893,8 +893,8 @@ export class CommitteeActivityService {
    *    dilution problem this filter exists to avoid, just moved one step later. `data` is
    *    documented (lfx-v2-indexer-service's indexer-contract.md) as a schema-free `flat_object`,
    *    and that same doc explicitly declines to guarantee per-field analyzer behavior inside
-   *    `data` — a caution, not a green light — so sending `filters` here is a deliberate bet on a
-   *    `term` clause being exact for a field the indexer can't promise that for. It's a bet worth
+   *    `data` — a caution, not a green light — so sending `filters_all` here is a deliberate bet on
+   *    a `term` clause being exact for a field the indexer can't promise that for. It's a bet worth
    *    making anyway: this repo
    *    already ships an identical `term` filter on another `data.*` subfield of this same resource
    *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
@@ -998,7 +998,7 @@ export class CommitteeActivityService {
 
   /**
    * Applies the client-side `category` backstop and warns if it ever drops a row — the tripwire
-   * for the doc comment's "the upstream `filters` term clause might not narrow" bet above.
+   * for the doc comment's "the upstream `filters_all` term clause might not narrow" bet above.
    * Without this, a non-narrowing upstream filter is invisible: the backstop silently absorbs
    * every non-Notes row and the leg looks healthy while quietly under-serving every request
    * (fetchSize filled with every category, only the newest handful surviving) — the exact
@@ -1015,7 +1015,7 @@ export class CommitteeActivityService {
     const notes = attachments.filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY);
     const droppedCount = attachments.length - notes.length;
     if (droppedCount > 0) {
-      logger.warning(req, 'get_committee_activity', 'Notes category filter did not fully narrow upstream — filters term clause may not be matching', {
+      logger.warning(req, 'get_committee_activity', 'Notes category filter did not fully narrow upstream — filters_all term clause may not be matching', {
         committee_uid: committeeUid,
         meeting_scope: meetingScope,
         dropped_count: droppedCount,
