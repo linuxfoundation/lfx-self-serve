@@ -59,6 +59,8 @@ export interface PersonaDetections {
 export interface PersonaApiResponse extends PersonaDetections {
   /** Writer on the tenant root project — bypasses nav persona filtering. Request-scoped, not cached. */
   isRootWriter: boolean;
+  /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
+  isLFStaff: boolean;
 }
 
 export interface SsrPersonaResult {
