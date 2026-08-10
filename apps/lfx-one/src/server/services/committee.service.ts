@@ -408,13 +408,18 @@ export class CommitteeService {
       has_slack_webhook: !!chatWebhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(chatWebhookUrl),
     };
 
+    // Defense-in-depth beyond the base-resource strip above: `settings` is a raw, uncast
+    // GET /committees/:id/settings body spread into `merged` at line 400, un-stripped — if the
+    // upstream schema change (LFXV2-3094) lands chat_webhook_url on the settings resource rather
+    // than the base one (undecided as of this writing), this is what stops it from leaking here.
+    // A no-op today either way, since neither resource carries the field yet.
     if (!options.includeProjectMetadata) {
-      return merged;
+      return this.stripChatWebhookUrl(merged);
     }
 
     // Enrich with project metadata so the UI can resolve project_uid -> project_slug for navigation.
     const [enriched] = await this.projectService.enrichWithProjectData(req, [merged]);
-    return enriched;
+    return this.stripChatWebhookUrl(enriched);
   }
 
   /**

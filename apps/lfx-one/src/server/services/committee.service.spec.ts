@@ -362,6 +362,20 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(result.has_slack_webhook).toBe(false);
       expect('chat_webhook_url' in result).toBe(false);
     });
+
+    it('never returns chat_webhook_url even if a future upstream schema change lands it on the settings resource instead of the base one', async () => {
+      // Forward-looking: LFXV2-3094 hasn't landed the field on either resource yet, so today
+      // this scenario can't occur — but the settings response is spread into the merged result
+      // unstripped, so if it ever does land here instead of the base resource, only the final
+      // stripChatWebhookUrl call on the returned object closes the leak.
+      proxyRequest
+        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' })
+        .mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL });
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect('chat_webhook_url' in result).toBe(false);
+    });
   });
 
   describe('getSlackWebhookUrlStrict', () => {
