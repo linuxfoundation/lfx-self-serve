@@ -426,7 +426,7 @@ export class CommitteeService {
     // check and impersonation guard in updateCommittee, neither of which this method runs. The
     // type omission alone doesn't stop a raw req.body cast (committee.controller.ts) from
     // carrying the key at runtime, so strip it explicitly rather than relying on the type system.
-    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    /* eslint-disable @typescript-eslint/no-unused-vars -- intentional strip, not a read */
     const {
       chat_webhook_url: _chatWebhookUrl,
       business_email_required,
@@ -435,6 +435,7 @@ export class CommitteeService {
       member_visibility,
       ...committeeData
     } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
+    /* eslint-enable @typescript-eslint/no-unused-vars */
 
     // Step 1: Create committee
     const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);

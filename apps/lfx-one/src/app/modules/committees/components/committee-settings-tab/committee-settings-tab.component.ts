@@ -149,8 +149,11 @@ export class CommitteeSettingsTabComponent {
 
     // Disable form fields for read-only (Auditor) access, and — independently — keep
     // chat_webhook_url specifically disabled during impersonation even when the rest of the form
-    // is editable (server-side: committee.service.ts's updateCommittee rejects only this one
-    // field during impersonation, not the whole request). form.enable() re-enables every child
+    // is editable. Server-side, committee.service.ts's updateCommittee rejects the *whole request*
+    // when chat_webhook_url is present during impersonation, not just that field — disabling only
+    // this one control client-side keeps the rest of the form saveable by simply excluding the
+    // webhook value from what saveSettings sends (it's gated on the control's own dirty flag,
+    // which a disabled-but-untouched control never sets). form.enable() re-enables every child
     // control including chat_webhook_url, so the impersonation re-disable must run after it, in
     // the same subscription, rather than as a separate independent one that could race.
     combineLatest([toObservable(this.canEdit), toObservable(this.impersonating)])
