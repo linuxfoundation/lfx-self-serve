@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACTIVITY_FEED_MAX_PAGE_SIZE, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { ACTIVITY_FEED_MAX_PAGE_SIZE, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, NOTES_ATTACHMENT_CATEGORY, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 // import type — erased entirely at compile time, so unlike the enums/utils imports below, this
 // one needs no vi.mock in the spec (same reasoning as activity-feed.utils.ts's own interfaces import).
@@ -862,20 +862,27 @@ export class CommitteeActivityService {
    * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
    * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
    *
-   * `filters: ['category:Notes']` IS sent upstream, with the unconditional client-side
-   * `category === 'Notes'` filter below kept as a backstop, not a substitute — both found in
-   * review and confirmed against lfx-v2-meeting-service's/lfx-v2-query-service's contract docs:
-   *  - `filters` compiles to an OpenSearch `term` clause (exact match). If `data.category` isn't
-   *    mapped as an exact-match/keyword field, the term matches nothing and this leg returns zero
-   *    rows on every call — a `term` filter EXCLUDES non-matching rows, it can't be "best-effort".
-   *    Whether the mapping is exact-match is unverified, so this is a real risk, not a theoretical
-   *    one — but it's a strictly better risk than dropping the filter and fetching `fetchSize`
-   *    attachments of every category before filtering client-side: that guarantees a *silent*,
-   *    hard-to-detect dilution (a committee whose meetings carry non-Notes attachments too would
-   *    only ever surface notes from its most recent handful of meetings, with `saturated` firing
-   *    far more than the actual Notes volume warrants), whereas a mapping mismatch here is a
-   *    *visible*, all-or-nothing failure — `notes_count: 0` in this method's completion log across
-   *    every committee, trivially distinguishable from "this committee genuinely has no notes."
+   * `filters: [\`category:${NOTES_ATTACHMENT_CATEGORY}\`]` IS sent upstream, with the unconditional
+   * client-side `category === NOTES_ATTACHMENT_CATEGORY` filter below kept as a backstop, not a
+   * substitute — both found in review and confirmed against lfx-v2-meeting-service's/
+   * lfx-v2-indexer-service's/lfx-v2-query-service's contract docs:
+   *  - `filters` compiles to an OpenSearch `term` clause (exact match) on `data.category`.
+   *    lfx-v2-indexer-service's indexer-contract.md documents `data` as a schema-free
+   *    `flat_object` — every subfield is keyword-indexed with no analyzer, exactly what a `term`
+   *    clause needs, so this isn't the "might not be exact-match" risk it would be on an
+   *    arbitrarily-mapped field. This repo already ships an identical `term` filter on another
+   *    `data.*` subfield of this same resource type (`document.service.ts`'s
+   *    `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`), confirming the pattern
+   *    works in production, not just in the contract doc. The one residual gap: the live index
+   *    mapping itself wasn't inspected, only the documented mapping *type* — if that ever proves
+   *    wrong, the failure mode is a *visible*, all-or-nothing one (`notes_count: 0` in
+   *    `getCommitteeActivity`'s completion log across every committee, trivially distinguishable
+   *    from "this committee genuinely has no notes"), which is why the filter is worth keeping
+   *    over the alternative: dropping it and fetching `fetchSize` attachments of every category
+   *    before filtering client-side guarantees a *silent*, hard-to-detect dilution instead (a
+   *    committee whose meetings carry non-Notes attachments too would only ever surface notes
+   *    from its most recent handful of meetings, with `saturated` firing far more than the actual
+   *    Notes volume warrants).
    *  - No `date_field`/`date_from`/`date_to` narrowing, unlike the files leg above. `modified_at`
    *    is never actually absent (`ModifiedAt time.Time` has no `omitempty`), but an attachment
    *    whose v1 source record had no parseable `updated_at` gets indexed with `modified_at` set to
@@ -902,7 +909,7 @@ export class CommitteeActivityService {
     const buildQuery = (type: string): Record<string, unknown> => ({
       type,
       parent: `committee:${committeeUid}`,
-      filters: ['category:Notes'],
+      filters: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
       page_size: fetchSize,
       sort: 'updated_desc',
     });
@@ -944,10 +951,10 @@ export class CommitteeActivityService {
 
     const events = [
       ...meetingResult.attachments
-        .filter((attachment) => attachment.category === 'Notes')
+        .filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY)
         .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'upcoming')),
       ...pastMeetingResult.attachments
-        .filter((attachment) => attachment.category === 'Notes')
+        .filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY)
         .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'past')),
     ];
 

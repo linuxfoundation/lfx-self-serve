@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingVisibility } from '../enums';
-import type { CardSelectorOption, MeetingTypeConfig } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -655,3 +655,11 @@ export const PAST_MEETING_SORT = {
   UPDATED_DESC: 'updated_desc',
   UPDATED_ASC: 'updated_asc',
 } as const;
+
+/**
+ * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
+ * notes_added leg treats as a note. A single source of truth for both the upstream `filters`
+ * term-clause value and the client-side re-filter comparison — see fetchNotesAddedEvents's own
+ * comment for why both need to agree on the exact same string (LFXV2-3077).
+ */
+export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
