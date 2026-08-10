@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -321,6 +321,20 @@ export class PaidSocialReachDrawerComponent {
   );
 
   // === Protected Methods ===
+  public constructor() {
+    // Clear the failure the moment the drawer closes, not when the next request starts.
+    // The reset inside initDrawerData hangs off toObservable(visible), which emits after
+    // the reopened template has already rendered — so a drawer reopened after a failure
+    // would paint the stale unavailable state for a frame before the skeleton replaced it.
+    // Reacting to `visible` covers every dismissal path (close button, ESC, mask click),
+    // not just the ones routed through onClose.
+    effect(() => {
+      if (!this.visible()) {
+        this.dataUnavailable.set(false);
+      }
+    });
+  }
+
   protected toggleProject(projectName: string): void {
     const current = this.expandedProjects();
     const next = new Set(current);
@@ -364,8 +378,9 @@ export class PaidSocialReachDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        // Clear the previous failure as the retry starts, so a reopened drawer shows the
-        // skeleton rather than the stale unavailable state while the new request is in flight.
+        // Belt-and-braces reset for retries that fire without a close/reopen (e.g. the
+        // foundation changing while the drawer is open). The close-driven effect above is
+        // what guarantees a reopened drawer never flashes the previous failure.
         tap(() => {
           this.drawerLoading.set(true);
           this.dataUnavailable.set(false);
