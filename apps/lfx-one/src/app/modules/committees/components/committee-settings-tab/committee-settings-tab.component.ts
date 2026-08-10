@@ -52,7 +52,7 @@ export class CommitteeSettingsTabComponent {
   public deleting = signal(false);
   public savingMl = signal(false);
   public removingMlUid = signal<string | null>(null);
-  /** Whether the Slack webhook "Replace" affordance is open, revealing the input for a new URL. Reset to false whenever `committee` refreshes. */
+  /** Whether the Slack webhook "Replace" affordance is open, revealing the input for a new URL. Reset to false on a successful save, or on a committee refresh unless the control has an unsaved (dirty) edit in progress — see the constructor. */
   public editingSlackWebhookUrl = signal(false);
   private mlLoadingInternal = signal(true);
 
@@ -72,7 +72,8 @@ export class CommitteeSettingsTabComponent {
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     // Write-only — never patched from the committee (Committee.has_slack_webhook is the only
-    // read signal). Always reset to null when `committee` refreshes; see the constructor.
+    // read signal). Reset to null when `committee` refreshes, unless the control has an unsaved
+    // (dirty) edit in progress; see the constructor.
     chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
   });
 
