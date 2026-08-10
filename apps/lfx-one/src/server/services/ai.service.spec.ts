@@ -9,24 +9,34 @@ vi.mock('./logger.service', () => ({
 
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config — a real, unmocked
 // import re-triggers the Angular JIT-compilation failure (matches weekly-brief.service.spec.ts's
-// convention). Values below are real runtime constants this file's assertions depend on.
-vi.mock('@lfx-one/shared/constants', () => ({
-  AI_AGENDA_SYSTEM_PROMPT: 'agenda prompt',
-  AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
-  AI_MODEL: 'mock-model',
-  AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
-  AI_REQUEST_CONFIG: { MAX_TOKENS: 4000, TEMPERATURE: 0.7, TIMEOUT_MS: 120_000, EXTRACTION_TIMEOUT_MS: 15_000 },
-  DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
-  NEWSLETTER_AI_MAX_TOKENS: 12_000,
-  WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
-  WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH: 300,
-  WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
-}));
+// convention). Most values below are inert mock strings/numbers this file's assertions don't
+// depend on being "real" — except AI_REQUEST_CONFIG, which the timeout-split tests below assert
+// against directly. That one is pulled from the real file via a direct relative import inside this
+// async factory (bypassing the '@lfx-one/shared/constants' alias, which resolves to the barrel —
+// all constants files, including ones with the Angular-tainted transitive imports this mock exists
+// to avoid; the direct file only pulls in its own plain './weekly-brief.constants' import), so the
+// mock structurally cannot drift from the value AiService actually uses in production.
+vi.mock('@lfx-one/shared/constants', async () => {
+  const actual = await import('../../../../../packages/shared/src/constants/ai.constants');
+  return {
+    AI_AGENDA_SYSTEM_PROMPT: 'agenda prompt',
+    AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
+    AI_MODEL: 'mock-model',
+    AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
+    AI_REQUEST_CONFIG: actual.AI_REQUEST_CONFIG,
+    DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
+    NEWSLETTER_AI_MAX_TOKENS: 12_000,
+    WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
+    WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH: 300,
+    WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
+  };
+});
 vi.mock('@lfx-one/shared/enums', () => ({
   MeetingType: { BOARD: 'board', MAINTAINERS: 'maintainers', MARKETING: 'marketing', TECHNICAL: 'technical', LEGAL: 'legal', OTHER: 'other', NONE: 'none' },
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 
+import { AI_REQUEST_CONFIG } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { AiService } from './ai.service';
@@ -138,17 +148,18 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
 
     await service.extractBriefActionItems(req, { brief_text: 'brief' });
 
-    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+    // Asserts against the real constant (the mock factory imports it directly — see the
+    // vi.mock('@lfx-one/shared/constants', ...) comment above), not a value duplicated in this
+    // file, so this can't pass while silently testing a stale bound.
+    expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS);
   });
 
-  it('the AI_REQUEST_CONFIG mock above matches the real shared constant — a guard against the exact drift this suite exists to catch', async () => {
-    // Imported by direct relative path, NOT the '@lfx-one/shared/constants' alias — the alias
-    // resolves to the barrel (all constants files), which is what re-triggers the Angular
-    // JIT-compilation failure the module-level vi.mock above exists to avoid. ai.constants.ts
-    // itself only imports './weekly-brief.constants' (also plain), so this stays safe.
-    const actual = await import('../../../../../packages/shared/src/constants/ai.constants');
-    expect(actual.AI_REQUEST_CONFIG.TIMEOUT_MS).toBe(120_000);
-    expect(actual.AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS).toBe(15_000);
+  it('sanity: EXTRACTION_TIMEOUT_MS is actually tighter than TIMEOUT_MS, not just differently named', () => {
+    // The two tests above verify the right constant reaches the right call site, but since the
+    // mock IS the real constant (not a duplicated value), they'd both stay green even if someone
+    // misconfigured EXTRACTION_TIMEOUT_MS to be >= TIMEOUT_MS — the split would be pointless but
+    // "correctly" wired. This is the one invariant worth checking independently of the mock.
+    expect(AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS).toBeLessThan(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
 
   it('does not log at ERROR on failure — the only caller (WeeklyBriefService) always degrades and logs WARN itself', async () => {
@@ -192,6 +203,6 @@ describe('AiService.generateMeetingAgenda', () => {
 
     await service.generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' });
 
-    expect(timeoutSpy).toHaveBeenCalledWith(120_000);
+    expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
 });
