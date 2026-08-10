@@ -33,6 +33,7 @@ import {
   Survey,
   Vote,
   WeeklyBriefActionItem,
+  WeeklyBriefState,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
@@ -674,15 +675,27 @@ export class CommitteeOverviewComponent {
   // before that resolution, reading the flag only inside switchMap would take the disabled branch
   // once and never re-evaluate, since committee() itself doesn't change again.
   //
-  // revision/state (read off the card's own `brief` signal via weeklyBriefCardRef) drive an inner
-  // refetch trigger — a generate/regenerate/save can land a new brief revision on the same page
-  // visit without committee uid or the enabled gate ever changing, and the server's cache key is
-  // revision-scoped, so without this the widget would keep showing stale (or empty, pre-first-
-  // generate) items until a full remount/reload (Cursor Bugbot review). `state` alone isn't
-  // enough either: a regenerate's revision bump lands immediately (in the 202 response), while
-  // `state` is still 'generating' until the poll completes — tracking both means both the
+  // brief uid/revision/state (read off the card's own `brief` signal via weeklyBriefCardRef)
+  // drive an inner refetch trigger — a generate/regenerate/save can land a new brief revision on
+  // the same page visit without committee uid or the enabled gate ever changing, and the server's
+  // cache key is revision-scoped, so without this the widget would keep showing stale (or empty,
+  // pre-first-generate) items until a full remount/reload (Cursor Bugbot review). `state` alone
+  // isn't enough either: a regenerate's revision bump lands immediately (in the 202 response),
+  // while `state` is still 'generating' until the poll completes — tracking both means both the
   // revision bump AND the later generating→generated transition each re-trigger a fetch, so the
   // real content is picked up once it's actually ready rather than only once at 'generating'.
+  // `uid` (the brief's own uid, not the committee's) is in the key too — a weekly window rollover
+  // produces a new brief with a new uid but restarts at revision 1, same as the just-finished
+  // window's first generate; without the brief uid, that rollover would compare equal to the
+  // prior window's {revision: 1, state: 'generated'} and leave the old window's items displayed
+  // even though the server cache is uid-scoped (Copilot review, round 4).
+  //
+  // Filtered to only emit once the child card has actually loaded a brief (non-null) — the card
+  // fetches its own current brief asynchronously, so on an uncached initial load this signal is
+  // null for a beat before the card's own request resolves. Without this filter, that null→loaded
+  // transition itself counted as a "change" and fired a second, concurrent getActionItems call
+  // racing the first — and since the BFF's cache check isn't single-flight, both misses could
+  // each invoke the AI proxy for the same revision (Copilot review, round 4).
   //
   // Deliberately kept as its OWN observable rather than folded into the outer `{uid, enabled}`
   // stream below: `startWith([])` needs to fire once per committee/enabled transition (to clear
@@ -694,11 +707,14 @@ export class CommitteeOverviewComponent {
   // refetches replace the displayed array only once new data arrives, no interim clear.
   private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
     const briefRevisionState$ = toObservable(
-      computed(() => ({
-        revision: this.weeklyBriefCardRef()?.brief()?.revision,
-        briefState: this.weeklyBriefCardRef()?.brief()?.state,
-      }))
-    ).pipe(distinctUntilChanged((a, b) => a.revision === b.revision && a.briefState === b.briefState));
+      computed(() => {
+        const brief = this.weeklyBriefCardRef()?.brief();
+        return brief ? { briefUid: brief.uid, revision: brief.revision, briefState: brief.state } : null;
+      })
+    ).pipe(
+      filter((v): v is { briefUid: string; revision: number; briefState: WeeklyBriefState } => v !== null),
+      distinctUntilChanged((a, b) => a.briefUid === b.briefUid && a.revision === b.revision && a.briefState === b.briefState)
+    );
 
     return toSignal(
       // enabled requires canEdit() (committee#writer), not just the feature flag — the backend
