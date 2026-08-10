@@ -60,6 +60,10 @@ describe('NewsletterRecipientEngagementComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
   }
 
+  // Component debounces search input by 300ms (debounceTime(300)); the extra
+  // 50ms is slack against timer jitter, not a magic number tied to nothing.
+  const SEARCH_DEBOUNCE_WAIT_MS = 350;
+
   beforeEach(async () => {
     newsletterService = { getRecipientEngagement: vi.fn() };
     await TestBed.configureTestingModule({
@@ -106,7 +110,7 @@ describe('NewsletterRecipientEngagementComponent', () => {
     await createComponent();
 
     fixture.componentInstance.filterForm.get('search')!.setValue('bob');
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_DEBOUNCE_WAIT_MS));
     await fixture.whenStable();
 
     const rows = fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-recipient-engagement-row-"]');
@@ -114,21 +118,57 @@ describe('NewsletterRecipientEngagementComponent', () => {
     expect(rows[0].getAttribute('data-testid')).toBe('newsletter-recipient-engagement-row-bob@acme.io');
   });
 
-  it('toggles the open timeline for a recipient with opens', async () => {
+  it('toggles the open timeline for a recipient with opens, updating the expand button aria-label', async () => {
     newsletterService.getRecipientEngagement.mockReturnValue(of(RESPONSE));
     await createComponent();
 
     expect(card('newsletter-recipient-engagement-timeline-jane@acme.io')).toBeNull();
+    const expandButton = card('newsletter-recipient-engagement-expand-jane@acme.io') as HTMLButtonElement;
+    expect(expandButton.getAttribute('aria-label')).toBe('Expand open timeline for Jane Doe');
 
-    (card('newsletter-recipient-engagement-expand-jane@acme.io') as HTMLButtonElement).click();
+    expandButton.click();
     await fixture.whenStable();
 
     expect(card('newsletter-recipient-engagement-timeline-jane@acme.io')).not.toBeNull();
+    expect(expandButton.getAttribute('aria-label')).toBe('Collapse open timeline for Jane Doe');
 
-    (card('newsletter-recipient-engagement-expand-jane@acme.io') as HTMLButtonElement).click();
+    expandButton.click();
     await fixture.whenStable();
 
     expect(card('newsletter-recipient-engagement-timeline-jane@acme.io')).toBeNull();
+    expect(expandButton.getAttribute('aria-label')).toBe('Expand open timeline for Jane Doe');
+  });
+
+  // bob@acme.io has no `name` — displayName falls back to email, and the
+  // expand affordance should only appear because RESPONSE gives bob open_count: 0.
+  // Use a nameless recipient with opens to prove the aria-label fallback too.
+  it('toggles the open timeline for a recipient without a name, falling back to email in the aria-label', async () => {
+    newsletterService.getRecipientEngagement.mockReturnValue(
+      of({
+        ...RESPONSE,
+        recipients: [
+          {
+            email: 'noname@acme.io',
+            delivered: true,
+            failed: false,
+            opened: true,
+            open_count: 1,
+            last_opened_at: '2026-08-09T10:00:00Z',
+            opened_at_list: ['2026-08-09T10:00:00Z'],
+          },
+        ],
+      })
+    );
+    await createComponent();
+
+    const expandButton = card('newsletter-recipient-engagement-expand-noname@acme.io') as HTMLButtonElement;
+    expect(expandButton.getAttribute('aria-label')).toBe('Expand open timeline for noname@acme.io');
+
+    expandButton.click();
+    await fixture.whenStable();
+
+    expect(card('newsletter-recipient-engagement-timeline-noname@acme.io')).not.toBeNull();
+    expect(expandButton.getAttribute('aria-label')).toBe('Collapse open timeline for noname@acme.io');
   });
 
   it('hides the section silently on a 403 (no auditor access)', async () => {
