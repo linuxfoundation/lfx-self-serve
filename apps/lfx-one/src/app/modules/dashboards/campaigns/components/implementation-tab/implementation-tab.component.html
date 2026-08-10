@@ -527,9 +527,8 @@
             absence, and nothing on the wire distinguishes them. The classification and the
             reasoning live in `platformOutcomes`.
           -->
-          @for (row of platformOutcomes(); track row.result.platform) {
-            @let pr = row.result;
-            @let outcome = row.outcome;
+          @for (pr of platformOutcomes(); track pr.platform) {
+            @let outcome = pr.outcome;
             <div
               class="rounded-md border bg-white p-3"
               [class.border-green-200]="outcome === 'created'"

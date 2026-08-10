@@ -36,18 +36,24 @@ import type {
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
-/** One campaign-service platform result paired with the three-state outcome the row renders. */
-interface PlatformResultRow {
-  result: CampaignPlatformResult;
-  outcome: 'created' | 'orphaned' | 'unconfirmed';
-}
+/**
+ * One campaign-service platform result paired with the three-state outcome the row renders.
+ *
+ * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
+ * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
+ * part of any contract between the tiers. Two repo rules meet here and an intersection is the
+ * only form satisfying both — `CLAUDE.md:176` prohibits the local `interface Foo {}` form inside
+ * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
+ * plain `type X = { … }` object literal.
+ */
+type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
   if (result.ok) {
-    return { result, outcome: 'created' };
+    return { ...result, outcome: 'created' };
   }
-  return { result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
 }
 
 @Component({
