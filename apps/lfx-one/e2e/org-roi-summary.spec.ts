@@ -335,6 +335,20 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     }
   });
 
+  test('surfaces an error rather than a skeleton when the failed request cleared the summary', async ({ page }) => {
+    // A failure empties the summary, so it stops matching the selected organization. If the
+    // org-identity check were tested before the failure branches, every error would render as a
+    // permanent loading skeleton and neither refusal nor outage would ever reach the viewer.
+    await stubOrgLensContext(page);
+    await page.route('**/api/orgs/*/lens/roi/**', (route) =>
+      route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'ROLE_GRANTS_UNAVAILABLE' }) })
+    );
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-error')).toBeVisible();
+    await expect(page.getByTestId('org-roi-portfolio-loading')).toHaveCount(0);
+  });
+
   test('distinguishes a 503 verification failure from a 403 refusal', async ({ page }) => {
     await stubOrgLensContext(page);
     await page.route('**/api/orgs/*/lens/roi/**', (route) =>
