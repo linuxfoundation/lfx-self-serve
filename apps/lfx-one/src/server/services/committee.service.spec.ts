@@ -516,5 +516,19 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect('chat_webhook_url' in result).toBe(false);
     });
+
+    it('createCommittee strips a chat_webhook_url from the create payload before it reaches upstream — the field is update-only and unvalidated here (no pattern check, no impersonation guard)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test' });
+
+      await service.createCommittee(req, {
+        name: 'Test',
+        category: 'general',
+        ...({ chat_webhook_url: 'https://evil.example.com/x' } as unknown as Record<string, never>),
+      });
+
+      expect(proxyRequest).toHaveBeenCalledOnce();
+      const sentBody = proxyRequest.mock.calls[0][5];
+      expect(sentBody).not.toHaveProperty('chat_webhook_url');
+    });
   });
 });

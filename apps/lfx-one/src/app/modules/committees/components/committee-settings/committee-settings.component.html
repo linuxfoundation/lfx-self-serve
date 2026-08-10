@@ -157,14 +157,14 @@
                   severity="danger"
                   [text]="true"
                   size="small"
-                  [disabled]="form().disabled"
+                  [disabled]="!!form().get('chat_webhook_url')?.disabled"
                   (onClick)="onRemoveSlackWebhook()"
                   data-testid="settings-slack-webhook-remove-button" />
                 <lfx-button
                   label="Replace"
                   severity="secondary"
                   size="small"
-                  [disabled]="form().disabled"
+                  [disabled]="!!form().get('chat_webhook_url')?.disabled"
                   (onClick)="startEditingSlackWebhookUrl.emit()"
                   data-testid="settings-slack-webhook-replace-button" />
               </div>
@@ -200,10 +200,15 @@
                 severity="secondary"
                 [text]="true"
                 size="small"
-                [disabled]="form().disabled"
+                [disabled]="!!form().get('chat_webhook_url')?.disabled"
                 (onClick)="onCancelSlackWebhookEdit()"
                 data-testid="settings-slack-webhook-cancel-button" />
             </div>
+          }
+          @if (!!form().get('chat_webhook_url')?.disabled && !form().disabled) {
+            <span class="text-xs text-gray-500" data-testid="settings-slack-webhook-impersonating-hint">
+              Configuring the Slack webhook is unavailable while impersonating another user.
+            </span>
           }
         </div>
       </div>

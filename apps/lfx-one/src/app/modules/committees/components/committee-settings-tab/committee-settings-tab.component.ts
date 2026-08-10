@@ -14,10 +14,11 @@ import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
@@ -41,6 +42,7 @@ export class CommitteeSettingsTabComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
+  private readonly userService = inject(UserService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -97,6 +99,12 @@ export class CommitteeSettingsTabComponent {
   // flag is flipped on.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
+  // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
+  // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
+  // established pattern (weekly-brief-card, profile-panel) of gating on
+  // `userService.impersonating()` directly, not on module input plumbing.
+  public readonly impersonating = this.userService.impersonating;
+
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
 
@@ -139,12 +147,20 @@ export class CommitteeSettingsTabComponent {
         }
       });
 
-    // Disable form fields for read-only (Auditor) access
-    toObservable(this.canEdit)
+    // Disable form fields for read-only (Auditor) access, and — independently — keep
+    // chat_webhook_url specifically disabled during impersonation even when the rest of the form
+    // is editable (server-side: committee.service.ts's updateCommittee rejects only this one
+    // field during impersonation, not the whole request). form.enable() re-enables every child
+    // control including chat_webhook_url, so the impersonation re-disable must run after it, in
+    // the same subscription, rather than as a separate independent one that could race.
+    combineLatest([toObservable(this.canEdit), toObservable(this.impersonating)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((editable) => {
+      .subscribe(([editable, impersonating]) => {
         if (editable) {
           this.form.enable();
+          if (impersonating) {
+            this.form.controls.chat_webhook_url.disable();
+          }
         } else {
           this.form.disable();
         }
@@ -276,6 +292,11 @@ export class CommitteeSettingsTabComponent {
             // user just typed survives this refresh instead of vanishing before they can read
             // the error.
             this.committeeUpdated.emit();
+          } else if (status === 403 && code === 'IMPERSONATION_READ_ONLY') {
+            // Backstop only — the control is already disabled during impersonation (see the
+            // constructor's combineLatest subscription), so this path shouldn't normally be
+            // reachable from this form. Kept for direct-API-caller parity with the server guard.
+            detail = 'Configuring the Slack webhook is unavailable while impersonating another user.';
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;

@@ -421,8 +421,20 @@ export class CommitteeService {
    * Creates a new committee with optional settings
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
-    // Extract settings fields
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
+    // chat_webhook_url is deliberately absent from CommitteeCreateData — it's update-only (see
+    // CommitteeUpdateData.chat_webhook_url), with its own SLACK_INCOMING_WEBHOOK_URL_PATTERN
+    // check and impersonation guard in updateCommittee, neither of which this method runs. The
+    // type omission alone doesn't stop a raw req.body cast (committee.controller.ts) from
+    // carrying the key at runtime, so strip it explicitly rather than relying on the type system.
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const {
+      chat_webhook_url: _chatWebhookUrl,
+      business_email_required,
+      is_audit_enabled,
+      show_meeting_attendees,
+      member_visibility,
+      ...committeeData
+    } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
 
     // Step 1: Create committee
     const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
@@ -454,10 +466,17 @@ export class CommitteeService {
     // Scoped to this one field, not the whole route: an impersonator repointing chat_webhook_url
     // to a channel they control, then leaving, would let a later legitimate share-slack (itself
     // correctly blocked during impersonation — weekly-brief.route.ts) deliver brief content
-    // somewhere the real committee owner never chose. Every other field on this same request
-    // (name, chat_channel, business_email_required, etc.) stays writable during impersonation, as
-    // it already was before this field existed — this is not a blanket write-lock on the route.
+    // somewhere the real committee owner never chose. Requests that don't carry chat_webhook_url
+    // are unaffected — this is not a blanket write-lock on the route. A request that does carry
+    // it is rejected whole, before any write (ETag fetch, core PUT, settings update), so name /
+    // chat_channel / business_email_required / etc. sent *alongside* chat_webhook_url in the same
+    // request are rejected too — resubmit them without the webhook field to save just those.
     if (data.chat_webhook_url !== undefined && isImpersonating(req)) {
+      logger.warning(req, 'impersonation_readonly', 'Blocked chat_webhook_url write during impersonation', {
+        committee_id: committeeId,
+        impersonator_sub: req.appSession?.['impersonator']?.sub,
+        target_sub: req.appSession?.['impersonationUser']?.sub,
+      });
       throw new AuthorizationError('Configuring the Slack webhook is not available while impersonating a user', {
         operation: 'update_committee',
         service: 'committee_service',
