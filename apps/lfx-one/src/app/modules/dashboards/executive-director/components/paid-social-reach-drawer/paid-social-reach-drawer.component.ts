@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -137,15 +137,21 @@ export class PaidSocialReachDrawerComponent {
   };
 
   // === WritableSignals ===
-  protected readonly drawerLoading = signal(false);
-
   /**
-   * True only after a request has actually failed, so the template can render an unavailable
-   * state instead of zeros. Tracked explicitly rather than inferred from a null `drawerResult`,
-   * which is also null before the drawer has ever been opened — inferring would show an error
-   * for a request that never ran.
+   * Single source of truth for what the content area renders. Two independent booleans could
+   * not express "no request has run yet" distinctly from "a request finished with zeros", so
+   * whichever one was cleared first left a frame rendering the other state's UI: clearing the
+   * failure flag on close exposed a zero-filled `@else`, and not clearing it flashed a stale
+   * error on reopen. 'idle' and 'loading' both render the skeleton, so no frame can fall
+   * through to fabricated zeros.
    */
-  protected readonly dataUnavailable = signal(false);
+  protected readonly status = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
+
+  /** Skeleton covers both idle and in-flight — neither has data worth rendering. */
+  protected readonly drawerLoading: Signal<boolean> = computed(() => this.status() === 'idle' || this.status() === 'loading');
+
+  /** Only ever true after a request has actually failed — never before one has run. */
+  protected readonly dataUnavailable: Signal<boolean> = computed(() => this.status() === 'failed');
 
   // === Computed Signals (lazy-loaded data) ===
   /**
@@ -321,20 +327,6 @@ export class PaidSocialReachDrawerComponent {
   );
 
   // === Protected Methods ===
-  public constructor() {
-    // Clear the failure the moment the drawer closes, not when the next request starts.
-    // The reset inside initDrawerData hangs off toObservable(visible), which emits after
-    // the reopened template has already rendered — so a drawer reopened after a failure
-    // would paint the stale unavailable state for a frame before the skeleton replaced it.
-    // Reacting to `visible` covers every dismissal path (close button, ESC, mask click),
-    // not just the ones routed through onClose.
-    effect(() => {
-      if (!this.visible()) {
-        this.dataUnavailable.set(false);
-      }
-    });
-  }
-
   protected toggleProject(projectName: string): void {
     const current = this.expandedProjects();
     const next = new Set(current);
@@ -376,26 +368,30 @@ export class PaidSocialReachDrawerComponent {
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(
+        // Reset on close so a reopen starts from the skeleton instead of the previous
+        // attempt's error. Done here rather than in onClose because the parent binds
+        // [visible] one-way and drives it from its own activeDrawer signal, so ESC and
+        // mask-click close the drawer via visibleChange without ever calling onClose.
+        tap(([isVisible]) => {
+          if (!isVisible) this.status.set('idle');
+        }),
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        // Belt-and-braces reset for retries that fire without a close/reopen (e.g. the
-        // foundation changing while the drawer is open). The close-driven effect above is
-        // what guarantees a reopened drawer never flashes the previous failure.
-        tap(() => {
-          this.drawerLoading.set(true);
-          this.dataUnavailable.set(false);
-        }),
+        // A retry supersedes whatever the last attempt produced. Moving straight to
+        // 'loading' clears a previous failure without ever passing through a state that
+        // renders zeros, and covers retries with no close/reopen (the foundation changing
+        // while the drawer is open) as well as reopens.
+        tap(() => this.status.set('loading')),
         switchMap((foundationSlug) =>
           this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
-            tap(() => this.drawerLoading.set(false)),
+            tap(() => this.status.set('loaded')),
             // null, not a zero-filled response: 0 impressions and 0.0x ROAS are legitimate
             // measurements, so returning them here would render a failed request as "this
             // foundation spent nothing" — the exact ambiguity getSocialReach stopped
             // producing when its own zero-fill fallback was removed. The template renders
             // an explicit unavailable state on null instead.
             catchError(() => {
-              this.drawerLoading.set(false);
-              this.dataUnavailable.set(true);
+              this.status.set('failed');
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
