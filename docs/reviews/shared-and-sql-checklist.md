@@ -239,3 +239,107 @@ const params = { limit: 50, offset: 0 };
 const params = { page_size: 50 };
 // For next page: { page_size: 50, page_token: previousResponse.nextPageToken }
 ```
+
+---
+
+### 10. No business logic in embedded Snowflake SQL (SHOULD FIX)
+
+Metric definitions, derived values, and reusable transformations belong in the [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt) repo — typically in silver, gold, or platinum models — not in LFX One server services. Embedded Snowflake queries own retrieval concerns: selecting modeled columns and applying parameterized `WHERE` filters, `ORDER BY`, and `LIMIT`.
+
+A narrow `SUM`/`MAX` over already-modeled measures may be used only to combine rows for a display scope that dbt does not yet provide, such as an umbrella foundation. It must not redefine a metric. Prefer adding the exact consumption grain to dbt so the application can select one row.
+
+**Do not embed in LFX One:**
+
+- `CASE` expressions that compute business metrics
+- Arithmetic on raw columns (percentages, rates, growth, ratios)
+- `SUM` / `AVG` / `COUNT` / window functions over fact columns
+- Joins, bucketing, or date/metric calculations that define what a number means
+
+If a dashboard needs a new derived field or queryable scope, add it to the appropriate dbt model, document and test it there, then select the named columns from LFX One.
+
+**Violation:**
+
+```typescript
+const overviewQuery = `
+  SELECT
+    SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS,
+    MAX(PLATFORMS_ACTIVE) AS PLATFORMS_ACTIVE,
+    CASE
+      WHEN SUM(PRIOR_TOTAL_FOLLOWERS) > 0
+        THEN ROUND(
+          (SUM(TOTAL_FOLLOWERS) - SUM(PRIOR_TOTAL_FOLLOWERS))
+          / SUM(PRIOR_TOTAL_FOLLOWERS) * 100, 1
+        )
+    END AS FOLLOWER_GROWTH_PCT
+  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW
+  WHERE 1=1
+    ${foundationFilter}
+`;
+// Recomputes follower_growth_pct in the app — logic belongs in dbt
+```
+
+**Fix:**
+
+Add a dbt model at the exact consumption grain. This example preserves the original growth calculation while producing one row for every supported scope, including the `tlf` umbrella. Add `unique` and `not_null` tests for `scope_slug` in the model YAML.
+
+```sql
+-- lf-dbt: platinum_lfx_one_social_media_overview_by_scope.sql
+WITH foundation_scopes AS (
+  SELECT
+    foundation_slug AS scope_slug,
+    SUM(total_followers) AS total_followers,
+    MAX(platforms_active) AS platforms_active,
+    SUM(prior_total_followers) AS prior_total_followers
+  FROM {{ ref('platinum_lfx_one_social_media_overview') }}
+  WHERE foundation_slug IS NOT NULL
+  GROUP BY 1
+),
+
+all_scopes AS (
+  SELECT
+    scope_slug,
+    total_followers,
+    platforms_active,
+    prior_total_followers
+  FROM foundation_scopes
+  WHERE scope_slug <> 'tlf'
+
+  UNION ALL
+
+  SELECT
+    'tlf' AS scope_slug,
+    SUM(total_followers) AS total_followers,
+    MAX(platforms_active) AS platforms_active,
+    SUM(prior_total_followers) AS prior_total_followers
+  FROM foundation_scopes
+)
+
+SELECT
+  scope_slug,
+  total_followers,
+  platforms_active,
+  CASE
+    WHEN prior_total_followers > 0
+      THEN ROUND(
+        (total_followers - prior_total_followers)
+        / prior_total_followers * 100,
+        1
+      )
+  END AS follower_growth_pct
+FROM all_scopes
+```
+
+```typescript
+const overviewQuery = `
+  SELECT
+    TOTAL_FOLLOWERS,
+    PLATFORMS_ACTIVE,
+    FOLLOWER_GROWTH_PCT
+  FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW_BY_SCOPE
+  WHERE SCOPE_SLUG = ?
+`;
+const result = await snowflakeService.execute(overviewQuery, [foundationSlug]);
+// Exactly one modeled row for both foundation and umbrella scopes
+```
+
+**Allowed in LFX One:** filtering by route params (foundation slug, date range), sorting, pagination, and a narrow `SUM`/`MAX` only when combining **already-modeled** measures for a display scope that dbt does not provide. When in doubt, add the scope or logic to dbt.

@@ -10,6 +10,8 @@ import { EnrollmentDisplayStatus, IndividualEnrollment } from '../interfaces/enr
 export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDisplayStatus {
   const { membership, price } = item;
   if (!membership) return 'Not Enrolled';
+  // Only 'Expired' short-circuits here. 'Active' and 'Purchased' are equivalent for display — a
+  // purchased membership is an active one, so both flow into the date-based derivation below.
   if (membership.status === 'Expired') return 'Expired';
   if (price === null || price === undefined) return 'Active';
   const endDateString = membership.endDate.length >= 10 ? membership.endDate.slice(0, 10) : membership.endDate;
@@ -31,6 +33,21 @@ export function deriveEnrollmentStatus(item: IndividualEnrollment): EnrollmentDi
   const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   if (endDate < thirtyDaysFromNow) return 'Expiring Soon';
   return 'Active';
+}
+
+/**
+ * Composes an enrollment CTA URL via URL + URLSearchParams (not string concat), so it is robust to a
+ * `base` with/without a trailing slash and a `ctaPath` with/without a leading `?`.
+ * @param base - Enrollment base URL
+ * @param ctaPath - Query string/path fragment from the API (with or without a leading `?`)
+ * @param renew - When true, adds `renew=true`
+ * @returns The composed absolute enrollment URL
+ */
+export function buildEnrollmentHref(base: string, ctaPath: string, renew = false): string {
+  const url = new URL(base);
+  new URLSearchParams(ctaPath).forEach((value, key) => url.searchParams.set(key, value));
+  if (renew) url.searchParams.set('renew', 'true');
+  return url.toString();
 }
 
 export function enrollmentStatusSeverity(status: EnrollmentDisplayStatus): 'success' | 'warn' | 'danger' | 'secondary' {

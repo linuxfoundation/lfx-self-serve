@@ -3,14 +3,20 @@
 
 import {
   AI_AGENDA_SYSTEM_PROMPT,
+  AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT,
   AI_MODEL,
   AI_NEWSLETTER_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
   NEWSLETTER_AI_MAX_TOKENS,
+  WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
+  WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
+  ExtractActionItemsRequest,
+  ExtractActionItemsResponse,
   GenerateAgendaRequest,
   GenerateAgendaResponse,
   GenerateNewsletterRequest,
@@ -165,7 +171,9 @@ export class AiService {
         },
       };
 
-      const response = await this.makeAiRequest(chatRequest);
+      // NEWSLETTER_TIMEOUT_MS, not the shared default — sized for this method's larger
+      // NEWSLETTER_AI_MAX_TOKENS completion (PR #1362 review — Copilot, Cursor Bugbot, @dealako).
+      const response = await this.makeAiRequest(chatRequest, AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
       const result = this.extractNewsletter(req, response);
 
       logger.success(req, 'generate_newsletter', startTime, {
@@ -178,6 +186,131 @@ export class AiService {
       logger.error(req, 'generate_newsletter', startTime, error);
       throw new Error('Failed to generate newsletter');
     }
+  }
+
+  /**
+   * Extracts actionable follow-up items from a weekly brief's `brief_text`. Follows the same
+   * assertConfigured/startOperation/try-throw skeleton as generateMeetingAgenda and
+   * generateNewsletter — this method still throws on misconfiguration or failure like every
+   * other AiService caller. The "extraction failures degrade silently" requirement (LFXV2-3043)
+   * is the caller's (WeeklyBriefService.getActionItems) responsibility, not AiService's.
+   */
+  public async extractBriefActionItems(req: Request, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse> {
+    this.assertConfigured();
+
+    const startTime = logger.startOperation(req, 'extract_brief_action_items', {
+      briefTextLength: request.brief_text.length,
+    });
+
+    try {
+      const chatRequest: OpenAIChatRequest = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT },
+          { role: 'user', content: `Weekly committee brief:\n"""\n${request.brief_text.trim()}\n"""` },
+        ],
+        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
+        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'brief_action_items',
+            description: 'Actionable follow-up items extracted from a weekly committee brief',
+            schema: {
+              type: 'object',
+              properties: {
+                items: {
+                  type: 'array',
+                  maxItems: WEEKLY_BRIEF_ACTION_ITEMS_MAX,
+                  items: {
+                    type: 'object',
+                    properties: {
+                      text: {
+                        type: 'string',
+                        description: 'Concise, actionable follow-up item text',
+                        maxLength: WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
+                      },
+                      // Nullable, not optional — OpenAI-style strict mode (strict: true +
+                      // additionalProperties: false below) requires every key in `properties` to
+                      // also appear in `required`; expressing "the model may not know this" via
+                      // omission (as the sibling agenda/newsletter schemas never needed to) rejects
+                      // every real call. See PR #1362 review — Cursor Bugbot + @dealako.
+                      suggested_owner_role: {
+                        type: ['string', 'null'],
+                        description: 'Suggested owner role/persona for the item, when inferable (e.g. "chair", "maintainer"), or null if not inferable',
+                        maxLength: WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
+                      },
+                    },
+                    required: ['text', 'suggested_owner_role'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['items'],
+              additionalProperties: false,
+            },
+          },
+          strict: true,
+        },
+      };
+
+      const response = await this.makeAiRequest(chatRequest, AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS);
+      const result = this.extractBriefActionItemsFromResponse(response);
+
+      logger.success(req, 'extract_brief_action_items', startTime, {
+        itemCount: result.items.length,
+      });
+
+      return result;
+    } catch (error) {
+      // Deliberately no logger.error() here, unlike the sibling generate* methods above — this
+      // method's only caller (WeeklyBriefService.getActionItems) always catches and degrades to
+      // an empty list, then logs at WARN (the correct level per logging-patterns.md's "graceful
+      // degradation" guidance). The original error's message is folded into the thrown error's
+      // message below — a bare rethrow of a new generic Error would silently discard the real
+      // cause (network failure, non-2xx status, schema rejection, JSON parse failure), leaving
+      // every failure mode logged identically and undiagnosable from that WARN alone (PR #1362
+      // review — Cursor Bugbot).
+      const cause = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract brief action items: ${cause}`);
+    }
+  }
+
+  private extractBriefActionItemsFromResponse(response: OpenAIChatResponse): ExtractActionItemsResponse {
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error('No brief action items response generated');
+    }
+
+    const content = response.choices[0].message.content;
+
+    if (!content || content.trim().length === 0) {
+      throw new Error('Empty brief action items response generated');
+    }
+
+    const parsed = JSON.parse(content.trim());
+
+    if (!Array.isArray(parsed.items)) {
+      throw new Error('Invalid items array in brief action items response');
+    }
+
+    // The schema's maxLength values are a request to the model, not a guarantee about its
+    // response — clamp defensively here too, since these strings get cached for the full TTL
+    // and rendered into a fixed-layout Pending Actions row. Whitespace-only text is rejected
+    // (not just trimmed) — an empty-after-trim item would still cache and render as a blank
+    // row with a live Dismiss control (PR #1362 review — Cursor Bugbot + Copilot + @dealako).
+    const items = parsed.items
+      .filter(
+        (item: unknown): item is { text: string; suggested_owner_role?: string } =>
+          !!item && typeof (item as { text?: unknown }).text === 'string' && (item as { text: string }).text.trim().length > 0
+      )
+      .map((item: { text: string; suggested_owner_role?: string }) => ({
+        text: item.text.trim().slice(0, WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH),
+        suggested_owner_role:
+          typeof item.suggested_owner_role === 'string' ? item.suggested_owner_role.trim().slice(0, WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH) : undefined,
+      }))
+      .slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX);
+
+    return { items };
   }
 
   private buildNewsletterPrompt(request: GenerateNewsletterRequest): string {
@@ -276,7 +409,12 @@ export class AiService {
     }
   }
 
-  private async makeAiRequest(request: OpenAIChatRequest): Promise<OpenAIChatResponse> {
+  // AbortSignal.timeout, not an unbounded fetch — a hung LiteLLM proxy would otherwise hold the
+  // request open for undici's ~300s default. `timeoutMs` defaults to the generous POST-path
+  // bound (agenda/newsletter); extractBriefActionItems passes AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS
+  // explicitly, since it runs on a GET page-load path where an unbounded or generously-bounded
+  // wait is an availability risk, not just slowness.
+  private async makeAiRequest(request: OpenAIChatRequest, timeoutMs: number = AI_REQUEST_CONFIG.TIMEOUT_MS): Promise<OpenAIChatResponse> {
     this.assertConfigured();
 
     const response = await fetch(this.aiProxyUrl, {
@@ -286,6 +424,7 @@ export class AiService {
         ['Authorization']: `Bearer ${this.aiKey}`,
       },
       body: JSON.stringify(request),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {

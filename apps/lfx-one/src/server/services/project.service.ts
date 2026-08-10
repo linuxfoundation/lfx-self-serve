@@ -130,7 +130,8 @@ import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyString
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { resolveAuditUserDisplayName } from '../utils/auth-helper';
@@ -2791,13 +2792,13 @@ export class ProjectService {
 
       // Block 5: Project + campaign level performance breakdown (period range)
       // All blocks use LAST_TOUCH_REVENUE as the default attribution model
-      const projectPerfQuery = `
+      const projectPerfQuery = (conversionColumn: 'LAST_TOUCH_CONVERSIONS' | 'CONV') => `
       SELECT
         PROJECT_NAME, CAMPAIGN_NAME, FUNNEL_STAGE,
         SUM(SPEND) AS SPEND, SUM(LAST_TOUCH_REVENUE) AS REVENUE,
         ROUND(DIV0(SUM(LAST_TOUCH_REVENUE), SUM(SPEND)), 2) AS ROAS,
-        SUM(CONV) AS CONVERSIONS,
-        ROUND(DIV0(SUM(CONV), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
+        SUM(${conversionColumn}) AS CONVERSIONS,
+        ROUND(DIV0(SUM(${conversionColumn}), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
         ROUND(DIV0(SUM(SPEND), NULLIF(SUM(CLICKS), 0)), 2) AS CPC,
         SUM(SESSIONS) AS SESSIONS,
         SUM(IMPRESSIONS) AS IMPRESSIONS,
@@ -2814,7 +2815,7 @@ export class ProjectService {
       // Block 6: Platform-level performance breakdown (by CHANNEL + CAMPAIGN_NAME)
       // All blocks use LAST_TOUCH_REVENUE as the default attribution model
       // Also used to derive channelGroups (impressions by channel) — eliminates a separate query
-      const platformPerfQuery = `
+      const platformPerfQuery = (conversionColumn: 'LAST_TOUCH_CONVERSIONS' | 'CONV') => `
       SELECT
         CHANNEL, CAMPAIGN_NAME,
         SUM(SPEND) AS SPEND, SUM(LAST_TOUCH_REVENUE) AS REVENUE,
@@ -2823,8 +2824,8 @@ export class ProjectService {
         SUM(IMPRESSIONS) AS IMPRESSIONS,
         ROUND(DIV0(SUM(CLICKS), NULLIF(SUM(IMPRESSIONS), 0)) * 100, 2) AS CTR,
         ROUND(DIV0(SUM(SPEND), NULLIF(SUM(CLICKS), 0)), 2) AS CPC,
-        ROUND(DIV0(SUM(CONV), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
-        SUM(CONV) AS CONVERSIONS
+        ROUND(DIV0(SUM(${conversionColumn}), NULLIF(SUM(CLICKS), 0)) * 100, 2) AS CONV_RATE,
+        SUM(${conversionColumn}) AS CONVERSIONS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE CAMPAIGN_MONTH >= TO_DATE(?)
         AND CAMPAIGN_MONTH < TO_DATE(?)
@@ -2833,6 +2834,8 @@ export class ProjectService {
       GROUP BY CHANNEL, CAMPAIGN_NAME
       ORDER BY CHANNEL, SPEND DESC
     `;
+
+      const breakdownParams = [resolved.startDate, resolved.endDate, ...foundationParams, ...classificationParams];
 
       const [impressionsResult, roasKpiResult, monthlyRoasResult, monthlyImpressionsResult, projectPerfResult, platformPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ TOTAL_IMPRESSIONS: number; TOTAL_SPEND: number; TOTAL_REVENUE: number }>(impressionsQuery, [
@@ -2859,78 +2862,49 @@ export class ProjectService {
           ...foundationParams,
           ...classificationParams,
         ]),
-        this.snowflakeService
-          .execute<{
-            PROJECT_NAME: string;
-            CAMPAIGN_NAME: string;
-            FUNNEL_STAGE: string;
-            SPEND: number;
-            REVENUE: number;
-            ROAS: number;
-            CONVERSIONS: number;
-            CONV_RATE: number;
-            CPC: number;
-            SESSIONS: number;
-            IMPRESSIONS: number;
-            CLICKS: number;
-          }>(projectPerfQuery, [resolved.startDate, resolved.endDate, ...foundationParams, ...classificationParams])
-          .catch((error) => {
-            logger.warning(undefined, 'get_social_reach', 'Optional project breakdown query failed, degrading gracefully', {
-              foundation_slug: foundationSlug,
-              err: error,
-            });
-            return {
-              rows: [] as {
-                PROJECT_NAME: string;
-                CAMPAIGN_NAME: string;
-                FUNNEL_STAGE: string;
-                SPEND: number;
-                REVENUE: number;
-                ROAS: number;
-                CONVERSIONS: number;
-                CONV_RATE: number;
-                CPC: number;
-                SESSIONS: number;
-                IMPRESSIONS: number;
-                CLICKS: number;
-              }[],
-            };
-          }),
-        this.snowflakeService
-          .execute<{
-            CHANNEL: string;
-            CAMPAIGN_NAME: string;
-            SPEND: number;
-            REVENUE: number;
-            ROAS: number;
-            CLICKS: number;
-            IMPRESSIONS: number;
-            CTR: number;
-            CPC: number;
-            CONV_RATE: number;
-            CONVERSIONS: number;
-          }>(platformPerfQuery, [resolved.startDate, resolved.endDate, ...foundationParams, ...classificationParams])
-          .catch((error) => {
-            logger.warning(undefined, 'get_social_reach', 'Optional platform breakdown query failed, degrading gracefully', {
-              foundation_slug: foundationSlug,
-              err: error,
-            });
-            return {
-              rows: [] as {
-                CHANNEL: string;
-                CAMPAIGN_NAME: string;
-                SPEND: number;
-                REVENUE: number;
-                ROAS: number;
-                CLICKS: number;
-                IMPRESSIONS: number;
-                CTR: number;
-                CPC: number;
-                CONV_RATE: number;
-                CONVERSIONS: number;
-              }[],
-            };
-          }),
+        this.executeWithLegacyConversionFallback<{
+          PROJECT_NAME: string;
+          CAMPAIGN_NAME: string;
+          FUNNEL_STAGE: string;
+          SPEND: number;
+          REVENUE: number;
+          ROAS: number;
+          CONVERSIONS: number;
+          CONV_RATE: number;
+          CPC: number;
+          SESSIONS: number;
+          IMPRESSIONS: number;
+          CLICKS: number;
+        }>({
+          primaryQuery: projectPerfQuery('LAST_TOUCH_CONVERSIONS'),
+          legacyQuery: projectPerfQuery('CONV'),
+          params: breakdownParams,
+          operation: 'get_social_reach',
+          foundationSlug,
+          retryMessage: 'Retrying project breakdown with legacy conversion column',
+          degradeMessage: 'Optional project breakdown query failed, degrading gracefully',
+        }),
+        this.executeWithLegacyConversionFallback<{
+          CHANNEL: string;
+          CAMPAIGN_NAME: string;
+          SPEND: number;
+          REVENUE: number;
+          ROAS: number;
+          CLICKS: number;
+          IMPRESSIONS: number;
+          CTR: number;
+          CPC: number;
+          CONV_RATE: number;
+          CONVERSIONS: number;
+        }>({
+          primaryQuery: platformPerfQuery('LAST_TOUCH_CONVERSIONS'),
+          legacyQuery: platformPerfQuery('CONV'),
+          params: breakdownParams,
+          operation: 'get_social_reach',
+          foundationSlug,
+          retryMessage: 'Retrying platform breakdown with legacy conversion column',
+          degradeMessage: 'Optional platform breakdown query failed, degrading gracefully',
+        }),
       ]);
 
       const totalReach = impressionsResult.rows[0]?.TOTAL_IMPRESSIONS ?? 0;
@@ -5908,7 +5882,6 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
-               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD * CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -5921,7 +5894,6 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
-               CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD * CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -6077,7 +6049,6 @@ export class ProjectService {
             LINEAR_ROAS_YTD: number;
             AVG_CPC_YTD: number;
             CTR_YTD: number;
-            CONVERSION_RATE_YTD: number;
             FIRST_TOUCH_REVENUE_YTD: number;
             LAST_TOUCH_REVENUE_YTD: number;
             LINEAR_REVENUE_YTD: number;
@@ -6797,11 +6768,8 @@ export class ProjectService {
         SUM(p.CLICKS) AS CLICKS,
         SUM(p.SPEND) AS SPEND,
         SUM(p.IMPRESSIONS) AS IMPRESSIONS,
-        SUM(p.CONVERSIONS) AS CONVERSIONS,
-        SUM(p.CONVERSIONS_VALUE) AS CONVERSIONS_VALUE,
         CASE WHEN SUM(p.IMPRESSIONS) > 0 THEN SUM(p.CLICKS) / SUM(p.IMPRESSIONS) * 100 ELSE 0 END AS CTR,
-        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC,
-        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.CONVERSIONS) / SUM(p.CLICKS) * 100 ELSE 0 END AS CONVERSION_RATE
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE p
       INNER JOIN top_keywords k
         ON p.KEYWORD_TEXT = k.KEYWORD_TEXT AND p.KEYWORD_MATCH_TYPE = k.KEYWORD_MATCH_TYPE
@@ -6840,13 +6808,7 @@ export class ProjectService {
           resolved.endDate,
           ...foundationParams,
         ]),
-        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]).catch((error) => {
-          logger.warning(undefined, 'get_keyword_performance', 'Attribution query failed, degrading gracefully', {
-            foundation_slug: foundationSlug,
-            err: error,
-          });
-          return { rows: [] as KeywordAttributionRow[] };
-        }),
+        this.snowflakeService.execute<KeywordAttributionRow>(attrQuery, [resolved.startDate, resolved.endDate, ...foundationParams]),
       ]);
 
       const attrMap = new Map<string, KeywordAttributionRow>();
@@ -6871,18 +6833,20 @@ export class ProjectService {
         const key = `${row.KEYWORD_TEXT}|${row.KEYWORD_MATCH_TYPE}`;
         const attr = attrMap.get(key);
         const attributedRevenue = attr?.ATTRIBUTED_LT_REVENUE ?? 0;
+        const attributedConversions = attr?.ATTRIBUTED_LT_CONVERSIONS ?? 0;
         const roas = attr?.ATTRIBUTED_LT_ROAS ?? 0;
+        const clicks = row.CLICKS ?? 0;
 
         const summary: KeywordSummary = {
           keyword: row.KEYWORD_TEXT,
           matchType: row.KEYWORD_MATCH_TYPE,
-          clicks: row.CLICKS ?? 0,
+          clicks,
           spend: Math.round((row.SPEND ?? 0) * 100) / 100,
           impressions: row.IMPRESSIONS ?? 0,
           ctr: Math.round((row.CTR ?? 0) * 100) / 100,
           cpc: Math.round((row.CPC ?? 0) * 100) / 100,
-          conversions: row.CONVERSIONS ?? 0,
-          conversionRate: Math.round((row.CONVERSION_RATE ?? 0) * 100) / 100,
+          conversions: attributedConversions,
+          conversionRate: clicks > 0 ? Math.round((attributedConversions / clicks) * 10000) / 100 : 0,
           attributedRevenue: Math.round(attributedRevenue * 100) / 100,
           roas: Math.round(roas * 100) / 100,
           searchTerms: [],
@@ -6908,7 +6872,7 @@ export class ProjectService {
             impressions: row.IMPRESSIONS ?? 0,
             ctr: Math.round((row.CTR ?? 0) * 100) / 100,
             cpc: Math.round((row.CPC ?? 0) * 100) / 100,
-            conversions: row.CONVERSIONS ?? 0,
+            conversions: null,
           });
         }
       }
@@ -6931,11 +6895,11 @@ export class ProjectService {
         },
       };
     } catch (error) {
-      logger.warning(undefined, 'get_keyword_performance', 'Failed to fetch keyword performance, returning empty', {
-        foundation_slug: foundationSlug,
-        err: error,
+      throw new MicroserviceError('Keyword attribution data is temporarily unavailable', 503, 'KEYWORD_ATTRIBUTION_UNAVAILABLE', {
+        operation: 'get_keyword_performance',
+        service: 'snowflake',
+        originalError: error instanceof Error ? error : new Error(String(error)),
       });
-      return { keywords: [], totals: { clicks: 0, spend: 0, impressions: 0, conversions: 0, attributedRevenue: 0 } };
     }
   }
 
@@ -7065,6 +7029,51 @@ export class ProjectService {
     });
 
     return { totalProjectsBySlug, totalMembersBySlug, totalValueBySlug, healthScoresBySlug };
+  }
+
+  /**
+   * Optional social-reach breakdowns try LAST_TOUCH_CONVERSIONS first, then retry with legacy
+   * CONV during schema rollout. Both attempts degrade to empty rows so headline KPIs that already
+   * succeeded are preserved when either query fails.
+   */
+  private async executeWithLegacyConversionFallback<T>(args: {
+    primaryQuery: string;
+    legacyQuery: string;
+    params: (string | number)[];
+    operation: string;
+    foundationSlug: string;
+    retryMessage: string;
+    degradeMessage: string;
+  }): Promise<{ rows: T[] }> {
+    try {
+      const result = await this.snowflakeService.execute<T>(args.primaryQuery, args.params, {
+        expectInvalidIdentifier: 'LAST_TOUCH_CONVERSIONS',
+      });
+      return { rows: result.rows };
+    } catch (error) {
+      if (isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')) {
+        logger.warning(undefined, args.operation, args.retryMessage, {
+          foundation_slug: args.foundationSlug,
+          err: error,
+        });
+        try {
+          const legacyResult = await this.snowflakeService.execute<T>(args.legacyQuery, args.params);
+          return { rows: legacyResult.rows };
+        } catch (legacyError) {
+          logger.warning(undefined, args.operation, args.degradeMessage, {
+            foundation_slug: args.foundationSlug,
+            err: legacyError,
+          });
+          return { rows: [] };
+        }
+      }
+
+      logger.warning(undefined, args.operation, args.degradeMessage, {
+        foundation_slug: args.foundationSlug,
+        err: error,
+      });
+      return { rows: [] };
+    }
   }
 
   private trendStartDate(resolved: ResolvedPeriodRange): string {

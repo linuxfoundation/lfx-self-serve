@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import type { ProjectFunding } from '@lfx-one/shared/enums';
-import type { Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Project, QueryServiceResponse, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
-// constructor also builds `NatsService`/`SnowflakeService`/`ETagService` — none of the methods
-// under test here touch them, so they're stubbed to trivial classes to keep construction cheap.
-const { proxyRequest, addAccessToResources, checkAccess, snowflakeExecute } = vi.hoisted(() => ({
+// constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
+// suites below use only the `execute` mock, while the others stay trivial.
+const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
-  snowflakeExecute: vi.fn(),
+  execute: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -66,7 +66,7 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
-vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute: snowflakeExecute }) } }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -269,7 +269,7 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
   let service: ProjectService;
 
   beforeEach(() => {
-    snowflakeExecute.mockReset();
+    execute.mockReset();
     service = new ProjectService();
   });
 
@@ -281,9 +281,79 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
     // otherwise a later refactor could reinstate the fallback with every test still green.
     it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
       const failure = new Error('snowflake timeout');
-      snowflakeExecute.mockRejectedValue(failure);
+      execute.mockRejectedValue(failure);
 
       await expect(service.getSocialReach('tlf', undefined, { start: '2026-01-01', end: '2026-07-01', label: 'test' } as any)).rejects.toBe(failure);
     });
+  });
+});
+
+describe('ProjectService — paid ads compatibility', () => {
+  const period: ResolvedPeriodRange = {
+    type: 'trailing',
+    startDate: '2026-01-01',
+    endDate: '2026-07-01',
+    label: 'Last 6 months',
+  };
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  it('translates keyword attribution failures without exposing Snowflake details', async () => {
+    const attributionError = new Error('keyword attribution unavailable');
+    execute.mockImplementation((sql: string) => {
+      if (sql.includes('PAID_ADS_KEYWORD_ATTRIBUTION')) {
+        return Promise.reject(attributionError);
+      }
+      return Promise.resolve({ rows: [], metadata: [] });
+    });
+
+    await expect(new ProjectService().getKeywordPerformance('cncf', period)).rejects.toMatchObject({
+      message: 'Keyword attribution data is temporarily unavailable',
+      code: 'KEYWORD_ATTRIBUTION_UNAVAILABLE',
+      statusCode: 503,
+      originalError: attributionError,
+    });
+  });
+
+  it('retries only the missing last-touch conversion column with the legacy query', async () => {
+    execute.mockImplementation((sql: string) => {
+      if (sql.includes('PROJECT_NAME, CAMPAIGN_NAME') && sql.includes('LAST_TOUCH_CONVERSIONS')) {
+        return Promise.reject(new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'"));
+      }
+      if (sql.includes('PROJECT_NAME, CAMPAIGN_NAME') && sql.includes('SUM(CONV)')) {
+        return Promise.resolve({
+          rows: [
+            {
+              PROJECT_NAME: 'Project',
+              CAMPAIGN_NAME: 'Campaign',
+              FUNNEL_STAGE: 'ToFU',
+              SPEND: 100,
+              REVENUE: 200,
+              ROAS: 2,
+              CONVERSIONS: 3,
+              CONV_RATE: 1.5,
+              CPC: 0.5,
+              SESSIONS: 10,
+              IMPRESSIONS: 1_000,
+              CLICKS: 200,
+            },
+          ],
+          metadata: [],
+        });
+      }
+      return Promise.resolve({ rows: [], metadata: [] });
+    });
+
+    const result = await new ProjectService().getSocialReach('cncf', undefined, period);
+
+    expect(result.projectBreakdown?.[0]).toMatchObject({ conversions: 3, convRate: 1.5 });
+    expect(
+      execute.mock.calls.some(
+        ([sql, , options]) => String(sql).includes('LAST_TOUCH_CONVERSIONS') && options?.expectInvalidIdentifier === 'LAST_TOUCH_CONVERSIONS'
+      )
+    ).toBe(true);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('SUM(CONV)'))).toBe(true);
   });
 });

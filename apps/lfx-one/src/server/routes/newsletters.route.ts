@@ -45,5 +45,6 @@ router.put('/:newsletterUid', (req, res, next) => newsletterController.updateNew
 router.delete('/:newsletterUid', (req, res, next) => newsletterController.deleteNewsletter(req, res, next));
 router.post('/:newsletterUid/send', (req, res, next) => newsletterController.sendNewsletter(req, res, next));
 router.get('/:newsletterUid/analytics', (req, res, next) => newsletterController.getAnalytics(req, res, next));
+router.get('/:newsletterUid/analytics/recipients', (req, res, next) => newsletterController.getRecipientEngagement(req, res, next));
 
 export default router;

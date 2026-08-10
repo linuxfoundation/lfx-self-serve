@@ -148,13 +148,15 @@ export class MicroserviceProxyService {
     return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders);
   }
 
-  // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE and
-  // LFX_V2_COMMITTEE_SERVICE fall back to LFX_V2_SERVICE (the gateway) when unset.
+  // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE,
+  // LFX_V2_COMMITTEE_SERVICE and LFX_V2_CAMPAIGN_SERVICE fall back to LFX_V2_SERVICE
+  // (the gateway) when unset.
   private resolveBaseUrl(service: keyof MicroserviceUrls): string {
     const urls: MicroserviceUrls = {
       LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
       LFX_V2_MEMBER_SERVICE: process.env['LFX_V2_MEMBER_SERVICE'] || process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
       LFX_V2_COMMITTEE_SERVICE: process.env['LFX_V2_COMMITTEE_SERVICE'] || process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
+      LFX_V2_CAMPAIGN_SERVICE: process.env['LFX_V2_CAMPAIGN_SERVICE'] || process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
     };
     // Strip trailing slashes so a config value like `https://host/` can't produce `host//path`.
     return urls[service].replace(/\/+$/, '');

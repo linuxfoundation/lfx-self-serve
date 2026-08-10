@@ -17,10 +17,19 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, finalize, of, switchMap, take } from 'rxjs';
 
 import { NewsletterFailedRecipientsDrawerComponent } from '../components/newsletter-failed-recipients-drawer/newsletter-failed-recipients-drawer.component';
+import { NewsletterRecipientEngagementComponent } from '../components/newsletter-recipient-engagement/newsletter-recipient-engagement.component';
 
 @Component({
   selector: 'lfx-newsletter-analytics',
-  imports: [DatePipe, CardComponent, ChartComponent, EmptyStateComponent, SkeletonModule, NewsletterFailedRecipientsDrawerComponent],
+  imports: [
+    DatePipe,
+    CardComponent,
+    ChartComponent,
+    EmptyStateComponent,
+    SkeletonModule,
+    NewsletterFailedRecipientsDrawerComponent,
+    NewsletterRecipientEngagementComponent,
+  ],
   templateUrl: './newsletter-analytics.component.html',
   styleUrl: './newsletter-analytics.component.scss',
 })
@@ -38,6 +47,9 @@ export class NewsletterAnalyticsComponent {
   protected readonly loadError = signal<string | null>(null);
   protected readonly canRenderChart = signal<boolean>(false);
   protected readonly failedDrawerVisible = signal<boolean>(false);
+  // Route params, retained for the recipient engagement child component's inputs.
+  protected readonly projectUid = signal<string>('');
+  protected readonly newsletterId = signal<string>('');
 
   // === Computed (complex bodies extracted to private init* methods) ===
   protected readonly openRatePercent: Signal<number | null> = this.initOpenRatePercent();
@@ -68,6 +80,8 @@ export class NewsletterAnalyticsComponent {
             this.loadError.set('Missing newsletter id or project.');
             return of(null);
           }
+          this.projectUid.set(projectUid);
+          this.newsletterId.set(id);
           this.loading.set(true);
           this.loadError.set(null);
           return this.newsletterService.getAnalytics(projectUid, id).pipe(

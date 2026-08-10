@@ -3508,7 +3508,7 @@ export interface EdEvolutionData {
 
 /**
  * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
- * One row per keyword/search-term per day.
+ * Traffic metrics only; authoritative conversions come from keyword attribution.
  */
 export interface KeywordPerformanceRow {
   RECORD_TYPE: 'keyword' | 'search_term';
@@ -3519,11 +3519,8 @@ export interface KeywordPerformanceRow {
   CLICKS: number;
   SPEND: number;
   IMPRESSIONS: number;
-  CONVERSIONS: number;
-  CONVERSIONS_VALUE: number;
   CTR: number;
   CPC: number;
-  CONVERSION_RATE: number;
 }
 
 /**
@@ -3566,7 +3563,7 @@ export interface SearchTermSummary {
   impressions: number;
   ctr: number;
   cpc: number;
-  conversions: number;
+  conversions: number | null;
 }
 
 /** API response for the keyword performance endpoint. */
