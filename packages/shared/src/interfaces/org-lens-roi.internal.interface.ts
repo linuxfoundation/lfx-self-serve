@@ -29,3 +29,30 @@ export interface OrgLensRoiCoverageWarehouseRow {
   HAS_ROI: number;
   IS_MAPPED: number;
 }
+
+/** `ORG_LENS_ROI_INVESTMENT_BREAKDOWN` has no `MARKUP_METHOD` column — the levels source carries none. */
+export interface OrgLensRoiInvestmentBreakdownWarehouseRow {
+  CONTRIBUTION_TYPE: string;
+  CONTRIBUTION_LABEL: string;
+  EXPENDITURE: number;
+}
+
+/**
+ * One row per project × contribution category, from `ORG_LENS_ROI_PROJECTS` left-joined to
+ * `ORG_LENS_ROI_PROJECTS_BREAKDOWN`. The project columns repeat across a project's category rows;
+ * `CONTRIBUTION_TYPE` is null for a project with no breakdown rows.
+ */
+export interface OrgLensRoiProjectWarehouseRow {
+  PROJECT_ID: string;
+  PROJECT_SLUG: string;
+  PROJECT_NAME: string;
+  TOTAL_EXPENDITURE: number;
+  TOTAL_RETURN: number;
+  PROFIT: number;
+  ROI: number | null;
+  BCR: number | null;
+  BREAKEVEN_MARKUP: number | null;
+  CONTRIBUTION_TYPE: string | null;
+  CONTRIBUTION_LABEL: string | null;
+  CATEGORY_EXPENDITURE: number | null;
+}
