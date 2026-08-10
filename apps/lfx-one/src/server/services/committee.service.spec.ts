@@ -20,7 +20,9 @@ const { proxyRequest, addAccessToResources, addAccessToResource, fetchWithETag, 
 
 vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
-vi.mock('@lfx-one/shared/constants', () => ({ SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/.+/ }));
+vi.mock('@lfx-one/shared/constants', () => ({
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+}));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -397,6 +399,54 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       // The read-back check (getSlackWebhookUrlStrict) is the only caller of a bare GET
       // /committees/:id via proxyRequest in this flow — its absence proves the check was skipped.
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('normalizes an empty-string chat_webhook_url to null instead of a spurious read-back mismatch', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+      // Read-back GET — nothing configured upstream, matching the normalized null.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: '' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+    });
+
+    it('runs the read-back check after the settings update, so unrelated settings changes are not silently discarded when the webhook fails to persist', async () => {
+      fetchWithETag
+        .mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' }) // core committee fetch
+        .mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // settings fetch
+      updateWithETag
+        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }) // core PUT — webhook silently dropped
+        .mockResolvedValueOnce(undefined); // settings PUT
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID }); // read-back GET, still no webhook
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL, is_audit_enabled: true })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'SLACK_WEBHOOK_NOT_PERSISTED',
+      });
+
+      // Both the core PUT and the settings PUT ran before the throw — is_audit_enabled was not
+      // silently dropped just because the webhook failed to persist.
+      expect(updateWithETag).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('chat_webhook_url redaction on list/create paths (not just getCommitteeById/updateCommittee)', () => {
+    it('getCommittees never returns chat_webhook_url even if the query-service index carries it', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL } as unknown as Partial<Committee>]));
+      addAccessToResources.mockResolvedValueOnce([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL, writer: true } as unknown as Committee]);
+
+      const result = await service.getCommittees(req, { tags: 'project_uid:project-1' }, { skipMailingListEnrichment: true });
+
+      expect(result).toHaveLength(1);
+      expect('chat_webhook_url' in result[0]).toBe(false);
+    });
+
+    it('createCommittee never returns chat_webhook_url even if upstream happens to echo it back', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', chat_webhook_url: VALID_WEBHOOK_URL });
+
+      const result = await service.createCommittee(req, { name: 'Test', category: 'general' });
+
+      expect('chat_webhook_url' in result).toBe(false);
     });
   });
 });

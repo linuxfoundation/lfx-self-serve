@@ -86,6 +86,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
   SLACK_WEBHOOK_POST_TIMEOUT_MS: 10_000,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
@@ -947,6 +948,14 @@ describe('WeeklyBriefService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream)', async () => {
+      mockShareableBrief();
+      getSlackWebhookUrlStrictMock.mockResolvedValue('https://evil.example.com/exfiltrate');
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other precondition passes', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       mockShareableBrief();
@@ -967,10 +976,27 @@ describe('WeeklyBriefService', () => {
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // A redirect could relocate the POST body off hooks.slack.com — must reject outright,
+          // not follow it.
+          redirect: 'error',
         })
       );
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(body.text).toContain('Hello committee');
+    });
+
+    it("escapes Slack mrkdwn control characters in brief_text and the committee name, so an AI-generated brief can't trigger @channel/@here or a deceptive link", async () => {
+      mockShareableBrief({ brief_text: 'Ping <!channel> and see <https://evil.example|this link>' });
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'A & B Committee', project_uid: 'project-1' });
+      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      await service.shareToSlack(req, 'committee-1', 1);
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.text).not.toContain('<!channel>');
+      expect(body.text).not.toContain('<https://evil.example|this link>');
+      expect(body.text).toContain('&lt;!channel&gt;');
+      expect(body.text).toContain('A &amp; B Committee');
     });
 
     it("throws 502 SLACK_SEND_FAILED with Slack's error text when Slack rejects the message", async () => {

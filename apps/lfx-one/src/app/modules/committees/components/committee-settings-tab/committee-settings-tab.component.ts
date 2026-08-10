@@ -88,6 +88,15 @@ export class CommitteeSettingsTabComponent {
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
 
+  // Whether the webhook-URL input is currently rendered/editable — the exact inverse of
+  // committee-settings.component.html's `slackWebhookConfigured() && !editingSlackWebhookUrl()`
+  // guard, derived from the same two source signals so the two can never drift. saveSettings()
+  // must gate on this, not on editingSlackWebhookUrl alone — a committee with no webhook yet
+  // renders the input immediately (editingSlackWebhookUrl stays false until "Replace" is clicked,
+  // which only exists once a webhook is already configured), so gating on editingSlackWebhookUrl
+  // alone silently discarded a first-time-configured URL.
+  public slackWebhookInputVisible = computed(() => this.editingSlackWebhookUrl() || !this.slackWebhookConfigured());
+
   public constructor() {
     // Patch form when committee input changes
     toObservable(this.committee)
@@ -212,9 +221,10 @@ export class CommitteeSettingsTabComponent {
         show_meeting_attendees: values.show_meeting_attendees ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
-        // Only sent when the user actually opened "Replace" — chat_webhook_url is write-only, so
-        // the form's untouched value is always null and must never be mistaken for "clear it".
-        ...(this.editingSlackWebhookUrl() ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
+        // Only sent while the input is actually visible/editable — chat_webhook_url is
+        // write-only, so an untouched, hidden ("Configured") field's form value is always null
+        // and must never be mistaken for "clear it".
+        ...(this.slackWebhookInputVisible() ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
@@ -222,8 +232,17 @@ export class CommitteeSettingsTabComponent {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Settings saved' });
           this.committeeUpdated.emit();
         },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save settings' });
+        error: (err: any) => {
+          const code = err?.error?.code;
+          const status = err?.status;
+          let detail = 'Failed to save settings';
+          if (status === 409 && code === 'SLACK_WEBHOOK_NOT_PERSISTED') {
+            detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook could not be stored.';
+          } else if (status === 400) {
+            const fieldErrors = err?.error?.errors as { message?: string }[] | undefined;
+            detail = fieldErrors?.[0]?.message ?? detail;
+          }
+          this.messageService.add({ severity: 'error', summary: 'Error', detail });
         },
       });
   }

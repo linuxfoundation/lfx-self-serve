@@ -4,6 +4,7 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   SLACK_WEBHOOK_POST_TIMEOUT_MS,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
@@ -59,6 +60,19 @@ function briefTextToHtml(text: string): string {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escape(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');
+}
+
+/**
+ * Escapes Slack mrkdwn control characters per Slack's own escaping rules
+ * (https://api.slack.com/reference/surfaces/formatting#escaping) — `&`, `<`, `>` are the only
+ * three that matter. Slack's incoming webhooks parse `text` as mrkdwn by default: an unescaped
+ * `<!channel>`/`<!here>` anywhere in `brief_text` (AI-generated from meeting/document titles —
+ * content a broader set of users than project writers can influence, then further editable by
+ * writers) would page the entire channel, and `<https://evil.example|label>` would render as a
+ * deceptive hyperlink.
+ */
+function escapeSlackMrkdwn(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -800,8 +814,17 @@ export class WeeklyBriefService {
     // getSlackWebhookUrlStrict, not a fail-open enrichment — same rationale as shareBrief's
     // hasMailingListStrict: a transient upstream failure must not be misreported as "no webhook
     // configured" (409 NO_SLACK_WEBHOOK is a real, actionable precondition failure).
+    //
+    // Re-validated against SLACK_INCOMING_WEBHOOK_URL_PATTERN here, not just trusted from
+    // upstream storage — the BFF's own updateCommittee is not the only possible writer of
+    // chat_webhook_url on the committee record (any client with a token can PUT /committees/:uid
+    // directly), so the stored value is untrusted input at the point of use. Without this, an
+    // arbitrary URL written some other way would turn this into a server-initiated POST of brief
+    // content to an attacker-chosen destination — exactly what the allowlist exists to prevent.
+    // A malformed value is treated the same as "not configured" — from the caller's perspective
+    // both are equally unactionable.
     const webhookUrl = await this.committeeService.getSlackWebhookUrlStrict(req, committeeId);
-    if (!webhookUrl) {
+    if (!webhookUrl || !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl)) {
       throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
@@ -818,12 +841,15 @@ export class WeeklyBriefService {
       });
     }
 
-    const text = `*Weekly Brief — ${committee.name}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${brief.brief_text}`;
+    const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
+      // A redirect response could relocate the POST body off hooks.slack.com entirely —
+      // 'error' rejects the fetch outright instead of silently following it.
+      redirect: 'error',
       signal: AbortSignal.timeout(SLACK_WEBHOOK_POST_TIMEOUT_MS),
     }).catch((error: unknown) => {
       throw new MicroserviceError('Unable to reach Slack — the webhook request failed or timed out', 502, 'SLACK_UNREACHABLE', {

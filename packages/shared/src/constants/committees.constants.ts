@@ -29,7 +29,7 @@ export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'membe
  * outbound POST to a URL the committee writer fully controls — without a domain allowlist, an
  * arbitrary URL here would let the BFF be used as an SSRF vector.
  */
-export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/.+/;
+export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
 
 /**
  * Configurable labels for committees displayed throughout the UI

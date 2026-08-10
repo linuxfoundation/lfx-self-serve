@@ -225,7 +225,7 @@ export class CommitteeService {
       }
     }
 
-    return committees;
+    return committees.map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -259,7 +259,7 @@ export class CommitteeService {
       })
     );
     const committees = await this.accessCheckService.addAccessToResources(req, resources, 'committee');
-    return committees.filter((c) => c.writer === true);
+    return committees.filter((c) => c.writer === true).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -314,7 +314,7 @@ export class CommitteeService {
       });
     }
 
-    return permitted.slice(0, pageSize);
+    return permitted.slice(0, pageSize).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -435,7 +435,7 @@ export class CommitteeService {
     }
 
     return {
-      ...newCommittee,
+      ...this.stripChatWebhookUrl(newCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -447,7 +447,14 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
-    if (data.chat_webhook_url && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(data.chat_webhook_url)) {
+    // Normalized once, up front: an empty string must behave identically to omission/null
+    // everywhere below it's used (validation skip, the PUT payload, and the read-back
+    // comparison) — otherwise a direct API caller sending '' would skip validation (falsy,
+    // intentionally) but then fail the read-back check with a spurious mismatch against the
+    // `null` getSlackWebhookUrlStrict actually returns for "not configured".
+    const normalizedData: CommitteeUpdateData = { ...data, ...(data.chat_webhook_url === '' && { chat_webhook_url: null }) };
+
+    if (normalizedData.chat_webhook_url && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(normalizedData.chat_webhook_url)) {
       throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
         operation: 'update_committee',
         service: 'committee_service',
@@ -457,7 +464,7 @@ export class CommitteeService {
 
     // Extract settings fields — writers/auditors belong to UpdateCommitteeSettingsRequestBody,
     // NOT UpdateCommitteeBaseRequestBody, so they must go through the settings endpoint
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = data;
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = normalizedData;
 
     const hasSettingsUpdate =
       business_email_required !== undefined ||
@@ -515,22 +522,6 @@ export class CommitteeService {
       updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
-    // Defensive check: unlike mailing_list/chat_channel, the upstream committee-service schema
-    // does not (yet) declare chat_webhook_url as of this writing — an unknown key in the PUT
-    // body above is silently dropped by Go's JSON unmarshaling rather than rejected. Confirm via
-    // a fresh read whether it actually persisted rather than trusting a false "saved" response;
-    // remove this check once the upstream schema change lands.
-    if (committeeData.chat_webhook_url !== undefined) {
-      const persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
-      if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
-        throw new ConflictError('Slack webhook support is not available in this environment yet — the update was not saved.', 'SLACK_WEBHOOK_NOT_PERSISTED', {
-          operation: 'update_committee',
-          service: 'committee_service',
-          path: `/committees/${committeeId}`,
-        });
-      }
-    }
-
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
     // (unlike the create path, there's no partial-success story here: if settings fail,
     // the response should not echo writers/auditors as if they were persisted)
@@ -545,16 +536,32 @@ export class CommitteeService {
       });
     }
 
-    // chat_webhook_url must never reach the HTTP response, same as getCommitteeById — strip it
-    // regardless of whether upstream happens to echo it back in the PUT response. has_slack_webhook
-    // is deliberately left out here (same as has_mailing_list, which this method also never sets) —
-    // it's a getCommitteeById-only enrichment; callers needing the post-save "configured" state
-    // already know it locally from whatever chat_webhook_url value they just submitted.
-    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
-    const { chat_webhook_url: _chatWebhookUrl, ...updatedCommitteeWithoutWebhook } = updatedCommittee as Committee & { chat_webhook_url?: string | null };
+    // Defensive check, run LAST (after every other write above has already committed): unlike
+    // mailing_list/chat_channel, the upstream committee-service schema does not (yet) declare
+    // chat_webhook_url as of this writing — an unknown key in the core PUT body is silently
+    // dropped by Go's JSON unmarshaling rather than rejected. Confirm via a fresh read whether it
+    // actually persisted rather than trusting a false "saved" response. Deliberately checked
+    // after the core PUT and settings update, not before — this is the one field in the whole
+    // payload that can fail here, and every other field the caller submitted (name, chat_channel,
+    // website, business_email_required, etc.) must still be reported as saved rather than
+    // silently discarded because of it. Remove this check once the upstream schema change lands.
+    if (committeeData.chat_webhook_url !== undefined) {
+      const persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
+      if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
+        throw new ConflictError(
+          'Your other changes were saved, but the Slack webhook could not be stored — this environment does not support it yet.',
+          'SLACK_WEBHOOK_NOT_PERSISTED',
+          {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+          }
+        );
+      }
+    }
 
     return {
-      ...updatedCommitteeWithoutWebhook,
+      ...this.stripChatWebhookUrl(updatedCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -1611,6 +1618,22 @@ export class CommitteeService {
     return committee?.chat_webhook_url ?? null;
   }
 
+  /**
+   * Strips the write-only `chat_webhook_url` credential from a committee before it leaves this
+   * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
+   * built from a raw upstream fetch (not routed through {@link getCommitteeById}'s own inline
+   * strip) — `getCommittees`, `getDirectGrantCommittees`, `searchCreatableCommittees`,
+   * `createCommittee`, `getCommitteesByIds` (covers `getMyCommittees`) — so the "never returned by
+   * any read" invariant on {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not
+   * just the two hand-audited call sites. A no-op today (upstream doesn't store the field yet),
+   * but load-bearing the moment the schema change referenced in `updateCommittee` lands.
+   */
+  private stripChatWebhookUrl<T extends Committee>(committee: T): T {
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
+    const { chat_webhook_url: _chatWebhookUrl, ...rest } = committee as T & { chat_webhook_url?: string | null };
+    return rest as T;
+  }
+
   /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
   private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
     const committee = await this.getCommitteeById(req, committeeId);
@@ -1701,7 +1724,7 @@ export class CommitteeService {
     const byUid = new Map<string, Committee>();
     for (const committee of batchResults.flat()) {
       if (committee?.uid) {
-        byUid.set(committee.uid, committee);
+        byUid.set(committee.uid, this.stripChatWebhookUrl(committee));
       }
     }
 
