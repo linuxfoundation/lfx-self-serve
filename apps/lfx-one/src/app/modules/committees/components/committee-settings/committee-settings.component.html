@@ -178,6 +178,11 @@
               styleClass="w-full"
               id="slack-webhook"
               data-testid="settings-slack-webhook-input"></lfx-input-text>
+            @if (form().get('chat_webhook_url')?.errors?.['pattern'] && form().get('chat_webhook_url')?.touched) {
+              <p class="text-sm text-red-600" data-testid="settings-slack-webhook-error">
+                Must be a Slack Incoming Webhook URL (https://hooks.slack.com/services/...)
+              </p>
+            }
             <div class="flex items-center justify-between gap-3 -mt-1">
               <p class="text-[11.5px] text-gray-400">
                 Create one from your Slack workspace's

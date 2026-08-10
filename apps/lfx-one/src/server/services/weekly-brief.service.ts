@@ -892,8 +892,12 @@ export class WeeklyBriefService {
 
     if (!response.ok) {
       // Slack's incoming-webhook error responses are a plain-text body (e.g. `invalid_payload`,
-      // `channel_not_found`, `action_prohibited`), not JSON.
-      const slackErrorText = await response.text().catch(() => '');
+      // `channel_not_found`, `action_prohibited`), not JSON. Slicing before use, not just at
+      // display time: response.text() buffers the whole body in memory regardless, and while
+      // webhookUrl is pinned to hooks.slack.com by the allowlist above (not an attacker-chosen
+      // host), bounding this keeps one unexpectedly large Slack response from bloating the log
+      // line and the client-facing error message.
+      const slackErrorText = (await response.text().catch(() => '')).slice(0, 500);
       throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',

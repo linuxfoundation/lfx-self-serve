@@ -401,7 +401,11 @@ export class CommitteeService {
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
-      has_slack_webhook: !!chatWebhookUrl,
+      // Format-checked, not just presence: a value that fails SLACK_INCOMING_WEBHOOK_URL_PATTERN
+      // (e.g. stored by a non-BFF writer, since this repo isn't the only writer of the field)
+      // must not show as "Configured" — shareToSlack re-validates the same pattern at send time,
+      // and a Configured badge over a value that's guaranteed to 409 there is a dead end.
+      has_slack_webhook: !!chatWebhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(chatWebhookUrl),
     };
 
     if (!options.includeProjectMetadata) {
@@ -544,7 +548,16 @@ export class CommitteeService {
     // after the core PUT and settings update, not before — this is the one field in the whole
     // payload that can fail here, and every other field the caller submitted (name, chat_channel,
     // website, business_email_required, etc.) must still be reported as saved rather than
-    // silently discarded because of it. Remove this check once the upstream schema change lands.
+    // silently discarded because of it. Remove this check once the upstream schema change lands
+    // (LFXV2-3094).
+    //
+    // Asymmetric today for a clear (chat_webhook_url: null): persistedWebhookUrl reads back null
+    // both when a real clear persisted and when upstream has no such field to persist to in the
+    // first place, so this can't distinguish them — a clear would false-report success on today's
+    // schema-less upstream the same way a set correctly fails loud. Not reachable in practice yet:
+    // the clear/Remove UI path only renders once has_slack_webhook is true (getCommitteeById),
+    // which itself requires a prior *set* to have round-tripped through this same check — i.e. the
+    // schema must already exist upstream by the time a clear is possible at all.
     if (committeeData.chat_webhook_url !== undefined) {
       const persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
       if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
