@@ -300,6 +300,14 @@ export class CommitteeSettingsTabComponent {
             // constructor's combineLatest subscription), so this path shouldn't normally be
             // reachable from this form. Kept for direct-API-caller parity with the server guard.
             detail = 'Configuring the Slack webhook is unavailable while impersonating another user.';
+          } else if (status === 403 && code === 'NOT_PROJECT_WRITER') {
+            // Unlike IMPERSONATION_READ_ONLY above, this one IS reachable from this form: canEdit
+            // (committee-view.component.ts) is true for a direct committee-writer grant, which
+            // updateCommittee's project-writer check on chat_webhook_url (committee.service.ts)
+            // does not accept — a committee writer without project-writer access sees an editable
+            // field with no reliable client-side signal to disable it against (see that commit's
+            // PR-description trade-off note). This branch is the only explanation the user gets.
+            detail = 'Only project writers can configure the Slack webhook.';
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;
