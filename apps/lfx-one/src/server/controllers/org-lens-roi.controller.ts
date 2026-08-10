@@ -69,6 +69,43 @@ export class OrgLensRoiController {
     }
   }
 
+  public async getInvestmentBreakdown(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_org_lens_roi_investment_breakdown';
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+    try {
+      assertOrgUid(orgUid, operation);
+      // Validated but not passed on: the breakdown genuinely cannot vary by method (its source table
+      // has no MARKUP_METHOD column). Rejecting an unknown value anyway keeps the 400 uniform across
+      // every ROI route rather than depending on which handler happens to use the parameter.
+      parseOrgLensRoiMethod(req.query['method'], operation);
+      await assertOrgLensRead(req, orgUid, operation);
+
+      const breakdown = await this.service.getInvestmentBreakdown(req, orgUid);
+      logger.success(req, operation, startTime, { org_uid: orgUid, rows: breakdown.rows.length });
+      this.send(res, breakdown);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_org_lens_roi_projects';
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+    try {
+      assertOrgUid(orgUid, operation);
+      const method = parseOrgLensRoiMethod(req.query['method'], operation);
+      await assertOrgLensRead(req, orgUid, operation);
+
+      const projects = await this.service.getProjects(req, orgUid, method);
+      logger.success(req, operation, startTime, { org_uid: orgUid, method, rows: projects.rows.length });
+      this.send(res, projects);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   private send(res: Response, body: unknown): void {
     res.setHeader('Cache-Control', 'no-store');
     res.json(body);
