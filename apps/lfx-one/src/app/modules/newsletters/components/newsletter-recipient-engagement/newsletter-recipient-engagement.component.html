@@ -88,6 +88,7 @@
                   class="text-gray-400 hover:text-gray-600"
                   (click)="toggleTimeline(row.email)"
                   [attr.aria-expanded]="expandedEmails().has(row.email)"
+                  [attr.aria-label]="(expandedEmails().has(row.email) ? 'Collapse' : 'Expand') + ' open timeline for ' + row.displayName"
                   [attr.data-testid]="'newsletter-recipient-engagement-expand-' + row.email">
                   <i class="fa-light" [class.fa-chevron-down]="expandedEmails().has(row.email)" [class.fa-chevron-right]="!expandedEmails().has(row.email)"></i>
                 </button>

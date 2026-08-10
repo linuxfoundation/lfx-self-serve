@@ -47,6 +47,10 @@ export class NewsletterRecipientEngagementComponent {
   public readonly newsletterUid = input.required<string>();
   public readonly status = input.required<NewsletterStatus>();
 
+  // Filter form
+  public readonly filterForm: FormGroup;
+  public readonly searchTerm: Signal<string>;
+
   // === Simple state ===
   public readonly response = signal<NewsletterRecipientEngagementResponse | null>(null);
   public readonly loading = signal<boolean>(false);
@@ -57,10 +61,6 @@ export class NewsletterRecipientEngagementComponent {
   public readonly loadErrorMessage = signal<string | null>(null);
   public readonly expandedEmails = signal<Set<string>>(new Set());
   public readonly activeChip = signal<NewsletterRecipientEngagementChipKey>('all');
-
-  // Filter form
-  public readonly filterForm: FormGroup;
-  public readonly searchTerm: Signal<string>;
 
   // === Computed (complex bodies extracted to private init* methods) ===
   public readonly rows: Signal<NewsletterRecipientRow[]> = this.initRows();
