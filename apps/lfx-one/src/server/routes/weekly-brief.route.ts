@@ -23,13 +23,14 @@ router.post('/:committeeId/weekly-briefs/generate', (req, res, next) => weeklyBr
 router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.saveBrief(req, res, next));
 
 // POST /committees/:committeeId/weekly-briefs/share - share the current brief to the committee mailing list
-// Not blocked during impersonation: the resolved ed_reply_email (getEffectiveEmail — during
-// impersonation this is the TARGET user's email, never the impersonator's, same as every other
-// getEffective* helper) is message data used for reply routing on the outbound email, not an
-// attribution of who performed the send. Unlike rating's per-user Valkey key below, there is no
-// persistent "the target did this" artifact an impersonator could silently fabricate here — using
-// the target's own email as reply-to is the intended behavior for a support-delegated send on
-// their behalf (replies should reach the real ED, not the assisting staff member).
+// NOT currently blocked during impersonation — this is a known, pre-existing gap (predates
+// LFXV2-3080), not a considered exception: shareBrief creates a persisted newsletter draft
+// (weekly-brief.service.ts's createNewsletter call) and sends it using the caller's own bearer
+// token, which auth.middleware.ts swaps to the impersonation target's token during
+// impersonation — so an impersonated send both persists an artifact and goes out attributed to
+// the target, the same "real, hard-to-retract, externally-visible action" criterion that gates
+// share-slack below. Left as-is here rather than silently expanding this ticket's scope to
+// change existing, already-shipped behavior — tracked as a follow-up in LFXV2-3093.
 router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
 
 // POST /committees/:committeeId/weekly-briefs/share-slack - share the current brief to the committee's Slack channel
