@@ -1,0 +1,12 @@
+/* TypeScript configuration for the app-side (browser) unit tests.
+   Server-side specs under src/server run under plain Node via vitest.config.ts
+   and are excluded here, so each half is type-checked with the lib and types it
+   actually has: DOM for the app, node for the server. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/spec",
+    "types": ["node"]
+  },
+  "include": ["src/app/**/*.spec.ts", "src/app/**/*.d.ts", "src/test-providers.ts"]
+}
