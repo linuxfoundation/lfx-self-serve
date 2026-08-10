@@ -307,7 +307,11 @@ export class CommitteeSettingsTabComponent {
             // does not accept — a committee writer without project-writer access sees an editable
             // field with no reliable client-side signal to disable it against (see that commit's
             // PR-description trade-off note). This branch is the only explanation the user gets.
-            detail = 'Only project writers can configure the Slack webhook.';
+            // Explicit "nothing was saved" clause: unlike the 409 branch above, this check runs
+            // before updateWithETag/updateCommitteeSettings, so every other field on this same
+            // save (visibility, join mode, chat_channel, etc.) was rejected too, not just the
+            // webhook — without saying so, this reads like the 409 branch's "other changes saved".
+            detail = 'Only project writers can configure the Slack webhook — no changes on this save were saved.';
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;
