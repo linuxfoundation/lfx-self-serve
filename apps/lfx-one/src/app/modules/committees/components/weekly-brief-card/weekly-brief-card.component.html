@@ -155,6 +155,30 @@
             </div>
           </div>
 
+          @if (sourceChips().length > 0) {
+            <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-sources">
+              <span class="text-xs font-medium text-gray-500">Sources</span>
+              @for (chip of sourceChips(); track chip.id) {
+                @if (chip.action; as action) {
+                  <button
+                    type="button"
+                    class="inline-flex border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
+                    (click)="onSourceChipAction(action)"
+                    [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id">
+                    <lfx-tag [value]="chip.label" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+                  </button>
+                } @else {
+                  <lfx-tag
+                    [value]="chip.label"
+                    [icon]="chip.icon"
+                    [rounded]="true"
+                    [outlined]="true"
+                    [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id" />
+                }
+              }
+            </div>
+          }
+
           <div class="flex flex-wrap gap-2">
             <lfx-button
               label="Regenerate"

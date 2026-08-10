@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { WEEKLY_BRIEF_ERROR_REASON } from '../constants/weekly-brief.constants';
+import type { PastMeetingActivityFeedAction, TabActivityFeedAction, VoteDrawerActivityFeedAction } from './activity-feed.interface';
 
 export type WeeklyBriefState = 'empty' | 'generating' | 'generated' | 'edited' | 'approved' | 'error';
 
@@ -10,18 +11,52 @@ export type WeeklyBriefErrorReason = (typeof WEEKLY_BRIEF_ERROR_REASON)[keyof ty
 
 /**
  * Matches upstream's `GroupWeeklyBriefSourceRef` exactly — `kind` is an open
- * string (not an enum; documented values include "meeting", "mailing-list",
- * "doc"), not the invented `source_type` shape this used to have. Upstream
- * marks nothing Required on this type, and the committee-service converter
- * omits `title`/`excerpt` when empty — the BFF forwards this object
- * unchanged, so both stay optional here rather than promising a string that
- * may not be present on the wire.
+ * string (not an enum; the Goa design's prose documents "meeting",
+ * "mailing-list", "doc" as examples), not the invented `source_type` shape
+ * this used to have. Upstream marks nothing Required on this type, and the
+ * committee-service converter omits `title`/`excerpt` when empty — the BFF
+ * forwards this object unchanged, so both stay optional here rather than
+ * promising a string that may not be present on the wire.
+ *
+ * What `lfx-v2-committee-service`'s `group_weekly_brief_generator.go`
+ * (`buildClaimsAndRefs`) actually emits today: "meeting", "mailing-list",
+ * "vote", and "members" — never "doc" (a design-doc example only). Kept
+ * mapped in `weekly-brief.utils.ts` anyway in case upstream starts sending
+ * it; any other unrecognized `kind` — present or future — renders unlinked
+ * rather than breaking.
  */
 export interface WeeklyBriefSourceRef {
   excerpt?: string;
   id: string;
   kind: string;
   title?: string;
+}
+
+/**
+ * What clicking a "Sources" chip does, for a `WeeklyBriefSourceRef` that resolves to a real
+ * target. Reuses `ActivityFeedAction`'s `past-meeting`/`vote-drawer`/`tab` variants exactly
+ * (LFXV2-3009's committee Overview activity feed already navigates through these same
+ * mechanisms) rather than a narrower union that duplicates their shape. `vote-drawer` carries
+ * the vote's own uid (`ref.id` for a "vote" kind) straight to `committee-overview.component.ts`'s
+ * existing drawer-opening logic — including its cache-miss fetch-by-uid fallback and its own
+ * "Vote unavailable, try the Votes tab instead" toast on a genuine fetch failure — rather than
+ * dropping the id and routing to the generic Votes tab. `survey-drawer`/`external-url` still don't apply to any documented or observed
+ * `source_refs` kind.
+ */
+export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDrawerActivityFeedAction | TabActivityFeedAction;
+
+/**
+ * Precomputed display view-model for one "Sources" chip under a weekly brief — built from a
+ * `WeeklyBriefSourceRef` by `mapWeeklyBriefSourceRefsToChips` (`../utils/weekly-brief.utils`).
+ * `action: null` means the chip renders unlinked (no resolvable click target for that `kind` —
+ * e.g. "mailing-list", which has no archive URL anywhere in this contract, or an unrecognized
+ * future `kind`).
+ */
+export interface WeeklyBriefSourceChip {
+  id: string;
+  label: string;
+  icon: string;
+  action: WeeklyBriefSourceChipAction | null;
 }
 
 export interface WeeklyBrief {

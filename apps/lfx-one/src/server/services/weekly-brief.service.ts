@@ -149,11 +149,24 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
       'open issues, and upcoming release planning.\n\n' +
       'Discussion focused on outstanding action items, contributor onboarding, and prioritization for the ' +
       'next iteration. The group surfaced no blocking risks and is on track for the planned milestones.',
-    source_refs: [],
+    // Representative refs across the kinds lfx-v2-committee-service's brief generator
+    // actually emits (LFXV2-3044) — mock mode otherwise never exercises the Sources chip
+    // row. Ids are synthetic; a chip's click-through target (e.g. a meeting join page) isn't
+    // guaranteed to resolve against this app's mocked/live backends in mock mode.
+    source_refs: [
+      { id: 'mock-meeting-1', kind: 'meeting', title: 'Weekly Sync' },
+      { id: 'mock-mailing-list-1', kind: 'mailing-list', title: 'Roadmap discussion thread' },
+      { id: 'mock-vote-1', kind: 'vote', title: 'Q1 Budget' },
+      { id: 'weekly-members', kind: 'members', title: 'Member roster changes' },
+    ],
     prompt_version: 'v1',
     model: 'mock',
     regeneration_count: 0,
-    private_source_present: false,
+    // Upstream's derivePrivateSourcePresent (group_weekly_brief_generator.go) always sets this
+    // true when the brief has any member activity — "members are inherently private" — and a
+    // "members" source_ref only exists when memberCount > 0, so a members ref + false here is a
+    // combination upstream can never actually produce (Copilot review, PR #1363).
+    private_source_present: true,
     created_at: nowIso,
     updated_at: nowIso,
     revision: 1,
