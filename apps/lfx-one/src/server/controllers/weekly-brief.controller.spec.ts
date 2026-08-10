@@ -378,6 +378,24 @@ describe('WeeklyBriefController', () => {
       expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledOnce();
     });
+
+    it('rejects a non-integer revision — same bound as rateBrief, not the looser finite-number check (PR #1361 review, round 2)', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 1.5 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects revision < 1', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 0 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
   });
 
   describe('clearBriefRating', () => {

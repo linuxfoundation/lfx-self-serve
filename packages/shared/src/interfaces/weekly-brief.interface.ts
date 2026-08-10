@@ -89,12 +89,11 @@ export type WeeklyBriefRating = 'up' | 'down';
 
 /**
  * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is
- * the revision the caller actually saw when they tapped — the server always rates whatever
- * revision is current at write time (see `weekly-brief.service.ts#rateBrief`'s doc comment), so
- * this is never used to reject the write, only logged alongside the server-resolved revision on
- * `rating_recorded` so a rating attributed to content the rater never saw (a co-chair's edit or
- * regenerate landing between page load and tap) can be identified and excluded during offline
- * rating-by-prompt_version analysis.
+ * the revision the caller actually saw when they tapped — the server rejects the write with a 409
+ * (`REVISION_MISMATCH`) when it no longer matches the server-resolved current revision, so a
+ * rating can never land on content the caller never actually reviewed (a co-chair's edit or
+ * regenerate landing between page load and tap; see `weekly-brief.service.ts#rateBrief`'s doc
+ * comment for the full reasoning, PR #1361 review).
  */
 export interface RateWeeklyBriefRequest {
   rating: WeeklyBriefRating;

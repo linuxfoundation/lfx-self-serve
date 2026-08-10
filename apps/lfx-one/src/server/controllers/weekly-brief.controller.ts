@@ -111,18 +111,20 @@ function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBrie
 }
 
 /**
- * Narrow `req.body` to `{ revision: number }` for the clear-rating (DELETE) endpoint — same shape
- * and reasoning as `validateShareBriefBody`: the caller must send back the revision they actually
- * saw so the service can reject a stale clear (PR #1361 review) instead of silently deleting
- * whatever revision happens to be current.
+ * Narrow `req.body` to `{ revision: number }` for the clear-rating (DELETE) endpoint. The caller
+ * must send back the revision they actually saw so the service can reject a stale clear (PR #1361
+ * review) instead of silently deleting whatever revision happens to be current. Same bound as
+ * `validateRateBriefBody`'s revision check (integer, >= 1) rather than `validateShareBriefBody`'s
+ * looser finite-number check — rate and clear are the same closed pair of endpoints and should
+ * share one boundary contract (PR #1361 review, round 2).
  */
 function validateClearRatingBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
   if (!body || typeof body !== 'object') {
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
-  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
-    return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
+  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be an integer of at least 1' } };
   }
   return { ok: true, value: { revision: b['revision'] as number } };
 }

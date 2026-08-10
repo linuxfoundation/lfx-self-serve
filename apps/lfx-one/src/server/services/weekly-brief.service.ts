@@ -26,7 +26,7 @@ import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -237,10 +237,11 @@ export class WeeklyBriefService {
    * when the cache is actually enabled (`VALKEY_URL` set): an unset `VALKEY_URL` is a documented
    * supported deployment mode (direct-fetch fallback), not a fault, and warning on every rating
    * in that mode would bury the genuine-fault signal this exists to surface. The durable
-   * analytics signal is the `rating_recorded` log line below (carrying `username` and the prior
-   * value, so re-rates/switches can be deduplicated per caller during offline analysis instead of
-   * each toggle over-counting as a distinct vote), which flows through the existing Pino →
-   * CloudWatch pipeline.
+   * analytics signal is the `rating_recorded` log line below (carrying `user_id` — the opaque
+   * OIDC `sub`, not the human-readable LFID username, since this line is retained indefinitely —
+   * and the prior value, so re-rates/switches can be deduplicated per caller during offline
+   * analysis instead of each toggle over-counting as a distinct vote), which flows through the
+   * existing Pino → CloudWatch pipeline.
    */
   public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating, revision: number): Promise<RateWeeklyBriefResponse> {
     const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, revision, 'rate_weekly_brief');
@@ -261,7 +262,14 @@ export class WeeklyBriefService {
       revision: brief.revision,
       prompt_version: brief.prompt_version,
       model: brief.model,
-      username,
+      // Opaque OIDC sub, not the LFID username — `username` (used above for the Valkey key,
+      // where per-user cache keys already convention on it — see buildUserCacheKey) is
+      // human-readable PII and this log line is retained indefinitely as the durable analytics
+      // record, unlike a short-TTL cache entry. `sub` still uniquely and stably identifies the
+      // caller for dedup purposes without persisting a readable identifier into the log stream
+      // (PR #1361 review — docs/reviews/knowledge-base/security.md's
+      // `security/pii-in-logs-and-identifiers`).
+      user_id: getEffectiveSub(req),
       previous_rating: previousRating,
       // `previous_rating: null` is ambiguous on its own — genuinely never rated, or unknowable
       // (evicted, or a transient read fault). `ValkeyService.getJson` swallows every fault
@@ -308,7 +316,7 @@ export class WeeklyBriefService {
       revision: brief.revision,
       prompt_version: brief.prompt_version,
       model: brief.model,
-      username,
+      user_id: getEffectiveSub(req),
       previous_rating: previousRating,
       rating_cache_enabled: valkeyService.isEnabled(),
     });

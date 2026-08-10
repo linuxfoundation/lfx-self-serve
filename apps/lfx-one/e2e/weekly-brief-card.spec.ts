@@ -1032,4 +1032,50 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     await expect(page.getByText('Failed to save your rating. Please try again.', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
+
+  test('a 409 revision-mismatch (a co-chair edited between page load and the tap) rolls back the thumb, reloads the current brief, and shows the reload-specific toast', async ({
+    page,
+  }) => {
+    await mockCommitteeShell(page);
+    const briefMock = await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+
+    // Simulates a co-chair's edit landing between this tab's page load and the rating tap: the
+    // POST rejects with the server's real REVISION_MISMATCH shape, and the *next* GET (fired by
+    // the component's own refresh$ recovery) returns the brief at its new revision, unrated.
+    const editedBrief: WeeklyBrief = { ...GENERATED_BRIEF, state: 'edited', revision: GENERATED_BRIEF.revision + 1 };
+    await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      briefMock.setResponse({ brief: editedBrief, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'This brief has changed since you last viewed it.', code: 'REVISION_MISMATCH' }),
+      });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const upBtn = page.getByRole('button', { name: 'Rate this brief helpful' });
+    // The second GET is refresh$'s own recovery fetch, distinct from the initial page-load GET —
+    // waiting for it (rather than just the POST) proves the card actually reloads, not just toasts.
+    const refreshGetPromise = page.waitForRequest(
+      (req) => req.method() === 'GET' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await upBtn.click();
+    await refreshGetPromise;
+
+    await expect(page.getByText('This brief has changed. Reloaded the latest version — please rate again.', { exact: true })).toBeVisible({
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    // Never the generic message a plain 5xx gets — the two error paths must stay distinguishable.
+    await expect(page.getByText('Failed to save your rating. Please try again.', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('weekly-brief-card-state-badge')).toHaveText('Edited', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
 });

@@ -99,7 +99,7 @@ import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
-const userReq = { oidc: { user: { nickname: 'alice' } } } as unknown as Request;
+const userReq = { oidc: { user: { nickname: 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
 
 describe('briefWindow', () => {
   afterEach(() => {
@@ -465,12 +465,15 @@ describe('WeeklyBriefService', () => {
           revision: brief.revision,
           prompt_version: brief.prompt_version,
           model: brief.model,
-          username: 'alice',
+          user_id: 'auth0|alice-sub',
           previous_rating: null,
           rating_cache_enabled: true,
           rating: 'up',
         })
       );
+      // The opaque sub is logged, never the human-readable LFID username (PR #1361 review —
+      // security/pii-in-logs-and-identifiers).
+      expect(logger.info).not.toHaveBeenCalledWith(userReq, 'rating_recorded', expect.any(String), expect.objectContaining({ username: expect.anything() }));
     });
 
     it('logs rating_cache_enabled: false when the cache is disabled — the one case previous_rating: null can be confidently read as "unknowable", not "genuinely unrated"', async () => {
@@ -529,11 +532,11 @@ describe('WeeklyBriefService', () => {
         userReq,
         'rating_recorded',
         expect.any(String),
-        expect.objectContaining({ username: 'alice', previous_rating: 'up', rating: 'down' })
+        expect.objectContaining({ user_id: 'auth0|alice-sub', previous_rating: 'up', rating: 'down' })
       );
     });
 
-    it('clearBriefRating logs a rating_cleared event carrying username and the previous rating', async () => {
+    it('clearBriefRating logs a rating_cleared event carrying the opaque user_id and the previous rating', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
@@ -544,7 +547,13 @@ describe('WeeklyBriefService', () => {
         userReq,
         'rating_cleared',
         expect.any(String),
-        expect.objectContaining({ committee_id: 'committee-1', brief_uid: brief.uid, revision: brief.revision, username: 'alice', previous_rating: 'up' })
+        expect.objectContaining({
+          committee_id: 'committee-1',
+          brief_uid: brief.uid,
+          revision: brief.revision,
+          user_id: 'auth0|alice-sub',
+          previous_rating: 'up',
+        })
       );
     });
 
