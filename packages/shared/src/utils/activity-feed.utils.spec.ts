@@ -172,7 +172,7 @@ describe('mapActivityEventsToFeedItems', () => {
 
   it('renders a notes_added event with the note type, icon, and label', () => {
     const items = mapActivityEventsToFeedItems([notesAdded({ name: 'Board Minutes.pdf' })], { votingEnabled: true });
-    expect(items[0]).toMatchObject({ type: 'note', label: 'Note added: Board Minutes.pdf', icon: 'fa-light fa-note-sticky' });
+    expect(items[0]).toMatchObject({ type: 'note', label: 'Note: Board Minutes.pdf', icon: 'fa-light fa-note-sticky' });
   });
 
   it('keys upcoming and past notes distinctly even when they share a document_uid — meeting_scope discriminates the @for tracking key', () => {

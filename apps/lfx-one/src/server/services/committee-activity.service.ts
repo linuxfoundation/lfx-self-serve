@@ -1033,6 +1033,10 @@ export class CommitteeActivityService {
       // data schema carries modified_at (lfx-v2-meeting-service's indexer-contract docs); the
       // ITX-aligned MeetingAttachment/PastMeetingAttachment shape's updated_at field doesn't apply
       // to this query-service-sourced projection (see CommitteeActivityNoteAttachment's doc comment).
+      // modified_at-first (not created_at-first) means editing/renaming an existing note bumps its
+      // sort position to the top of the feed, same as the files/folders/links legs above — this is
+      // why activity-feed.utils.ts's notes_added case renders "Note: X", not "Note added: X": the
+      // label can't claim a specific action this timestamp doesn't guarantee actually happened.
       occurred_at: firstValidTimestamp(attachment.modified_at, attachment.created_at),
       committee_uid: committeeUid,
       payload: {

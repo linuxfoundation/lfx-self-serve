@@ -92,7 +92,12 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
         // v1_past_meeting_attachment are two distinct upstream uid namespaces, same reasoning as
         // document_uploaded's document_type-namespaced key.
         key: `note-${meeting_scope}-${document_uid}`,
-        label: `Note added: ${name}`,
+        // "Note: X", not "Note added: X" — occurred_at prefers modified_at (see buildNotesEvent's
+        // own comment), so an edited/renamed note re-surfaces at the top of the feed on every
+        // edit, not just its original creation. A verb-free label avoids claiming "added" for
+        // what might be an edit, matching document_uploaded's own verb-free label for the same
+        // modified-first sort reason (its "Document: X" doesn't claim "uploaded" either).
+        label: `Note: ${name}`,
         timestamp: event.occurred_at,
         icon: 'fa-light fa-note-sticky',
         // meeting_scope, not a precise deep link to the source meeting — MeetingAttachment/
