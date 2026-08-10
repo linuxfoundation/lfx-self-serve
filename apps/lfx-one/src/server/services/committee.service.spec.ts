@@ -386,9 +386,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
 
     it('never returns chat_webhook_url on the includeProjectMetadata: true (enriched) path — the one actually used by GET /api/committees/:id', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })
-        .mockResolvedValueOnce({});
+      // Seeded on the SETTINGS resource, not the base one: the base-resource field is already
+      // destructured away at the top of getCommitteeById, before merged/enriched ever exist —
+      // seeding it there would make this pass even with the enriched-path strip deleted. Settings
+      // is the one source that reaches `merged`/`enriched` unstripped, so it's the only seed that
+      // actually exercises the stripChatWebhookUrl(enriched) call this test claims to cover.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({
+        chat_webhook_url: VALID_WEBHOOK_URL,
+      });
       enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
         Promise.resolve((items as Committee[]).map((item) => ({ ...item, project_slug: 'test-project' })))
       );
