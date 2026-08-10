@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import type { Committee, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -424,11 +425,21 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
     });
 
-    it('rejects a chat_webhook_url change (403 NOT_PROJECT_WRITER) when the caller is a committee writer but not a project writer — choosing the Slack destination must require the same authorization as sending to it', async () => {
+    it('rejects a chat_webhook_url change (403 NOT_PROJECT_WRITER) when the caller is a committee writer but not a project writer — choosing the Slack destination must require the same authorization as sending to it, and rejects the whole save, not just the webhook field', async () => {
       fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
       checkSingleAccessStrict.mockResolvedValueOnce(false);
 
-      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+      // chat_channel (core) and member_visibility (settings) alongside chat_webhook_url — pins
+      // the client-facing toast's claim that nothing on this save persisted, not just the
+      // webhook: both updateWithETag call sites (core PUT and settings PUT) go through the same
+      // mocked function, so a single "not called" assertion covers both.
+      await expect(
+        service.updateCommittee(req, COMMITTEE_UID, {
+          chat_webhook_url: VALID_WEBHOOK_URL,
+          chat_channel: '#general',
+          member_visibility: 'public' as CommitteeMemberVisibility,
+        })
+      ).rejects.toMatchObject({
         statusCode: 403,
         code: 'NOT_PROJECT_WRITER',
       });

@@ -311,7 +311,7 @@ export class CommitteeSettingsTabComponent {
             // before updateWithETag/updateCommitteeSettings, so every other field on this same
             // save (visibility, join mode, chat_channel, etc.) was rejected too, not just the
             // webhook — without saying so, this reads like the 409 branch's "other changes saved".
-            detail = 'Only project writers can configure the Slack webhook — no changes on this save were saved.';
+            detail = 'Only project writers can configure the Slack webhook. No changes were saved. Contact a project administrator.';
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;
