@@ -86,6 +86,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
   SLACK_WEBHOOK_POST_TIMEOUT_MS: 10_000,
+  SLACK_MESSAGE_TEXT_MAX_LENGTH: 40_000,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
@@ -974,6 +975,13 @@ describe('WeeklyBriefService', () => {
       mockShareableBrief();
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'BACKEND_NOT_LIVE' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("throws 400 when the composed message exceeds SLACK_MESSAGE_TEXT_MAX_LENGTH, before ever POSTing (mirrors shareBrief's NEWSLETTER_BODY_MAX_LENGTH guard)", async () => {
+      mockShareableBrief({ brief_text: 'x'.repeat(40_001) });
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 400 });
       expect(fetchMock).not.toHaveBeenCalled();
     });
 

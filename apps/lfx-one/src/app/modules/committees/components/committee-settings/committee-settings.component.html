@@ -151,13 +151,23 @@
                 <i class="fa-light fa-circle-check"></i>
                 Configured
               </span>
-              <lfx-button
-                label="Replace"
-                severity="secondary"
-                size="small"
-                [disabled]="form().disabled"
-                (onClick)="startEditingSlackWebhookUrl.emit()"
-                data-testid="settings-slack-webhook-replace-button" />
+              <div class="flex gap-2">
+                <lfx-button
+                  label="Remove"
+                  severity="danger"
+                  [text]="true"
+                  size="small"
+                  [disabled]="form().disabled"
+                  (onClick)="onRemoveSlackWebhook()"
+                  data-testid="settings-slack-webhook-remove-button" />
+                <lfx-button
+                  label="Replace"
+                  severity="secondary"
+                  size="small"
+                  [disabled]="form().disabled"
+                  (onClick)="startEditingSlackWebhookUrl.emit()"
+                  data-testid="settings-slack-webhook-replace-button" />
+              </div>
             </div>
           } @else {
             <lfx-input-text
@@ -168,12 +178,26 @@
               styleClass="w-full"
               id="slack-webhook"
               data-testid="settings-slack-webhook-input"></lfx-input-text>
-            <p class="text-[11.5px] text-gray-400 -mt-1">
-              Create one from your Slack workspace's
-              <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline"
-                >Incoming Webhooks settings</a
-              >.
-            </p>
+            <div class="flex items-center justify-between gap-3 -mt-1">
+              <p class="text-[11.5px] text-gray-400">
+                Create one from your Slack workspace's
+                <a
+                  href="https://api.slack.com/messaging/webhooks"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-blue-500 hover:underline"
+                  data-testid="settings-slack-webhook-docs-link"
+                  >Incoming Webhooks settings</a
+                >.
+              </p>
+              <lfx-button
+                label="Cancel"
+                severity="secondary"
+                [text]="true"
+                size="small"
+                (onClick)="onCancelSlackWebhookEdit()"
+                data-testid="settings-slack-webhook-cancel-button" />
+            </div>
           }
         </div>
       </div>

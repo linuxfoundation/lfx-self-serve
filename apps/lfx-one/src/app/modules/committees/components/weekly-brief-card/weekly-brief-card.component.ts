@@ -791,11 +791,17 @@ export class WeeklyBriefCardComponent {
           } else if (status === 400) {
             const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
-          } else if (status === 502) {
-            // SLACK_SEND_FAILED / SLACK_UNREACHABLE — Slack rejected the message or the
-            // webhook request itself failed/timed out. Unlike the mailing-list send, this
-            // is synchronous, so a failure here means nothing was posted — safe to retry.
-            detail = 'Slack could not be reached, or rejected the message. Check the webhook URL in Group Settings and try again.';
+          } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
+            // Slack answered synchronously with a rejection (invalid_payload, channel_not_found,
+            // etc.) — the POST was never accepted, so nothing was posted. Safe to retry.
+            detail = 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
+          } else if (status === 0 || status === 408 || status >= 500) {
+            // Ambiguous, same rationale as performShare's identical status-range branch: this
+            // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)
+            // alongside a dropped connection or gateway timeout talking to our own BFF — in
+            // either case there's no confirmation Slack didn't already receive the POST before
+            // the failure, unlike the SLACK_SEND_FAILED branch above.
+            detail = 'The send may not have completed — check the Slack channel before trying again.';
           } else {
             detail = 'Failed to share brief. Please try again.';
           }

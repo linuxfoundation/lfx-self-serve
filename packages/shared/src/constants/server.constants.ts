@@ -23,6 +23,10 @@ export const SENSITIVE_FIELDS = [
   'email',
   'passcode',
   'organizers',
+  // Matches chat_webhook_url (LFXV2-3080) — a Slack Incoming Webhook URL is itself a bearer
+  // credential (anyone holding it can post to the channel); logger.sanitize's key.includes()
+  // match catches it via this substring without needing a field-specific entry.
+  'webhook',
 ] as const;
 
 /**

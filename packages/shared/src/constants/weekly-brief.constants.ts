@@ -45,6 +45,15 @@ export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
  */
 export const SLACK_WEBHOOK_POST_TIMEOUT_MS = 10_000;
 
+/**
+ * Slack's documented hard limit on an incoming-webhook message's `text` field. Checked
+ * server-side before the POST (mirrors shareBrief's NEWSLETTER_BODY_MAX_LENGTH guard) so an
+ * oversized brief surfaces as an actionable 400 instead of an opaque 502 from Slack. Escaping
+ * (`&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`) can expand brief_text up to 5x, so this is checked
+ * against the final composed text, not brief_text's own (smaller) WEEKLY_BRIEF_TEXT_MAX_LENGTH.
+ */
+export const SLACK_MESSAGE_TEXT_MAX_LENGTH = 40_000;
+
 /** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
 export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
 

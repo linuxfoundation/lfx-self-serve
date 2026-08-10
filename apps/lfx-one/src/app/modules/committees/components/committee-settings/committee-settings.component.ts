@@ -41,10 +41,32 @@ export class CommitteeSettingsComponent {
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();
+  /** Emitted when the user backs out of the webhook input without saving (Cancel / Undo Remove) — the parent should collapse back to the Configured badge state. */
+  public readonly cancelEditingSlackWebhookUrl = output<void>();
 
   // Constants from shared package
   public readonly features = COMMITTEE_SETTINGS_FEATURES;
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
   public readonly memberVisibilityOptions = MEMBER_VISIBILITY_OPTIONS;
   public readonly joinModeOptions = JOIN_MODE_OPTIONS;
+
+  /**
+   * Stages a removal: clears the control and marks it dirty so saveSettings' dirty-gate picks it
+   * up as an explicit "clear the webhook" instruction, then reveals the (now-empty) input so the
+   * user can see the staged change before hitting the page's single Save Changes button — there
+   * is deliberately no separate save path here.
+   */
+  public onRemoveSlackWebhook(): void {
+    const control = this.form().controls['chat_webhook_url'];
+    control?.setValue('');
+    control?.markAsDirty();
+    this.startEditingSlackWebhookUrl.emit();
+  }
+
+  /** Backs out of an in-progress edit (Replace or Remove) without saving — resets the control to pristine/empty so a half-typed or staged-for-removal value can't block the page's other saves via [disabled]="form.invalid" (Validators.pattern rejects a partial URL). */
+  public onCancelSlackWebhookEdit(): void {
+    const control = this.form().controls['chat_webhook_url'];
+    control?.reset(null);
+    this.cancelEditingSlackWebhookUrl.emit();
+  }
 }

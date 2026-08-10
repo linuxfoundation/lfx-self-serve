@@ -5,6 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  SLACK_MESSAGE_TEXT_MAX_LENGTH,
   SLACK_WEBHOOK_POST_TIMEOUT_MS,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
@@ -853,6 +854,16 @@ export class WeeklyBriefService {
     }
 
     const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
+    if (text.length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
+      throw ServiceValidationError.forField(
+        'brief_text',
+        `Brief is too long to share to Slack (must be ${SLACK_MESSAGE_TEXT_MAX_LENGTH} characters or fewer once formatted)`,
+        {
+          operation: 'share_weekly_brief_slack',
+          service: 'weekly_brief_service',
+        }
+      );
+    }
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
