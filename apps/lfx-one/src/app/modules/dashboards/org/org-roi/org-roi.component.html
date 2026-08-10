@@ -93,9 +93,9 @@
   <!-- Mounted outside the state chain above, which swaps the whole populated block for a skeleton
        on every request — including a method-only one. Inside it, the category donut remounted on
        each method switch and re-issued a read whose response cannot vary by method. Out here it
-       survives the switch, so its account-keyed request never re-emits. An org change still keys
-       it differently, and each donut raises its own loading state, so neither can show one
-       organization's figures under another's header. -->
+       survives the switch. An org change is different and must not survive: `showsFigures()`
+       checks the summary's own orgUid against the selected account, so it goes false immediately
+       rather than leaving one company's figures on another company's page. -->
   @if (showsFigures()) {
     <!-- No [method]: category investment has no estimation method in the warehouse. -->
     <lfx-org-roi-category-donut />

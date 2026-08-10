@@ -109,6 +109,20 @@ export class OrgRoiComponent {
   );
 
   /**
+   * Whether the summary in hand actually describes the organization now selected.
+   *
+   * `summary()` holds its previous value while a new request is in flight, so during an org switch
+   * every measure derived from it belongs to the organization the viewer just navigated away from.
+   * Comparing the payload's own `orgUid` to the selected account is a synchronous signal read, so
+   * it flips in the same change-detection pass as the switch — unlike the donuts' internal loading
+   * flags, which are driven by `toObservable` and therefore only settle on the next effect flush.
+   */
+  private readonly summaryMatchesSelectedOrg: Signal<boolean> = computed(() => {
+    const selected = this.accountContext.selectedAccount()?.accountId ?? '';
+    return selected !== '' && this.summary().orgUid === selected;
+  });
+
+  /**
    * True whenever this organization has figures to show — deliberately **without**
    * `portfolioLoading`, unlike the state-branch chain in the template.
    *
@@ -118,9 +132,10 @@ export class OrgRoiComponent {
    * claimed. Mounting the donuts on this condition instead keeps them alive across a method
    * change, so the category donut's account-keyed request simply never re-emits.
    *
-   * It is safe against the obvious hazard — showing one organization's figures under another's
-   * header — because each donut keys its own fetch on the account id and flips its own loading
-   * state the moment that changes, so an org switch renders its skeleton rather than stale money.
+   * An org switch is the case that must NOT survive, and the identity check is what separates the
+   * two: the account id changes while the summary still describes the previous organization, so
+   * this goes false immediately and the donuts unmount rather than rendering one company's
+   * investment under another's page.
    */
   protected readonly showsFigures: Signal<boolean> = computed(
     () =>
@@ -130,10 +145,17 @@ export class OrgRoiComponent {
       this.hasAnalyticsId() &&
       !this.portfolioForbidden() &&
       !this.portfolioFailed() &&
+      this.summaryMatchesSelectedOrg() &&
       this.hasRoiData()
   );
 
+  /**
+   * Blank until the summary describes the selected organization. The header sits outside the
+   * state-branch chain, so without this it would keep showing the previous organization's date
+   * window for the whole of the next request — seconds, on a warehouse read.
+   */
   protected readonly windowLabel: Signal<string> = computed(() => {
+    if (!this.summaryMatchesSelectedOrg()) return '';
     const { yearMin, yearMax } = this.summary();
     if (yearMin === null || yearMax === null) return '';
     return yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`;

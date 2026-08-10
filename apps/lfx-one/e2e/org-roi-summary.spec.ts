@@ -183,6 +183,19 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
   });
 
+  test('hides the figures and the date window when the summary is for another organization', async ({ page }) => {
+    // The summary keeps its previous value while a new request is in flight, so anything derived
+    // from it describes the organization the viewer just left. Both surfaces key off the payload's
+    // own orgUid rather than assuming the summary in hand belongs to the selected account.
+    await stubOrgLensContext(page, { summary: { ...MOCK_SUMMARY, orgUid: '001410000000000XYZ' } });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-page')).toBeVisible();
+    await expect(page.getByTestId('org-roi-window')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-category-donut')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-projects-donut')).toHaveCount(0);
+  });
+
   test('never sends an estimation method to the category breakdown, which cannot vary by one', async ({ page }) => {
     // The source table has no MARKUP_METHOD column, so a method-bearing request would imply a
     // distinction the warehouse does not make — and invite a pointless refetch on every switch.
