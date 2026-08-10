@@ -98,9 +98,10 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     const confirmationService = TestBed.inject(ConfirmationService);
     const confirmSpy = vi.spyOn(confirmationService, 'confirm');
     component.onShareToSlack();
-    // .at(-1), not [0]: each vi.spyOn call installs a fresh spy but inherits the prior mock's
-    // state, so calls accumulate across invocations within a test — a test that invokes this
-    // helper twice must read the most recent confirm() call, not the first.
+    // vi.spyOn installs a fresh, empty spy on every call — since this function calls it and
+    // then immediately triggers exactly one confirm(), [0] and .at(-1) are equivalent here.
+    // .at(-1) is used anyway as the more defensive read, in case that single-call assumption
+    // ever changes.
     const opts = confirmSpy.mock.calls.at(-1)?.[0];
     // Asserted, not optional-chained through: onShareToSlack() returning early (e.g. a future
     // negative test where committeeUid/revision is missing) must fail loudly here, not silently
