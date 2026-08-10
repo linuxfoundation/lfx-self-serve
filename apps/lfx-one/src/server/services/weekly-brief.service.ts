@@ -210,23 +210,20 @@ export class WeeklyBriefService {
         'GET'
       );
     }
-    return this.withCallerRating(req, response);
+    return this.withCallerRating(req, committeeId, response);
   }
 
   /**
    * POST /committees/:committeeId/weekly-briefs/:briefUid/rating
    *
-   * BFF-only feature (LFXV2-3042) — no upstream endpoint. A rating always *lands* on whatever
-   * revision is currently stored for `briefUid`, resolved server-side via `getCurrentBrief` — the
-   * write itself can never target a stale revision. `clientRevision` is the revision the caller
-   * actually saw when they tapped (captured client-side at render time); it is never used to
-   * reject the write, only logged alongside the server-resolved `revision` on `rating_recorded` —
-   * if a co-chair's edit or regenerate lands between the rater's page load and their tap, the two
-   * values diverge, and offline rating-by-prompt_version analysis can identify and drop a vote
-   * attributed to content the rater never actually reviewed. Upserts (re-rating, including
-   * switching up↔down, overwrites the same Valkey key — no duplicate row); a later regenerate
-   * produces a new `revision` and therefore a new key, so the new revision starts unrated (never
-   * carries the old rating forward).
+   * BFF-only feature (LFXV2-3042) — no upstream endpoint. `revision` is the revision the caller
+   * actually rendered when they tapped — `resolveRatableBrief` rejects with a 409
+   * (`REVISION_MISMATCH`) when it no longer matches the server-resolved current revision, so a
+   * stale tab can never misattribute a vote to content the rater didn't actually see (PR #1361
+   * review; see `resolveRatableBrief`'s doc comment for the full reasoning). Upserts (re-rating,
+   * including switching up↔down, overwrites the same Valkey key — no duplicate row); a later
+   * regenerate produces a new `revision` and therefore a new key, so the new revision starts
+   * unrated (never carries the old rating forward).
    *
    * Blocked entirely during impersonation (`blockDuringImpersonation` in `weekly-brief.route.ts`):
    * `requireUsername`/`getEffectiveUsername` resolves the *impersonated* user's identity, and
@@ -245,16 +242,10 @@ export class WeeklyBriefService {
    * each toggle over-counting as a distinct vote), which flows through the existing Pino →
    * CloudWatch pipeline.
    */
-  public async rateBrief(
-    req: Request,
-    committeeId: string,
-    briefUid: string,
-    rating: WeeklyBriefRating,
-    clientRevision: number
-  ): Promise<RateWeeklyBriefResponse> {
-    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'rate_weekly_brief');
+  public async rateBrief(req: Request, committeeId: string, briefUid: string, rating: WeeklyBriefRating, revision: number): Promise<RateWeeklyBriefResponse> {
+    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, revision, 'rate_weekly_brief');
     const username = this.requireUsername(req, 'rate_weekly_brief');
-    const key = this.requireRatingKey(brief.uid, brief.revision, username, 'rate_weekly_brief');
+    const key = this.requireRatingKey(committeeId, brief.uid, brief.revision, username, 'rate_weekly_brief');
 
     const persisted = await valkeyService.setJson(key, { rating }, VALKEY_CACHE.WEEKLY_BRIEF_RATING_TTL_SECONDS);
     if (!persisted && valkeyService.isEnabled()) {
@@ -268,7 +259,6 @@ export class WeeklyBriefService {
       committee_id: committeeId,
       brief_uid: brief.uid,
       revision: brief.revision,
-      client_revision: clientRevision,
       prompt_version: brief.prompt_version,
       model: brief.model,
       username,
@@ -292,13 +282,17 @@ export class WeeklyBriefService {
   /**
    * DELETE /committees/:committeeId/weekly-briefs/:briefUid/rating
    *
-   * Clears the caller's rating on the current brief revision. Same current-revision resolution,
-   * impersonation block, and fail-soft/durable-log split as `rateBrief` — see its doc comment.
+   * Clears the caller's rating on the current brief revision. `revision` is required and enforced
+   * the same way `rateBrief` enforces it (409 `REVISION_MISMATCH` on drift) — without it, a stale
+   * tab's "clear" tap would delete whatever revision is *currently* current instead of the one the
+   * user actually saw as rated, silently no-op-ing against the wrong key while the real rating on
+   * the old revision sits untouched (PR #1361 review). Same impersonation block and
+   * fail-soft/durable-log split as `rateBrief` — see its doc comment.
    */
-  public async clearBriefRating(req: Request, committeeId: string, briefUid: string): Promise<void> {
-    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, 'clear_weekly_brief_rating');
+  public async clearBriefRating(req: Request, committeeId: string, briefUid: string, revision: number): Promise<void> {
+    const { brief, callerRating: previousRating } = await this.resolveRatableBrief(req, committeeId, briefUid, revision, 'clear_weekly_brief_rating');
     const username = this.requireUsername(req, 'clear_weekly_brief_rating');
-    const key = this.requireRatingKey(brief.uid, brief.revision, username, 'clear_weekly_brief_rating');
+    const key = this.requireRatingKey(committeeId, brief.uid, brief.revision, username, 'clear_weekly_brief_rating');
 
     const persisted = await valkeyService.del(key);
     if (!persisted && valkeyService.isEnabled()) {
@@ -658,11 +652,11 @@ export class WeeklyBriefService {
    * cache miss/fault all resolve to `caller_rating: null` rather than throwing — this is a
    * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
    */
-  private async withCallerRating(req: Request, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
+  private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
     if (!response.brief) return response;
     const username = getEffectiveUsername(req);
     if (!username) return response;
-    const key = buildWeeklyBriefRatingCacheKey(response.brief.uid, response.brief.revision, username);
+    const key = buildWeeklyBriefRatingCacheKey(committeeId, response.brief.uid, response.brief.revision, username);
     if (!key) return response;
     const stored = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     return { ...response, caller_rating: stored?.rating ?? null };
@@ -671,17 +665,23 @@ export class WeeklyBriefService {
   /**
    * Resolves and validates the brief a rate/clear-rating call targets. Re-fetches the current
    * brief (rather than trusting anything client-supplied beyond `briefUid`) so `revision`/
-   * `prompt_version`/`model` in the rating log are always the server's own values — `rateBrief`'s
-   * caller-supplied `revision` (see its doc comment) is never used to select the target here, only
-   * logged separately as `client_revision`; a rating always lands on whatever revision is current
-   * at write time. Guards that `briefUid`
-   * still names the committee's current brief — e.g. a window rollover produced a new brief_uid
-   * between page load and tap — same "existence, not the write itself" gap this closes as
-   * `assertCommitteeRead` closes for reads. Also requires the brief be in a shareable state
+   * `prompt_version`/`model` in the rating log are always the server's own values. Guards that
+   * `briefUid` still names the committee's current brief — e.g. a window rollover produced a new
+   * brief_uid between page load and tap — same "existence, not the write itself" gap this closes
+   * as `assertCommitteeRead` closes for reads. Also requires the brief be in a shareable state
    * (`generated`/`edited`/`approved`), same set and same 404 shape `shareBrief` already uses for
    * "no reviewable content to act on" — the UI only ever renders the rating control in those
    * states, but a direct API call must not be able to record a rating against a brief that's
    * still `generating`, `error`, or `empty`.
+   *
+   * `expectedRevision` — the revision the caller actually rendered when they tapped — must match
+   * the server-resolved current revision, or this throws a 409 (`REVISION_MISMATCH`, same
+   * shape/code `shareBrief` already uses). Without this, a stale tab whose displayed content moved
+   * on (a co-chair's edit or regenerate landed between page load and tap) would silently rate/clear
+   * the *new* revision while the user only ever saw the old one — both misattributing the vote in
+   * the durable analytics log (wrong `prompt_version`/`model`) and, on a later refresh, pre-lighting
+   * the thumb against content the rater never actually reviewed (PR #1361 review). Matches the
+   * optimistic-concurrency contract `saveBrief`/`shareBrief` already enforce for their own writes.
    *
    * Also returns the brief's `caller_rating` (already resolved by `getCurrentBrief` →
    * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
@@ -692,12 +692,19 @@ export class WeeklyBriefService {
     req: Request,
     committeeId: string,
     briefUid: string,
+    expectedRevision: number,
     operation: string
   ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
     const response = await this.getCurrentBrief(req, committeeId);
     const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });
+    }
+    if (brief.revision !== expectedRevision) {
+      throw new ConflictError('This brief has changed since you last viewed it. Reload to review the latest version before rating.', 'REVISION_MISMATCH', {
+        operation,
+        service: 'weekly_brief_service',
+      });
     }
     return { brief, callerRating: response.caller_rating ?? null };
   }
@@ -711,9 +718,9 @@ export class WeeklyBriefService {
     return username;
   }
 
-  /** Resolves the rating cache key, or throws if the brief uid/username aren't filter-safe — `assertCommitteeRead` + `validateUidParameter` make this practically unreachable, but a rating write must not silently no-op against a null key. */
-  private requireRatingKey(briefUid: string, revision: number, username: string, operation: string): string {
-    const key = buildWeeklyBriefRatingCacheKey(briefUid, revision, username);
+  /** Resolves the rating cache key, or throws if the committee/brief uid or username aren't filter-safe — `assertCommitteeRead` + `validateUidParameter` make this practically unreachable, but a rating write must not silently no-op against a null key. */
+  private requireRatingKey(committeeId: string, briefUid: string, revision: number, username: string, operation: string): string {
+    const key = buildWeeklyBriefRatingCacheKey(committeeId, briefUid, revision, username);
     if (!key) {
       throw ServiceValidationError.forField('briefUid', 'Unable to build a rating key for this brief/user', { operation, service: 'weekly_brief_service' });
     }

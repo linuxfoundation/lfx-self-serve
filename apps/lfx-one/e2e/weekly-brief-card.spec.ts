@@ -983,13 +983,13 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: 'up' });
 
-    let deleteFired = false;
+    let capturedDeleteBody: { revision?: number } | null = null;
     await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
       if (route.request().method() !== 'DELETE') {
         await route.fallback();
         return;
       }
-      deleteFired = true;
+      capturedDeleteBody = route.request().postDataJSON() as { revision?: number };
       await route.fulfill({ status: 204 });
     });
 
@@ -1006,7 +1006,7 @@ test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
     await upBtn.click();
     await deletePromise;
 
-    expect(deleteFired).toBe(true);
+    expect(capturedDeleteBody).toEqual({ revision: GENERATED_BRIEF.revision });
     await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 

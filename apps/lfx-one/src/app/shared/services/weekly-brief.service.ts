@@ -75,9 +75,10 @@ export class WeeklyBriefService {
    *
    * Upserts the caller's rating on the brief's current revision (also handles switching
    * up↔down — same request, new value). `revision` is the revision the caller actually saw when
-   * they tapped — the BFF never rejects on it (it always rates whatever revision is current at
-   * write time), it's only logged server-side for offline attribution-drift detection. No
-   * `catchError` — the caller rolls back its own optimistic UI state on failure.
+   * they tapped — the BFF rejects with a 409 when it no longer matches the server-resolved current
+   * revision (a co-chair's edit/regenerate landed in between), so the caller must handle that
+   * status and refresh rather than retry blindly. No `catchError` — the caller classifies the
+   * error itself.
    */
   public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating, revision: number): Observable<RateWeeklyBriefResponse> {
     const body: RateWeeklyBriefRequest = { rating, revision };
@@ -89,10 +90,14 @@ export class WeeklyBriefService {
   /**
    * DELETE /api/committees/:committeeId/weekly-briefs/:briefUid/rating
    *
-   * Clears the caller's rating on the brief's current revision. No `catchError` — the caller
-   * rolls back its own optimistic UI state on failure.
+   * Clears the caller's rating on the brief's current revision. `revision` is required and
+   * enforced the same way `rateWeeklyBrief` enforces it (409 on drift) — without it, a stale tab's
+   * clear could silently delete an unrelated (currently-current) revision's rating instead of the
+   * one the user saw as rated. No `catchError` — the caller classifies the error itself.
    */
-  public clearWeeklyBriefRating(committeeId: string, briefUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`).pipe(take(1));
+  public clearWeeklyBriefRating(committeeId: string, briefUid: string, revision: number): Observable<void> {
+    return this.http
+      .delete<void>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, { body: { revision } })
+      .pipe(take(1));
   }
 }

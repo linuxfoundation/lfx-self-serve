@@ -47,8 +47,8 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valk
     valkeyServiceMock,
     // 'unsafe' is a sentinel this spec uses to exercise the fail-closed null-key branch —
     // mirrors session-store.service.spec.ts's 'unsafe' → null convention.
-    buildWeeklyBriefRatingCacheKeyMock: vi.fn((briefUid: string, revision: number, username: string) =>
-      username === 'unsafe' ? null : `${briefUid}:${revision}:${username}`
+    buildWeeklyBriefRatingCacheKeyMock: vi.fn((committeeUid: string, briefUid: string, revision: number, username: string) =>
+      username === 'unsafe' ? null : `${committeeUid}:${briefUid}:${revision}:${username}`
     ),
   };
 });
@@ -419,8 +419,23 @@ describe('WeeklyBriefService', () => {
       await service.rateBrief(userReq, 'committee-1', briefUid, 'down', 1);
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBe('down');
 
-      await service.clearBriefRating(userReq, 'committee-1', briefUid);
+      await service.clearBriefRating(userReq, 'committee-1', briefUid, 1);
       expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBeNull();
+    });
+
+    it('two different committees never collide on the same cache key, even when mock mode gives them the same brief uid and starting revision (PR #1361 review)', async () => {
+      // buildMockBrief hard-codes the same uid ('wb_mock_...') and starts every committee at
+      // revision 1 — without committee_uid in the cache key, rating committee-a would pre-light
+      // committee-b's identical thumbs.
+      const briefA = (await service.getCurrentBrief(userReq, 'committee-a')).brief!;
+      const briefB = (await service.getCurrentBrief(userReq, 'committee-b')).brief!;
+      expect(briefA.uid).toBe(briefB.uid);
+      expect(briefA.revision).toBe(briefB.revision);
+
+      await service.rateBrief(userReq, 'committee-a', briefA.uid, 'up', briefA.revision);
+
+      expect((await service.getCurrentBrief(userReq, 'committee-a')).caller_rating).toBe('up');
+      expect((await service.getCurrentBrief(userReq, 'committee-b')).caller_rating).toBeNull();
     });
 
     it('a new revision (regenerate) starts unrated — the prior rating is never carried forward', async () => {
@@ -451,7 +466,6 @@ describe('WeeklyBriefService', () => {
           prompt_version: brief.prompt_version,
           model: brief.model,
           username: 'alice',
-          client_revision: 1,
           previous_rating: null,
           rating_cache_enabled: true,
           rating: 'up',
@@ -474,20 +488,34 @@ describe('WeeklyBriefService', () => {
       );
     });
 
-    it('rateBrief logs a divergent client_revision alongside the server-resolved revision, so offline analysis can drop a vote cast against content the rater never actually saw (e.g. a co-chair edited between page load and tap)', async () => {
+    it('rateBrief rejects (409) a stale revision instead of misattributing the vote to content the rater never saw (e.g. a co-chair edited between page load and tap)', async () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       const staleClientRevision = brief.revision; // what the rater's page still shows...
       await service.saveBrief(userReq, 'committee-1', { brief_text: 'edited by a co-chair', revision: brief.revision }); // ...but the brief has since moved on
 
-      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', staleClientRevision);
+      await expect(service.rateBrief(userReq, 'committee-1', brief.uid, 'up', staleClientRevision)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'REVISION_MISMATCH',
+      });
 
-      expect(logger.info).toHaveBeenCalledWith(
-        userReq,
-        'rating_recorded',
-        expect.any(String),
-        expect.objectContaining({ revision: brief.revision + 1, client_revision: staleClientRevision })
-      );
+      // The rejected rate must not have written anything — the brief is still unrated at its
+      // real current revision.
+      expect((await service.getCurrentBrief(userReq, 'committee-1')).caller_rating).toBeNull();
+      expect(logger.info).not.toHaveBeenCalledWith(userReq, 'rating_recorded', expect.any(String), expect.anything());
+    });
+
+    it('clearBriefRating rejects (409) a stale revision instead of deleting whatever revision happens to be current', async () => {
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const brief = initial.brief!;
+      await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', brief.revision);
+      const staleClientRevision = brief.revision;
+      await service.saveBrief(userReq, 'committee-1', { brief_text: 'edited by a co-chair', revision: brief.revision });
+
+      await expect(service.clearBriefRating(userReq, 'committee-1', brief.uid, staleClientRevision)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'REVISION_MISMATCH',
+      });
     });
 
     it('rateBrief logs the prior value as previous_rating when switching (so offline analysis can net re-rates instead of over-counting)', async () => {
@@ -510,7 +538,7 @@ describe('WeeklyBriefService', () => {
       const brief = initial.brief!;
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
 
-      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid, brief.revision);
 
       expect(logger.info).toHaveBeenCalledWith(
         userReq,
@@ -542,7 +570,7 @@ describe('WeeklyBriefService', () => {
       await service.rateBrief(userReq, 'committee-1', brief.uid, 'up', 1);
       valkeyServiceMock.del.mockResolvedValueOnce(false);
 
-      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid, brief.revision);
 
       expect(logger.warning).toHaveBeenCalledWith(
         userReq,
@@ -570,7 +598,7 @@ describe('WeeklyBriefService', () => {
       valkeyServiceMock.isEnabled.mockReturnValue(false);
       valkeyServiceMock.del.mockResolvedValueOnce(false);
 
-      await service.clearBriefRating(userReq, 'committee-1', brief.uid);
+      await service.clearBriefRating(userReq, 'committee-1', brief.uid, brief.revision);
 
       expect(logger.warning).not.toHaveBeenCalledWith(userReq, 'rating_persist_failed', expect.any(String), expect.anything());
     });
@@ -612,7 +640,7 @@ describe('WeeklyBriefService', () => {
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const brief = initial.brief!;
       // 'alice' is never the 'unsafe' sentinel, so the mock key builder never returns null here.
-      const key = buildWeeklyBriefRatingCacheKeyMock(brief.uid, brief.revision, 'alice')!;
+      const key = buildWeeklyBriefRatingCacheKeyMock('committee-1', brief.uid, brief.revision, 'alice')!;
       valkeyStore.set(key, { rating: 'sideways' });
 
       const result = await service.getCurrentBrief(userReq, 'committee-1');

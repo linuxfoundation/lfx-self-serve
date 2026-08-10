@@ -395,7 +395,7 @@ export class WeeklyBriefCardComponent {
     // resolution TypeScript can't cleanly unify, breaking the `.subscribe()` call below.
     const request$: Observable<unknown> =
       next === null
-        ? this.weeklyBriefService.clearWeeklyBriefRating(committeeUid, current.uid)
+        ? this.weeklyBriefService.clearWeeklyBriefRating(committeeUid, current.uid, current.revision)
         : this.weeklyBriefService.rateWeeklyBrief(committeeUid, current.uid, next, current.revision);
     request$
       .pipe(
@@ -412,11 +412,13 @@ export class WeeklyBriefCardComponent {
           this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: previous });
           // The server 404s when briefUid no longer names the committee's current brief (a
           // window rollover) or the brief moved out of a ratable state (a co-chair regenerated
-          // in another tab) — see resolveRatableBrief. Retrying against the same stale card can
-          // never succeed; refresh$ pulls the real current state instead of leaving the user
-          // stuck tapping a button that will 404 forever (same dead-end onSave's 409 branch and
-          // onGenerate's 409 branch already close).
-          if (err?.status === 404) {
+          // in another tab), and 409s when the revision this card rendered no longer matches the
+          // server-resolved current revision (a co-chair's edit/regenerate landed between page
+          // load and this tap) — see resolveRatableBrief. Retrying against the same stale card can
+          // never succeed either way; refresh$ pulls the real current state instead of leaving the
+          // user stuck tapping a button that will keep failing (same dead-end onSave's 409 branch
+          // and onGenerate's 409 branch already close).
+          if (err?.status === 404 || err?.status === 409) {
             this.refresh$.next();
             this.messageService.add({
               severity: 'error',

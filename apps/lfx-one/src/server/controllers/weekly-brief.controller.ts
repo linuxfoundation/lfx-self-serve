@@ -111,6 +111,23 @@ function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBrie
 }
 
 /**
+ * Narrow `req.body` to `{ revision: number }` for the clear-rating (DELETE) endpoint — same shape
+ * and reasoning as `validateShareBriefBody`: the caller must send back the revision they actually
+ * saw so the service can reject a stale clear (PR #1361 review) instead of silently deleting
+ * whatever revision happens to be current.
+ */
+function validateClearRatingBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
+  }
+  return { ok: true, value: { revision: b['revision'] as number } };
+}
+
+/**
  * Controller for the WG Weekly Brief endpoints.
  *
  * Upstream HTTP status codes (202 accepted, 429 throttle, 409 edited-brief
@@ -396,9 +413,20 @@ export class WeeklyBriefController {
         return;
       }
 
+      const validation = validateClearRatingBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid clear-weekly-brief-rating request body', {
+            operation: 'clear_weekly_brief_rating',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
       await assertCommitteeRead(req, committeeId, 'clear_weekly_brief_rating');
 
-      await this.weeklyBriefService.clearBriefRating(req, committeeId, briefUid);
+      await this.weeklyBriefService.clearBriefRating(req, committeeId, briefUid, validation.value.revision);
 
       logger.success(req, 'clear_weekly_brief_rating', startTime, {
         committee_id: committeeId,

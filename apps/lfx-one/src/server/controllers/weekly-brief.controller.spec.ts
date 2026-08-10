@@ -360,15 +360,35 @@ describe('WeeklyBriefController', () => {
     });
   });
 
+  describe('clearBriefRating — request body validation', () => {
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({}), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-numeric revision', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 'one' }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('clearBriefRating', () => {
     it('checks committee read access, calls the service, and responds 204 with no body', async () => {
       weeklyBriefSvc.clearBriefRating.mockResolvedValue(undefined);
       const res = buildRes();
 
-      await controller.clearBriefRating(buildRatingReq(), res, vi.fn());
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), res, vi.fn());
 
       expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'clear_weekly_brief_rating');
-      expect(weeklyBriefSvc.clearBriefRating).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID);
+      expect(weeklyBriefSvc.clearBriefRating).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 1);
       expect(res.status).toHaveBeenCalledWith(204);
       expect(res.send).toHaveBeenCalledWith();
     });
@@ -378,7 +398,7 @@ describe('WeeklyBriefController', () => {
       weeklyBriefSvc.clearBriefRating.mockRejectedValue(upstreamError);
       const next = vi.fn();
 
-      await controller.clearBriefRating(buildRatingReq(), buildRes(), next);
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(upstreamError);
     });
@@ -388,7 +408,7 @@ describe('WeeklyBriefController', () => {
       assertCommitteeRead.mockRejectedValueOnce(forbidden);
       const next = vi.fn();
 
-      await controller.clearBriefRating(buildRatingReq(), buildRes(), next);
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), buildRes(), next);
 
       expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);
