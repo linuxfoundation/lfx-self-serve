@@ -64,7 +64,7 @@ function notesAdded(overrides: Partial<Extract<ActivityEvent, { type: 'notes_add
     type: 'notes_added',
     occurred_at: occurredAt,
     committee_uid: COMMITTEE_UID,
-    payload: { document_uid: 'note-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_id: 'meeting-1', meeting_scope: 'upcoming', ...overrides },
+    payload: { document_uid: 'note-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_scope: 'upcoming', ...overrides },
   };
 }
 
@@ -259,10 +259,14 @@ describe('mapActivityEventsToFeedItems', () => {
     });
 
     it('falls back to the meetings tab, filtered by scope, for a file note even when a url is present', () => {
-      const upcoming = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', meeting_scope: 'upcoming' })], { votingEnabled: true });
+      const upcoming = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', url: 'https://example.com/notes.pdf', meeting_scope: 'upcoming' })], {
+        votingEnabled: true,
+      });
       expect(upcoming[0].action).toEqual({ kind: 'tab', tab: 'meetings:upcoming' });
 
-      const past = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', meeting_scope: 'past' })], { votingEnabled: true });
+      const past = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', url: 'https://example.com/notes.pdf', meeting_scope: 'past' })], {
+        votingEnabled: true,
+      });
       expect(past[0].action).toEqual({ kind: 'tab', tab: 'meetings:past' });
     });
   });

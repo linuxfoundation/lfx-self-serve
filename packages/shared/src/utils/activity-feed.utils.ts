@@ -85,7 +85,7 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
     }
 
     case 'notes_added': {
-      const { document_uid, name, url, meeting_scope } = event.payload;
+      const { document_uid, name, document_type, url, meeting_scope } = event.payload;
       return {
         type: 'note',
         // meeting_scope in the key, not just document_uid — v1_meeting_attachment and
@@ -102,8 +102,9 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
         // "no precise deep link, route to the containing tab" compromise document_uploaded
         // already makes for file/folder rows. 'meetings:upcoming'/'meetings:past' is an
         // already-live composite tab-context format (committee-view.component.ts's
-        // handleTabNavigation).
-        action: url && isValidUrl(url) ? { kind: 'external-url', url } : { kind: 'tab', tab: `meetings:${meeting_scope}` },
+        // handleTabNavigation). document_type === 'link' guard mirrors document_uploaded's own
+        // condition — a file-type note never opens a raw url directly, even if one is ever set.
+        action: document_type === 'link' && url && isValidUrl(url) ? { kind: 'external-url', url } : { kind: 'tab', tab: `meetings:${meeting_scope}` },
       };
     }
 

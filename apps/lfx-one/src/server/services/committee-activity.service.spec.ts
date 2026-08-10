@@ -83,7 +83,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import type { ActivityPageCursor, MeetingAttachment, PastMeeting, PastMeetingAttachment, Survey, Vote } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, CommitteeActivityNoteAttachment, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
@@ -129,7 +129,7 @@ function survey(overrides: Partial<Survey> = {}): Survey {
   } as Survey;
 }
 
-function meetingAttachment(overrides: Partial<MeetingAttachment> = {}): MeetingAttachment {
+function meetingAttachment(overrides: Partial<CommitteeActivityNoteAttachment> = {}): CommitteeActivityNoteAttachment {
   return {
     uid: 'ma-1',
     meeting_id: 'meeting-1',
@@ -137,21 +137,22 @@ function meetingAttachment(overrides: Partial<MeetingAttachment> = {}): MeetingA
     category: 'Notes',
     name: 'Meeting Notes.pdf',
     created_at: '2026-01-06T00:00:00Z',
+    modified_at: '2026-01-06T00:00:00Z',
     ...overrides,
-  } as MeetingAttachment;
+  };
 }
 
-function pastMeetingAttachment(overrides: Partial<PastMeetingAttachment> = {}): PastMeetingAttachment {
+function pastMeetingAttachment(overrides: Partial<CommitteeActivityNoteAttachment> = {}): CommitteeActivityNoteAttachment {
   return {
     uid: 'pma-1',
-    meeting_and_occurrence_id: 'pm-1-occ-1',
     meeting_id: 'meeting-1',
     type: 'file',
     category: 'Notes',
     name: 'Past Meeting Notes.pdf',
     created_at: '2026-01-07T00:00:00Z',
+    modified_at: '2026-01-07T00:00:00Z',
     ...overrides,
-  } as PastMeetingAttachment;
+  };
 }
 
 /** Default proxyRequest router: benign empty responses for every leg unless a test overrides it. */
@@ -886,7 +887,7 @@ describe('CommitteeActivityService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({
         type: 'notes_added',
-        payload: { document_uid: 'ma-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_id: 'meeting-1', meeting_scope: 'upcoming' },
+        payload: { document_uid: 'ma-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_scope: 'upcoming' },
       });
     });
 
@@ -902,14 +903,37 @@ describe('CommitteeActivityService', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({
         type: 'notes_added',
-        payload: { document_uid: 'pma-1', name: 'Past Meeting Notes.pdf', document_type: 'file', meeting_id: 'meeting-1', meeting_scope: 'past' },
+        payload: { document_uid: 'pma-1', name: 'Past Meeting Notes.pdf', document_type: 'file', meeting_scope: 'past' },
       });
     });
 
-    it('drops a non-Notes-category attachment row even if the server-side filters param fails to narrow it', async () => {
-      // Validates the client-side re-filter decision: the upstream `filters: ['category:Notes']`
-      // param is a best-effort payload-size optimization, not something this leg's correctness
-      // depends on — this mock simulates the server-side filter not narrowing at all.
+    it('populates payload.url from a link-type attachment, but leaves it undefined for a file-type attachment even with a link field set', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              { type: 'v1_meeting_attachment', id: 'ma-link', data: meetingAttachment({ uid: 'ma-link', type: 'link', link: 'https://example.com/notes' }) },
+              // A file-type row with a stray `link` field set (shouldn't happen upstream, but this
+              // pins that buildNotesEvent gates on document_type, not just field presence).
+              { type: 'v1_meeting_attachment', id: 'ma-file', data: meetingAttachment({ uid: 'ma-file', type: 'file', link: 'https://example.com/stray' }) },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      const byUid = Object.fromEntries(
+        result.data.filter((e) => e.type === 'notes_added').map((e) => [e.type === 'notes_added' ? e.payload.document_uid : '', e])
+      );
+      expect(byUid['ma-link']).toMatchObject({ payload: { document_type: 'link', url: 'https://example.com/notes' } });
+      expect(byUid['ma-file']).toMatchObject({ payload: { document_type: 'file', url: undefined } });
+    });
+
+    it('drops a non-Notes-category attachment row — the client-side filter is the only correctness guarantee this leg has', async () => {
+      // No `filters`/`category` param is sent upstream at all (see fetchNotesAddedEvents's doc
+      // comment on why an upstream term filter risks silently zeroing the leg) — this test
+      // exercises the actual mechanism that keeps non-Notes rows out.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
           return Promise.resolve({
@@ -927,22 +951,29 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ payload: { document_uid: 'ma-1' } });
     });
 
-    it('queries both attachment types scoped by committee parent ref and the category filter', async () => {
+    it('queries both attachment types scoped by committee parent ref only — no upstream category filter or date narrowing', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'v1_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, filters: ['category:Notes'] })
+        expect.objectContaining({ type: 'v1_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, page_size: 25, sort: 'updated_desc' })
       );
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'v1_past_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, filters: ['category:Notes'] })
+        expect.objectContaining({ type: 'v1_past_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, page_size: 25, sort: 'updated_desc' })
       );
+      const [meetingCall, pastMeetingCall] = proxyRequest.mock.calls.filter(
+        (call) => call[2] === '/query/resources' && (call[4]?.type === 'v1_meeting_attachment' || call[4]?.type === 'v1_past_meeting_attachment')
+      );
+      expect(meetingCall[4]).not.toHaveProperty('filters');
+      expect(meetingCall[4]).not.toHaveProperty('date_field');
+      expect(pastMeetingCall[4]).not.toHaveProperty('filters');
+      expect(pastMeetingCall[4]).not.toHaveProperty('date_field');
     });
 
     it('keeps upcoming-meeting and past-meeting notes as distinct events even when they share the same attachment uid', async () => {
@@ -954,14 +985,22 @@ describe('CommitteeActivityService', () => {
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
           return Promise.resolve({
             resources: [
-              { type: 'v1_meeting_attachment', id: 'shared-uid', data: meetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z' }) },
+              {
+                type: 'v1_meeting_attachment',
+                id: 'shared-uid',
+                data: meetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z', modified_at: '2026-01-05T00:00:00Z' }),
+              },
             ],
           });
         }
         if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') {
           return Promise.resolve({
             resources: [
-              { type: 'v1_past_meeting_attachment', id: 'shared-uid', data: pastMeetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z' }) },
+              {
+                type: 'v1_past_meeting_attachment',
+                id: 'shared-uid',
+                data: pastMeetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z', modified_at: '2026-01-05T00:00:00Z' }),
+              },
             ],
           });
         }
@@ -982,9 +1021,10 @@ describe('CommitteeActivityService', () => {
 
     it("sets hasMore when either notes sub-leg's upstream page_token signals more data", async () => {
       const fetchSize = 25;
-      const attachments = Array.from({ length: fetchSize }, (_, i) =>
-        meetingAttachment({ uid: `ma-${i}`, created_at: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
-      );
+      const attachments = Array.from({ length: fetchSize }, (_, i) => {
+        const timestamp = i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z';
+        return meetingAttachment({ uid: `ma-${i}`, created_at: timestamp, modified_at: timestamp });
+      });
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
           return Promise.resolve({
@@ -1031,7 +1071,13 @@ describe('CommitteeActivityService', () => {
         }
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
           return Promise.resolve({
-            resources: [{ type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment({ created_at: '2026-01-05T00:00:00Z' }) }],
+            resources: [
+              {
+                type: 'v1_meeting_attachment',
+                id: 'ma-1',
+                data: meetingAttachment({ created_at: '2026-01-05T00:00:00Z', modified_at: '2026-01-05T00:00:00Z' }),
+              },
+            ],
           });
         }
         return defaultProxyRequest(r, s, path, m, query);

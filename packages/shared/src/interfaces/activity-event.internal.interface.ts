@@ -25,10 +25,11 @@ export interface ActivityPageCursor {
 export interface CommitteeActivityQuery {
   /**
    * Inclusive lower bound on `occurred_at`. Enforced in-memory against the merged pool (the
-   * correctness guarantee); additionally pushed upstream as `date_from` on all four legs as
+   * correctness guarantee); additionally pushed upstream as `date_from` on several legs as
    * best-effort narrowing only — each leg's upstream `date_field` approximates a multi-field
    * fallback derivation it can't fully represent, so it narrows fetched volume but isn't relied
-   * on for correctness. See the per-leg comments in `committee-activity.service.ts`.
+   * on for correctness. Surveys and notes deliberately opt out of upstream date narrowing
+   * entirely — see their per-leg comments in `committee-activity.service.ts` for why.
    */
   since?: string;
   /**
@@ -72,4 +73,24 @@ export interface CommitteeActivityDocumentFile {
   name: string;
   created_at?: string;
   updated_at?: string;
+}
+
+/**
+ * Query-service projection for an indexed `v1_meeting_attachment` / `v1_past_meeting_attachment`
+ * resource — deliberately distinct from `MeetingAttachment`/`PastMeetingAttachment`
+ * (`meeting-attachment.interface.ts`), which are documented as aligned with the ITX proxy API
+ * response, not the indexer's data schema. The indexer contract
+ * (lfx-v2-meeting-service's `docs/indexer-contract.md`, V1 Meeting Attachment /
+ * V1 Past Meeting Attachment sections) carries `modified_at`, not `updated_at` — using the ITX
+ * shape here silently fell back to `created_at` for every row (LFXV2-3077 review finding).
+ */
+export interface CommitteeActivityNoteAttachment {
+  uid: string;
+  meeting_id: string;
+  type: 'file' | 'link';
+  category?: string;
+  name: string;
+  link?: string;
+  created_at?: string;
+  modified_at?: string;
 }

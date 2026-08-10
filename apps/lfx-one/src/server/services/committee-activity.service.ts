@@ -12,13 +12,12 @@ import type {
   CommitteeActivityDocumentFile,
   CommitteeActivityFolder,
   CommitteeActivityLink,
+  CommitteeActivityNoteAttachment,
   CommitteeActivityQuery,
   DocumentUploadedActivityEvent,
-  MeetingAttachment,
   NotesAddedActivityEvent,
   PaginatedResponse,
   PastMeeting,
-  PastMeetingAttachment,
   QueryServiceResponse,
   Survey,
   SurveyClosedActivityEvent,
@@ -172,10 +171,11 @@ function isAfterCursor(event: { occurred_at: string; key: string }, cursor: Acti
 
 /**
  * Aggregates a committee's activity across existing sources (past meetings, votes, surveys,
- * documents) into one time-ordered, cursor-paginated feed — LFXV2-1707 v1. No new upstream
- * service: each source is an existing committee-scoped read, fetched in parallel and merged
- * server-side. See `packages/shared/src/interfaces/activity-event.interface.ts` for which event
- * types this emits vs. defers pending a real event log.
+ * documents, notes-category meeting attachments) into one time-ordered, cursor-paginated feed —
+ * LFXV2-1707 v1 / LFXV2-3077. No new upstream service: each source is an existing
+ * committee-scoped read, fetched in parallel and merged server-side. See
+ * `packages/shared/src/interfaces/activity-event.interface.ts` for which event types this emits
+ * vs. defers pending a real event log.
  */
 export class CommitteeActivityService {
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -284,7 +284,7 @@ export class CommitteeActivityService {
       // (committee-activity-query.helper.ts: a bad explicit cursor is a 400, not a silently-ignored
       // value). This method is public and reachable directly by a future non-HTTP caller that
       // skips that validation; degrading here would (a) diverge from the HTTP path's policy for the
-      // same bad input and (b) still do the full 7-call upstream fan-out below for a result that's
+      // same bad input and (b) still do the full 9-call upstream fan-out below for a result that's
       // provably empty anyway (isAfterCursor can't place any real event "after" an unparseable
       // cursor position), which is pure waste. Failing fast avoids both.
       throw ServiceValidationError.forField('cursor.before', 'cursor.before must be a valid ISO 8601 timestamp', {
@@ -323,7 +323,7 @@ export class CommitteeActivityService {
 
     // INFO, not DEBUG — matches DocumentService.getMyDocuments's "N-stage aggregation" logging
     // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
-    // single-source enrichment services that stay at DEBUG throughout. A merge across 4
+    // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
@@ -456,9 +456,9 @@ export class CommitteeActivityService {
   /**
    * Unlike every other leg, a failure here is NOT caught-and-degraded by the caller — it's allowed
    * to reject `getCommitteeActivity`'s `Promise.all` and propagate to the controller's `next(error)`.
-   * `GET /committees/:uid` is the one leg in this 7-call fan-out (committee + 4 `/query/resources`
-   * legs — meetings, votes, surveys, files — + committee-service's folders/links legs) whose
-   * committee-service FGA rejection is allowed to fail the whole request. The 4 `/query/resources`
+   * `GET /committees/:uid` is the one leg in this 9-call fan-out (committee + 6 `/query/resources`
+   * legs — meetings, votes, surveys, files, notes×2 — + committee-service's folders/links legs) whose
+   * committee-service FGA rejection is allowed to fail the whole request. The 6 `/query/resources`
    * legs filter per-resource and never 403 the whole request (see the controller's docblock); the
    * folders/links legs are also committee-service-FGA-backed but are deliberately caught-and-degraded
    * in fetchDocumentEvents rather than propagated, since a single missing/inaccessible committee's
@@ -856,46 +856,59 @@ export class CommitteeActivityService {
    * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
    * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
    *
-   * filters: ['category:Notes'] is sent upstream (query-service's /query/resources accepts
-   * `filters` generically for any `type`, confirmed against lfx-v2-query-service's Goa design),
-   * but no existing caller of these two types in this repo has ever exercised that param on them
-   * — whether `category` is indexed as an exact-match field is unverified in practice. The
-   * unconditional client-side `category === 'Notes'` re-filter below (in the .map() call sites)
-   * is the actual correctness guarantee; the upstream filter is a best-effort payload-size
-   * optimization on top of it, not something this leg depends on for correctness.
+   * No upstream `filters`/`date_field` narrowing, unlike the files leg above — two reasons, both
+   * found in review and confirmed against lfx-v2-meeting-service's indexer-contract docs:
+   *  1. `filters: ['category:Notes']` compiles to an OpenSearch `term` clause (exact match). If
+   *     `data.category` isn't mapped as an exact-match/keyword field, that term matches nothing
+   *     and the leg silently returns zero rows on every call — a `term` filter EXCLUDES
+   *     non-matching rows, it can't be "best-effort"; whether the mapping is exact-match is
+   *     unverified. The unconditional client-side `category === 'Notes'` filter below is the only
+   *     correctness guarantee this leg has, so the upstream filter isn't sent at all.
+   *  2. A `date_field`/`date_from`/`date_to` window here would filter on `modified_at`, which is
+   *     optional and typically unset for an attachment that's been uploaded once and never
+   *     edited — the common case for notes, not a rare edge. That's the same systematic
+   *     exclusion `fetchSurveyEvents` above documents at length as its own reason for dropping
+   *     upstream date narrowing entirely; this leg follows that precedent instead of repeating
+   *     the files leg's date_field, which is safe there only because committee_document rows
+   *     reliably carry a real `updated_at`.
+   * `since`/`before` are still accepted (unused in the query itself) to keep this leg's call
+   * signature uniform with every other fetch* method — the in-memory since/cursor pass in
+   * getCommitteeActivity is what actually enforces the window for this leg, exactly as it already
+   * does for votes and surveys.
    */
   private async fetchNotesAddedEvents(
     req: Request,
     committeeUid: string,
-    since: string | undefined,
-    before: string | undefined,
+    _since: string | undefined,
+    _before: string | undefined,
     fetchSize: number
   ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
-    const hasWindow = !!since || !!before;
     const buildQuery = (type: string): Record<string, unknown> => ({
       type,
       parent: `committee:${committeeUid}`,
-      filters: ['category:Notes'],
       page_size: fetchSize,
       sort: 'updated_desc',
-      ...(hasWindow && { date_field: 'updated_at' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
     });
 
     const [meetingResult, pastMeetingResult] = await Promise.all([
       this.microserviceProxy
-        .proxyRequest<QueryServiceResponse<MeetingAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', buildQuery('v1_meeting_attachment'))
+        .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          buildQuery('v1_meeting_attachment')
+        )
         .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
         .catch((err) => {
           logger.warning(req, 'get_committee_activity', 'Failed to fetch upcoming-meeting notes attachments, continuing without them', {
             committee_uid: committeeUid,
             err,
           });
-          return { attachments: [] as MeetingAttachment[], pageToken: undefined as string | undefined };
+          return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
         }),
       this.microserviceProxy
-        .proxyRequest<QueryServiceResponse<PastMeetingAttachment> | null>(
+        .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(
           req,
           'LFX_V2_SERVICE',
           '/query/resources',
@@ -908,7 +921,7 @@ export class CommitteeActivityService {
             committee_uid: committeeUid,
             err,
           });
-          return { attachments: [] as PastMeetingAttachment[], pageToken: undefined as string | undefined };
+          return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
         }),
     ]);
 
@@ -927,21 +940,20 @@ export class CommitteeActivityService {
     return { events, saturated: !!meetingResult.pageToken || !!pastMeetingResult.pageToken };
   }
 
-  private buildNotesEvent(
-    committeeUid: string,
-    attachment: MeetingAttachment | PastMeetingAttachment,
-    meetingScope: 'upcoming' | 'past'
-  ): NotesAddedActivityEvent {
+  private buildNotesEvent(committeeUid: string, attachment: CommitteeActivityNoteAttachment, meetingScope: 'upcoming' | 'past'): NotesAddedActivityEvent {
     return {
       type: 'notes_added',
-      occurred_at: firstValidTimestamp(attachment.updated_at, attachment.created_at),
+      // modified_at, not updated_at — v1_meeting_attachment/v1_past_meeting_attachment's indexed
+      // data schema carries modified_at (lfx-v2-meeting-service's indexer-contract docs); the
+      // ITX-aligned MeetingAttachment/PastMeetingAttachment shape's updated_at field doesn't apply
+      // to this query-service-sourced projection (see CommitteeActivityNoteAttachment's doc comment).
+      occurred_at: firstValidTimestamp(attachment.modified_at, attachment.created_at),
       committee_uid: committeeUid,
       payload: {
         document_uid: attachment.uid,
         name: attachment.name,
         document_type: attachment.type,
         url: attachment.type === 'link' ? attachment.link : undefined,
-        meeting_id: attachment.meeting_id,
         meeting_scope: meetingScope,
       },
     };

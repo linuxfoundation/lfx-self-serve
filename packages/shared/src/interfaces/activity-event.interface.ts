@@ -97,9 +97,12 @@ export interface DocumentUploadedActivityEvent extends BaseActivityEvent {
 }
 
 /**
- * Sourced from `MeetingAttachment` (`v1_meeting_attachment`) / `PastMeetingAttachment`
- * (`v1_past_meeting_attachment`) rows whose `category` is `'Notes'` — see
- * `CommitteeActivityService.fetchNotesAddedEvents` (LFXV2-3077).
+ * Sourced from the query-service projection of `v1_meeting_attachment` / `v1_past_meeting_attachment`
+ * rows (`CommitteeActivityNoteAttachment`, `activity-event.internal.interface.ts`) whose `category`
+ * is `'Notes'` — see `CommitteeActivityService.fetchNotesAddedEvents` (LFXV2-3077). No `meeting_id`
+ * in the payload: nothing consumes it yet, and the only value available from the past-meeting leg
+ * (the originating meeting id, not `meeting_and_occurrence_id`) isn't precise enough for a future
+ * deep-link — add it back with the right field once a consumer needs it.
  */
 export interface NotesAddedActivityEvent extends BaseActivityEvent {
   type: 'notes_added';
@@ -109,7 +112,6 @@ export interface NotesAddedActivityEvent extends BaseActivityEvent {
     document_type: 'file' | 'link';
     /** Only set for document_type: 'link' — same asymmetry as DocumentUploadedActivityEvent.payload.url. */
     url?: string;
-    meeting_id: string;
     /**
      * v1_meeting_attachment ('upcoming') vs v1_past_meeting_attachment ('past') — two distinct
      * upstream uid namespaces, same reasoning as document_uploaded's document_type discriminant.
