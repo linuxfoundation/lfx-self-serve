@@ -687,7 +687,7 @@ export class CommitteeService {
       } catch (err) {
         logger.warning(req, 'update_committee', 'Could not confirm chat_webhook_url persistence after an otherwise-successful save', {
           committee_id: committeeId,
-          err: err instanceof Error ? err.message : String(err),
+          err,
         });
         throw new ConflictError(
           'Your other changes were saved, but the Slack webhook status could not be confirmed. Reload to check whether it was saved.',
