@@ -75,6 +75,39 @@ export interface WeeklyBriefCurrentResponse {
   brief: WeeklyBrief | null;
   /** Null alongside a null `brief` on a genuine miss — upstream's `GET /current` never fabricates counters. */
   throttle: WeeklyBriefThrottle | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
+   * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
+   * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
+   * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
+   */
+  caller_rating?: WeeklyBriefRating | null;
+}
+
+/** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
+export type WeeklyBriefRating = 'up' | 'down';
+
+/**
+ * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is
+ * the revision the caller actually saw when they tapped — the server rejects the write with a 409
+ * (`REVISION_MISMATCH`) when it no longer matches the server-resolved current revision, so a
+ * rating can never land on content the caller never actually reviewed (a co-chair's edit or
+ * regenerate landing between page load and tap; see `weekly-brief.service.ts#rateBrief`'s doc
+ * comment for the full reasoning, PR #1361 review).
+ */
+export interface RateWeeklyBriefRequest {
+  rating: WeeklyBriefRating;
+  revision: number;
+}
+
+/**
+ * Response body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating` — also the
+ * shape persisted in the caller's Valkey rating-cache entry (`buildWeeklyBriefRatingCacheKey`
+ * / `weekly-brief.service.ts`'s `isStoredRating` guard), since the two are structurally the same
+ * "what did they rate it" record.
+ */
+export interface RateWeeklyBriefResponse {
+  rating: WeeklyBriefRating;
 }
 
 /**

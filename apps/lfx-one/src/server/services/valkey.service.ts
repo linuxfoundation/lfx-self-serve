@@ -319,6 +319,21 @@ export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
   return `${keyPrefix()}:${VALKEY_CACHE.MEMBER_V1_MAPPING_NAMESPACE}:${memberUid}`;
 }
 
+/**
+ * Per-caller weekly-brief rating cache key (LFXV2-3042) — one entry per (committee_uid, brief_uid,
+ * revision, username), so a new revision (post-regenerate) never inherits the prior revision's
+ * rating. `committeeUid` is included even though `briefUid` is already globally unique in live
+ * mode: mock mode (the default dev/CI mode) hard-codes the same brief uid and starts every
+ * committee's brief at revision 1 (see `buildMockBrief`), so a committee-less key would let one
+ * committee's rating pre-light an unrelated committee's identical thumbs (PR #1361 review).
+ * Null (fail-closed → skip cache) when the committee uid, brief uid, or username isn't
+ * filter-safe, so none of them can corrupt the `:`-delimited key.
+ */
+export function buildWeeklyBriefRatingCacheKey(committeeUid: string, briefUid: string, revision: number, username: string): string | null {
+  if (!isFilterSafeIdentifier(committeeUid) || !isFilterSafeIdentifier(briefUid) || !isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_RATING_NAMESPACE}:${committeeUid}:${briefUid}:${revision}:${username}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

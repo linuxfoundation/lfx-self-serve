@@ -244,6 +244,16 @@ async function mockShareBrief(
 }
 
 /**
+ * Mock POST/DELETE /api/committees/:uid/weekly-briefs/:briefUid/rating. `onRequest` receives
+ * the intercepted route and decides how to fulfill it — kept generic (rather than a fixed
+ * status/body like `mockShareBrief`) since the rating tests need different handling per HTTP
+ * method (POST for rate, DELETE for clear) on the same URL.
+ */
+async function mockRating(page: Page, briefUid: string, onRequest: (route: Route) => Promise<void>): Promise<void> {
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/${briefUid}/rating`, onRequest);
+}
+
+/**
  * Block LaunchDarkly SDK traffic so the OpenFeature provider fails to initialize
  * inside the browser. With no provider, FeatureFlagService#getBooleanFlag returns
  * the supplied `defaultValue` (false for `wg-weekly-brief`). Net effect: the
@@ -919,5 +929,153 @@ test.describe('WG Weekly Brief card — Regenerate disabled (throttle exhausted)
     const hint = page.getByTestId('weekly-brief-card-regenerate-disabled-hint');
     await expect(hint).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(hint).toContainText('Weekly regeneration limit reached');
+  });
+});
+
+test.describe('WG Weekly Brief card — Rating (flag ON, LFXV2-3042)', () => {
+  test('caller_rating from GET /current pre-lights the matching thumb on load', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: 'up' });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Role-based, not the raw `aria-pressed` DOM attribute: `<lfx-button>` wraps PrimeNG's
+    // `<p-button>`, and the real interactive element the browser's accessibility tree exposes
+    // as `role=button` may not be the literal node `getByTestId` resolves to — querying by role
+    // + accessible name walks the computed accessibility tree instead of relying on which DOM
+    // node physically carries the `aria-pressed` attribute.
+    await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('button', { name: 'Rate this brief not helpful', pressed: false })).toBeVisible();
+  });
+
+  test('tapping an unrated thumb POSTs the rating and lights it', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+
+    let capturedBody: { rating?: string; revision?: number } | null = null;
+    await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      capturedBody = route.request().postDataJSON() as { rating?: string; revision?: number };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rating: 'down' }) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const downBtn = page.getByRole('button', { name: 'Rate this brief not helpful' });
+    const postPromise = page.waitForRequest((req) => req.method() === 'POST' && req.url().includes(`/weekly-briefs/${GENERATED_BRIEF.uid}/rating`), {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    await downBtn.click();
+    await postPromise;
+
+    expect(capturedBody).toEqual({ rating: 'down', revision: GENERATED_BRIEF.revision });
+    await expect(page.getByRole('button', { name: 'Rate this brief not helpful', pressed: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('tapping the active thumb clears the rating via DELETE', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: 'up' });
+
+    let capturedDeleteBody: { revision?: number } | null = null;
+    await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
+      if (route.request().method() !== 'DELETE') {
+        await route.fallback();
+        return;
+      }
+      capturedDeleteBody = route.request().postDataJSON() as { revision?: number };
+      await route.fulfill({ status: 204 });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const upBtn = page.getByRole('button', { name: 'Rate this brief helpful', pressed: true });
+    await expect(upBtn).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const deletePromise = page.waitForRequest((req) => req.method() === 'DELETE' && req.url().includes(`/weekly-briefs/${GENERATED_BRIEF.uid}/rating`), {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    await upBtn.click();
+    await deletePromise;
+
+    expect(capturedDeleteBody).toEqual({ revision: GENERATED_BRIEF.revision });
+    await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('a failed rating request rolls back the optimistic thumb and shows an error toast', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+
+    await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Internal error' }) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const upBtn = page.getByRole('button', { name: 'Rate this brief helpful' });
+    await upBtn.click();
+
+    await expect(page.getByText('Failed to save your rating. Please try again.', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('a 409 revision-mismatch (a co-chair edited between page load and the tap) rolls back the thumb, reloads the current brief, and shows the reload-specific toast', async ({
+    page,
+  }) => {
+    await mockCommitteeShell(page);
+    const briefMock = await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+
+    // Simulates a co-chair's edit landing between this tab's page load and the rating tap: the
+    // POST rejects with the server's real REVISION_MISMATCH shape, and the *next* GET (fired by
+    // the component's own refresh$ recovery) returns the brief at its new revision, unrated.
+    const editedBrief: WeeklyBrief = { ...GENERATED_BRIEF, state: 'edited', revision: GENERATED_BRIEF.revision + 1 };
+    await mockRating(page, GENERATED_BRIEF.uid, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      briefMock.setResponse({ brief: editedBrief, throttle: USED_THROTTLE_AFTER_GENERATE, caller_rating: null });
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'This brief has changed since you last viewed it.', code: 'REVISION_MISMATCH' }),
+      });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const upBtn = page.getByRole('button', { name: 'Rate this brief helpful' });
+    // The second GET is refresh$'s own recovery fetch, distinct from the initial page-load GET —
+    // waiting for it (rather than just the POST) proves the card actually reloads, not just toasts.
+    const refreshGetPromise = page.waitForRequest(
+      (req) => req.method() === 'GET' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`),
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await upBtn.click();
+    await refreshGetPromise;
+
+    await expect(page.getByText('This brief has changed. Reloaded the latest version — please rate again.', { exact: true })).toBeVisible({
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    // Never the generic message a plain 5xx gets — the two error paths must stay distinguishable.
+    await expect(page.getByText('Failed to save your rating. Please try again.', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('weekly-brief-card-state-badge')).toHaveText('Edited', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('button', { name: 'Rate this brief helpful', pressed: false })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 });
