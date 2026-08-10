@@ -200,7 +200,21 @@ if (!otlpEndpoint) {
         // bootstrap also deliberately avoids importing any app-side package, so no app code loads
         // before instrumentations are registered. If the allowlisted host ever changes there,
         // update it here too.
-        ignoreRequestHook: (request) => request.origin === 'https://hooks.slack.com',
+        //
+        // Parses request.origin as a URL and checks .hostname, rather than comparing
+        // request.origin to the literal string 'https://hooks.slack.com' — undici's own span
+        // code builds the exported URL the same way (`new URL(request.path, request.origin)`,
+        // instrumentation-undici's index.js), so this guard can't silently drift out of sync
+        // with a shape change (e.g. a trailing slash) the way an exact-string comparison could.
+        // Fails closed (instruments/exports normally) on a malformed origin, since that's not a
+        // shape hooks.slack.com URLs ever take.
+        ignoreRequestHook: (request) => {
+          try {
+            return new URL(request.origin).hostname === 'hooks.slack.com';
+          } catch {
+            return false;
+          }
+        },
         headersToSpanAttributes: {
           requestHeaders: ['content-type'],
           responseHeaders: ['content-type'],
