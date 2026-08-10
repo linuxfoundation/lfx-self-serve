@@ -32,11 +32,12 @@ export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'membe
  * The `hooks.slack.com` host is duplicated as a literal in `apps/lfx-one/otel.mjs`'s
  * `ignoreRequestHook` (LFXV2-3080) — that carve-out exists because this URL carries a bearer
  * credential in its path, which OTel's undici instrumentation would otherwise export unredacted
- * on every outbound share. It compares against `request.origin` (scheme+host only), so it can't
- * reuse this full-URL pattern directly, and the OTel bootstrap deliberately imports no app-side
- * package so nothing app-side loads before instrumentations register. If this pattern's host ever
- * changes or a second host is added, `otel.mjs`'s carve-out must be updated to match, or the
- * credential leak reopens silently.
+ * on every outbound share. It checks only the derived request URL's hostname — deliberately
+ * broader than this path-anchored full-URL pattern, since suppressing every request to the host
+ * is the safe direction for a redaction guard — and the OTel bootstrap deliberately imports no
+ * app-side package so nothing app-side loads before instrumentations register. If this pattern's
+ * host ever changes or a second host is added, `otel.mjs`'s carve-out must be updated to match,
+ * or the credential leak reopens silently.
  */
 export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
 

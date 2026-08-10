@@ -908,9 +908,10 @@ export class WeeklyBriefService {
       // BaseApiError#toResponse puts `message` directly in the client response, and slackErrorText
       // is otherwise arbitrary third-party content (a Slack-side HTML error page, an intermediary
       // proxy's response). The untrimmed (but SLACK_ERROR_BODY_MAX_LENGTH-bounded) text still
-      // reaches operators either way, via errorBody.reason below (log-only) — only this
-      // client-safety check trims, so a trailing newline Slack or a proxy might add doesn't
-      // disqualify an otherwise-legitimate token.
+      // reaches operators either way, via errorBody.reason below (log-only, and only when the
+      // body was actually readable — see that line's own comment for the empty/unreadable case)
+      // — only this client-safety check trims, so a trailing newline Slack or a proxy might add
+      // doesn't disqualify an otherwise-legitimate token.
       const trimmedErrorText = slackErrorText.trim();
       const clientSafeReason = SLACK_ERROR_TOKEN_PATTERN.test(trimmedErrorText) ? trimmedErrorText : '';
       throw new MicroserviceError(`Slack rejected the message${clientSafeReason ? `: ${clientSafeReason}` : ''}`, 502, 'SLACK_SEND_FAILED', {
