@@ -15,9 +15,11 @@ Users with **maintainer**, **board-member**, or **executive-director** personas 
 
 ## Does an attendee need an LFX account to join a meeting?
 
-Not for a standard public meeting. Each non-restricted meeting has a public join page at `/meetings/:id` that's accessible without authentication — you can share this link with anyone.
+No — no meeting requires an LFX account to view or join. Every meeting has a public join page at `/meetings/:id` that you can share with anyone.
 
-If a meeting is marked **Restricted**, the attendee needs to already be on the meeting's registrant list (matched by their email or username) to see full join details. That's a registration check, not a passcode — see "Can I protect a meeting with a passcode?" below.
+If a meeting is marked **Private**, the join link carries the meeting's password as part of the URL, so anyone with that link can join without signing in. If a meeting is marked **Restricted**, the attendee needs to submit an email or username that matches an existing registrant record to see full join details — that's a registration check, not a passcode or a login requirement. See "Can I protect a meeting with a passcode?" below.
+
+Note that the organizer's name and contact link on the join page are only visible to signed-in visitors, even on an otherwise-public meeting.
 
 ## What is the AI agenda generation feature?
 
@@ -29,7 +31,7 @@ Yes. The meeting creation form has a full recurrence builder: repeat every N day
 
 ## How do I add meetings to my calendar?
 
-There's currently no button to download a single meeting as its own ICS file. Instead, from the **Meetings** dashboard in your Foundation or Project lens, use the **Subscribe** button to get a live calendar feed (ICS URL) covering all of that project's or foundation's meetings. Add that feed once to Google Calendar, Outlook, or Apple Calendar, and it stays up to date automatically.
+There's currently no button to download a single meeting as its own ICS file. Instead, from the **Meetings** dashboard in your Foundation or Project lens, use the **Subscribe** button to get a live calendar feed (ICS URL) for that project's or foundation's meetings. The feed excludes **Private** meetings; **Restricted**-but-public meetings still appear on it. Add the feed once to Google Calendar, Outlook, or Apple Calendar, and it stays up to date automatically.
 
 ## What happens when I open a meeting link and see "Meeting Not Found"?
 
@@ -37,7 +39,7 @@ This can happen if the link has expired or is no longer valid, the meeting was d
 
 ## Can I protect a meeting with a passcode?
 
-There's no separate passcode field for meetings. Access control works through the **Restricted** meeting setting instead: a restricted meeting only shows full join details to people who match an existing registrant (by email or username). If you need access to a restricted meeting, ask the organizer to add you as a registrant rather than asking for a passcode.
+There's no passcode field you enter manually. **Private** meetings do have a password, but it's embedded automatically in the join link when the organizer copies it — you don't type it in separately. Access to a **Restricted** meeting works differently: it only shows full join details to people who match an existing registrant (by email or username). If you need access to a restricted meeting, ask the organizer to add you as a registrant.
 
 ## Why can't I see a meeting I was invited to?
 

@@ -14,7 +14,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View meetings
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. (In your personal **My Meetings** view — the Me lens — you can see meetings across your projects, but you can't create or manage them from there.)
+2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. Your personal **My Meetings** view (Me lens) also shows meetings across your projects, and Edit/Delete still appear there for meetings you organize — that view just doesn't have a **Create Meeting** button.
 3. The dashboard lists meetings for your active project context, with **Upcoming** and **Past** tabs. If no meetings are scheduled, the Upcoming tab shows "No meetings yet / Schedule a meeting to get started."
 4. Each meeting you organize shows **Edit** and **Delete** icon buttons directly on its card in the list. You can also select a meeting to open its full detail view.
 
@@ -22,20 +22,20 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
-## Cancel or delete a meeting
+## Delete a meeting
 
 Select the delete (trash) icon on a meeting you organize.
 
-- For a one-time meeting, you'll confirm the cancellation.
+- For a one-time meeting, you'll confirm with **Delete Meeting** — the meeting is permanently deleted; this can't be undone.
 - For a meeting that's part of a recurring series, you'll be asked to choose between **Cancel This Occurrence** (only that instance is cancelled; the rest of the series continues) or **Delete Entire Series** (the whole recurring series is permanently deleted).
 
 ## Subscribe to a calendar feed
 
-There's no button to download a single meeting as an ICS file. Instead, from the Meetings dashboard in your Foundation or Project lens, select **Subscribe** to get a live calendar feed (ICS URL) for all of that project's or foundation's meetings. Add it once to Google Calendar, Outlook, or Apple Calendar to keep it in sync automatically.
+There's no button to download a single meeting as an ICS file. Instead, from the Meetings dashboard in your Foundation or Project lens, select **Subscribe** to get a live calendar feed (ICS URL) for that project's or foundation's meetings. The feed excludes **Private** meetings; **Restricted**-but-public meetings still appear on it. Add it once to Google Calendar, Outlook, or Apple Calendar to keep it in sync automatically.
 
 ## Share the meeting join link
 
-Each meeting has a unique public URL at `/meetings/:id`. Use the **Copy meeting link** button on the meeting's join page, or copy it from the meeting detail view, and share it with attendees. No LFX account is required to access a non-restricted meeting's join page.
+Each meeting has a unique join URL at `/meetings/:id`. Use the **Copy meeting link** button on the meeting's join page or card, or copy it from the meeting detail view, and share it with attendees. No LFX account is ever required to access a meeting's join page — for a **Private** meeting, the copied link automatically carries the meeting's password.
 
 ## Switch project context
 

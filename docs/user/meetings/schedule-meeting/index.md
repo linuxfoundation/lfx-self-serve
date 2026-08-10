@@ -36,7 +36,7 @@ The meeting appears on the **Upcoming** tab of the project's **Meetings** dashbo
 
 ## Add the meeting to your calendar
 
-There's no button to download a single meeting as its own ICS file. To keep a calendar in sync with all of a project's or foundation's meetings, go to that project's or foundation's **Meetings** dashboard and select **Subscribe** to get a live calendar feed (ICS URL) — add it once to Google Calendar, Outlook, or Apple Calendar.
+There's no button to download a single meeting as its own ICS file. To keep a calendar in sync with a project's or foundation's meetings, go to that project's or foundation's **Meetings** dashboard and select **Subscribe** to get a live calendar feed (ICS URL) — add it once to Google Calendar, Outlook, or Apple Calendar. The feed excludes **Private** meetings; **Restricted**-but-public meetings still appear on it.
 
 ## Related
 

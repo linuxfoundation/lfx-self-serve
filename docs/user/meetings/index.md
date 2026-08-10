@@ -26,16 +26,17 @@ All authenticated users can view meetings for their projects. Contributors have 
 
 Creating and managing meetings requires a **maintainer**, **board-member**, or **executive-director** persona — or, for a specific project, a user who has been granted **Meeting Coordinator** access for that project even without one of those personas.
 
-The public meeting join page (`/meetings/:id`) is accessible without authentication for meetings that aren't marked Private or Restricted.
+No meeting ever strictly requires an LFX account to view or join. A **Private** meeting is joinable by anyone with the link, which carries the meeting's password as a query parameter — no sign-in involved. A **Restricted** meeting checks the email or username you provide against its registrant list; that's a registrant-match check, not an authentication requirement.
 
 ## Navigation
 
 The left navigation label for this section depends on which lens you're in:
 
 - **Me lens** (your personal view): the sidebar item is **My Meetings**, at route `/meetings`. This shows meetings across all of your projects, but does not include a way to create a new meeting.
-- **Foundation, Project, or Org lens**: the sidebar item is **Meetings**, scoped to that foundation, project, or org. This is where the **Create Meeting** button appears, if you have write access.
+- **Foundation or Project lens**: the sidebar item is **Meetings**, scoped to that foundation or project. This is where the **Create Meeting** button appears, if you have write access.
+- **Org lens**: the sidebar item is also labeled **Meetings**, but it opens a meeting analytics view for the org rather than the shared meetings dashboard — there's no Create Meeting button here.
 
-All of these lead to the same dashboard, just scoped differently. Time filters: **Upcoming** and **Past**. In the Me lens, an additional **Pending RSVP** filter (Upcoming only) and **Organized by me** filter (Upcoming and Past) are available.
+Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Time filters: **Upcoming** and **Past**. In the Me lens, an additional **Pending RSVP** filter (Upcoming only) and **Organized by me** filter (Upcoming and Past) are available.
 
 Empty states differ by lens:
 
@@ -48,11 +49,11 @@ Empty states differ by lens:
 - **Meeting join page**: A public URL where attendees can view meeting details and join without signing in, unless the meeting is Private or Restricted
 - **Meeting Not Found page**: Shown when a meeting link is invalid, expired, or the meeting was deleted or cancelled
 - **Restricted meeting**: A meeting that only lets in people who match an existing registrant record (by email or username) — there's no separate meeting passcode
-- **Calendar subscription**: From the Foundation or Project lens dashboard, the **Subscribe** button gives you a live ICS feed URL for that project's or foundation's meetings, which you add once to your calendar app. There is no per-meeting ICS download.
+- **Calendar subscription**: From the Foundation or Project lens dashboard, the **Subscribe** button gives you a live ICS feed URL for that project's or foundation's meetings, which you add once to your calendar app. The feed excludes **Private** meetings; **Restricted** meetings that are otherwise public still appear on it. There is no per-meeting ICS download.
 
 ## Public meeting access
 
-Each non-restricted meeting has a public join link at `/meetings/:id`. This page shows meeting details, who's organizing it (with a direct email link), and the information you need to join — no LFX account required. If a meeting is marked **Restricted**, you'll need to be on the registrant list to see full join details; contact the meeting organizer (shown on the page) to be added.
+Every meeting has a join link at `/meetings/:id`, and viewing or joining it never requires an LFX account. This page shows meeting details and the information you need to join. The meeting organizer's name and contact link are only shown to signed-in visitors — unauthenticated visitors see the meeting details without organizer contact info. If a meeting is marked **Restricted**, you'll need to submit an email or username that matches an existing registrant to see full join details; contact the meeting organizer to be added as a registrant.
 
 ## Related sections
 
