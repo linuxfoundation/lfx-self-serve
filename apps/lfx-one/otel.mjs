@@ -201,16 +201,18 @@ if (!otlpEndpoint) {
         // before instrumentations are registered. If the allowlisted host ever changes there,
         // update it here too.
         //
-        // Parses request.origin as a URL and checks .hostname, rather than comparing
-        // request.origin to the literal string 'https://hooks.slack.com' — undici's own span
-        // code builds the exported URL the same way (`new URL(request.path, request.origin)`,
-        // instrumentation-undici's index.js), so this guard can't silently drift out of sync
-        // with a shape change (e.g. a trailing slash) the way an exact-string comparison could.
-        // Fails closed (instruments/exports normally) on a malformed origin, since that's not a
-        // shape hooks.slack.com URLs ever take.
+        // Builds the exact same URL undici's own span code exports as url.full — new
+        // URL(request.path, request.origin) (@opentelemetry/instrumentation-undici's
+        // build/src/undici.js) — and checks its .hostname, rather than comparing request.origin
+        // to the literal string 'https://hooks.slack.com'. request.path can itself be absolute
+        // and override request.origin entirely, so comparing origin alone could disagree with
+        // what's actually exported; deriving from the identical expression means this guard
+        // can't diverge from it. On a malformed input this falls back to normal instrumentation
+        // (undici's own construction would throw on the same input and skip the span anyway, so
+        // that fallback is provably harmless here, not merely assumed safe).
         ignoreRequestHook: (request) => {
           try {
-            return new URL(request.origin).hostname === 'hooks.slack.com';
+            return new URL(request.path, request.origin).hostname === 'hooks.slack.com';
           } catch {
             return false;
           }
