@@ -184,9 +184,16 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                       | Description                                                                                           | Required | Default |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | `"true"` serves campaign job status from campaign-service; anything else keeps the in-process job map | No       | off     |
+| Parameter                                       | Description                                                                     | Required | Default |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | Serves campaign job status from campaign-service; see the accepted values below | No       | off     |
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
+unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
+operator setting `yes` and expecting it to be ignored would route production traffic at
+campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
+in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
 
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read

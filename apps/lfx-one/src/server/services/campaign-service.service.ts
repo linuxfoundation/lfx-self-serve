@@ -4,6 +4,8 @@
 import type { CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
+import { JOB_LOST_MESSAGE } from './campaign-proxy.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -88,15 +90,33 @@ export class CampaignServiceClient {
    * (`campaign-proxy.service.ts`), which only works while every poll happens to land on the
    * pod that started the job — the code already logs that symptom by name. campaign-service
    * persists jobs, so this survives a replica switch.
+   *
+   * An upstream 404 becomes `not_found`, not a thrown error, because that is what the path
+   * being replaced returns for an unknown job — and the poller has an arm for it
+   * (`campaign.service.ts` renders "Lost connection to the campaign creation process"). A
+   * flagged cutover whose two sides disagree on a reachable outcome is not a cutover; it is a
+   * second behaviour hidden behind an environment variable, and the difference would surface
+   * only for the expired-job case nobody exercises before shipping.
+   *
+   * ONLY 404. Every other failure — a 401, a 503, a gateway timeout — is rethrown, because
+   * those mean the status is UNKNOWN, and reporting unknown as `not_found` would tell the user
+   * their campaign creation was lost when it may be running perfectly well.
    */
   public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
-    const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
-      req,
-      'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/jobs/${encodeURIComponent(jobId)}`,
-      'GET'
-    );
-    return adaptJobPollResponse(response);
+    try {
+      const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/jobs/${encodeURIComponent(jobId)}`,
+        'GET'
+      );
+      return adaptJobPollResponse(response);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return { status: 'not_found', error: JOB_LOST_MESSAGE };
+      }
+      throw error;
+    }
   }
 }
 

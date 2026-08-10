@@ -348,12 +348,16 @@ environment:
   # make that a supported, documented deployment; not declaring it keeps the bypass out of the
   # chart's surface. It is not needed for the cutover flag below, which is a separate variable.
 
-  # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Set to "true" to serve
+  # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Serves
   # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job
   # map, which only answers correctly when the poll lands on the pod that started the job.
-  # Anything other than an explicit affirmative — including empty, and including a typo —
-  # keeps the existing behaviour, so a rollback is this value alone: no code change, no build,
-  # no image promotion.
+  #
+  # ON for "true", "1", "yes" or "on", trimmed and case-insensitive. Everything else is OFF,
+  # including empty, "0", "false", and any misspelling — so a rollback is this value alone:
+  # no code change, no build, no image promotion. Note that "yes" and "on" DO enable it; this
+  # is not a `== "true"` comparison, and setting one of them expecting to be ignored would
+  # route production traffic. Default-deny is the deliberate half: `flase` is invisible in a
+  # values.yaml diff, so an unrecognised value fails towards the path known to work.
   #
   # It is NOT a live switch. This is a container environment variable, so changing it edits the
   # pod template and takes effect only as pods are replaced; with the default replica count and

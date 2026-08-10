@@ -53,6 +53,17 @@ if (globalThis.fetch) {
 
 const REQUIRED_ENV_VARS = ['GADS_CLIENT_ID', 'GADS_CLIENT_SECRET', 'GADS_DEVELOPER_TOKEN', 'GADS_CUSTOMER_ID', 'GADS_REFRESH_TOKEN'];
 
+/**
+ * What a poll for an unknown job reports.
+ *
+ * Exported so `campaign-service.service.ts` can return the SAME string for campaign-service's
+ * 404, rather than a second copy of it. The two are the flag-off and flag-on sides of one
+ * cutover (LFXV2-3070), and a user-visible message that differs by which side served the
+ * request is a behaviour change smuggled in by an environment variable. One definition makes
+ * that impossible rather than merely unlikely.
+ */
+export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation process. Please try again.';
+
 let envChecked = false;
 
 function checkRequiredEnv(req?: Request): void {
@@ -899,7 +910,7 @@ export class CampaignProxyService {
     const job = jobs.get(jobId);
     if (!job) {
       logger.warning(req, 'campaign_job_status', `Job ${jobId} not found on this instance — likely routed to a different replica`, { jobId });
-      return { status: 'not_found', error: 'Lost connection to the campaign creation process. Please try again.' };
+      return { status: 'not_found', error: JOB_LOST_MESSAGE };
     }
     return job;
   }

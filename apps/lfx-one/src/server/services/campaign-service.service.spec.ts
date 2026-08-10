@@ -16,6 +16,8 @@ vi.mock('./microservice-proxy.service', () => ({
 
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
+import { JOB_LOST_MESSAGE } from './campaign-proxy.service';
 import { adaptJobPollResponse, CampaignServiceClient, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
@@ -132,5 +134,25 @@ describe('CampaignServiceClient.getJobStatus', () => {
 
     await new CampaignServiceClient().getJobStatus(req, 'a/b');
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/a%2Fb', 'GET');
+  });
+
+  // The flag-off path returns a `not_found` STATUS for an unknown job, and the poller has an
+  // arm for it. A thrown 404 would take a different branch in the component, so the two sides
+  // of the cutover would disagree on an outcome only the expired-job case reaches.
+  it('translates an upstream 404 into the not_found status the in-process path returns', async () => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
+
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({
+      status: 'not_found',
+      error: JOB_LOST_MESSAGE,
+    });
+  });
+
+  // Only 404. Anything else means the status is UNKNOWN, and reporting unknown as `not_found`
+  // tells the user their campaign creation was lost when it may be running fine.
+  it.each([401, 500, 503])('rethrows a %i rather than reporting the job lost', async (statusCode) => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('upstream', statusCode, 'ERR'));
+
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode });
   });
 });
