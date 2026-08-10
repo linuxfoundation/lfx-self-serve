@@ -1765,13 +1765,16 @@ export class CommitteeService {
   /**
    * Strips the write-only `chat_webhook_url` credential from a committee before it leaves this
    * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
-   * built from a raw upstream fetch (not routed through {@link getCommitteeById}'s own inline
-   * strip) — `getCommittees`, `getDirectGrantCommittees`, `searchCreatableCommittees`,
-   * `createCommittee`, `updateCommittee`, `getCommitteesByIds` (covers `getMyCommittees`) — so the
-   * "never returned by any read" invariant on {@link Committee.has_slack_webhook}'s doc comment
-   * holds everywhere, not just the two hand-audited call sites. A no-op today (upstream doesn't
-   * store the field yet), but load-bearing the moment the schema change referenced in
-   * `updateCommittee` lands.
+   * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
+   * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
+   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
+   * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
+   * its own inline destructure of the base resource — that inline strip only covers the base
+   * fetch, while `merged`/`enriched` also spread in the raw settings-resource response, so both
+   * layers matter regardless of which resource the field eventually lands on. A no-op today
+   * (upstream doesn't store the field on either resource yet), but load-bearing the moment the
+   * schema change referenced in `updateCommittee` lands.
    *
    * Deliberately not null-tolerant: `proxyRequest` can return `null` for an empty upstream body
    * (documented at committee-activity.service.ts's four guarded call sites), and both
