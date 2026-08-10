@@ -195,6 +195,13 @@ operator setting `yes` and expecting it to be ignored would route production tra
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
 in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
 
+The flag is necessary but not sufficient: a poll reaches campaign-service only when the job id is
+also a UUID, which is the shape campaign-service mints. Creation is not cut over yet and still
+mints `job_<epoch>_<rand>` ids in this application, so with the flag ON today every real poll
+still goes to the in-process job map. Do not read "flag on, no errors" as a verified cutover —
+until creation moves, no production request has taken the new path, and the first traffic to
+exercise it will arrive with that later change rather than with this switch.
+
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
 `LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as

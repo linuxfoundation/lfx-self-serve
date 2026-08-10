@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CAMPAIGN_JOB_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
   BulkKeywordActionRequest,
@@ -93,7 +93,7 @@ export class CampaignService {
           }
           throw new Error(message);
         }
-        if (status.status === 'not_found') throw new Error('Lost connection to the campaign creation process. Please try again.');
+        if (status.status === 'not_found') throw new Error(JOB_LOST_MESSAGE);
         throw new Error('Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.');
       })
     );

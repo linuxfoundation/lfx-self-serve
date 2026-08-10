@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type { CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { JOB_LOST_MESSAGE } from './campaign-proxy.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**

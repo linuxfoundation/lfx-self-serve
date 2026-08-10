@@ -504,27 +504,28 @@
         class="rounded-lg border p-5"
         [class.border-green-200]="anyPlatformCreated()"
         [class.bg-green-50]="anyPlatformCreated()"
-        [class.border-red-200]="!anyPlatformCreated()"
-        [class.bg-red-50]="!anyPlatformCreated()"
+        [class.border-amber-200]="!anyPlatformCreated()"
+        [class.bg-amber-50]="!anyPlatformCreated()"
         data-testid="implementation-platform-results">
         <div class="mb-3 flex items-center gap-2">
           @if (anyPlatformCreated()) {
             <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
           } @else {
-            <i class="fa-light fa-circle-xmark text-red-600" aria-hidden="true"></i>
+            <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
           }
           <h3 class="text-sm font-semibold text-gray-900">
-            {{ anyPlatformCreated() ? 'Campaigns Created' : 'No Campaigns Created' }}
+            {{ anyPlatformCreated() ? 'Campaigns Created' : 'Campaign Status Unconfirmed' }}
           </h3>
         </div>
         <div class="flex flex-col gap-2">
           <!--
-            Three states, not two. `ok: false` covers two outcomes that must not both read as a
-            red failure: an ORPHAN (the upstream paid campaign was created and only the database
-            write failed — `campaignId` is populated on purpose so the id is not lost) and a SKIP
-            (a concurrent request owns this platform, which campaign-service explicitly calls not
-            a failure). The classification is computed in `platformOutcomes` — see it for why the
-            skip is not detected by matching its message.
+            Three states, not two, and the third is UNCONFIRMED rather than "not created".
+            `ok: false` covers an ORPHAN (the upstream paid campaign was created and only the
+            database write failed — `campaignId` is populated on purpose so the id is not lost)
+            and an id-less remainder that mixes genuine rejections, concurrent-dispatch skips and
+            responses whose upstream id was lost. Only the first is safely reportable as an
+            absence, and nothing on the wire distinguishes them. The classification and the
+            reasoning live in `platformOutcomes`.
           -->
           @for (row of platformOutcomes(); track row.result.platform) {
             @let pr = row.result;
@@ -532,8 +533,7 @@
             <div
               class="rounded-md border bg-white p-3"
               [class.border-green-200]="outcome === 'created'"
-              [class.border-amber-200]="outcome === 'orphaned'"
-              [class.border-red-200]="outcome === 'not-created'"
+              [class.border-amber-200]="outcome !== 'created'"
               [attr.data-testid]="'implementation-platform-result-' + pr.platform">
               <div class="flex items-center gap-2">
                 @switch (outcome) {
@@ -544,7 +544,7 @@
                     <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
                   }
                   @default {
-                    <i class="fa-light fa-circle-xmark text-red-600" aria-hidden="true"></i>
+                    <i class="fa-light fa-circle-question text-amber-600" aria-hidden="true"></i>
                   }
                 }
                 <p class="text-sm font-medium text-gray-900">
@@ -563,7 +563,7 @@
                         created upstream but not recorded — needs reconciliation
                       }
                       @default {
-                        not created
+                        could not be confirmed — check the ad account before creating it again
                       }
                     }
                   </span>
@@ -573,7 +573,7 @@
                 }
               </div>
               @if (pr.error) {
-                <p class="mt-1 text-xs" [class.text-amber-700]="outcome === 'orphaned'" [class.text-red-700]="outcome !== 'orphaned'">
+                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
                   {{ pr.error }}
                 </p>
               }

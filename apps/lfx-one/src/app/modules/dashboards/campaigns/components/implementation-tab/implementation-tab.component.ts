@@ -39,7 +39,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
 /** One campaign-service platform result paired with the three-state outcome the row renders. */
 interface PlatformResultRow {
   result: CampaignPlatformResult;
-  outcome: 'created' | 'orphaned' | 'not-created';
+  outcome: 'created' | 'orphaned' | 'unconfirmed';
 }
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
@@ -47,7 +47,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
   if (result.ok) {
     return { result, outcome: 'created' };
   }
-  return { result, outcome: result.campaignId ? 'orphaned' : 'not-created' };
+  return { result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
 }
 
 @Component({
@@ -115,10 +115,21 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * `not-created` deliberately does NOT claim "failed". A skip lands here too — campaign-service
-   * explicitly calls a skip not a failure — and the wire has no dedicated `skipped` field yet
-   * (LFXV2-2665 tracks adding one). It must not be inferred by matching the human-readable
-   * sentence, because a message reworded upstream would silently flip the UI's verdict.
+   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
+   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
+   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
+   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
+   * failure), and two responses in which an upstream campaign may well exist but its id did not
+   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
+   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
+   * artifact exists, and their next move is to create a second one that really does spend money.
+   *
+   * So the row states what is known — this platform's campaign could not be confirmed — and
+   * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
+   * the cheap direction: a needless look at the ad account costs a minute, a duplicate paid
+   * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
+   * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
+   * reworded upstream would silently flip the UI's verdict.
    */
   protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
 
@@ -129,8 +140,12 @@ export class ImplementationTabComponent implements OnInit {
    * while only successful jobs carried per-platform rows. A failed job carries them too — that
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
+   *
+   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
+   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
+   * acts on without reading further, and this one must not assert an absence nobody verified.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'not-created'));
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);

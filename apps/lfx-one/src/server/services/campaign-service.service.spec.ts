@@ -14,10 +14,10 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 
+import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { JOB_LOST_MESSAGE } from './campaign-proxy.service';
 import { adaptJobPollResponse, CampaignServiceClient, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
