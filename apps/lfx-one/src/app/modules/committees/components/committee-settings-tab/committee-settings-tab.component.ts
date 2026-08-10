@@ -7,7 +7,7 @@ import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult, ValidationError } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
@@ -88,13 +88,10 @@ export class CommitteeSettingsTabComponent {
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
 
-  // Whether the webhook-URL input is currently rendered/editable — the exact inverse of
-  // committee-settings.component.html's `slackWebhookConfigured() && !editingSlackWebhookUrl()`
-  // guard, derived from the same two source signals so the two can never drift. saveSettings()
-  // must gate on this, not on editingSlackWebhookUrl alone — a committee with no webhook yet
-  // renders the input immediately (editingSlackWebhookUrl stays false until "Replace" is clicked,
-  // which only exists once a webhook is already configured), so gating on editingSlackWebhookUrl
-  // alone silently discarded a first-time-configured URL.
+  // Whether the webhook-URL input is currently rendered/editable — passed straight to
+  // CommitteeSettingsComponent as its single source of truth for that decision (not re-derived
+  // independently in the child from two separately-passed inputs, which is how the "input
+  // visible but the save didn't send it" bug happened in the first place).
   public slackWebhookInputVisible = computed(() => this.editingSlackWebhookUrl() || !this.slackWebhookConfigured());
 
   public constructor() {
@@ -221,10 +218,14 @@ export class CommitteeSettingsTabComponent {
         show_meeting_attendees: values.show_meeting_attendees ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
-        // Only sent while the input is actually visible/editable — chat_webhook_url is
-        // write-only, so an untouched, hidden ("Configured") field's form value is always null
-        // and must never be mistaken for "clear it".
-        ...(this.slackWebhookInputVisible() ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
+        // Gated on the control's own dirty flag, not on whether the input happens to be
+        // rendered — patchValue (constructor) never marks a control dirty, only a real user
+        // edit does, so this is "the user actually typed something" rather than "the input was
+        // visible". Gating on visibility alone would send chat_webhook_url: null on every save
+        // for a not-yet-configured committee (untouched or not), forcing a needless read-back
+        // round trip and risking clobbering a webhook someone else configured after this page
+        // loaded.
+        ...(this.form.controls.chat_webhook_url.dirty ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
@@ -238,8 +239,13 @@ export class CommitteeSettingsTabComponent {
           let detail = 'Failed to save settings';
           if (status === 409 && code === 'SLACK_WEBHOOK_NOT_PERSISTED') {
             detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook could not be stored.';
+            // Everything except the webhook did persist (see committee.service.ts's
+            // updateCommittee — this check runs last, after the core PUT and settings update) —
+            // refresh so the tab reflects those saved changes instead of appearing to have
+            // silently failed.
+            this.committeeUpdated.emit();
           } else if (status === 400) {
-            const fieldErrors = err?.error?.errors as { message?: string }[] | undefined;
+            const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;
           }
           this.messageService.add({ severity: 'error', summary: 'Error', detail });

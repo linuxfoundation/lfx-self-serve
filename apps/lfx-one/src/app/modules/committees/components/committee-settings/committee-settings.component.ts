@@ -20,10 +20,15 @@ export class CommitteeSettingsComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
   public readonly showHeader = input<boolean>(true);
-  /** Whether the committee already has a Slack webhook configured (from Committee.has_slack_webhook — the raw URL is write-only and never reaches this component). */
-  public readonly slackWebhookConfigured = input<boolean>(false);
-  /** Whether the "Replace" affordance has been opened, revealing the input for a new webhook URL. */
-  public readonly editingSlackWebhookUrl = input<boolean>(false);
+  /**
+   * Whether the Slack webhook URL input is rendered/editable (vs. the "Configured" badge +
+   * Replace button). A single source of truth computed once by the parent from
+   * `Committee.has_slack_webhook` and its own "Replace clicked" state — deliberately not
+   * re-derived here from two separately-passed booleans, which is how a previous version of this
+   * component could show the input while the parent's save payload disagreed about whether it
+   * was visible.
+   */
+  public readonly slackWebhookInputVisible = input<boolean>(false);
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();

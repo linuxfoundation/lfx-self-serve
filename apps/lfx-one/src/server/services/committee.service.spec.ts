@@ -432,8 +432,12 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
   describe('chat_webhook_url redaction on list/create paths (not just getCommitteeById/updateCommittee)', () => {
     it('getCommittees never returns chat_webhook_url even if the query-service index carries it', async () => {
-      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL } as unknown as Partial<Committee>]));
-      addAccessToResources.mockResolvedValueOnce([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL, writer: true } as unknown as Committee]);
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL } as Partial<Committee> & { chat_webhook_url: string }])
+      );
+      addAccessToResources.mockResolvedValueOnce([
+        { uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL, writer: true } as Committee & { chat_webhook_url: string },
+      ]);
 
       const result = await service.getCommittees(req, { tags: 'project_uid:project-1' }, { skipMailingListEnrichment: true });
 

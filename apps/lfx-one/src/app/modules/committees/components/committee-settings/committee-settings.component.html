@@ -144,7 +144,7 @@
             <p class="text-xs text-gray-600">Send the weekly brief to a Slack channel with one click</p>
           </div>
         </div>
-        @if (slackWebhookConfigured() && !editingSlackWebhookUrl()) {
+        @if (!slackWebhookInputVisible()) {
           <div class="flex items-center justify-between gap-3" data-testid="settings-slack-webhook-configured">
             <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
               <i class="fa-light fa-circle-check"></i>

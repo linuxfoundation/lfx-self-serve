@@ -824,6 +824,16 @@ export class WeeklyBriefService {
     // A malformed value is treated the same as "not configured" — from the caller's perspective
     // both are equally unactionable.
     const webhookUrl = await this.committeeService.getSlackWebhookUrlStrict(req, committeeId);
+    if (webhookUrl && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl)) {
+      // Distinguish this from "genuinely unconfigured" in the logs (never the URL itself) — an
+      // operator debugging "the user swears it's configured" needs to be able to tell a stale/
+      // out-of-band-written value apart from nothing having been set, and a real SSRF attempt
+      // apart from either. The caller-facing error is deliberately identical either way (both are
+      // equally unactionable from their side).
+      logger.warning(req, 'share_weekly_brief_slack', 'Stored chat_webhook_url failed the Slack allowlist — refusing to send', {
+        committee_id: committeeId,
+      });
+    }
     if (!webhookUrl || !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl)) {
       throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
         operation: 'share_weekly_brief_slack',
