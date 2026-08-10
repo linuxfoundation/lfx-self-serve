@@ -903,12 +903,22 @@ export class WeeklyBriefService {
       // would still be fully materialized in memory even though only SLACK_ERROR_BODY_MAX_LENGTH
       // characters of it are ever used.
       const slackErrorText = await this.readBoundedText(response, SLACK_ERROR_BODY_MAX_LENGTH).catch(() => '');
-      throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
+      // Slack's own documented error strings are short lowercase/underscore tokens
+      // (invalid_payload, channel_not_found, action_prohibited, …) — only echo the body into the
+      // client-facing message when it actually looks like one of those. BaseApiError#toResponse
+      // puts `message` directly in the client response, and slackErrorText is otherwise arbitrary
+      // third-party content (a Slack-side HTML error page, an intermediary proxy's response) that
+      // has no business being reflected into a browser toast. The full text still reaches
+      // operators either way, via errorBody.reason below (log-only).
+      const clientSafeReason = /^[a-z_]{1,64}$/.test(slackErrorText) ? slackErrorText : '';
+      throw new MicroserviceError(`Slack rejected the message${clientSafeReason ? `: ${clientSafeReason}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
-        // status is log-only (MicroserviceError#toResponse never echoes errorBody to the client
-        // except via its details/errors sub-keys) — lets an operator tell a 429 rate-limit apart
-        // from a 403 revoked webhook even when the body itself is empty or unreadable.
+        // status/reason are log-only (MicroserviceError#toResponse never echoes errorBody to the
+        // client except via its details/errors sub-keys) — reason keeps the full truncated body
+        // for operators even when it didn't qualify for the client-facing message above, and
+        // status lets an operator tell a 429 rate-limit apart from a 403 revoked webhook even
+        // when the body itself is empty or unreadable.
         errorBody: { status: response.status, reason: slackErrorText || 'unknown error' },
       });
     }

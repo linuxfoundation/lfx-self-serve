@@ -1068,6 +1068,19 @@ describe('WeeklyBriefService', () => {
       });
     });
 
+    it('does not reflect a non-token-shaped Slack response body into the client-facing message, but still keeps the full text in errorBody.reason for operators', async () => {
+      mockShareableBrief();
+      const htmlBody = '<html><body>502 Bad Gateway</body></html>';
+      fetchMock.mockResolvedValueOnce(mockResponse(502, htmlBody));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        message: 'Slack rejected the message',
+        errorBody: { status: 502, reason: htmlBody },
+      });
+    });
+
     it('truncates an oversized Slack error body to SLACK_ERROR_BODY_MAX_LENGTH', async () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(400, 'x'.repeat(10_000)));
