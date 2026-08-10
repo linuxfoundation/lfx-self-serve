@@ -605,7 +605,16 @@ export class CommitteeOverviewComponent {
   // switchMap), so the section's outer visibility gate stays satisfied through this transition.
   private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
     return toSignal(
-      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() }))).pipe(
+      // enabled requires canEdit() (committee#writer), not just the feature flag — the backend
+      // endpoint (getActionItems) is gated on committee#auditor via assertCommitteeRead, which
+      // explicitly excludes rank-and-file committee members (see
+      // committee-read-access.helper.ts's doc comment). Without this, every non-writer viewing
+      // Overview with the flag on would fire a guaranteed 401/403 on every page load — dead
+      // weight, degrading silently to an empty list, but a real authorization mismatch between
+      // what this fetch attempts and what the backend permits. Matches the sibling
+      // weekly-brief-card gate one section up: `weeklyBriefEnabled() && canEdit()` (PR #1362
+      // review — Copilot + @dealako).
+      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
         filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
         distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
         switchMap(({ uid, enabled }) =>
