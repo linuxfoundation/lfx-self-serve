@@ -17,14 +17,14 @@
       <span>{{ errorMessage }}</span>
     </div>
   </lfx-card>
-} @else if (rows().length > 0) {
+} @else if (rows().length > 0 || showCompletenessNote()) {
   <lfx-card data-testid="newsletter-recipient-engagement">
     <div class="flex flex-col gap-4 p-2">
       <div class="flex flex-col gap-1">
         <h2 class="text-base font-semibold text-gray-900">Recipient engagement</h2>
         @if (showCompletenessNote()) {
           <p class="text-xs text-gray-500" data-testid="newsletter-recipient-engagement-partial-note">
-            Showing {{ rows().length }} of {{ response()?.total_recipients }} recipients — some records are still processing.
+            Showing {{ rows().length }} of {{ response()?.total_recipients }} recipients — some records could not be retrieved.
           </p>
         }
       </div>
@@ -126,7 +126,7 @@
             </td>
             <td>
               @if (row.last_opened_at) {
-                <span class="text-sm text-gray-700" [title]="row.last_opened_at | date: 'MMM d, y, h:mm a'">{{ relativeOpened(row.last_opened_at) }}</span>
+                <span class="text-sm text-gray-700" [title]="row.last_opened_at | date: 'MMM d, y, h:mm a'">{{ row.lastOpenedRelative }}</span>
               } @else {
                 <span class="text-sm text-gray-400">—</span>
               }

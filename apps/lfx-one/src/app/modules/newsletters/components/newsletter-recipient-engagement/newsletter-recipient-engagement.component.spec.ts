@@ -171,6 +171,24 @@ describe('NewsletterRecipientEngagementComponent', () => {
     expect(expandButton.getAttribute('aria-label')).toBe('Collapse open timeline for noname@acme.io');
   });
 
+  // Regression: a recipient who opened before later bouncing/being marked spam
+  // carries both `opened: true` and `failed: true`. The Failed chip (and the
+  // Delivery column's own "Failed" tag) must win so the two stay consistent.
+  it('classifies a recipient with both opened and failed as failed', async () => {
+    newsletterService.getRecipientEngagement.mockReturnValue(
+      of({
+        ...RESPONSE,
+        recipients: [
+          { email: 'bounced-after-open@acme.io', delivered: true, failed: true, opened: true, open_count: 1, opened_at_list: ['2026-08-08T10:00:00Z'] },
+        ],
+      })
+    );
+    await createComponent();
+
+    expect(card('newsletter-recipient-engagement-segment-failed')?.textContent?.trim()).toBe('Failed (1)');
+    expect(card('newsletter-recipient-engagement-segment-opened')?.textContent?.trim()).toBe('Opened (0)');
+  });
+
   it('hides the section silently on a 403 (no auditor access)', async () => {
     newsletterService.getRecipientEngagement.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
 
@@ -203,5 +221,17 @@ describe('NewsletterRecipientEngagementComponent', () => {
     await createComponent();
 
     expect(card('newsletter-recipient-engagement-partial-note')?.textContent).toContain('3 of 10');
+  });
+
+  // Regression: when the provider omits every record (not just some), the card
+  // must still render so the partial-data note is visible instead of the whole
+  // section silently disappearing.
+  it('still renders the partial-data note when the incomplete response has zero recipients', async () => {
+    newsletterService.getRecipientEngagement.mockReturnValue(of({ ...RESPONSE, complete: false, total_recipients: 10, recipients: [] }));
+
+    await createComponent();
+
+    expect(card('newsletter-recipient-engagement')).not.toBeNull();
+    expect(card('newsletter-recipient-engagement-partial-note')?.textContent).toContain('0 of 10');
   });
 });

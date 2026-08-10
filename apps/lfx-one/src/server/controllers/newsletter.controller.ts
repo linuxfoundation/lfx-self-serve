@@ -292,11 +292,12 @@ export class NewsletterController {
    * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics/recipients
    */
   public async getRecipientEngagement(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const newsletterUid = this.requireNewsletterUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_recipient_engagement', { project_uid: projectUid, newsletter_id: newsletterUid });
-
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
     try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_recipient_engagement', { project_uid: projectUid, newsletter_id: newsletterUid });
       const engagement = await this.newsletterService.getRecipientEngagement(req, projectUid, newsletterUid);
       logger.success(req, 'newsletter_recipient_engagement', startTime, {
         newsletter_id: newsletterUid,

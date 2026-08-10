@@ -262,6 +262,9 @@ export type NewsletterRecipientEngagementSegment = 'opened' | 'not-opened' | 'fa
 export interface NewsletterRecipientRow extends NewsletterRecipientEngagement {
   displayName: string;
   segment: NewsletterRecipientEngagementSegment;
+  // Precomputed so the template never calls a component method for formatting
+  // (re-runs every CD cycle) — null when there's no last_opened_at to format.
+  lastOpenedRelative: string | null;
 }
 
 /** Filter chip key for the recipient engagement table — `'all'` plus every `NewsletterRecipientEngagementSegment`. */

@@ -88,10 +88,6 @@ export class NewsletterRecipientEngagementComponent {
     this.activeChip.set(key);
   }
 
-  public relativeOpened(iso: string): string {
-    return formatRelativeTime(new Date(iso));
-  }
-
   private initializeFilterForm(): FormGroup {
     return new FormGroup({
       search: new FormControl(''),
@@ -134,9 +130,12 @@ export class NewsletterRecipientEngagementComponent {
       });
   }
 
+  // `failed` takes precedence over `opened`: a recipient can bounce or be marked
+  // as spam *after* an earlier open, so `opened && failed` must classify as
+  // 'failed' to stay consistent with the Delivery column's own tag precedence.
   private classifySegment(recipient: NewsletterRecipientEngagement): NewsletterRecipientEngagementSegment {
-    if (recipient.opened) return 'opened';
     if (recipient.failed) return 'failed';
+    if (recipient.opened) return 'opened';
     return 'not-opened';
   }
 
@@ -148,6 +147,7 @@ export class NewsletterRecipientEngagementComponent {
           ...recipient,
           displayName: recipient.name || recipient.email,
           segment: this.classifySegment(recipient),
+          lastOpenedRelative: recipient.last_opened_at ? formatRelativeTime(new Date(recipient.last_opened_at)) : null,
         }))
         .sort((a, b) => {
           if (a.opened !== b.opened) return a.opened ? -1 : 1;
