@@ -877,11 +877,14 @@ export class CommitteeActivityService {
    * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
    * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
    *
-   * `filters: ['category:' + NOTES_ATTACHMENT_CATEGORY]` IS sent upstream, with the unconditional
-   * client-side `category === NOTES_ATTACHMENT_CATEGORY` filter below kept as a backstop, not a
-   * substitute — both found in review and confirmed against lfx-v2-meeting-service's/
-   * lfx-v2-indexer-service's/lfx-v2-query-service's contract docs:
-   *  - `filters` compiles to an OpenSearch `term` clause (exact match) on `data.category`. It's
+   * `filters_all: ['category:' + NOTES_ATTACHMENT_CATEGORY]` IS sent upstream, with the
+   * unconditional client-side `category === NOTES_ATTACHMENT_CATEGORY` filter below kept as a
+   * backstop, not a substitute — both found in review and confirmed against
+   * lfx-v2-meeting-service's/lfx-v2-indexer-service's/lfx-v2-query-service's contract docs.
+   * `filters_all`, not `filters` — the query-service contract marks `filters` legacy ("Prefer
+   * `filters_all` going forward"); semantically identical for a single-value AND filter, and this
+   * is the first new query written against this contract since that guidance shipped.
+   *  - `filters_all` compiles to an OpenSearch `term` clause (exact match) on `data.category`. It's
    *    the only way to narrow the OpenSearch query itself on `category` — the attachment types'
    *    Tags tables (lfx-v2-meeting-service's indexer-contract.md) don't include it, so `tags`
    *    can't filter on it; `cel_filter` can express `data.category == 'Notes'` too, but the
@@ -973,7 +976,7 @@ export class CommitteeActivityService {
       .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type,
         parent: `committee:${committeeUid}`,
-        filters: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
+        filters_all: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
         page_size: fetchSize,
         sort: 'updated_desc',
         // date_to only, never date_from — see fetchNotesAddedEvents's own doc comment for why the

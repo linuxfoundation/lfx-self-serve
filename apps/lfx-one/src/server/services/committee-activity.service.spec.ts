@@ -1013,7 +1013,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('drops a non-Notes-category attachment row even if the upstream filters param fails to narrow it', async () => {
-      // The client-side filter is a backstop, not a substitute, for the upstream `filters:
+      // The client-side filter is a backstop, not a substitute, for the upstream `filters_all:
       // ['category:Notes']` param (see fetchNotesAddedEvents's doc comment on why both are sent) —
       // this test simulates the upstream filter not narrowing at all and asserts the client-side
       // pass still excludes the non-Notes row.
@@ -1044,7 +1044,7 @@ describe('CommitteeActivityService', () => {
         expect.objectContaining({
           type: 'v1_meeting_attachment',
           parent: `committee:${COMMITTEE_UID}`,
-          filters: ['category:Notes'],
+          filters_all: ['category:Notes'],
           page_size: 25,
           sort: 'updated_desc',
         })
@@ -1057,7 +1057,7 @@ describe('CommitteeActivityService', () => {
         expect.objectContaining({
           type: 'v1_past_meeting_attachment',
           parent: `committee:${COMMITTEE_UID}`,
-          filters: ['category:Notes'],
+          filters_all: ['category:Notes'],
           page_size: 25,
           sort: 'updated_desc',
         })
