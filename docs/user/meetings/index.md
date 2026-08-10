@@ -38,6 +38,7 @@ The left navigation label for this section depends on which lens you're in:
 All of these lead to the same dashboard, just scoped differently. Time filters: **Upcoming** and **Past**. In the Me lens, an additional **Pending RSVP** filter (Upcoming only) and **Organized by me** filter (Upcoming and Past) are available.
 
 Empty states differ by lens:
+
 - Me lens, no upcoming meetings: "No upcoming meetings — Meetings from your committees and projects will appear here."
 - Foundation/Project/Org lens, no upcoming meetings: "No meetings yet — Schedule a meeting to get started."
 
