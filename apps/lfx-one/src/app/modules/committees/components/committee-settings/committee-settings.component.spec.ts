@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { CommitteeSettingsComponent } from './committee-settings.component';
 
-/** Mirrors committee-settings-tab.component.ts's real FormGroup shape — every control the template's other cards (member visibility, join mode, feature toggles) reference via formControlName must exist or Angular throws NG01203. */
+/** Mirrors committee-settings-tab.component.ts's real FormGroup shape — every control the template's other cards (member visibility, join mode, feature toggles) reference via formControlName must exist or Angular throws NG01203. chat_webhook_url carries the real Validators.pattern too, not just the same key, so a test asserting form-invalid behavior around it is actually exercising that validator. */
 function buildForm(): FormGroup {
   return new FormGroup({
     member_visibility: new FormControl('hidden'),
@@ -22,7 +23,7 @@ function buildForm(): FormGroup {
     show_meeting_attendees: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
-    chat_webhook_url: new FormControl<string | null>(null),
+    chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
   });
 }
 
@@ -91,6 +92,9 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     form.controls['chat_webhook_url'].markAsDirty();
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
     await fixture.whenStable();
+    // The claim this test is actually pinning: a half-typed URL genuinely wedges the form via
+    // the real Validators.pattern, not just a same-named control with no validator attached.
+    expect(form.invalid).toBe(true);
 
     const emitted: void[] = [];
     fixture.componentInstance.cancelEditingSlackWebhookUrl.subscribe(() => emitted.push(undefined));
@@ -99,7 +103,24 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
 
     expect(form.controls['chat_webhook_url'].value).toBeNull();
     expect(form.controls['chat_webhook_url'].pristine).toBe(true);
+    expect(form.valid).toBe(true);
     expect(emitted).toHaveLength(1);
+  });
+
+  it('disables Cancel (like Remove and Replace) when the form is disabled — read-only Auditor access must not leave one live control in an otherwise disabled card', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    form.disable();
+    await fixture.whenStable();
+
+    const cancelButton = button('settings-slack-webhook-cancel-button');
+    expect(cancelButton.disabled).toBe(true);
+
+    const emitted: void[] = [];
+    fixture.componentInstance.cancelEditingSlackWebhookUrl.subscribe(() => emitted.push(undefined));
+    cancelButton.click();
+    await fixture.whenStable();
+
+    expect(emitted).toHaveLength(0);
   });
 
   it('does not render the Slack webhook card at all when showSlackWebhook is false (e.g. the create/edit wizard, whose form has no chat_webhook_url control)', async () => {

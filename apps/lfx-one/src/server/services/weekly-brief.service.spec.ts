@@ -985,6 +985,17 @@ describe('WeeklyBriefService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('counts Unicode code points, not UTF-16 code units, for the length guard — an astral-plane-heavy brief under the code-point limit must not false-positive', async () => {
+      // Each 😀 is 1 code point but 2 UTF-16 units — 25,000 of them is 25,000 code points
+      // (under SLACK_MESSAGE_TEXT_MAX_LENGTH) but 50,000 UTF-16 units (over it). A raw
+      // `.length` check would wrongly reject this; `[...text].length` must not.
+      mockShareableBrief({ brief_text: '😀'.repeat(25_000) });
+      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({ committee_name: 'Test Committee' });
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
     it('POSTs the brief text to the stored webhook URL and resolves on a 200 from Slack', async () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
