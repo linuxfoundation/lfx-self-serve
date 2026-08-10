@@ -951,8 +951,9 @@ export class AnalyticsService {
    * Errors propagate to the caller rather than resolving to an all-zeros response.
    * Spend, impressions and ROAS of 0 are legitimate measurements, so a zero-filled
    * error fallback here would render a failed request as "this foundation spent
-   * nothing" — indistinguishable from the real thing. Every caller already handles
-   * the error stream and renders its own unavailable state.
+   * nothing" — indistinguishable from the real thing. Callers must handle the error
+   * stream and render their own unavailable state; a caller that swallows the error
+   * back into zeros reintroduces exactly the ambiguity this avoids.
    *
    * @param foundationSlug - Foundation slug used to filter metrics
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
@@ -1294,8 +1295,9 @@ export class AnalyticsService {
    * Errors propagate to the caller rather than resolving to an all-zeros response.
    * $0 attributed revenue is a legitimate measurement, so a zero-filled error fallback
    * here would render a failed request as "this foundation won nothing" —
-   * indistinguishable from the real thing. Every caller already handles the error
-   * stream and renders its own unavailable state.
+   * indistinguishable from the real thing. Callers must handle the error stream and
+   * render their own unavailable state; a caller that swallows the error back into
+   * zeros reintroduces exactly the ambiguity this avoids.
    *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
