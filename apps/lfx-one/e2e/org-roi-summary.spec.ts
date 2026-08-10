@@ -194,6 +194,11 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-window')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-category-donut')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-projects-donut')).toHaveCount(0);
+    // The headline band carries the largest figures on the page, so it is the one surface that
+    // must not slip through: it renders from the same summary and needs the same identity check.
+    await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-annual-trend')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-portfolio-loading')).toBeVisible();
   });
 
   test('never sends an estimation method to the category breakdown, which cannot vary by one', async ({ page }) => {

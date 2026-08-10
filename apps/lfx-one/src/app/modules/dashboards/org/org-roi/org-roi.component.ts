@@ -117,7 +117,7 @@ export class OrgRoiComponent {
    * it flips in the same change-detection pass as the switch — unlike the donuts' internal loading
    * flags, which are driven by `toObservable` and therefore only settle on the next effect flush.
    */
-  private readonly summaryMatchesSelectedOrg: Signal<boolean> = computed(() => {
+  protected readonly summaryMatchesSelectedOrg: Signal<boolean> = computed(() => {
     const selected = this.accountContext.selectedAccount()?.accountId ?? '';
     return selected !== '' && this.summary().orgUid === selected;
   });

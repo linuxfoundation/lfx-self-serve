@@ -57,7 +57,12 @@
       icon="fa-light fa-triangle-exclamation"
       title="ROI metrics aren't available for this company right now. Please try again."
       data-testid="org-roi-no-analytics-id-state" />
-  } @else if (portfolioLoading()) {
+  } @else if (portfolioLoading() || !summaryMatchesSelectedOrg()) {
+    <!-- The org-identity check belongs in the loading condition, not only on the figures below:
+         the summary keeps its previous value until the next response lands, and `portfolioLoading`
+         is raised only on the following effect flush. Without it this branch loses to the populated
+         one for that window, putting the previous organization's headline amounts under the newly
+         selected one. -->
     <section class="flex flex-col gap-4" data-testid="org-roi-portfolio-loading">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         @for (i of [1, 2, 3, 4]; track i) {
