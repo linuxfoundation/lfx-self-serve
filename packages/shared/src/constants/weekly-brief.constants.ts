@@ -61,6 +61,17 @@ export const SLACK_MESSAGE_TEXT_MAX_LENGTH = 40_000;
  */
 export const SLACK_ERROR_BODY_MAX_LENGTH = 500;
 
+/**
+ * Matches Slack's own documented incoming-webhook error strings — short lowercase/underscore
+ * tokens (`invalid_payload`, `channel_not_found`, `action_prohibited`, `rate_limited`, …). Used
+ * to gate whether a rejected share's response body is safe to echo into the client-facing error
+ * message: the actual body could be arbitrary third-party content (an HTML error page, an
+ * intermediary proxy's response), and only a recognizable Slack token should ever reach a
+ * browser toast. The full (untrimmed) body always still reaches operators via the log-only
+ * `errorBody.reason` regardless of whether it matches this pattern.
+ */
+export const SLACK_ERROR_TOKEN_PATTERN = /^[a-z_]{1,64}$/;
+
 /** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
 export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
 

@@ -86,6 +86,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   SLACK_WEBHOOK_POST_TIMEOUT_MS: 10_000,
   SLACK_MESSAGE_TEXT_MAX_LENGTH: 40_000,
   SLACK_ERROR_BODY_MAX_LENGTH: 500,
+  SLACK_ERROR_TOKEN_PATTERN: /^[a-z_]{1,64}$/,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
@@ -1078,6 +1079,18 @@ describe('WeeklyBriefService', () => {
         code: 'SLACK_SEND_FAILED',
         message: 'Slack rejected the message',
         errorBody: { status: 502, reason: htmlBody },
+      });
+    });
+
+    it('still echoes a legitimate Slack token into the client message even with a trailing newline, while errorBody.reason keeps the untrimmed body', async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce(mockResponse(400, 'invalid_payload\n'));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'SLACK_SEND_FAILED',
+        message: 'Slack rejected the message: invalid_payload',
+        errorBody: { status: 400, reason: 'invalid_payload\n' },
       });
     });
 

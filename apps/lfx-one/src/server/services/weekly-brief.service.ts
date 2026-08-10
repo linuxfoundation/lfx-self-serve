@@ -5,6 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   SLACK_ERROR_BODY_MAX_LENGTH,
+  SLACK_ERROR_TOKEN_PATTERN,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   SLACK_MESSAGE_TEXT_MAX_LENGTH,
   SLACK_WEBHOOK_POST_TIMEOUT_MS,
@@ -903,14 +904,14 @@ export class WeeklyBriefService {
       // would still be fully materialized in memory even though only SLACK_ERROR_BODY_MAX_LENGTH
       // characters of it are ever used.
       const slackErrorText = await this.readBoundedText(response, SLACK_ERROR_BODY_MAX_LENGTH).catch(() => '');
-      // Slack's own documented error strings are short lowercase/underscore tokens
-      // (invalid_payload, channel_not_found, action_prohibited, …) — only echo the body into the
-      // client-facing message when it actually looks like one of those. BaseApiError#toResponse
-      // puts `message` directly in the client response, and slackErrorText is otherwise arbitrary
-      // third-party content (a Slack-side HTML error page, an intermediary proxy's response) that
-      // has no business being reflected into a browser toast. The full text still reaches
-      // operators either way, via errorBody.reason below (log-only).
-      const clientSafeReason = /^[a-z_]{1,64}$/.test(slackErrorText) ? slackErrorText : '';
+      // SLACK_ERROR_TOKEN_PATTERN gates what's safe to echo into the client-facing message —
+      // BaseApiError#toResponse puts `message` directly in the client response, and slackErrorText
+      // is otherwise arbitrary third-party content (a Slack-side HTML error page, an intermediary
+      // proxy's response). The full (untrimmed) text still reaches operators either way, via
+      // errorBody.reason below (log-only) — only this client-safety check trims, so a trailing
+      // newline Slack or a proxy might add doesn't disqualify an otherwise-legitimate token.
+      const trimmedErrorText = slackErrorText.trim();
+      const clientSafeReason = SLACK_ERROR_TOKEN_PATTERN.test(trimmedErrorText) ? trimmedErrorText : '';
       throw new MicroserviceError(`Slack rejected the message${clientSafeReason ? `: ${clientSafeReason}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
