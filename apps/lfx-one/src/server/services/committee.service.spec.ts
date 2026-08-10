@@ -558,6 +558,20 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       });
     });
 
+    it('throws SLACK_WEBHOOK_UNVERIFIED (distinct from SLACK_WEBHOOK_NOT_PERSISTED) when the confirmation read itself fails, after the core PUT and settings update already succeeded', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+      // getSlackWebhookUrlStrict's read-back GET fails outright (e.g. a transient upstream
+      // outage) — must not be reported the same way as a confirmed mismatch, since everything
+      // requested up to this point already committed.
+      proxyRequest.mockRejectedValueOnce(new Error('upstream unavailable'));
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'SLACK_WEBHOOK_UNVERIFIED',
+      });
+    });
+
     it('never returns chat_webhook_url on the response even if upstream happens to echo it back', async () => {
       fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
       updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL });

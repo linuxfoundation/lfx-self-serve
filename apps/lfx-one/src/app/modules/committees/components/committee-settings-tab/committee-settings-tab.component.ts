@@ -295,6 +295,14 @@ export class CommitteeSettingsTabComponent {
             // user just typed survives this refresh instead of vanishing before they can read
             // the error.
             this.committeeUpdated.emit();
+          } else if (status === 409 && code === 'SLACK_WEBHOOK_UNVERIFIED') {
+            // Same rationale as SLACK_WEBHOOK_NOT_PERSISTED above: everything the user set did
+            // persist (this check only runs after the core PUT and settings update both already
+            // succeeded), the webhook's status just couldn't be confirmed — e.g. a transient
+            // upstream outage on the confirmation read, not a real rejection. Still emit + leave
+            // the control dirty for the same reasons as that branch.
+            detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook status could not be confirmed.';
+            this.committeeUpdated.emit();
           } else if (status === 403 && code === 'IMPERSONATION_READ_ONLY') {
             // Backstop only — the control is already disabled during impersonation (see the
             // constructor's combineLatest subscription), so this path shouldn't normally be

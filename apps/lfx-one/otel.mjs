@@ -186,6 +186,14 @@ if (!otlpEndpoint) {
       }),
       new ExpressInstrumentation(),
       new UndiciInstrumentation({
+        // Skip instrumentation entirely for Slack incoming-webhook requests (LFXV2-3080): the
+        // URL path itself carries a bearer credential (https://hooks.slack.com/services/T…/B…/<secret>),
+        // and this instrumentation records url.full/url.path as span attributes with no
+        // redaction — the SENSITIVE_FIELDS/logger.sanitize() defense elsewhere in this repo has
+        // no reach into the OTel pipeline. ignoreRequestHook returning true suppresses span
+        // creation entirely, which also prevents responseHook below from ever seeing this
+        // request (it looks up a per-request record that's only populated when a span exists).
+        ignoreRequestHook: (request) => request.origin === 'https://hooks.slack.com',
         headersToSpanAttributes: {
           requestHeaders: ['content-type'],
           responseHeaders: ['content-type'],

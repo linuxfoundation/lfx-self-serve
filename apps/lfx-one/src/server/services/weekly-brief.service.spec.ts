@@ -990,11 +990,20 @@ describe('WeeklyBriefService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('counts Unicode code points, not UTF-16 code units, for the length guard — an astral-plane-heavy brief under the code-point limit must not false-positive', async () => {
+    it('rejects an astral-plane-heavy brief whose UTF-16 length exceeds the limit even though its code-point count does not — the guard takes the larger (more conservative) of the two counts', async () => {
       // Each 😀 is 1 code point but 2 UTF-16 units — 25,000 of them is 25,000 code points
-      // (under SLACK_MESSAGE_TEXT_MAX_LENGTH) but 50,000 UTF-16 units (over it). A raw
-      // `.length` check would wrongly reject this; `[...text].length` must not.
+      // (under SLACK_MESSAGE_TEXT_MAX_LENGTH) but 50,000 UTF-16 units (over it). Since Slack's own
+      // "40,000 characters" limit doesn't specify an encoding, the guard takes Math.max of both
+      // counts rather than trusting the smaller one — a pre-flight check should err toward
+      // rejecting too early, not toward letting something through that Slack itself then 502s on.
       mockShareableBrief({ brief_text: '😀'.repeat(25_000) });
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 400 });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('does not reject a brief whose code-point count and UTF-16 length both sit under the limit', async () => {
+      mockShareableBrief({ brief_text: 'x'.repeat(1000) });
       fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({ committee_name: 'Test Committee' });

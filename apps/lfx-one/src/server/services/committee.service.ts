@@ -673,7 +673,32 @@ export class CommitteeService {
     // with an empty value, so saveSettings sends chat_webhook_url: null with no prior set) —
     // harmless, since nothing was actually persisted before or after either way.
     if (committeeData.chat_webhook_url !== undefined) {
-      const persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
+      // getSlackWebhookUrlStrict fails closed by design (propagates upstream errors rather than
+      // defaulting to null) — correct for its other caller (shareToSlack, where a transient
+      // outage must not be misread as "no webhook configured"), but wrong here: by this point
+      // the core PUT and settings PUT have both already committed, so a transient failure on
+      // this confirmation-only read must not read to the caller as "the save failed" — everything
+      // requested actually did save, we just couldn't confirm the one field that might not have.
+      // Distinguished from the genuine SLACK_WEBHOOK_NOT_PERSISTED mismatch below with its own
+      // code so the client doesn't conflate "confirmed not persisted" with "couldn't check".
+      let persistedWebhookUrl: string | null;
+      try {
+        persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
+      } catch (err) {
+        logger.warning(req, 'update_committee', 'Could not confirm chat_webhook_url persistence after an otherwise-successful save', {
+          committee_id: committeeId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        throw new ConflictError(
+          'Your other changes were saved, but the Slack webhook status could not be confirmed. Reload to check whether it was saved.',
+          'SLACK_WEBHOOK_UNVERIFIED',
+          {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+          }
+        );
+      }
       if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
         throw new ConflictError(
           'Your other changes were saved, but the Slack webhook could not be stored — this environment does not support it yet.',

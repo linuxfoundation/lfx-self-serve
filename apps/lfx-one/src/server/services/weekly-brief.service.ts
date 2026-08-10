@@ -860,12 +860,14 @@ export class WeeklyBriefService {
     }
 
     const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
-    // [...text].length, not text.length — counts Unicode code points, not UTF-16 code units,
-    // matching how the controller validates this same brief_text field on save
-    // (weekly-brief.controller.ts's [...b['brief_text']].length check against
-    // WEEKLY_BRIEF_TEXT_MAX_LENGTH). A raw .length would disagree with that check for an
-    // emoji-heavy brief.
-    if ([...text].length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
+    // Math.max(text.length, [...text].length), not just one or the other: this guard's job is to
+    // pre-empt an opaque 502 from Slack, and Slack's own "40,000 characters" doc doesn't specify
+    // an encoding — text.length (UTF-16 code units) is >= code-point count for any text containing
+    // astral-plane characters (emoji), so using the smaller code-point-only count (as the
+    // controller's brief_text *save* validation does, for a different reason — matching upstream's
+    // own declared maxLength) would let an emoji-heavy brief past this guard only to still be
+    // rejected by Slack. Taking the max is the conservative choice for a pre-flight check.
+    if (Math.max(text.length, [...text].length) > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
       // Phrased in terms of shortening the brief, not the post-escaping/post-header character
       // ceiling above — that number (40,000) would be confusing next to the brief editor's own
       // much smaller cap (WEEKLY_BRIEF_TEXT_MAX_LENGTH, 20,000).
