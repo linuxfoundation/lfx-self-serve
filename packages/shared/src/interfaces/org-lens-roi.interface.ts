@@ -89,3 +89,23 @@ export interface OrgLensRoiProjects {
   /** The complete, uncapped project set (DR-005). */
   rows: OrgLensRoiProjectRow[];
 }
+
+/** One rendered arc of the category donut. A view model — never serialized, never a wire contract. */
+export interface OrgLensRoiCategorySlice {
+  key: string;
+  label: string;
+  expenditure: number;
+  share: number;
+  color: string;
+}
+
+/** One rendered arc of the projects donut. A view model — never serialized, never a wire contract. */
+export interface OrgLensRoiProjectSlice {
+  key: string;
+  label: string;
+  /** The true signed measure, which is what the label reports. */
+  value: number;
+  /** What the arc is sized by. Never negative, because an arc cannot be. */
+  weight: number;
+  color: string;
+}

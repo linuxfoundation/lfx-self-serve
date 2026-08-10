@@ -428,4 +428,17 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
     await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
   });
+
+  test('says so rather than drawing a blank chart when categories sum to zero', async ({ page }) => {
+    // Rows present but nothing to draw from them. Keying the template off the row count alone
+    // rendered an empty canvas beside an empty legend, which reads as a broken widget.
+    await stubOrgLensContext(page, {
+      investmentBreakdown: { rows: MOCK_CATEGORY_ROWS.map((row) => ({ ...row, expenditure: 0 })), total: 0 },
+    });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-category-donut-legend')).toHaveCount(0);
+  });
 });

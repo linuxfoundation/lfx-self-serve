@@ -5,7 +5,7 @@
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <h2 class="text-base font-semibold text-gray-900">Investment by contribution category</h2>
 
-    @if (hasRows()) {
+    @if (hasSlices()) {
       <div class="inline-flex self-start rounded-md border border-gray-200 p-0.5" role="group" aria-label="Category display units">
         <button
           type="button"
@@ -49,7 +49,7 @@
       <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
       <span>The category breakdown couldn't be loaded. Please try again.</span>
     </div>
-  } @else if (!hasRows()) {
+  } @else if (!hasSlices()) {
     <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-category-donut-empty">
       <i class="fa-light fa-chart-pie text-gray-400" aria-hidden="true"></i>
       <span>No category breakdown is available for this organization.</span>

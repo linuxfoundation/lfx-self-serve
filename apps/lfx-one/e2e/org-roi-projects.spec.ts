@@ -74,7 +74,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(note).toBeVisible();
     await expect(note).toContainText(`${NEGATIVE_PROJECTS.length} projects have a negative net return`);
     await expect(note).toContainText(formatCurrency(NEGATIVE_PROJECTS_TOTAL));
-    await expect(note).toContainText('cannot be drawn as a slice');
+    await expect(note).toContainText('cannot be sized as a slice');
 
     const list = page.getByTestId('org-roi-projects-donut-negative-list');
     for (const project of NEGATIVE_PROJECTS) {
@@ -85,6 +85,12 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
 
     // The chart still renders, sized by the profitable projects alone.
     await expect(page.getByTestId('org-roi-projects-donut-chart')).toBeVisible();
+
+    // Loss-making projects are in exactly one place. They are excluded from the remainder as well
+    // as from the arcs, so the remainder counts only the four profitable projects left over —
+    // reporting them both here and inside "Other" would double-count them.
+    const profitable = MOCK_PROJECT_INPUTS.filter((input) => input.return > input.expenditure);
+    await expect(page.getByTestId('org-roi-projects-donut-legend')).toContainText(`Other (${profitable.length - 2} projects)`);
   });
 
   test('does not claim a negative net return on a measure that has none', async ({ page }) => {
@@ -115,8 +121,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(list).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
   });
 
-  test('carries the modelled-cost disclosure on the investment measure only', async ({ page }) => {
-    // FR-039a binds surfaces that show an *investment* figure. Return and Net Return are not that.
+  test('carries the modelled-cost disclosure wherever a figure derives from modelled cost', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
@@ -127,6 +132,12 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(note).toContainText('same for every organization');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
 
+    // Net Return is totalReturn − totalExpenditure, so it is a direct function of the modelled
+    // cost and owes the same disclosure — the per-project loss figures render on this tab.
+    await page.getByTestId('org-roi-projects-donut-measure-netReturn').click();
+    await expect(page.getByTestId('org-roi-projects-donut-modelled-cost-note')).toBeVisible();
+
+    // Total Return alone is not derived from investment, so it does not.
     await page.getByTestId('org-roi-projects-donut-measure-return').click();
     await expect(page.getByTestId('org-roi-projects-donut-modelled-cost-note')).toHaveCount(0);
   });

@@ -15,7 +15,7 @@ import {
   ORG_LENS_ROI_PROJECT_MEASURE_LABELS,
   ORG_LENS_ROI_PROJECT_MEASURES,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, OrgLensRoiProjects } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, OrgLensRoiProjects, OrgLensRoiProjectSlice } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
@@ -24,16 +24,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_PROJECTS: OrgLensRoiProjects = { method: ORG_LENS_ROI_DEFAULT_METHOD, rows: [] };
-
-interface ProjectSlice {
-  key: string;
-  label: string;
-  /** The true signed measure. Negative for a loss-making project on the Net Return tab. */
-  value: number;
-  /** What the arc is sized by — never negative, because an arc cannot be. */
-  weight: number;
-  color: string;
-}
 
 /** Highest-contributing projects by a selectable measure (US4, FR-027, FR-028). */
 @Component({
@@ -63,7 +53,12 @@ export class OrgRoiProjectsDonutComponent {
 
   protected readonly hasRows: Signal<boolean> = computed(() => this.projects().rows.length > 0);
 
-  protected readonly showsInvestment: Signal<boolean> = computed(() => this.measure() === 'investment');
+  /**
+   * FR-039a names the investment figure, but Net Return is `totalReturn - totalExpenditure` — a
+   * direct function of the modelled cost — and the negative list below renders per-project money on
+   * that tab. Total Return alone owes no modelled-cost disclosure; the other two do.
+   */
+  protected readonly showsModelledCost: Signal<boolean> = computed(() => this.measure() !== 'return');
 
   protected readonly measureLabel: Signal<string> = computed(() => this.measureLabels[this.measure()]);
 
@@ -95,7 +90,9 @@ export class OrgRoiProjectsDonutComponent {
   protected readonly negativeSummary: Signal<string> = computed(() => {
     const { count, total } = this.negatives();
     const subject = count === 1 ? '1 project has' : `${count.toLocaleString('en-US')} projects have`;
-    return `${subject} a negative net return, totalling ${formatCurrency(total)}. A negative value cannot be drawn as a slice, so it is excluded from the chart and listed here instead.`;
+    // Accurate about the partition: these are in neither a slice nor the remainder, so the chart
+    // above genuinely does not represent them and this list is their only reporting.
+    return `${subject} a negative net return, totalling ${formatCurrency(total)}. A negative value cannot be sized as a slice, so these are excluded from the chart and from its remainder, and reported here instead.`;
   });
 
   /**
@@ -103,43 +100,54 @@ export class OrgRoiProjectsDonutComponent {
    * remainder labelled with its project count. The cap is a second stop condition: a flat portfolio
    * would otherwise reach the coverage target only after hundreds of unreadable slivers.
    */
-  protected readonly slices: Signal<ProjectSlice[]> = computed(() => {
-    const ranked = this.ranked();
-    const totalWeight = ranked.reduce((sum, entry) => sum + Math.max(0, entry.value), 0);
-    if (ranked.length === 0 || !(totalWeight > 0)) return [];
+  protected readonly slices: Signal<OrgLensRoiProjectSlice[]> = computed(() => {
+    // Partition once, at zero, and let the chart and the negative disclosure own disjoint halves.
+    // Folding loss-making projects into the remainder as well as naming them below would report
+    // them twice, and would leave the remainder's arc (drawn from clamped magnitudes) disagreeing
+    // with its own legend figure (summed signed) with nothing to explain the gap. Every entry here
+    // is >= 0, so `weight` equals `value` throughout and each arc matches the number beside it.
+    const chartable = this.ranked().filter((entry) => entry.value >= 0);
+    const totalWeight = chartable.reduce((sum, entry) => sum + entry.value, 0);
+    if (chartable.length === 0 || !(totalWeight > 0)) return [];
 
-    const kept: ProjectSlice[] = [];
+    const kept: OrgLensRoiProjectSlice[] = [];
     let covered = 0;
     let index = 0;
 
-    while (index < ranked.length && kept.length < ORG_LENS_ROI_PROJECT_DONUT_MAX_SLICES && covered < ORG_LENS_ROI_PROJECT_DONUT_COVERAGE) {
-      const entry = ranked[index];
-      const weight = Math.max(0, entry.value);
-      // A non-positive value contributes no arc; stop rather than emit invisible slices.
-      if (weight <= 0) break;
+    while (index < chartable.length && kept.length < ORG_LENS_ROI_PROJECT_DONUT_MAX_SLICES && covered < ORG_LENS_ROI_PROJECT_DONUT_COVERAGE) {
+      const entry = chartable[index];
       kept.push({
         key: entry.row.projectId,
         label: entry.row.projectName,
         value: entry.value,
-        weight,
+        weight: entry.value,
         color: ORG_LENS_ROI_DONUT_PALETTE[kept.length % ORG_LENS_ROI_DONUT_PALETTE.length],
       });
-      covered += weight / totalWeight;
+      covered += entry.value / totalWeight;
       index += 1;
     }
 
-    const rest = ranked.slice(index);
+    const rest = chartable.slice(index);
     if (rest.length === 0) return kept;
 
+    // A remainder standing for a single project hides a real name behind "Other (1 project)" and
+    // saves no space. Name it instead.
+    if (rest.length === 1) {
+      const only = rest[0];
+      return [
+        ...kept,
+        { key: only.row.projectId, label: only.row.projectName, value: only.value, weight: only.value, color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR },
+      ];
+    }
+
     const restValue = rest.reduce((sum, entry) => sum + entry.value, 0);
-    const restWeight = rest.reduce((sum, entry) => sum + Math.max(0, entry.value), 0);
     return [
       ...kept,
       {
         key: 'remainder',
-        label: rest.length === 1 ? 'Other (1 project)' : `Other (${rest.length.toLocaleString('en-US')} projects)`,
+        label: `Other (${rest.length.toLocaleString('en-US')} projects)`,
         value: restValue,
-        weight: restWeight,
+        weight: restValue,
         color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR,
       },
     ];

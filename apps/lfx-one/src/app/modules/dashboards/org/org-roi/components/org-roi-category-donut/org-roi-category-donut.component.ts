@@ -12,7 +12,7 @@ import {
   ORG_LENS_ROI_KPI_EXPLANATION,
   ORG_LENS_ROI_NO_VALUE,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiInvestmentBreakdown } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiCategoryRow, OrgLensRoiCategorySlice, OrgLensRoiInvestmentBreakdown } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
@@ -21,14 +21,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_BREAKDOWN: OrgLensRoiInvestmentBreakdown = { rows: [], total: 0 };
-
-interface CategorySlice {
-  key: string;
-  label: string;
-  expenditure: number;
-  share: number;
-  color: string;
-}
 
 /** Investment by contribution category (US3, FR-023 to FR-026). */
 @Component({
@@ -57,7 +49,12 @@ export class OrgRoiCategoryDonutComponent {
 
   protected readonly total: Signal<number> = computed(() => this.breakdown().total);
 
-  protected readonly hasRows: Signal<boolean> = computed(() => this.breakdown().rows.length > 0);
+  /**
+   * Gate on the slices, not on the row count. An organization can have category rows that sum to
+   * zero investment, and there is nothing to draw from those — keying the template off row count
+   * alone rendered a blank canvas beside an empty legend instead of saying so.
+   */
+  protected readonly hasSlices: Signal<boolean> = computed(() => this.slices().length > 0);
 
   /**
    * The reconciliation anchor (FR-026, SC-011). It is the sum of exactly the rows drawn below, and
@@ -74,18 +71,17 @@ export class OrgRoiCategoryDonutComponent {
    * FR-025 — categories under the display threshold collapse into one labelled remainder, so a
    * $1,190 education line does not render as an invisible sliver with an unreachable legend entry.
    */
-  protected readonly slices: Signal<CategorySlice[]> = computed(() => {
+  protected readonly slices: Signal<OrgLensRoiCategorySlice[]> = computed(() => {
     const { rows, total } = this.breakdown();
     if (rows.length === 0 || !(total > 0)) return [];
 
-    const kept: CategorySlice[] = [];
-    const collapsed: { expenditure: number; count: number } = { expenditure: 0, count: 0 };
+    const kept: OrgLensRoiCategorySlice[] = [];
+    const collapsed: OrgLensRoiCategoryRow[] = [];
 
     for (const row of rows) {
       const share = row.expenditure / total;
       if (share < ORG_LENS_ROI_CATEGORY_REMAINDER_THRESHOLD) {
-        collapsed.expenditure += row.expenditure;
-        collapsed.count += 1;
+        collapsed.push(row);
         continue;
       }
       kept.push({
@@ -97,14 +93,32 @@ export class OrgRoiCategoryDonutComponent {
       });
     }
 
-    if (collapsed.count === 0) return kept;
+    if (collapsed.length === 0) return kept;
+
+    // A remainder standing for a single category is strictly worse than the category itself: it
+    // hides a real name behind "Other (1 category)" and saves no space.
+    if (collapsed.length === 1) {
+      const only = collapsed[0];
+      return [
+        ...kept,
+        {
+          key: only.type,
+          label: only.label,
+          expenditure: only.expenditure,
+          share: only.expenditure / total,
+          color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR,
+        },
+      ];
+    }
+
+    const collapsedTotal = collapsed.reduce((sum, row) => sum + row.expenditure, 0);
     return [
       ...kept,
       {
         key: 'remainder',
-        label: collapsed.count === 1 ? 'Other (1 category)' : `Other (${collapsed.count} categories)`,
-        expenditure: collapsed.expenditure,
-        share: collapsed.expenditure / total,
+        label: `Other (${collapsed.length} categories)`,
+        expenditure: collapsedTotal,
+        share: collapsedTotal / total,
         color: ORG_LENS_ROI_DONUT_REMAINDER_COLOR,
       },
     ];
@@ -128,8 +142,13 @@ export class OrgRoiCategoryDonutComponent {
     });
   });
 
+  /**
+   * Counts the underlying categories, not the slices. A remainder slice stands for several, so
+   * announcing the slice count told a screen-reader user "6 categories" for an organization with
+   * eight — a number no sighted user is shown to contradict.
+   */
   protected readonly chartSummaryLabel: Signal<string> = computed(
-    () => `Doughnut chart of modelled investment across ${this.slices().length} contribution categories. The same figures are listed beside it.`
+    () => `Doughnut chart of modelled investment across ${this.breakdown().rows.length} contribution categories. The same figures are listed beside it.`
   );
 
   protected readonly chartData: Signal<ChartData<'doughnut'>> = computed(() => {

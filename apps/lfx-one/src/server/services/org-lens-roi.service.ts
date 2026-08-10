@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  ORG_LENS_ROI_CACHE_KEY,
-  ORG_LENS_ROI_CONTRIBUTION_TYPES,
-  ORG_LENS_ROI_COVERAGE_REASONS,
-  ORG_LENS_ROI_METHODS,
-  VALKEY_CACHE,
-} from '@lfx-one/shared/constants';
+import { ORG_LENS_ROI_CACHE_KEY, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgLensRoiAnnual,
   OrgLensRoiAnnualRow,
@@ -34,6 +28,13 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 export class OrgLensRoiService {
+  /**
+   * Floating-point slack when re-checking that category rows still sum to their stated total. The
+   * warehouse residual measured across all covered accounts is ~6e-08 on a $145M base, so a cent is
+   * several orders of magnitude of headroom while still catching a genuinely wrong total.
+   */
+  private static readonly reconciliationEpsilonUsd = 0.01;
+
   private readonly snowflakeService = SnowflakeService.getInstance();
 
   public async getSummary(req: Request, accountId: string, method: OrgLensRoiMethod): Promise<OrgLensRoiSummary> {
@@ -198,6 +199,10 @@ export class OrgLensRoiService {
         LEFT JOIN ${this.projectsBreakdownTable()} b
           ON b.ACCOUNT_ID = p.ACCOUNT_ID AND b.PROJECT_ID = p.PROJECT_ID
         WHERE p.ACCOUNT_ID = ? AND p.MARKUP_METHOD = ?
+        -- PROJECT_ID keeps a project's category rows contiguous and makes ties deterministic;
+        -- DISPLAY_ORDER fixes category order within a project. TOTAL_RETURN DESC is the payload's
+        -- default ranking: the donut re-sorts by the selected measure, but US5's table (FR-033a)
+        -- pages the set in this order and needs it stable across requests.
         ORDER BY p.TOTAL_RETURN DESC, p.PROJECT_ID, b.DISPLAY_ORDER
       `;
         const result = await this.snowflakeService.execute<OrgLensRoiProjectWarehouseRow>(sql, [accountId, method]);
@@ -216,7 +221,9 @@ export class OrgLensRoiService {
         project = {
           projectId: row.PROJECT_ID,
           projectSlug: this.toNullableLabel(row.PROJECT_SLUG) ?? '',
-          projectName: this.toNullableLabel(row.PROJECT_NAME) ?? '',
+          // Falls back rather than emptying: the name is what every surface labels a project with,
+          // and a blank legend entry is worse than an unlovely slug.
+          projectName: this.toNullableLabel(row.PROJECT_NAME) ?? this.toNullableLabel(row.PROJECT_SLUG) ?? row.PROJECT_ID,
           totalExpenditure: this.toFiniteNumber(row.TOTAL_EXPENDITURE),
           totalReturn: this.toFiniteNumber(row.TOTAL_RETURN),
           profit: this.toFiniteNumber(row.PROFIT),
@@ -354,13 +361,25 @@ export class OrgLensRoiService {
     return typeof value === 'number' && Number.isFinite(value);
   }
 
-  /** Per-row, not just per-envelope: the donut maps over these, so one malformed entry is enough to break a render. */
+  /**
+   * Per-row, not just per-envelope: the donut maps over these, so one malformed entry is enough to
+   * break a render.
+   *
+   * `type` is checked for shape, deliberately **not** against
+   * `ORG_LENS_ROI_CONTRIBUTION_TYPES`. The vocabulary is already enforced upstream by an
+   * `accepted_values` dbt test, and enforcing it again here would only create a write/read
+   * asymmetry: the mapper writes whatever the warehouse returns, so a seed that gained a ninth
+   * contribution type before this constant did would write entries this guard then rejected on
+   * every read — permanently defeating the cache for that organization and re-running the
+   * ~1,200-row join on every request. Dropping the unknown row instead would be worse still: the
+   * category total would silently stop reconciling with the KPI figure (FR-026).
+   */
   private static isCategoryRows(value: unknown): boolean {
     if (!Array.isArray(value)) return false;
     return value.every((row) => {
       if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
       const entry = row as Record<string, unknown>;
-      if (!(ORG_LENS_ROI_CONTRIBUTION_TYPES as readonly string[]).includes(entry['type'] as string)) return false;
+      if (typeof entry['type'] !== 'string' || entry['type'].length === 0) return false;
       if (typeof entry['label'] !== 'string') return false;
       return OrgLensRoiService.isFiniteNumber(entry['expenditure']);
     });
@@ -370,7 +389,15 @@ export class OrgLensRoiService {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
     const breakdown = value as Record<string, unknown>;
     if (!OrgLensRoiService.isFiniteNumber(breakdown['total'])) return false;
-    return OrgLensRoiService.isCategoryRows(breakdown['rows']);
+    if (!OrgLensRoiService.isCategoryRows(breakdown['rows'])) return false;
+
+    // The write path sums `total` from these same rows, so the two agree by construction. The read
+    // path had no such guarantee: any finite `total` was accepted alongside any rows, letting a
+    // corrupt or stale entry render a headline investment figure that contradicts the slices under
+    // it — the misleading-money outcome the reconciliation invariant exists to prevent.
+    const rows = breakdown['rows'] as { expenditure: number }[];
+    const summed = rows.reduce((sum, row) => sum + row.expenditure, 0);
+    return Math.abs(summed - (breakdown['total'] as number)) <= OrgLensRoiService.reconciliationEpsilonUsd;
   }
 
   private static isProjects(value: unknown): boolean {

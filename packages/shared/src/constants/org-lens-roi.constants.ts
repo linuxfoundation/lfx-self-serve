@@ -70,11 +70,12 @@ export const ORG_LENS_ROI_PROJECT_DONUT_MAX_SLICES = 10;
 
 export const ORG_LENS_ROI_PROJECT_MEASURES = ['investment', 'return', 'netReturn'] as const;
 
-export const ORG_LENS_ROI_PROJECT_MEASURE_LABELS = {
+/** Annotated like `ORG_LENS_ROI_METHOD_LABELS`, so adding a measure without a label fails here rather than at each index site. */
+export const ORG_LENS_ROI_PROJECT_MEASURE_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_MEASURES)[number], string> = {
   investment: 'Investment',
   return: 'Return',
   netReturn: 'Net Return',
-} as const;
+};
 
 /** Ends in gray so the remainder slice reads as "everything else" rather than as another category. */
 export const ORG_LENS_ROI_DONUT_PALETTE: readonly string[] = [
