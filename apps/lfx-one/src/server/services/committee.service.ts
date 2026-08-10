@@ -1729,8 +1729,17 @@ export class CommitteeService {
    * any read" invariant on {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not
    * just the two hand-audited call sites. A no-op today (upstream doesn't store the field yet),
    * but load-bearing the moment the schema change referenced in `updateCommittee` lands.
+   *
+   * Null-tolerant: `proxyRequest` can return `null` for an empty upstream body (documented at
+   * committee-activity.service.ts's four guarded call sites) — createCommittee and
+   * updateCommittee's no-core-update branch both feed a raw `proxyRequest` result straight into
+   * this helper, so an unguarded destructure here would turn that into an untyped 500 instead of
+   * whatever typed handling (or lack thereof) the caller already has for a null response.
    */
   private stripChatWebhookUrl<T extends Committee>(committee: T): T {
+    if (!committee) {
+      return committee;
+    }
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
     const { chat_webhook_url: _chatWebhookUrl, ...rest } = committee as T & { chat_webhook_url?: string | null };
     return rest as T;

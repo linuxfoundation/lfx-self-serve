@@ -578,5 +578,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       const sentBody = proxyRequest.mock.calls[0][5];
       expect(sentBody).not.toHaveProperty('chat_webhook_url');
     });
+
+    it('createCommittee resolves (does not throw) when upstream returns a null body — stripChatWebhookUrl must tolerate null the same way the old bare spread did', async () => {
+      proxyRequest.mockResolvedValueOnce(null);
+
+      // The regression this guards against: an unguarded destructure inside stripChatWebhookUrl
+      // (`const { chat_webhook_url, ...rest } = null`) throws synchronously, which would reject
+      // this promise instead of resolving it — .resolves fails the test if that happens.
+      await expect(service.createCommittee(req, { name: 'Test', category: 'general' })).resolves.toBeDefined();
+    });
   });
 });
