@@ -39,7 +39,7 @@ describe('FilterPillsComponent', () => {
   }
 
   it('renders one pill per option', () => {
-    expect(fixture.nativeElement.querySelectorAll('button')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="filter-pill-"]')).toHaveLength(2);
     expect(pill('kubecon').textContent?.trim()).toBe('KubeCon');
   });
 

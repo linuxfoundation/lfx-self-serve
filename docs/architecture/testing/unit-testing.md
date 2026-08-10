@@ -36,8 +36,10 @@ template compiler.
 ## The app-side builder
 
 App specs go through the **`@angular/build:unit-test`** builder rather than a hand-rolled Vite +
-Angular plugin setup. The builder ships with Angular itself, so its version always matches the
-framework's, and it reuses the application build (`buildTarget: lfx-one:build:development`) —
+Angular plugin setup. The builder is released by the Angular team alongside the framework and
+carries the framework's compatibility contract — not a promise that the two resolve to the same
+version (`@angular/build` is 20.3.13 here against a 20.3.15 framework; they are independent
+packages) — and it reuses the application build (`buildTarget: lfx-one:build:development`) —
 which is what makes `templateUrl`, `styleUrls`, and the `@lfx-one/shared/*` path aliases resolve
 in specs exactly as they do in the app. Nothing about the module graph is re-described in a
 second config file, so nothing about it can drift.
@@ -45,6 +47,25 @@ second config file, so nothing about it can drift.
 > The builder prints `NOTE: The "unit-test" builder is currently EXPERIMENTAL` on every run.
 > That is expected. The API surface used here is small — `buildTarget`, `tsConfig`, `runner`,
 > `providersFile`, `include` — and all of it is the documented shape.
+
+### Why `apps/lfx-one` is on Vitest 3
+
+The builder does not bundle Vitest — it imports Vitest's Node API from the workspace — so the
+version it runs against is a real compatibility constraint, not a formality.
+`@angular/build@20.3.13` declares `"vitest": "^3.1.1"`. Support for Vitest 4 first appears in
+`@angular/build@21.x`, which is an Angular major upgrade and not something a test harness gets to
+drag in. So `apps/lfx-one` pins **`vitest: ^3.2.4`**, satisfying the range the builder actually
+declares.
+
+The peer dependency is marked optional, so nothing fails the install if you ignore it — which is
+exactly why this is written down. A green sample run on Vitest 4 is not evidence of
+compatibility; it is evidence that the parts those two specs touch happen to line up.
+
+`packages/shared` stays on Vitest 4 deliberately. It runs its own suite with plain `vitest run`,
+has no Angular builder in the path, and therefore no reason to be held back by one. The two
+workspaces resolve independently. **When this app moves to Angular 21, raise this pin back to
+`^4` in the same change** — leaving it behind would pin the whole app to a runner two majors
+old for no remaining reason.
 
 `browsers` is deliberately **omitted**, which selects jsdom on Node. That keeps unit tests free
 of a browser download and a browser's startup cost; real-browser coverage is the E2E suite's job
