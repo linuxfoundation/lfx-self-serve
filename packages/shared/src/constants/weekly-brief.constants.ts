@@ -67,7 +67,8 @@ export const SLACK_ERROR_BODY_MAX_LENGTH = 500;
  * to gate whether a rejected share's response body is safe to echo into the client-facing error
  * message: the actual body could be arbitrary third-party content (an HTML error page, an
  * intermediary proxy's response), and only a recognizable Slack token should ever reach a
- * browser toast. The full (untrimmed) body always still reaches operators via the log-only
+ * browser toast. The untrimmed body — still bounded by SLACK_ERROR_BODY_MAX_LENGTH above, and
+ * only when the body was actually readable — reaches operators via the log-only
  * `errorBody.reason` regardless of whether it matches this pattern.
  */
 export const SLACK_ERROR_TOKEN_PATTERN = /^[a-z_]{1,64}$/;

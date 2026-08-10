@@ -195,11 +195,13 @@ if (!otlpEndpoint) {
         // request (it looks up a per-request record that's only populated when a span exists).
         // The 'hooks.slack.com' host below is intentionally duplicated from
         // SLACK_INCOMING_WEBHOOK_URL_PATTERN in packages/shared/src/constants/committees.constants.ts
-        // rather than importing it: that constant is a full-URL regex, while this check compares
-        // against request.origin (scheme+host only), so it can't be reused as-is. This OTel
-        // bootstrap also deliberately avoids importing any app-side package, so no app code loads
-        // before instrumentations are registered. If the allowlisted host ever changes there,
-        // update it here too.
+        // rather than importing it: that constant is a full-URL regex anchored on the exact
+        // credential-bearing path, while this check only compares the derived URL's .hostname —
+        // deliberately broader, since suppressing every request to the host is the safe direction
+        // for a redaction guard (a well-formed-webhook-only check would fail open on a malformed
+        // but still credential-bearing URL). This OTel bootstrap also deliberately avoids
+        // importing any app-side package, so no app code loads before instrumentations are
+        // registered. If the allowlisted host ever changes there, update it here too.
         //
         // Builds the exact same URL undici's own span code exports as url.full — new
         // URL(request.path, request.origin) (@opentelemetry/instrumentation-undici's
