@@ -62,9 +62,10 @@ export class CommitteeSettingsTabComponent {
    * True only when the user clicked Remove (`removeSlackWebhookStaged`), not merely when the
    * control is dirty-and-empty — Replace also leaves the control empty if the user types then
    * backspaces everything, and that should NOT be treated as "delete the webhook" on save. Reset
-   * to false on Cancel, on a successful save, and the moment the user types a non-empty value
-   * (typing a real URL supersedes a staged removal — see the constructor's valueChanges
-   * subscription).
+   * to false on Cancel, on a successful save, the moment the user types a non-empty value (typing
+   * a real URL supersedes a staged removal — see the constructor's valueChanges subscription),
+   * and on a committee refresh when the control isn't holding an unsaved edit (mirrors
+   * `editingSlackWebhookUrl`'s own reset there).
    */
   public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);

@@ -185,6 +185,12 @@
                 Must be a Slack Incoming Webhook URL (https://hooks.slack.com/services/...)
               </p>
             }
+            @if (slackWebhookRemovalStaged()) {
+              <p class="text-[11.5px] text-amber-700" data-testid="settings-slack-webhook-removal-staged-hint">
+                <i class="fa-light fa-triangle-exclamation"></i>
+                The webhook will be removed when you save. Enter a new URL to replace it instead, or Cancel to keep the current one.
+              </p>
+            }
             <div class="flex items-center justify-between gap-3 -mt-1">
               <p class="text-[11.5px] text-gray-400">
                 Create one from your Slack workspace's

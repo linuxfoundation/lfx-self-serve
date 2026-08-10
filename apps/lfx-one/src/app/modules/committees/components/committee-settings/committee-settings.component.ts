@@ -47,6 +47,13 @@ export class CommitteeSettingsComponent {
    */
   public readonly slackWebhookConfigured = input<boolean>(false);
   /**
+   * Whether Remove has staged a webhook deletion for the next save — the revealed (now-empty)
+   * input looks visually identical to the "no webhook configured yet" state (or to Replace with
+   * everything typed back out), so this drives an explicit hint rather than leaving that
+   * distinction invisible to the user.
+   */
+  public readonly slackWebhookRemovalStaged = input<boolean>(false);
+  /**
    * Whether the caller is impersonating another user — drives the webhook card's disabled state
    * and hint text directly, not inferred from the control's own `disabled` flag. The control can
    * be disabled for other reasons too (e.g. read-only Auditor access via `form().disabled`), and
@@ -80,14 +87,17 @@ export class CommitteeSettingsComponent {
   );
 
   /**
-   * Stages a removal: clears the control and marks it dirty so saveSettings' dirty-gate picks it
-   * up as an explicit "clear the webhook" instruction, then reveals the input so the user can
-   * enter a replacement instead if they change their mind — there is deliberately no separate
+   * Stages a removal: clears the control and marks it dirty, then reveals the input so the user
+   * can enter a replacement instead if they change their mind — there is deliberately no separate
    * save path here, everything funnels through the page's single Save Changes button.
-   * `removeSlackWebhookStaged` (distinct from `startEditingSlackWebhookUrl`, also emitted here)
-   * is what actually tells the parent this is an intentional removal, not just an empty control —
-   * the parent clears that signal again the moment the user types a non-empty value, so typing a
-   * replacement URL after clicking Remove correctly supersedes the staged removal.
+   * `removeSlackWebhookStaged` (distinct from `startEditingSlackWebhookUrl`, also emitted here) is
+   * what actually tells the parent this is an intentional removal — dirty-and-empty alone is
+   * ambiguous with Replace-then-cleared-back-to-empty, which must NOT delete the webhook on save.
+   * The parent clears the staged flag again the moment the user types a non-empty value, so typing
+   * a replacement URL after clicking Remove correctly supersedes the staged removal. The revealed
+   * (now-empty) input still looks identical to the "no webhook configured yet" state, or to a
+   * cleared-but-not-staged Replace — `slackWebhookRemovalStaged` drives the hint below that makes
+   * "this save will delete the webhook" visible instead of a silent surprise.
    */
   public onRemoveSlackWebhook(): void {
     const control = this.form().controls['chat_webhook_url'];

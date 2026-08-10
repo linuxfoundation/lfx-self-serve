@@ -119,6 +119,17 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-error"]')).not.toBeNull();
   });
 
+  it('shows the removal-staged hint when slackWebhookRemovalStaged is true, and hides it otherwise', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    fixture.componentRef.setInput('slackWebhookRemovalStaged', true);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-removal-staged-hint"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('slackWebhookRemovalStaged', false);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-removal-staged-hint"]')).toBeNull();
+  });
+
   it('shows no validation error for a valid, dirty URL', async () => {
     form.controls['chat_webhook_url'].setValue('https://hooks.slack.com/services/T1/B1/X');
     form.controls['chat_webhook_url'].markAsDirty();
