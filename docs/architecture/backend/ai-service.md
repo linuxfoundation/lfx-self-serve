@@ -189,14 +189,15 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
   TEMPERATURE: 0.7,
-  TIMEOUT_MS: 60_000, // default AbortSignal.timeout bound — agenda/newsletter (user-initiated POSTs)
+  TIMEOUT_MS: 120_000, // default AbortSignal.timeout bound — agenda/newsletter (user-initiated POSTs); not tuned against real newsletter-generation latency data
   EXTRACTION_TIMEOUT_MS: 15_000, // tighter bound for extractBriefActionItems (GET page-load path)
 };
 
 export const DURATION_ESTIMATION = {
-  BASE_DURATION: 30, // Base meeting duration in minutes
-  TIME_PER_ITEM: 5, // Additional time per agenda item
-  MINIMUM_DURATION: 15, // Minimum meeting duration
+  BASE_DURATION: 15, // Opening/closing time in minutes
+  TIME_PER_ITEM: 10, // Average time per agenda item in minutes
+  MINIMUM_DURATION: 30, // Minimum meeting duration in minutes
+  MAXIMUM_DURATION: 240, // Maximum meeting duration in minutes (4 hours)
 };
 ```
 

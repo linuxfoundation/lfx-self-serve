@@ -295,10 +295,12 @@ export class WeeklyBriefService {
     if (!writeSucceeded) {
       // isEnabled() (checked above) only reflects configuration, not live connection health — a
       // configured-but-currently-unreachable Valkey passes that guard and reaches this point.
-      // A failed write here is the actual signal that this extraction ran uncached and AI spend
-      // is unbounded while the cache stays down; worth a warning even though the response to the
-      // caller is unaffected (the freshly-extracted items are still returned below).
-      logger.warning(req, 'get_weekly_brief_action_items', 'Extraction result could not be cached — AI spend is unbounded while the cache is down', {
+      // setJson also fails soft on other faults (oversized value, op timeout), so "unreachable"
+      // isn't the only cause — but every cause here means this extraction ran uncached and the
+      // next read will re-extract too, so it's worth a warning regardless of which fault it was.
+      // The response to the caller is unaffected (the freshly-extracted items are still returned
+      // below) — this only affects whether the NEXT read hits the AI proxy again.
+      logger.warning(req, 'get_weekly_brief_action_items', 'Extraction result could not be cached — next read will re-invoke the AI proxy', {
         committee_id: committeeId,
         brief_uid: brief.uid,
       });

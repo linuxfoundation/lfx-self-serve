@@ -15,7 +15,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
   AI_MODEL: 'mock-model',
   AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
-  AI_REQUEST_CONFIG: { MAX_TOKENS: 4000, TEMPERATURE: 0.7, TIMEOUT_MS: 30_000 },
+  AI_REQUEST_CONFIG: { MAX_TOKENS: 4000, TEMPERATURE: 0.7, TIMEOUT_MS: 120_000, EXTRACTION_TIMEOUT_MS: 15_000 },
   DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
   NEWSLETTER_AI_MAX_TOKENS: 12_000,
   WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
@@ -129,6 +129,27 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
 
     const [, options] = fetchMock.mock.calls[0];
     expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('uses the tighter EXTRACTION_TIMEOUT_MS, not the generous default TIMEOUT_MS used by the POST-driven generators', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+
+    await service.extractBriefActionItems(req, { brief_text: 'brief' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(15_000);
+    timeoutSpy.mockRestore();
+  });
+
+  it('generateMeetingAgenda (a POST-driven path) gets the generous default timeout, not the tight extraction bound', async () => {
+    const { MeetingType } = await import('@lfx-one/shared/enums');
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'agenda text', duration: 30 })));
+
+    await service.generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(120_000);
+    timeoutSpy.mockRestore();
   });
 
   it('does not log at ERROR on failure — the only caller (WeeklyBriefService) always degrades and logs WARN itself', async () => {

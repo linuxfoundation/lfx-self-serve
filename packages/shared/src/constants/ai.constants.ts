@@ -168,10 +168,13 @@ export const AI_REQUEST_CONFIG = {
    * Default AbortSignal.timeout bound for user-initiated (POST) AiService calls — agenda and
    * newsletter generation. Without it, a hung LiteLLM proxy holds the request open for undici's
    * ~300s default; a long wait here is a UX problem, not an availability one, so this is
-   * generous — sized to comfortably exceed newsletter's larger NEWSLETTER_AI_MAX_TOKENS
-   * completion, not to feel snappy.
+   * deliberately generous rather than tuned for snappiness — newsletter's NEWSLETTER_AI_MAX_TOKENS
+   * (12,000, non-streaming) has no measured p99 latency in this repo, so this is set well above
+   * what a hung-proxy bound needs to be, not against real newsletter-generation timing data. If
+   * long newsletter drafts start failing on timeout, raise this (or give newsletter its own
+   * bound) rather than assuming this margin is safe.
    */
-  TIMEOUT_MS: 60_000,
+  TIMEOUT_MS: 120_000,
   /**
    * Tighter AbortSignal.timeout bound specifically for extractBriefActionItems, which runs on a
    * GET page-load path (committee Overview), not a user-initiated POST — an unbounded or
