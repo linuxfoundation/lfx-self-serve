@@ -36,7 +36,7 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { AuthorizationError, ConflictError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
@@ -438,18 +438,29 @@ export class CommitteeService {
     /* eslint-enable @typescript-eslint/no-unused-vars */
 
     // Step 1: Create committee
-    const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+    // <Committee | null>, not <Committee> — matches the established convention at
+    // committee-activity.service.ts's guarded proxyRequest call sites: proxyRequest can return
+    // null for an empty upstream body, and typing the call site itself as nullable is what makes
+    // that reachable through the type system (a bare <Committee> would make the compiler believe
+    // newCommittee is always non-null even though the runtime value can be null).
+    const newCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+
+    // Fail loud, not silently: an empty body on a create response means the committee-service
+    // didn't confirm anything was actually created. Returning a uid-less object here instead would
+    // let the controller respond 201 with committee.uid undefined, and the client's post-create
+    // flow (committee-manage.component.ts) reads that uid immediately to add members — a silent
+    // "success" would be strictly worse than a loud failure, not a safer fallback. This also
+    // narrows newCommittee to non-null for the rest of the method, so nothing below it needs `?.`.
+    if (!newCommittee?.uid) {
+      throw new MicroserviceError('Committee service returned an empty response for the create request', 502, 'EMPTY_UPSTREAM_RESPONSE', {
+        operation: 'create_committee',
+        service: 'committee_service',
+        path: '/committees',
+      });
+    }
 
     // Step 2: Update settings if provided
-    // newCommittee?.uid, not newCommittee.uid: proxyRequest can return null for an empty upstream
-    // body (see stripChatWebhookUrl's doc comment below) — an unguarded deref here would throw
-    // before reaching that helper's own null tolerance, and a throw inside this catch block isn't
-    // caught by it, so the untyped 500 this whole null-tolerance effort exists to avoid would
-    // still happen on this path specifically.
-    if (
-      newCommittee?.uid &&
-      (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined)
-    ) {
+    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
       try {
         await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
       } catch {
@@ -522,7 +533,7 @@ export class CommitteeService {
       auditors !== undefined;
     const hasCoreUpdate = Object.keys(committeeData).length > 0;
 
-    let updatedCommittee: Committee;
+    let updatedCommittee: Committee | null;
 
     if (hasCoreUpdate) {
       // Step 1: Fetch committee with ETag
@@ -580,7 +591,9 @@ export class CommitteeService {
       };
 
       // Step 3: Update committee with ETag (PUT)
-      updatedCommittee = await this.etagService.updateWithETag<Committee>(
+      // <Committee | null>, not <Committee> — see the matching comment on createCommittee's
+      // proxyRequest call above; updateWithETag forwards to the same proxyRequest under the hood.
+      updatedCommittee = await this.etagService.updateWithETag<Committee | null>(
         req,
         'LFX_V2_SERVICE',
         `/committees/${committeeId}`,
@@ -590,7 +603,20 @@ export class CommitteeService {
       );
     } else {
       // No core fields to update — fetch current committee for the response
-      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    }
+
+    // Fail loud, not silently: an empty body here means the committee-service didn't confirm the
+    // update (or, on the else branch, the committee no longer exists), and the mailing_list
+    // fallback below dereferences updatedCommittee unconditionally — same rationale as
+    // createCommittee's identical guard. Narrows updatedCommittee to non-null for the rest of the
+    // method.
+    if (!updatedCommittee) {
+      throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'EMPTY_UPSTREAM_RESPONSE', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
     }
 
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
@@ -1738,24 +1764,15 @@ export class CommitteeService {
    * just the two hand-audited call sites. A no-op today (upstream doesn't store the field yet),
    * but load-bearing the moment the schema change referenced in `updateCommittee` lands.
    *
-   * Null-tolerant: `proxyRequest` can return `null` for an empty upstream body (documented at
-   * committee-activity.service.ts's four guarded call sites) — createCommittee and
-   * updateCommittee's no-core-update branch both feed a raw `proxyRequest` result straight into
-   * this helper, so an unguarded destructure here would turn that into an untyped 500 instead of
-   * whatever typed handling (or lack thereof) the caller already has for a null response.
-   *
-   * Overloaded rather than a single `T | null` signature: the `.map()` call sites always pass a
-   * real, already-non-null `Committee` from an array upstream fetches guarantee non-null, and
-   * should keep getting `T` back — only createCommittee/updateCommittee, which feed a raw,
-   * possibly-null `proxyRequest` result straight in, need the nullable overload. A single
-   * `T | null` signature would force every call site to handle null it can't actually receive.
+   * Deliberately not null-tolerant: `proxyRequest` can return `null` for an empty upstream body
+   * (documented at committee-activity.service.ts's four guarded call sites), and both
+   * `createCommittee` and `updateCommittee` feed a raw `proxyRequest`/`updateWithETag` result
+   * through this helper — but each throws its own typed `MicroserviceError` immediately after
+   * that fetch if the result is null/undefined, rather than letting a body-less response silently
+   * become a 201/200 with a uid-less `Committee`. By the time either caller reaches this helper,
+   * the value is guaranteed non-null.
    */
-  private stripChatWebhookUrl<T extends Committee>(committee: T): T;
-  private stripChatWebhookUrl<T extends Committee>(committee: T | null | undefined): T | null | undefined;
-  private stripChatWebhookUrl<T extends Committee>(committee: T | null | undefined): T | null | undefined {
-    if (!committee) {
-      return committee;
-    }
+  private stripChatWebhookUrl<T extends Committee>(committee: T): T {
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
     const { chat_webhook_url: _chatWebhookUrl, ...rest } = committee as T & { chat_webhook_url?: string | null };
     return rest as T;

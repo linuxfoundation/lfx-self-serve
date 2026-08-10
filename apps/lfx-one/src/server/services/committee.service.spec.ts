@@ -428,6 +428,25 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
     });
 
+    it('throws a typed 502 (not an untyped 500, and not a silent success) when updateWithETag returns a null body', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce(null);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'EMPTY_UPSTREAM_RESPONSE',
+      });
+    });
+
+    it('throws a typed 502 when the no-core-update GET fallback returns a null body', async () => {
+      proxyRequest.mockResolvedValueOnce(null);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { business_email_required: true })).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'EMPTY_UPSTREAM_RESPONSE',
+      });
+    });
+
     it('rejects a chat_webhook_url change (403 NOT_PROJECT_WRITER) when the caller is a committee writer but not a project writer — choosing the Slack destination must require the same authorization as sending to it, and rejects the whole save, not just the webhook field', async () => {
       fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
       checkSingleAccessStrict.mockResolvedValueOnce(false);
@@ -579,19 +598,26 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(sentBody).not.toHaveProperty('chat_webhook_url');
     });
 
-    it('createCommittee resolves (does not throw) when upstream returns a null body — stripChatWebhookUrl must tolerate null the same way the old bare spread did', async () => {
+    it('createCommittee throws a typed 502 (not an untyped 500, and not a silent uid-less success) when upstream returns a null body', async () => {
       proxyRequest.mockResolvedValueOnce(null);
 
-      // The regression this guards against: an unguarded destructure inside stripChatWebhookUrl
-      // (`const { chat_webhook_url, ...rest } = null`) throws synchronously, which would reject
-      // this promise instead of resolving it — .resolves fails the test if that happens.
-      await expect(service.createCommittee(req, { name: 'Test', category: 'general' })).resolves.toBeDefined();
+      // Fails loud, not silently: a body-less create response means the committee-service never
+      // confirmed anything was created. Resolving with a uid-less object instead would let the
+      // controller respond 201 with committee.uid undefined, and the client's post-create flow
+      // reads that uid immediately to add members.
+      await expect(service.createCommittee(req, { name: 'Test', category: 'general' })).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'EMPTY_UPSTREAM_RESPONSE',
+      });
     });
 
-    it('createCommittee resolves when upstream returns a null body AND a settings field was requested — the settings-update branch derefs newCommittee.uid before ever reaching stripChatWebhookUrl', async () => {
+    it('createCommittee throws before attempting the settings update when upstream returns a null body AND a settings field was requested', async () => {
       proxyRequest.mockResolvedValueOnce(null);
 
-      await expect(service.createCommittee(req, { name: 'Test', category: 'general', is_audit_enabled: true })).resolves.toBeDefined();
+      await expect(service.createCommittee(req, { name: 'Test', category: 'general', is_audit_enabled: true })).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'EMPTY_UPSTREAM_RESPONSE',
+      });
 
       // The settings PUT itself must not have been attempted — there's no committee uid to target.
       expect(updateWithETag).not.toHaveBeenCalled();
