@@ -80,9 +80,7 @@ export class GroupDetailComponent {
 
   protected readonly hasUpcomingMeetings = computed(() => (this.group()?.upcoming_meetings?.length ?? 0) > 0);
 
-  protected readonly safeExternalSources: Signal<PublicGroupExternalSource[]> = computed(
-    () => this.group()?.external_sources?.filter((source) => isValidUrl(source.url)) ?? []
-  );
+  protected readonly safeExternalSources: Signal<PublicGroupExternalSource[]> = this.initSafeExternalSources();
 
   protected readonly hasExternalSources = computed(() => this.safeExternalSources().length > 0);
 
@@ -119,6 +117,10 @@ export class GroupDetailComponent {
       dismissableMask: true,
       data: { feedUrl, name: g.name },
     });
+  }
+
+  private initSafeExternalSources(): Signal<PublicGroupExternalSource[]> {
+    return computed(() => this.group()?.external_sources?.filter((source) => isValidUrl(source.url)) ?? []);
   }
 
   private initGroup(): Signal<PublicGroupDetail | null> {

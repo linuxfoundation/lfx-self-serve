@@ -188,12 +188,10 @@
                     target="_blank"
                     rel="noopener noreferrer"
                     class="flex items-center gap-2 text-sm text-blue-500 hover:underline"
-                    [attr.data-testid]="'external-source-' + source.entity_type">
+                    [attr.data-testid]="'external-source-' + source.entity_type + '-' + $index">
                     <i class="fa-light fa-arrow-up-right-from-square w-4 text-center text-gray-400"></i>
                     <span>{{ source.label }}</span>
-                    @if (source.provider === 'ocg') {
-                      <lfx-tag value="Powered by OCG" severity="secondary" styleClass="!text-[10px] !py-0" data-testid="external-source-ocg-badge"></lfx-tag>
-                    }
+                    <lfx-tag value="Powered by OCG" severity="secondary" styleClass="!text-[10px] !py-0" data-testid="external-source-ocg-badge"></lfx-tag>
                   </a>
                 }
               </div>
