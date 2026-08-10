@@ -300,10 +300,15 @@ export class WeeklyBriefService {
       // next read will re-extract too, so it's worth a warning regardless of which fault it was.
       // The response to the caller is unaffected (the freshly-extracted items are still returned
       // below) — this only affects whether the NEXT read hits the AI proxy again.
-      logger.warning(req, 'get_weekly_brief_action_items', 'Extraction result could not be cached — next read will re-invoke the AI proxy', {
-        committee_id: committeeId,
-        brief_uid: brief.uid,
-      });
+      logger.warning(
+        req,
+        'get_weekly_brief_action_items',
+        'Extraction result could not be cached — every read of this brief revision will re-invoke the AI proxy until caching recovers',
+        {
+          committee_id: committeeId,
+          brief_uid: brief.uid,
+        }
+      );
     }
 
     return { items };

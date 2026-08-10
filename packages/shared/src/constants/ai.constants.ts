@@ -172,7 +172,10 @@ export const AI_REQUEST_CONFIG = {
    * (12,000, non-streaming) has no measured p99 latency in this repo, so this is set well above
    * what a hung-proxy bound needs to be, not against real newsletter-generation timing data. If
    * long newsletter drafts start failing on timeout, raise this (or give newsletter its own
-   * bound) rather than assuming this margin is safe.
+   * bound) rather than assuming this margin is safe — but note a rolling deploy severs in-flight
+   * requests after server.ts's 25s HTTP drain window regardless, so bounds well above that are
+   * only reachable between deploys; streaming or a background job is the real fix for AI calls
+   * that can run long, not a larger timeout.
    */
   TIMEOUT_MS: 120_000,
   /**

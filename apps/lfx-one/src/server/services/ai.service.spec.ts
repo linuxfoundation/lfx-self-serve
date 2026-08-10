@@ -60,6 +60,7 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks(); // un-spies AbortSignal.timeout even if a test fails before its own mockRestore()
     process.env = { ...originalEnv };
   });
 
@@ -138,18 +139,16 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     await service.extractBriefActionItems(req, { brief_text: 'brief' });
 
     expect(timeoutSpy).toHaveBeenCalledWith(15_000);
-    timeoutSpy.mockRestore();
   });
 
-  it('generateMeetingAgenda (a POST-driven path) gets the generous default timeout, not the tight extraction bound', async () => {
-    const { MeetingType } = await import('@lfx-one/shared/enums');
-    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
-    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'agenda text', duration: 30 })));
-
-    await service.generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' });
-
-    expect(timeoutSpy).toHaveBeenCalledWith(120_000);
-    timeoutSpy.mockRestore();
+  it('the AI_REQUEST_CONFIG mock above matches the real shared constant — a guard against the exact drift this suite exists to catch', async () => {
+    // Imported by direct relative path, NOT the '@lfx-one/shared/constants' alias — the alias
+    // resolves to the barrel (all constants files), which is what re-triggers the Angular
+    // JIT-compilation failure the module-level vi.mock above exists to avoid. ai.constants.ts
+    // itself only imports './weekly-brief.constants' (also plain), so this stays safe.
+    const actual = await import('../../../../../packages/shared/src/constants/ai.constants');
+    expect(actual.AI_REQUEST_CONFIG.TIMEOUT_MS).toBe(120_000);
+    expect(actual.AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS).toBe(15_000);
   });
 
   it('does not log at ERROR on failure — the only caller (WeeklyBriefService) always degrades and logs WARN itself', async () => {
@@ -164,5 +163,35 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ items: 'not an array' })));
 
     await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/Failed to extract brief action items/);
+  });
+});
+
+describe('AiService.generateMeetingAgenda', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let service: AiService;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    service = new AiService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  it('gets the generous default timeout, not the tight extraction bound (LFXV2-3043)', async () => {
+    const { MeetingType } = await import('@lfx-one/shared/enums');
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'agenda text', duration: 30 })));
+
+    await service.generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(120_000);
   });
 });
