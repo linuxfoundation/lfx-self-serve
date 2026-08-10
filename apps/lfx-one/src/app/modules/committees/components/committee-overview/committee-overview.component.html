@@ -201,7 +201,12 @@
         </div>
 
         @if (weeklyBriefEnabled() && canEdit()) {
-          <lfx-weekly-brief-card [committee]="committee()" [canEdit]="canEdit()" data-testid="committee-overview-weekly-brief-card" />
+          <lfx-weekly-brief-card
+            [committee]="committee()"
+            [canEdit]="canEdit()"
+            (tabNavigated)="navigateToTab($event)"
+            (voteDrawerRequested)="openVoteDrawer($event)"
+            data-testid="committee-overview-weekly-brief-card" />
         }
 
         <!-- My Pending Actions -->

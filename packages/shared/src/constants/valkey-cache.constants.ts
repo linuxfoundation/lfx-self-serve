@@ -43,6 +43,15 @@ export const VALKEY_CACHE = {
    */
   MEMBER_V1_MAPPING_NAMESPACE: 'member-v1-mapping:v1',
 
+  /**
+   * Domain + schema-version segment for the per-caller weekly-brief rating cache (LFXV2-3042).
+   * This is the live dedup/upsert store only (current vote per brief_uid+revision+username) —
+   * not a system of record. The durable analytics signal is the structured `rating_recorded`/
+   * `rating_cleared` log events `weekly-brief.service.ts` emits alongside every write, which
+   * flow through the existing Pino → CloudWatch pipeline.
+   */
+  WEEKLY_BRIEF_RATING_NAMESPACE: 'weekly-brief-rating:v1',
+
   /** Domain + schema-version segment for the per-brief-revision AI-extracted weekly-brief action-items cache (LFXV2-3043). Keyed by brief uid + revision, so a regenerated/re-edited brief naturally misses and re-extracts — no explicit invalidation needed. */
   WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE: 'weekly-brief-action-items:v1',
 
@@ -75,6 +84,9 @@ export const VALKEY_CACHE = {
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Freshness window for a caller's weekly-brief rating (90 days) — long enough to outlive a brief revision's realistic on-screen lifetime; not indefinite, since Valkey here is a dedup cache, not the durable analytics record (see `WEEKLY_BRIEF_RATING_NAMESPACE`). */
+  WEEKLY_BRIEF_RATING_TTL_SECONDS: 90 * 24 * 60 * 60,
 
   /** TTL for a session whose `cookie.maxAge` is present but already non-positive (already past absolute expiry) — expires it out of Valkey immediately instead of handing it the multi-day fallback above. */
   SESSION_EXPIRED_TTL_SECONDS: 1,
