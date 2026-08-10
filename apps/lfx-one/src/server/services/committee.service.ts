@@ -556,8 +556,9 @@ export class CommitteeService {
     // first place, so this can't distinguish them — a clear would false-report success on today's
     // schema-less upstream the same way a set correctly fails loud. Low-impact in practice: the
     // Remove button (clearing an already-*configured* webhook) can't be reached until
-    // has_slack_webhook is true, which itself requires a prior set to have round-tripped through
-    // this same check — so that path implies the schema already exists upstream. The one reachable
+    // has_slack_webhook is true, which requires a webhook to have actually persisted upstream
+    // (via this check or any other writer) — so that path implies the schema already exists
+    // upstream. The one reachable
     // case today is typing then deleting on a never-configured committee (the control goes dirty
     // with an empty value, so saveSettings sends chat_webhook_url: null with no prior set) —
     // harmless, since nothing was actually persisted before or after either way.
