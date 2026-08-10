@@ -928,6 +928,90 @@ describe('CommitteeActivityService', () => {
       expect(byUid['ma-file']).toMatchObject({ payload: { document_type: 'file', url: undefined } });
     });
 
+    it('stamps occurred_at from modified_at, not created_at, when both are present', async () => {
+      // Regression for the exact field-name bug fixed earlier on this branch (50bb78d4e) — pins
+      // that this leg reads modified_at first, not just that firstValidTimestamp itself works.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'v1_meeting_attachment',
+                id: 'ma-1',
+                data: meetingAttachment({ modified_at: '2026-02-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z' }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({ type: 'notes_added', occurred_at: '2026-02-01T00:00:00Z' });
+    });
+
+    it('falls back to created_at when modified_at is the Go zero-date sentinel', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'v1_meeting_attachment',
+                id: 'ma-1',
+                data: meetingAttachment({ modified_at: '0001-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z' }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({ type: 'notes_added', occurred_at: '2026-01-01T00:00:00Z' });
+    });
+
+    it('warns with a dropped_count when the client-side backstop excludes rows the upstream filter should have already excluded', async () => {
+      // Tripwire for the "upstream filters term clause might not narrow" bet — a non-narrowing
+      // filter is otherwise invisible: the backstop silently absorbs it and the leg looks healthy.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              { type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment({ category: 'Notes' }) },
+              { type: 'v1_meeting_attachment', id: 'ma-2', data: meetingAttachment({ uid: 'ma-2', category: 'Other' }) },
+              { type: 'v1_meeting_attachment', id: 'ma-3', data: meetingAttachment({ uid: 'ma-3', category: 'Presentation' }) },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_committee_activity',
+        expect.stringContaining('Notes category filter did not fully narrow upstream'),
+        expect.objectContaining({ meeting_scope: 'upcoming', dropped_count: 2 })
+      );
+    });
+
+    it('does not warn when every fetched row is already Notes-category — the upstream filter narrowed correctly', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({ resources: [{ type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment({ category: 'Notes' }) }] });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(warning).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'get_committee_activity',
+        expect.stringContaining('Notes category filter did not fully narrow upstream'),
+        expect.anything()
+      );
+    });
+
     it('drops a non-Notes-category attachment row even if the upstream filters param fails to narrow it', async () => {
       // The client-side filter is a backstop, not a substitute, for the upstream `filters:
       // ['category:Notes']` param (see fetchNotesAddedEvents's doc comment on why both are sent) —

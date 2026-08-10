@@ -912,62 +912,74 @@ export class CommitteeActivityService {
     _before: string | undefined,
     fetchSize: number
   ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
-    const buildQuery = (type: string): Record<string, unknown> => ({
-      type,
-      parent: `committee:${committeeUid}`,
-      filters: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
-      page_size: fetchSize,
-      sort: 'updated_desc',
-    });
-
     const [meetingResult, pastMeetingResult] = await Promise.all([
-      this.microserviceProxy
-        .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          buildQuery('v1_meeting_attachment')
-        )
-        .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
-        .catch((err) => {
-          logger.warning(req, 'get_committee_activity', 'Failed to fetch upcoming-meeting notes attachments, continuing without them', {
-            committee_uid: committeeUid,
-            err,
-          });
-          return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
-        }),
-      this.microserviceProxy
-        .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          buildQuery('v1_past_meeting_attachment')
-        )
-        .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
-        .catch((err) => {
-          logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting notes attachments, continuing without them', {
-            committee_uid: committeeUid,
-            err,
-          });
-          return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
-        }),
+      this.fetchNoteAttachmentPage(req, committeeUid, 'v1_meeting_attachment', 'upcoming-meeting', fetchSize),
+      this.fetchNoteAttachmentPage(req, committeeUid, 'v1_past_meeting_attachment', 'past-meeting', fetchSize),
     ]);
 
     const events = [
-      ...meetingResult.attachments
-        .filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY)
-        .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'upcoming')),
-      ...pastMeetingResult.attachments
-        .filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY)
-        .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'past')),
+      ...this.buildNotesEventsForScope(req, committeeUid, meetingResult.attachments, 'upcoming'),
+      ...this.buildNotesEventsForScope(req, committeeUid, pastMeetingResult.attachments, 'past'),
     ];
 
     // Both sub-legs are bounded to one upstream page_size-limited page (unlike
     // fetchDocumentEvents, where only the files sub-leg is bounded and folders/links are
     // excluded from saturation) — so either one's own page_token signals more data upstream.
     return { events, saturated: !!meetingResult.pageToken || !!pastMeetingResult.pageToken };
+  }
+
+  /** One sub-leg's bounded query-service fetch, shared by both attachment types fetchNotesAddedEvents fans out to. */
+  private async fetchNoteAttachmentPage(
+    req: Request,
+    committeeUid: string,
+    type: string,
+    scopeLabel: string,
+    fetchSize: number
+  ): Promise<{ attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
+    return this.microserviceProxy
+      .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type,
+        parent: `committee:${committeeUid}`,
+        filters: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
+        page_size: fetchSize,
+        sort: 'updated_desc',
+      })
+      .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
+      .catch((err) => {
+        logger.warning(req, 'get_committee_activity', `Failed to fetch ${scopeLabel} notes attachments, continuing without them`, {
+          committee_uid: committeeUid,
+          err,
+        });
+        return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
+      });
+  }
+
+  /**
+   * Applies the client-side `category` backstop and warns if it ever drops a row — the tripwire
+   * for the doc comment's "the upstream `filters` term clause might not narrow" bet above.
+   * Without this, a non-narrowing upstream filter is invisible: the backstop silently absorbs
+   * every non-Notes row and the leg looks healthy while quietly under-serving every request
+   * (fetchSize filled with every category, only the newest handful surviving) — the exact
+   * "someone eventually notices" failure mode `notes_count: 0` catches for a *fully* failed
+   * filter, but with no equivalent signal for a *partially* failed one. Same pattern as
+   * fetchPastMeetingEvents's own scheduled_start_time tripwire.
+   */
+  private buildNotesEventsForScope(
+    req: Request,
+    committeeUid: string,
+    attachments: CommitteeActivityNoteAttachment[],
+    meetingScope: 'upcoming' | 'past'
+  ): NotesAddedActivityEvent[] {
+    const notes = attachments.filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY);
+    const droppedCount = attachments.length - notes.length;
+    if (droppedCount > 0) {
+      logger.warning(req, 'get_committee_activity', 'Notes category filter did not fully narrow upstream — filters term clause may not be matching', {
+        committee_uid: committeeUid,
+        meeting_scope: meetingScope,
+        dropped_count: droppedCount,
+      });
+    }
+    return notes.map((attachment) => this.buildNotesEvent(committeeUid, attachment, meetingScope));
   }
 
   private buildNotesEvent(committeeUid: string, attachment: CommitteeActivityNoteAttachment, meetingScope: 'upcoming' | 'past'): NotesAddedActivityEvent {
