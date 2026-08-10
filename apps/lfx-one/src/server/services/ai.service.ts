@@ -171,7 +171,9 @@ export class AiService {
         },
       };
 
-      const response = await this.makeAiRequest(chatRequest);
+      // NEWSLETTER_TIMEOUT_MS, not the shared default — sized for this method's larger
+      // NEWSLETTER_AI_MAX_TOKENS completion (PR #1362 review — Copilot, Cursor Bugbot, @dealako).
+      const response = await this.makeAiRequest(chatRequest, AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
       const result = this.extractNewsletter(req, response);
 
       logger.success(req, 'generate_newsletter', startTime, {

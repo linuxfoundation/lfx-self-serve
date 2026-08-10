@@ -400,6 +400,14 @@ describe('WeeklyBriefService', () => {
       expect(buildCacheKey).toHaveBeenCalledWith('committee-1', expect.any(String), expect.any(Number));
     });
 
+    it('scopes each item uid to the committee too, not just the cache key (PR #1362 review — Copilot: the mock fixture shares one brief uid across committees, so an unscoped item uid would collide the dismiss-cookie identity across committees)', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items[0].uid.startsWith('committee-1-')).toBe(true);
+    });
+
     it('warns (but still returns the freshly-extracted items) when the cache write fails — isEnabled() only reflects configuration, not reachability', async () => {
       extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
       valkeySetJson.mockResolvedValue(false); // e.g. Valkey configured but currently unreachable

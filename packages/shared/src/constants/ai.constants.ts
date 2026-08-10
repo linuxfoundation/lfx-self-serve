@@ -165,19 +165,28 @@ export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
   TEMPERATURE: 0.7,
   /**
-   * Default AbortSignal.timeout bound for user-initiated (POST) AiService calls — agenda and
-   * newsletter generation. Without it, a hung LiteLLM proxy holds the request open for undici's
-   * ~300s default; a long wait here is a UX problem, not an availability one, so this is
-   * deliberately generous rather than tuned for snappiness — newsletter's NEWSLETTER_AI_MAX_TOKENS
-   * (12,000, non-streaming) has no measured p99 latency in this repo, so this is set well above
-   * what a hung-proxy bound needs to be, not against real newsletter-generation timing data. If
-   * long newsletter drafts start failing on timeout, raise this (or give newsletter its own
-   * bound) rather than assuming this margin is safe — but note a rolling deploy severs in-flight
-   * requests after server.ts's shutdown drain (15s LB drain + 25s HTTP close ≈ 40s from SIGTERM)
-   * regardless, so bounds well above that are only reachable between deploys; streaming or a
-   * background job is the real fix for AI calls that can run long, not a larger timeout.
+   * Default AbortSignal.timeout bound for user-initiated (POST) AiService calls — currently only
+   * generateMeetingAgenda (MAX_TOKENS: 4000 above). Without it, a hung LiteLLM proxy holds the
+   * request open for undici's ~300s default; a long wait here is a UX problem, not an
+   * availability one. generateNewsletter does NOT use this default — its larger token budget
+   * gets its own NEWSLETTER_TIMEOUT_MS below, sized for its own completion size instead of
+   * sharing a guessed number with agenda generation (this shared-bound approach is exactly what
+   * caused repeated review findings — Copilot, Cursor Bugbot, @dealako — before it was split
+   * out). Note a rolling deploy severs in-flight requests after server.ts's shutdown drain (15s
+   * LB drain + 25s HTTP close ≈ 40s from SIGTERM) regardless of either bound, so values well
+   * above that are only reachable between deploys; streaming or a background job is the real fix
+   * for an AI call that can run long, not a larger timeout.
    */
   TIMEOUT_MS: 120_000,
+  /**
+   * AbortSignal.timeout bound for generateNewsletter specifically. Sized for
+   * NEWSLETTER_AI_MAX_TOKENS (12,000, non-streaming): needs the completion to sustain roughly
+   * 50 tokens/sec to finish within this window, comfortably below typical non-streaming Sonnet
+   * throughput even without measured p99 latency data for this specific proxy. Kept separate
+   * from TIMEOUT_MS (agenda's 4,000-token budget) so raising one never silently tightens or
+   * loosens the other.
+   */
+  NEWSLETTER_TIMEOUT_MS: 240_000,
   /**
    * Tighter AbortSignal.timeout bound specifically for extractBriefActionItems, which runs on a
    * GET page-load path (committee Overview), not a user-initiated POST — an unbounded or

@@ -240,3 +240,33 @@ describe('AiService.generateMeetingAgenda', () => {
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
 });
+
+describe('AiService.generateNewsletter', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let service: AiService;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    service = new AiService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  it('gets its own NEWSLETTER_TIMEOUT_MS, not the generic default shared with agenda generation (PR #1362 review — Copilot, Cursor Bugbot, @dealako)', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ subject: 'Subject', bodyHtml: '<p>Body</p>' })));
+
+    await service.generateNewsletter(req, { rawContent: 'notes', contextType: 'project', contextName: 'Debug Project' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
+    expect(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS).toBeGreaterThan(AI_REQUEST_CONFIG.TIMEOUT_MS);
+  });
+});

@@ -189,7 +189,8 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
   TEMPERATURE: 0.7,
-  TIMEOUT_MS: 120_000, // default AbortSignal.timeout bound — agenda/newsletter (user-initiated POSTs); not tuned against real newsletter-generation latency data
+  TIMEOUT_MS: 120_000, // default AbortSignal.timeout bound — generateMeetingAgenda only (4,000-token budget)
+  NEWSLETTER_TIMEOUT_MS: 240_000, // generateNewsletter's own bound, sized for its larger 12,000-token budget
   EXTRACTION_TIMEOUT_MS: 15_000, // tighter bound for extractBriefActionItems (GET page-load path)
 };
 

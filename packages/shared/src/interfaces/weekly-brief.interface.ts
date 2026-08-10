@@ -118,7 +118,7 @@ export interface ShareWeeklyBriefResult {
  * set (and new `uid`s), not an update to this one.
  */
 export interface WeeklyBriefActionItem {
-  /** Deterministic per cached revision: `${source_brief_uid}-${revision}-${index}` */
+  /** Deterministic per cached revision: `${committee_uid}-${source_brief_uid}-${revision}-${index}`. Committee-scoped because the mock-mode brief fixture reuses the same source_brief_uid across committees. */
   uid: string;
   /** Short, actionable follow-up text */
   text: string;

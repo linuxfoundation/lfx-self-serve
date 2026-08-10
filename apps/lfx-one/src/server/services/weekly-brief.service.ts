@@ -271,7 +271,12 @@ export class WeeklyBriefService {
     try {
       const extraction = await this.aiService.extractBriefActionItems(req, { brief_text: brief.brief_text });
       items = extraction.items.slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX).map((item, index) => ({
-        uid: `${brief.uid}-${brief.revision}-${index}`,
+        // committeeId, not just brief.uid/revision — the cache key gained this scoping earlier,
+        // but this per-item uid (which HiddenActionsService hashes into the dismiss-cookie
+        // identity) didn't. Without it, the mock-mode brief fixture's shared uid across
+        // committees means dismissing item 0 in one committee hides item 0 in every committee
+        // (PR #1362 review — Copilot).
+        uid: `${committeeId}-${brief.uid}-${brief.revision}-${index}`,
         text: item.text,
         suggested_owner_role: item.suggested_owner_role,
         source_brief_uid: brief.uid,
