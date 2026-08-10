@@ -1,0 +1,152 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
+// this app's vitest config, so runtime collaborators are mocked. This file's own imports from
+// `@lfx-one/shared/interfaces` are type-only, so esbuild elides them.
+const { proxyRequest, getProjectIdBySlug } = vi.hoisted(() => ({ proxyRequest: vi.fn(), getProjectIdBySlug: vi.fn() }));
+
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public getProjectIdBySlug = getProjectIdBySlug;
+  },
+}));
+
+import type { Request } from 'express';
+
+import { adaptJobPollResponse, CampaignServiceClient } from './campaign-service.service';
+
+const req = {} as unknown as Request;
+
+describe('adaptJobPollResponse', () => {
+  // The poller terminates on `takeWhile((s) => s.status === 'running', true)`. `queued` is the
+  // state every job is in on its first tick, so forwarding it raw stops the poll immediately
+  // and reports a finished create with no campaigns — for a job that has not started.
+  it('maps queued to running so the first poll does not terminate the job', () => {
+    expect(adaptJobPollResponse({ job_id: 'j1', status: 'queued' })).toEqual({ status: 'running' });
+  });
+
+  it('maps running to running', () => {
+    expect(adaptJobPollResponse({ job_id: 'j1', status: 'running' })).toEqual({ status: 'running' });
+  });
+
+  // The mirror-image failure: `succeeded` forwarded raw is not `'running'` either, so it would
+  // never terminate the poll and the page would spin to the 300s cap on a job that is finished.
+  it('maps succeeded to done and converts the per-platform results', () => {
+    expect(
+      adaptJobPollResponse({
+        job_id: 'j1',
+        status: 'succeeded',
+        result: [{ platform: 'google-ads', ok: true, campaign_id: '123' }],
+      })
+    ).toEqual({
+      status: 'done',
+      platformResults: [{ platform: 'google-ads', ok: true, campaignId: '123', error: undefined }],
+      error: undefined,
+    });
+  });
+
+  // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
+  // platform's own `ok` flag carries the per-platform truth.
+  it('maps partial to done and keeps both the succeeded and the failed platform', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'partial',
+      result: [
+        { platform: 'google-ads', ok: true, campaign_id: '123' },
+        { platform: 'meta-ads', ok: false, error: 'budget rejected' },
+      ],
+    });
+
+    expect(adapted.status).toBe('done');
+    expect(adapted.platformResults).toEqual([
+      { platform: 'google-ads', ok: true, campaignId: '123', error: undefined },
+      { platform: 'meta-ads', ok: false, campaignId: undefined, error: 'budget rejected' },
+    ]);
+  });
+
+  it('maps failed to error and always carries a message', () => {
+    expect(adaptJobPollResponse({ job_id: 'j1', status: 'failed' })).toEqual({
+      status: 'error',
+      platformResults: undefined,
+      error: 'campaign creation failed',
+    });
+    expect(adaptJobPollResponse({ job_id: 'j1', status: 'failed', error: 'no credentials' }).error).toBe('no credentials');
+  });
+
+  // An unrecognised status is a contract change, not a terminal state. `done` would claim
+  // campaigns exist that nobody verified.
+  it('treats an unrecognised status as an error rather than as done', () => {
+    const adapted = adaptJobPollResponse({ job_id: 'j1', status: 'cancelled' } as never);
+    expect(adapted.status).toBe('error');
+    expect(adapted.error).toContain('cancelled');
+  });
+
+  // campaign-service reports neither ad-group/keyword/ad counts nor a campaign URL. Synthesising
+  // a `result` here would make the implementation tab render "0 ad groups · 0 keywords · 0 ads"
+  // and an empty link for a campaign that really has them.
+  it('never synthesises a CampaignCreateResponse result', () => {
+    const adapted = adaptJobPollResponse({ job_id: 'j1', status: 'succeeded', result: [{ platform: 'google-ads', ok: true, campaign_id: '1' }] });
+    expect(adapted.result).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.resolveLfProjectUid', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getProjectIdBySlug.mockReset();
+  });
+
+  it('resolves the tlf project and caches the successful lookup', async () => {
+    getProjectIdBySlug.mockResolvedValue({ uid: 'uid-1', slug: 'tlf', exists: true });
+    const client = new CampaignServiceClient();
+
+    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
+    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
+    expect(getProjectIdBySlug).toHaveBeenCalledTimes(1);
+    expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'tlf');
+  });
+
+  // `getProjectIdBySlug` reports `exists: false` for a NATS timeout as well as for a genuinely
+  // missing project. Caching the negative would turn one blip into a campaigns page that stays
+  // broken for the life of the pod.
+  it('does not cache a failed lookup, and reports it as 503 rather than 404', async () => {
+    getProjectIdBySlug.mockResolvedValueOnce({ slug: 'tlf', exists: false });
+    const client = new CampaignServiceClient();
+
+    await expect(client.resolveLfProjectUid(req)).rejects.toMatchObject({ statusCode: 503 });
+
+    getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-1', slug: 'tlf', exists: true });
+    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
+    expect(getProjectIdBySlug).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CampaignServiceClient.getJobStatus', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getProjectIdBySlug.mockReset();
+    getProjectIdBySlug.mockResolvedValue({ uid: 'uid-1', slug: 'tlf', exists: true });
+  });
+
+  it('scopes the request to the resolved project and adapts the response', async () => {
+    proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
+
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({ status: 'running' });
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/uid-1/jobs/j1', 'GET');
+  });
+
+  it('encodes the job id into the path', async () => {
+    proxyRequest.mockResolvedValue({ job_id: 'a/b', status: 'running' });
+
+    await new CampaignServiceClient().getJobStatus(req, 'a/b');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/uid-1/jobs/a%2Fb', 'GET');
+  });
+});

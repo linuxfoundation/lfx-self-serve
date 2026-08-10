@@ -19,8 +19,10 @@ import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
+import { CampaignServiceClient } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -31,6 +33,7 @@ const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
+  private readonly campaignServiceClient = new CampaignServiceClient();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
   private readonly redditMetricsService = new RedditMetricsService();
@@ -249,11 +252,25 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_job_status', { jobId });
+    // First endpoint of the campaign-service cutover. The flag selects the SOURCE; the two
+    // sources do NOT speak the same shape, so `CampaignServiceClient` adapts one onto the
+    // other (see `adaptJobPollResponse` — the status vocabularies differ, and campaign-service
+    // reports per-platform results rather than the vendor-direct path's `CampaignCreateResponse`).
+    // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
+    // in-process path and `platformResults` on the campaign-service path. Rollback stays an env
+    // change rather than a deploy.
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+    const startTime = logger.startOperation(req, 'campaign_job_status', { jobId, source: viaCampaignService ? 'campaign_service' : 'in_process' });
 
     try {
-      const status = await this.proxyService.getJobStatus(req, jobId);
-      logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status });
+      // No try/catch fallback to the in-process map when the proxied call fails. The
+      // in-process map does not hold this job unless this same pod created it, so a
+      // fallback would answer "not found" for a job that campaign-service knows is
+      // running — turning a transient outage into a spurious terminal state the client
+      // stops polling on. Letting the error through keeps the failure visible and the
+      // flag is the way back.
+      const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
+      logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
     } catch (error) {
       next(error);

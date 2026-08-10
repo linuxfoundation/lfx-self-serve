@@ -487,6 +487,41 @@
       </div>
     }
 
+    <!--
+      Campaign-service reports per-platform outcomes only: which platform, whether the create
+      succeeded, the upstream campaign id, and the failure reason. It does not report ad-group,
+      keyword or ad counts, so this block deliberately shows fewer facts than the block above
+      rather than showing the same facts as zeros.
+    -->
+    @if (platformResults().length > 0) {
+      <div class="rounded-lg border border-green-200 bg-green-50 p-5" data-testid="implementation-platform-results">
+        <div class="mb-3 flex items-center gap-2">
+          <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+          <h3 class="text-sm font-semibold text-gray-900">Campaigns Created</h3>
+        </div>
+        <div class="flex flex-col gap-2">
+          @for (pr of platformResults(); track pr.platform) {
+            <div class="rounded-md border border-green-200 bg-white p-3" [attr.data-testid]="'implementation-platform-result-' + pr.platform">
+              <div class="flex items-center gap-2">
+                @if (pr.ok) {
+                  <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+                } @else {
+                  <i class="fa-light fa-circle-xmark text-red-600" aria-hidden="true"></i>
+                }
+                <p class="text-sm font-medium text-gray-900">{{ pr.platform }}</p>
+                @if (pr.campaignId) {
+                  <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
+                }
+              </div>
+              @if (pr.error) {
+                <p class="mt-1 text-xs text-red-700">{{ pr.error }}</p>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
     @if (errors().length > 0) {
       <div class="rounded-lg border border-red-200 bg-red-50 p-5">
         <h3 class="mb-2 text-sm font-semibold text-red-800">Errors</h3>

@@ -178,6 +178,17 @@ environment:
 | `environment.QUERY_SERVICE_URL` | Query service URL for resource queries | No       | `http://query-service.default.svc.cluster.local/query/resources` |
 | `environment.NATS_URL`          | NATS messaging server URL              | **Yes**  | -                                                                |
 
+#### Campaign Service Cutover
+
+Campaign endpoints are being moved off this application's vendor-direct integrations and onto
+lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
+changing a value here rather than by shipping a revert.
+
+| Parameter                                       | Description                                                                                           | Required | Default          |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ---------------- |
+| `environment.LFX_V2_CAMPAIGN_SERVICE`           | Campaign-service base URL; falls back to the gateway                                                  | No       | `LFX_V2_SERVICE` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | `"true"` serves campaign job status from campaign-service; anything else keeps the in-process job map | No       | off              |
+
 #### AI Service Configuration
 
 | Parameter                  | Description                              | Required | Default |

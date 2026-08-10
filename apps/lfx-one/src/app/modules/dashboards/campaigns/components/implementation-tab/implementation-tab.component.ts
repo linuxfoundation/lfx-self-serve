@@ -20,10 +20,11 @@ import { map, startWith, Subscription, take } from 'rxjs';
 import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
-  CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
+  CampaignPlatformResult,
   CampaignType,
   LinkedInAccount,
   LinkedInCreativeVariant,
@@ -78,6 +79,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
+  /**
+   * Per-platform outcomes as lfx-v2-campaign-service reports them, used when the server is
+   * serving job status from that service instead of the in-process job map. Kept separate from
+   * `results` because campaign-service does not report ad-group, keyword or ad counts, and
+   * folding it into `results` would mean rendering zeros for numbers nobody measured.
+   */
+  protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);
@@ -190,6 +198,7 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('form');
     this.creationProgress.set([]);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
   }
 
@@ -277,6 +286,7 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
 
     const form = this.campaignForm.getRawValue();
@@ -392,6 +402,7 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('form');
     this.creationProgress.set([]);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
@@ -482,10 +493,11 @@ export class ImplementationTabComponent implements OnInit {
       .getCreateResult(jobId)
       .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (result: CampaignCreateResponse | null) => {
-          if (result) {
-            this.results.set(result.campaigns);
-            this.errors.set(result.errors);
+        next: (outcome: CampaignJobOutcome | null) => {
+          if (outcome) {
+            this.results.set(outcome.campaigns);
+            this.platformResults.set(outcome.platformResults ?? []);
+            this.errors.set(outcome.errors);
             this.step.set('results');
           }
         },

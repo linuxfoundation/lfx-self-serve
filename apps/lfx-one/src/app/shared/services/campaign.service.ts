@@ -12,6 +12,7 @@ import {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
+  CampaignJobOutcome,
   CampaignJobStatus,
   CampaignMonitorResponse,
   CampaignSSEEventType,
@@ -53,7 +54,7 @@ export class CampaignService {
     return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
   }
 
-  public getCreateResult(jobId: string): Observable<CampaignCreateResponse | null> {
+  public getCreateResult(jobId: string): Observable<CampaignJobOutcome | null> {
     if (!jobId) {
       return of(null);
     }
@@ -61,7 +62,17 @@ export class CampaignService {
     return this.pollJobStatus(jobId).pipe(
       last(),
       map((status) => {
-        if (status.status === 'done') return status.result ?? null;
+        // A `done` job always yields an outcome, even when neither field is populated.
+        // Returning null for a finished job would leave the caller unable to tell "the job
+        // ended" from "there is nothing yet", and the caller's timeout branch would then
+        // report a completed create as one that took too long.
+        if (status.status === 'done') {
+          return {
+            campaigns: status.result?.campaigns ?? [],
+            errors: status.result?.errors ?? (status.error ? [status.error] : []),
+            platformResults: status.platformResults,
+          };
+        }
         if (status.status === 'error') throw new Error(status.error || 'Campaign creation was unsuccessful. Please try again.');
         if (status.status === 'not_found') throw new Error('Lost connection to the campaign creation process. Please try again.');
         throw new Error('Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.');
