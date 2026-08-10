@@ -2,7 +2,7 @@
 
 ## 🤖 Overview
 
-The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information) and **newsletter content** generation. The two public entry points are `generateMeetingAgenda` and `generateNewsletter`, and the service is consumed by the meetings, newsletters, and campaigns flows.
+The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
 
 ## 🏗 Architecture
 
@@ -15,12 +15,12 @@ Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude Son
    Service      Controller     Logic           Proxy
 ```
 
-The "Feature API" is whichever controller fronts the request: `meeting.controller.ts` (agenda generation), `newsletter.controller.ts` (newsletter generation), and the campaigns flow, which also routes AI briefs through this layer.
+The "Feature API" is whichever controller fronts the request: `meeting.controller.ts` (agenda generation), `newsletter.controller.ts` (newsletter generation), `weekly-brief.controller.ts` (indirectly — its service layer, not the controller, calls `extractBriefActionItems`), and the campaigns flow, which also routes AI briefs through this layer.
 
 ### Core Components
 
-- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda` and `generateNewsletter`
-- **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features; the campaigns flow consumes the same service
+- **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`
+- **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features directly; `weekly-brief.controller.ts` never calls `AiService` itself — `WeeklyBriefService.getActionItems` does, on its behalf; the campaigns flow consumes the same service
 - **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 
@@ -81,6 +81,10 @@ export interface GenerateAgendaResponse {
 #### Generate Newsletter
 
 The service also exposes `generateNewsletter(req, request: GenerateNewsletterRequest): Promise<GenerateNewsletterResponse>` for AI newsletter drafting, consumed by `newsletter.controller.ts`. Its request/response contracts live in `@lfx-one/shared`, and the implementation mirrors the agenda path: the same `isAiConfigured()` guard, JSON-schema-validated response, and the parse → fallback strategy described below (with its own `buildNewsletterPrompt`/`extractNewsletter`).
+
+#### Extract Brief Action Items
+
+`extractBriefActionItems(req, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse>` (LFXV2-3043) reads a weekly brief's `brief_text` and extracts up to `WEEKLY_BRIEF_ACTION_ITEMS_MAX` concrete follow-up items (`{text, suggested_owner_role?}`), consumed by `WeeklyBriefService.getActionItems` — never called directly from a controller. It follows the same `isAiConfigured()`/structured-JSON-schema/throw-on-failure skeleton as the two methods above (using the tighter `AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS` bound, since it runs on a GET page-load path rather than a user-initiated POST); unlike them, its caller (`WeeklyBriefService`) deliberately catches the throw and degrades to an empty item list rather than propagating an error to the brief page, and caches successful (including legitimately empty) extractions in Valkey per `(committeeId, brief.uid, brief.revision)` so repeated reads of the same brief revision don't re-invoke the AI proxy. `committeeId` is part of the key because the mock-mode brief fixture reuses the same `uid`/`revision` for every committee. The endpoint also skips extraction entirely — returning an empty list rather than calling the AI proxy uncached — whenever Valkey isn't configured (`VALKEY_URL` unset); this only covers the unconfigured case, not a configured-but-currently-unreachable Valkey.
 
 ### JSON Schema Validation
 
@@ -184,13 +188,17 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
-  TEMPERATURE: 0.3,
+  TEMPERATURE: 0.7,
+  TIMEOUT_MS: 120_000, // default AbortSignal.timeout bound — generateMeetingAgenda only (4,000-token budget)
+  NEWSLETTER_TIMEOUT_MS: 240_000, // generateNewsletter's own bound, sized for its larger 12,000-token budget
+  EXTRACTION_TIMEOUT_MS: 15_000, // tighter bound for extractBriefActionItems (GET page-load path)
 };
 
 export const DURATION_ESTIMATION = {
-  BASE_DURATION: 30, // Base meeting duration in minutes
-  TIME_PER_ITEM: 5, // Additional time per agenda item
-  MINIMUM_DURATION: 15, // Minimum meeting duration
+  BASE_DURATION: 15, // Opening/closing time in minutes
+  TIME_PER_ITEM: 10, // Average time per agenda item in minutes
+  MINIMUM_DURATION: 30, // Minimum meeting duration in minutes
+  MAXIMUM_DURATION: 240, // Maximum meeting duration in minutes (4 hours)
 };
 ```
 
