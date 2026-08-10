@@ -153,13 +153,22 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(emitted).toHaveLength(0);
   });
 
-  it('disables Remove/Replace/Cancel and shows a hint when impersonating — inferred from the impersonating input directly, not from the control being disabled for some other reason', async () => {
+  it('disables Remove/Replace and shows a hint when impersonating — inferred from the impersonating input directly, not from the control being disabled for some other reason', async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', false);
     fixture.componentRef.setInput('impersonating', true);
     await fixture.whenStable();
 
     expect(button('settings-slack-webhook-remove-button').disabled).toBe(true);
     expect(button('settings-slack-webhook-replace-button').disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-impersonating-hint"]')).not.toBeNull();
+  });
+
+  it('disables Cancel when impersonating, on the input-visible branch', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    fixture.componentRef.setInput('impersonating', true);
+    await fixture.whenStable();
+
+    expect(button('settings-slack-webhook-cancel-button').disabled).toBe(true);
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-impersonating-hint"]')).not.toBeNull();
   });
 
