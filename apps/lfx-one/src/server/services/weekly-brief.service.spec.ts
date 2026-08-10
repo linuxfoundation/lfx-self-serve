@@ -948,21 +948,20 @@ describe('WeeklyBriefService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), and logs the distinction for operators', async () => {
+    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), tagged with metadata that distinguishes it from "genuinely unconfigured" for operators', async () => {
       mockShareableBrief();
       getSlackWebhookUrlStrictMock.mockResolvedValue('https://evil.example.com/exfiltrate');
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
+      try {
+        await service.shareToSlack(req, 'committee-1', 1);
+        expect.fail('expected shareToSlack to throw');
+      } catch (error) {
+        expect(error).toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
+        // apiErrorHandler logs this metadata alongside the single WARN it already emits for the
+        // thrown error — no separate log call, and never the URL itself.
+        expect((error as { metadata?: unknown }).metadata).toEqual({ webhook_state: 'stored_but_rejected' });
+      }
       expect(fetchMock).not.toHaveBeenCalled();
-      // Distinguishes "a value is stored but rejected" from "genuinely unconfigured" in the logs
-      // (never the URL itself) — the caller-facing error is identical either way, but an operator
-      // needs the difference.
-      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
-        req,
-        'share_weekly_brief_slack',
-        expect.stringContaining('failed the Slack allowlist'),
-        expect.objectContaining({ committee_id: 'committee-1' })
-      );
     });
 
     it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other precondition passes', async () => {

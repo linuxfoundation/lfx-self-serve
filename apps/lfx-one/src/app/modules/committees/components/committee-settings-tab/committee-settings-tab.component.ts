@@ -115,6 +115,11 @@ export class CommitteeSettingsTabComponent {
           website: c.website ?? null,
           chat_webhook_url: null,
         });
+        // patchValue does not clear dirty — without this, a control the user typed into once
+        // stays dirty for the rest of the component's life (this tab survives a committee
+        // refresh, it isn't destroyed/recreated), and every subsequent save re-sends the now-null
+        // patched value as an explicit "clear the webhook" instruction.
+        this.form.controls.chat_webhook_url.markAsPristine();
         this.editingSlackWebhookUrl.set(false);
       });
 
@@ -239,11 +244,13 @@ export class CommitteeSettingsTabComponent {
           let detail = 'Failed to save settings';
           if (status === 409 && code === 'SLACK_WEBHOOK_NOT_PERSISTED') {
             detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook could not be stored.';
-            // Everything except the webhook did persist (see committee.service.ts's
-            // updateCommittee — this check runs last, after the core PUT and settings update) —
-            // refresh so the tab reflects those saved changes instead of appearing to have
-            // silently failed.
-            this.committeeUpdated.emit();
+            // Deliberately no committeeUpdated.emit() here (unlike the success path): this tab
+            // survives a committee refresh rather than being destroyed, and a refresh re-patches
+            // chat_webhook_url to null — wiping the URL the user just typed before they can even
+            // read the error. Everything else the user set (see committee.service.ts's
+            // updateCommittee — this check runs last, after the core PUT and settings update) did
+            // persist and already matches what the form shows locally; the toast is the
+            // confirmation, a visual refresh isn't needed to prove it.
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;

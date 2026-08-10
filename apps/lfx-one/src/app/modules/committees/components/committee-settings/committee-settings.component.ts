@@ -21,12 +21,21 @@ export class CommitteeSettingsComponent {
   public readonly form = input.required<FormGroup>();
   public readonly showHeader = input<boolean>(true);
   /**
+   * Whether to render the Slack Incoming Webhook card at all. Defaults to false — this
+   * component is also used by the committee create/edit wizard (`committee-manage.component`),
+   * whose form has no `chat_webhook_url` control; rendering the card there would either throw
+   * (NG01203, if the input branch showed) or lie (a false "Configured" badge, if the badge branch
+   * showed). Only `committee-settings-tab.component` — the one place with a real committee to
+   * enrich and a form that declares the control — opts in.
+   */
+  public readonly showSlackWebhook = input<boolean>(false);
+  /**
    * Whether the Slack webhook URL input is rendered/editable (vs. the "Configured" badge +
-   * Replace button). A single source of truth computed once by the parent from
-   * `Committee.has_slack_webhook` and its own "Replace clicked" state — deliberately not
-   * re-derived here from two separately-passed booleans, which is how a previous version of this
-   * component could show the input while the parent's save payload disagreed about whether it
-   * was visible.
+   * Replace button), when `showSlackWebhook` is true. A single source of truth computed once by
+   * the parent from `Committee.has_slack_webhook` and its own "Replace clicked" state —
+   * deliberately not re-derived here from two separately-passed booleans, which is how a
+   * previous version of this component could show the input while the parent's save payload
+   * disagreed about whether it was visible.
    */
   public readonly slackWebhookInputVisible = input<boolean>(false);
 
