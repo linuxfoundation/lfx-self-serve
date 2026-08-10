@@ -880,15 +880,18 @@ export class CommitteeActivityService {
    *    making anyway: this repo
    *    already ships an identical `term` filter on another `data.*` subfield of this same resource
    *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
-   *    and the failure mode if the bet is wrong is a *visible*, all-or-nothing one (`notes_count: 0`
-   *    in `getCommitteeActivity`'s completion log across every committee, trivially distinguishable
-   *    from "this committee genuinely has no notes") — not a silent one. The alternative (dropping
-   *    the filter and fetching `fetchSize` attachments of every category before filtering
-   *    client-side) trades that visible risk for a guaranteed, silent dilution instead: a committee
-   *    whose meetings carry non-Notes attachments too would only ever surface notes from its most
-   *    recent handful of meetings, with `saturated` firing far more than the actual Notes volume
-   *    warrants. If the bet ever proves wrong, the durable fix is an upstream request to add
-   *    `category` to the attachment tag sets, not reverting to the client-side-only approach.
+   *    and the failure mode if the bet is wrong is *visible*, not silent, at both ends of the
+   *    spectrum: a fully-failed filter shows up as `notes_count: 0` in `getCommitteeActivity`'s
+   *    completion log across every committee (trivially distinguishable from "this committee
+   *    genuinely has no notes"), and a partially-failed filter (matches, but doesn't narrow) shows
+   *    up as `buildNotesEventsForScope`'s own `dropped_count` warning below. Neither signal exists
+   *    for the alternative: dropping the filter and fetching `fetchSize` attachments of every
+   *    category before filtering client-side trades both visible risks for one guaranteed, silent
+   *    dilution instead — a committee whose meetings carry non-Notes attachments too would only
+   *    ever surface notes from its most recent handful of meetings, with `saturated` firing far
+   *    more than the actual Notes volume warrants, and nothing would ever log it. If the bet ever
+   *    proves wrong, the durable fix is an upstream request to add `category` to the attachment tag
+   *    sets, not reverting to the client-side-only approach.
    *  - No `date_field`/`date_from`/`date_to` narrowing, unlike the files leg above. `modified_at`
    *    is never actually absent (`ModifiedAt time.Time` has no `omitempty`), but an attachment
    *    whose v1 source record had no parseable `updated_at` gets indexed with `modified_at` set to
@@ -912,10 +915,17 @@ export class CommitteeActivityService {
     _before: string | undefined,
     fetchSize: number
   ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
-    const [meetingResult, pastMeetingResult] = await Promise.all([
-      this.fetchNoteAttachmentPage(req, committeeUid, 'v1_meeting_attachment', 'upcoming-meeting', fetchSize),
-      this.fetchNoteAttachmentPage(req, committeeUid, 'v1_past_meeting_attachment', 'past-meeting', fetchSize),
-    ]);
+    // Type and scope are paired here, not passed as two separate positional args at each call
+    // site — both fetchNoteAttachmentPage and buildNotesEventsForScope key their logging off
+    // `scope`, so a transposed pair (past type, upcoming scope) would previously compile and only
+    // show up as a wrong log line; pairing them removes that failure mode entirely.
+    const ATTACHMENT_SOURCES: { type: string; scope: 'upcoming' | 'past' }[] = [
+      { type: 'v1_meeting_attachment', scope: 'upcoming' },
+      { type: 'v1_past_meeting_attachment', scope: 'past' },
+    ];
+    const [meetingResult, pastMeetingResult] = await Promise.all(
+      ATTACHMENT_SOURCES.map((source) => this.fetchNoteAttachmentPage(req, committeeUid, source.type, source.scope, fetchSize))
+    );
 
     const events = [
       ...this.buildNotesEventsForScope(req, committeeUid, meetingResult.attachments, 'upcoming'),
@@ -933,7 +943,7 @@ export class CommitteeActivityService {
     req: Request,
     committeeUid: string,
     type: string,
-    scopeLabel: string,
+    scope: 'upcoming' | 'past',
     fetchSize: number
   ): Promise<{ attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
     return this.microserviceProxy
@@ -946,8 +956,11 @@ export class CommitteeActivityService {
       })
       .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
       .catch((err) => {
-        logger.warning(req, 'get_committee_activity', `Failed to fetch ${scopeLabel} notes attachments, continuing without them`, {
+        // meeting_scope, matching buildNotesEventsForScope's own warning field — both logs
+        // describe the same sub-leg and need to correlate on one field/value, not two vocabularies.
+        logger.warning(req, 'get_committee_activity', 'Failed to fetch notes attachments, continuing without them', {
           committee_uid: committeeUid,
+          meeting_scope: scope,
           err,
         });
         return { attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
