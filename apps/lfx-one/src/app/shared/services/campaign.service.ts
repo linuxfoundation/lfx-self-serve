@@ -27,6 +27,7 @@ import {
   RedditMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
+import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
@@ -147,11 +148,28 @@ export class CampaignService {
     return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request);
   }
 
+  /**
+   * Polls one create job until it reaches a terminal state, or until the five-minute budget runs out.
+   *
+   * The retry sits INSIDE `exhaustMap`, on the single status read, and that placement is the whole
+   * point: an error raised in the outer pipe kills `timer` itself, so without it one 502 from a
+   * redeploying pod ends the poll permanently while the job it was watching carries on creating paid
+   * campaigns upstream. The user is then shown a failure next to a "Create Another" button, and the
+   * campaigns that did get made are invisible to this system. Retrying the outer pipe instead would
+   * restart the timer and re-run the whole schedule, which is not the same thing.
+   *
+   * Only transient reads are retried — `retryTransientHttpError` re-throws 4xx immediately, so an
+   * expired session still surfaces at once rather than after two pointless round trips. Two attempts
+   * past the first, rather than the shared default of one, because the cost of giving up early here
+   * is an orphaned paid campaign and the cost of trying again is one more GET. A failure that
+   * outlives all three still propagates: `getCreateResult` reports it, which is correct, because at
+   * that point the job status genuinely is unknown.
+   */
   private pollJobStatus(jobId: string): Observable<CampaignJobStatus> {
     const maxPolls = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     return timer(0, CAMPAIGN_JOB_POLL_INTERVAL_MS).pipe(
       take(maxPolls),
-      exhaustMap(() => this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`)),
+      exhaustMap(() => this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`).pipe(retryTransientHttpError(2))),
       takeWhile((status) => status.status === 'running', true)
     );
   }
