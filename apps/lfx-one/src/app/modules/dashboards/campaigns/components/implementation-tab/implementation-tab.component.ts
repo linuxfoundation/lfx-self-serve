@@ -88,14 +88,25 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
 
   /**
-   * Whether ANY platform in `platformResults` succeeded.
+   * Whether ANY platform in `platformResults` has a campaign upstream.
    *
    * The panel used to be unconditionally green and headed "Campaigns Created", which was true
    * while only successful jobs carried per-platform rows. A failed job carries them too — that
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
+   *
+   * `ok` alone is NOT the test, and the orphan case is exactly why. campaign-service sets
+   * `campaign_id` on one specific failure — the upstream (paid) campaign WAS created and
+   * recording it into Postgres failed (`orchestrator.go`: "created upstream campaign but failed
+   * to record it") — precisely so the orphaned id is not lost. Its Goa design says so on the
+   * field: "Present when ok; also set on the specific failure where the upstream campaign was
+   * created but recording it failed". A result that is all-orphaned therefore has real campaigns
+   * running and real money being spent, and gating on `ok` would head that page "No Campaigns
+   * Created" while printing the ids of the campaigns it claims do not exist. Wrong in the
+   * expensive direction: the reader's next move is to create them again.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformResults().some((r) => r.ok));
+  protected readonly anyPlatformCreated = computed(() => this.platformResults().some((r) => r.ok || !!r.campaignId));
+
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);
@@ -174,6 +185,7 @@ export class ImplementationTabComponent implements OnInit {
   private jobSubscription: Subscription | null = null;
 
   // === Lifecycle ===
+
   public constructor() {
     effect(() => {
       const brief = this.briefData();
@@ -213,6 +225,28 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Protected Methods ===
+  /**
+   * One platform row's outcome, as three states rather than the boolean the wire carries.
+   *
+   * Kept here rather than inlined in the template so the classification is stated once and can
+   * be tested directly.
+   *
+   * `not-created` deliberately does NOT claim "failed". A skip lands here too: when a concurrent
+   * request already owns a (brief, platform) pair, campaign-service sends `ok: false` with the
+   * message "skipped: a concurrent request already owns this platform's campaign creation (not a
+   * failure)". Its `aggregateStatus` does not count a skip as a failure either. The wire has no
+   * dedicated `skipped` field yet (LFXV2-2665 tracks adding one), and this must not be inferred
+   * by matching that human-readable sentence — a message reworded upstream would silently flip
+   * the UI's verdict. So the row states only what is certain, that no campaign was created for
+   * it, and lets the accompanying message say which of the two it was.
+   */
+  protected outcomeOf(result: CampaignPlatformResult): 'created' | 'orphaned' | 'not-created' {
+    if (result.ok) {
+      return 'created';
+    }
+    return result.campaignId ? 'orphaned' : 'not-created';
+  }
+
   protected addHeadline(): void {
     (this.campaignForm.controls.headlines as FormArray).push(
       this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])
