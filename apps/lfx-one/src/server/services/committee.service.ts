@@ -525,6 +525,30 @@ export class CommitteeService {
         'update_committee'
       );
 
+      // Choosing the Slack destination must require the same authorization as sending to it —
+      // shareToSlack (weekly-brief.service.ts) gates the send on strict project-writer, not
+      // committee-writer. Upstream's own PUT /committees/:uid only enforces committee-writer
+      // (direct grants exist independently of project writer — see getDirectGrantCommittees), so
+      // without this, a committee writer who is not a project writer could point the webhook at a
+      // Slack workspace they control, and a later legitimate project-writer send would deliver
+      // brief content there. Checked here (post-fetch, since currentCommittee.project_uid is
+      // needed) rather than before, to avoid a second upstream round trip only for this field.
+      if (normalizedData.chat_webhook_url !== undefined) {
+        const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+          resource: 'project',
+          id: currentCommittee.project_uid,
+          access: 'writer',
+        });
+        if (!isProjectWriter) {
+          throw new AuthorizationError('Only project writers can configure the Slack webhook', {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+            code: 'NOT_PROJECT_WRITER',
+          });
+        }
+      }
+
       // Step 2: Strip read-only and computed fields, then merge with update data (PUT replaces the entire resource)
       /* eslint-disable @typescript-eslint/no-unused-vars -- intentional destructuring to strip server-computed fields */
       const {

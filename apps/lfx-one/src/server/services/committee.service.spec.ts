@@ -7,19 +7,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
-const { proxyRequest, addAccessToResources, addAccessToResource, fetchWithETag, updateWithETag, resolveAuditUserDisplayName, isImpersonating } = vi.hoisted(
-  () => ({
-    proxyRequest: vi.fn(),
-    addAccessToResources: vi.fn(),
-    // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
-    // list-oriented addAccessToResources every other describe block in this file already uses.
-    addAccessToResource: vi.fn(),
-    fetchWithETag: vi.fn(),
-    updateWithETag: vi.fn(),
-    resolveAuditUserDisplayName: vi.fn(),
-    isImpersonating: vi.fn(() => false),
-  })
-);
+const {
+  proxyRequest,
+  addAccessToResources,
+  addAccessToResource,
+  checkSingleAccessStrict,
+  fetchWithETag,
+  updateWithETag,
+  resolveAuditUserDisplayName,
+  isImpersonating,
+} = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  addAccessToResources: vi.fn(),
+  // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
+  // list-oriented addAccessToResources every other describe block in this file already uses.
+  addAccessToResource: vi.fn(),
+  // Defaults true — most updateCommittee tests aren't exercising the project-writer gate on
+  // chat_webhook_url (LFXV2-3080) and shouldn't need to know it exists to pass.
+  checkSingleAccessStrict: vi.fn(() => Promise.resolve(true)),
+  fetchWithETag: vi.fn(),
+  updateWithETag: vi.fn(),
+  resolveAuditUserDisplayName: vi.fn(),
+  isImpersonating: vi.fn(() => false),
+}));
 
 vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
@@ -35,6 +45,7 @@ vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
     public addAccessToResource = addAccessToResource;
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('./etag.service', () => ({
@@ -307,6 +318,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     proxyRequest.mockReset();
     addAccessToResources.mockReset();
     addAccessToResource.mockReset();
+    checkSingleAccessStrict.mockReset().mockResolvedValue(true);
     fetchWithETag.mockReset();
     updateWithETag.mockReset();
     resolveAuditUserDisplayName.mockReset();
@@ -410,6 +422,28 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+    });
+
+    it('rejects a chat_webhook_url change (403 NOT_PROJECT_WRITER) when the caller is a committee writer but not a project writer — choosing the Slack destination must require the same authorization as sending to it', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'NOT_PROJECT_WRITER',
+      });
+
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(updateWithETag).not.toHaveBeenCalled();
+    });
+
+    it('does not run the project-writer check for updates that omit chat_webhook_url', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
     });
 
     it('rejects a chat_webhook_url that does not match the hooks.slack.com pattern, before touching upstream', async () => {
