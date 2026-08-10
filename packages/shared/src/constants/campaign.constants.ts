@@ -237,3 +237,13 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
   conversions: 'Conversions',
   video_views: 'Video Views',
 } as const;
+
+/**
+ * Shown when a creation job can no longer be found on either polling source.
+ *
+ * Lives in shared constants rather than in `campaign-proxy.service.ts` because both tiers
+ * render it: the Express `not_found` outcome and the Angular poller's `not_found` arm. Keeping
+ * it beside the vendor-direct service would also point the campaign-service client at the very
+ * module the cutover exists to retire.
+ */
+export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation process. Please try again.';

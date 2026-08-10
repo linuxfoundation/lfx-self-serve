@@ -20,10 +20,11 @@ import { map, startWith, Subscription, take } from 'rxjs';
 import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
-  CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
+  CampaignPlatformResult,
   CampaignType,
   LinkedInAccount,
   LinkedInCreativeVariant,
@@ -34,6 +35,26 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
+
+/**
+ * One campaign-service platform result paired with the three-state outcome the row renders.
+ *
+ * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
+ * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
+ * part of any contract between the tiers. Two repo rules meet here and an intersection is the
+ * only form satisfying both — `CLAUDE.md:176` prohibits the local `interface Foo {}` form inside
+ * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
+ * plain `type X = { … }` object literal.
+ */
+type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
+
+/** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
+function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
+  if (result.ok) {
+    return { ...result, outcome: 'created' };
+  }
+  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+}
 
 @Component({
   selector: 'lfx-implementation-tab',
@@ -78,6 +99,60 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
   protected readonly results = signal<CampaignCreateResult[]>([]);
+  /**
+   * Per-platform outcomes as lfx-v2-campaign-service reports them, used when the server is
+   * serving job status from that service instead of the in-process job map. Kept separate from
+   * `results` because campaign-service does not report ad-group, keyword or ad counts, and
+   * folding it into `results` would mean rendering zeros for numbers nobody measured.
+   */
+  protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
+
+  /**
+   * `platformResults` with each row's outcome resolved to three states rather than the boolean
+   * the wire carries. Derived here rather than in the template because only signal reads,
+   * computed values and pipes may appear there (`docs/reviews/frontend-checklist.md` §4).
+   *
+   * `ok` alone is NOT the test, and the orphan case is exactly why. campaign-service sets
+   * `campaign_id` on one specific failure — the upstream (paid) campaign WAS created and
+   * recording it into Postgres failed (`orchestrator.go`: "created upstream campaign but failed
+   * to record it") — precisely so the orphaned id is not lost. Its Goa design says so on the
+   * field: "Present when ok; also set on the specific failure where the upstream campaign was
+   * created but recording it failed". Such a row has a real campaign running and real money
+   * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
+   * next move is to create it again.
+   *
+   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
+   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
+   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
+   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
+   * failure), and two responses in which an upstream campaign may well exist but its id did not
+   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
+   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
+   * artifact exists, and their next move is to create a second one that really does spend money.
+   *
+   * So the row states what is known — this platform's campaign could not be confirmed — and
+   * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
+   * the cheap direction: a needless look at the ad account costs a minute, a duplicate paid
+   * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
+   * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
+   * reworded upstream would silently flip the UI's verdict.
+   */
+  protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
+
+  /**
+   * Whether ANY platform has a campaign upstream — an orphan counts, per the reasoning above.
+   *
+   * The panel used to be unconditionally green and headed "Campaigns Created", which was true
+   * while only successful jobs carried per-platform rows. A failed job carries them too — that
+   * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
+   * otherwise be announced as a success in green.
+   *
+   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
+   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
+   * acts on without reading further, and this one must not assert an absence nobody verified.
+   */
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
+
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);
@@ -156,6 +231,7 @@ export class ImplementationTabComponent implements OnInit {
   private jobSubscription: Subscription | null = null;
 
   // === Lifecycle ===
+
   public constructor() {
     effect(() => {
       const brief = this.briefData();
@@ -190,10 +266,12 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('form');
     this.creationProgress.set([]);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
   }
 
   // === Protected Methods ===
+
   protected addHeadline(): void {
     (this.campaignForm.controls.headlines as FormArray).push(
       this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])
@@ -277,6 +355,7 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('creating');
     this.creationProgress.set(['Submitting campaign...']);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
 
     const form = this.campaignForm.getRawValue();
@@ -392,6 +471,7 @@ export class ImplementationTabComponent implements OnInit {
     this.step.set('form');
     this.creationProgress.set([]);
     this.results.set([]);
+    this.platformResults.set([]);
     this.errors.set([]);
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
@@ -482,10 +562,11 @@ export class ImplementationTabComponent implements OnInit {
       .getCreateResult(jobId)
       .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (result: CampaignCreateResponse | null) => {
-          if (result) {
-            this.results.set(result.campaigns);
-            this.errors.set(result.errors);
+        next: (outcome: CampaignJobOutcome | null) => {
+          if (outcome) {
+            this.results.set(outcome.campaigns);
+            this.platformResults.set(outcome.platformResults ?? []);
+            this.errors.set(outcome.errors);
             this.step.set('results');
           }
         },

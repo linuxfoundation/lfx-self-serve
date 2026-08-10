@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { EnrollmentMembership, IndividualEnrollment } from '../interfaces';
-import { deriveEnrollmentStatus, enrollmentStatusSeverity } from './enrollment.utils';
+import { buildEnrollmentHref, deriveEnrollmentStatus, enrollmentStatusSeverity } from './enrollment.utils';
 
 /** Formats a Date as YYYY-MM-DD, matching the EndDate shape the member-service returns. */
 function isoDate(date: Date): string {
@@ -129,6 +129,25 @@ describe('deriveEnrollmentStatus', () => {
     const item = enrollment({ membership: membership({ endDate: daysFromNow(10) }) });
     expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
   });
+
+  // 'Purchased' has no dedicated branch — it deliberately flows into the same date-based derivation
+  // as 'Active'. These pin that equivalence so the fall-through can't silently regress.
+  describe("treats 'Purchased' identically to 'Active'", () => {
+    it('returns Active when EndDate is more than 30 days out', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(60) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Active');
+    });
+
+    it('returns Expiring Soon when EndDate is within 30 days and not stripe-autoRenew', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(10) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Expiring Soon');
+    });
+
+    it('returns Expired when EndDate is in the past', () => {
+      const item = enrollment({ membership: membership({ status: 'Purchased', endDate: daysFromNow(-5) }) });
+      expect(deriveEnrollmentStatus(item)).toBe('Expired');
+    });
+  });
 });
 
 describe('enrollmentStatusSeverity', () => {
@@ -146,5 +165,33 @@ describe('enrollmentStatusSeverity', () => {
 
   it('maps Not Enrolled to secondary', () => {
     expect(enrollmentStatusSeverity('Not Enrolled')).toBe('secondary');
+  });
+});
+
+describe('buildEnrollmentHref', () => {
+  const CTA = '?product=prod-1&project=tlf';
+
+  it('composes the base and query-only ctaPath into an absolute URL', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', CTA)).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
+  });
+
+  it('appends renew=true when renew is set', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', CTA, true)).toBe('https://enroll.example.org/?product=prod-1&project=tlf&renew=true');
+  });
+
+  it('tolerates a base without a trailing slash', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org', CTA)).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
+  });
+
+  it('tolerates a base that carries a path segment (no trailing slash)', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/join', CTA)).toBe('https://enroll.example.org/join?product=prod-1&project=tlf');
+  });
+
+  it('tolerates a ctaPath without a leading question mark', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', 'product=prod-1&project=tlf')).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
+  });
+
+  it('handles empty ctaPath by returning the base URL', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', '')).toBe('https://enroll.example.org/');
   });
 });

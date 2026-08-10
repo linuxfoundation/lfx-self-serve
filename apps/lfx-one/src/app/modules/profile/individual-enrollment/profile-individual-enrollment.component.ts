@@ -6,8 +6,8 @@
 import { DatePipe, formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DisplayEnrollment, EnrollmentsState } from '@lfx-one/shared/interfaces';
-import { deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
+import { DisplayEnrollment, DisplayEnrollmentsState, EnrollmentsState } from '@lfx-one/shared/interfaces';
+import { buildEnrollmentHref, deriveEnrollmentStatus, enrollmentStatusSeverity } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
@@ -40,44 +40,21 @@ export class ProfileIndividualEnrollmentComponent {
   // disabled and the auto-renew write is blocked server-side.
   protected readonly impersonating = this.userService.impersonating;
 
-  protected readonly enrollments = signal<DisplayEnrollment[] | null | undefined>(undefined);
-  protected readonly enrollmentError = signal<string | null>(null);
+  // Single source of truth mirroring the service's loading | loaded | error union — the template
+  // switches on `displayState().kind` so there is no null/undefined tri-state to `!`-assert.
+  private readonly enrollmentState = signal<DisplayEnrollmentsState>({ kind: 'loading' });
   protected readonly pendingIds = signal<Set<string>>(new Set());
 
   /** Local overrides for auto-renew values applied optimistically before PATCH completes. */
   private readonly autoRenewOverrides = signal<Map<string, boolean>>(new Map());
 
-  protected readonly displayedEnrollments: Signal<DisplayEnrollment[] | null | undefined> = this.initDisplayedEnrollments();
+  protected readonly displayState: Signal<DisplayEnrollmentsState> = this.initDisplayState();
 
   public constructor() {
     this.enrollmentService
       .getEnrollments()
       .pipe(takeUntilDestroyed())
-      .subscribe((state: EnrollmentsState) => {
-        if (state.kind === 'loading') {
-          this.enrollments.set(undefined);
-          this.enrollmentError.set(null);
-        } else if (state.kind === 'error') {
-          this.enrollments.set(null);
-          this.enrollmentError.set(state.message);
-        } else {
-          const base = environment.urls.enrollment;
-          this.enrollments.set(
-            state.items.map((item): DisplayEnrollment => {
-              const displayStatus = deriveEnrollmentStatus(item);
-              return {
-                ...item,
-                displayStatus,
-                severity: enrollmentStatusSeverity(displayStatus),
-                enrollHref: `${base}${item.ctaPath}`,
-                renewHref: `${base}${item.ctaPath}&renew=true`,
-                pending: false,
-              };
-            })
-          );
-          this.enrollmentError.set(null);
-        }
-      });
+      .subscribe((state: EnrollmentsState) => this.enrollmentState.set(this.toDisplayState(state)));
   }
 
   protected isPending(item: DisplayEnrollment): boolean {
@@ -150,9 +127,9 @@ export class ProfileIndividualEnrollmentComponent {
   }
 
   private syncAutoRenewValue(membershipId: string, autoRenew: boolean): void {
-    this.enrollments.update((list) => {
-      if (!list) return list;
-      return list.map((item) => {
+    this.enrollmentState.update((state) => {
+      if (state.kind !== 'loaded') return state;
+      const items = state.items.map((item) => {
         if (item.membership?.id === membershipId) {
           const updatedMembership = { ...item.membership, autoRenew };
           const updatedItem = { ...item, membership: updatedMembership };
@@ -161,6 +138,7 @@ export class ProfileIndividualEnrollmentComponent {
         }
         return item;
       });
+      return { kind: 'loaded', items };
     });
   }
 
@@ -172,23 +150,44 @@ export class ProfileIndividualEnrollmentComponent {
     });
   }
 
-  private initDisplayedEnrollments(): Signal<DisplayEnrollment[] | null | undefined> {
+  // Projects the server state into the display shape once, at the subscription boundary.
+  private toDisplayState(state: EnrollmentsState): DisplayEnrollmentsState {
+    // The loading/error arms are structurally identical across both unions (only the loaded arm's
+    // item type differs), so returning `state` verbatim is intentional, not a missed projection.
+    if (state.kind !== 'loaded') return state;
+    const base = environment.urls.enrollment;
+    const items = state.items.map((item): DisplayEnrollment => {
+      const displayStatus = deriveEnrollmentStatus(item);
+      return {
+        ...item,
+        displayStatus,
+        severity: enrollmentStatusSeverity(displayStatus),
+        enrollHref: buildEnrollmentHref(base, item.ctaPath),
+        renewHref: buildEnrollmentHref(base, item.ctaPath, true),
+        pending: false,
+      };
+    });
+    return { kind: 'loaded', items };
+  }
+
+  private initDisplayState(): Signal<DisplayEnrollmentsState> {
     return computed(() => {
-      const list = this.enrollments();
+      const state = this.enrollmentState();
+      if (state.kind !== 'loaded') return state;
       const overrides = this.autoRenewOverrides();
       const pending = this.pendingIds();
-      if (!list) return list;
-      return list.map((item) => {
-        const membershipId = item.membership?.id;
-        const isPending = membershipId ? pending.has(membershipId) : false;
-        if (membershipId && overrides.has(membershipId)) {
-          const autoRenew = overrides.get(membershipId)!;
-          const updatedMembership = { ...item.membership!, autoRenew };
+      const items = state.items.map((item) => {
+        const membership = item.membership;
+        const isPending = membership ? pending.has(membership.id) : false;
+        if (membership && overrides.has(membership.id)) {
+          const autoRenew = overrides.get(membership.id) ?? false;
+          const updatedMembership = { ...membership, autoRenew };
           const displayStatus = deriveEnrollmentStatus({ ...item, membership: updatedMembership });
           return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus), pending: isPending };
         }
         return { ...item, pending: isPending };
       });
+      return { kind: 'loaded', items };
     });
   }
 }

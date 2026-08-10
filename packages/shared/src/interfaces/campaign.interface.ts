@@ -485,9 +485,51 @@ export interface CampaignCreateResponse {
   errors: string[];
 }
 
+/**
+ * One platform's outcome as lfx-v2-campaign-service reports it.
+ *
+ * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
+ * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
+ * `platform-result` carries none of them — it knows the platform, whether the create
+ * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
+ * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
+ * them, which reports a successful create as an empty one. A separate, smaller type keeps the
+ * absent fields absent, so nothing can render a number nobody measured.
+ */
+export interface CampaignPlatformResult {
+  platform: string;
+  ok: boolean;
+  /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
+  campaignId?: string;
+  error?: string;
+}
+
+/**
+ * What a finished creation job left behind, normalised across both sources.
+ *
+ * `campaigns` is populated by the vendor-direct path and `platformResults` by the
+ * campaign-service path — never both. Neither is a guarantee of content: the vendor-direct path
+ * calls `completeJob` unconditionally (`campaign-proxy.service.ts`), so a run in which every
+ * platform failed finishes as `done` with an empty `campaigns` and a populated `errors`. Read
+ * `errors` and each result's own flag; do not treat "the job is over" as "a campaign exists".
+ *
+ * Kept as one type so the caller has a single "the job is over, here is what happened" value
+ * rather than a nullable `CampaignCreateResponse` that reads as "nothing happened" on the
+ * campaign-service path.
+ */
+export interface CampaignJobOutcome {
+  campaigns: CampaignCreateResult[];
+  errors: string[];
+  platformResults?: CampaignPlatformResult[];
+}
+
 export interface CampaignJobStatus {
   status: 'running' | 'done' | 'error' | 'not_found';
+  /** Populated by the in-process (vendor-direct) path only. */
   result?: CampaignCreateResponse;
+  /** Populated by the campaign-service path only. See `CampaignPlatformResult` for why the two differ. */
+  platformResults?: CampaignPlatformResult[];
   error?: string;
 }
 

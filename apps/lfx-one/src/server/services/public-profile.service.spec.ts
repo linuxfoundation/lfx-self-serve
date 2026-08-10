@@ -124,8 +124,8 @@ describe('projectPublicProfile', () => {
           },
         ],
       },
-      certification_activities: [{ ID: 'c1', Name: 'CKA', Status: 'active', Type: 'cert', StartDate: '2024', EndDate: '2025' }],
-      training_activities: [{ Name: 'Intro', Status: 'done', Type: 'course' }],
+      certification_activities: [{ ID: 'c1', Name: 'CKA', Status: 'Completed', Type: 'cert', StartDate: '2024', EndDate: '2025' }],
+      training_activities: [{ Name: 'Intro', Status: 'Enrolled', Type: 'E-Learning' }],
       badges: [{ Image: 'https://img.example/b.png', Url: 'https://b.example' }],
       skills: [{ ID: 's1', Name: 'Go' }],
       presentations: [{ Name: 'Talk', LocationName: '123 Main St, Springfield' }],
@@ -139,7 +139,7 @@ describe('projectPublicProfile', () => {
     expect(projected.About).toBe('Hello');
     expect(projected.technical_contribution?.projects[0]).toEqual({ Name: 'Kubernetes', Slug: 'k8s', commits: 12, deleted: 0, added: 0, prs: 0, issues: 0 });
     expect(projected.certification_activities).toEqual([{ Name: 'CKA', Type: 'cert', StartDate: '2024', EndDate: '2025' }]);
-    expect(projected.training_activities).toEqual([{ Name: 'Intro', Type: 'course' }]);
+    expect(projected.training_activities).toEqual([{ Name: 'Intro', Type: 'E-Learning' }]);
     expect(projected.badges).toEqual([{ Image: 'https://img.example/b.png', Url: 'https://b.example' }]);
 
     // Unrendered / PII fields never ship — assert on the serialized wire form.
@@ -156,8 +156,7 @@ describe('projectPublicProfile', () => {
     expect(wire).not.toContain('proj-1'); // project.ID
     expect(wire).not.toContain('"docs"'); // project.docs
     expect(wire).not.toContain('Springfield'); // presentation location
-    expect(wire).not.toContain('active'); // certification Status
-    expect(wire).not.toContain('"done"'); // training Status
+    expect(wire).not.toContain('Status'); // neither certification nor training Status is projected
   });
 
   it('fails closed to isPublic false and omits absent optional sections', () => {
@@ -290,5 +289,126 @@ describe('PublicProfileService.getPublicProfile', () => {
   it('maps a network failure to a 502 MicroserviceError', async () => {
     fetchMock.mockRejectedValue(new Error('connection refused'));
     await expect(service.getPublicProfile(req, 'jane')).rejects.toMatchObject({ statusCode: 502 });
+  });
+});
+
+// The projection helpers are module-private, so they're exercised through the exported
+// `projectPublicProfile` seam — mirroring myprofile's training/certification computed filters.
+describe('projectPublicProfile — training_activities allow-list projection', () => {
+  it('keeps only allow-listed training Types, dropping exam/subscription/bundle rows', () => {
+    const projected = projectPublicProfile({
+      training_activities: [
+        { Name: 'A', Type: 'E-Learning', Status: 'Completed' },
+        { Name: 'B', Type: 'Instructor-Led', Status: 'Enrolled' },
+        { Name: 'C', Type: 'edX', Status: 'Started' },
+        { Name: 'D', Type: 'Certification Exam', Status: 'Completed' },
+        { Name: 'E', Type: 'Subscription', Status: 'Completed' },
+        { Name: 'F', Type: 'Bundle', Status: 'Completed' },
+      ],
+    });
+
+    expect(projected.training_activities?.map((t) => t.Name)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('keeps only allow-listed enrollment Statuses, dropping cancelled/unknown/absent-status rows', () => {
+    const projected = projectPublicProfile({
+      training_activities: [
+        { Name: 'Enrolled row', Type: 'E-Learning', Status: 'Enrolled' },
+        { Name: 'Completed row', Type: 'E-Learning', Status: 'Completed' },
+        { Name: 'Started row', Type: 'E-Learning', Status: 'Started' },
+        { Name: 'Not started row', Type: 'E-Learning', Status: 'Not started' },
+        { Name: 'Cancelled row', Type: 'E-Learning', Status: 'Cancelled' },
+        { Name: 'Unknown status row', Type: 'E-Learning', Status: 'In Progress' },
+        { Name: 'No status row', Type: 'E-Learning' },
+      ],
+    });
+
+    expect(projected.training_activities?.map((t) => t.Name)).toEqual(['Completed row', 'Enrolled row', 'Not started row', 'Started row']);
+  });
+
+  it('blanks epoch-placeholder dates to empty string and passes real dates through', () => {
+    const projected = projectPublicProfile({
+      training_activities: [{ Name: 'A', Type: 'E-Learning', Status: 'Completed', StartDate: '1970-01-01T00:00:00Z', EndDate: '2025-03-04T00:00:00Z' }],
+    });
+
+    expect(projected.training_activities?.[0]).toEqual({ Name: 'A', Type: 'E-Learning', StartDate: '', EndDate: '2025-03-04T00:00:00Z' });
+  });
+
+  it('leaves absent dates undefined rather than blanking them', () => {
+    const projected = projectPublicProfile({
+      training_activities: [{ Name: 'A', Type: 'E-Learning', Status: 'Completed' }],
+    });
+
+    expect(projected.training_activities?.[0].StartDate).toBeUndefined();
+    expect(projected.training_activities?.[0].EndDate).toBeUndefined();
+  });
+
+  it('sorts the kept trainings by Name ascending', () => {
+    const projected = projectPublicProfile({
+      training_activities: [
+        { Name: 'Zeta', Type: 'E-Learning', Status: 'Completed' },
+        { Name: 'Alpha', Type: 'Instructor-Led', Status: 'Enrolled' },
+        { Name: 'Mango', Type: 'edX', Status: 'Started' },
+      ],
+    });
+
+    expect(projected.training_activities?.map((t) => t.Name)).toEqual(['Alpha', 'Mango', 'Zeta']);
+  });
+
+  it('returns undefined when training_activities is missing or not an array', () => {
+    expect(projectPublicProfile({}).training_activities).toBeUndefined();
+    expect(projectPublicProfile({ training_activities: null }).training_activities).toBeUndefined();
+    expect(projectPublicProfile({ training_activities: 'nope' }).training_activities).toBeUndefined();
+    expect(projectPublicProfile({ training_activities: { Name: 'A' } }).training_activities).toBeUndefined();
+  });
+});
+
+describe('projectPublicProfile — certification_activities allow-list projection', () => {
+  it('keeps only Completed certifications, dropping other/absent statuses', () => {
+    const projected = projectPublicProfile({
+      certification_activities: [
+        { Name: 'Completed cert', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'In progress cert', Status: 'In Progress', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'Enrolled cert', Status: 'Enrolled', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'No status cert', StartDate: '2025-01-02T00:00:00Z' },
+      ],
+    });
+
+    expect(projected.certification_activities?.map((c) => c.Name)).toEqual(['Completed cert']);
+  });
+
+  it('drops completed certifications whose StartDate is the epoch placeholder or absent', () => {
+    const projected = projectPublicProfile({
+      certification_activities: [
+        { Name: 'Real date', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'Epoch date', Status: 'Completed', StartDate: '1970-01-01T00:00:00Z' },
+        { Name: 'No date', Status: 'Completed' },
+      ],
+    });
+
+    expect(projected.certification_activities?.map((c) => c.Name)).toEqual(['Real date']);
+  });
+
+  it('projects the render-only fields and never the raw Status', () => {
+    const projected = projectPublicProfile({
+      certification_activities: [
+        { Name: 'Kubernetes', Type: 'Certification', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z', EndDate: '2028-01-02T00:00:00Z' },
+      ],
+    });
+
+    expect(projected.certification_activities?.[0]).toEqual({
+      Name: 'Kubernetes',
+      Type: 'Certification',
+      StartDate: '2025-01-02T00:00:00Z',
+      EndDate: '2028-01-02T00:00:00Z',
+    });
+    expect(projected.certification_activities?.[0]).not.toHaveProperty('Status');
+  });
+
+  it('returns undefined when certification_activities is missing or not an array', () => {
+    expect(projectPublicProfile({}).certification_activities).toBeUndefined();
+    expect(projectPublicProfile({ certification_activities: null }).certification_activities).toBeUndefined();
+    expect(projectPublicProfile({ certification_activities: 'nope' }).certification_activities).toBeUndefined();
+    expect(projectPublicProfile({ certification_activities: { Name: 'A' } }).certification_activities).toBeUndefined();
   });
 });

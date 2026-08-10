@@ -495,7 +495,7 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction';
 
 /**
  * Pending action item for task list
@@ -536,6 +536,8 @@ export interface PendingActionItem {
   inviteOrganization?: CommitteeOrganizationReference | null;
   /** Precomputed flag: accept must collect organization when true (set on Invitation action types) */
   inviteRequiresOrganization?: boolean;
+  /** Weekly-brief action-item UID (set on BriefAction action types). Gives HiddenActionsService's identifier scheme a stable per-item key instead of falling back to type+badge+text. */
+  briefActionUid?: string;
 }
 
 /**

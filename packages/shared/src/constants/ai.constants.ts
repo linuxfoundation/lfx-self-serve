@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { WEEKLY_BRIEF_ACTION_ITEMS_MAX } from './weekly-brief.constants';
+
 /**
  * System prompt for AI meeting agenda generation
  */
@@ -126,6 +128,32 @@ Respond with a JSON object matching the provided schema exactly:
 Do not include any text outside the JSON object.`;
 
 /**
+ * System prompt for AI weekly-brief action-item extraction.
+ *
+ * Extraction runs once per brief revision (cached by the BFF) — empty extraction is a
+ * valid, common outcome for a quiet week, not a failure. The prompt asks for structured
+ * output (a JSON items array) matching ExtractActionItemsResponse, enforced via the
+ * request's response_format json_schema, not free text.
+ */
+export const AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT = `You are an assistant that reads a weekly committee brief and extracts concrete, actionable follow-up items for committee members — turning read-only prose into a short personal checklist.
+
+Key principles:
+- Only extract items that describe something a person could actually go do (e.g. "onboard the new member", "review the proposed charter change") — not summaries, announcements, or background context.
+- Each item should be a short, specific, imperative phrase (e.g. "Onboard the new member from Acme Corp"), not a restatement of a whole paragraph.
+- If you can infer who would naturally own an item (e.g. "chair", "maintainer", "ED"), set suggested_owner_role to that. When unclear, set it to null — never guess a specific person's name, and never omit the field.
+- Extract at most ${WEEKLY_BRIEF_ACTION_ITEMS_MAX} items, prioritizing the most concrete and time-sensitive ones.
+- Many briefs — especially a quiet week with no notable activity — will have zero actionable items. Returning an empty items array is correct and expected; do not invent items to avoid an empty result.
+
+You must respond with a valid JSON object in this exact format:
+{
+  "items": [
+    { "text": "string, a concise actionable follow-up", "suggested_owner_role": "string or null — never omitted" }
+  ]
+}
+
+Do not include any text outside the JSON object.`;
+
+/**
  * AI model configuration
  */
 export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
@@ -136,6 +164,35 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
   TEMPERATURE: 0.7,
+  /**
+   * Default AbortSignal.timeout bound for user-initiated (POST) AiService calls — currently only
+   * generateMeetingAgenda (MAX_TOKENS: 4000 above). Without it, a hung LiteLLM proxy holds the
+   * request open for undici's ~300s default; a long wait here is a UX problem, not an
+   * availability one. generateNewsletter does NOT use this default — its larger token budget
+   * gets its own NEWSLETTER_TIMEOUT_MS below, sized for its own completion size instead of
+   * sharing a guessed number with agenda generation (this shared-bound approach is exactly what
+   * caused repeated review findings — Copilot, Cursor Bugbot, @dealako — before it was split
+   * out). Note a rolling deploy severs in-flight requests after server.ts's shutdown drain (15s
+   * LB drain + 25s HTTP close ≈ 40s from SIGTERM) regardless of either bound, so values well
+   * above that are only reachable between deploys; streaming or a background job is the real fix
+   * for an AI call that can run long, not a larger timeout.
+   */
+  TIMEOUT_MS: 120_000,
+  /**
+   * AbortSignal.timeout bound for generateNewsletter specifically. Sized for
+   * NEWSLETTER_AI_MAX_TOKENS (12,000, non-streaming): needs the completion to sustain roughly
+   * 50 tokens/sec to finish within this window, comfortably below typical non-streaming Sonnet
+   * throughput even without measured p99 latency data for this specific proxy. Kept separate
+   * from TIMEOUT_MS (agenda's 4,000-token budget) so raising one never silently tightens or
+   * loosens the other.
+   */
+  NEWSLETTER_TIMEOUT_MS: 240_000,
+  /**
+   * Tighter AbortSignal.timeout bound specifically for extractBriefActionItems, which runs on a
+   * GET page-load path (committee Overview), not a user-initiated POST — an unbounded or
+   * generously-bounded wait there is an availability risk, not just slowness.
+   */
+  EXTRACTION_TIMEOUT_MS: 15_000,
 };
 
 /**
