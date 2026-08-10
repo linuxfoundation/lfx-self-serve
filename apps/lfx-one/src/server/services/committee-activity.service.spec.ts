@@ -132,7 +132,6 @@ function survey(overrides: Partial<Survey> = {}): Survey {
 function meetingAttachment(overrides: Partial<CommitteeActivityNoteAttachment> = {}): CommitteeActivityNoteAttachment {
   return {
     uid: 'ma-1',
-    meeting_id: 'meeting-1',
     type: 'file',
     category: 'Notes',
     name: 'Meeting Notes.pdf',
@@ -145,7 +144,6 @@ function meetingAttachment(overrides: Partial<CommitteeActivityNoteAttachment> =
 function pastMeetingAttachment(overrides: Partial<CommitteeActivityNoteAttachment> = {}): CommitteeActivityNoteAttachment {
   return {
     uid: 'pma-1',
-    meeting_id: 'meeting-1',
     type: 'file',
     category: 'Notes',
     name: 'Past Meeting Notes.pdf',
@@ -930,10 +928,11 @@ describe('CommitteeActivityService', () => {
       expect(byUid['ma-file']).toMatchObject({ payload: { document_type: 'file', url: undefined } });
     });
 
-    it('drops a non-Notes-category attachment row — the client-side filter is the only correctness guarantee this leg has', async () => {
-      // No `filters`/`category` param is sent upstream at all (see fetchNotesAddedEvents's doc
-      // comment on why an upstream term filter risks silently zeroing the leg) — this test
-      // exercises the actual mechanism that keeps non-Notes rows out.
+    it('drops a non-Notes-category attachment row even if the upstream filters param fails to narrow it', async () => {
+      // The client-side filter is a backstop, not a substitute, for the upstream `filters:
+      // ['category:Notes']` param (see fetchNotesAddedEvents's doc comment on why both are sent) —
+      // this test simulates the upstream filter not narrowing at all and asserts the client-side
+      // pass still excludes the non-Notes row.
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
           return Promise.resolve({
@@ -951,28 +950,38 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0]).toMatchObject({ payload: { document_uid: 'ma-1' } });
     });
 
-    it('queries both attachment types scoped by committee parent ref only — no upstream category filter or date narrowing', async () => {
+    it('queries both attachment types scoped by committee parent ref and the category filter, with no upstream date narrowing', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'v1_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, page_size: 25, sort: 'updated_desc' })
+        expect.objectContaining({
+          type: 'v1_meeting_attachment',
+          parent: `committee:${COMMITTEE_UID}`,
+          filters: ['category:Notes'],
+          page_size: 25,
+          sort: 'updated_desc',
+        })
       );
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
         'LFX_V2_SERVICE',
         '/query/resources',
         'GET',
-        expect.objectContaining({ type: 'v1_past_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, page_size: 25, sort: 'updated_desc' })
+        expect.objectContaining({
+          type: 'v1_past_meeting_attachment',
+          parent: `committee:${COMMITTEE_UID}`,
+          filters: ['category:Notes'],
+          page_size: 25,
+          sort: 'updated_desc',
+        })
       );
       const [meetingCall, pastMeetingCall] = proxyRequest.mock.calls.filter(
         (call) => call[2] === '/query/resources' && (call[4]?.type === 'v1_meeting_attachment' || call[4]?.type === 'v1_past_meeting_attachment')
       );
-      expect(meetingCall[4]).not.toHaveProperty('filters');
       expect(meetingCall[4]).not.toHaveProperty('date_field');
-      expect(pastMeetingCall[4]).not.toHaveProperty('filters');
       expect(pastMeetingCall[4]).not.toHaveProperty('date_field');
     });
 

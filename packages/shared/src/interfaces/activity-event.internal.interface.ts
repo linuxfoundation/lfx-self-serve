@@ -86,7 +86,6 @@ export interface CommitteeActivityDocumentFile {
  */
 export interface CommitteeActivityNoteAttachment {
   uid: string;
-  meeting_id: string;
   type: 'file' | 'link';
   category?: string;
   name: string;

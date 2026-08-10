@@ -231,19 +231,19 @@ export class CommitteeActivityService {
     // a runtime tripwire for exactly this: a warning log if a real, differing scheduled_start_time
     // ever shows up on a returned row, rather than relying on this comment alone to catch it.
     //
-    // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
-    // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
-    // converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer contract
-    // documents as index-write/audit metadata, not a copy of any `data.*` domain field — distinct
-    // from the `date_field` values votes and files filter on: votes' `data.last_modified_time`,
+    // Votes, surveys, files, and notes are all in a different, genuinely-approximate bucket:
+    // query-service's `sort=updated_desc` resolves to the INDEX's own root-level `updated_at`
+    // (`cmd/service/converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer
+    // contract documents as index-write/audit metadata, not a copy of any `data.*` domain field —
+    // distinct from the `date_field` values votes and files filter on: votes' `data.last_modified_time`,
     // files' `data.updated_at` (each auto-prefixed with `data.` by query-service, unlike `sort`).
     // Files happens to share a field NAME with the sort target (`updated_at` == `updated_at`)
     // despite resolving to a different actual field once `data.` prefixing is applied; votes'
-    // date_field name doesn't even coincide with `updated_at`. Surveys is the exception here: it
-    // has no upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
-    // updated_desc` is the only upstream ordering this leg gets. Same class of approximation as the
-    // per-leg date_field (filter-dimension) caveats discussed next, just in the sort dimension
-    // instead.
+    // date_field name doesn't even coincide with `updated_at`. Surveys and notes are the exception
+    // here: neither has an upstream date_field at all (see fetchSurveyEvents's and
+    // fetchNotesAddedEvents's own comments for why, two different reasons) — `sort: updated_desc`
+    // is the only upstream ordering either leg gets. Same class of approximation as the per-leg
+    // date_field (filter-dimension) caveats discussed next, just in the sort dimension instead.
     //
     // Filter dimension: votes/files each filter on a single upstream `date_field` that only
     // approximates their own multi-field occurred_at derivation (see each leg's own comment for
@@ -252,13 +252,19 @@ export class CommitteeActivityService {
     // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
     // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
     // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys is
-    // the one exception where "sending none at all" IS the right call, not the failure mode this
-    // paragraph describes: unlike votes/files, a survey's cutoff-driven occurred_at isn't bounded
-    // below by any field the row gets written to, so date_field narrowing there would systematically
-    // (not rarely) exclude exactly the rows `since` is meant to include — see fetchSurveyEvents.
+    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys and
+    // notes are the exception where "sending none at all" IS the right call, not the failure mode
+    // this paragraph describes — for two different reasons. Surveys: unlike votes/files, a survey's
+    // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
+    // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
+    // is meant to include — see fetchSurveyEvents. Notes: an attachment whose v1 source record had
+    // no parseable `updated_at` gets indexed with `modified_at` set to the Go zero-date sentinel
+    // (`0001-01-01T00:00:00Z`, lfx-v2-meeting-service's `parseTime` swallows that error rather than
+    // omitting the field — `modified_at` is never actually absent), which an upstream date_field
+    // filter would exclude even though `firstValidTimestamp` correctly treats the sentinel as
+    // invalid and falls back to `created_at` for `occurred_at` — see fetchNotesAddedEvents.
     //
-    // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
+    // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files/notes
     // are each bounded to a single upstream page of `fetchSize` rows.
     // If more than `fetchSize` rows on one of those legs share the exact same occurred_at second,
     // rows beyond the upstream page are simply never fetched, on any page — unlike folders/links
@@ -384,7 +390,7 @@ export class CommitteeActivityService {
     windowed.sort((a, b) => compareEventsDesc({ occurred_at: a.event.occurred_at, key: a.key }, { occurred_at: b.event.occurred_at, key: b.key }));
 
     // `windowed.length > limit` alone under-detects "more data exists": each of
-    // meetings/votes/surveys/files is bounded to a single upstream page of `fetchSize` rows (see
+    // meetings/votes/surveys/files/notes is bounded to a single upstream page of `fetchSize` rows (see
     // the caveat above), so once a page's fetch actually hits that bound, there could be more rows
     // upstream than made it into `windowed` even though the merged pool itself isn't over `limit` —
     // e.g. a single dominant source returning exactly `fetchSize` rows, several of which get
@@ -797,8 +803,8 @@ export class CommitteeActivityService {
     // anyway, never past it. The exact/final since+cursor enforcement still happens once,
     // centrally, in getCommitteeActivity — this pre-filter only needs to be a superset of that.
     // This fully closes the tie-truncation failure for folders/links specifically, because nothing
-    // upstream ever caps what this leg can re-fetch. The sibling meetings/votes/surveys/files legs
-    // are each capped to one upstream page of fetchSize and can still hit the same failure if more
+    // upstream ever caps what this leg can re-fetch. The sibling meetings/votes/surveys/files/notes
+    // legs are each capped to one upstream page of fetchSize and can still hit the same failure if more
     // than fetchSize of their own rows share one exact timestamp — see the caveat on `fetchSize`'s
     // own comment above, in getCommitteeActivity.
     const folderEvents = boundedSortDesc(
@@ -856,21 +862,31 @@ export class CommitteeActivityService {
    * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
    * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
    *
-   * No upstream `filters`/`date_field` narrowing, unlike the files leg above — two reasons, both
-   * found in review and confirmed against lfx-v2-meeting-service's indexer-contract docs:
-   *  1. `filters: ['category:Notes']` compiles to an OpenSearch `term` clause (exact match). If
-   *     `data.category` isn't mapped as an exact-match/keyword field, that term matches nothing
-   *     and the leg silently returns zero rows on every call — a `term` filter EXCLUDES
-   *     non-matching rows, it can't be "best-effort"; whether the mapping is exact-match is
-   *     unverified. The unconditional client-side `category === 'Notes'` filter below is the only
-   *     correctness guarantee this leg has, so the upstream filter isn't sent at all.
-   *  2. A `date_field`/`date_from`/`date_to` window here would filter on `modified_at`, which is
-   *     optional and typically unset for an attachment that's been uploaded once and never
-   *     edited — the common case for notes, not a rare edge. That's the same systematic
-   *     exclusion `fetchSurveyEvents` above documents at length as its own reason for dropping
-   *     upstream date narrowing entirely; this leg follows that precedent instead of repeating
-   *     the files leg's date_field, which is safe there only because committee_document rows
-   *     reliably carry a real `updated_at`.
+   * `filters: ['category:Notes']` IS sent upstream, with the unconditional client-side
+   * `category === 'Notes'` filter below kept as a backstop, not a substitute — both found in
+   * review and confirmed against lfx-v2-meeting-service's/lfx-v2-query-service's contract docs:
+   *  - `filters` compiles to an OpenSearch `term` clause (exact match). If `data.category` isn't
+   *    mapped as an exact-match/keyword field, the term matches nothing and this leg returns zero
+   *    rows on every call — a `term` filter EXCLUDES non-matching rows, it can't be "best-effort".
+   *    Whether the mapping is exact-match is unverified, so this is a real risk, not a theoretical
+   *    one — but it's a strictly better risk than dropping the filter and fetching `fetchSize`
+   *    attachments of every category before filtering client-side: that guarantees a *silent*,
+   *    hard-to-detect dilution (a committee whose meetings carry non-Notes attachments too would
+   *    only ever surface notes from its most recent handful of meetings, with `saturated` firing
+   *    far more than the actual Notes volume warrants), whereas a mapping mismatch here is a
+   *    *visible*, all-or-nothing failure — `notes_count: 0` in this method's completion log across
+   *    every committee, trivially distinguishable from "this committee genuinely has no notes."
+   *  - No `date_field`/`date_from`/`date_to` narrowing, unlike the files leg above. `modified_at`
+   *    is never actually absent (`ModifiedAt time.Time` has no `omitempty`), but an attachment
+   *    whose v1 source record had no parseable `updated_at` gets indexed with `modified_at` set to
+   *    Go's zero-date sentinel (`0001-01-01T00:00:00Z` — `parseTime`'s error is swallowed rather
+   *    than the field being omitted). An upstream date range filter on `modified_at` would exclude
+   *    those sentinel rows even though `firstValidTimestamp` below correctly treats the sentinel as
+   *    invalid and falls back to `created_at` for `occurred_at` — the two would silently diverge on
+   *    exactly those rows. Same class of problem `fetchSurveyEvents` documents at length for its
+   *    own, different reason; this leg follows that same "drop the narrowing" precedent rather than
+   *    repeating the files leg's `date_field`, which is safe there only because `committee_document`
+   *    rows reliably carry a real, non-sentinel `updated_at`.
    * `since`/`before` are still accepted (unused in the query itself) to keep this leg's call
    * signature uniform with every other fetch* method — the in-memory since/cursor pass in
    * getCommitteeActivity is what actually enforces the window for this leg, exactly as it already
@@ -886,6 +902,7 @@ export class CommitteeActivityService {
     const buildQuery = (type: string): Record<string, unknown> => ({
       type,
       parent: `committee:${committeeUid}`,
+      filters: ['category:Notes'],
       page_size: fetchSize,
       sort: 'updated_desc',
     });
