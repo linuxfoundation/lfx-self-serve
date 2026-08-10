@@ -811,9 +811,11 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-2').click();
     await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
 
-    // Give A's delayed response time to land, then confirm it did NOT clobber B's drawer —
-    // this is the regression this test exists to catch (PR #1363 review).
-    await page.waitForTimeout(1200);
+    // Give A's delayed (1s) mocked response comfortable room to land — a tight margin here
+    // previously left this assertion able to pass even if A would go on to clobber B moments
+    // later (Copilot review, PR #1363) — then confirm it did NOT clobber B's drawer. This is
+    // the regression this test exists to catch.
+    await page.waitForTimeout(2500);
     await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
   });
 

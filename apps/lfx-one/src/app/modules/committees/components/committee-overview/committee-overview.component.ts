@@ -51,7 +51,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, switchMap, take, takeUntil, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -140,14 +140,15 @@ export class CommitteeOverviewComponent {
   public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
-  // The uid openVoteDrawer's cache-miss fallback fetch (getVote) is currently in flight for, or
-  // null when idle — an idempotency/staleness guard, not a template-facing spinner. Tracks the
-  // requested uid (not just a boolean) so a second click on a *different* uid while the first
-  // is still in flight can supersede it, and a late response for a uid that's no longer the
-  // latest request gets discarded instead of silently overwriting a newer selection (PR #1363
-  // review: Copilot, Cursor Bugbot, and @dealako all independently flagged the boolean-only
-  // version's race — see openVoteDrawer's own comment for the two failure modes it caused).
-  private voteDrawerFetchInFlight = signal<string | null>(null);
+  // Every openVoteDrawer(voteUid) call pushes here rather than resolving inline — initVoteDrawerRequests'
+  // switchMap is what guarantees "latest click wins" (see that method's own comment). A manual
+  // in-flight-uid tracking flag was tried first and still had a gap: two clicks on the *same*
+  // uid (A, then B, then A again) can't be told apart by uid alone, so a stale first-A response
+  // could still land after a second-A request started and be misread as current (PR #1363
+  // review: Copilot caught this after Copilot/Cursor Bugbot/@dealako's original different-uid
+  // race was fixed). switchMap's built-in cancel-the-previous-inner-observable semantics close
+  // both cases at once, for any pair of clicks — not just different uids.
+  private readonly voteDrawerRequest$ = new Subject<{ voteUid: string; committeeUid: string | undefined }>();
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);
@@ -262,6 +263,8 @@ export class CommitteeOverviewComponent {
   });
 
   public constructor() {
+    this.initVoteDrawerRequests();
+
     // When the last pending vote/survey is resolved, fade the section out then remove it from the DOM.
     // sectionEverShown prevents the fade from triggering on initial load with zero actions.
     toObservable(this.pendingActionItems)
@@ -304,75 +307,11 @@ export class CommitteeOverviewComponent {
 
   // Shared by handleActivityItemClick's 'vote-drawer' case and weekly-brief-card's
   // voteDrawerRequested output (LFXV2-3044) — both need the same lookup-fetch-or-toast
-  // behavior, not two copies of it.
-  //
-  // this.votes() and the caller's own source (the activity feed, or a weekly brief's
-  // source_refs) are independent server fetches (the former page_size=100 by updated_at) — a
-  // vote recent enough to appear in either isn't guaranteed to be within this fetch's window,
-  // so this lookup can miss even though the vote genuinely exists (Copilot review, PR #1363).
-  // On a cache miss, fetch it directly by uid — mirrors pending-actions.component.ts's
-  // loadVoteForRow — so only a real fetch failure (not-found, network) falls through to the
-  // toast, not every cache-window miss.
+  // behavior, not two copies of it. Just pushes onto voteDrawerRequest$; all the
+  // cache-vs-fetch and latest-click-wins logic lives in initVoteDrawerRequests, once, rather
+  // than per call site.
   public openVoteDrawer(voteUid: string): void {
-    const cached = this.votes().find((v) => v.uid === voteUid);
-    if (cached) {
-      this.selectedVoteId.set(cached.uid);
-      this.selectedVote.set(cached);
-      this.voteDrawerVisible.set(true);
-      // A fetch for a *different* uid may still be in flight from an earlier click — clear the
-      // tracked target so its eventual next()/error() handler (which checks this signal against
-      // its own uid before applying anything) discards that now-stale response instead of
-      // overwriting this newer, synchronously-resolved selection.
-      this.voteDrawerFetchInFlight.set(null);
-      return;
-    }
-
-    // Same uid already fetching — let it complete rather than firing a duplicate GET. A
-    // *different* uid, though, supersedes rather than getting silently dropped: updating the
-    // tracked target below means an earlier fetch's response will fail the uid check in
-    // next()/error() and be discarded, while this click gets its own fetch. "Latest click wins"
-    // — the imperative equivalent of switchMap, without restructuring this into a stream.
-    if (this.voteDrawerFetchInFlight() === voteUid) return;
-    this.voteDrawerFetchInFlight.set(voteUid);
-    const committeeUid = this.committee()?.uid;
-    this.voteService
-      .getVote(voteUid)
-      .pipe(
-        take(1),
-        // Stop if the user has navigated to a different committee before this resolves —
-        // RouteReuseStrategy can keep this component instance alive across that navigation,
-        // and a late response must not pop the wrong committee's vote drawer open (same
-        // rationale as weekly-brief-card.component.ts's identical guard on its own async calls).
-        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
-        takeUntilDestroyed(this.destroyRef),
-        // Covers cancellation (takeUntil firing on a committee change) as well as normal
-        // completion — next()/error() below already clear this when they're still the current
-        // target, so this is a no-op in that case; the `=== voteUid` check still matters here
-        // because a *different*, newer fetch's finalize must not clear its own in-progress
-        // tracking when this (now-cancelled) one tears down after it.
-        finalize(() => {
-          if (this.voteDrawerFetchInFlight() === voteUid) {
-            this.voteDrawerFetchInFlight.set(null);
-          }
-        })
-      )
-      .subscribe({
-        next: (vote) => {
-          // Discard a stale response: the user has since clicked a different chip (a cache hit,
-          // which clears this to null above, or another uncached fetch, which overwrites it with
-          // a different uid) — only the fetch that's still the latest request may apply.
-          if (this.voteDrawerFetchInFlight() !== voteUid) return;
-          this.voteDrawerFetchInFlight.set(null);
-          this.selectedVoteId.set(vote.uid);
-          this.selectedVote.set(vote);
-          this.voteDrawerVisible.set(true);
-        },
-        error: () => {
-          if (this.voteDrawerFetchInFlight() !== voteUid) return;
-          this.voteDrawerFetchInFlight.set(null);
-          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
-        },
-      });
+    this.voteDrawerRequest$.next({ voteUid, committeeUid: this.committee()?.uid });
   }
 
   public handlePendingActionClick(item: PendingActionItem): void {
@@ -559,6 +498,52 @@ export class CommitteeOverviewComponent {
       clearTimeout(this.sectionFadeTimerId);
       this.sectionFadeTimerId = null;
     }
+  }
+
+  // Called once from the constructor — wires openVoteDrawer's voteDrawerRequest$ to a
+  // switchMap pipeline so every new request (cache hit or fetch, same uid or different)
+  // automatically cancels whatever the previous request was still doing. This is what
+  // actually guarantees "latest click wins": a manual in-flight-uid tracking flag (tried
+  // first) still let a stale response through when the *same* uid was clicked twice in a row
+  // (A, then B, then A again) — the flag can't distinguish "this specific request" from "an
+  // earlier request for the same uid," but switchMap's built-in unsubscribe-the-previous-inner-
+  // observable semantics don't need to (PR #1363 review: Copilot caught this gap after the
+  // original different-uid race, from Copilot/Cursor Bugbot/@dealako, was fixed).
+  private initVoteDrawerRequests(): void {
+    this.voteDrawerRequest$
+      .pipe(
+        switchMap(({ voteUid, committeeUid }) => {
+          const cached = this.votes().find((v) => v.uid === voteUid);
+          if (cached) return of({ vote: cached });
+          // this.votes() and the caller's own source (the activity feed, or a weekly brief's
+          // source_refs) are independent server fetches (the former page_size=100 by
+          // updated_at) — a vote recent enough to appear in either isn't guaranteed to be
+          // within this fetch's window, so the cache lookup above can miss even though the
+          // vote genuinely exists. Fetch it directly by uid — mirrors
+          // pending-actions.component.ts's loadVoteForRow — so only a real fetch failure
+          // (not-found, network) falls through to the toast below, not every cache-window miss.
+          return this.voteService.getVote(voteUid).pipe(
+            map((vote) => ({ vote })),
+            // Stop if the user has navigated to a different committee before this resolves —
+            // RouteReuseStrategy can keep this component instance alive across that
+            // navigation, and a late response must not pop the wrong committee's vote drawer
+            // open (same rationale as weekly-brief-card.component.ts's identical guard on its
+            // own async calls).
+            takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+            catchError(() => of({ vote: null }))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ vote }) => {
+        if (vote) {
+          this.selectedVoteId.set(vote.uid);
+          this.selectedVote.set(vote);
+          this.voteDrawerVisible.set(true);
+        } else {
+          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
+        }
+      });
   }
 
   // Private initializer functions
