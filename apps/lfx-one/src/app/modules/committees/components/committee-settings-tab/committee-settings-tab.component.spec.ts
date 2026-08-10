@@ -94,6 +94,37 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(payload.chat_webhook_url).toBe('https://hooks.slack.com/services/T1/B1/X');
   });
 
+  it('omits chat_webhook_url when the control is dirty-but-empty and no removal was staged — Replace-then-cleared-back-to-empty must not silently delete a configured webhook', () => {
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.setValue('');
+    component.form.controls.chat_webhook_url.markAsDirty();
+    expect(component.slackWebhookRemovalStaged()).toBe(false);
+
+    component.saveSettings();
+
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('chat_webhook_url');
+  });
+
+  it('sends chat_webhook_url: null when the control is dirty-and-empty AND a removal was explicitly staged', () => {
+    component.form.controls.chat_webhook_url.setValue('');
+    component.form.controls.chat_webhook_url.markAsDirty();
+    component.slackWebhookRemovalStaged.set(true);
+
+    component.saveSettings();
+
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload.chat_webhook_url).toBeNull();
+  });
+
+  it('clears a staged removal the moment the user types a non-empty value — typing a replacement supersedes Remove', () => {
+    component.slackWebhookRemovalStaged.set(true);
+
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+
+    expect(component.slackWebhookRemovalStaged()).toBe(false);
+  });
+
   it('preserves a dirty chat_webhook_url value across a committee input refresh instead of nulling it', async () => {
     component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
     component.form.controls.chat_webhook_url.markAsDirty();

@@ -57,6 +57,13 @@ export class CommitteeSettingsComponent {
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();
+  /**
+   * Emitted only by the explicit Remove action, distinct from `startEditingSlackWebhookUrl`
+   * (also emitted by Remove, alongside this one, to reveal the input) — lets the parent tell an
+   * intentional "clear the webhook" apart from a Replace-then-cleared-back-to-empty edit, which
+   * would otherwise both leave the control dirty-and-empty and look identical at save time.
+   */
+  public readonly removeSlackWebhookStaged = output<void>();
   /** Emitted when the user backs out of the webhook input without saving (Cancel / Undo Remove) — the parent should collapse back to the Configured badge state. */
   public readonly cancelEditingSlackWebhookUrl = output<void>();
 
@@ -76,15 +83,18 @@ export class CommitteeSettingsComponent {
    * Stages a removal: clears the control and marks it dirty so saveSettings' dirty-gate picks it
    * up as an explicit "clear the webhook" instruction, then reveals the input so the user can
    * enter a replacement instead if they change their mind — there is deliberately no separate
-   * save path here, everything funnels through the page's single Save Changes button. Note the
-   * revealed (now-empty) input is visually indistinguishable from the "no webhook configured yet"
-   * state — nothing currently signals "a removal is staged" beyond the field being empty.
+   * save path here, everything funnels through the page's single Save Changes button.
+   * `removeSlackWebhookStaged` (distinct from `startEditingSlackWebhookUrl`, also emitted here)
+   * is what actually tells the parent this is an intentional removal, not just an empty control —
+   * the parent clears that signal again the moment the user types a non-empty value, so typing a
+   * replacement URL after clicking Remove correctly supersedes the staged removal.
    */
   public onRemoveSlackWebhook(): void {
     const control = this.form().controls['chat_webhook_url'];
     control?.setValue('');
     control?.markAsDirty();
     this.startEditingSlackWebhookUrl.emit();
+    this.removeSlackWebhookStaged.emit();
   }
 
   /** Backs out of an in-progress edit (Replace or Remove) without saving — resets the control to pristine/empty so a half-typed or staged-for-removal value can't block the page's other saves via [disabled]="form.invalid" (Validators.pattern rejects a partial URL). */

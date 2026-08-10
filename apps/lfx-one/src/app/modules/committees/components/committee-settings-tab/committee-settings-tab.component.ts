@@ -58,6 +58,15 @@ export class CommitteeSettingsTabComponent {
   public removingMlUid = signal<string | null>(null);
   /** Whether the Slack webhook "Replace" affordance is open, revealing the input for a new URL. Reset to false on a successful save, or on a committee refresh unless the control has an unsaved (dirty) edit in progress — see the constructor. */
   public editingSlackWebhookUrl = signal(false);
+  /**
+   * True only when the user clicked Remove (`removeSlackWebhookStaged`), not merely when the
+   * control is dirty-and-empty — Replace also leaves the control empty if the user types then
+   * backspaces everything, and that should NOT be treated as "delete the webhook" on save. Reset
+   * to false on Cancel, on a successful save, and the moment the user types a non-empty value
+   * (typing a real URL supersedes a staged removal — see the constructor's valueChanges
+   * subscription).
+   */
+  public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);
 
   // Subject to trigger ML list refresh after association changes
@@ -144,8 +153,18 @@ export class CommitteeSettingsTabComponent {
         });
         if (!preserveWebhookEdit) {
           this.editingSlackWebhookUrl.set(false);
+          this.slackWebhookRemovalStaged.set(false);
         }
       });
+
+    // Typing a non-empty value after clicking Remove means the user changed their mind and is
+    // entering a replacement URL instead — the staged removal no longer applies, and saveSettings'
+    // payload gate must go back to keying off the typed value rather than the removal flag.
+    this.form.controls.chat_webhook_url.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      if (value) {
+        this.slackWebhookRemovalStaged.set(false);
+      }
+    });
 
     // Disable form fields for read-only (Auditor) access, and — independently — keep
     // chat_webhook_url specifically disabled during impersonation even when the rest of the form
@@ -265,7 +284,15 @@ export class CommitteeSettingsTabComponent {
         // for a not-yet-configured committee (untouched or not), forcing a needless read-back
         // round trip and risking clobbering a webhook someone else configured after this page
         // loaded.
-        ...(this.form.controls.chat_webhook_url.dirty ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
+        //
+        // A dirty-but-empty control is ambiguous on its own: it's what an explicit Remove looks
+        // like, but it's also what Replace looks like if the user types then backspaces
+        // everything without hitting Cancel. Requiring either a real typed value OR the explicit
+        // slackWebhookRemovalStaged flag (set only by Remove — see that signal's doc comment)
+        // keeps the latter case from silently deleting an already-configured webhook.
+        ...(this.form.controls.chat_webhook_url.dirty && (values.chat_webhook_url || this.slackWebhookRemovalStaged())
+          ? { chat_webhook_url: values.chat_webhook_url || null }
+          : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
@@ -278,6 +305,7 @@ export class CommitteeSettingsTabComponent {
             this.form.controls.chat_webhook_url.reset(null);
           }
           this.editingSlackWebhookUrl.set(false);
+          this.slackWebhookRemovalStaged.set(false);
           this.committeeUpdated.emit();
         },
         error: (err: any) => {

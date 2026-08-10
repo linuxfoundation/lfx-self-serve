@@ -71,20 +71,23 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-configured"]')).toBeNull();
   });
 
-  it("Remove clears and dirties the control, and emits startEditingSlackWebhookUrl — saveSettings' payload gate keys off exactly this dirty flag", async () => {
+  it("Remove clears and dirties the control, and emits both startEditingSlackWebhookUrl and removeSlackWebhookStaged — saveSettings' payload gate needs the latter to tell an intentional removal apart from Replace-then-cleared", async () => {
     form.controls['chat_webhook_url'].setValue('https://hooks.slack.com/services/T1/B1/X');
     form.controls['chat_webhook_url'].markAsPristine();
     fixture.componentRef.setInput('slackWebhookInputVisible', false);
     await fixture.whenStable();
 
-    const emitted: void[] = [];
-    fixture.componentInstance.startEditingSlackWebhookUrl.subscribe(() => emitted.push(undefined));
+    const startEditingEmitted: void[] = [];
+    const removeStagedEmitted: void[] = [];
+    fixture.componentInstance.startEditingSlackWebhookUrl.subscribe(() => startEditingEmitted.push(undefined));
+    fixture.componentInstance.removeSlackWebhookStaged.subscribe(() => removeStagedEmitted.push(undefined));
 
     button('settings-slack-webhook-remove-button').click();
 
     expect(form.controls['chat_webhook_url'].value).toBe('');
     expect(form.controls['chat_webhook_url'].dirty).toBe(true);
-    expect(emitted).toHaveLength(1);
+    expect(startEditingEmitted).toHaveLength(1);
+    expect(removeStagedEmitted).toHaveLength(1);
   });
 
   it('Cancel resets the control to pristine/null and emits cancelEditingSlackWebhookUrl — unblocks [disabled]="form.invalid" on a half-typed URL', async () => {
