@@ -331,6 +331,17 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect(result.has_slack_webhook).toBe(false);
     });
+
+    it('reports has_slack_webhook: false for a stored value that fails the Slack allowlist (e.g. written by a non-BFF caller)', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: 'https://evil.example.com/x' })
+        .mockResolvedValueOnce({});
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect(result.has_slack_webhook).toBe(false);
+      expect('chat_webhook_url' in result).toBe(false);
+    });
   });
 
   describe('getSlackWebhookUrlStrict', () => {

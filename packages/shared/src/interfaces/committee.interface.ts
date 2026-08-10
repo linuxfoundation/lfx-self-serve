@@ -424,7 +424,9 @@ export interface Committee {
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
   chat_channel?: string | null;
   /**
-   * Whether the committee has a Slack incoming webhook configured (enriched by BFF). The raw
+   * Whether the committee has a *valid* Slack incoming webhook configured (enriched by BFF) —
+   * `false` if the stored value doesn't match `SLACK_INCOMING_WEBHOOK_URL_PATTERN`, not just
+   * presence, since this repo's write path isn't the only possible writer of the field. The raw
    * `chat_webhook_url` is a bearer credential and is deliberately never returned by any read —
    * see {@link CommitteeUpdateData.chat_webhook_url}. This boolean is the only signal reads get.
    */

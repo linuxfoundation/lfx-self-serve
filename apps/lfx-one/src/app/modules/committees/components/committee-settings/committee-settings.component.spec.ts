@@ -107,6 +107,24 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(emitted).toHaveLength(1);
   });
 
+  it('shows a validation error for a half-typed URL as soon as it goes dirty, not just on blur — matches the disabled-Save moment', async () => {
+    form.controls['chat_webhook_url'].setValue('https://not-a-valid-slack-url');
+    form.controls['chat_webhook_url'].markAsDirty();
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-error"]')).not.toBeNull();
+  });
+
+  it('shows no validation error for a valid, dirty URL', async () => {
+    form.controls['chat_webhook_url'].setValue('https://hooks.slack.com/services/T1/B1/X');
+    form.controls['chat_webhook_url'].markAsDirty();
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-error"]')).toBeNull();
+  });
+
   it('labels the button "Clear" when no webhook is configured yet (nothing to cancel back to) and "Cancel" when one is (backing out of Replace)', async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
 

@@ -178,7 +178,7 @@
               styleClass="w-full"
               id="slack-webhook"
               data-testid="settings-slack-webhook-input"></lfx-input-text>
-            @if (form().get('chat_webhook_url')?.errors?.['pattern'] && form().get('chat_webhook_url')?.touched) {
+            @if (form().get('chat_webhook_url')?.errors?.['pattern'] && (form().get('chat_webhook_url')?.touched || form().get('chat_webhook_url')?.dirty)) {
               <p class="text-sm text-red-600" data-testid="settings-slack-webhook-error">
                 Must be a Slack Incoming Webhook URL (https://hooks.slack.com/services/...)
               </p>

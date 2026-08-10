@@ -54,6 +54,13 @@ export const SLACK_WEBHOOK_POST_TIMEOUT_MS = 10_000;
  */
 export const SLACK_MESSAGE_TEXT_MAX_LENGTH = 40_000;
 
+/**
+ * Cap on how much of Slack's plain-text error response (invalid_payload, channel_not_found,
+ * etc.) is read and surfaced when a webhook POST is rejected — bounds both the log line and the
+ * client-facing error message against an unexpectedly large response body.
+ */
+export const SLACK_ERROR_BODY_MAX_LENGTH = 500;
+
 /** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
 export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
 

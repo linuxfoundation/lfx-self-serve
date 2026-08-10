@@ -4,6 +4,7 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  SLACK_ERROR_BODY_MAX_LENGTH,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   SLACK_MESSAGE_TEXT_MAX_LENGTH,
   SLACK_WEBHOOK_POST_TIMEOUT_MS,
@@ -897,7 +898,7 @@ export class WeeklyBriefService {
       // webhookUrl is pinned to hooks.slack.com by the allowlist above (not an attacker-chosen
       // host), bounding this keeps one unexpectedly large Slack response from bloating the log
       // line and the client-facing error message.
-      const slackErrorText = (await response.text().catch(() => '')).slice(0, 500);
+      const slackErrorText = (await response.text().catch(() => '')).slice(0, SLACK_ERROR_BODY_MAX_LENGTH);
       throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',

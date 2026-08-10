@@ -9,7 +9,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { SLACK_MESSAGE_TEXT_MAX_LENGTH, WEEKLY_BRIEF_DEFAULT_THROTTLE, WEEKLY_BRIEF_TEXT_MAX_LENGTH } from './weekly-brief.constants';
+import {
+  SLACK_ERROR_BODY_MAX_LENGTH,
+  SLACK_MESSAGE_TEXT_MAX_LENGTH,
+  WEEKLY_BRIEF_DEFAULT_THROTTLE,
+  WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+} from './weekly-brief.constants';
 
 describe('WEEKLY_BRIEF_TEXT_MAX_LENGTH', () => {
   it('matches upstream UpdateCurrentWeeklyBriefRequestBody.brief_text maxLength', () => {
@@ -23,6 +28,14 @@ describe('SLACK_MESSAGE_TEXT_MAX_LENGTH', () => {
   // here wouldn't be caught there — this is the one place it's checked against the real export.
   it("matches Slack's documented incoming-webhook text field limit", () => {
     expect(SLACK_MESSAGE_TEXT_MAX_LENGTH).toBe(40_000);
+  });
+});
+
+describe('SLACK_ERROR_BODY_MAX_LENGTH', () => {
+  // Same rationale as the two describes above: weekly-brief.service.spec.ts's wholesale
+  // `@lfx-one/shared/constants` mock hand-copies this value too.
+  it('is a small, deliberate bound', () => {
+    expect(SLACK_ERROR_BODY_MAX_LENGTH).toBe(500);
   });
 });
 
