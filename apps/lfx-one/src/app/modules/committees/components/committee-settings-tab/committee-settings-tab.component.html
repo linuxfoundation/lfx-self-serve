@@ -19,8 +19,9 @@
   <lfx-committee-settings
     [form]="form"
     [showHeader]="false"
-    [showSlackWebhook]="true"
+    [showSlackWebhook]="slackWebhookEnabled()"
     [slackWebhookInputVisible]="slackWebhookInputVisible()"
+    [slackWebhookConfigured]="slackWebhookConfigured()"
     (startEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(true)"
     (cancelEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(false)">
     <!-- Mailing list card projected into child's Connected Channels section -->

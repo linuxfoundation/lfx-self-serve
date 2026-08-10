@@ -794,7 +794,13 @@ export class WeeklyBriefService {
       });
     }
 
-    const committee = await this.committeeService.getCommitteeById(req, committeeId);
+    // One fetch, not two: getCommitteeForSlackShare returns exactly what this method needs
+    // (name, project_uid, the raw webhook URL) from a single upstream call — going through
+    // getCommitteeById (settings/membership/access-check enrichment this method never reads)
+    // plus a second, separate getSlackWebhookUrlStrict call would cost an extra round trip and
+    // open a TOCTOU window on the webhook value between the two reads. See
+    // getSlackWebhookUrlStrict's doc comment for the full rationale.
+    const committee = await this.committeeService.getCommitteeForSlackShare(req, committeeId);
 
     // Same strict project-writer boundary as shareBrief, for the same reason: sharing is a
     // deliberate, low-frequency action where misattributing a transient access-check outage as
@@ -812,10 +818,6 @@ export class WeeklyBriefService {
       });
     }
 
-    // getSlackWebhookUrlStrict, not a fail-open enrichment — same rationale as shareBrief's
-    // hasMailingListStrict: a transient upstream failure must not be misreported as "no webhook
-    // configured" (409 NO_SLACK_WEBHOOK is a real, actionable precondition failure).
-    //
     // Re-validated against SLACK_INCOMING_WEBHOOK_URL_PATTERN here, not just trusted from
     // upstream storage — the BFF's own updateCommittee is not the only possible writer of
     // chat_webhook_url on the committee record (any client with a token can PUT /committees/:uid
@@ -824,7 +826,7 @@ export class WeeklyBriefService {
     // content to an attacker-chosen destination — exactly what the allowlist exists to prevent.
     // A malformed value is treated the same as "not configured" — from the caller's perspective
     // both are equally unactionable.
-    const webhookUrl = await this.committeeService.getSlackWebhookUrlStrict(req, committeeId);
+    const webhookUrl = committee.chat_webhook_url;
     const isAllowedWebhook = !!webhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl);
     if (webhookUrl && !isAllowedWebhook) {
       // Logged, not put in the thrown error's `metadata` — BaseApiError.toResponse() serializes

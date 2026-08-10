@@ -38,6 +38,14 @@ export class CommitteeSettingsComponent {
    * disagreed about whether it was visible.
    */
   public readonly slackWebhookInputVisible = input<boolean>(false);
+  /**
+   * Whether the committee already has a webhook configured — distinct from `slackWebhookInputVisible`.
+   * Used only to pick the input-branch button's label: "Cancel" backs out to the Configured badge
+   * (meaningful only when a webhook actually exists to back out to); when none is configured yet,
+   * the input is the resting state — there's nothing to cancel back to, so the same button instead
+   * reads "Clear" (undoes typed-but-unsaved text, staying on the empty input).
+   */
+  public readonly slackWebhookConfigured = input<boolean>(false);
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();

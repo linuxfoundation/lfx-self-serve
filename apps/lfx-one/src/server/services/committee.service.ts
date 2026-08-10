@@ -1604,9 +1604,12 @@ export class CommitteeService {
    * Strict single-committee Slack-webhook fetch, mirroring {@link hasMailingListStrict}'s
    * fail-closed contract — propagates an upstream failure instead of silently reporting "no
    * webhook configured". Deliberately bypasses {@link getCommitteeById}, which strips
-   * `chat_webhook_url` from every response it returns; this is the one internal call site
-   * allowed to see the raw credential, and only to POST it directly to Slack. Never expose this
-   * value via any controller/route.
+   * `chat_webhook_url` from every response it returns. Used by `updateCommittee`'s read-back
+   * check, where only the URL itself is needed. `shareToSlack` uses
+   * {@link getCommitteeForSlackShare} instead — it needs `name`/`project_uid` too, and fetching
+   * those separately via `getCommitteeById` would mean two upstream round trips (and a TOCTOU
+   * window on the webhook value) for one send. Both are internal call sites allowed to see the
+   * raw credential, and only to act on it directly; never expose it via any controller/route.
    */
   public async getSlackWebhookUrlStrict(req: Request, committeeId: string): Promise<string | null> {
     const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
@@ -1616,6 +1619,29 @@ export class CommitteeService {
       'GET'
     );
     return committee?.chat_webhook_url ?? null;
+  }
+
+  /**
+   * Lean single-fetch variant for `shareToSlack`: only `name`, `project_uid`, and the raw webhook
+   * URL — not {@link getCommitteeById}'s settings/membership/access-check enrichment, none of
+   * which `shareToSlack` reads. See {@link getSlackWebhookUrlStrict}'s doc comment for why this
+   * exists as its own method rather than composing the two.
+   */
+  public async getCommitteeForSlackShare(req: Request, committeeId: string): Promise<{ name: string; project_uid: string; chat_webhook_url: string | null }> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
+    if (!committee) {
+      throw new ResourceNotFoundError('Committee', committeeId, {
+        operation: 'get_committee_for_slack_share',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+    return { name: committee.name, project_uid: committee.project_uid, chat_webhook_url: committee.chat_webhook_url ?? null };
   }
 
   /**

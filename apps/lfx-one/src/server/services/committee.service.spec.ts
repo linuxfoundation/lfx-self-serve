@@ -347,6 +347,31 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
   });
 
+  describe('getCommitteeForSlackShare', () => {
+    it('returns name, project_uid, and the raw webhook URL from a single fetch', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL });
+
+      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).resolves.toEqual({
+        name: 'Test',
+        project_uid: 'project-1',
+        chat_webhook_url: VALID_WEBHOOK_URL,
+      });
+      expect(proxyRequest).toHaveBeenCalledOnce();
+    });
+
+    it('returns chat_webhook_url: null when not configured', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+
+      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).resolves.toMatchObject({ chat_webhook_url: null });
+    });
+
+    it('throws 404 when the committee does not exist', async () => {
+      proxyRequest.mockResolvedValueOnce(undefined);
+
+      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 404 });
+    });
+  });
+
   describe('updateCommittee', () => {
     it('rejects a chat_webhook_url that does not match the hooks.slack.com pattern, before touching upstream', async () => {
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: 'https://evil.example.com/x' })).rejects.toMatchObject({

@@ -191,7 +191,7 @@
                 >.
               </p>
               <lfx-button
-                label="Cancel"
+                [label]="slackWebhookConfigured() ? 'Cancel' : 'Clear'"
                 severity="secondary"
                 [text]="true"
                 size="small"

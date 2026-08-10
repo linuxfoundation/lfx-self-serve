@@ -11,6 +11,7 @@ import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, Mai
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -32,6 +33,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 })
 export class CommitteeSettingsTabComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly lensService = inject(LensService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
@@ -85,6 +87,15 @@ export class CommitteeSettingsTabComponent {
 
   // Derived loading state: true until first emission from associatedMailingLists
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
+
+  // Dark-launch gate for the whole Slack webhook card — mirrors committee-overview.component.ts's
+  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag: the upstream
+  // committee-service has no chat_webhook_url field yet (see committee.service.ts's
+  // updateCommittee/getSlackWebhookUrlStrict comments), so every save deterministically fails
+  // with 409 SLACK_WEBHOOK_NOT_PERSISTED today. Rendering the card unconditionally would show
+  // every user a dead end; this keeps it hidden until the upstream schema change lands and the
+  // flag is flipped on.
+  public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief-slack', false);
 
   // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
   public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);

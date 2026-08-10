@@ -24,8 +24,7 @@ const {
   buildWeeklyBriefRatingCacheKeyMock,
   extractBriefActionItems,
   buildCacheKey,
-  getCommitteeByIdMock,
-  getSlackWebhookUrlStrictMock,
+  getCommitteeForSlackShareMock,
   checkSingleAccessStrictMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
@@ -72,8 +71,7 @@ const {
     // mockResolvedValue in the 'shareToSlack' describe block's own beforeEach; other describe
     // blocks in this file never call them, since shareBrief/shareToSlack are the only methods
     // that touch committeeService/accessCheckService.
-    getCommitteeByIdMock: vi.fn(),
-    getSlackWebhookUrlStrictMock: vi.fn(),
+    getCommitteeForSlackShareMock: vi.fn(),
     checkSingleAccessStrictMock: vi.fn(),
   };
 });
@@ -111,13 +109,12 @@ vi.mock('./logger.service', () => ({
 }));
 // shareBrief's collaborators — shareBrief itself isn't exercised by this spec, but
 // WeeklyBriefService's constructor instantiates all three, so they must at least be
-// constructible without pulling in their own real import chains. getCommitteeById /
-// getSlackWebhookUrlStrict / checkSingleAccessStrict back shareToSlack's (LFXV2-3080)
-// precondition chain — see the 'shareToSlack' describe block below.
+// constructible without pulling in their own real import chains. getCommitteeForSlackShare /
+// checkSingleAccessStrict back shareToSlack's (LFXV2-3080) precondition chain — see the
+// 'shareToSlack' describe block below.
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
-    public getCommitteeById = getCommitteeByIdMock;
-    public getSlackWebhookUrlStrict = getSlackWebhookUrlStrictMock;
+    public getCommitteeForSlackShare = getCommitteeForSlackShareMock;
   },
 }));
 vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
@@ -885,8 +882,11 @@ describe('WeeklyBriefService', () => {
 
     beforeEach(() => {
       process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' });
-      getSlackWebhookUrlStrictMock.mockResolvedValue('https://hooks.slack.com/services/T000/B000/XXXX');
+      getCommitteeForSlackShareMock.mockResolvedValue({
+        name: 'Test Committee',
+        project_uid: 'project-1',
+        chat_webhook_url: 'https://hooks.slack.com/services/T000/B000/XXXX',
+      });
       checkSingleAccessStrictMock.mockResolvedValue(true);
       fetchMock = vi.fn();
       vi.stubGlobal('fetch', fetchMock);
@@ -943,15 +943,19 @@ describe('WeeklyBriefService', () => {
 
     it('throws 409 NO_SLACK_WEBHOOK when the committee has no webhook configured', async () => {
       mockShareableBrief();
-      getSlackWebhookUrlStrictMock.mockResolvedValue(null);
+      getCommitteeForSlackShareMock.mockResolvedValue({ name: 'Test Committee', project_uid: 'project-1', chat_webhook_url: null });
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though getSlackWebhookUrlStrict returned a value (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), and logs (not returns) the distinction for operators', async () => {
+    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though a value is configured (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), and logs (not returns) the distinction for operators', async () => {
       mockShareableBrief();
-      getSlackWebhookUrlStrictMock.mockResolvedValue('https://evil.example.com/exfiltrate');
+      getCommitteeForSlackShareMock.mockResolvedValue({
+        name: 'Test Committee',
+        project_uid: 'project-1',
+        chat_webhook_url: 'https://evil.example.com/exfiltrate',
+      });
 
       // The response body must stay byte-identical to the "genuinely unconfigured" case — no
       // `metadata` (BaseApiError.toResponse() serializes `metadata` straight into the client
@@ -1019,7 +1023,11 @@ describe('WeeklyBriefService', () => {
 
     it("escapes Slack mrkdwn control characters in brief_text and the committee name, so an AI-generated brief can't trigger @channel/@here or a deceptive link", async () => {
       mockShareableBrief({ brief_text: 'Ping <!channel> and see <https://evil.example|this link>' });
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'A & B Committee', project_uid: 'project-1' });
+      getCommitteeForSlackShareMock.mockResolvedValue({
+        name: 'A & B Committee',
+        project_uid: 'project-1',
+        chat_webhook_url: 'https://hooks.slack.com/services/T000/B000/XXXX',
+      });
       fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
       await service.shareToSlack(req, 'committee-1', 1);
