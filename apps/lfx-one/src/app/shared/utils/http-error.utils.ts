@@ -52,11 +52,18 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 
 /**
  * Whether an error is worth retrying — a beat of time could plausibly fix a network drop (0),
- * rate limit (429), or upstream 5xx, but not a client error like an expired session (401) or a
- * permission/not-found response (403/404).
+ * rate limit (429), request timeout (408), or upstream 5xx, but not a client error like an
+ * expired session (401) or a permission/not-found response (403/404).
+ *
+ * 408 is in the list despite being a 4xx because in this app it is not a client error at all:
+ * it is the status this server mints for its OWN abort, when an upstream microservice call
+ * exceeds the configured timeout (`ApiClientService.executeRequest`). Nothing about the request
+ * is wrong, and the next attempt may well land inside the budget — treating it as permanent
+ * would abandon exactly the case retrying exists for. The rest of the 4xx range keeps failing
+ * fast, so authentication and validation errors still surface on the first response.
  */
 export function isTransientHttpError(error: unknown): boolean {
-  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
+  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500);
 }
 
 /**

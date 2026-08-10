@@ -178,6 +178,49 @@ environment:
 | `environment.QUERY_SERVICE_URL` | Query service URL for resource queries | No       | `http://query-service.default.svc.cluster.local/query/resources` |
 | `environment.NATS_URL`          | NATS messaging server URL              | **Yes**  | -                                                                |
 
+#### Campaign Service Cutover
+
+Campaign endpoints are being moved off this application's vendor-direct integrations and onto
+lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
+changing a value here rather than by shipping a revert.
+
+| Parameter                                       | Description                                                                     | Required | Default |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | Serves campaign job status from campaign-service; see the accepted values below | No       | off     |
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
+unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
+operator setting `yes` and expecting it to be ignored would route production traffic at
+campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
+in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
+
+The flag is necessary but not sufficient: a poll reaches campaign-service only when the job id is
+also a UUID, which is the shape campaign-service mints. Creation is not cut over yet and still
+mints `job_<epoch>_<rand>` ids in this application, so with the flag ON today every real poll
+still goes to the in-process job map. Do not read "flag on, no errors" as a verified cutover —
+until creation moves, no production request has taken the new path, and the first traffic to
+exercise it will arrive with that later change rather than with this switch.
+
+Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
+There is deliberately no chart parameter for a campaign-service base URL. The application does read
+`LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
+`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+The fallback is what makes the gateway the default, and the gateway is where the authorization
+lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
+while the service's own token check authenticates the caller without authorizing them for that
+project. A base URL aimed at a service instance would therefore let any caller with a valid token
+act on a project it holds no grant for, given a job id.
+
+Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
+emits every entry in `.Values.environment`, so an override adds the variable without touching this
+chart. All three variables are therefore rejected at render time by
+`lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
+than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
+still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
+deployment that genuinely needs a direct address should drop the variable from that list in a
+reviewed chart commit — a values override is invisible to review, a chart change is not.
+
 #### AI Service Configuration
 
 | Parameter                  | Description                              | Required | Default |

@@ -337,6 +337,43 @@ environment:
   LFX_V2_SERVICE:
     value:
 
+  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the sibling
+  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE`. Each one falls back in code to
+  # `LFX_V2_SERVICE`, so leaving it unset routes campaign traffic through the gateway — and
+  # the gateway is where the authorization lives. Heimdall and OpenFGA enforce
+  # `campaign_manager` on the project in front of campaign-service; the service's own token
+  # check is an authentication check, not a project-scoped authorization one, so a base URL
+  # pointing straight at a service instance would let any caller holding a valid token act on
+  # a project it has no grant for, by knowing a job id.
+  #
+  # Omitting them here is not the enforcement, though — `templates/deployment.yaml` emits every
+  # entry in this map, so an override adds the variable without touching the chart. All three
+  # are rejected at render time by `lfx-self-serve.environment.gatewayOnlyValidate`; a
+  # deployment that genuinely needs a direct address drops one from that list in a reviewed
+  # chart commit. None of this is needed for the cutover flag below, a separate variable.
+
+  # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Serves
+  # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job
+  # map, which only answers correctly when the poll lands on the pod that started the job.
+  #
+  # ON for "true", "1", "yes" or "on", trimmed and case-insensitive. Everything else is OFF,
+  # including empty, "0", "false", and any misspelling — so a rollback is this value alone:
+  # no code change, no build, no image promotion. Note that "yes" and "on" DO enable it; this
+  # is not a `== "true"` comparison, and setting one of them expecting to be ignored would
+  # route production traffic. Default-deny is the deliberate half: `flase` is invisible in a
+  # values.yaml diff, so an unrecognised value fails towards the path known to work.
+  #
+  # It is NOT a live switch. This is a container environment variable, so changing it edits the
+  # pod template and takes effect only as pods are replaced; with the default replica count and
+  # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
+  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
+  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
+  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # "rollback is one value" line onto a future flag whose two paths could both claim the same
+  # request — that one needs a no-overlap rollout or a shared runtime configuration source.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
+    value:
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.
