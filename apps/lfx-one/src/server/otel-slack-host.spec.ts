@@ -33,5 +33,10 @@ describe('otel.mjs Slack-webhook host stays in sync with SLACK_INCOMING_WEBHOOK_
 
     expect(otelHost).toBeTruthy();
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(`https://${otelHost}/services/T1/B1/abc`)).toBe(true);
+    // otel.mjs suppresses exactly one host. The behavioral check above alone wouldn't catch a
+    // second host being added to the pattern (e.g. via an alternation) — otel's host would still
+    // pass, but a second webhook host would now be allowlisted with nothing suppressing spans for
+    // it. This is the other failure mode the pattern's own doc comment calls out by name.
+    expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.source).not.toContain('|');
   });
 });
