@@ -88,9 +88,16 @@
     <lfx-org-roi-kpi-cards [summary]="summary()" />
 
     <lfx-org-roi-annual-trend [method]="method()" />
+  }
 
-    <!-- No [method]: category investment has no estimation method in the warehouse, so this
-         surface is identical under both and refetching it on a switch would be wasted work. -->
+  <!-- Mounted outside the state chain above, which swaps the whole populated block for a skeleton
+       on every request — including a method-only one. Inside it, the category donut remounted on
+       each method switch and re-issued a read whose response cannot vary by method. Out here it
+       survives the switch, so its account-keyed request never re-emits. An org change still keys
+       it differently, and each donut raises its own loading state, so neither can show one
+       organization's figures under another's header. -->
+  @if (showsFigures()) {
+    <!-- No [method]: category investment has no estimation method in the warehouse. -->
     <lfx-org-roi-category-donut />
 
     <lfx-org-roi-projects-donut [method]="method()" />

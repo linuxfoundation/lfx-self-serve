@@ -68,7 +68,7 @@ export class OrgRoiProjectsDonutComponent {
     return this.projects()
       .rows.map((row) => ({ row, value: this.measureValue(row, measure) }))
       .filter((entry) => Number.isFinite(entry.value))
-      .sort((a, b) => b.value - a.value || a.row.projectId.localeCompare(b.row.projectId));
+      .sort((a, b) => b.value - a.value || this.compareProjectIds(a.row.projectId, b.row.projectId));
   });
 
   /**
@@ -210,6 +210,15 @@ export class OrgRoiProjectsDonutComponent {
 
   public setMeasure(measure: OrgLensRoiProjectMeasure): void {
     this.measure.set(measure);
+  }
+
+  /**
+   * Codepoint order, deliberately not `localeCompare`. The tie-break key is an opaque warehouse id,
+   * so collation carries no meaning — and an unpinned locale would let Node and the browser order
+   * ties differently, which for an SSR-rendered legend is a hydration mismatch.
+   */
+  private compareProjectIds(a: string, b: string): number {
+    return Number(a > b) - Number(a < b);
   }
 
   /** Never re-derived: profit is defined once in the metric layer and carried through (FR-007). */

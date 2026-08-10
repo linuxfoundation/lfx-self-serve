@@ -157,6 +157,32 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-assumptions-method-direct')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('does not refetch the category breakdown when only the estimation method changes', async ({ page }) => {
+    // Asserting the URL carries no `method=` is not enough — it stayed true while the component
+    // was being torn down and remounted by the loading branch on every switch, re-issuing the
+    // identical request. This counts the requests instead.
+    const breakdownRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/lens/roi/investment-breakdown')) breakdownRequests.push(request.url());
+    });
+
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
+    const beforeSwitch = breakdownRequests.length;
+    expect(beforeSwitch).toBeGreaterThan(0);
+
+    // Wait on a method-scoped sibling so the switch has demonstrably completed before counting.
+    const projectsRefetch = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
+    await page.getByTestId('org-roi-assumptions-trigger').click();
+    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await projectsRefetch;
+
+    expect(breakdownRequests.length).toBe(beforeSwitch);
+    // And it stayed on screen rather than flashing away and back.
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
+  });
+
   test('never sends an estimation method to the category breakdown, which cannot vary by one', async ({ page }) => {
     // The source table has no MARKUP_METHOD column, so a method-bearing request would imply a
     // distinction the warehouse does not make — and invite a pointless refetch on every switch.

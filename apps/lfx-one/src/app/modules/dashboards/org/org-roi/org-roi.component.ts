@@ -108,6 +108,31 @@ export class OrgRoiComponent {
       !this.portfolioFailed()
   );
 
+  /**
+   * True whenever this organization has figures to show — deliberately **without**
+   * `portfolioLoading`, unlike the state-branch chain in the template.
+   *
+   * The chain swaps the whole populated block for a skeleton on every request, including a
+   * method-only one. That tore down and remounted the category donut on each method switch,
+   * re-issuing a read whose response cannot vary by method — the opposite of what its own comment
+   * claimed. Mounting the donuts on this condition instead keeps them alive across a method
+   * change, so the category donut's account-keyed request simply never re-emits.
+   *
+   * It is safe against the obvious hazard — showing one organization's figures under another's
+   * header — because each donut keys its own fetch on the account id and flips its own loading
+   * state the moment that changes, so an org switch renders its skeleton rather than stale money.
+   */
+  protected readonly showsFigures: Signal<boolean> = computed(
+    () =>
+      this.loaded() &&
+      !this.hasNoOrgAccess() &&
+      this.hasCompany() &&
+      this.hasAnalyticsId() &&
+      !this.portfolioForbidden() &&
+      !this.portfolioFailed() &&
+      this.hasRoiData()
+  );
+
   protected readonly windowLabel: Signal<string> = computed(() => {
     const { yearMin, yearMax } = this.summary();
     if (yearMin === null || yearMax === null) return '';
