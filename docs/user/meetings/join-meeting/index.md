@@ -31,11 +31,11 @@ There's no passcode you enter manually. Instead, some meetings are marked **Rest
 
 ## Register for a meeting
 
-If a meeting is **public and not restricted**, and you haven't already been invited, the join page shows a **Register for Meeting** button. Selecting it opens a short form: First Name, Last Name, and Email are required; Job Title and Organization are optional. Submitting adds you as a registrant for that meeting — no LFX account needed. The button doesn't appear if you're already invited, or if the meeting is Restricted (for a Restricted meeting, ask the organizer to add you as a registrant instead).
+If a meeting is **public and not restricted**, and you haven't already been invited, the join page shows a **Register for Meeting** button — but you need to be **signed in** to see it. Selecting it opens a short form: First Name, Last Name, and Email are required; Job Title and Organization are optional. Submitting adds you as a registrant for that meeting. The button doesn't appear if you're not signed in, if you're already invited, or if the meeting is Restricted (for a Restricted meeting, ask the organizer to add you as a registrant instead).
 
 ## Respond to an invitation (RSVP)
 
-If you've been invited to a meeting, the join page shows **Yes**, **No**, and **Maybe** buttons so you can respond. For a recurring meeting, responding asks you to choose a scope first:
+If you've been invited to a meeting, the join page shows **Yes**, **No**, and **Maybe** buttons so you can respond — you need to be **signed in** to see these buttons. For a recurring meeting, responding asks you to choose a scope first:
 
 - **All occurrences** — applies your response to the entire series
 - **This occurrence only** — applies only to the specific meeting you're responding from

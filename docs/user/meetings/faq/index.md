@@ -47,11 +47,11 @@ Make sure you're in the right lens: your personal **My Meetings** view (Me lens)
 
 ## Can I register myself for a meeting I wasn't invited to?
 
-Yes, if the meeting is **public and not restricted**. Its join page shows a **Register for Meeting** button with a short form (name, email, and optionally job title and organization). Submitting it adds you as a registrant. This button isn't available for **Restricted** meetings — for those, ask the organizer to add you as a registrant.
+Yes, if the meeting is **public and not restricted** — but you need to be **signed in** to see the option. Its join page shows a **Register for Meeting** button with a short form (name, email, and optionally job title and organization). Submitting it adds you as a registrant. This button isn't available for **Restricted** meetings — for those, ask the organizer to add you as a registrant.
 
 ## Can I RSVP to a meeting I'm invited to?
 
-Yes. The join page shows **Yes**, **No**, and **Maybe** buttons for invited attendees. For a recurring meeting, you'll also choose whether your response applies to **all occurrences**, **this occurrence only**, or **this and following occurrences**.
+Yes, if you're **signed in**. The join page shows **Yes**, **No**, and **Maybe** buttons for invited attendees. For a recurring meeting, you'll also choose whether your response applies to **all occurrences**, **this occurrence only**, or **this and following occurrences**.
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 

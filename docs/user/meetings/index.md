@@ -17,8 +17,8 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - Schedule new meetings, choosing a video platform and recurrence pattern
 - Edit existing meeting details (title, time, agenda, platform)
 - Join meetings via the public meeting join page — no LFX account required
-- Register yourself for a public, non-restricted meeting you weren't invited to
-- RSVP (Yes/No/Maybe) to a meeting you're invited to
+- Register yourself for a public, non-restricted meeting you weren't invited to (requires signing in)
+- RSVP (Yes/No/Maybe) to a meeting you're invited to (requires signing in)
 - Generate a draft meeting agenda with AI assistance, or start from a pre-built agenda template
 - View a past meeting's recording, transcript, and AI summary, if you have access
 - Upload or view meeting materials (files and links)

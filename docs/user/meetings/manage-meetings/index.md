@@ -21,7 +21,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
-For a meeting that's part of a recurring series, saving your edit asks you to choose a scope: **Edit only this occurrence** or **Edit this and all future occurrences**. There's no option to edit the entire series at once — this scope choice is separate from the delete/cancel scope below.
+For a meeting that's part of a recurring series, an edit currently applies only to that single occurrence — there's no option to apply it to the whole series or to future occurrences. This is separate from the delete/cancel scope below, which does let you act on the whole series.
 
 ## Manage guests and registrants
 
