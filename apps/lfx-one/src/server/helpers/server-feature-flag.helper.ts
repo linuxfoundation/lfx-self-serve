@@ -21,11 +21,15 @@
  * whose two paths can both claim the same request needs a no-overlap rollout, or a runtime
  * configuration source every replica observes at once.
  *
- * Env vars are read on EVERY call rather than captured at module load. Not for hot reload —
- * see above, there is none — but because a value frozen at import time is untestable without
- * module-registry surgery, and because a process that is sent a new value by any means (a
- * `kubectl set env` on the pod, a future dynamic source) then honours it without a special
- * case. The cost is a map lookup per request, which is nothing next to the HTTP call it gates.
+ * Env vars are read on EVERY call rather than captured at module load. This buys NOTHING
+ * operationally and the reason is worth stating, because per-request reads look like they
+ * should: a running process's environment cannot be changed from outside. `kubectl set env`
+ * patches the Deployment template and replaces pods; it does not reach into a live container.
+ * So a per-call read and a module-load read behave identically in the cluster. The reason to
+ * read per call is testability — a value frozen at import time cannot be varied across cases
+ * without module-registry surgery — plus keeping the door open for a future dynamic source
+ * that mutates `process.env` in-process. The cost is a map lookup per request, which is
+ * nothing next to the HTTP call it gates.
  */
 
 /** Every server-side flag, and what turning it ON does. */

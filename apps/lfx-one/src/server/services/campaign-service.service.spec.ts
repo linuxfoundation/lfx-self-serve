@@ -34,8 +34,11 @@ describe('adaptJobPollResponse', () => {
     expect(adaptJobPollResponse({ job_id: 'j1', status: 'running' })).toEqual({ status: 'running' });
   });
 
-  // The mirror-image failure: `succeeded` forwarded raw is not `'running'` either, so it would
-  // never terminate the poll and the page would spin to the 300s cap on a job that is finished.
+  // The mirror-image failure, and NOT a hang — `takeWhile(..., true)` is inclusive, so a raw
+  // `succeeded` is emitted and the poll completes promptly. The damage is downstream:
+  // `getCreateResult` matches none of its arms on that status, falls through to its last
+  // `throw`, and reports "Campaign creation is taking longer than expected" for a job that
+  // finished immediately and successfully — with the campaigns it created never rendered.
   it('maps succeeded to done and converts the per-platform results', () => {
     expect(
       adaptJobPollResponse({
