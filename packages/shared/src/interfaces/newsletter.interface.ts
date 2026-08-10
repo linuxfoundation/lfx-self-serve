@@ -207,6 +207,76 @@ export interface NewsletterAnalytics {
   last_event_at?: string;
 }
 
+/**
+ * One recipient's row from the per-recipient engagement endpoint
+ * (GET …/newsletters/{id}/analytics/recipients). Mirrors the upstream DTO
+ * (lfx-v2-newsletter-service PR #74) field-for-field.
+ */
+export interface NewsletterRecipientEngagement {
+  // Best-effort display name resolved from the newsletter's committees at read
+  // time. Absent when the member no longer appears in the committees, has no
+  // name on file, or the committee lookup failed — clients fall back to email.
+  name?: string;
+  email: string;
+  sent_at?: string;
+  delivered: boolean;
+  delivered_at?: string;
+  failed: boolean;
+  failed_at?: string;
+  opened: boolean;
+  open_count: number;
+  last_opened_at?: string;
+  // Every recorded open timestamp, ascending. Always present (empty array when
+  // the recipient never opened); capped at the 500 most recent opens.
+  opened_at_list: string[];
+}
+
+/**
+ * Body of GET …/newsletters/{id}/analytics/recipients. This endpoint is
+ * PII-gated upstream (requires the `auditor` relation, fail-closed) — stricter
+ * than the aggregate `/analytics` endpoint's `viewer` gate, so callers must
+ * handle 403 distinctly (a user who can see NewsletterAnalytics may still lack
+ * access here).
+ */
+export interface NewsletterRecipientEngagementResponse {
+  newsletter_id: string;
+  // The newsletter's send-time audience snapshot.
+  total_recipients: number;
+  // False when the provider returned fewer per-recipient records than
+  // total_recipients — clients must treat the list as partial, not as proof
+  // the absent recipients were never sent to.
+  complete: boolean;
+  // Sorted by email ascending; always present; no pagination (upstream returns
+  // the full committee-bounded audience in one response).
+  recipients: NewsletterRecipientEngagement[];
+}
+
+export type NewsletterRecipientEngagementSegment = 'opened' | 'not-opened' | 'failed';
+
+/**
+ * UI view-model row derived from NewsletterRecipientEngagement for the
+ * recipient engagement table: adds the resolved display fallback and the
+ * bucket used for the filter chips, keeping the template free of nested
+ * ternaries.
+ */
+export interface NewsletterRecipientRow extends NewsletterRecipientEngagement {
+  displayName: string;
+  segment: NewsletterRecipientEngagementSegment;
+  // Precomputed so the template never calls a component method for formatting
+  // (re-runs every CD cycle) — null when there's no last_opened_at to format.
+  lastOpenedRelative: string | null;
+}
+
+/** Filter chip key for the recipient engagement table — `'all'` plus every `NewsletterRecipientEngagementSegment`. */
+export type NewsletterRecipientEngagementChipKey = 'all' | NewsletterRecipientEngagementSegment;
+
+/** One filter chip above the recipient engagement table, with its live count. */
+export interface NewsletterRecipientEngagementChipConfig {
+  key: NewsletterRecipientEngagementChipKey;
+  label: string;
+  count: number;
+}
+
 export interface NewsletterRow extends NewsletterListItem {
   openRateLabel: string;
   /** UI-populated: true while the row's analytics fetch is in flight. */
