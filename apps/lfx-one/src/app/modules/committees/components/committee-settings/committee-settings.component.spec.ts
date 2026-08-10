@@ -153,6 +153,25 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('disables Remove/Replace/Cancel and shows a hint when impersonating — inferred from the impersonating input directly, not from the control being disabled for some other reason', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', false);
+    fixture.componentRef.setInput('impersonating', true);
+    await fixture.whenStable();
+
+    expect(button('settings-slack-webhook-remove-button').disabled).toBe(true);
+    expect(button('settings-slack-webhook-replace-button').disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-impersonating-hint"]')).not.toBeNull();
+  });
+
+  it('does not show the impersonating hint when the form is disabled for an unrelated reason (read-only Auditor access)', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', false);
+    form.disable();
+    await fixture.whenStable();
+
+    expect(button('settings-slack-webhook-remove-button').disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-impersonating-hint"]')).toBeNull();
+  });
+
   it('does not render the Slack webhook card at all when showSlackWebhook is false (e.g. the create/edit wizard, whose form has no chat_webhook_url control)', async () => {
     fixture.componentRef.setInput('showSlackWebhook', false);
     await fixture.whenStable();

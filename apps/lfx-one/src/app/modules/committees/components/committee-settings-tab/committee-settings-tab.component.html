@@ -22,6 +22,7 @@
     [showSlackWebhook]="slackWebhookEnabled()"
     [slackWebhookInputVisible]="slackWebhookInputVisible()"
     [slackWebhookConfigured]="slackWebhookConfigured()"
+    [impersonating]="impersonating()"
     (startEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(true)"
     (cancelEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(false)">
     <!-- Mailing list card projected into child's Connected Channels section -->

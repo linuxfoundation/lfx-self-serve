@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -46,6 +46,14 @@ export class CommitteeSettingsComponent {
    * reads "Clear" (undoes typed-but-unsaved text, staying on the empty input).
    */
   public readonly slackWebhookConfigured = input<boolean>(false);
+  /**
+   * Whether the caller is impersonating another user — drives the webhook card's disabled state
+   * and hint text directly, not inferred from the control's own `disabled` flag. The control can
+   * be disabled for other reasons too (e.g. read-only Auditor access via `form().disabled`), and
+   * inferring "impersonating" from disabled-ness alone would show a false reason once a second
+   * disable path exists.
+   */
+  public readonly impersonating = input<boolean>(false);
 
   // Outputs
   public readonly startEditingSlackWebhookUrl = output<void>();
@@ -57,6 +65,12 @@ export class CommitteeSettingsComponent {
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
   public readonly memberVisibilityOptions = MEMBER_VISIBILITY_OPTIONS;
   public readonly joinModeOptions = JOIN_MODE_OPTIONS;
+
+  /** The input-branch button's base label — "Cancel" backs out to an existing webhook, "Clear" undoes typed-but-unsaved text with nothing to back out to. Extracted so the aria-label below doesn't nest a ternary inside another. */
+  public readonly slackWebhookCancelLabel = computed(() => (this.slackWebhookConfigured() ? 'Cancel' : 'Clear'));
+  public readonly slackWebhookCancelAriaLabel = computed(() =>
+    this.impersonating() ? `${this.slackWebhookCancelLabel()} — unavailable while impersonating another user` : this.slackWebhookCancelLabel()
+  );
 
   /**
    * Stages a removal: clears the control and marks it dirty so saveSettings' dirty-gate picks it

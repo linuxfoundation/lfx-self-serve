@@ -157,14 +157,16 @@
                   severity="danger"
                   [text]="true"
                   size="small"
-                  [disabled]="!!form().get('chat_webhook_url')?.disabled"
+                  [disabled]="form().disabled || impersonating()"
+                  [ariaLabel]="impersonating() ? 'Remove — unavailable while impersonating another user' : 'Remove'"
                   (onClick)="onRemoveSlackWebhook()"
                   data-testid="settings-slack-webhook-remove-button" />
                 <lfx-button
                   label="Replace"
                   severity="secondary"
                   size="small"
-                  [disabled]="!!form().get('chat_webhook_url')?.disabled"
+                  [disabled]="form().disabled || impersonating()"
+                  [ariaLabel]="impersonating() ? 'Replace — unavailable while impersonating another user' : 'Replace'"
                   (onClick)="startEditingSlackWebhookUrl.emit()"
                   data-testid="settings-slack-webhook-replace-button" />
               </div>
@@ -196,17 +198,18 @@
                 >.
               </p>
               <lfx-button
-                [label]="slackWebhookConfigured() ? 'Cancel' : 'Clear'"
+                [label]="slackWebhookCancelLabel()"
                 severity="secondary"
                 [text]="true"
                 size="small"
-                [disabled]="!!form().get('chat_webhook_url')?.disabled"
+                [disabled]="form().disabled || impersonating()"
+                [ariaLabel]="slackWebhookCancelAriaLabel()"
                 (onClick)="onCancelSlackWebhookEdit()"
                 data-testid="settings-slack-webhook-cancel-button" />
             </div>
           }
-          @if (!!form().get('chat_webhook_url')?.disabled && !form().disabled) {
-            <span class="text-xs text-gray-500" data-testid="settings-slack-webhook-impersonating-hint">
+          @if (impersonating()) {
+            <span class="text-xs text-gray-500" id="settings-slack-webhook-impersonating-hint" data-testid="settings-slack-webhook-impersonating-hint">
               Configuring the Slack webhook is unavailable while impersonating another user.
             </span>
           }
