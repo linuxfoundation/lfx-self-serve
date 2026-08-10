@@ -5,12 +5,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CommentPromptFormValue, PollCommentPrompt, VoteFormValue } from '../interfaces/poll.interface';
+import type { CommentPromptFormValue, PollCommentPrompt, VoteFormValue } from '../interfaces/poll.interface';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  isNonBlankCommentPrompt,
   mapApiCommentPromptToFormValue,
   mapCommentPromptsToApiFormat,
 } from './vote.utils';
@@ -95,5 +96,19 @@ describe('mapCommentPromptsToApiFormat', () => {
 
   it('returns undefined for nullish input', () => {
     expect(mapCommentPromptsToApiFormat(null as unknown as CommentPromptFormValue[])).toBeUndefined();
+  });
+});
+
+describe('isNonBlankCommentPrompt', () => {
+  it('returns true for non-blank text, ignoring surrounding whitespace', () => {
+    expect(isNonBlankCommentPrompt('Why this choice?')).toBe(true);
+    expect(isNonBlankCommentPrompt('  padded  ')).toBe(true);
+  });
+
+  it('returns false for blank, empty, or nullish text', () => {
+    expect(isNonBlankCommentPrompt('')).toBe(false);
+    expect(isNonBlankCommentPrompt('   ')).toBe(false);
+    expect(isNonBlankCommentPrompt(undefined)).toBe(false);
+    expect(isNonBlankCommentPrompt(null)).toBe(false);
   });
 });

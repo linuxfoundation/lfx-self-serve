@@ -423,6 +423,17 @@ export interface VoteReviewQuestion {
 }
 
 /**
+ * Processed comment prompt data for the vote review step
+ * @description Used for displaying comment-question summary in the review step
+ */
+export interface VoteReviewCommentPrompt {
+  /** One-based prompt index for display */
+  index: number;
+  /** Comment prompt text (blank prompts are filtered out — they are dropped on submit) */
+  prompt: string;
+}
+
+/**
  * Processed option data for vote results display
  * @description Contains computed values for displaying vote results
  */

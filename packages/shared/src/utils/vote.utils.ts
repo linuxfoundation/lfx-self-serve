@@ -4,8 +4,8 @@
 import { addDays } from 'date-fns';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION } from '../constants/poll.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { CommitteeReference } from '../interfaces/committee.interface';
-import {
+import type { CommitteeReference } from '../interfaces/committee.interface';
+import type {
   CommentPromptFormValue,
   CreatePollCommentPrompt,
   CreatePollQuestion,
@@ -137,13 +137,21 @@ export function mapQuestionToApiFormat(question: QuestionFormValue): CreatePollQ
 }
 
 /**
+ * Returns true when comment-prompt text is non-blank after trimming.
+ * Shared by the submit-side mapper and the review-step display so the two cannot drift.
+ */
+export function isNonBlankCommentPrompt(text?: string | null): boolean {
+  return (text?.trim().length ?? 0) > 0;
+}
+
+/**
  * Maps the form's comment-prompt array to the API's poll_comment_prompts, dropping blanks
  * @param commentPrompts - Comment prompt form values
  * @returns poll_comment_prompts for the API request, or undefined when there are none to send
  */
 export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormValue[]): CreatePollCommentPrompt[] | undefined {
   const nonBlank: CreatePollCommentPrompt[] = (commentPrompts ?? [])
-    .filter((commentPrompt) => (commentPrompt.prompt?.trim().length ?? 0) > 0)
+    .filter((commentPrompt) => isNonBlankCommentPrompt(commentPrompt.prompt))
     .map((commentPrompt) => {
       const mapped: CreatePollCommentPrompt = { prompt: commentPrompt.prompt.trim() };
       if (commentPrompt.prompt_id) {
