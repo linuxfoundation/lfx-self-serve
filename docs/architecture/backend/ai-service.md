@@ -84,7 +84,7 @@ The service also exposes `generateNewsletter(req, request: GenerateNewsletterReq
 
 #### Extract Brief Action Items
 
-`extractBriefActionItems(req, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse>` (LFXV2-3043) reads a weekly brief's `brief_text` and extracts up to `WEEKLY_BRIEF_ACTION_ITEMS_MAX` concrete follow-up items (`{text, suggested_owner_role?}`), consumed by `WeeklyBriefService.getActionItems` — never called directly from a controller. It follows the same `isAiConfigured()`/structured-JSON-schema/throw-on-failure skeleton as the two methods above; unlike them, its caller (`WeeklyBriefService`) deliberately catches the throw and degrades to an empty item list rather than propagating an error to the brief page, and caches successful (including legitimately empty) extractions in Valkey per `(brief.uid, brief.revision)` so repeated reads of the same brief revision don't re-invoke the AI proxy.
+`extractBriefActionItems(req, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse>` (LFXV2-3043) reads a weekly brief's `brief_text` and extracts up to `WEEKLY_BRIEF_ACTION_ITEMS_MAX` concrete follow-up items (`{text, suggested_owner_role?}`), consumed by `WeeklyBriefService.getActionItems` — never called directly from a controller. It follows the same `isAiConfigured()`/structured-JSON-schema/throw-on-failure skeleton as the two methods above (using the tighter `AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS` bound, since it runs on a GET page-load path rather than a user-initiated POST); unlike them, its caller (`WeeklyBriefService`) deliberately catches the throw and degrades to an empty item list rather than propagating an error to the brief page, and caches successful (including legitimately empty) extractions in Valkey per `(committeeId, brief.uid, brief.revision)` so repeated reads of the same brief revision don't re-invoke the AI proxy. `committeeId` is part of the key because the mock-mode brief fixture reuses the same `uid`/`revision` for every committee. The endpoint also skips extraction entirely — returning an empty list rather than calling the AI proxy uncached — whenever Valkey isn't configured (`VALKEY_URL` unset); this only covers the unconfigured case, not a configured-but-currently-unreachable Valkey.
 
 ### JSON Schema Validation
 
@@ -188,7 +188,9 @@ export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
-  TEMPERATURE: 0.3,
+  TEMPERATURE: 0.7,
+  TIMEOUT_MS: 60_000, // default AbortSignal.timeout bound — agenda/newsletter (user-initiated POSTs)
+  EXTRACTION_TIMEOUT_MS: 15_000, // tighter bound for extractBriefActionItems (GET page-load path)
 };
 
 export const DURATION_ESTIMATION = {

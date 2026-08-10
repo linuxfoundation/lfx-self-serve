@@ -225,9 +225,12 @@ export class WeeklyBriefService {
    * on every page view.
    *
    * The Valkey cache is the only thing bounding AI spend on this GET (unlike the agenda/
-   * newsletter paths, which are user-initiated POSTs) — if the cache is unavailable, this
-   * skips extraction entirely rather than firing an uncached AI call on every single read
-   * (full-branch review finding).
+   * newsletter paths, which are user-initiated POSTs) — when Valkey isn't CONFIGURED
+   * (`isEnabled()` — no `VALKEY_URL`), this skips extraction entirely rather than firing an
+   * uncached AI call on every single read (full-branch review finding). `isEnabled()` reflects
+   * configuration, not live connection health, though: a configured-but-currently-unreachable
+   * Valkey still passes this guard and falls through to `getJson`'s normal fail-soft timeout
+   * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
@@ -236,7 +239,10 @@ export class WeeklyBriefService {
     }
 
     if (!valkeyService.isEnabled()) {
-      logger.warning(req, 'get_weekly_brief_action_items', 'Cache unavailable, skipping extraction', {
+      // DEBUG, not WARN — an unconfigured Valkey is an expected steady-state condition in some
+      // environments (e.g. local dev), not a per-request anomaly; this fires on every
+      // committee-overview page view in that environment and would otherwise drown real signal.
+      logger.debug(req, 'get_weekly_brief_action_items', 'Cache not configured, skipping extraction', {
         committee_id: committeeId,
         brief_uid: brief.uid,
       });
@@ -285,7 +291,18 @@ export class WeeklyBriefService {
       return { items: [] };
     }
 
-    await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
+    const writeSucceeded = await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
+    if (!writeSucceeded) {
+      // isEnabled() (checked above) only reflects configuration, not live connection health — a
+      // configured-but-currently-unreachable Valkey passes that guard and reaches this point.
+      // A failed write here is the actual signal that this extraction ran uncached and AI spend
+      // is unbounded while the cache stays down; worth a warning even though the response to the
+      // caller is unaffected (the freshly-extracted items are still returned below).
+      logger.warning(req, 'get_weekly_brief_action_items', 'Extraction result could not be cached — AI spend is unbounded while the cache is down', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
+    }
 
     return { items };
   }

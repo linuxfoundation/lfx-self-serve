@@ -693,18 +693,6 @@ export class CommitteeOverviewComponent {
     });
   }
 
-  // Prefers the stable intrinsic id (briefActionUid) over the buttonLink/text fallback so
-  // dismissing one brief item doesn't shift the index-derived key of unrelated rows.
-  private buildPendingActionRowKey(item: PendingActionItem, index: number): string {
-    if (item.briefActionUid) {
-      return `${item.type}-${item.briefActionUid}`;
-    }
-    if (item.buttonLink) {
-      return `${item.type}-${item.buttonLink}`;
-    }
-    return `${item.type}-${item.text}-${index}`;
-  }
-
   private initPendingActionsViewAllTab(): Signal<'votes' | 'surveys'> {
     return computed(() => {
       const hasVotes = this.pendingActionItems().some((item) => item.type === 'Vote');
@@ -794,6 +782,18 @@ export class CommitteeOverviewComponent {
         meetingBadge: this.deriveMeetingBadge(item),
       }))
     );
+  }
+
+  // Prefers the stable intrinsic id (briefActionUid) over the buttonLink/text fallback so
+  // dismissing one brief item doesn't shift the index-derived key of unrelated rows.
+  private buildPendingActionRowKey(item: PendingActionItem, index: number): string {
+    if (item.briefActionUid) {
+      return `${item.type}-${item.briefActionUid}`;
+    }
+    if (item.buttonLink) {
+      return `${item.type}-${item.buttonLink}`;
+    }
+    return `${item.type}-${item.text}-${index}`;
   }
 
   // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical

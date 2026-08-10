@@ -247,7 +247,7 @@ export class AiService {
         },
       };
 
-      const response = await this.makeAiRequest(chatRequest);
+      const response = await this.makeAiRequest(chatRequest, AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS);
       const result = this.extractBriefActionItemsFromResponse(response);
 
       logger.success(req, 'extract_brief_action_items', startTime, {
@@ -393,15 +393,14 @@ export class AiService {
     }
   }
 
-  private async makeAiRequest(request: OpenAIChatRequest): Promise<OpenAIChatResponse> {
+  // AbortSignal.timeout, not an unbounded fetch — a hung LiteLLM proxy would otherwise hold the
+  // request open for undici's ~300s default. `timeoutMs` defaults to the generous POST-path
+  // bound (agenda/newsletter); extractBriefActionItems passes AI_REQUEST_CONFIG.EXTRACTION_TIMEOUT_MS
+  // explicitly, since it runs on a GET page-load path where an unbounded or generously-bounded
+  // wait is an availability risk, not just slowness.
+  private async makeAiRequest(request: OpenAIChatRequest, timeoutMs: number = AI_REQUEST_CONFIG.TIMEOUT_MS): Promise<OpenAIChatResponse> {
     this.assertConfigured();
 
-    // AbortSignal.timeout, not an unbounded fetch — a hung LiteLLM proxy would otherwise hold
-    // the request open for undici's ~300s default. Agenda/newsletter generation are
-    // user-initiated POSTs where a long wait is merely a bad UX; extractBriefActionItems runs on
-    // a GET page-load path (and, once weekly-brief SSR ships, potentially on the SSR critical
-    // path — see AI_REQUEST_CONFIG.TIMEOUT_MS's doc comment), so an unbounded call there is a
-    // latent availability risk, not just slowness.
     const response = await fetch(this.aiProxyUrl, {
       method: 'POST',
       headers: {
@@ -409,7 +408,7 @@ export class AiService {
         ['Authorization']: `Bearer ${this.aiKey}`,
       },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(AI_REQUEST_CONFIG.TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {

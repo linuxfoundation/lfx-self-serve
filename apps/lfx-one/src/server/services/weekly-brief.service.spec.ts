@@ -370,7 +370,9 @@ describe('WeeklyBriefService', () => {
       expect(buildCacheKey).not.toHaveBeenCalled();
       expect(valkeyGetJson).not.toHaveBeenCalled();
       expect(extractBriefActionItems).not.toHaveBeenCalled();
-      expect(logger.warning).toHaveBeenCalledWith(
+      // DEBUG, not WARN — an unconfigured cache is a steady-state condition in some
+      // environments, not a per-request anomaly worth alerting on every page view.
+      expect(logger.debug).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_action_items',
         expect.any(String),
@@ -396,6 +398,21 @@ describe('WeeklyBriefService', () => {
       await service.getActionItems(req, 'committee-1');
 
       expect(buildCacheKey).toHaveBeenCalledWith('committee-1', expect.any(String), expect.any(Number));
+    });
+
+    it('warns (but still returns the freshly-extracted items) when the cache write fails — isEnabled() only reflects configuration, not reachability', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+      valkeySetJson.mockResolvedValue(false); // e.g. Valkey configured but currently unreachable
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items).toHaveLength(1);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.stringContaining('could not be cached'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
     });
   });
 
