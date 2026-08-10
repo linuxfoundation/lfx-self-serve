@@ -867,12 +867,17 @@ export class CommitteeActivityService {
    * substitute — both found in review and confirmed against lfx-v2-meeting-service's/
    * lfx-v2-indexer-service's/lfx-v2-query-service's contract docs:
    *  - `filters` compiles to an OpenSearch `term` clause (exact match) on `data.category`. It's
-   *    the ONLY in-contract way to filter on `category` server-side — the attachment types' Tags
-   *    tables (lfx-v2-meeting-service's indexer-contract.md) don't include it, so it can't be
-   *    filtered via `tags` instead. `data` is documented as a schema-free `flat_object`, and the
-   *    same contract explicitly declines to guarantee per-field analyzer behavior inside `data` —
-   *    a caution, not a green light — so this is a deliberate bet on a `term` clause being exact
-   *    for a field the indexer can't promise that for. It's a bet worth making anyway: this repo
+   *    the only way to narrow the OpenSearch query itself on `category` — the attachment types'
+   *    Tags tables (lfx-v2-meeting-service's indexer-contract.md) don't include it, so `tags`
+   *    can't filter on it; `cel_filter` can express `data.category == 'Notes'` too, but the
+   *    query-service contract documents it as applied in-process AFTER OpenSearch paginates, "not
+   *    a substitute for narrowing the OpenSearch query itself" — it would inherit the exact same
+   *    dilution problem this filter exists to avoid, just moved one step later. `data` is
+   *    documented (lfx-v2-indexer-service's indexer-contract.md) as a schema-free `flat_object`,
+   *    and that same doc explicitly declines to guarantee per-field analyzer behavior inside
+   *    `data` — a caution, not a green light — so sending `filters` here is a deliberate bet on a
+   *    `term` clause being exact for a field the indexer can't promise that for. It's a bet worth
+   *    making anyway: this repo
    *    already ships an identical `term` filter on another `data.*` subfield of this same resource
    *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
    *    and the failure mode if the bet is wrong is a *visible*, all-or-nothing one (`notes_count: 0`
