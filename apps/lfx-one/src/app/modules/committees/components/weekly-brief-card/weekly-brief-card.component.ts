@@ -3,11 +3,13 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
@@ -16,8 +18,18 @@ import {
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { Committee, ShareWeeklyBriefResult, WeeklyBrief, WeeklyBriefCurrentResponse, WeeklyBriefThrottle } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
+import {
+  Committee,
+  ShareWeeklyBriefResult,
+  WeeklyBrief,
+  WeeklyBriefCurrentResponse,
+  WeeklyBriefRating,
+  WeeklyBriefSourceChip,
+  WeeklyBriefSourceChipAction,
+  WeeklyBriefThrottle,
+} from '@lfx-one/shared/interfaces';
+import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -31,6 +43,7 @@ import {
   filter,
   finalize,
   map,
+  Observable,
   of,
   skip,
   switchMap,
@@ -45,7 +58,7 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule],
+  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule, TagComponent],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -57,10 +70,27 @@ export class WeeklyBriefCardComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
+  private readonly router = inject(Router);
 
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+
+  // Outputs — 'tab'/'vote-drawer' source-ref actions bubble up so the parent can drive its
+  // own tab/drawer state (mirrors committee-overview.component.ts's identically-shaped
+  // tabNavigated output and openVoteDrawer method for its activity feed, both of which this
+  // binds straight through to).
+  public readonly tabNavigated = output<string>();
+  public readonly voteDrawerRequested = output<string>();
+
+  // Rating is server-blocked during impersonation (rateBrief/clearBriefRating resolve the
+  // impersonated user's own identity for the write — see weekly-brief.route.ts's
+  // blockDuringImpersonation comment) — surfaced here too so the buttons render
+  // visible-but-disabled instead of firing a request that 403s into a misleading generic
+  // "Rating failed" toast. Matches the established pattern (profile-panel, account-settings,
+  // etc.) of gating on `userService.impersonating()` directly, not on module input plumbing.
+  public readonly impersonating = this.userService.impersonating;
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
@@ -82,11 +112,26 @@ export class WeeklyBriefCardComponent {
   public readonly saving = signal(false);
   public readonly sharing = signal(false);
   public readonly editMode = signal(false);
+  // True while a rate/clear-rating request is in flight — guards against a second tap
+  // racing the first before the optimistic state has settled.
+  public readonly ratingPending = signal(false);
 
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
   private readonly briefResponse = signal<WeeklyBriefCurrentResponse | null>(null);
+
+  // Optimistic rating overlay, keyed to the exact brief (uid + revision) it applies to.
+  // `revision` alone isn't enough: a brand-new brief (new `uid`, e.g. after a window
+  // rollover) restarts at revision 1 same as the last one, so a revision-only key would
+  // wrongly light a fresh, never-rated brief just because it happens to share a revision
+  // number with a previously-rated one. Also explicitly cleared (see
+  // initBriefResponseSubscription / pollUntilTerminal) whenever a fresh authoritative GET
+  // lands — otherwise a silent server-side persist failure (rateBrief still returns 200
+  // while its Valkey write no-ops) would leave the thumb lit forever, surviving even a
+  // manual refresh, since the overlay would keep overriding the server's real (unrated)
+  // caller_rating.
+  private readonly optimisticRating = signal<{ briefUid: string; revision: number; value: WeeklyBriefRating | null } | null>(null);
 
   // Refresh trigger consumed by initBriefResponseSubscription — declared here (not
   // further down with the other private helpers) because @typescript-eslint/member-ordering
@@ -117,6 +162,12 @@ export class WeeklyBriefCardComponent {
     return b && b.state !== 'empty' ? b : null;
   });
 
+  // "Sources" chip row view-model — precomputed here rather than resolved per-chip in
+  // the template (repo rule: docs/reviews/frontend-checklist.md §4). Empty when the
+  // brief has no source_refs, which the template uses to skip rendering the row/header
+  // entirely.
+  public readonly sourceChips: Signal<WeeklyBriefSourceChip[]> = computed(() => mapWeeklyBriefSourceRefsToChips(this.renderableBrief()?.source_refs ?? []));
+
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
   // failure. Retrying it can never succeed and would just spend a regeneration slot,
@@ -124,6 +175,17 @@ export class WeeklyBriefCardComponent {
   public readonly isQuietWeek: Signal<boolean> = computed(() => {
     const b = this.brief();
     return b?.state === 'error' && b?.error_reason === WEEKLY_BRIEF_ERROR_REASON.NO_SOURCES;
+  });
+
+  // The caller's own rating on the brief currently on screen — the optimistic overlay
+  // when it's for this exact revision, otherwise whatever the last server load reported.
+  // `caller_rating` is BFF enrichment on the response envelope, not on `WeeklyBrief`
+  // itself (there's no upstream field for it) — read from `briefResponse`, not `brief()`.
+  public readonly callerRating: Signal<WeeklyBriefRating | null> = computed(() => {
+    const b = this.brief();
+    const override = this.optimisticRating();
+    if (b && override && override.briefUid === b.uid && override.revision === b.revision) return override.value;
+    return this.briefResponse()?.caller_rating ?? null;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {
@@ -341,12 +403,84 @@ export class WeeklyBriefCardComponent {
     }
   }
 
+  // Tapping the currently-active thumb clears the rating; tapping the other one switches.
+  // Optimistic: the overlay is set before the request fires and rolled back on failure —
+  // this is a one-tap, low-stakes action, so waiting on a round-trip before showing
+  // feedback isn't worth the click feeling unresponsive.
+  public onRate(value: WeeklyBriefRating): void {
+    const committeeUid = this.committee()?.uid;
+    const current = this.brief();
+    if (!committeeUid || !current || this.ratingPending() || this.impersonating()) return;
+    const previous = this.callerRating();
+    const next = previous === value ? null : value;
+    this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: next });
+    this.ratingPending.set(true);
+    // Explicit `Observable<unknown>` — without it, the ternary's two branches (`Observable<void>`
+    // vs `Observable<RateWeeklyBriefResponse>`) infer a union type whose `.pipe()` overload
+    // resolution TypeScript can't cleanly unify, breaking the `.subscribe()` call below.
+    const request$: Observable<unknown> =
+      next === null
+        ? this.weeklyBriefService.clearWeeklyBriefRating(committeeUid, current.uid, current.revision)
+        : this.weeklyBriefService.rateWeeklyBrief(committeeUid, current.uid, next, current.revision);
+    request$
+      .pipe(
+        take(1),
+        // Same guard as onSave/performShare: a rate/clear started on committee A whose
+        // response arrives after the user has already navigated to committee B must not
+        // touch B's rating state.
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.ratingPending.set(false))
+      )
+      .subscribe({
+        error: (err: HttpErrorResponse) => {
+          this.optimisticRating.set({ briefUid: current.uid, revision: current.revision, value: previous });
+          // The server 404s when briefUid no longer names the committee's current brief (a
+          // window rollover) or the brief moved out of a ratable state (a co-chair regenerated
+          // in another tab), and 409s when the revision this card rendered no longer matches the
+          // server-resolved current revision (a co-chair's edit/regenerate landed between page
+          // load and this tap) — see resolveRatableBrief. Retrying against the same stale card can
+          // never succeed either way; refresh$ pulls the real current state instead of leaving the
+          // user stuck tapping a button that will keep failing (same dead-end onSave's 409 branch
+          // and onGenerate's 409 branch already close).
+          if (err?.status === 404 || err?.status === 409) {
+            this.refresh$.next();
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Rating failed',
+              detail: 'This brief has changed. Reloaded the latest version — please rate again.',
+            });
+            return;
+          }
+          this.messageService.add({ severity: 'error', summary: 'Rating failed', detail: 'Failed to save your rating. Please try again.' });
+        },
+      });
+  }
+
   public onCancelEdit(): void {
     this.editMode.set(false);
   }
 
   public onRetry(): void {
     this.refresh$.next();
+  }
+
+  // Mirrors committee-overview.component.ts's handleActivityItemClick for these same action
+  // kinds — 'past-meeting' navigates directly (no drawer for this action), 'vote-drawer' and
+  // 'tab' bubble up via voteDrawerRequested/tabNavigated for the parent to drive its own
+  // drawer/tab state, same as that component's own openVoteDrawer/navigateToTab.
+  public onSourceChipAction(action: WeeklyBriefSourceChipAction): void {
+    switch (action.kind) {
+      case 'past-meeting':
+        void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
+        break;
+      case 'vote-drawer':
+        this.voteDrawerRequested.emit(action.voteUid);
+        break;
+      case 'tab':
+        this.tabNavigated.emit(action.tab);
+        break;
+    }
   }
 
   // Private initializer functions
@@ -373,6 +507,8 @@ export class WeeklyBriefCardComponent {
       this.sharing.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
+      this.ratingPending.set(false);
+      this.optimisticRating.set(null);
     });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(
@@ -396,6 +532,13 @@ export class WeeklyBriefCardComponent {
       )
       .subscribe((response) => {
         this.briefResponse.set(response);
+        // A fresh, authoritative GET always supersedes any optimistic rating overlay —
+        // otherwise a silent server-side persist failure (rateBrief/clearBriefRating
+        // return 200 while their Valkey write no-ops) would leave a stale thumb lit even
+        // across a manual refresh. `callerRating`'s brief-uid+revision key already makes
+        // the overlay self-invalidate on a genuinely different brief/revision; this covers
+        // the same-revision case too.
+        this.optimisticRating.set(null);
         // Covers a page reload, navigating back to this committee, or a co-chair's
         // generation already in flight — not just this tab's own onGenerate() call.
         // Without this, a card that *loads* into the generating state never polls and
@@ -467,6 +610,9 @@ export class WeeklyBriefCardComponent {
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
           this.briefResponse.set(response);
+          // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
+          // supersedes any optimistic overlay.
+          this.optimisticRating.set(null);
           if (isNewTerminal(response)) {
             observedTerminal = true;
           }

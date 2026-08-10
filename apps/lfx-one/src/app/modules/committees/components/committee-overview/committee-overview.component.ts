@@ -51,7 +51,7 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -127,10 +127,28 @@ export class CommitteeOverviewComponent {
   public readonly tabNavigated = output<string>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
 
+  // A field initializer runs in this component's injection context automatically (must come
+  // after the `committee` input it reads, or TS2729 "used before its initialization") — used
+  // by openVoteDrawer's cache-miss fetch to stop if the user navigates to a different committee
+  // (RouteReuseStrategy can keep this component instance alive across that navigation) before
+  // the fetch resolves. Calling toObservable(this.committee) directly inside a click-handler
+  // method would throw (NG0203: not an injection context), same rationale as
+  // weekly-brief-card.component.ts's identical committee$ field.
+  private readonly committee$ = toObservable(this.committee);
+
   // Vote drawer state
   public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
+  // Every openVoteDrawer(voteUid) call pushes here rather than resolving inline — initVoteDrawerRequests'
+  // switchMap is what guarantees "latest click wins" (see that method's own comment). A manual
+  // in-flight-uid tracking flag was tried first and still had a gap: two clicks on the *same*
+  // uid (A, then B, then A again) can't be told apart by uid alone, so a stale first-A response
+  // could still land after a second-A request started and be misread as current (PR #1363
+  // review: Copilot caught this after Copilot/Cursor Bugbot/@dealako's original different-uid
+  // race was fixed). switchMap's built-in cancel-the-previous-inner-observable semantics close
+  // both cases at once, for any pair of clicks — not just different uids.
+  private readonly voteDrawerRequest$ = new Subject<{ voteUid: string; committeeUid: string | undefined }>();
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);
@@ -245,6 +263,8 @@ export class CommitteeOverviewComponent {
   });
 
   public constructor() {
+    this.initVoteDrawerRequests();
+
     // When the last pending vote/survey is resolved, fade the section out then remove it from the DOM.
     // sectionEverShown prevents the fade from triggering on initial load with zero actions.
     toObservable(this.pendingActionItems)
@@ -285,17 +305,26 @@ export class CommitteeOverviewComponent {
     this.tabNavigated.emit(tab);
   }
 
+  // Shared by handleActivityItemClick's 'vote-drawer' case and weekly-brief-card's
+  // voteDrawerRequested output (LFXV2-3044) — both need the same lookup-fetch-or-toast
+  // behavior, not two copies of it. Just pushes onto voteDrawerRequest$; all the
+  // cache-vs-fetch and latest-click-wins logic lives in initVoteDrawerRequests, once, rather
+  // than per call site.
+  public openVoteDrawer(voteUid: string): void {
+    this.voteDrawerRequest$.next({ voteUid, committeeUid: this.committee()?.uid });
+  }
+
   public handlePendingActionClick(item: PendingActionItem): void {
-    if (item.type === 'Vote') {
-      const vote = this.pendingVotes().find((v) => v.uid === item.buttonLink);
-      if (vote) {
-        this.selectedVoteId.set(vote.uid);
-        this.selectedVote.set(vote);
-        this.voteDrawerVisible.set(true);
-      }
-    } else {
+    if (item.type !== 'Vote') {
       this.tabNavigated.emit('surveys');
+      return;
     }
+    // Searches votes() (the broader fetch), not pendingVotes() (ACTIVE-only) — item.buttonLink
+    // was a valid pendingVotes() uid when this row was built, but the vote may have closed by
+    // the time it's clicked. Falls back to '' rather than skipping the call on a missing
+    // buttonLink so that edge case still reaches openVoteDrawer's own "Vote unavailable" toast
+    // (a guaranteed miss) instead of a silent no-op.
+    this.openVoteDrawer(item.buttonLink ?? '');
   }
 
   public handleActivityItemClick(item: ActivityFeedItem): void {
@@ -317,44 +346,27 @@ export class CommitteeOverviewComponent {
         void this.router.navigate(['/meetings', action.meetingId], action.password ? { queryParams: { password: action.password } } : {});
         break;
       }
-      case 'vote-drawer': {
-        // this.votes() and the activity feed are two independent server fetches (the former
-        // page_size=100 by updated_at; the latter defaults to ACTIVITY_FEED_DEFAULT_PAGE_SIZE most
-        // recent by occurred_at, unless this call ever starts passing page_size) — a vote recent
-        // enough to appear in the feed isn't guaranteed to be within the former's window, so this
-        // lookup can miss.
-        //
-        // A miss here is recoverable in principle — VoteResultsDrawerComponent's own initVote()
-        // re-fetches by voteId with a startWith(listVote) fallback, so opening the drawer with just
-        // voteId set (no local seed) would still resolve. Not done here: the drawer's template has
-        // no `@else` on `@if (vote(); as voteData)`, so a null seed renders an empty drawer with no
-        // loading or not-found state until (or unless) that fetch settles — worse than this toast
-        // for the genuinely-missing case, and out of this component's scope to add. Toast instead.
-        const vote = this.votes().find((v) => v.uid === action.voteUid);
-        if (vote) {
-          this.selectedVoteId.set(vote.uid);
-          this.selectedVote.set(vote);
-          this.voteDrawerVisible.set(true);
-        } else {
-          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
-        }
+      case 'vote-drawer':
+        this.openVoteDrawer(action.voteUid);
         break;
-      }
       case 'survey-drawer': {
-        // Different failure mode than the vote-drawer case above, same toast-instead remedy.
-        // Unlike votes (a genuine window-size mismatch — getVotesByCommittee pins page_size=100),
-        // the server's SurveyService.getSurveys drains every page via fetchAllQueryResources, so
-        // this.surveys() is not a windowed slice — but "drains every page" isn't "always complete":
-        // fetchAllQueryResources defaults to failOnPartial=false (this call site doesn't override
-        // it), so a later page failing after retries returns what was fetched so far rather than
-        // throwing, and initSurveys' own catchError(() => of([])) yields an empty array on a
-        // failed/in-flight fetch regardless of drain completeness. So a miss here is normally
-        // fetch-timing staleness against the activity feed's independent request (the common case,
-        // since surveys() usually is complete) rather than a bounded-window gap like votes — but
-        // isn't guaranteed to be. Same recoverable-in-principle/toast-instead trade-off regardless:
-        // SurveyResultsDrawerComponent's own initSurvey() has the identical startWith/re-fetch
-        // shape and the identical missing `@else` on its template's `@if` as
-        // VoteResultsDrawerComponent.
+        // Different failure mode than the vote-drawer case above, still toast-only on a miss
+        // (unlike votes, not upgraded to a cache-miss fetch — see openVoteDrawer's own comment
+        // for why that gap mattered more there). Unlike votes (a genuine window-size mismatch —
+        // getVotesByCommittee pins page_size=100), the server's SurveyService.getSurveys drains
+        // every page via fetchAllQueryResources, so this.surveys() is not a windowed slice — but
+        // "drains every page" isn't "always complete": fetchAllQueryResources defaults to
+        // failOnPartial=false (this call site doesn't override it), so a later page failing
+        // after retries returns what was fetched so far rather than throwing, and initSurveys'
+        // own catchError(() => of([])) yields an empty array on a failed/in-flight fetch
+        // regardless of drain completeness. So a miss here is normally fetch-timing staleness
+        // against the activity feed's independent request (the common case, since surveys()
+        // usually is complete) rather than a bounded-window gap like votes — but isn't
+        // guaranteed to be. Recoverable in principle the same way: SurveyResultsDrawerComponent's
+        // own initSurvey() has the identical startWith/re-fetch shape and the identical missing
+        // `@else` on its template's `@if` as VoteResultsDrawerComponent, so a fetch-on-miss
+        // fallback could be added here too if this asymmetry becomes a real problem — out of
+        // this ticket's scope (LFXV2-3044 only touches the vote-drawer path).
         const survey = this.surveys().find((s) => s.uid === action.surveyUid);
         if (survey) {
           this.selectedSurveyId.set(survey.uid);
@@ -486,6 +498,63 @@ export class CommitteeOverviewComponent {
       clearTimeout(this.sectionFadeTimerId);
       this.sectionFadeTimerId = null;
     }
+  }
+
+  // Called once from the constructor — wires openVoteDrawer's voteDrawerRequest$ to a
+  // switchMap pipeline so every new request (cache hit or fetch, same uid or different)
+  // automatically cancels whatever the previous request was still doing. This is what
+  // actually guarantees "latest click wins": a manual in-flight-uid tracking flag (tried
+  // first) still let a stale response through when the *same* uid was clicked twice in a row
+  // (A, then B, then A again) — the flag can't distinguish "this specific request" from "an
+  // earlier request for the same uid," but switchMap's built-in unsubscribe-the-previous-inner-
+  // observable semantics don't need to (PR #1363 review: Copilot caught this gap after the
+  // original different-uid race, from Copilot/Cursor Bugbot/@dealako, was fixed).
+  private initVoteDrawerRequests(): void {
+    this.voteDrawerRequest$
+      .pipe(
+        switchMap(({ voteUid, committeeUid }) => {
+          const cached = this.votes().find((v) => v.uid === voteUid);
+          if (cached) return of({ vote: cached });
+          // this.votes() and the caller's own source (the activity feed, or a weekly brief's
+          // source_refs) are independent server fetches (the former page_size=100 by
+          // updated_at) — a vote recent enough to appear in either isn't guaranteed to be
+          // within this fetch's window, so the cache lookup above can miss even though the
+          // vote genuinely exists. Fetch it directly by uid — mirrors
+          // pending-actions.component.ts's loadVoteForRow — so only a real fetch failure
+          // (not-found, network) falls through to the toast below, not every cache-window miss.
+          return this.voteService.getVote(voteUid).pipe(
+            map((vote) => ({ vote })),
+            // Stop if the user has navigated to a different committee before this resolves —
+            // RouteReuseStrategy can keep this component instance alive across that
+            // navigation, and a late response must not pop the wrong committee's vote drawer
+            // open (same rationale as weekly-brief-card.component.ts's identical guard on its
+            // own async calls).
+            takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+            catchError(() => of({ vote: null }))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ vote }) => {
+        if (vote) {
+          this.selectedVoteId.set(vote.uid);
+          this.selectedVote.set(vote);
+          this.voteDrawerVisible.set(true);
+        } else {
+          // "Try the Votes tab instead" is only true when that tab actually exists —
+          // committee-view.component.ts hides it when enable_voting is false, and a weekly
+          // brief's vote chip deliberately still renders in that state (see
+          // mapWeeklyBriefSourceRefsToChips's 'vote' case) since a brief's window can predate
+          // voting being turned off. Neutral copy avoids pointing at a tab that isn't there
+          // (Copilot review, PR #1363).
+          const votesTabVisible = !!this.committee()?.enable_voting;
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Vote unavailable',
+            detail: votesTabVisible ? 'This vote could not be found. Try the Votes tab instead.' : 'This vote could not be found.',
+          });
+        }
+      });
   }
 
   // Private initializer functions
