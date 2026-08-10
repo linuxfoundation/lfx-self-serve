@@ -22,6 +22,13 @@ rather than chaining them with `&&`. A failing server spec must not stop the app
 running: the point of splitting them is that each half reports independently, and a CI log that
 shows only the first failure sends you back for a second round to discover the second.
 
+That lives in `scripts/run-tests.mjs` rather than in the `package.json` script, because
+`yarn run` executes scripts in **Yarn's own portable shell, not `sh`**. That shell has no `$?`
+and no `$(( ))` — it globs the `?` (`No matches found: "?"`) and then hands `process.exitCode`
+a `NaN`, which fails the run for a reason that has nothing to do with the tests. A one-liner
+that works when pasted into your terminal can still be broken under `yarn test`, so verify
+changes to it **through `yarn test`**, not by running the pieces by hand.
+
 Keep the two sets disjoint. A server spec picked up by the Angular builder pays for a browser
 environment it never uses; an app spec picked up by `vitest.config.ts` fails on the missing
 template compiler.

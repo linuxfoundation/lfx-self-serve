@@ -10,7 +10,7 @@
     "build:production": "yarn docs:build && ng build --configuration production",
     "build:staging": "yarn docs:build && ng build --configuration staging",
     "watch": "yarn docs:build && ng build --watch --configuration development",
-    "test": "yarn test:server; s=$?; yarn test:app; a=$?; exit $((s > a ? s : a))",
+    "test": "node scripts/run-tests.mjs",
     "test:server": "vitest run",
     "test:app": "ng test",
     "start:server": "pm2-runtime ecosystem.config.js",
