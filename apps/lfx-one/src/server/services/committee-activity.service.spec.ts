@@ -68,17 +68,17 @@ vi.mock('../helpers/committee-activity-query.helper', async (importOriginal) => 
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning, info, startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
-    getMeetings = getMeetings;
+    public getMeetings = getMeetings;
   },
 }));
 vi.mock('./vote.service', () => ({
   VoteService: class {
-    getVotes = getVotes;
+    public getVotes = getVotes;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
-    proxyRequest = proxyRequest;
+    public proxyRequest = proxyRequest;
   },
 }));
 
@@ -519,7 +519,7 @@ describe('CommitteeActivityService', () => {
 
       let cursor: ActivityPageCursor | undefined;
       const uids: string[] = [];
-      for (let i = 0; i < manyFolders.length; i++) {
+      for (let remaining = manyFolders.length; remaining > 0; remaining--) {
         const page = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
         if (page.data.length === 0) break;
         const event = page.data[0];
@@ -547,7 +547,7 @@ describe('CommitteeActivityService', () => {
 
       let cursor: ActivityPageCursor | undefined;
       const uids = new Set<string>();
-      for (let i = 0; i < tiedFolders.length; i++) {
+      for (let remaining = tiedFolders.length; remaining > 0; remaining--) {
         const page = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
         if (page.data.length === 0) break;
         const event = page.data[0];

@@ -105,6 +105,11 @@ Conventions, all of which the existing specs follow:
 run before any test executes. There is no separate `check-types` step for the app to catch it
 later.
 
+Specs are also **linted like any other source file**. `**/*.spec.ts` used to sit in
+`eslint.config.js`'s ignore list, which meant every spec in the repo was exempt from the rules
+the code it tests must follow — a test file is the last place that should be, since a fake that
+quietly breaks a rule is how a fake stops modelling the real thing. The exemption is gone.
+
 ## Verifying a test actually binds
 
 A test that passes proves nothing on its own — a fake that short-circuits, or an assertion that
