@@ -1040,6 +1040,18 @@ describe('WeeklyBriefService', () => {
       expect(body.text).toContain('Hello committee');
     });
 
+    it('logs the sending user on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      await service.shareToSlack(userReq, 'committee-1', 1);
+
+      expect(logger.info).toHaveBeenCalledWith(userReq, 'share_weekly_brief_slack_sent', expect.any(String), {
+        committee_id: 'committee-1',
+        shared_by: 'alice',
+      });
+    });
+
     it("escapes Slack mrkdwn control characters in brief_text and the committee name, so an AI-generated brief can't trigger @channel/@here or a deceptive link", async () => {
       mockShareableBrief({ brief_text: 'Ping <!channel> and see <https://evil.example|this link>' });
       getCommitteeForSlackShareMock.mockResolvedValue({

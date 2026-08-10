@@ -182,19 +182,30 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     fixture.componentRef.setInput('committee', { ...COMMITTEE, has_slack_webhook: false });
     await fixture.whenStable();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')?.textContent).toContain(
+      'No Slack webhook configured'
+    );
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).toBeNull();
   });
 
-  it('shows the impersonating hint (not the disabled hint) when impersonating, even if a webhook is configured', async () => {
+  it('shows the impersonating hint when impersonating, even though a webhook is configured', async () => {
     impersonating.set(true);
     await fixture.whenStable();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')?.textContent).toContain('impersonating');
+  });
+
+  it("shows the impersonating hint, not the disabled hint, when both conditions are true — pins the template's @if/@else-if precedence", async () => {
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, has_slack_webhook: false });
+    impersonating.set(true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')?.textContent).toContain('impersonating');
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).toBeNull();
   });
 
-  it('shows neither Slack hint when a webhook is configured and the caller is not impersonating', () => {
+  it('shows neither Slack hint (but does render the Share to Slack button) when a webhook is configured and the caller is not impersonating', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-button"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).toBeNull();
   });

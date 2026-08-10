@@ -926,8 +926,14 @@ export class WeeklyBriefService {
       });
     }
 
+    // shared_by is the one place this action's actor is recorded at all: the webhook POST body
+    // itself carries no caller identity (it's why /share-slack blocks during impersonation in the
+    // first place — see impersonation-readonly.middleware.ts), and unlike shareBrief, a successful
+    // send leaves no other persisted record (e.g. a newsletter draft) an operator could trace back
+    // to a user later.
     logger.info(req, 'share_weekly_brief_slack_sent', 'Weekly brief sent to the committee Slack channel', {
       committee_id: committeeId,
+      shared_by: getEffectiveUsername(req),
     });
 
     return { committee_name: committee.name };
