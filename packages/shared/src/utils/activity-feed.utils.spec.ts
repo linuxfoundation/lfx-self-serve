@@ -59,6 +59,15 @@ function documentUploaded(
   };
 }
 
+function notesAdded(overrides: Partial<Extract<ActivityEvent, { type: 'notes_added' }>['payload']> = {}, occurredAt = '2026-01-05T10:00:00Z'): ActivityEvent {
+  return {
+    type: 'notes_added',
+    occurred_at: occurredAt,
+    committee_uid: COMMITTEE_UID,
+    payload: { document_uid: 'note-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_scope: 'upcoming', ...overrides },
+  };
+}
+
 describe('mapActivityEventsToFeedItems', () => {
   it('returns an empty array when given no events', () => {
     expect(mapActivityEventsToFeedItems([], { votingEnabled: true })).toEqual([]);
@@ -161,6 +170,22 @@ describe('mapActivityEventsToFeedItems', () => {
     expect(items[0].type).toBe('past_meeting');
   });
 
+  it('renders a notes_added event with the note type, icon, and label', () => {
+    const items = mapActivityEventsToFeedItems([notesAdded({ name: 'Board Minutes.pdf' })], { votingEnabled: true });
+    expect(items[0]).toMatchObject({ type: 'note', label: 'Note: Board Minutes.pdf', icon: 'fa-light fa-note-sticky' });
+  });
+
+  it('keys upcoming and past notes distinctly even when they share a document_uid — meeting_scope discriminates the @for tracking key', () => {
+    const items = mapActivityEventsToFeedItems(
+      [
+        notesAdded({ document_uid: 'shared-uid', meeting_scope: 'upcoming' }, '2026-01-02T00:00:00Z'),
+        notesAdded({ document_uid: 'shared-uid', meeting_scope: 'past' }, '2026-01-01T00:00:00Z'),
+      ],
+      { votingEnabled: true }
+    );
+    expect(new Set(items.map((i) => i.key)).size).toBe(2);
+  });
+
   describe('action', () => {
     it('routes a meeting_held item to its meeting_id', () => {
       const items = mapActivityEventsToFeedItems([meetingHeld({ meeting_id: 'pm-42', meeting_occurrence_id: 'pm-42-occ-1' })], { votingEnabled: true });
@@ -214,6 +239,35 @@ describe('mapActivityEventsToFeedItems', () => {
     it('falls back to the documents tab for a folder document', () => {
       const items = mapActivityEventsToFeedItems([documentUploaded({ document_type: 'folder' })], { votingEnabled: true });
       expect(items[0].action).toEqual({ kind: 'tab', tab: 'documents' });
+    });
+
+    it('opens a link note directly when it has a valid http(s) url', () => {
+      const items = mapActivityEventsToFeedItems([notesAdded({ document_type: 'link', url: 'https://example.com/notes' })], { votingEnabled: true });
+      expect(items[0].action).toEqual({ kind: 'external-url', url: 'https://example.com/notes' });
+    });
+
+    it('falls back to the meetings tab, filtered by scope, for a link note with a missing or unsafe url', () => {
+      const missingUrl = mapActivityEventsToFeedItems([notesAdded({ document_type: 'link', url: undefined, meeting_scope: 'upcoming' })], {
+        votingEnabled: true,
+      });
+      expect(missingUrl[0].action).toEqual({ kind: 'tab', tab: 'meetings:upcoming' });
+
+      const unsafeUrl = mapActivityEventsToFeedItems([notesAdded({ document_type: 'link', url: 'javascript:alert(1)', meeting_scope: 'past' })], {
+        votingEnabled: true,
+      });
+      expect(unsafeUrl[0].action).toEqual({ kind: 'tab', tab: 'meetings:past' });
+    });
+
+    it('falls back to the meetings tab, filtered by scope, for a file note even when a url is present', () => {
+      const upcoming = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', url: 'https://example.com/notes.pdf', meeting_scope: 'upcoming' })], {
+        votingEnabled: true,
+      });
+      expect(upcoming[0].action).toEqual({ kind: 'tab', tab: 'meetings:upcoming' });
+
+      const past = mapActivityEventsToFeedItems([notesAdded({ document_type: 'file', url: 'https://example.com/notes.pdf', meeting_scope: 'past' })], {
+        votingEnabled: true,
+      });
+      expect(past[0].action).toEqual({ kind: 'tab', tab: 'meetings:past' });
     });
   });
 });
