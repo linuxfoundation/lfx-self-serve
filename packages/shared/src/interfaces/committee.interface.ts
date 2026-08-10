@@ -423,6 +423,12 @@ export interface Committee {
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
   chat_channel?: string | null;
+  /**
+   * Whether the committee has a Slack incoming webhook configured (enriched by BFF). The raw
+   * `chat_webhook_url` is a bearer credential and is deliberately never returned by any read —
+   * see {@link CommitteeUpdateData.chat_webhook_url}. This boolean is the only signal reads get.
+   */
+  has_slack_webhook?: boolean;
 
   // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
   // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
@@ -570,6 +576,11 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   mailing_list?: string | null;
   /** Update or clear chat channel */
   chat_channel?: string | null;
+  /**
+   * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
+   * Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
+   */
+  chat_webhook_url?: string | null;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */

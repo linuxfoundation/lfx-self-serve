@@ -37,6 +37,14 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 /** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
 
+/**
+ * Timeout for the "Share to Slack" incoming-webhook POST. A plain webhook call should complete
+ * in well under a second; this is generous headroom, not a tuned budget — deliberately far
+ * short of `NEWSLETTER_SEND_TIMEOUT_MS` (120s), which accounts for an entirely different,
+ * heavier upstream call.
+ */
+export const SLACK_WEBHOOK_POST_TIMEOUT_MS = 10_000;
+
 /** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
 export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
 

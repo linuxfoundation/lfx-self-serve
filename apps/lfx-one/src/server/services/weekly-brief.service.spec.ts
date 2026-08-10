@@ -24,6 +24,9 @@ const {
   buildWeeklyBriefRatingCacheKeyMock,
   extractBriefActionItems,
   buildCacheKey,
+  getCommitteeByIdMock,
+  getSlackWebhookUrlStrictMock,
+  checkSingleAccessStrictMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
@@ -65,6 +68,13 @@ const {
     buildCacheKey: vi.fn(
       (committeeId: string, briefUid: string, revision: number): string | null => `weekly-brief-action-items:${committeeId}:${briefUid}:${revision}`
     ),
+    // shareToSlack's (LFXV2-3080) collaborators — controlled per-test below via
+    // mockResolvedValue in the 'shareToSlack' describe block's own beforeEach; other describe
+    // blocks in this file never call them, since shareBrief/shareToSlack are the only methods
+    // that touch committeeService/accessCheckService.
+    getCommitteeByIdMock: vi.fn(),
+    getSlackWebhookUrlStrictMock: vi.fn(),
+    checkSingleAccessStrictMock: vi.fn(),
   };
 });
 
@@ -75,6 +85,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
+  SLACK_WEBHOOK_POST_TIMEOUT_MS: 10_000,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
@@ -96,12 +107,23 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
-// shareBrief's collaborators — not exercised by this spec (no shareBrief tests here),
-// but WeeklyBriefService's constructor instantiates all three, so they must at least
-// be constructible without pulling in their own real import chains.
-vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
+// shareBrief's collaborators — shareBrief itself isn't exercised by this spec, but
+// WeeklyBriefService's constructor instantiates all three, so they must at least be
+// constructible without pulling in their own real import chains. getCommitteeById /
+// getSlackWebhookUrlStrict / checkSingleAccessStrict back shareToSlack's (LFXV2-3080)
+// precondition chain — see the 'shareToSlack' describe block below.
+vi.mock('./committee.service', () => ({
+  CommitteeService: class {
+    public getCommitteeById = getCommitteeByIdMock;
+    public getSlackWebhookUrlStrict = getSlackWebhookUrlStrictMock;
+  },
+}));
 vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
-vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
+vi.mock('./access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrictMock;
+  },
+}));
 // getActionItems' (LFXV2-3043) collaborator — controlled per-test below.
 vi.mock('./ai.service', () => ({
   AiService: class {
@@ -843,6 +865,126 @@ describe('WeeklyBriefService', () => {
       const result = await service.getCurrentBrief(userReq, 'committee-1');
 
       expect(result.caller_rating).toBeNull();
+    });
+  });
+
+  describe('shareToSlack (LFXV2-3080)', () => {
+    /** Builds a minimal fetch Response stand-in with the given status and text body. */
+    function mockResponse(status: number, body: string): Response {
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: `status ${status}`,
+        text: async () => body,
+      } as unknown as Response;
+    }
+
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' });
+      getSlackWebhookUrlStrictMock.mockResolvedValue('https://hooks.slack.com/services/T000/B000/XXXX');
+      checkSingleAccessStrictMock.mockResolvedValue(true);
+      fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /** A brief in a shareable state, queued up for the getCurrentBrief call shareToSlack makes internally. */
+    function mockShareableBrief(overrides: Record<string, unknown> = {}): void {
+      proxyRequest.mockResolvedValueOnce({
+        brief: {
+          uid: 'b1',
+          state: 'generated',
+          revision: 1,
+          brief_text: 'Hello committee',
+          window_start: '2026-01-01',
+          window_end: '2026-01-07',
+          ...overrides,
+        },
+        throttle: null,
+      });
+    }
+
+    it('throws 404 when there is no brief to share', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the brief is not in a shareable state', async () => {
+      mockShareableBrief({ state: 'generating' });
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 REVISION_MISMATCH when the caller-supplied revision is stale', async () => {
+      mockShareableBrief({ revision: 2 });
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'REVISION_MISMATCH' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 403 NOT_PROJECT_WRITER when the caller is not a project writer', async () => {
+      mockShareableBrief();
+      checkSingleAccessStrictMock.mockResolvedValue(false);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 NO_SLACK_WEBHOOK when the committee has no webhook configured', async () => {
+      mockShareableBrief();
+      getSlackWebhookUrlStrictMock.mockResolvedValue(null);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other precondition passes', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      mockShareableBrief();
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'BACKEND_NOT_LIVE' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('POSTs the brief text to the stored webhook URL and resolves on a 200 from Slack', async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const result = await service.shareToSlack(req, 'committee-1', 1);
+
+      expect(result).toEqual({ committee_name: 'Test Committee' });
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://hooks.slack.com/services/T000/B000/XXXX',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.text).toContain('Hello committee');
+    });
+
+    it("throws 502 SLACK_SEND_FAILED with Slack's error text when Slack rejects the message", async () => {
+      mockShareableBrief();
+      fetchMock.mockResolvedValueOnce(mockResponse(400, 'invalid_payload'));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 502, code: 'SLACK_SEND_FAILED' });
+    });
+
+    it('throws 502 SLACK_UNREACHABLE instead of letting a raw network error escape', async () => {
+      mockShareableBrief();
+      fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 502, code: 'SLACK_UNREACHABLE' });
     });
   });
 });

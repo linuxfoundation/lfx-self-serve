@@ -7,14 +7,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
-const { proxyRequest, addAccessToResources, resolveAuditUserDisplayName } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, addAccessToResource, fetchWithETag, updateWithETag, resolveAuditUserDisplayName } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
+  // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
+  // list-oriented addAccessToResources every other describe block in this file already uses.
+  addAccessToResource: vi.fn(),
+  fetchWithETag: vi.fn(),
+  updateWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({ CommitteeMemberRole: {} }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
+vi.mock('@lfx-one/shared/constants', () => ({ SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/.+/ }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -23,9 +29,15 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
+    public addAccessToResource = addAccessToResource;
   },
 }));
-vi.mock('./etag.service', () => ({ ETagService: class {} }));
+vi.mock('./etag.service', () => ({
+  ETagService: class {
+    public fetchWithETag = fetchWithETag;
+    public updateWithETag = updateWithETag;
+  },
+}));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('../helpers/query-service.helper', async () => {
   const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
@@ -277,5 +289,114 @@ describe('CommitteeService.acceptCommitteeInvite — post-acceptance membership 
 
     expect(getCommitteeById).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
+  let service: CommitteeService;
+
+  const COMMITTEE_UID = 'committee-1';
+  const VALID_WEBHOOK_URL = 'https://hooks.slack.com/services/T000/B000/XXXX';
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    addAccessToResources.mockReset();
+    addAccessToResource.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    resolveAuditUserDisplayName.mockReset();
+    // Pass-through default — most tests here don't care about access-check enrichment itself.
+    addAccessToResource.mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
+    service = new CommitteeService();
+  });
+
+  describe('getCommitteeById', () => {
+    it('computes has_slack_webhook from the upstream chat_webhook_url field and never returns the raw value', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })
+        .mockResolvedValueOnce({}); // GET /committees/:id/settings
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect(result.has_slack_webhook).toBe(true);
+      expect('chat_webhook_url' in result).toBe(false);
+    });
+
+    it('reports has_slack_webhook: false when no webhook is configured upstream', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({});
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect(result.has_slack_webhook).toBe(false);
+    });
+  });
+
+  describe('getSlackWebhookUrlStrict', () => {
+    it('returns the raw webhook URL when configured', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL });
+
+      await expect(service.getSlackWebhookUrlStrict(req, COMMITTEE_UID)).resolves.toBe(VALID_WEBHOOK_URL);
+    });
+
+    it('returns null when not configured', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID });
+
+      await expect(service.getSlackWebhookUrlStrict(req, COMMITTEE_UID)).resolves.toBeNull();
+    });
+  });
+
+  describe('updateCommittee', () => {
+    it('rejects a chat_webhook_url that does not match the hooks.slack.com pattern, before touching upstream', async () => {
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: 'https://evil.example.com/x' })).rejects.toMatchObject({
+        statusCode: 400,
+      });
+
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('accepts a well-formed hooks.slack.com URL', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL });
+      // getSlackWebhookUrlStrict's read-back confirmation GET.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+    });
+
+    it('throws SLACK_WEBHOOK_NOT_PERSISTED when upstream silently drops the field instead of reporting a false success (no committee-service schema support yet)', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      // Upstream's PUT response doesn't echo chat_webhook_url back — simulates today's real
+      // committee-service, which has no field for it at all.
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+      // The read-back confirmation GET also comes back without it.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'SLACK_WEBHOOK_NOT_PERSISTED',
+      });
+    });
+
+    it('never returns chat_webhook_url on the response even if upstream happens to echo it back', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL });
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL });
+
+      const result = await service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL });
+
+      expect('chat_webhook_url' in result).toBe(false);
+    });
+
+    it('does not perform the read-back confirmation GET when chat_webhook_url is not part of the update', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
+
+      await service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' });
+
+      // The read-back check (getSlackWebhookUrlStrict) is the only caller of a bare GET
+      // /committees/:id via proxyRequest in this flow — its absence proves the check was skipped.
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 });

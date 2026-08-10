@@ -111,6 +111,7 @@ export class WeeklyBriefCardComponent {
   public readonly pollTimedOut = signal(false);
   public readonly saving = signal(false);
   public readonly sharing = signal(false);
+  public readonly sharingSlack = signal(false);
   public readonly editMode = signal(false);
   // True while a rate/clear-rating request is in flight — guards against a second tap
   // racing the first before the optimistic state has settled.
@@ -374,6 +375,22 @@ export class WeeklyBriefCardComponent {
     });
   }
 
+  public onShareToSlack(): void {
+    // Same snapshot-not-re-read rationale as onShareToMailingList: the confirmation dialog
+    // names a specific committee, so the request that follows must target that same snapshot.
+    const committeeUid = this.committee()?.uid;
+    const revision = this.brief()?.revision;
+    if (!committeeUid || revision === undefined) return;
+    this.confirmationService.confirm({
+      header: 'Share to Slack',
+      message: 'Send the current brief to this committee’s Slack channel?',
+      icon: 'fa-brands fa-slack',
+      acceptLabel: 'Send',
+      rejectLabel: 'Cancel',
+      accept: () => this.performShareToSlack(committeeUid, revision),
+    });
+  }
+
   public async onCopyAndShare(): Promise<void> {
     const text = this.brief()?.brief_text ?? '';
     // Matches planning-tab.component.ts's copyToClipboard guard: navigator.clipboard is
@@ -505,6 +522,7 @@ export class WeeklyBriefCardComponent {
       this.generating.set(false);
       this.saving.set(false);
       this.sharing.set(false);
+      this.sharingSlack.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
       this.ratingPending.set(false);
@@ -727,6 +745,57 @@ export class WeeklyBriefCardComponent {
             // could send the brief twice. (status === 0 covers network
             // failures/aborts, which never surface an HTTP status.)
             detail = 'The send may not have completed — check the project’s Newsletters list before trying again.';
+          } else {
+            detail = 'Failed to share brief. Please try again.';
+          }
+          this.messageService.add({ severity: 'error', summary: 'Share failed', detail });
+        },
+      });
+  }
+
+  private performShareToSlack(committeeUid: string, revision: number): void {
+    this.sharingSlack.set(true);
+    this.weeklyBriefService
+      .shareWeeklyBriefToSlack(committeeUid, revision)
+      .pipe(
+        take(1),
+        // Same guard as performShare: a send started on committee A whose response arrives
+        // after the user has already navigated to committee B must not touch B's card.
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.sharingSlack.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Sent', detail: 'Brief sent to the committee Slack channel.' });
+        },
+        error: (err: HttpErrorResponse) => {
+          const code = (err?.error as { code?: string } | undefined)?.code;
+          const status = err?.status;
+          let detail: string;
+          if (status === 404) {
+            detail = 'No brief available to share.';
+          } else if (status === 403) {
+            detail = 'Only project writers can share the weekly brief to Slack. Contact a project administrator.';
+          } else if (status === 409) {
+            if (code === 'NO_SLACK_WEBHOOK') {
+              detail = 'No Slack webhook configured for this committee.';
+            } else if (code === 'BACKEND_NOT_LIVE') {
+              detail = 'Sharing is not available in this environment yet.';
+            } else if (code === 'REVISION_MISMATCH') {
+              detail = 'This brief was updated since you last viewed it. Reload to review the latest version before sharing.';
+              this.refresh$.next();
+            } else {
+              detail = 'This brief is already being sent, or was already sent.';
+            }
+          } else if (status === 400) {
+            const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
+            detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
+          } else if (status === 502) {
+            // SLACK_SEND_FAILED / SLACK_UNREACHABLE — Slack rejected the message or the
+            // webhook request itself failed/timed out. Unlike the mailing-list send, this
+            // is synchronous, so a failure here means nothing was posted — safe to retry.
+            detail = 'Slack could not be reached, or rejected the message. Check the webhook URL in Group Settings and try again.';
           } else {
             detail = 'Failed to share brief. Please try again.';
           }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -35,7 +36,7 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ConflictError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
@@ -363,15 +364,26 @@ export class CommitteeService {
     // LFXV2-2914). Compute it the same way the query-service-backed list
     // endpoints (getCommittees/getMyCommittees) do: a direct count against
     // the mailing-list index.
-    const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    const rawCommittee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
 
-    if (!committee) {
+    if (!rawCommittee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
         operation: 'get_committee_by_id',
         service: 'committee_service',
         path: `/committees/${committeeId}`,
       });
     }
+
+    // chat_webhook_url is a bearer credential — strip it immediately after the upstream fetch so
+    // it never flows into the access-check merge, project-metadata enrichment, or the HTTP
+    // response. has_slack_webhook is the only signal any read gets; see the doc comment on
+    // Committee.has_slack_webhook and CommitteeUpdateData.chat_webhook_url.
+    const { chat_webhook_url: chatWebhookUrl, ...committee } = rawCommittee;
 
     // Fetch settings, optional caller membership, access, optional inherited
     // (parent-project) permissions, and optional mailing-list status in parallel.
@@ -389,6 +401,7 @@ export class CommitteeService {
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
+      has_slack_webhook: !!chatWebhookUrl,
     };
 
     if (!options.includeProjectMetadata) {
@@ -434,6 +447,14 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
+    if (data.chat_webhook_url && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(data.chat_webhook_url)) {
+      throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
     // Extract settings fields — writers/auditors belong to UpdateCommitteeSettingsRequestBody,
     // NOT UpdateCommitteeBaseRequestBody, so they must go through the settings endpoint
     const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = data;
@@ -494,6 +515,22 @@ export class CommitteeService {
       updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
+    // Defensive check: unlike mailing_list/chat_channel, the upstream committee-service schema
+    // does not (yet) declare chat_webhook_url as of this writing — an unknown key in the PUT
+    // body above is silently dropped by Go's JSON unmarshaling rather than rejected. Confirm via
+    // a fresh read whether it actually persisted rather than trusting a false "saved" response;
+    // remove this check once the upstream schema change lands.
+    if (committeeData.chat_webhook_url !== undefined) {
+      const persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
+      if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
+        throw new ConflictError('Slack webhook support is not available in this environment yet — the update was not saved.', 'SLACK_WEBHOOK_NOT_PERSISTED', {
+          operation: 'update_committee',
+          service: 'committee_service',
+          path: `/committees/${committeeId}`,
+        });
+      }
+    }
+
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
     // (unlike the create path, there's no partial-success story here: if settings fail,
     // the response should not echo writers/auditors as if they were persisted)
@@ -508,8 +545,16 @@ export class CommitteeService {
       });
     }
 
+    // chat_webhook_url must never reach the HTTP response, same as getCommitteeById — strip it
+    // regardless of whether upstream happens to echo it back in the PUT response. has_slack_webhook
+    // is deliberately left out here (same as has_mailing_list, which this method also never sets) —
+    // it's a getCommitteeById-only enrichment; callers needing the post-save "configured" state
+    // already know it locally from whatever chat_webhook_url value they just submitted.
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
+    const { chat_webhook_url: _chatWebhookUrl, ...updatedCommitteeWithoutWebhook } = updatedCommittee as Committee & { chat_webhook_url?: string | null };
+
     return {
-      ...updatedCommittee,
+      ...updatedCommitteeWithoutWebhook,
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -1546,6 +1591,24 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     });
     return count > 0;
+  }
+
+  /**
+   * Strict single-committee Slack-webhook fetch, mirroring {@link hasMailingListStrict}'s
+   * fail-closed contract — propagates an upstream failure instead of silently reporting "no
+   * webhook configured". Deliberately bypasses {@link getCommitteeById}, which strips
+   * `chat_webhook_url` from every response it returns; this is the one internal call site
+   * allowed to see the raw credential, and only to POST it directly to Slack. Never expose this
+   * value via any controller/route.
+   */
+  public async getSlackWebhookUrlStrict(req: Request, committeeId: string): Promise<string | null> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
+    return committee?.chat_webhook_url ?? null;
   }
 
   /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */

@@ -25,6 +25,9 @@ router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBrie
 // POST /committees/:committeeId/weekly-briefs/share - share the current brief to the committee mailing list
 router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
 
+// POST /committees/:committeeId/weekly-briefs/share-slack - share the current brief to the committee's Slack channel
+router.post('/:committeeId/weekly-briefs/share-slack', (req, res, next) => weeklyBriefController.shareToSlack(req, res, next));
+
 // POST /committees/:committeeId/weekly-briefs/:briefUid/rating - rate (or re-rate) the current brief
 // Blocked during impersonation: unlike generate/save/share (which proxy through untouched and are
 // therefore attributed to whoever actually authenticated), rateBrief resolves the caller's identity

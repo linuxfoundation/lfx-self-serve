@@ -12,6 +12,8 @@ const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted
     getActionItems: vi.fn(),
     generateBrief: vi.fn(),
     saveBrief: vi.fn(),
+    shareBrief: vi.fn(),
+    shareToSlack: vi.fn(),
     rateBrief: vi.fn(),
     clearBriefRating: vi.fn(),
   },
@@ -335,6 +337,91 @@ describe('WeeklyBriefController', () => {
       await controller.getActionItems(buildReq(), res, vi.fn());
 
       expect(res.json).toHaveBeenCalledWith({ items });
+    });
+  });
+
+  describe('shareToSlack (LFXV2-3080) — request body validation', () => {
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.shareToSlack(buildReq({}), buildRes(), next);
+
+      expect(weeklyBriefSvc.shareToSlack).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    });
+
+    it('rejects a non-numeric revision', async () => {
+      const next = vi.fn();
+
+      await controller.shareToSlack(buildReq({ revision: 'one' }), buildRes(), next);
+
+      expect(weeklyBriefSvc.shareToSlack).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    });
+
+    it('accepts a valid body and forwards the revision to the service', async () => {
+      weeklyBriefSvc.shareToSlack.mockResolvedValue({ committee_name: 'Test Committee' });
+
+      await controller.shareToSlack(buildReq({ revision: 3 }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.shareToSlack).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 3);
+    });
+  });
+
+  describe('shareToSlack (LFXV2-3080) — read access gate', () => {
+    it('checks committee read access before sharing — same gate shape as shareBrief: the service enforces the real project-writer boundary', async () => {
+      weeklyBriefSvc.shareToSlack.mockResolvedValue({ committee_name: 'Test Committee' });
+
+      await controller.shareToSlack(buildReq({ revision: 1 }), buildRes(), vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'share_weekly_brief_slack');
+      const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
+      const shareOrder = weeklyBriefSvc.shareToSlack.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(shareOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeRead via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeRead.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.shareToSlack(buildReq({ revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.shareToSlack).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
+    });
+
+    it('stops after validateUidParameter rejects an invalid committeeId, without checking access or calling the service', async () => {
+      const next = vi.fn();
+      const req = { params: { committeeId: '' }, body: { revision: 1 }, path: '/test', log: {} } as any;
+
+      await controller.shareToSlack(req, buildRes(), next);
+
+      expect(assertCommitteeRead).not.toHaveBeenCalled();
+      expect(weeklyBriefSvc.shareToSlack).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('shareToSlack (LFXV2-3080)', () => {
+    it('propagates a service error via next instead of swallowing it (e.g. 409 NO_SLACK_WEBHOOK)', async () => {
+      const upstreamError = Object.assign(new Error('no webhook'), { statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
+      weeklyBriefSvc.shareToSlack.mockRejectedValue(upstreamError);
+      const next = vi.fn();
+
+      await controller.shareToSlack(buildReq({ revision: 1 }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(upstreamError);
+    });
+
+    it('returns the service result as JSON', async () => {
+      const result = { committee_name: 'Test Committee' };
+      weeklyBriefSvc.shareToSlack.mockResolvedValue(result);
+      const res = buildRes();
+
+      await controller.shareToSlack(buildReq({ revision: 1 }), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith(result);
     });
   });
 

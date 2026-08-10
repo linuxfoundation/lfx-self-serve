@@ -180,6 +180,15 @@ export interface ShareWeeklyBriefResult {
 }
 
 /**
+ * Unlike {@link ShareWeeklyBriefResult}, a Slack incoming webhook POST is synchronous — Slack
+ * accepts or rejects the message in the same request, so there is no recipient-count/fan-out
+ * concept to report here. A resolved promise means Slack accepted the message.
+ */
+export interface ShareWeeklyBriefToSlackResult {
+  committee_name: string;
+}
+
+/**
  * An AI-extracted follow-up item from a brief's `brief_text` (LFXV2-3043). Extraction runs
  * lfx-one-side, once per `(source_brief_uid, revision)` pair, cached by the BFF — this record
  * has no independent `revision` field because a new revision produces an entirely new cached

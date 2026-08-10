@@ -24,6 +24,14 @@ export {
 export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
+ * Slack Incoming Webhook URLs always live under this stable, documented prefix. Enforced as a
+ * hard allowlist (not just format hinting) because `chat_webhook_url` drives a server-initiated
+ * outbound POST to a URL the committee writer fully controls — without a domain allowlist, an
+ * arbitrary URL here would let the BFF be used as an SSRF vector.
+ */
+export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/.+/;
+
+/**
  * Configurable labels for committees displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
  * while keeping all code and file names as "committees"

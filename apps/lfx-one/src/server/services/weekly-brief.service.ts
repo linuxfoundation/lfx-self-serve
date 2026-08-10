@@ -4,6 +4,7 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  SLACK_WEBHOOK_POST_TIMEOUT_MS,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
@@ -19,6 +20,7 @@ import {
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
+  ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefActionItem,
   WeeklyBriefCurrentResponse,
@@ -750,6 +752,103 @@ export class WeeklyBriefService {
       committee_name: committee.name,
       total_recipients: sendResult.total_recipients,
     };
+  }
+
+  /**
+   * Shares the current brief to the committee's configured Slack channel via an Incoming
+   * Webhook POST. Precondition chain mirrors {@link shareBrief} exactly (brief exists +
+   * shareable state, revision matches, caller is a project writer, `WEEKLY_BRIEF_BACKEND=live`)
+   * with one swap: "has a mailing list configured" becomes "has a Slack webhook configured".
+   *
+   * Unlike shareBrief's newsletter-service handoff (async accept-then-fan-out), a webhook POST
+   * is synchronous — Slack's own response is authoritative. A resolved promise means Slack
+   * accepted the message, not that it was merely queued.
+   */
+  public async shareToSlack(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefToSlackResult> {
+    const { brief } = await this.getCurrentBrief(req, committeeId);
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
+      throw new ResourceNotFoundError('Weekly brief', committeeId, {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+    if (brief.revision !== expectedRevision) {
+      throw new ConflictError('The brief has been updated since you last viewed it. Reload to review the latest version before sharing.', 'REVISION_MISMATCH', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    const committee = await this.committeeService.getCommitteeById(req, committeeId);
+
+    // Same strict project-writer boundary as shareBrief, for the same reason: sharing is a
+    // deliberate, low-frequency action where misattributing a transient access-check outage as
+    // a permission denial is worse than the extra strict-variant call.
+    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+      resource: 'project',
+      id: committee.project_uid,
+      access: 'writer',
+    });
+    if (!isProjectWriter) {
+      throw new AuthorizationError('Only project writers can share the weekly brief to Slack', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        code: 'NOT_PROJECT_WRITER',
+      });
+    }
+
+    // getSlackWebhookUrlStrict, not a fail-open enrichment — same rationale as shareBrief's
+    // hasMailingListStrict: a transient upstream failure must not be misreported as "no webhook
+    // configured" (409 NO_SLACK_WEBHOOK is a real, actionable precondition failure).
+    const webhookUrl = await this.committeeService.getSlackWebhookUrlStrict(req, committeeId);
+    if (!webhookUrl) {
+      throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    // Preconditions above are enforced regardless of backend mode; only the actual send is
+    // gated on isLive() — same rationale as shareBrief: mock-mode content must never actually
+    // post to a real Slack channel.
+    if (!this.isLive(req)) {
+      throw new ConflictError('Sharing is not available in this environment (WEEKLY_BRIEF_BACKEND is not "live")', 'BACKEND_NOT_LIVE', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    const text = `*Weekly Brief — ${committee.name}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${brief.brief_text}`;
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(SLACK_WEBHOOK_POST_TIMEOUT_MS),
+    }).catch((error: unknown) => {
+      throw new MicroserviceError('Unable to reach Slack — the webhook request failed or timed out', 502, 'SLACK_UNREACHABLE', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        originalError: error instanceof Error ? error : undefined,
+      });
+    });
+
+    if (!response.ok) {
+      // Slack's incoming-webhook error responses are a plain-text body (e.g. `invalid_payload`,
+      // `channel_not_found`, `action_prohibited`), not JSON.
+      const slackErrorText = await response.text().catch(() => '');
+      throw new MicroserviceError(`Slack rejected the message${slackErrorText ? `: ${slackErrorText}` : ''}`, 502, 'SLACK_SEND_FAILED', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        errorBody: { reason: slackErrorText || 'unknown error' },
+      });
+    }
+
+    logger.info(req, 'share_weekly_brief_slack_sent', 'Weekly brief sent to the committee Slack channel', {
+      committee_id: committeeId,
+    });
+
+    return { committee_name: committee.name };
   }
 
   /**

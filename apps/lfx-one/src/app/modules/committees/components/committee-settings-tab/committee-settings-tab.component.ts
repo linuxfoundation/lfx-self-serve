@@ -3,12 +3,13 @@
 
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -51,6 +52,8 @@ export class CommitteeSettingsTabComponent {
   public deleting = signal(false);
   public savingMl = signal(false);
   public removingMlUid = signal<string | null>(null);
+  /** Whether the Slack webhook "Replace" affordance is open, revealing the input for a new URL. Reset to false whenever `committee` refreshes. */
+  public editingSlackWebhookUrl = signal(false);
   private mlLoadingInternal = signal(true);
 
   // Subject to trigger ML list refresh after association changes
@@ -68,6 +71,9 @@ export class CommitteeSettingsTabComponent {
     show_meeting_attendees: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
+    // Write-only — never patched from the committee (Committee.has_slack_webhook is the only
+    // read signal). Always reset to null when `committee` refreshes; see the constructor.
+    chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
   });
 
   // Project mailing lists (loaded when committee has a project_uid — used by the picker dialog)
@@ -78,6 +84,9 @@ export class CommitteeSettingsTabComponent {
 
   // Derived loading state: true until first emission from associatedMailingLists
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
+
+  // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
+  public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
 
   public constructor() {
     // Patch form when committee input changes
@@ -98,7 +107,9 @@ export class CommitteeSettingsTabComponent {
           show_meeting_attendees: c.show_meeting_attendees || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
+          chat_webhook_url: null,
         });
+        this.editingSlackWebhookUrl.set(false);
       });
 
     // Disable form fields for read-only (Auditor) access
@@ -201,6 +212,9 @@ export class CommitteeSettingsTabComponent {
         show_meeting_attendees: values.show_meeting_attendees ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
+        // Only sent when the user actually opened "Replace" — chat_webhook_url is write-only, so
+        // the form's untouched value is always null and must never be mistaken for "clear it".
+        ...(this.editingSlackWebhookUrl() ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
