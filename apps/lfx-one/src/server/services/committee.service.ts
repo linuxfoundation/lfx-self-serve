@@ -405,14 +405,23 @@ export class CommitteeService {
       // (e.g. stored by a non-BFF writer, since this repo isn't the only writer of the field)
       // must not show as "Configured" — shareToSlack re-validates the same pattern at send time,
       // and a Configured badge over a value that's guaranteed to 409 there is a dead end.
+      //
+      // Base-resource-only, like getSlackWebhookUrlStrict and getCommitteeForSlackShare below —
+      // none of the three read this from `settings`. If LFXV2-3094 lands the field on the
+      // settings resource instead of the base one, this trio silently under-reports rather than
+      // leaking: has_slack_webhook stays false for a genuinely configured committee (Share stays
+      // disabled, the settings card shows "Not configured"), with no error surfaced anywhere.
+      // Deliberately not guessing at a dual-source read for an undecided schema — whichever
+      // resource LFXV2-3094 actually lands on, update all three read sites together then.
       has_slack_webhook: !!chatWebhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(chatWebhookUrl),
     };
 
     // Defense-in-depth beyond the base-resource strip above: `settings` is a raw, uncast
-    // GET /committees/:id/settings body spread into `merged` at line 400, un-stripped — if the
-    // upstream schema change (LFXV2-3094) lands chat_webhook_url on the settings resource rather
-    // than the base one (undecided as of this writing), this is what stops it from leaking here.
-    // A no-op today either way, since neither resource carries the field yet.
+    // GET /committees/:id/settings body spread into `merged` alongside `withAccess` above,
+    // un-stripped — if the upstream schema change (LFXV2-3094) lands chat_webhook_url on the
+    // settings resource rather than the base one (undecided as of this writing), this is what
+    // stops it from leaking here. A no-op today either way, since neither resource carries the
+    // field yet.
     if (!options.includeProjectMetadata) {
       return this.stripChatWebhookUrl(merged);
     }
@@ -1770,9 +1779,10 @@ export class CommitteeService {
    * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
    * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
    * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
-   * its own inline destructure of the base resource — that inline strip only covers the base
-   * fetch, while `merged`/`enriched` also spread in the raw settings-resource response, so both
-   * layers matter regardless of which resource the field eventually lands on. A no-op today
+   * its own inline destructure of the base resource — the inline strip keeps the credential out
+   * of the access-check and project-metadata enrichment inputs, while this call is what
+   * guarantees the response itself is clean no matter which resource (base or settings) the field
+   * lands on. A no-op today
    * (upstream doesn't store the field on either resource yet), but load-bearing the moment the
    * schema change referenced in `updateCommittee` lands.
    *

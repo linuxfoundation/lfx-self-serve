@@ -17,6 +17,7 @@ const {
   updateWithETag,
   resolveAuditUserDisplayName,
   isImpersonating,
+  enrichWithProjectData,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
@@ -30,6 +31,8 @@ const {
   updateWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
   isImpersonating: vi.fn(() => false),
+  // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
+  enrichWithProjectData: vi.fn((_req: unknown, items: unknown[]) => Promise.resolve(items)),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({
@@ -58,7 +61,11 @@ vi.mock('./etag.service', () => ({
     public updateWithETag = updateWithETag;
   },
 }));
-vi.mock('./project.service', () => ({ ProjectService: class {} }));
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public enrichWithProjectData = enrichWithProjectData;
+  },
+}));
 vi.mock('../helpers/query-service.helper', async () => {
   const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
   return {
@@ -327,6 +334,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     updateWithETag.mockReset();
     resolveAuditUserDisplayName.mockReset();
     isImpersonating.mockReset().mockReturnValue(false);
+    enrichWithProjectData.mockReset().mockImplementation((_req: unknown, items: unknown[]) => Promise.resolve(items));
     // Pass-through default — most tests here don't care about access-check enrichment itself.
     addAccessToResource.mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
     service = new CommitteeService();
@@ -375,6 +383,20 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       const result = await service.getCommitteeById(req, COMMITTEE_UID);
 
       expect('chat_webhook_url' in result).toBe(false);
+    });
+
+    it('never returns chat_webhook_url on the includeProjectMetadata: true (enriched) path — the one actually used by GET /api/committees/:id', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })
+        .mockResolvedValueOnce({});
+      enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
+        Promise.resolve((items as Committee[]).map((item) => ({ ...item, project_slug: 'test-project' })))
+      );
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeProjectMetadata: true });
+
+      expect('chat_webhook_url' in result).toBe(false);
+      expect(result.project_slug).toBe('test-project');
     });
   });
 

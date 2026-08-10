@@ -98,8 +98,11 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     const confirmationService = TestBed.inject(ConfirmationService);
     const confirmSpy = vi.spyOn(confirmationService, 'confirm');
     component.onShareToSlack();
-    const opts = confirmSpy.mock.calls[0][0];
-    opts.accept?.();
+    // .at(-1), not [0]: vi.spyOn returns the same spy instance across repeated calls in this
+    // helper (calls accumulate, they aren't reset), so a test that invokes this twice must read
+    // the most recent confirm() call, not the first.
+    const opts = confirmSpy.mock.calls.at(-1)?.[0];
+    opts?.accept?.();
   }
 
   it('sends the brief and shows a success toast on a 200', () => {
