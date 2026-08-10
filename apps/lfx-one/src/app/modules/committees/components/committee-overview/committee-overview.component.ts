@@ -33,7 +33,6 @@ import {
   Survey,
   Vote,
   WeeklyBriefActionItem,
-  WeeklyBriefState,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
@@ -675,8 +674,8 @@ export class CommitteeOverviewComponent {
   // before that resolution, reading the flag only inside switchMap would take the disabled branch
   // once and never re-evaluate, since committee() itself doesn't change again.
   //
-  // revision/state (read off the card's own `brief` signal via weeklyBriefCardRef) are in the
-  // tracked key too — a generate/regenerate/save can land a new brief revision on the same page
+  // revision/state (read off the card's own `brief` signal via weeklyBriefCardRef) drive an inner
+  // refetch trigger — a generate/regenerate/save can land a new brief revision on the same page
   // visit without committee uid or the enabled gate ever changing, and the server's cache key is
   // revision-scoped, so without this the widget would keep showing stale (or empty, pre-first-
   // generate) items until a full remount/reload (Cursor Bugbot review). `state` alone isn't
@@ -685,14 +684,22 @@ export class CommitteeOverviewComponent {
   // revision bump AND the later generating→generated transition each re-trigger a fetch, so the
   // real content is picked up once it's actually ready rather than only once at 'generating'.
   //
-  // startWith([]) clears the previous committee's items synchronously on every uid change —
-  // without it, toSignal retains the last-emitted array until the new fetch resolves, so a
-  // committee switch could briefly re-badge committee A's AI-extracted items with committee B's
-  // name (initPendingActionItems() stamps `badge: this.committee().name` onto whatever
-  // briefActionItems() currently holds). Safe against a spurious fade: votesLoading()/surveysLoading()
-  // are already true for the new committee at this point (both reset synchronously in their own
-  // switchMap), so the section's outer visibility gate stays satisfied through this transition.
+  // Deliberately kept as its OWN observable rather than folded into the outer `{uid, enabled}`
+  // stream below: `startWith([])` needs to fire once per committee/enabled transition (to clear
+  // the previous committee's items — see below), but NOT on every revision/state change within
+  // the SAME committee visit, or a same-visit generate/regenerate/save would synchronously flash
+  // the whole widget to empty before the refetch resolves (Cursor Bugbot review, round 2 — the
+  // first attempt applied startWith per revision/state change too). Nesting this inside the outer
+  // switchMap means `startWith([])` only wraps the outer transition; inner revision/state-driven
+  // refetches replace the displayed array only once new data arrives, no interim clear.
   private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
+    const briefRevisionState$ = toObservable(
+      computed(() => ({
+        revision: this.weeklyBriefCardRef()?.brief()?.revision,
+        briefState: this.weeklyBriefCardRef()?.brief()?.state,
+      }))
+    ).pipe(distinctUntilChanged((a, b) => a.revision === b.revision && a.briefState === b.briefState));
+
     return toSignal(
       // enabled requires canEdit() (committee#writer), not just the feature flag — the backend
       // endpoint (getActionItems) is gated on committee#auditor via assertCommitteeRead, which
@@ -703,20 +710,22 @@ export class CommitteeOverviewComponent {
       // what this fetch attempts and what the backend permits. Matches the sibling
       // weekly-brief-card gate one section up: `weeklyBriefEnabled() && canEdit()` (PR #1362
       // review — Copilot + @dealako).
-      toObservable(
-        computed(() => ({
-          uid: this.committee()?.uid,
-          enabled: this.weeklyBriefEnabled() && this.canEdit(),
-          revision: this.weeklyBriefCardRef()?.brief()?.revision,
-          briefState: this.weeklyBriefCardRef()?.brief()?.state,
-        }))
-      ).pipe(
-        filter((s): s is { uid: string; enabled: boolean; revision: number | undefined; briefState: WeeklyBriefState | undefined } => !!s.uid),
-        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled && a.revision === b.revision && a.briefState === b.briefState),
+      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
+        filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
+        // startWith([]) here clears the previous committee's items synchronously on every uid/
+        // enabled change — without it, toSignal retains the last-emitted array until the new
+        // fetch resolves, so a committee switch could briefly re-badge committee A's AI-extracted
+        // items with committee B's name (initPendingActionItems() stamps `badge: this.committee().
+        // name` onto whatever briefActionItems() currently holds). Safe against a spurious fade:
+        // votesLoading()/surveysLoading() are already true for the new committee at this point
+        // (both reset synchronously in their own switchMap), so the section's outer visibility
+        // gate stays satisfied through this transition. Positioned OUTSIDE the inner switchMap
+        // below (not per revision/state change) — see the class-level comment above.
         switchMap(({ uid, enabled }) =>
           enabled
-            ? this.weeklyBriefService.getActionItems(uid).pipe(
-                map((response) => response.items),
+            ? briefRevisionState$.pipe(
+                switchMap(() => this.weeklyBriefService.getActionItems(uid).pipe(map((response) => response.items))),
                 startWith<WeeklyBriefActionItem[]>([])
               )
             : of<WeeklyBriefActionItem[]>([])
