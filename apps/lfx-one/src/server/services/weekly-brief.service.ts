@@ -705,9 +705,12 @@ export class WeeklyBriefService {
     }
 
     // isProjectWriter (checked above) is the newsletter service's actual authorization
-    // boundary, so the caller's own bearer token is used as-is here — no token swap,
-    // and the sender's display name resolves correctly from the caller's own JWT
-    // principal (see NewsletterServiceClient#sendNewsletter's doc comment).
+    // boundary, so the caller's own bearer token is used as-is here — no token swap at
+    // this layer (see NewsletterServiceClient#sendNewsletter's doc comment). The sender's
+    // display name resolves from that token's JWT principal — which, under impersonation,
+    // is the TARGET's principal, since auth.middleware.ts has already swapped
+    // req.bearerToken to the impersonation token by the time this method runs (known
+    // pre-existing gap, tracked in LFXV2-3093; see weekly-brief.route.ts's /share comment).
     const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
       subject,
       body_html: bodyHtml,
