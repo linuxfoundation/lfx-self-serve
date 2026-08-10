@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -33,6 +33,7 @@ import {
   Survey,
   Vote,
   WeeklyBriefActionItem,
+  WeeklyBriefState,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
@@ -97,6 +98,13 @@ export class CommitteeOverviewComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly weeklyBriefService = inject(WeeklyBriefService);
   private readonly hiddenActionsService = inject(HiddenActionsService);
+
+  // Reactive handle on the child card's own `brief` signal (LFXV2-3043, Cursor Bugbot review) —
+  // initBriefActionItems needs to know when a generate/regenerate/save lands a new revision on
+  // the SAME page visit, not just when the committee or the enabled gate changes. The card only
+  // renders when weeklyBriefEnabled() && canEdit(), same precondition initBriefActionItems
+  // already gates on, so this is undefined exactly when the fetch is disabled anyway.
+  private readonly weeklyBriefCardRef = viewChild(WeeklyBriefCardComponent);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -667,6 +675,16 @@ export class CommitteeOverviewComponent {
   // before that resolution, reading the flag only inside switchMap would take the disabled branch
   // once and never re-evaluate, since committee() itself doesn't change again.
   //
+  // revision/state (read off the card's own `brief` signal via weeklyBriefCardRef) are in the
+  // tracked key too — a generate/regenerate/save can land a new brief revision on the same page
+  // visit without committee uid or the enabled gate ever changing, and the server's cache key is
+  // revision-scoped, so without this the widget would keep showing stale (or empty, pre-first-
+  // generate) items until a full remount/reload (Cursor Bugbot review). `state` alone isn't
+  // enough either: a regenerate's revision bump lands immediately (in the 202 response), while
+  // `state` is still 'generating' until the poll completes — tracking both means both the
+  // revision bump AND the later generating→generated transition each re-trigger a fetch, so the
+  // real content is picked up once it's actually ready rather than only once at 'generating'.
+  //
   // startWith([]) clears the previous committee's items synchronously on every uid change —
   // without it, toSignal retains the last-emitted array until the new fetch resolves, so a
   // committee switch could briefly re-badge committee A's AI-extracted items with committee B's
@@ -685,9 +703,16 @@ export class CommitteeOverviewComponent {
       // what this fetch attempts and what the backend permits. Matches the sibling
       // weekly-brief-card gate one section up: `weeklyBriefEnabled() && canEdit()` (PR #1362
       // review — Copilot + @dealako).
-      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
-        filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
-        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
+      toObservable(
+        computed(() => ({
+          uid: this.committee()?.uid,
+          enabled: this.weeklyBriefEnabled() && this.canEdit(),
+          revision: this.weeklyBriefCardRef()?.brief()?.revision,
+          briefState: this.weeklyBriefCardRef()?.brief()?.state,
+        }))
+      ).pipe(
+        filter((s): s is { uid: string; enabled: boolean; revision: number | undefined; briefState: WeeklyBriefState | undefined } => !!s.uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled && a.revision === b.revision && a.briefState === b.briefState),
         switchMap(({ uid, enabled }) =>
           enabled
             ? this.weeklyBriefService.getActionItems(uid).pipe(

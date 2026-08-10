@@ -260,7 +260,7 @@ describe('AiService.generateNewsletter', () => {
     process.env = { ...originalEnv };
   });
 
-  it('gets its own NEWSLETTER_TIMEOUT_MS, not the generic default shared with agenda generation (PR #1362 review — Copilot, Cursor Bugbot, @dealako)', async () => {
+  it('gets its own NEWSLETTER_TIMEOUT_MS, not the generic default shared with agenda generation', async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
     fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ subject: 'Subject', bodyHtml: '<p>Body</p>' })));
 
