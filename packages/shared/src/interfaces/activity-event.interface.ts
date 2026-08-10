@@ -5,13 +5,17 @@ import type { CommitteeDocumentType } from './committee.interface';
 
 /**
  * Full target lifecycle-event vocabulary for a committee's activity feed (LFXV2-1707). Only
- * `meeting_held`, `vote_opened`/`vote_closed`, `survey_published`/`survey_closed`, and
- * `document_uploaded` are actually emitted in v1 (aggregation-derived from existing sources: past
- * meetings, votes, surveys, documents — see `committee-activity.service.ts`). `document_deleted`,
- * `member_joined`, `member_left`, and `notes_added` (see `DeferredActivityEvent`) are deferred: no
- * upstream source exists yet (no document-delete tombstone — hard delete, unindexed; no
- * committee-membership history tracking; no notes feature). The union stays complete now so the
- * wire contract doesn't grow a breaking change when a real event log starts emitting them.
+ * `meeting_held`, `vote_opened`/`vote_closed`, `survey_published`/`survey_closed`,
+ * `document_uploaded`, and `notes_added` are actually emitted in v1 (aggregation-derived from
+ * existing sources: past meetings, votes, surveys, documents, meeting attachments — see
+ * `committee-activity.service.ts`). `notes_added` is sourced from `MeetingAttachment` /
+ * `PastMeetingAttachment` rows whose `category` is `'Notes'` (LFXV2-3077) — a new aggregation leg,
+ * not a filter on the `document_uploaded` leg, since folders/links/`committee_document` files carry
+ * no `category` field. `document_deleted`, `member_joined`, and `member_left` (see
+ * `DeferredActivityEvent`) remain deferred: no upstream source exists yet (no document-delete
+ * tombstone — hard delete, unindexed; no committee-membership history tracking). The union stays
+ * complete now so the wire contract doesn't grow a breaking change when a real event log starts
+ * emitting them.
  *
  * Derived from `ActivityEvent['type']` (declared below — TypeScript allows forward references
  * between type aliases in the same module) rather than hand-restated, so adding, removing, or
@@ -93,12 +97,36 @@ export interface DocumentUploadedActivityEvent extends BaseActivityEvent {
 }
 
 /**
+ * Sourced from `MeetingAttachment` (`v1_meeting_attachment`) / `PastMeetingAttachment`
+ * (`v1_past_meeting_attachment`) rows whose `category` is `'Notes'` — see
+ * `CommitteeActivityService.fetchNotesAddedEvents` (LFXV2-3077).
+ */
+export interface NotesAddedActivityEvent extends BaseActivityEvent {
+  type: 'notes_added';
+  payload: {
+    document_uid: string;
+    name: string;
+    document_type: 'file' | 'link';
+    /** Only set for document_type: 'link' — same asymmetry as DocumentUploadedActivityEvent.payload.url. */
+    url?: string;
+    meeting_id: string;
+    /**
+     * v1_meeting_attachment ('upcoming') vs v1_past_meeting_attachment ('past') — two distinct
+     * upstream uid namespaces, same reasoning as document_uploaded's document_type discriminant.
+     * Drives eventKey's namespace (committee-activity.service.ts) and the client's tab-routing
+     * action (activity-feed.utils.ts).
+     */
+    meeting_scope: 'upcoming' | 'past';
+  };
+}
+
+/**
  * Placeholder variant for the deferred event types — never constructed in v1 (no upstream source
  * exists to populate it). Kept in the union so `ActivityEventType` stays the full target vocabulary
  * without every consumer needing a separate "future type" case.
  */
 export interface DeferredActivityEvent extends BaseActivityEvent {
-  type: 'document_deleted' | 'member_joined' | 'member_left' | 'notes_added';
+  type: 'document_deleted' | 'member_joined' | 'member_left';
   payload: Record<string, never>;
 }
 
@@ -116,4 +144,5 @@ export type ActivityEvent =
   | SurveyPublishedActivityEvent
   | SurveyClosedActivityEvent
   | DocumentUploadedActivityEvent
+  | NotesAddedActivityEvent
   | DeferredActivityEvent;

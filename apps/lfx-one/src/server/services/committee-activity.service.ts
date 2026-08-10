@@ -14,8 +14,11 @@ import type {
   CommitteeActivityLink,
   CommitteeActivityQuery,
   DocumentUploadedActivityEvent,
+  MeetingAttachment,
+  NotesAddedActivityEvent,
   PaginatedResponse,
   PastMeeting,
+  PastMeetingAttachment,
   QueryServiceResponse,
   Survey,
   SurveyClosedActivityEvent,
@@ -63,6 +66,8 @@ function eventKey(event: ActivityEvent): string {
       return `survey:${event.payload.survey_uid}`;
     case 'document_uploaded':
       return `document:${event.payload.document_type}:${event.payload.document_uid}`;
+    case 'notes_added':
+      return `note:${event.payload.meeting_scope}:${event.payload.document_uid}`;
     default:
       // Deferred types are never constructed in v1 (see activity-event.interface.ts) — occurred_at
       // is the least-bad fallback key if one ever were.
@@ -323,7 +328,7 @@ export class CommitteeActivityService {
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
-    const [committee, pastMeetingResult, voteResult, surveyResult, documentResult] = await Promise.all([
+    const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
@@ -341,12 +346,22 @@ export class CommitteeActivityService {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
         return { events: [], saturated: false };
       }),
+      this.fetchNotesAddedEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
+        logger.warning(req, 'get_committee_activity', 'Failed to fetch notes activity, continuing without it', { committee_uid: committeeUid, err });
+        return { events: [], saturated: false };
+      }),
     ]);
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
     // doc comment) — by this line `committee` is always a resolved Committee.
     const votingEnabled = committee.enable_voting;
-    const sources: ActivityEvent[][] = [pastMeetingResult.events, votingEnabled ? voteResult.events : [], surveyResult.events, documentResult.events];
+    const sources: ActivityEvent[][] = [
+      pastMeetingResult.events,
+      votingEnabled ? voteResult.events : [],
+      surveyResult.events,
+      documentResult.events,
+      notesResult.events,
+    ];
 
     // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
     // (occurred_at, key). No per-source pre-cap — a global sort+slice already picks the true top
@@ -384,7 +399,8 @@ export class CommitteeActivityService {
     // bound at all (fetched in full every call) and are already filtered+bounded correctly against
     // the exact cursor inside fetchDocumentEvents, so a fetched length at `fetchSize` there reflects
     // this leg's own internal cap, not an upstream truncation signal.
-    const anyLegSaturated = pastMeetingResult.saturated || (votingEnabled && voteResult.saturated) || surveyResult.saturated || documentResult.saturated;
+    const anyLegSaturated =
+      pastMeetingResult.saturated || (votingEnabled && voteResult.saturated) || surveyResult.saturated || documentResult.saturated || notesResult.saturated;
 
     const page = windowed.slice(0, limit);
     const data = page.map(({ event }) => event);
@@ -421,6 +437,7 @@ export class CommitteeActivityService {
       vote_count: voteResult.events.length,
       survey_count: surveyResult.events.length,
       document_count: documentResult.events.length,
+      notes_count: notesResult.events.length,
       voting_enabled: votingEnabled,
       returned: data.length,
       has_more: hasMore,
@@ -828,6 +845,105 @@ export class CommitteeActivityService {
       occurred_at: occurredAt,
       committee_uid: committeeUid,
       payload: { document_uid: documentUid, name, document_type: documentType, url },
+    };
+  }
+
+  // ─── Notes → notes_added ────────────────────────────────────────────────────
+
+  /**
+   * A new aggregation leg, NOT a filter on fetchDocumentEvents above — folders/links/
+   * committee_document files carry no `category` field, so a Notes-category row can only come
+   * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
+   * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
+   *
+   * filters: ['category:Notes'] is sent upstream (query-service's /query/resources accepts
+   * `filters` generically for any `type`, confirmed against lfx-v2-query-service's Goa design),
+   * but no existing caller of these two types in this repo has ever exercised that param on them
+   * — whether `category` is indexed as an exact-match field is unverified in practice. The
+   * unconditional client-side `category === 'Notes'` re-filter below (in the .map() call sites)
+   * is the actual correctness guarantee; the upstream filter is a best-effort payload-size
+   * optimization on top of it, not something this leg depends on for correctness.
+   */
+  private async fetchNotesAddedEvents(
+    req: Request,
+    committeeUid: string,
+    since: string | undefined,
+    before: string | undefined,
+    fetchSize: number
+  ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
+    const hasWindow = !!since || !!before;
+    const buildQuery = (type: string): Record<string, unknown> => ({
+      type,
+      parent: `committee:${committeeUid}`,
+      filters: ['category:Notes'],
+      page_size: fetchSize,
+      sort: 'updated_desc',
+      ...(hasWindow && { date_field: 'updated_at' }),
+      ...(since && { date_from: since }),
+      ...(before && { date_to: before }),
+    });
+
+    const [meetingResult, pastMeetingResult] = await Promise.all([
+      this.microserviceProxy
+        .proxyRequest<QueryServiceResponse<MeetingAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', buildQuery('v1_meeting_attachment'))
+        .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
+        .catch((err) => {
+          logger.warning(req, 'get_committee_activity', 'Failed to fetch upcoming-meeting notes attachments, continuing without them', {
+            committee_uid: committeeUid,
+            err,
+          });
+          return { attachments: [] as MeetingAttachment[], pageToken: undefined as string | undefined };
+        }),
+      this.microserviceProxy
+        .proxyRequest<QueryServiceResponse<PastMeetingAttachment> | null>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          buildQuery('v1_past_meeting_attachment')
+        )
+        .then((response) => ({ attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
+        .catch((err) => {
+          logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting notes attachments, continuing without them', {
+            committee_uid: committeeUid,
+            err,
+          });
+          return { attachments: [] as PastMeetingAttachment[], pageToken: undefined as string | undefined };
+        }),
+    ]);
+
+    const events = [
+      ...meetingResult.attachments
+        .filter((attachment) => attachment.category === 'Notes')
+        .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'upcoming')),
+      ...pastMeetingResult.attachments
+        .filter((attachment) => attachment.category === 'Notes')
+        .map((attachment) => this.buildNotesEvent(committeeUid, attachment, 'past')),
+    ];
+
+    // Both sub-legs are bounded to one upstream page_size-limited page (unlike
+    // fetchDocumentEvents, where only the files sub-leg is bounded and folders/links are
+    // excluded from saturation) — so either one's own page_token signals more data upstream.
+    return { events, saturated: !!meetingResult.pageToken || !!pastMeetingResult.pageToken };
+  }
+
+  private buildNotesEvent(
+    committeeUid: string,
+    attachment: MeetingAttachment | PastMeetingAttachment,
+    meetingScope: 'upcoming' | 'past'
+  ): NotesAddedActivityEvent {
+    return {
+      type: 'notes_added',
+      occurred_at: firstValidTimestamp(attachment.updated_at, attachment.created_at),
+      committee_uid: committeeUid,
+      payload: {
+        document_uid: attachment.uid,
+        name: attachment.name,
+        document_type: attachment.type,
+        url: attachment.type === 'link' ? attachment.link : undefined,
+        meeting_id: attachment.meeting_id,
+        meeting_scope: meetingScope,
+      },
     };
   }
 }

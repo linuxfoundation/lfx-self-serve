@@ -83,7 +83,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import type { ActivityPageCursor, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, MeetingAttachment, PastMeeting, PastMeetingAttachment, Survey, Vote } from '@lfx-one/shared/interfaces';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
@@ -129,12 +129,39 @@ function survey(overrides: Partial<Survey> = {}): Survey {
   } as Survey;
 }
 
+function meetingAttachment(overrides: Partial<MeetingAttachment> = {}): MeetingAttachment {
+  return {
+    uid: 'ma-1',
+    meeting_id: 'meeting-1',
+    type: 'file',
+    category: 'Notes',
+    name: 'Meeting Notes.pdf',
+    created_at: '2026-01-06T00:00:00Z',
+    ...overrides,
+  } as MeetingAttachment;
+}
+
+function pastMeetingAttachment(overrides: Partial<PastMeetingAttachment> = {}): PastMeetingAttachment {
+  return {
+    uid: 'pma-1',
+    meeting_and_occurrence_id: 'pm-1-occ-1',
+    meeting_id: 'meeting-1',
+    type: 'file',
+    category: 'Notes',
+    name: 'Past Meeting Notes.pdf',
+    created_at: '2026-01-07T00:00:00Z',
+    ...overrides,
+  } as PastMeetingAttachment;
+}
+
 /** Default proxyRequest router: benign empty responses for every leg unless a test overrides it. */
 function defaultProxyRequest(_req: Request, _service: string, path: string, _method: string, query?: Record<string, unknown>): unknown {
   if (path.endsWith('/folders')) return Promise.resolve([]);
   if (path.endsWith('/links')) return Promise.resolve([]);
   if (path === '/query/resources' && query?.['type'] === 'survey') return Promise.resolve({ resources: [] });
   if (path === '/query/resources' && query?.['type'] === 'committee_document') return Promise.resolve({ resources: [] });
+  if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') return Promise.resolve({ resources: [] });
+  if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') return Promise.resolve({ resources: [] });
   if (/^\/committees\/[^/]+$/.test(path)) return Promise.resolve({ uid: COMMITTEE_UID, enable_voting: true });
   throw new Error(`Unhandled proxyRequest call in test: ${path}`);
 }
@@ -843,6 +870,175 @@ describe('CommitteeActivityService', () => {
       await expect(service.getCommitteeActivity(req, uidNeedingEncoding, { limit: 8 })).rejects.toMatchObject({
         path: '/committees/committee%201',
       });
+    });
+  });
+
+  describe('notes_added leg', () => {
+    it('emits a notes_added event for a Notes-category v1_meeting_attachment row, scoped upcoming', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({ resources: [{ type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment() }] });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        type: 'notes_added',
+        payload: { document_uid: 'ma-1', name: 'Meeting Notes.pdf', document_type: 'file', meeting_id: 'meeting-1', meeting_scope: 'upcoming' },
+      });
+    });
+
+    it('emits a notes_added event for a Notes-category v1_past_meeting_attachment row, scoped past', async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') {
+          return Promise.resolve({ resources: [{ type: 'v1_past_meeting_attachment', id: 'pma-1', data: pastMeetingAttachment() }] });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        type: 'notes_added',
+        payload: { document_uid: 'pma-1', name: 'Past Meeting Notes.pdf', document_type: 'file', meeting_id: 'meeting-1', meeting_scope: 'past' },
+      });
+    });
+
+    it('drops a non-Notes-category attachment row even if the server-side filters param fails to narrow it', async () => {
+      // Validates the client-side re-filter decision: the upstream `filters: ['category:Notes']`
+      // param is a best-effort payload-size optimization, not something this leg's correctness
+      // depends on — this mock simulates the server-side filter not narrowing at all.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              { type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment({ category: 'Notes' }) },
+              { type: 'v1_meeting_attachment', id: 'ma-2', data: meetingAttachment({ uid: 'ma-2', category: 'Other' }) },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data.filter((e) => e.type === 'notes_added')).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ payload: { document_uid: 'ma-1' } });
+    });
+
+    it('queries both attachment types scoped by committee parent ref and the category filter', async () => {
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ type: 'v1_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, filters: ['category:Notes'] })
+      );
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ type: 'v1_past_meeting_attachment', parent: `committee:${COMMITTEE_UID}`, filters: ['category:Notes'] })
+      );
+    });
+
+    it('keeps upcoming-meeting and past-meeting notes as distinct events even when they share the same attachment uid', async () => {
+      // Regression for the meeting_scope-namespaced eventKey — v1_meeting_attachment and
+      // v1_past_meeting_attachment are two distinct upstream uid namespaces (same reasoning as
+      // document_uploaded's document_type discrimination). Paginating (not just an unpaginated
+      // merge) is what actually exercises the cursor-boundary collision risk.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              { type: 'v1_meeting_attachment', id: 'shared-uid', data: meetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z' }) },
+            ],
+          });
+        }
+        if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') {
+          return Promise.resolve({
+            resources: [
+              { type: 'v1_past_meeting_attachment', id: 'shared-uid', data: pastMeetingAttachment({ uid: 'shared-uid', created_at: '2026-01-05T00:00:00Z' }) },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const page1 = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 1 });
+      expect(page1.data).toHaveLength(1);
+      expect(page1.page_token).toBeDefined();
+
+      const cursor = encodeActivityPageToken.mock.calls.at(-1)?.[0] as ActivityPageCursor;
+      const page2 = await service.getCommitteeActivity(req, COMMITTEE_UID, { cursor, limit: 1 });
+
+      expect(page2.data).toHaveLength(1);
+      const scopes = [page1.data[0], page2.data[0]].map((e) => (e.type === 'notes_added' ? e.payload.meeting_scope : null)).sort();
+      expect(scopes).toEqual(['past', 'upcoming']);
+    });
+
+    it("sets hasMore when either notes sub-leg's upstream page_token signals more data", async () => {
+      const fetchSize = 25;
+      const attachments = Array.from({ length: fetchSize }, (_, i) =>
+        meetingAttachment({ uid: `ma-${i}`, created_at: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
+      );
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: attachments.map((a) => ({ type: 'v1_meeting_attachment', id: a.uid, data: a })),
+            page_token: 'more-notes-upstream',
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
+      expect(result.data).toHaveLength(1);
+      expect(result.page_token).toBeDefined();
+    });
+
+    it('degrades a failed notes sub-leg to empty without failing the whole feed', async () => {
+      getMeetings.mockResolvedValue({ data: [pastMeeting()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') return Promise.reject(new Error('upstream down'));
+        if (path === '/query/resources' && query?.['type'] === 'v1_past_meeting_attachment') {
+          return Promise.resolve({ resources: [{ type: 'v1_past_meeting_attachment', id: 'pma-1', data: pastMeetingAttachment() }] });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      const types = result.data.map((e) => e.type);
+      expect(types).toContain('meeting_held');
+      const notesEvent = result.data.find((e) => e.type === 'notes_added');
+      expect(notesEvent).toMatchObject({ payload: { meeting_scope: 'past' } });
+    });
+
+    it('merges all five sources including notes_added and sorts by occurred_at descending', async () => {
+      getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-01T00:00:00Z' })] });
+      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({ resources: [{ type: 'survey', id: 'survey-1', data: survey({ last_modified_at: '2026-01-02T00:00:00Z' }) }] });
+        }
+        if (path === '/query/resources' && query?.['type'] === 'committee_document') {
+          return Promise.resolve({
+            resources: [{ type: 'committee_document', id: 'doc-1', data: { uid: 'doc-1', name: 'Charter.pdf', updated_at: '2026-01-04T00:00:00Z' } }],
+          });
+        }
+        if (path === '/query/resources' && query?.['type'] === 'v1_meeting_attachment') {
+          return Promise.resolve({
+            resources: [{ type: 'v1_meeting_attachment', id: 'ma-1', data: meetingAttachment({ created_at: '2026-01-05T00:00:00Z' }) }],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data.map((e) => e.type)).toEqual(['notes_added', 'document_uploaded', 'vote_closed', 'survey_published', 'meeting_held']);
     });
   });
 
