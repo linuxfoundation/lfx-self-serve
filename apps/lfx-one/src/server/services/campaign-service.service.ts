@@ -4,9 +4,7 @@
 import type { CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { ProjectService } from './project.service';
 
 /**
  * `job-poll-response` as lfx-v2-campaign-service publishes it (`design/brief.go`).
@@ -35,10 +33,37 @@ interface CampaignServiceJobPollResponse {
  * LF-scoped by construction, gated by `executiveDirectorGuard` rather than by a per-project
  * permission. lfx-v2-campaign-service, by contrast, is `/projects/{projectId}/…` scoped
  * throughout and authorises on `campaign_manager` for that project. Bridging the two means
- * resolving one fixed slug, and this is it. Not 'the-linux-foundation' — 'tlf' is the
- * canonical form; the longer spelling resolves to nothing.
+ * one fixed slug, and this is it. Not 'the-linux-foundation' — 'tlf' is the canonical form;
+ * the longer spelling resolves to nothing.
+ *
+ * This value goes on the wire AS THE SLUG, deliberately un-resolved. campaign-service's
+ * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
+ * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
+ * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
+ * written under `tlf` is invisible to a poll made under the project's uid. Resolving the slug
+ * to a uid here would look more canonical and find nothing.
  */
 const LF_PROJECT_SLUG = 'tlf';
+
+/**
+ * True when `jobId` is a job campaign-service could possibly know about.
+ *
+ * The flag alone is not a safe router, and this is the reason. Campaign CREATION has not been
+ * cut over: `campaign-proxy.service.ts` still mints `job_<epoch>_<rand>` ids into an in-process
+ * `Map`. campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so such an id
+ * is rejected by the request decoder with a 400 before any lookup happens — and even without
+ * that validation there is no row to find, because nothing created one. Routing purely on the
+ * flag would therefore break every poll the moment the flag went on, which is the exact failure
+ * the flag exists to fix.
+ *
+ * Routing on the id's SHAPE is safe in both directions and needs no second flag: a `job_` id can
+ * only have come from this process, and a UUID can only have come from campaign-service. When
+ * creation is cut over, new ids become UUIDs and start taking the new path on their own; ids
+ * minted before the cutover keep resolving against the map that holds them.
+ */
+export function isCampaignServiceJobId(jobId: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
+}
 
 /**
  * Client for lfx-v2-campaign-service.
@@ -51,54 +76,9 @@ const LF_PROJECT_SLUG = 'tlf';
  */
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
-  private readonly projectService: ProjectService;
 
-  /**
-   * Memoised LF project uid. A slug→uid mapping is immutable for the life of a project, so
-   * caching it avoids a NATS round-trip on every campaign request.
-   *
-   * Only a SUCCESSFUL resolution is ever cached. `getProjectIdBySlug` converts a NATS
-   * timeout or a 503 no-responder into `exists: false` — indistinguishable, at this layer,
-   * from "there is no such project" — so caching a negative would turn one blip in the NATS
-   * connection into a permanently broken campaigns page for the lifetime of the pod, fixable
-   * only by a restart. An uncached negative costs one retry per request instead, which is
-   * the correct trade.
-   */
-  private lfProjectUid: string | null = null;
-
-  public constructor(microserviceProxy?: MicroserviceProxyService, projectService?: ProjectService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
-    this.projectService = projectService ?? new ProjectService();
-  }
-
-  /**
-   * Resolve the LF project uid that scopes every campaign-service path.
-   *
-   * Throws rather than returning a sentinel when resolution fails. The caller's alternative
-   * would be to fall back to the vendor-direct path, and a SILENT fallback is the worst
-   * available outcome: the page keeps working, so nobody investigates, and the cutover is
-   * reported as verified while every request is still being served by the code it was
-   * supposed to replace. A loud failure is recoverable by turning the flag off.
-   */
-  public async resolveLfProjectUid(req: Request): Promise<string> {
-    if (this.lfProjectUid) {
-      return this.lfProjectUid;
-    }
-
-    const result = await this.projectService.getProjectIdBySlug(req, LF_PROJECT_SLUG);
-    if (!result.exists || !result.uid) {
-      // 503, not 404. `getProjectIdBySlug` reports `exists: false` for BOTH "no such project"
-      // and "the query timed out / no NATS responder", and the two are indistinguishable from
-      // here. A 404 would tell the operator the LF project is missing — it is not — and would
-      // read as a permanent, client-side condition on a fault that is transient and ours.
-      throw new MicroserviceError(`could not resolve the '${LF_PROJECT_SLUG}' project needed to reach campaign-service`, 503, 'SERVICE_UNAVAILABLE', {
-        operation: 'resolve_lf_project_uid',
-        service: 'campaign_service_client',
-      });
-    }
-
-    this.lfProjectUid = result.uid;
-    return result.uid;
   }
 
   /**
@@ -110,11 +90,10 @@ export class CampaignServiceClient {
    * persists jobs, so this survives a replica switch.
    */
   public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
-    const projectUid = await this.resolveLfProjectUid(req);
     const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectUid)}/jobs/${encodeURIComponent(jobId)}`,
+      `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/jobs/${encodeURIComponent(jobId)}`,
       'GET'
     );
     return adaptJobPollResponse(response);
@@ -131,8 +110,12 @@ export class CampaignServiceClient {
  *   - `queued` is the state a job is in for its first tick. Forwarded raw it is not
  *     `'running'`, so the poll STOPS on the first response and the UI reports a finished
  *     create with no campaigns — for a job that has not started yet.
- *   - `succeeded` forwarded raw is likewise not `'running'`, so it would never terminate the
- *     poll either; the page would spin to the 300s cap on a job that finished immediately.
+ *   - `succeeded` forwarded raw is likewise not `'running'`, and `takeWhile`'s inclusive form
+ *     emits that final value before completing — so the poll ends promptly, but on a status
+ *     `getCreateResult` matches none of its arms. It falls through to the last `throw` and
+ *     reports "Campaign creation is taking longer than expected" for a job that finished
+ *     immediately and successfully. The failure is not a hang; it is a completed create
+ *     reported as a timeout, with the campaigns it made never rendered.
  *
  * Both failures are silent, which is why the mapping is explicit and tested rather than
  * inferred. `partial` maps to `done`: some platforms succeeded, and each platform's own `ok`

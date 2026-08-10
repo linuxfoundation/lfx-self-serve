@@ -348,7 +348,17 @@ environment:
   # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job
   # map, which only answers correctly when the poll lands on the pod that started the job.
   # Anything other than an explicit affirmative — including empty, and including a typo —
-  # keeps the existing behaviour, so a rollback is this value alone.
+  # keeps the existing behaviour, so a rollback is this value alone: no code change, no build,
+  # no image promotion.
+  #
+  # It is NOT a live switch. This is a container environment variable, so changing it edits the
+  # pod template and takes effect only as pods are replaced; with the default replica count and
+  # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
+  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
+  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
+  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # "rollback is one value" line onto a future flag whose two paths could both claim the same
+  # request — that one needs a no-overlap rollout or a shared runtime configuration source.
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
     value:
 

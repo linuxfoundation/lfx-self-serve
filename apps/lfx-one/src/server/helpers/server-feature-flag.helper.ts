@@ -10,10 +10,22 @@
  * campaign-service cutover can move one endpoint at a time and roll a bad one back by
  * changing an environment variable, without shipping code.
  *
- * Env vars are read on EVERY call rather than captured at module load. A flag whose value
- * is frozen at import time cannot be rolled back without a restart, which defeats the point,
- * and it also makes the flag untestable without module-registry surgery. The cost is a map
- * lookup per request, which is nothing next to the proxied HTTP call it gates.
+ * Be precise about what that buys, because "env var" reads as "instant" and it is not. The
+ * chart injects these as container environment variables, so changing one edits the Deployment
+ * pod template and reaches a process only through a rolling restart. What is avoided is a code
+ * change, a build and an image promotion — not a rollout. Plan for the rollout: with the
+ * default three replicas and a RollingUpdate, flag-on and flag-off pods overlap for its
+ * duration. That overlap is harmless HERE only because routing also depends on the job id's
+ * shape (`isCampaignServiceJobId`): a `job_` id goes to the in-process map on every pod
+ * regardless of the flag, and a UUID cannot exist until creation is cut over. A future flag
+ * whose two paths can both claim the same request needs a no-overlap rollout, or a runtime
+ * configuration source every replica observes at once.
+ *
+ * Env vars are read on EVERY call rather than captured at module load. Not for hot reload —
+ * see above, there is none — but because a value frozen at import time is untestable without
+ * module-registry surgery, and because a process that is sent a new value by any means (a
+ * `kubectl set env` on the pod, a future dynamic source) then honours it without a special
+ * case. The cost is a map lookup per request, which is nothing next to the HTTP call it gates.
  */
 
 /** Every server-side flag, and what turning it ON does. */

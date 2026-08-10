@@ -6,22 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
 // `@lfx-one/shared/interfaces` are type-only, so esbuild elides them.
-const { proxyRequest, getProjectIdBySlug } = vi.hoisted(() => ({ proxyRequest: vi.fn(), getProjectIdBySlug: vi.fn() }));
+const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
   },
 }));
-vi.mock('./project.service', () => ({
-  ProjectService: class {
-    public getProjectIdBySlug = getProjectIdBySlug;
-  },
-}));
 
 import type { Request } from 'express';
 
-import { adaptJobPollResponse, CampaignServiceClient } from './campaign-service.service';
+import { adaptJobPollResponse, CampaignServiceClient, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
@@ -98,55 +93,44 @@ describe('adaptJobPollResponse', () => {
   });
 });
 
-describe('CampaignServiceClient.resolveLfProjectUid', () => {
-  beforeEach(() => {
-    proxyRequest.mockReset();
-    getProjectIdBySlug.mockReset();
+describe('isCampaignServiceJobId', () => {
+  // Creation is NOT cut over: it still mints `job_<epoch>_<rand>` in `campaign-proxy.service.ts`,
+  // and campaign-service's `get-job` declares `Format(FormatUUID)` on the path parameter. Routing
+  // on the flag alone would 400 every poll the moment the flag was turned on — breaking the exact
+  // flow the flag exists to fix. The shape is what makes the two sources distinguishable.
+  it('accepts a campaign-service UUID job id', () => {
+    expect(isCampaignServiceJobId('3f2504e0-4f89-11d3-9a0c-0305e82c3301')).toBe(true);
+    expect(isCampaignServiceJobId('3F2504E0-4F89-11D3-9A0C-0305E82C3301')).toBe(true);
   });
 
-  it('resolves the tlf project and caches the successful lookup', async () => {
-    getProjectIdBySlug.mockResolvedValue({ uid: 'uid-1', slug: 'tlf', exists: true });
-    const client = new CampaignServiceClient();
-
-    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
-    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
-    expect(getProjectIdBySlug).toHaveBeenCalledTimes(1);
-    expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'tlf');
-  });
-
-  // `getProjectIdBySlug` reports `exists: false` for a NATS timeout as well as for a genuinely
-  // missing project. Caching the negative would turn one blip into a campaigns page that stays
-  // broken for the life of the pod.
-  it('does not cache a failed lookup, and reports it as 503 rather than 404', async () => {
-    getProjectIdBySlug.mockResolvedValueOnce({ slug: 'tlf', exists: false });
-    const client = new CampaignServiceClient();
-
-    await expect(client.resolveLfProjectUid(req)).rejects.toMatchObject({ statusCode: 503 });
-
-    getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-1', slug: 'tlf', exists: true });
-    await expect(client.resolveLfProjectUid(req)).resolves.toBe('uid-1');
-    expect(getProjectIdBySlug).toHaveBeenCalledTimes(2);
+  it('rejects the in-process job id shape so those polls keep their current source', () => {
+    expect(isCampaignServiceJobId('job_1754812800000_a1b2c3')).toBe(false);
+    expect(isCampaignServiceJobId('')).toBe(false);
+    expect(isCampaignServiceJobId('3f2504e0-4f89-11d3-9a0c-0305e82c330')).toBe(false);
+    expect(isCampaignServiceJobId('3f2504e0-4f89-11d3-9a0c-0305e82c3301-extra')).toBe(false);
   });
 });
 
 describe('CampaignServiceClient.getJobStatus', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
-    getProjectIdBySlug.mockReset();
-    getProjectIdBySlug.mockResolvedValue({ uid: 'uid-1', slug: 'tlf', exists: true });
   });
 
-  it('scopes the request to the resolved project and adapts the response', async () => {
+  // The SLUG goes on the wire, deliberately un-resolved. `create-brief` accepts a slug only
+  // (`Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`, which a UUID fails) and stores exactly that string;
+  // `GetJob` then scopes with an EXACT `b.project_id = $2`. Polling under the project's uid
+  // would look more canonical and never find the job.
+  it('scopes the request to the tlf slug, not to a resolved uid', async () => {
     proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
 
     await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({ status: 'running' });
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/uid-1/jobs/j1', 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/j1', 'GET');
   });
 
   it('encodes the job id into the path', async () => {
     proxyRequest.mockResolvedValue({ job_id: 'a/b', status: 'running' });
 
     await new CampaignServiceClient().getJobStatus(req, 'a/b');
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/uid-1/jobs/a%2Fb', 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/a%2Fb', 'GET');
   });
 });

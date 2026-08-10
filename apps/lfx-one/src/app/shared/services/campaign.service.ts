@@ -79,7 +79,20 @@ export class CampaignService {
             platformResults: status.platformResults,
           };
         }
-        if (status.status === 'error') throw new Error(status.error || 'Campaign creation was unsuccessful. Please try again.');
+        if (status.status === 'error') {
+          const message = status.error || 'Campaign creation was unsuccessful. Please try again.';
+          // A failed job that still reported per-platform results is a terminal OUTCOME, not a
+          // bare error, and it must not be flattened into a thrown message. campaign-service
+          // attaches `result` to `failed` jobs as well as successful ones, and a failed entry
+          // can carry a `campaignId`: the campaign really was created upstream and only the
+          // recording of it failed. That orphaned id is the one piece of state nobody can
+          // recover from anywhere else — throwing here would leave real paid campaigns running
+          // with nothing in this system pointing at them. Report the failure AND the rows.
+          if (status.platformResults?.length) {
+            return { campaigns: [], errors: [message], platformResults: status.platformResults };
+          }
+          throw new Error(message);
+        }
         if (status.status === 'not_found') throw new Error('Lost connection to the campaign creation process. Please try again.');
         throw new Error('Campaign creation is taking longer than expected. Check Google Ads to see if your campaign was created.');
       })

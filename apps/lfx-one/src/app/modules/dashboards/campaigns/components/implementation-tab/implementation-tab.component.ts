@@ -86,6 +86,16 @@ export class ImplementationTabComponent implements OnInit {
    * folding it into `results` would mean rendering zeros for numbers nobody measured.
    */
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
+
+  /**
+   * Whether ANY platform in `platformResults` succeeded.
+   *
+   * The panel used to be unconditionally green and headed "Campaigns Created", which was true
+   * while only successful jobs carried per-platform rows. A failed job carries them too — that
+   * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
+   * otherwise be announced as a success in green.
+   */
+  protected readonly anyPlatformCreated = computed(() => this.platformResults().some((r) => r.ok));
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
   protected readonly briefHsToken = signal<string | null>(null);

@@ -22,7 +22,7 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
-import { CampaignServiceClient } from '../services/campaign-service.service';
+import { CampaignServiceClient, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -257,9 +257,18 @@ export class CampaignController {
     // other (see `adaptJobPollResponse` — the status vocabularies differ, and campaign-service
     // reports per-platform results rather than the vendor-direct path's `CampaignCreateResponse`).
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
-    // in-process path and `platformResults` on the campaign-service path. Rollback stays an env
-    // change rather than a deploy.
-    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+    // in-process path and `platformResults` on the campaign-service path.
+    //
+    // The flag is necessary but NOT sufficient to route: creation is not cut over, so
+    // `createCampaign` above still mints `job_<epoch>_<rand>` into the in-process map, and
+    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id` — it would answer
+    // 400 for every one of them. Flag-only routing would therefore break all polling the moment
+    // the flag went on, which is the failure the flag exists to fix. `isCampaignServiceJobId`
+    // adds the second condition, and it needs no separate flag of its own: a `job_` id can only
+    // have come from this process and a UUID can only have come from campaign-service, so ids
+    // minted either side of the create cutover keep resolving against the store that holds them.
+    // Rollback stays an env change (plus the pod rollout that applies it) rather than a deploy.
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs) && isCampaignServiceJobId(jobId);
     const startTime = logger.startOperation(req, 'campaign_job_status', { jobId, source: viaCampaignService ? 'campaign_service' : 'in_process' });
 
     try {
