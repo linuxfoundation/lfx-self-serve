@@ -541,7 +541,18 @@ export class CommitteeOverviewComponent {
           this.selectedVote.set(vote);
           this.voteDrawerVisible.set(true);
         } else {
-          this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
+          // "Try the Votes tab instead" is only true when that tab actually exists —
+          // committee-view.component.ts hides it when enable_voting is false, and a weekly
+          // brief's vote chip deliberately still renders in that state (see
+          // mapWeeklyBriefSourceRefsToChips's 'vote' case) since a brief's window can predate
+          // voting being turned off. Neutral copy avoids pointing at a tab that isn't there
+          // (Copilot review, PR #1363).
+          const votesTabVisible = !!this.committee()?.enable_voting;
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Vote unavailable',
+            detail: votesTabVisible ? 'This vote could not be found. Try the Votes tab instead.' : 'This vote could not be found.',
+          });
         }
       });
   }

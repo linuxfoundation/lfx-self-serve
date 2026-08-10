@@ -162,7 +162,11 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
     prompt_version: 'v1',
     model: 'mock',
     regeneration_count: 0,
-    private_source_present: false,
+    // Upstream's derivePrivateSourcePresent (group_weekly_brief_generator.go) always sets this
+    // true when the brief has any member activity — "members are inherently private" — and a
+    // "members" source_ref only exists when memberCount > 0, so a members ref + false here is a
+    // combination upstream can never actually produce (Copilot review, PR #1363).
+    private_source_present: true,
     created_at: nowIso,
     updated_at: nowIso,
     revision: 1,

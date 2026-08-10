@@ -712,7 +712,11 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
   });
 
-  test('clicking a vote chip shows an unavailable toast when the by-uid fetch itself fails', async ({ page }) => {
+  test('clicking a vote chip shows a neutral unavailable toast when voting is disabled for the committee', async ({ page }) => {
+    // mockCommitteeShell's default fixture has enable_voting: false — committee-view hides the
+    // Votes tab in that state, so the toast must not point at a tab that doesn't exist (Copilot
+    // review, PR #1363: a weekly-brief vote chip deliberately still renders even when voting is
+    // off, since a brief's window can predate voting being disabled).
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
@@ -731,10 +735,31 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByText(/This vote could not be found\. Try the Votes tab instead\./i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText('This vote could not be found.', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText(/Try the Votes tab instead/i)).toHaveCount(0);
     // p-drawer's host element can remain in the DOM while closed (PrimeNG toggles visibility,
     // not presence) — assert not-visible, not absent, so this holds regardless of that detail.
     await expect(page.getByTestId('vote-results-drawer')).not.toBeVisible();
+  });
+
+  test('clicking a vote chip mentions the Votes tab in the unavailable toast when voting is enabled', async ({ page }) => {
+    await mockCommitteeShell(page, { enable_voting: true });
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.route('**/api/votes/src-vote-1**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await expect(page.getByText(/This vote could not be found\. Try the Votes tab instead\./i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('a slower, superseded vote fetch does not overwrite a faster, newer selection (concurrent click race)', async ({ page }) => {
