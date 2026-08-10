@@ -922,8 +922,11 @@ export class CommitteeActivityService {
     // reaches buildNotesEventsForScope: buildNotesEvent writes it into the user-visible
     // `payload.meeting_scope`, which activity-feed.utils.ts uses to namespace the feed item's
     // @for tracking key — a swapped scope there is payload-corrupting, not just a wrong log line.
-    // `as const` pins this to exactly a 2-tuple so `results` below can't silently grow a third,
-    // unhandled source if one is ever added without also updating the code that consumes it.
+    // `as const` is what narrows `scope` to the literal union fetchNoteAttachmentPage's `scope`
+    // param requires (without it, the literal widens to `scope: string`). Not an arity guard —
+    // `results` below is consumed by `flatMap`/`some`, both N-safe by construction, so a third
+    // source added here would be fully handled, not silently dropped; the narrowed `type` param
+    // (not this array) is what would catch a typo'd resource-type string at compile time.
     const ATTACHMENT_SOURCES = [
       { type: 'v1_meeting_attachment', scope: 'upcoming' },
       { type: 'v1_past_meeting_attachment', scope: 'past' },
