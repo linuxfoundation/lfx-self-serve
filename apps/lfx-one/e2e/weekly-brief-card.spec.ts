@@ -116,6 +116,17 @@ const BRIEF_WITH_SOURCES: WeeklyBrief = {
   ],
 };
 
+// Two distinct vote refs — for the concurrent-click race test only (PR #1363 review: Copilot,
+// Cursor Bugbot, and a human reviewer all independently caught that a single in-flight boolean
+// let an earlier fetch's late response overwrite a newer, already-open selection).
+const BRIEF_WITH_TWO_VOTES: WeeklyBrief = {
+  ...GENERATED_BRIEF,
+  source_refs: [
+    { id: 'src-vote-1', kind: 'vote', title: 'Q1 Budget' },
+    { id: 'src-vote-2', kind: 'vote', title: 'Q2 Budget' },
+  ],
+};
+
 function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
   return {
     uid: TEST_COMMITTEE_UID,
@@ -714,6 +725,96 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     // p-drawer's host element can remain in the DOM while closed (PrimeNG toggles visibility,
     // not presence) — assert not-visible, not absent, so this holds regardless of that detail.
     await expect(page.getByTestId('vote-results-drawer')).not.toBeVisible();
+  });
+
+  test('a slower, superseded vote fetch does not overwrite a faster, newer selection (concurrent click race)', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_TWO_VOTES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    // Vote A: absent from the list, so clicking it triggers openVoteDrawer's fetch fallback —
+    // deliberately delayed so it's still in flight when vote B is clicked next.
+    const voteA: Vote = {
+      uid: 'src-vote-1',
+      name: 'Q1 Budget',
+      end_time: '2026-06-01T00:00:00.000Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid-wb',
+    };
+    // Vote B: present in the list, so it's a votes()-cache hit — opens synchronously.
+    const voteB: Vote = {
+      uid: 'src-vote-2',
+      name: 'Q2 Budget',
+      end_time: '2026-06-08T00:00:00.000Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid-wb',
+    };
+    const resultsFor = (v: Vote): VoteResultsResponse => ({
+      poll_results: [],
+      comment_results: [],
+      num_recipients: 0,
+      num_votes_cast: 0,
+      num_abstained: 0,
+      poll_end_time: v.end_time,
+    });
+
+    await page.route('**/api/votes*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [voteB] }) });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/votes/src-vote-1**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      // The delay is the point: vote B must be clicked and open before this resolves.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const url = route.request().url();
+      if (url.includes('/results')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resultsFor(voteA)) });
+        return;
+      }
+      if (url.includes('/my-response')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteA) });
+    });
+    // Vote B is a votes()-cache hit for committee-overview's own lookup, but
+    // VoteResultsDrawerComponent still independently re-fetches by uid once it's open.
+    await page.route('**/api/votes/src-vote-2**', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      const url = route.request().url();
+      if (url.includes('/results')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resultsFor(voteB)) });
+        return;
+      }
+      if (url.includes('/my-response')) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteB) });
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Click A (starts its delayed fetch), then immediately click B (cached — opens synchronously)
+    // before A's fetch resolves.
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await page.getByTestId('weekly-brief-card-source-chip-src-vote-2').click();
+    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
+
+    // Give A's delayed response time to land, then confirm it did NOT clobber B's drawer —
+    // this is the regression this test exists to catch (PR #1363 review).
+    await page.waitForTimeout(1200);
+    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
   });
 
   test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {

@@ -140,10 +140,14 @@ export class CommitteeOverviewComponent {
   public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
-  // True while openVoteDrawer's cache-miss fallback fetch (getVote) is in flight — an
-  // idempotency guard, not a template-facing spinner (matches pending-actions.component.ts's
-  // loadingVoteUids, simplified to a single flag since only one vote drawer can be open here).
-  private voteDrawerFetchInFlight = signal(false);
+  // The uid openVoteDrawer's cache-miss fallback fetch (getVote) is currently in flight for, or
+  // null when idle — an idempotency/staleness guard, not a template-facing spinner. Tracks the
+  // requested uid (not just a boolean) so a second click on a *different* uid while the first
+  // is still in flight can supersede it, and a late response for a uid that's no longer the
+  // latest request gets discarded instead of silently overwriting a newer selection (PR #1363
+  // review: Copilot, Cursor Bugbot, and @dealako all independently flagged the boolean-only
+  // version's race — see openVoteDrawer's own comment for the two failure modes it caused).
+  private voteDrawerFetchInFlight = signal<string | null>(null);
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);
@@ -315,15 +319,21 @@ export class CommitteeOverviewComponent {
       this.selectedVoteId.set(cached.uid);
       this.selectedVote.set(cached);
       this.voteDrawerVisible.set(true);
+      // A fetch for a *different* uid may still be in flight from an earlier click — clear the
+      // tracked target so its eventual next()/error() handler (which checks this signal against
+      // its own uid before applying anything) discards that now-stale response instead of
+      // overwriting this newer, synchronously-resolved selection.
+      this.voteDrawerFetchInFlight.set(null);
       return;
     }
 
-    // Idempotency guard: a fetch is already in flight — let it complete rather than firing a
-    // second GET (matches pending-actions.component.ts's loadingVoteUids guard; only one vote
-    // drawer can be open in this component, so a single flag suffices where that component
-    // needs a per-row Set).
-    if (this.voteDrawerFetchInFlight()) return;
-    this.voteDrawerFetchInFlight.set(true);
+    // Same uid already fetching — let it complete rather than firing a duplicate GET. A
+    // *different* uid, though, supersedes rather than getting silently dropped: updating the
+    // tracked target below means an earlier fetch's response will fail the uid check in
+    // next()/error() and be discarded, while this click gets its own fetch. "Latest click wins"
+    // — the imperative equivalent of switchMap, without restructuring this into a stream.
+    if (this.voteDrawerFetchInFlight() === voteUid) return;
+    this.voteDrawerFetchInFlight.set(voteUid);
     const committeeUid = this.committee()?.uid;
     this.voteService
       .getVote(voteUid)
@@ -335,15 +345,31 @@ export class CommitteeOverviewComponent {
         // rationale as weekly-brief-card.component.ts's identical guard on its own async calls).
         takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
         takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.voteDrawerFetchInFlight.set(false))
+        // Covers cancellation (takeUntil firing on a committee change) as well as normal
+        // completion — next()/error() below already clear this when they're still the current
+        // target, so this is a no-op in that case; the `=== voteUid` check still matters here
+        // because a *different*, newer fetch's finalize must not clear its own in-progress
+        // tracking when this (now-cancelled) one tears down after it.
+        finalize(() => {
+          if (this.voteDrawerFetchInFlight() === voteUid) {
+            this.voteDrawerFetchInFlight.set(null);
+          }
+        })
       )
       .subscribe({
         next: (vote) => {
+          // Discard a stale response: the user has since clicked a different chip (a cache hit,
+          // which clears this to null above, or another uncached fetch, which overwrites it with
+          // a different uid) — only the fetch that's still the latest request may apply.
+          if (this.voteDrawerFetchInFlight() !== voteUid) return;
+          this.voteDrawerFetchInFlight.set(null);
           this.selectedVoteId.set(vote.uid);
           this.selectedVote.set(vote);
           this.voteDrawerVisible.set(true);
         },
         error: () => {
+          if (this.voteDrawerFetchInFlight() !== voteUid) return;
+          this.voteDrawerFetchInFlight.set(null);
           this.messageService.add({ severity: 'warn', summary: 'Vote unavailable', detail: 'This vote could not be found. Try the Votes tab instead.' });
         },
       });
