@@ -226,3 +226,46 @@ Args (dict):
 {{- fail (printf "ConfigMap name %q exceeds the 253-char DNS-1123 subdomain limit (release fullname + staticConfigMaps key %q is too long)" $cmName $name) -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Reject a per-service base URL that would route traffic around the gateway.
+
+`microservice-proxy.service.ts` resolves each of LFX_V2_CAMPAIGN_SERVICE,
+LFX_V2_MEMBER_SERVICE and LFX_V2_COMMITTEE_SERVICE to its own value when set
+and to LFX_V2_SERVICE otherwise. The fallback is what makes the gateway the
+default, and the gateway is where the authorization lives: Heimdall and
+OpenFGA enforce the per-project grant in front of these services, while a
+service's own token check authenticates the caller without authorizing them
+for the project they named. A base URL aimed straight at a service instance
+therefore lets any caller holding a valid token act on a project it has no
+grant for.
+
+Leaving the keys out of values.yaml was never enough on its own —
+deployment.yaml emits every entry in `.Values.environment`, so an override
+adds the variable without touching this chart. This is the render-time check
+that makes the omission binding, and failing here means the mistake surfaces
+in a diff-able `helm template` run rather than in a running pod.
+
+An empty value is allowed: `LFX_V2_MEMBER_SERVICE: {value: }` declares the key
+without setting it, which the container start-up treats as unset and which the
+application then resolves to LFX_V2_SERVICE — the intended routing.
+
+A deployment that genuinely needs a direct address (a mesh path that still
+enforces the grant, say) should change this list in a reviewed chart commit,
+which is the point: a values override is invisible to review, a chart change
+is not.
+
+Call once at the top of any template that renders .Values.environment:
+  {{- include "lfx-self-serve.environment.gatewayOnlyValidate" . }}
+*/}}
+{{- define "lfx-self-serve.environment.gatewayOnlyValidate" -}}
+{{- $env := .Values.environment | default dict -}}
+{{- range $name := (list "LFX_V2_CAMPAIGN_SERVICE" "LFX_V2_MEMBER_SERVICE" "LFX_V2_COMMITTEE_SERVICE") -}}
+{{- $cfg := index $env $name -}}
+{{- if kindIs "map" $cfg -}}
+{{- if or (and (hasKey $cfg "value") $cfg.value) (hasKey $cfg "valueFrom") -}}
+{{- fail (printf "environment.%s must not be set: it overrides the gateway base URL (LFX_V2_SERVICE), and the gateway is where Heimdall/OpenFGA enforce the per-project grant. Pointing the application at a service instance directly lets any caller with a valid token act on a project it has no grant for. Remove the override, or drop %s from the gateway-only list in templates/_helpers.tpl in a reviewed chart change." $name $name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
