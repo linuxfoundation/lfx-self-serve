@@ -434,17 +434,23 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).rejects.toMatchObject({
         statusCode: 502,
-        code: 'EMPTY_UPSTREAM_RESPONSE',
+        code: 'UPSTREAM_INVALID_RESPONSE',
       });
     });
 
-    it('throws a typed 502 when the no-core-update GET fallback returns a null body', async () => {
-      proxyRequest.mockResolvedValueOnce(null);
+    it('throws a typed 502 when the no-core-update GET fallback returns a null body, but only after the settings write it must not block already ran', async () => {
+      proxyRequest.mockResolvedValueOnce(null); // response-shaping GET (no core fields to update)
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'etag-settings' }); // updateCommitteeSettings' own fetch
+      updateWithETag.mockResolvedValueOnce({}); // updateCommitteeSettings' own PUT
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { business_email_required: true })).rejects.toMatchObject({
         statusCode: 502,
-        code: 'EMPTY_UPSTREAM_RESPONSE',
+        code: 'UPSTREAM_INVALID_RESPONSE',
       });
+
+      // The guard is checked after the settings update specifically so an empty
+      // response-shaping GET can't block an otherwise-successful settings write.
+      expect(updateWithETag).toHaveBeenCalledOnce();
     });
 
     it('rejects a chat_webhook_url change (403 NOT_PROJECT_WRITER) when the caller is a committee writer but not a project writer — choosing the Slack destination must require the same authorization as sending to it, and rejects the whole save, not just the webhook field', async () => {
@@ -607,7 +613,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       // reads that uid immediately to add members.
       await expect(service.createCommittee(req, { name: 'Test', category: 'general' })).rejects.toMatchObject({
         statusCode: 502,
-        code: 'EMPTY_UPSTREAM_RESPONSE',
+        code: 'UPSTREAM_INVALID_RESPONSE',
       });
     });
 
@@ -616,7 +622,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       await expect(service.createCommittee(req, { name: 'Test', category: 'general', is_audit_enabled: true })).rejects.toMatchObject({
         statusCode: 502,
-        code: 'EMPTY_UPSTREAM_RESPONSE',
+        code: 'UPSTREAM_INVALID_RESPONSE',
       });
 
       // The settings PUT itself must not have been attempted — there's no committee uid to target.

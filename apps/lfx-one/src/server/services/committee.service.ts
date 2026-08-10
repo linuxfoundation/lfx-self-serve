@@ -452,7 +452,7 @@ export class CommitteeService {
     // "success" would be strictly worse than a loud failure, not a safer fallback. This also
     // narrows newCommittee to non-null for the rest of the method, so nothing below it needs `?.`.
     if (!newCommittee?.uid) {
-      throw new MicroserviceError('Committee service returned an empty response for the create request', 502, 'EMPTY_UPSTREAM_RESPONSE', {
+      throw new MicroserviceError('Committee service returned an empty response for the create request', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'create_committee',
         service: 'committee_service',
         path: '/committees',
@@ -606,19 +606,6 @@ export class CommitteeService {
       updatedCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
-    // Fail loud, not silently: an empty body here means the committee-service didn't confirm the
-    // update (or, on the else branch, the committee no longer exists), and the mailing_list
-    // fallback below dereferences updatedCommittee unconditionally — same rationale as
-    // createCommittee's identical guard. Narrows updatedCommittee to non-null for the rest of the
-    // method.
-    if (!updatedCommittee) {
-      throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'EMPTY_UPSTREAM_RESPONSE', {
-        operation: 'update_committee',
-        service: 'committee_service',
-        path: `/committees/${committeeId}`,
-      });
-    }
-
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
     // (unlike the create path, there's no partial-success story here: if settings fail,
     // the response should not echo writers/auditors as if they were persisted)
@@ -630,6 +617,22 @@ export class CommitteeService {
         member_visibility,
         writers,
         auditors,
+      });
+    }
+
+    // Fail loud, not silently: an empty body here means the committee-service didn't confirm the
+    // core update (or, on the no-core-update branch, the committee no longer exists), and the
+    // mailing_list fallback below dereferences updatedCommittee unconditionally — same rationale
+    // as createCommittee's identical guard. Deliberately checked *after* the settings update, not
+    // before — on the no-core-update branch, `updatedCommittee` is only a response-shaping GET, so
+    // an empty body there must not block an otherwise-successful settings write; on the
+    // core-update branch, the PUT has already committed regardless of what this empty response
+    // says. Narrows updatedCommittee to non-null for the rest of the method.
+    if (!updatedCommittee) {
+      throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
       });
     }
 
