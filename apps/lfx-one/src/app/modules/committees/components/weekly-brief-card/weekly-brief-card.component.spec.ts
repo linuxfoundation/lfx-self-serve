@@ -98,10 +98,12 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     const confirmationService = TestBed.inject(ConfirmationService);
     const confirmSpy = vi.spyOn(confirmationService, 'confirm');
     component.onShareToSlack();
-    // vi.spyOn installs a fresh, empty spy on every call — since this function calls it and
-    // then immediately triggers exactly one confirm(), [0] and .at(-1) are equivalent here.
-    // .at(-1) is used anyway as the more defensive read, in case that single-call assumption
-    // ever changes.
+    // Under vitest ^3.2.4 (this workspace's pinned version — packages/shared runs vitest 4,
+    // which behaves differently: it reuses the existing spy and calls DO accumulate there),
+    // vi.spyOn installs a fresh, empty spy on every call, so since this function calls it and
+    // then immediately triggers exactly one confirm(), [0] and .at(-1) are equivalent today.
+    // .at(-1) is used anyway — it's the correct read under both versions' semantics, so it costs
+    // nothing now and removes one thing to fix if this workspace ever moves to vitest 4.
     const opts = confirmSpy.mock.calls.at(-1)?.[0];
     // Asserted, not optional-chained through: onShareToSlack() returning early (e.g. a future
     // negative test where committeeUid/revision is missing) must fail loudly here, not silently
