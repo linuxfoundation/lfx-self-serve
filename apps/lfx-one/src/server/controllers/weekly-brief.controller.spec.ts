@@ -4,12 +4,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const COMMITTEE_ID = 'a0000000-0000-0000-0000-000000000001';
+const BRIEF_UID = 'wb_00000000-0000-0000-0000-000000000001';
 
 const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted(() => ({
   weeklyBriefSvc: {
     getCurrentBrief: vi.fn(),
     generateBrief: vi.fn(),
     saveBrief: vi.fn(),
+    rateBrief: vi.fn(),
+    clearBriefRating: vi.fn(),
   },
   assertCommitteeRead: vi.fn(),
   assertCommitteeWrite: vi.fn(),
@@ -55,8 +58,12 @@ function buildReq(body: unknown = {}): any {
   return { params: { committeeId: COMMITTEE_ID }, body, path: '/test', log: {} };
 }
 
+function buildRatingReq(body: unknown = {}): any {
+  return { params: { committeeId: COMMITTEE_ID, briefUid: BRIEF_UID }, body, path: '/test', log: {} };
+}
+
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn() };
 }
 
 describe('WeeklyBriefController', () => {
@@ -271,6 +278,157 @@ describe('WeeklyBriefController', () => {
       await controller.getCurrentBrief(buildReq(), buildRes(), next);
 
       expect(weeklyBriefSvc.getCurrentBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
+    });
+  });
+
+  describe('rateBrief — request body validation', () => {
+    it('rejects a missing rating', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a rating value outside the closed up/down type (LFXV2-3042: not a free string)', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'love it', revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up' }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-integer revision', async () => {
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1.5 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('accepts "up"', async () => {
+      weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'up' });
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'up', 1);
+    });
+
+    it('accepts "down"', async () => {
+      weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'down' });
+
+      await controller.rateBrief(buildRatingReq({ rating: 'down', revision: 2 }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.rateBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 'down', 2);
+    });
+  });
+
+  describe('rateBrief — read access gate', () => {
+    it('checks committee read access before rating (a rating is a personal reaction, not a committee edit)', async () => {
+      weeklyBriefSvc.rateBrief.mockResolvedValue({ rating: 'up' });
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'rate_weekly_brief');
+      const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
+      const rateOrder = weeklyBriefSvc.rateBrief.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(rateOrder);
+    });
+
+    it('propagates a 403 from assertCommitteeRead via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeRead.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.rateBrief(buildRatingReq({ rating: 'up', revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.rateBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(forbidden);
+    });
+  });
+
+  describe('clearBriefRating — request body validation', () => {
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({}), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-numeric revision', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 'one' }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a non-integer revision — same bound as rateBrief, not the looser finite-number check (PR #1361 review, round 2)', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 1.5 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('rejects revision < 1', async () => {
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 0 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('clearBriefRating', () => {
+    it('checks committee read access, calls the service, and responds 204 with no body', async () => {
+      weeklyBriefSvc.clearBriefRating.mockResolvedValue(undefined);
+      const res = buildRes();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), res, vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'clear_weekly_brief_rating');
+      expect(weeklyBriefSvc.clearBriefRating).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, BRIEF_UID, 1);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+    });
+
+    it('propagates a service error via next instead of swallowing it', async () => {
+      const upstreamError = new Error('no brief to clear');
+      weeklyBriefSvc.clearBriefRating.mockRejectedValue(upstreamError);
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(upstreamError);
+    });
+
+    it('propagates a 403 from assertCommitteeRead via next without calling the service', async () => {
+      const forbidden = new Error('You do not have access to this committee.');
+      assertCommitteeRead.mockRejectedValueOnce(forbidden);
+      const next = vi.fn();
+
+      await controller.clearBriefRating(buildRatingReq({ revision: 1 }), buildRes(), next);
+
+      expect(weeklyBriefSvc.clearBriefRating).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);
     });
   });
