@@ -41,8 +41,14 @@ describe('isTransientHttpError', () => {
   });
 });
 
+/** A failing source that records how many times it was subscribed. */
+interface CountingSource {
+  attempts: () => number;
+  run: () => Observable<never>;
+}
+
 describe('retryTransientHttpError', () => {
-  function countingSource(error: unknown): { attempts: () => number; run: () => Observable<never> } {
+  function countingSource(error: unknown): CountingSource {
     let attempts = 0;
     return {
       attempts: () => attempts,

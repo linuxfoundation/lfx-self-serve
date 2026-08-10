@@ -17,6 +17,11 @@ yarn test:server   # server only — fast, no Angular compile
 yarn test:app      # app only
 ```
 
+`yarn test` runs the two halves **unconditionally** and exits with the worse of the two statuses,
+rather than chaining them with `&&`. A failing server spec must not stop the app half from
+running: the point of splitting them is that each half reports independently, and a CI log that
+shows only the first failure sends you back for a second round to discover the second.
+
 Keep the two sets disjoint. A server spec picked up by the Angular builder pays for a browser
 environment it never uses; an app spec picked up by `vitest.config.ts` fails on the missing
 template compiler.
