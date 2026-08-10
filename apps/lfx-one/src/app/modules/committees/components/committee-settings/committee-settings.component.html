@@ -186,8 +186,8 @@
               </p>
             }
             @if (slackWebhookRemovalStaged()) {
-              <p class="text-[11.5px] text-amber-700" data-testid="settings-slack-webhook-removal-staged-hint">
-                <i class="fa-light fa-triangle-exclamation"></i>
+              <p class="text-[11.5px] text-amber-700" role="alert" data-testid="settings-slack-webhook-removal-staged-hint">
+                <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
                 The webhook will be removed when you save. Enter a new URL to replace it instead, or Cancel to keep the current one.
               </p>
             }

@@ -127,8 +127,9 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
 
   it('end-to-end: clicking the real Remove button on a configured committee, then Save, sends chat_webhook_url: null — exercises the actual child-emit → parent-signal wire, not just the signal set by hand', async () => {
     // The other slackWebhookRemovalStaged tests above set the signal directly — they'd still pass
-    // even if the (removeSlackWebhookStaged) binding in committee-settings-tab.component.html were
-    // deleted or misspelled. Only a real click through the rendered child catches that.
+    // even if the (removeSlackWebhookStaged) or [slackWebhookRemovalStaged] bindings in
+    // committee-settings-tab.component.html were deleted or misspelled. Only a real click through
+    // the rendered child, plus asserting the hint it feeds back into actually renders, catches that.
     fixture.componentRef.setInput('committee', { ...COMMITTEE, has_slack_webhook: true });
     await fixture.whenStable();
 
@@ -138,6 +139,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     await fixture.whenStable();
 
     expect(component.slackWebhookRemovalStaged()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-removal-staged-hint"]')).not.toBeNull();
 
     component.saveSettings();
 
