@@ -6,6 +6,7 @@ import type { ApiResponse, CampaignBriefOutput, CampaignBriefPersistResult, Camp
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -81,14 +82,20 @@ interface CampaignServiceBriefEnvelope {
 /**
  * The canonical slug for The Linux Foundation's own project row.
  *
- * `/foundation/campaigns` is a fixed route with no project or slug segment — it is
- * LF-scoped by construction, gated by `executiveDirectorGuard` rather than by a per-project
- * permission. lfx-v2-campaign-service, by contrast, is `/projects/{projectId}/…` scoped
- * throughout and authorises on `campaign_manager` for that project. Bridging the two means
- * one fixed slug, and this is it. Not 'the-linux-foundation' — 'tlf' is the canonical form;
- * the longer spelling resolves to nothing.
+ * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
+ * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
+ * project or slug segment", LF-scoped by construction. That is wrong: the route carries
+ * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
+ * foundation reaches the page with their own foundation selected. Anything that WRITES must
+ * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
  *
- * This value goes on the wire AS THE SLUG, deliberately un-resolved. campaign-service's
+ * The job poll keeps the constant because it is currently unreachable with a real id:
+ * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
+ * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
+ * both the create and the poll in the same change, at which point this constant goes away.
+ *
+ * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
+ * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
  * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
  * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
  * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
@@ -201,9 +208,17 @@ export class CampaignServiceClient {
    * There is no retry on `PreconditionFailed`. A 412 means another writer replaced this brief
    * between the find and the PUT; re-reading and overwriting would silently discard their work.
    * The user is told instead — see the caller.
+   *
+   * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
+   * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
+   * `projectQueryParamGuard` seeds the context from `?project=`), while campaign-service scopes
+   * and authorises every brief on its project. Hard-coding `tlf` would either 403 a CNCF ED or —
+   * for an LF staffer who also holds TLF access — file their CNCF work in TLF's brief table,
+   * where the partial unique index on `(project_id, event_slug)` then collides it with unrelated
+   * TLF work for the same event.
    */
-  public async saveBrief(req: Request, brief: CampaignBriefOutput, eventSlug: string): Promise<CampaignBriefPersistResult> {
-    const basePath = `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/briefs`;
+  public async saveBrief(req: Request, brief: CampaignBriefOutput, eventSlug: string, projectSlug: string): Promise<CampaignBriefPersistResult> {
+    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
     const existing = await this.findBrief(req, basePath, eventSlug);
 
@@ -216,7 +231,7 @@ export class CampaignServiceClient {
         undefined,
         envelope
       );
-      return { enabled: true, briefId: created.data.id, etag: readEtag(created), created: true };
+      return this.approveBrief(req, basePath, created, true);
     }
 
     // `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
@@ -237,7 +252,74 @@ export class CampaignServiceClient {
       envelope,
       { 'If-Match': existing.etag }
     );
-    return { enabled: true, briefId: updated.data.id, etag: readEtag(updated), created: false };
+    return this.approveBrief(req, basePath, updated, false);
+  }
+
+  /**
+   * Move the brief just written from `draft` to `approved`, and report the result of the save.
+   *
+   * campaign-service creates every brief as `draft`, and `replaceBriefQuery` deliberately resets
+   * an existing one to `draft` on every PUT — its comment says why: "a modified brief cannot
+   * silently retain status='approved' (which would let changed ad inputs be treated as approved
+   * and dispatched without re-review)". So a save on its own always leaves the row unapproved.
+   *
+   * That is not a durable record of what happened. This save is triggered by the user reviewing
+   * the generated brief and choosing to proceed to Implementation — an approval, in the product's
+   * own terms — and downstream campaign-service refuses to act on anything else: `create-campaigns`
+   * and `build-audience` both gate on `status = 'approved'` at a specific version. Leaving the row
+   * in `draft` would mean Phase 3 could not create a campaign from the very brief the user
+   * approved. Approving immediately after the write is also exactly the case the repo's warning
+   * permits: the content being approved is the content just sent, not a stale snapshot.
+   *
+   * `If-Match` is the validator from the write, which is why this takes the whole response rather
+   * than an id: `approve-brief` declares `PreconditionRequired` for a missing one, and every write
+   * response carries the fresh ETag in its header. A write that answered without one cannot be
+   * approved — reported as `approved: false` rather than guessed at, for the same reason
+   * `saveBrief` refuses to synthesise an `If-Match` above.
+   *
+   * A failed approval is NOT a failed save, and is not reported as one. The brief is durable at
+   * this point; telling the user it could not be saved would be false, and would push them to
+   * regenerate a brief that is sitting in the database. It is surfaced instead as `approved:
+   * false` on the result plus a warning log, and Phase 3 — which has to re-check approval at a
+   * version anyway, since anyone may have edited the brief in between — can re-approve.
+   */
+  private async approveBrief(
+    req: Request,
+    basePath: string,
+    written: ApiResponse<CampaignServiceBrief>,
+    created: boolean
+  ): Promise<CampaignBriefPersistResult> {
+    const briefId = written.data.id;
+    const writeEtag = readEtag(written);
+    const saved = { enabled: true as const, briefId, created };
+
+    if (writeEtag === null) {
+      logger.warning(req, 'campaign_persist_brief_approve', 'campaign-service returned no ETag for the written brief; leaving it in draft', {
+        briefId,
+      });
+      return { ...saved, etag: null, approved: false };
+    }
+
+    try {
+      const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodeURIComponent(briefId)}/approve`,
+        'POST',
+        undefined,
+        undefined,
+        { 'If-Match': writeEtag }
+      );
+      return { ...saved, etag: readEtag(approved), approved: true };
+    } catch (error) {
+      logger.warning(req, 'campaign_persist_brief_approve', 'brief was saved but could not be approved', {
+        briefId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // The write's own validator, not null: it is still the current one, because the approve
+      // that would have bumped the version is precisely what failed.
+      return { ...saved, etag: writeEtag, approved: false };
+    }
   }
 
   /**

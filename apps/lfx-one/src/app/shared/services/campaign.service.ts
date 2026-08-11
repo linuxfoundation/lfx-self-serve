@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
@@ -60,9 +60,15 @@ export class CampaignService {
    * not wait on it, because campaign creation still runs entirely client-side and a slow or
    * failing save would block work that does not depend on it. The result is reported in the UI
    * instead of thrown away; see `CampaignBriefPersistenceState`.
+   *
+   * `projectSlug` travels as a query param rather than in the body because the body IS the brief
+   * — the server reads `req.body` as one — and because `?project=<slug>` is already how this
+   * application names the active foundation on every route it scopes.
    */
-  public persistBrief(brief: CampaignBriefOutput): Observable<CampaignBriefPersistResult> {
-    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief);
+  public persistBrief(brief: CampaignBriefOutput, projectSlug: string): Observable<CampaignBriefPersistResult> {
+    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, {
+      params: new HttpParams().set('project', projectSlug),
+    });
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
