@@ -732,6 +732,35 @@ function attributionCaption(revenueImpact: RevenueImpactResponse): string {
 }
 
 /**
+ * Overrides a single-value or dual-signal card's value-bearing fields with the same
+ * em-dash placeholder used by unavailableDualSignal, while pending is true.
+ *
+ * Only Paid Media and Attribution carry an `undefined` sentinel for a failed/pending
+ * request — every other card's source field is a non-optional zero-filled object, so
+ * without this the pending window renders each of their real-looking values (member
+ * counts, session totals, mention counts, etc.) as if they were measured zeros for the
+ * newly-selected foundation, the exact defect this PR exists to remove elsewhere.
+ */
+function withPendingPlaceholder(card: DashboardMetricCard, pending: boolean): DashboardMetricCard {
+  if (!pending) return card;
+  if (card.customContentType === 'dual-signal') {
+    return {
+      ...card,
+      dualSignals: card.dualSignals?.map((row) => unavailableDualSignal(row.label, row.color ?? '')),
+      caption: DATA_LOADING_CAPTION,
+    };
+  }
+  return {
+    ...card,
+    value: '—',
+    changePercentage: undefined,
+    trend: undefined,
+    chartData: EMPTY_CHART_DATA,
+    subtitle: DATA_LOADING_CAPTION,
+  };
+}
+
+/**
  * Filter options for the ED Evolution prototype dashboard
  */
 export const ED_EVOLUTION_FILTER_OPTIONS: FilterPillOption[] = [
@@ -815,6 +844,7 @@ function seriesTrendDirection(series: number[], activity: number[] = series): 'u
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
   const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, emailCtr, paidCampaign, revenueImpact } = data;
+  const { pending } = data;
 
   // Paid Media and Attribution render em-dashes both while loading and after a failed
   // request, but only the latter may claim the data "could not be loaded". Anything
@@ -839,6 +869,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // Empty when paidCampaign is undefined; the Paid Media card renders its
   // unavailable state in that case and never reads this.
   const paidActivity = paidCampaign ? paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0)) : [];
+
+  // Paid Media and Attribution already carry their own undefined-sentinel pending
+  // handling above (paidCampaign/revenueImpact), so they're excluded here to avoid
+  // double-applying the placeholder — everything else has no such sentinel and would
+  // otherwise render its zero-filled PENDING_ED_EVOLUTION_DATA fields as measured data.
+  const selfGuardedDrawerTypes = new Set([DashboardDrawerType.MarketingPaidSocialReach, DashboardDrawerType.RevenueImpact]);
 
   return [
     // Card order is the display order in the Marketing Overview carousel, and the
@@ -1136,5 +1172,5 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
       drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
     } as DashboardMetricCard,
-  ];
+  ].map((card) => (card.drawerType && selfGuardedDrawerTypes.has(card.drawerType) ? card : withPendingPlaceholder(card, pending ?? false)));
 }
