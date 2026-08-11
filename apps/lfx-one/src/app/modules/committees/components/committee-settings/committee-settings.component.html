@@ -172,10 +172,10 @@
               </div>
             </div>
           } @else {
-            <!-- data-dd-privacy="mask": this field is a bearer credential (see
-                 SLACK_INCOMING_WEBHOOK_URL_PATTERN's doc comment and otel.mjs's ignoreRequestHook
-                 for the other two redaction sites in this set) — Datadog RUM's Session Replay
-                 records input values verbatim at this app's defaultPrivacyLevel: 'allow'
+            <!-- data-dd-privacy="mask": this field is a bearer credential (see the other two
+                 redaction sites in this set — SENSITIVE_FIELDS' 'webhook' entry in
+                 server.constants.ts, and otel.mjs's ignoreRequestHook) — Datadog RUM's Session
+                 Replay records input values verbatim at this app's defaultPrivacyLevel: 'allow'
                  (datadog-rum.provider.ts), and the attribute cascades to the native input this
                  wrapper renders. -->
             <lfx-input-text
