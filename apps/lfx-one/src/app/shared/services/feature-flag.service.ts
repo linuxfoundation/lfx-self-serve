@@ -2,8 +2,36 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, Injectable, Signal, signal } from '@angular/core';
-import { User } from '@lfx-one/shared';
+import { environment } from '@environments/environment';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, User } from '@lfx-one/shared';
 import { Client, EvaluationContext, JsonValue, OpenFeature, ProviderEvents, ProviderStatus } from '@openfeature/web-sdk';
+
+/**
+ * A locally-forced value for one flag, or `undefined` when none is set.
+ *
+ * Exists so automated tests can pin a flag without reaching LaunchDarkly. Without it a flag-gated
+ * route cannot be tested at all: the SDK evaluates first against an anonymous context and only
+ * later against the authenticated user, so a flag targeted at named users reads false in that first
+ * window and a `canMatch` guard can redirect before the real value ever arrives. Intercepting the
+ * SDK at the network layer was tried and is not workable — aborting its stream stops the provider
+ * reaching READY, and serving one keeps it reconnecting.
+ *
+ * **Ignored entirely in production builds**, so it cannot be used to unlock a flag against a
+ * deployed environment.
+ */
+function readFlagOverride(key: string): boolean | undefined {
+  if (environment.production || typeof window === 'undefined') return undefined;
+
+  try {
+    const raw = window.localStorage.getItem(FEATURE_FLAG_OVERRIDE_STORAGE_KEY);
+    if (raw === null) return undefined;
+    const value = (JSON.parse(raw) as Record<string, unknown>)[key];
+    return typeof value === 'boolean' ? value : undefined;
+  } catch {
+    // Unreadable or malformed storage must never take a flag decision with it.
+    return undefined;
+  }
+}
 
 @Injectable({
   providedIn: 'root',
@@ -66,6 +94,11 @@ export class FeatureFlagService {
     return computed(() => {
       // Reactive dependency on context signal
       this.context();
+
+      const override = readFlagOverride(key);
+      if (override !== undefined) {
+        return override;
+      }
 
       if (!this.isInitialized() || !this.client) {
         return defaultValue;

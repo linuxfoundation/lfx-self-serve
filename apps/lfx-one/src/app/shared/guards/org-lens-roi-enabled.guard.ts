@@ -29,8 +29,18 @@ export const orgLensRoiEnabledGuard: CanMatchFn = async () => {
         catchError(() => of(false))
       )
     );
+    // Provider never became ready in time (LD slow / unreachable) → fail open, matching
+    // myClasEnabledGuard. Failing closed silently bounced viewers off a page they may well be
+    // entitled to, and the bounce is indistinguishable from the feature not existing.
+    //
+    // This flag is a dark launch rather than a fully-enabled one, so failing open can show an
+    // unfinished page to an Org Lens viewer when LaunchDarkly is slow. That is bounded: every ROI
+    // endpoint runs its own `assertOrgLensRead` regardless of any flag, so what leaks early is an
+    // incomplete view, never data the viewer could not already request. Logged so the frequency is
+    // visible rather than assumed.
     if (!ready) {
-      return router.parseUrl('/org/overview');
+      console.warn('orgLensRoiEnabledGuard: LD provider not ready after 5 s — failing open');
+      return true;
     }
   }
 
