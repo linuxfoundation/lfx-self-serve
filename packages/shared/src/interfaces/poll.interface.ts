@@ -564,8 +564,8 @@ export interface PollQuestionResult {
 
 /**
  * Single voter's response to a comment prompt in results
- * @description Voter identifiers (`user_id`, `user_name`) are absent (not empty)
- * when the vote is pseudo-anonymous
+ * @description Voter identity fields (`user_id`, `user_name`, `profile_picture`) are absent
+ * (not empty) when the vote is pseudo-anonymous
  */
 export interface PollCommentResponse {
   /** Vote response (ballot) identifier */
@@ -576,6 +576,8 @@ export interface PollCommentResponse {
   comment_text: string;
   /** Voter's display name — absent when the vote is pseudo-anonymous */
   user_name?: string;
+  /** Voter's profile picture URL — absent when the vote is pseudo-anonymous */
+  profile_picture?: string;
   /** Timestamp when the voter submitted their vote */
   vote_creation_time: string;
   /** Whether the voter abstained from voting */
