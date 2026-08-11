@@ -58,6 +58,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     classifyCommitteeEngagement: actual.classifyCommitteeEngagement,
     computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate,
     isCommitteeMemberActive: actual.isCommitteeMemberActive,
+    isCommitteeMemberActiveEligible: actual.isCommitteeMemberActiveEligible,
     isCommitteeMemberAtRisk: actual.isCommitteeMemberAtRisk,
     isCommitteeMemberRateEligible: actual.isCommitteeMemberRateEligible,
     isJoinedWithinWindow: actual.isJoinedWithinWindow,
@@ -296,7 +297,26 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       // Without the exclusion this would be 10/18 = 0.56; the LF Staff row must not depress it.
       expect(result.summary.attendance_rate).toBe(1);
-      expect(result.summary.total_count).toBe(2); // roster count is unaffected — only the rate/active/at-risk sums exclude LF Staff
+      expect(result.summary.total_count).toBe(2); // roster count is unaffected — only the rate/active/eligible/at-risk sums exclude LF Staff
+      // eligible_count (the active_count ratio denominator, LFXV2-3101 review fix) excludes the
+      // LF Staff member too — 1/1, not 1/2, so the ratio can read 100% for this committee.
+      expect(result.summary.eligible_count).toBe(1);
+    });
+
+    it("excludes an Emeritus member from eligible_count, the active_count ratio's denominator (LFXV2-3101 review fix)", async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('emeritus')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 }),
+        row({ MEMBER_USER_ID: 'emeritus', MEMBER_VOTING_STATUS: 'Emeritus', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 1 }),
+      ]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      // Without the exclusion this would read active_count 1 / total_count 2 — permanently capped
+      // below 100% for any committee that seats an Emeritus member, regardless of real participation.
+      expect(result.summary.active_count).toBe(1);
+      expect(result.summary.eligible_count).toBe(1);
+      expect(result.summary.total_count).toBe(2);
     });
 
     it('does not broaden the LF Staff exclusion to a non-staff Observer with low attendance', async () => {
@@ -462,7 +482,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result).toEqual({
         members: [{ uid: 'm1', attended: 0, invited: 0, rate: 0, classification: 'Inactive', role: 'None', voting_status: 'None', committee_meetings: 0 }],
-        summary: { attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 },
+        summary: { attendance_rate: 0, active_count: 0, eligible_count: 1, total_count: 1, at_risk_count: 0 },
         computed_at: null,
         data_available: false,
         data_source: 'live',
@@ -504,7 +524,7 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
       expect(result.members[0]).toMatchObject({ invited: 0, attended: 0, classification: 'Inactive' });
-      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 1, at_risk_count: 0 });
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, eligible_count: 1, total_count: 1, at_risk_count: 0 });
     });
 
     it('returns a fully internally-consistent zeroed payload for a no-rows committee — no member classifies High or counts active, regardless of roster tenure', async () => {
@@ -524,7 +544,8 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       // Emeritus is a roster seat-type fact, independent of engagement data — still shown, but it
       // doesn't count toward active_count/at_risk_count either way (isCommitteeMemberActive excludes it).
       expect(result.members.find((m) => m.uid === 'emeritus-member')).toMatchObject({ classification: 'Emeritus' });
-      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, total_count: 3, at_risk_count: 0 });
+      // eligible_count excludes the Emeritus member too (roster-known, unaffected by data_available).
+      expect(result.summary).toEqual({ attendance_rate: 0, active_count: 0, eligible_count: 2, total_count: 3, at_risk_count: 0 });
     });
 
     it('still tenure-graces a roster member added since the model refresh when the committee DOES have real data (data_available:true)', async () => {

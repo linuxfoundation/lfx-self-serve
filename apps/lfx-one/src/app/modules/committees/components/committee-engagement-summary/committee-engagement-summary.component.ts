@@ -47,9 +47,13 @@ export class CommitteeEngagementSummaryComponent {
     const summary = this.engagement()?.summary;
     return summary ? formatCommitteeEngagementRatePercent(summary.attendance_rate) : '—';
   });
+  // Denominator is eligible_count, NOT total_count (LFXV2-3101 review fix) — total_count includes
+  // Emeritus/LF Staff seats that active_count's numerator always excludes, so active_count/
+  // total_count could never reach 100% for a committee that seats either. See
+  // CommitteeEngagementSummary.eligible_count's doc.
   public readonly activeMembersLabel: Signal<string> = computed(() => {
     const summary = this.engagement()?.summary;
-    return summary ? `${summary.active_count}/${summary.total_count}` : '—';
+    return summary ? `${summary.active_count}/${summary.eligible_count}` : '—';
   });
   public readonly atRiskCount: Signal<number> = computed(() => this.engagement()?.summary?.at_risk_count ?? 0);
   // Explicit aria-labels below embed the displayed value/window — a screen-reader user focusing
@@ -60,7 +64,7 @@ export class CommitteeEngagementSummaryComponent {
   );
   public readonly activeMembersAriaLabel: Signal<string> = computed(
     () =>
-      `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — active count excludes Emeritus and LF Staff seats; total roster count includes them`
+      `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — both active count and the denominator exclude Emeritus and LF Staff seats; the full roster count is shown separately elsewhere on the page`
   );
 
   public onWindowChange(windowId: string): void {

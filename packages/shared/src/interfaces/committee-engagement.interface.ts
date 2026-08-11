@@ -83,10 +83,24 @@ export interface CommitteeEngagementSummary {
    * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
    * clause only applies when `data_available` is `true` — on a zero-row committee, or one whose
    * rows exist but don't join to any roster member, tenure alone can't imply active (see
-   * `data_available`'s doc), so this is `0` there regardless of roster join dates.
+   * `data_available`'s doc), so this is `0` there regardless of roster join dates. Display this as
+   * a ratio against `eligible_count`, NOT `total_count` — see `eligible_count`'s doc for why.
    */
   active_count: number;
-  /** Full committee roster size (including members with no engagement data). */
+  /**
+   * Roster members NOT excluded from `active_count`'s population — i.e. not Emeritus, not LF Staff
+   * (`isCommitteeMemberActiveEligible`, LFXV2-3101 review fix). The correct denominator for
+   * displaying `active_count` as a ratio: `total_count` includes Emeritus/LF Staff seats that
+   * `active_count`'s numerator always excludes, so `active_count / total_count` can never reach
+   * 100% for a committee that seats either, regardless of real participation — the same shape of
+   * bug this ticket fixed for the At-Risk filter, just showing up in the ratio instead.
+   * Attendance-independent, so — unlike `active_count`/`at_risk_count`/`attendance_rate` — this
+   * does NOT zero out when `data_available` is `false`: `role`/`voting_status` are roster
+   * passthroughs that stay populated regardless (see `data_available`'s doc), so this is
+   * roster-known the same way `total_count` is.
+   */
+  eligible_count: number;
+  /** Full committee roster size (including members with no engagement data, and including Emeritus/LF Staff seats — use `eligible_count`, not this field, as the `active_count` ratio's denominator). */
   total_count: number;
   /** Members classified Low, plus members invited within the window who attended nothing (badge reads Inactive, but there is signal to act on — unlike a member never invited). */
   at_risk_count: number;
@@ -119,8 +133,8 @@ export interface CommitteeEngagementResponse {
    * of `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
    * data for the whole committee, there is no engagement data to correlate tenure against, so every
    * non-Emeritus, non-LF-Staff member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
-   * `active_count`, `at_risk_count`) are all `0` — `total_count` still reflects the full roster size
-   * regardless, since that's roster-known independent of engagement data. Asserting `High` (or a
+   * `active_count`, `at_risk_count`) are all `0` — `total_count` and `eligible_count` still reflect
+   * the roster regardless, since both are roster-known independent of engagement data. Asserting `High` (or a
    * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
    * `attendance_rate: 0` in the same payload. The tenure-grace exception only fires when
    * `data_available` is `true` — i.e. the committee has rows AND at least one roster member matched

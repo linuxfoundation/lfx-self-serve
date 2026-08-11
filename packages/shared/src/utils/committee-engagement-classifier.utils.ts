@@ -96,6 +96,22 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
 }
 
 /**
+ * Whether a member belongs to the population `active_count` is measured over — i.e. whether they
+ * could ever contribute to it, independent of whether *this* member happens to be active right
+ * now. This is `CommitteeEngagementSummary.eligible_count`'s per-member rule, the correct
+ * denominator for displaying `active_count` as a ratio (LFXV2-3101 review fix): counting Emeritus
+ * and LF Staff seats in the denominator while `isCommitteeMemberActive` always excludes them from
+ * the numerator means a committee that seats either could never read 100% active regardless of
+ * real participation — the same shape of bug the ticket fixed for the At-Risk filter, just showing
+ * up in the ratio instead. Attendance-independent by design (unlike `isCommitteeMemberActive`,
+ * which mixes the exclusion with an attendance check) — a never-attended non-Emeritus/non-staff
+ * member is still eligible, just not active.
+ */
+export function isCommitteeMemberActiveEligible(input: Pick<CommitteeEngagementClassificationInput, 'votingStatus' | 'role'>): boolean {
+  return input.votingStatus !== CommitteeMemberVotingStatus.EMERITUS && input.role !== CommitteeMemberRole.LF_STAFF;
+}
+
+/**
  * Whether a member's `attended`/`invited` counts should feed the committee-wide `attendance_rate`
  * sum (LFXV2-3101) — `LF Staff` seats are excluded, Emeritus seats deliberately are NOT (see
  * `CommitteeEngagementSummary.attendance_rate`'s doc for why the two aren't symmetric here, unlike

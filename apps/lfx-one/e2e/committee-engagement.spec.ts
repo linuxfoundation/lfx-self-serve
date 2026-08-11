@@ -196,7 +196,8 @@ test.describe('Committee engagement — overview summary (flag on)', () => {
     test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
     await expect(summary.getByTestId('committee-engagement-summary-attendance-rate')).toContainText('78%', { timeout: ELEMENT_TIMEOUT });
-    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('3/7');
+    // 3/5, not 3/7 — the denominator is eligible_count (roster minus Emeritus/LF Staff), not total_count.
+    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('3/5');
     await expect(summary.getByTestId('committee-engagement-summary-at-risk')).toContainText('2');
     await expect(summary.getByTestId('committee-engagement-summary-freshness')).toHaveText('Updated daily');
   });

@@ -15,6 +15,7 @@ import {
   classifyCommitteeEngagement,
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
+  isCommitteeMemberActiveEligible,
   isCommitteeMemberAtRisk,
   isCommitteeMemberRateEligible,
   isJoinedWithinWindow,
@@ -313,6 +314,7 @@ export class CommitteeEngagementService {
     let totalAttended = 0;
     let totalInvited = 0;
     let activeCount = 0;
+    let eligibleCount = 0;
     let atRiskCount = 0;
     let matchedCount = 0;
 
@@ -398,6 +400,11 @@ export class CommitteeEngagementService {
 
       const classification = classifyCommitteeEngagement(classificationInput);
       if (isCommitteeMemberActive(classificationInput)) activeCount++;
+      // Attendance-independent (role/voting_status alone), so computed unconditionally like
+      // total_count — never gated on usableData/effectiveRow the way activeCount's attendance
+      // check is. See eligible_count's doc for why this, not total_count, is the correct
+      // active_count ratio denominator.
+      if (isCommitteeMemberActiveEligible(classificationInput)) eligibleCount++;
       if (isCommitteeMemberAtRisk(classificationInput)) atRiskCount++;
 
       return {
@@ -436,6 +443,7 @@ export class CommitteeEngagementService {
       summary: {
         attendance_rate: computeCommitteeEngagementRate(totalAttended, totalInvited),
         active_count: activeCount,
+        eligible_count: eligibleCount,
         total_count: members.length,
         at_risk_count: atRiskCount,
       },

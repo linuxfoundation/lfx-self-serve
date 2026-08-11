@@ -8,6 +8,7 @@ import {
   classifyCommitteeEngagement,
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
+  isCommitteeMemberActiveEligible,
   isCommitteeMemberAtRisk,
   isCommitteeMemberRateEligible,
   isJoinedWithinWindow,
@@ -181,6 +182,25 @@ describe('isCommitteeMemberActive', () => {
 
   it('is always false for LF Staff, even with real attendance or a fresh join (LFXV2-3101)', () => {
     expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: true })).toBe(false);
+  });
+});
+
+describe('isCommitteeMemberActiveEligible (LFXV2-3101 review fix — the active_count/eligible_count denominator)', () => {
+  it('is false for Emeritus, so an Emeritus-heavy committee is not permanently capped below 100% active', () => {
+    expect(isCommitteeMemberActiveEligible({ votingStatus: EMERITUS, role: undefined })).toBe(false);
+  });
+
+  it('is false for LF Staff, for the same reason', () => {
+    expect(isCommitteeMemberActiveEligible({ votingStatus: OBSERVER, role: LF_STAFF })).toBe(false);
+  });
+
+  it('is true for a real member regardless of attendance — eligibility is attendance-independent, unlike isCommitteeMemberActive', () => {
+    expect(isCommitteeMemberActiveEligible({ votingStatus: VOTING_REP, role: CHAIR })).toBe(true);
+    expect(isCommitteeMemberActiveEligible({ votingStatus: VOTING_REP, role: undefined })).toBe(true);
+  });
+
+  it('is true for a non-staff Observer (the carve-out is role-based, not voting-status-based)', () => {
+    expect(isCommitteeMemberActiveEligible({ votingStatus: OBSERVER, role: undefined })).toBe(true);
   });
 });
 

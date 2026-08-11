@@ -111,9 +111,11 @@ export function buildRoster(): Record<string, unknown>[] {
  * One engagement response per window; the 90d numbers differ from 30d so a window switch is
  * observable in the UI, not just on the network. `at_risk_count: 2` = m-low (Low) +
  * m-inactive-invited (Inactive with invites); m-inactive-never, m-emeritus, and m-lf-staff are
- * excluded by rule. `active_count`/`at_risk_count`/`attendance_rate` are fixture literals, not
- * derived from `members[]` below — they don't need to recompute when a member's numbers change,
- * only to stay a plausible, internally-consistent snapshot.
+ * excluded by rule. `eligible_count: 5` = the 7-member roster minus m-emeritus and m-lf-staff (the
+ * active_count ratio's denominator, LFXV2-3101 review fix — NOT total_count, which stays the full
+ * roster size). `active_count`/`eligible_count`/`at_risk_count`/`attendance_rate` are fixture
+ * literals, not derived from `members[]` below — they don't need to recompute when a member's
+ * numbers change, only to stay a plausible, internally-consistent snapshot.
  */
 export function buildEngagementResponse(window: CommitteeEngagementWindow, overrides: Partial<CommitteeEngagementResponse> = {}): CommitteeEngagementResponse {
   const is90d = window === '90d';
@@ -163,7 +165,7 @@ export function buildEngagementResponse(window: CommitteeEngagementWindow, overr
         committee_meetings: 12,
       },
     ],
-    summary: { attendance_rate: 0.78, active_count: 3, total_count: 7, at_risk_count: 2 },
+    summary: { attendance_rate: 0.78, active_count: 3, eligible_count: 5, total_count: 7, at_risk_count: 2 },
     computed_at: null,
     data_available: true,
     data_source: 'live',
@@ -190,7 +192,9 @@ export function buildDegradedEngagementResponse(window: CommitteeEngagementWindo
       committee_meetings: 0,
       classification: degradedClassification(m),
     })),
-    summary: { attendance_rate: 0, active_count: 0, total_count: 7, at_risk_count: 0 },
+    // eligible_count stays 5 (not zeroed) — roster-known independent of engagement data, same as
+    // total_count. See CommitteeEngagementSummary.eligible_count's doc.
+    summary: { attendance_rate: 0, active_count: 0, eligible_count: 5, total_count: 7, at_risk_count: 0 },
     data_available: false,
   };
 }
