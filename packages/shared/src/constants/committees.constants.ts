@@ -42,6 +42,15 @@ export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'membe
 export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
 
 /**
+ * Non-anchored, `/g`-flagged sibling of {@link SLACK_INCOMING_WEBHOOK_URL_PATTERN} — for
+ * scrubbing a webhook URL that might appear *embedded* in arbitrary third-party text (e.g. a
+ * caught fetch error's message), not for validating a whole string. Deliberately looser than the
+ * validation pattern (no path-segment shape requirement past `/services/`) since a defensive
+ * redaction site should err toward over-matching, not under-matching, a potential credential.
+ */
+export const SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN = /https:\/\/hooks\.slack\.com\/services\/\S*/g;
+
+/**
  * Configurable labels for committees displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
  * while keeping all code and file names as "committees"

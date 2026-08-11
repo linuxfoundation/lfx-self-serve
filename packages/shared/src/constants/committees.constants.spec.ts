@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from './committees.constants';
+import { SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from './committees.constants';
 
 /**
  * Tests the real, imported constant — not a hand-copied regex literal in a test's own mock, the
@@ -44,5 +44,28 @@ describe('SLACK_INCOMING_WEBHOOK_URL_PATTERN', () => {
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/')).toBe(false);
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/services/')).toBe(false);
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/services/T1/B1/')).toBe(false);
+  });
+});
+
+describe('SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN', () => {
+  it('strips a webhook URL embedded in arbitrary surrounding text', () => {
+    const redacted = 'fetch failed: https://hooks.slack.com/services/T000/B000/XXXX unreachable'.replace(
+      SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN,
+      '[redacted-url]'
+    );
+    expect(redacted).toBe('fetch failed: [redacted-url] unreachable');
+  });
+
+  it('strips every occurrence when the URL appears more than once', () => {
+    const redacted = 'https://hooks.slack.com/services/T1/B1/X and again https://hooks.slack.com/services/T2/B2/Y'.replace(
+      SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN,
+      '[redacted-url]'
+    );
+    expect(redacted).not.toContain('hooks.slack.com');
+  });
+
+  it('leaves text with no embedded webhook URL unchanged', () => {
+    const text = 'fetch failed: connect ETIMEDOUT';
+    expect(text.replace(SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN, '[redacted-url]')).toBe(text);
   });
 });

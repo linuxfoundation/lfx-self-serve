@@ -6,6 +6,7 @@ import {
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   SLACK_ERROR_BODY_MAX_LENGTH,
   SLACK_ERROR_TOKEN_PATTERN,
+  SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   SLACK_MESSAGE_TEXT_MAX_LENGTH,
   SLACK_WEBHOOK_POST_TIMEOUT_MS,
@@ -905,7 +906,11 @@ export class WeeklyBriefService {
       throw new MicroserviceError('Unable to reach Slack — the webhook request failed or timed out', 502, 'SLACK_UNREACHABLE', {
         operation: 'share_weekly_brief_slack',
         service: 'weekly_brief_service',
-        originalError: error instanceof Error ? error : undefined,
+        // Redacted, not passed through as-is: getLogContext() logs this message unsanitized
+        // (`sanitize()` only redacts top-level keys, and `original_error` isn't one of them).
+        // Today's undici fetch-failure/abort messages don't embed the request URL, so this is
+        // defense-in-depth against a future fetch/undici version that does.
+        originalError: error instanceof Error ? new Error(error.message.replace(SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN, '[redacted-url]')) : undefined,
       });
     });
 

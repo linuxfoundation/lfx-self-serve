@@ -189,6 +189,15 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('not available in this environment') }));
   });
 
+  it('FEATURE_DISABLED (409) tells the user Slack sharing is not enabled here — must not fall through to the generic "reload and try again" fallback, which implies retrying could help', () => {
+    shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 409, error: { code: 'FEATURE_DISABLED' } })));
+
+    shareToSlack();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('not enabled in this environment') }));
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Reload and try again') }));
+  });
+
   it('shows the disabled hint (not the impersonating hint) when no webhook is configured and the caller is not impersonating', async () => {
     fixture.componentRef.setInput('committee', { ...COMMITTEE, has_slack_webhook: false });
     await fixture.whenStable();

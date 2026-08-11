@@ -799,12 +799,18 @@ export class WeeklyBriefCardComponent {
               detail = 'No Slack webhook configured for this committee.';
             } else if (code === 'BACKEND_NOT_LIVE') {
               detail = 'Sharing is not available in this environment yet.';
+            } else if (code === 'FEATURE_DISABLED') {
+              // weekly-brief.service.ts's ServerFeatureFlag.WeeklyBriefSlack kill switch — only
+              // reachable when it's off while the UI-facing wg-weekly-brief-slack flag is on
+              // (both must be on for a real send). Not "reload and try again": reloading can't
+              // fix this, only flipping the server flag can.
+              detail = 'Sharing to Slack is not enabled in this environment yet.';
             } else if (code === 'REVISION_MISMATCH') {
               detail = 'This brief was updated since you last viewed it. Reload to review the latest version before sharing.';
               this.refresh$.next();
             } else {
               // Unlike performShare's mailing-list fallback, shareToSlack has no "already sent"
-              // concept — it emits only the three codes above, so this branch is unreachable in
+              // concept — it emits only the four codes above, so this branch is unreachable in
               // practice today. Kept neutral (not copy-pasted from performShare) in case a future
               // 409 code is added here without updating this switch.
               detail = "This brief can't be shared to Slack right now. Reload and try again.";

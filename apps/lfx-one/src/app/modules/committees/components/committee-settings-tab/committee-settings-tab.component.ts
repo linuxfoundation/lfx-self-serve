@@ -363,6 +363,11 @@ export class CommitteeSettingsTabComponent {
             // save (visibility, join mode, chat_channel, etc.) was rejected too, not just the
             // webhook — without saying so, this reads like the 409 branch's "other changes saved".
             detail = 'Only project writers can configure the Slack webhook. No changes were saved. Contact a project administrator.';
+          } else if (status === 409 && code === 'FEATURE_DISABLED') {
+            // committee.service.ts's ServerFeatureFlag.WeeklyBriefSlack kill switch — checked
+            // first in updateCommittee, before any write, so — like NOT_PROJECT_WRITER above —
+            // nothing on this save persisted, not just the webhook field.
+            detail = 'Slack webhook sharing is not enabled in this environment yet. No changes were saved.';
           } else if (status === 400) {
             const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
             detail = fieldErrors?.[0]?.message ?? detail;

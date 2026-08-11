@@ -273,6 +273,18 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Only project writers') }));
   });
 
+  it('surfaces FEATURE_DISABLED (409) without emitting committeeUpdated — the server checks this before any write, so nothing on the save persisted, and the generic "Failed to save settings" fallback must not be shown instead', () => {
+    updateCommittee.mockReturnValueOnce(throwError(() => ({ status: 409, error: { code: 'FEATURE_DISABLED' } })));
+
+    const emitted: void[] = [];
+    component.committeeUpdated.subscribe(() => emitted.push(undefined));
+
+    component.saveSettings();
+
+    expect(emitted).toHaveLength(0);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('not enabled in this environment') }));
+  });
+
   it('surfaces a 400 field-validation error using the server-supplied message, without emitting committeeUpdated', () => {
     updateCommittee.mockReturnValueOnce(throwError(() => ({ status: 400, error: { errors: [{ message: 'Must be a valid Slack Incoming Webhook URL' }] } })));
 

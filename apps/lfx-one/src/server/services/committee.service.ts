@@ -1778,6 +1778,11 @@ export class CommitteeService {
    * URL — not {@link getCommitteeById}'s settings/membership/access-check enrichment, none of
    * which `shareToSlack` reads. See {@link getSlackWebhookUrlStrict}'s doc comment for why this
    * exists as its own method rather than composing the two.
+   *
+   * @internal Cannot be `private` like {@link getSlackWebhookUrlStrict} — `WeeklyBriefService`
+   * must call it — but that also means nothing mechanically stops a future caller from obtaining
+   * the raw credential through it. Only `WeeklyBriefService.shareToSlack` may call this today;
+   * treat any new call site as a review flag, not a routine addition.
    */
   public async getCommitteeForSlackShare(req: Request, committeeId: string): Promise<{ name: string; project_uid: string; chat_webhook_url: string | null }> {
     const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(

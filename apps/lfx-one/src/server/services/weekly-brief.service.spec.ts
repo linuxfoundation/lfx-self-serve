@@ -88,6 +88,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   SLACK_ERROR_BODY_MAX_LENGTH: 500,
   SLACK_ERROR_TOKEN_PATTERN: /^[a-z_]{1,64}$/,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+  SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN: /https:\/\/hooks\.slack\.com\/services\/\S*/g,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
@@ -1222,6 +1223,22 @@ describe('WeeklyBriefService', () => {
       fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 502, code: 'SLACK_UNREACHABLE' });
+    });
+
+    it('redacts an embedded webhook URL from the caught fetch error before it becomes originalError — getLogContext() logs original_error unsanitized (SENSITIVE_FIELDS does not cover it), so a future fetch/undici version that puts the request URL in its error message must not leak the credential', async () => {
+      mockShareableBrief();
+      fetchMock.mockRejectedValueOnce(new TypeError('fetch failed: https://hooks.slack.com/services/T000/B000/XXXX unreachable'));
+
+      let caught: MicroserviceError | undefined;
+      try {
+        await service.shareToSlack(req, 'committee-1', 1);
+      } catch (error) {
+        caught = error as MicroserviceError;
+      }
+
+      const originalError = caught?.getLogContext()['original_error'] as string | undefined;
+      expect(originalError).toContain('[redacted-url]');
+      expect(originalError).not.toContain('hooks.slack.com');
     });
   });
 });
