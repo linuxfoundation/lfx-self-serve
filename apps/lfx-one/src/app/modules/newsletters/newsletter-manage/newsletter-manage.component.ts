@@ -1146,6 +1146,12 @@ export class NewsletterManageComponent {
         next: (result: NewsletterCancelScheduleResult) => {
           this.version.set(result.newsletter.version);
           this.newsletterStatus.set(result.newsletter.status);
+          // A newsletter opened via a deep-linked `?step=N` while scheduled was locked
+          // to review by isScheduleReadOnly(), leaving that param sitting unused in the
+          // URL. Cancelling flips isScheduleReadOnly() false, and deriveViewMode would
+          // then honor the stale param and jump straight to the stepper — clear it so
+          // the author stays on the review screen they just cancelled from.
+          this.backToReview();
           this.messageService.add({ severity: 'success', summary: 'Schedule cancelled', detail: 'The newsletter is back in Drafts.' });
         },
         error: (err: HttpErrorResponse) => {
