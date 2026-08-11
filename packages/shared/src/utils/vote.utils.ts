@@ -96,7 +96,6 @@ export function mapApiQuestionToFormValue(question: PollQuestion): QuestionFormV
  */
 export function mapApiCommentPromptToFormValue(prompt: PollCommentPrompt): CommentPromptFormValue {
   return {
-    prompt_id: prompt.prompt_id,
     prompt: prompt.prompt,
   };
 }
@@ -152,13 +151,7 @@ export function isNonBlankCommentPrompt(text?: string | null): boolean {
 export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormValue[]): CreatePollCommentPrompt[] | undefined {
   const nonBlank: CreatePollCommentPrompt[] = (commentPrompts ?? [])
     .filter((commentPrompt) => isNonBlankCommentPrompt(commentPrompt.prompt))
-    .map((commentPrompt) => {
-      const mapped: CreatePollCommentPrompt = { prompt: commentPrompt.prompt.trim() };
-      if (commentPrompt.prompt_id) {
-        mapped.prompt_id = commentPrompt.prompt_id;
-      }
-      return mapped;
-    });
+    .map((commentPrompt) => ({ prompt: commentPrompt.prompt.trim() }));
 
   return nonBlank.length > 0 ? nonBlank : undefined;
 }

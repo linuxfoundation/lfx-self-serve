@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
-import { CommitteeReference } from './committee.interface';
+import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type { CommitteeReference } from './committee.interface';
 
 /**
  * Filter state for the votes dashboard table
@@ -380,8 +380,6 @@ export interface QuestionFormValue {
  * @description Represents the raw form values extracted from a comment-prompt FormGroup
  */
 export interface CommentPromptFormValue {
-  /** Existing prompt identifier — present when editing an existing prompt */
-  prompt_id?: string;
   /** Comment prompt text */
   prompt: string;
 }
@@ -566,13 +564,14 @@ export interface PollQuestionResult {
 
 /**
  * Single voter's response to a comment prompt in results
- * @description `user_name` is absent (not empty) when the vote is pseudo-anonymous
+ * @description Voter identifiers (`user_id`, `user_name`) are absent (not empty)
+ * when the vote is pseudo-anonymous
  */
 export interface PollCommentResponse {
   /** Vote response (ballot) identifier */
   vote_id: string;
-  /** Voter's user identifier */
-  user_id: string;
+  /** Voter's user identifier — absent when the vote is pseudo-anonymous */
+  user_id?: string;
   /** Submitted comment text */
   comment_text: string;
   /** Voter's display name — absent when the vote is pseudo-anonymous */
@@ -638,11 +637,11 @@ export interface CreatePollQuestion {
 
 /**
  * Comment prompt definition for creating a poll
- * @description Used in CreateVoteRequest to define optional comment prompts
+ * @description Used in CreateVoteRequest to define optional comment prompts.
+ * Aligns with upstream PollCommentPromptInput — prompt IDs are server-assigned,
+ * so the request carries only the prompt text.
  */
 export interface CreatePollCommentPrompt {
-  /** Existing prompt identifier — present when editing an existing prompt, absent for a newly authored one */
-  prompt_id?: string;
   /** Comment prompt text */
   prompt: string;
 }

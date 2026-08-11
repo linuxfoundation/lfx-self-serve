@@ -276,7 +276,6 @@ export class VoteManageComponent {
    */
   public createCommentPromptFormGroup(): FormGroup {
     return new FormGroup({
-      prompt_id: new FormControl<string | undefined>(undefined),
       prompt: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
     });
   }
@@ -430,7 +429,6 @@ export class VoteManageComponent {
 
     for (const commentPrompt of formValue.commentPrompts) {
       const commentPromptGroup = new FormGroup({
-        prompt_id: new FormControl<string | undefined>(commentPrompt.prompt_id),
         prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
       });
       commentPromptsArray.push(commentPromptGroup);

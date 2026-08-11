@@ -169,6 +169,7 @@
               [text]="true"
               severity="danger"
               icon="fa-light fa-trash"
+              [ariaLabel]="'Remove comment question ' + (cIdx + 1)"
               (onClick)="removeCommentPrompt(cIdx)"
               styleClass="!h-8 !w-8 !p-0 mt-6"
               [attr.data-testid]="'vote-comment-prompt-remove-' + cIdx">

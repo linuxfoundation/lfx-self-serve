@@ -58,10 +58,10 @@ describe.each(BUILDERS)('$name — poll_comment_prompts mapping', ({ build }) =>
     expect(request.poll_comment_prompts).toEqual([{ prompt: 'Real prompt' }]);
   });
 
-  it('preserves prompt_id on existing prompts while omitting it for new ones', () => {
-    const formValue = baseFormValue([{ prompt_id: 'existing-uuid', prompt: 'Existing prompt' }, { prompt: 'New prompt' }]);
+  it('maps multiple prompts to poll_comment_prompts in order', () => {
+    const formValue = baseFormValue([{ prompt: 'Existing prompt' }, { prompt: 'New prompt' }]);
     const request = build(formValue, PROJECT_UID);
-    expect(request.poll_comment_prompts).toEqual([{ prompt_id: 'existing-uuid', prompt: 'Existing prompt' }, { prompt: 'New prompt' }]);
+    expect(request.poll_comment_prompts).toEqual([{ prompt: 'Existing prompt' }, { prompt: 'New prompt' }]);
   });
 
   it('omits poll_comment_prompts when every prompt is blank', () => {
@@ -72,19 +72,19 @@ describe.each(BUILDERS)('$name — poll_comment_prompts mapping', ({ build }) =>
 });
 
 describe('mapApiCommentPromptToFormValue', () => {
-  it('copies prompt_id and prompt from the API prompt', () => {
+  it('copies the prompt text from the API prompt', () => {
     const prompt: PollCommentPrompt = { prompt_id: 'p-1', prompt: 'Why did you vote this way?' };
-    expect(mapApiCommentPromptToFormValue(prompt)).toEqual({ prompt_id: 'p-1', prompt: 'Why did you vote this way?' });
+    expect(mapApiCommentPromptToFormValue(prompt)).toEqual({ prompt: 'Why did you vote this way?' });
   });
 });
 
 describe('mapCommentPromptsToApiFormat', () => {
-  it('trims prompt text and preserves prompt_id for existing prompts', () => {
-    const formValue = baseFormValue([{ prompt_id: 'p-1', prompt: '  Existing  ' }]);
-    expect(mapCommentPromptsToApiFormat(formValue.commentPrompts)).toEqual([{ prompt_id: 'p-1', prompt: 'Existing' }]);
+  it('trims prompt text', () => {
+    const formValue = baseFormValue([{ prompt: '  Existing  ' }]);
+    expect(mapCommentPromptsToApiFormat(formValue.commentPrompts)).toEqual([{ prompt: 'Existing' }]);
   });
 
-  it('omits prompt_id for newly authored prompts', () => {
+  it('maps prompt text only', () => {
     const formValue = baseFormValue([{ prompt: 'New prompt' }]);
     expect(mapCommentPromptsToApiFormat(formValue.commentPrompts)).toEqual([{ prompt: 'New prompt' }]);
   });
