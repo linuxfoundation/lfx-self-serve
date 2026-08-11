@@ -80,8 +80,8 @@
           <!-- About Me — free-text bio, first field per the v2 prototype (LFXV2-2933) -->
           <div>
             <label for="drawer-edit-about-me" class="block text-sm text-slate-900 mb-2">About Me</label>
-            <!-- No native [maxlength] — it counts UTF-16 units, so it would block an emoji-heavy bio
-                 below the real rune limit and hide the over-length case from the counter/validator. -->
+            <!-- No native [maxlength] (it counts UTF-16 units and would block an emoji-heavy bio below
+                 the real rune limit); the component hard-caps by code point instead. -->
             <lfx-textarea
               [form]="profileForm"
               control="bio"

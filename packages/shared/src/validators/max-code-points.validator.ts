@@ -6,11 +6,8 @@ import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { codePointLength } from '../utils/string.utils';
 
 /**
- * Reactive-form validator that caps a string control by Unicode code-point count
- * (like Go's `[]rune(s)`), not the UTF-16 code units `Validators.maxLength` counts.
- * Keeps the client-side bio limit aligned with the auth-service 2000-rune cap so
- * emoji/non-BMP characters aren't double-counted and rejected below the real limit.
- * Mirrors Angular's maxlength error shape: `{ maxCodePoints: { requiredLength, actualLength } }`.
+ * Caps a string control by Unicode code-point count (like Go's `[]rune(s)`), not the UTF-16 units
+ * `Validators.maxLength` counts, with the maxlength error shape `{ maxCodePoints: { requiredLength, actualLength } }`.
  * @param max - The maximum allowed number of code points
  */
 export function maxCodePointsValidator(max: number): ValidatorFn {

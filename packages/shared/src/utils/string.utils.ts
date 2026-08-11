@@ -90,11 +90,8 @@ export function stableKeyParity(key: string): 0 | 1 {
 }
 
 /**
- * Count the Unicode code points in a string, matching Go's `len([]rune(s))`.
- * Differs from `String.length` (UTF-16 code units) for non-BMP characters: an
- * emoji or some CJK ideographs are a single code point but two UTF-16 units.
- * Used to measure the bio against the auth-service 2000-rune cap so the client
- * doesn't reject at roughly half the real allowance.
+ * Count the Unicode code points in a string (like Go's `len([]rune(s))`), so an emoji or
+ * non-BMP char counts once where `String.length` would count its two UTF-16 units.
  * @param value - The string to measure
  * @returns The number of Unicode code points
  */

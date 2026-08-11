@@ -8,9 +8,8 @@ import '@angular/compiler';
 import { UserMetadata } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// UserService's constructor instantiates several collaborators (NATS, Snowflake, etc.). Stub each
-// module so `new UserService()` is cheap and side-effect-free — validateUserMetadata is a pure,
-// synchronous method and touches none of them.
+// Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
+// side-effect-free — validateUserMetadata is pure and synchronous and touches none of them.
 vi.mock('./nats.service', () => ({ NatsService: vi.fn() }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: vi.fn(() => ({})) } }));
 vi.mock('./meeting.service', () => ({ MeetingService: vi.fn() }));

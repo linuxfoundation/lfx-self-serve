@@ -266,9 +266,8 @@ export class UserService {
       throw new Error('Job title is too long');
     }
 
-    // Validate bio if provided. Count Unicode code points (not UTF-16 units) to match the
-    // auth-service cap of PROFILE_BIO_MAX_LENGTH runes — otherwise emoji/non-BMP characters
-    // would be rejected here at roughly half the length the backend actually accepts.
+    // Count code points (not UTF-16 units) to match the auth-service PROFILE_BIO_MAX_LENGTH rune
+    // cap — otherwise emoji/non-BMP bios would be rejected at roughly half the real allowance.
     if (metadata?.bio && codePointLength(metadata.bio) > PROFILE_BIO_MAX_LENGTH) {
       throw new Error(`Bio is too long (max ${PROFILE_BIO_MAX_LENGTH} characters)`);
     }

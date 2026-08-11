@@ -358,10 +358,8 @@ test.describe('Profile edit drawer', () => {
   });
 
   test('S8: an over-limit emoji bio is hard-capped at 2000 code points, not UTF-16 units', async ({ page }) => {
-    // Regression for LFXV2-3104: the bio cap counts Unicode code points (runes), not UTF-16 units.
-    // Native [maxlength] was removed because it caps by UTF-16 units and would stop an emoji bio at
-    // ~1000 glyphs; the code-point hard cap must instead trim a 2001-emoji paste (4002 UTF-16 units)
-    // down to exactly 2000 emoji and settle the counter at "2000 / 2000" with no overflow.
+    // Regression for LFXV2-3104: the cap counts code points, not UTF-16 units — a 2001-emoji paste
+    // (4002 UTF-16 units) is trimmed to exactly 2000 emoji, where native [maxlength] would stop at ~1000.
     await gotoProfile(page);
     await page.getByTestId('profile-edit-button').click();
 

@@ -90,9 +90,8 @@ export class ProfileEditDrawerComponent {
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
 
-  // Live code-point count of the bio, backing the "x / max" counter beneath the field. The field is
-  // hard-capped at bioMaxLength on input (see the bio valueChanges sub), so this never exceeds it.
-  // Seeded in populateForm (patchValue runs with emitEvent:false, so valueChanges won't fire on open).
+  // Live code-point count of the bio, backing the "x / max" counter. Seeded in populateForm
+  // (patchValue uses emitEvent:false) and hard-capped at bioMaxLength by the valueChanges sub.
   public readonly bioLength = signal(0);
 
   // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
@@ -219,10 +218,8 @@ export class ProfileEditDrawerComponent {
       this.hasChanges.set(this.profileForm.dirty);
     });
 
-    // Hard-cap the bio at the code-point limit as the user types or pastes. Trimming by code point
-    // (not UTF-16 units) is what keeps an emoji-heavy bio accepted up to the real rune limit — the
-    // reason native [maxlength] was removed. Re-emit the capped value with emitEvent:false to avoid a
-    // feedback loop, then reflect the length in the counter.
+    // Hard-cap the bio by code point (not UTF-16 units) so emoji-heavy bios reach the real rune
+    // limit; re-emit the trimmed value with emitEvent:false to avoid a loop, then update the counter.
     this.profileForm
       .get('bio')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
