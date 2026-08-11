@@ -1182,8 +1182,14 @@ export class AnalyticsService {
    * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
    * Emits null on error so the drawer shows its empty state.
    */
-  public getEventDetail(eventId: string): Observable<EventDetailResponse | null> {
-    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId } }).pipe(catchError(() => of(null)));
+  /**
+   * Event detail for one event. `foundationSlug` is required and server-enforced: the event id
+   * alone carries no ownership, so the query is scoped to the foundation rather than trusting it.
+   * Resolves to `null` for a genuinely missing event and throws on transport/authorization
+   * failures, so the drawer can tell "no such event" apart from "we could not load it".
+   */
+  public getEventDetail(eventId: string, foundationSlug: string): Observable<EventDetailResponse | null> {
+    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId, foundationSlug } });
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {

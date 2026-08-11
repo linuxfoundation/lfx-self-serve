@@ -7,14 +7,15 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
-import { finalize, of, skip, switchMap } from 'rxjs';
+import { Skeleton } from 'primeng/skeleton';
+import { catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
 
 import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-event-detail-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, DrawerModule],
+  imports: [NgClass, DrawerModule, Skeleton],
   templateUrl: './event-detail-drawer.component.html',
 })
 export class EventDetailDrawerComponent {
@@ -26,14 +27,20 @@ export class EventDetailDrawerComponent {
   // === Inputs ===
   /** Event id to load when the drawer opens. */
   public readonly eventId = input<string | null>(null);
+  /** Foundation the event belongs to; required by the server to scope the read. */
+  public readonly foundationSlug = input<string | undefined>();
 
   // === WritableSignals ===
   /**
-   * Set by the detail stream rather than derived from `detail() === null`. The request emits
-   * `null` on failure, so a derived flag would leave the skeleton up forever on an error
-   * instead of falling through to the empty state.
+   * Set by the detail stream rather than derived from `detail() === null`. The request can end in
+   * an error, so a derived flag would leave the skeleton up forever instead of falling through.
    */
   protected readonly loading = signal(false);
+  /**
+   * Distinguishes "we could not load this" from "this event has no detail" — both leave `detail()`
+   * null, but only one of them should tell the user something went wrong.
+   */
+  protected readonly failed = signal(false);
 
   // === Computed Signals ===
   protected readonly detail: Signal<EventDetailResponse | null> = this.initDetail();
@@ -51,30 +58,49 @@ export class EventDetailDrawerComponent {
     return Math.min(100, Math.round((d.sponsorshipRevenue.actual / d.sponsorshipRevenue.goal) * 100));
   });
 
-  // === Protected Helpers (template) ===
-  protected num(value: number): string {
-    return formatNumber(value);
-  }
-
-  protected money(value: number): string {
-    return formatCurrency(value);
-  }
-
-  /** Registration pace vs last year as a signed percent string, or null when no baseline. */
-  protected vsLastYearLabel(): string | null {
+  /**
+   * Everything the template renders as text, formatted once per detail change. The template used
+   * to call formatting helpers directly, which re-ran locale/currency formatting on every
+   * change-detection pass; per the frontend checklist templates read computed values instead.
+   */
+  protected readonly view = computed(() => {
     const d = this.detail();
-    if (!d || d.vsLastYear === null) return null;
-    const pct = Math.round((d.vsLastYear - 1) * 100);
+    if (!d) return null;
+    return {
+      dateLabel: this.formatDate(d.startDate),
+      vsLastYearLabel: this.formatVsLastYear(d.vsLastYear),
+      registrationsActual: formatNumber(d.registrations.actual),
+      registrationsGoal: formatNumber(d.registrations.goal),
+      sponsorshipActual: formatCurrency(d.sponsorshipRevenue.actual),
+      sponsorshipGoal: formatCurrency(d.sponsorshipRevenue.goal),
+      tiers: d.sponsorshipTiers.map((tier) => ({
+        tier: tier.tier,
+        label: tier.tier || 'Other',
+        sponsorCount: tier.sponsorCount,
+        revenue: formatCurrency(tier.revenue),
+      })),
+    };
+  });
+
+  // === Private Helpers ===
+  /** Registration pace vs last year as a signed percent string, or null when no baseline. */
+  private formatVsLastYear(vsLastYear: number | null): string | null {
+    if (vsLastYear === null) return null;
+    const pct = Math.round((vsLastYear - 1) * 100);
     if (pct > 0) return `+${pct}% vs last year`;
     if (pct < 0) return `${pct}% vs last year`;
     return 'On par with last year';
   }
 
-  protected dateLabel(): string {
-    const iso = this.detail()?.startDate ?? '';
+  private formatDate(iso: string): string {
     const [year, month, day] = iso.split('-').map(Number);
     if (!year || !month || !day) return iso;
-    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    // Range-check before Date.UTC: it rolls out-of-range parts over silently (month=13 becomes
+    // January of the next year), rendering a confidently wrong date instead of the raw value.
+    if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+    return parsed.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -84,20 +110,32 @@ export class EventDetailDrawerComponent {
 
   // === Private Initializers ===
   private initDetail(): Signal<EventDetailResponse | null> {
-    // Lazy-load on open: react to visibility flipping true (skip the initial value).
+    // Lazy-load on open, and reload when the selected event changes. Both are triggers: the
+    // drawer stays open while the user clicks a different roster row, so watching `visible`
+    // alone would leave the previous event's numbers on screen under the new event's name.
     return toSignal(
-      toObservable(this.visible).pipe(
-        skip(1),
-        switchMap((open) => {
-          const id = this.eventId();
-          if (!open || !id) {
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.foundationSlug)]).pipe(
+        // The parent sets eventId and visible in two separate writes, so one open produces two
+        // emissions; dedupe the triple so that lands as a single fetch rather than a duplicate.
+        distinctUntilChanged(([prevOpen, prevId, prevSlug], [open, id, slug]) => prevOpen === open && prevId === id && prevSlug === slug),
+        switchMap(([open, id, slug]) => {
+          if (!open || !id || !slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          // finalize, not a tap on the value — the request emits null on error, and that
-          // still has to clear the skeleton.
-          return this.analyticsService.getEventDetail(id).pipe(finalize(() => this.loading.set(false)));
+          this.failed.set(false);
+          // finalize, not a tap on the value — the stream can end in an error, and that still
+          // has to clear the skeleton. The error is caught here rather than in the service so a
+          // failure renders "couldn't load" instead of the "no detail" empty state.
+          return this.analyticsService.getEventDetail(id, slug).pipe(
+            catchError((error: unknown) => {
+              console.error('[analytics] event-detail failed', { eventId: id, foundationSlug: slug, error });
+              this.failed.set(true);
+              return of(null);
+            }),
+            finalize(() => this.loading.set(false))
+          );
         })
       ),
       { initialValue: null }

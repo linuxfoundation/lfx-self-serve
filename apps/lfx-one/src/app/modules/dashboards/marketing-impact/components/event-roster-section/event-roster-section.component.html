@@ -71,7 +71,8 @@
           tabindex="0"
           (click)="openEvent(row.eventId)"
           (keydown.enter)="openEvent(row.eventId)"
-          (keydown.space)="openEvent(row.eventId)"
+          (keydown.space)="$event.preventDefault(); openEvent(row.eventId)"
+          [attr.aria-label]="'View detail for ' + row.eventName"
           [attr.data-testid]="'event-roster-row-' + row.eventId">
           <span class="w-24 text-xs text-gray-500 tabular-nums" role="cell">{{ row.dateLabel }}</span>
 
@@ -137,4 +138,4 @@
   }
 </div>
 
-<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" />
+<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" [foundationSlug]="foundationSlug()" />
