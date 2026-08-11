@@ -232,11 +232,17 @@ export class NewsletterManageComponent {
     this.scheduleTimeValue();
     this.scheduleTimezoneValue();
     this.scheduleClockTick();
+    // Gate every reason on schedule mode — the validator itself doesn't know
+    // about sendMode (it just reads the date/time controls), so stale picker
+    // values left over from a prior schedule pick would otherwise still
+    // surface 'past'/'tooSoon'/'tooFar' after switching to Send now, which
+    // would spuriously fire initSchedulePastGuard's toast-and-clear below.
+    if (sendMode !== 'schedule') return null;
     // Check the control's own format error before the group-level window error —
     // an out-of-range free-typed time (e.g. "13:99 PM") normalizes into a valid
     // instant via combineDateTime instead of failing, so scheduleWindow would
     // otherwise never catch it.
-    if (sendMode === 'schedule' && this.form.controls.scheduleTime.invalid) {
+    if (this.form.controls.scheduleTime.invalid) {
       return 'invalidFormat';
     }
     return this.form.errors?.['scheduleWindow'] ?? null;
@@ -1062,11 +1068,34 @@ export class NewsletterManageComponent {
       return;
     }
     if (err.status === 409 && upstreamCode === 'scheduled') {
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Already scheduled',
-        detail: 'This newsletter is already scheduled.',
-      });
+      // Someone else (another tab, or a retry that actually landed) armed this
+      // draft first. A toast alone leaves newsletterStatus() at 'draft', so
+      // isScheduleReadOnly() stays false and every edit/save/send control keeps
+      // accepting input against a newsletter the upstream will now reject —
+      // refetch and adopt the real status/version, same as runCancelSchedule's
+      // conflict branch.
+      this.newsletterService
+        .getNewsletter(this.projectUid(), id)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (newsletter) => {
+            this.version.set(newsletter.version);
+            this.newsletterStatus.set(newsletter.status);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Already scheduled',
+              detail: 'This newsletter is already scheduled.',
+            });
+          },
+          error: () => {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Already scheduled',
+              detail: 'This newsletter is already scheduled. Reload the page to see the latest status.',
+              life: 8000,
+            });
+          },
+        });
       return;
     }
     if (err.status === 409 && (upstreamCode === 'send_in_progress' || upstreamCode === 'already_sent')) {
