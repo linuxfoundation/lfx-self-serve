@@ -31,11 +31,11 @@ export interface MarketingImpactTabOption {
   label: string;
 }
 
-/** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
-export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining';
+/** Campaign Type identifiers for the Campaign Impact filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'membership';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
-export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';
+export type MarketingImpactTab = 'all' | 'web' | 'social' | 'email' | 'paid' | 'social-listening';
 
 /** Aggregated KPI source data fetched for the Marketing Impact overview tab. */
 export interface OverviewKpiData {
@@ -105,7 +105,6 @@ export interface EventRosterRowView {
   sponsorshipRevenue: EventRosterBar;
   /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
   atRisk: boolean;
-  cfpStatus: string;
 }
 
 /** Pre-formatted view-model for a single Events Summary stat tile. */

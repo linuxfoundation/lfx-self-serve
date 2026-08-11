@@ -34,6 +34,8 @@ export class EventRosterSectionComponent {
   protected readonly skeletons: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly drawerVisible = signal(false);
   protected readonly selectedEventId = signal<string | null>(null);
+  // Which story the open drawer tells: 'b2c' (registrations + campaigns) or 'b2b' (sponsorship).
+  protected readonly drawerFocus = signal<'b2c' | 'b2b'>('b2c');
 
   // === Computed Signals ===
   protected readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -47,7 +49,18 @@ export class EventRosterSectionComponent {
   }
 
   protected openEvent(eventId: string): void {
+    this.openFocused(eventId, 'b2c');
+  }
+
+  /**
+   * Open the detail drawer scoped to one story. Called from the individual
+   * column cells so registrations open the B2C (campaigns) view and sponsorship
+   * opens the B2B view. `event` is stopped so the row-level click doesn't also fire.
+   */
+  protected openFocused(eventId: string, focus: 'b2c' | 'b2b', event?: Event): void {
+    event?.stopPropagation();
     this.selectedEventId.set(eventId);
+    this.drawerFocus.set(focus);
     this.drawerVisible.set(true);
   }
 
@@ -97,7 +110,6 @@ export class EventRosterSectionComponent {
       registrations,
       sponsorshipRevenue,
       atRisk,
-      cfpStatus: event.cfpStatus,
     };
   }
 

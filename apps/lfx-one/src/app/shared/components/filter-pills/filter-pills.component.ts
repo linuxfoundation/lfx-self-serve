@@ -18,7 +18,7 @@ export class FilterPillsComponent {
   public readonly selectedFilter = input.required<string>();
   public readonly filterChange = output<string>();
 
-  public handleFilterChange(filterId: string): void {
-    this.filterChange.emit(filterId);
+  public handleFilterChange(option: FilterPillOption): void {
+    this.filterChange.emit(option.id);
   }
 }
