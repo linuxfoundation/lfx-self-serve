@@ -636,7 +636,13 @@ export interface EventsSummaryResponse {
  * there is no prior-period baseline to compare against.
  */
 export interface EventsOverviewMetric {
-  value: number;
+  /**
+   * The metric's value, or null when it isn't derivable for the requested period. Attendee,
+   * country, organization, and sponsorship counts only exist as pre-aggregated YTD rollups in
+   * Snowflake, so a month-scoped request returns null for them rather than passing off a
+   * year-to-date figure as a monthly one.
+   */
+  value: number | null;
   changeFraction: number | null;
 }
 

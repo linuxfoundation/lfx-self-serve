@@ -24,6 +24,7 @@ export class EventRosterSectionComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedPeriod = input<string>('');
 
   // === Controls ===
   protected readonly search = new FormControl('', { nonNullable: true });
@@ -64,16 +65,17 @@ export class EventRosterSectionComponent {
   private initRoster(): Signal<EventRosterResponse> {
     const slug$ = toObservable(this.foundationSlug);
     const past$ = toObservable(this.includePast);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, past$]).pipe(
-        switchMap(([slug, includePast]) => {
+      combineLatest([slug$, past$, period$]).pipe(
+        switchMap(([slug, includePast, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ projectId: '', events: [] });
           }
           this.loading.set(true);
-          return this.analyticsService.getEventRoster(slug, includePast).pipe(finalize(() => this.loading.set(false)));
+          return this.analyticsService.getEventRoster(slug, includePast, period || undefined).pipe(finalize(() => this.loading.set(false)));
         })
       ),
       { initialValue: { projectId: '', events: [] } }

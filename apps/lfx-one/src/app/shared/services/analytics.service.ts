@@ -1147,9 +1147,11 @@ export class AnalyticsService {
    * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab.
    * Emits null on error so the tiles fall back to dashes rather than measured zeros.
    */
-  public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
+  public getEventsOverviewSummary(foundationSlug: string, period?: string): Observable<EventsOverviewSummaryResponse | null> {
     return this.http
-      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
+      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', {
+        params: this.buildFoundationParams(foundationSlug, undefined, period),
+      })
       .pipe(catchError(() => of(null)));
   }
 
@@ -1157,10 +1159,12 @@ export class AnalyticsService {
    * Foundation event roster (upcoming by default; pass includePast for the full history).
    * Emits an empty roster on error so the table shows its empty state rather than breaking.
    */
-  public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
-    const key = `${foundationSlug}|${includePast}`;
+  public getEventRoster(foundationSlug: string, includePast = false, period?: string): Observable<EventRosterResponse> {
+    // Every argument that changes the response belongs in the key — the period included, or a
+    // period switch would replay the previous period's roster.
+    const key = `${foundationSlug}|${includePast}|${period ?? ''}`;
     if (!this.eventRosterCache.has(key)) {
-      const params: Record<string, string> = { foundationSlug };
+      const params = this.buildFoundationParams(foundationSlug, undefined, period);
       if (includePast) {
         params['includePast'] = 'true';
       }

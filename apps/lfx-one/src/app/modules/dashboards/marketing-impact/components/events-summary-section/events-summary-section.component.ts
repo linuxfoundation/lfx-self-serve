@@ -66,17 +66,19 @@ export class EventsSummarySectionComponent {
 
     return toSignal(
       combineLatest([slug$, period$]).pipe(
-        switchMap(([slug]) => {
+        switchMap(([slug, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          // All 7 tiles come from a single YTD-scoped endpoint over
-          // PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW + MARKETING_EVENT_SPONSORSHIPS. Each
-          // metric carries its value and a YoY change fraction (null when no prior baseline);
-          // a null response falls the whole block back to dashes.
-          return this.analyticsService.getEventsOverviewSummary(slug).pipe(
+          // The default (YTD/trailing) period reads all 7 tiles from
+          // PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW + MARKETING_EVENT_SPONSORSHIPS. A single
+          // month re-aggregates events/registrations/speakers per event instead and returns null
+          // for the four metrics that only exist as YTD rollups. Each metric carries its value
+          // and a YoY change fraction (null when no prior baseline); a null response falls the
+          // whole block back to dashes.
+          return this.analyticsService.getEventsOverviewSummary(slug, period || undefined).pipe(
             map((data) =>
               data === null
                 ? null
@@ -103,8 +105,10 @@ export class EventsSummarySectionComponent {
       const data = this.summary();
       return EventsSummarySectionComponent.tiles.map((tile) => {
         const metric = data ? data[tile.key] : null;
+        // A null value means the metric isn't derivable for the selected period (the YTD-only
+        // rollups under a month filter), so it stays a dash rather than rendering as zero.
         let value = '—';
-        if (metric) {
+        if (metric && metric.value !== null) {
           value = tile.format === 'currency' ? formatCurrency(metric.value) : formatNumber(metric.value);
         }
 
