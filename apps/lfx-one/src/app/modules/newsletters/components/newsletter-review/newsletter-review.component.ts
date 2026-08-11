@@ -9,6 +9,7 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
 import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { EMPTY, startWith, switchMap } from 'rxjs';
@@ -22,7 +23,13 @@ const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = 
   past: 'This time has passed — pick a new one.',
   tooSoon: 'Pick a time at least 30 minutes from now, so it can still be cancelled if needed.',
   tooFar: 'Pick a time within the next 72 hours.',
+  invalidFormat: 'Enter a valid time, like 9:30 AM.',
 };
+
+// Upfront explanation of the schedule window and the settlement lag, so the rules show
+// before the picker ever produces an error — see SCHEDULE_WINDOW_MESSAGES for the reactive
+// versions of the same constraints once a pick actually falls outside them.
+const SCHEDULE_RULES_TEXT = `Pick a time at least ${NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES} minutes from now (so it can still be cancelled) and within the next ${NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS} hours. Delivery can lag up to a few minutes behind the time shown here.`;
 
 @Component({
   selector: 'lfx-newsletter-review',
@@ -50,6 +57,7 @@ export class NewsletterReviewComponent {
   public readonly committeesLoading = input<boolean>(false);
   public readonly scheduleMinDate = input<Date | null>(null);
   public readonly scheduleMaxDate = input<Date | null>(null);
+  public readonly scheduleMinDateTime = input<Date | null>(null);
   public readonly scheduleSummary = input<string>('');
   public readonly scheduleWindowError = input<NewsletterScheduleWindowError | null>(null);
   public readonly canSchedule = input<boolean>(false);
@@ -99,6 +107,7 @@ export class NewsletterReviewComponent {
   protected readonly contentIncomplete = computed(() => !this.hasSubject() || !this.hasBody());
 
   protected readonly sendModeOptions = SEND_MODE_OPTIONS;
+  protected readonly scheduleRulesText = SCHEDULE_RULES_TEXT;
   protected readonly scheduleWindowMessage = computed<string | null>(() => {
     const error = this.scheduleWindowError();
     return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;

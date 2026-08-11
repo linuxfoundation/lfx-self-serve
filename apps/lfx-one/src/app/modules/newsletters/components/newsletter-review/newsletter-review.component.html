@@ -217,6 +217,7 @@
             data-testid="newsletter-review-schedule-mode-toggle">
           </lfx-select-button>
         </div>
+        <p class="text-xs text-gray-500" data-testid="newsletter-review-schedule-rules">{{ scheduleRulesText }}</p>
 
         @if (sendMode() === 'schedule') {
           <div class="flex flex-col gap-2">
@@ -229,7 +230,14 @@
                 [minDate]="scheduleMinDate()"
                 [maxDate]="scheduleMaxDate()"
                 data-testid="newsletter-review-schedule-date"></lfx-calendar>
-              <lfx-time-picker [form]="form()" control="scheduleTime" placeholder="Select time" data-testid="newsletter-review-schedule-time"></lfx-time-picker>
+              <lfx-time-picker
+                [form]="form()"
+                control="scheduleTime"
+                placeholder="Select time"
+                [selectedDate]="form().get('scheduleDate')?.value ?? null"
+                [minDateTime]="scheduleMinDateTime()"
+                [maxDateTime]="scheduleMaxDate()"
+                data-testid="newsletter-review-schedule-time"></lfx-time-picker>
             </div>
             @if (scheduleWindowMessage(); as message) {
               <div class="text-xs text-amber-600" data-testid="newsletter-review-schedule-window-error">{{ message }}</div>

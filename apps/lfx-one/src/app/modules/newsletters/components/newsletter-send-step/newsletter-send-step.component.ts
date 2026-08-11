@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
 import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 
 const SEND_MODE_OPTIONS = [
@@ -18,7 +19,12 @@ const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = 
   past: 'This time has passed — pick a new one.',
   tooSoon: 'Pick a time at least 30 minutes from now, so it can still be cancelled if needed.',
   tooFar: 'Pick a time within the next 72 hours.',
+  invalidFormat: 'Enter a valid time, like 9:30 AM.',
 };
+
+// See newsletter-review.component.ts's identical constant for the rationale — this
+// component and the review card show the same schedule panel in two different steps.
+const SCHEDULE_RULES_TEXT = `Pick a time at least ${NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES} minutes from now (so it can still be cancelled) and within the next ${NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS} hours. Delivery can lag up to a few minutes behind the time shown here.`;
 
 @Component({
   selector: 'lfx-newsletter-send-step',
@@ -41,6 +47,7 @@ export class NewsletterSendStepComponent {
   public readonly sendMode = input<'now' | 'schedule'>('now');
   public readonly scheduleMinDate = input<Date | null>(null);
   public readonly scheduleMaxDate = input<Date | null>(null);
+  public readonly scheduleMinDateTime = input<Date | null>(null);
   public readonly scheduleSummary = input<string>('');
   public readonly scheduleWindowError = input<NewsletterScheduleWindowError | null>(null);
   public readonly canSchedule = input<boolean>(false);
@@ -54,6 +61,7 @@ export class NewsletterSendStepComponent {
   public readonly cancelSchedule = output<void>();
 
   protected readonly sendModeOptions = SEND_MODE_OPTIONS;
+  protected readonly scheduleRulesText = SCHEDULE_RULES_TEXT;
   protected readonly scheduleWindowMessage = computed<string | null>(() => {
     const error = this.scheduleWindowError();
     return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;
