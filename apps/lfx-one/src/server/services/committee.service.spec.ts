@@ -537,6 +537,22 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
+    it('authorizes the webhook against the effective post-update project when the same PUT also moves the committee (project_uid) — a writer of only the old project must not pair the move with a webhook they control', async () => {
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-a' }, etag: 'etag-1' });
+      // The rejection itself isn't what pins the fix — the toHaveBeenCalledWith below is: the
+      // check must target the incoming project-b (committeeData.project_uid), not the
+      // committee's current project-a, which is what the pre-fix code passed.
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL, project_uid: 'project-b' })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'NOT_PROJECT_WRITER',
+      });
+
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-b', access: 'writer' });
+      expect(updateWithETag).not.toHaveBeenCalled();
+    });
+
     it('does not run the project-writer check for updates that omit chat_webhook_url', async () => {
       fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
       updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
@@ -550,6 +566,18 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: 'https://evil.example.com/x' })).rejects.toMatchObject({
         statusCode: 400,
       });
+
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it("rejects non-string chat_webhook_url JSON values (false, 0, objects) with a 400 before any write — the declared string|null type doesn't stop a raw req.body cast, and falsy non-strings would otherwise skip the pattern test and only fail post-write via the read-back mismatch", async () => {
+      for (const badValue of [false, 0, { url: VALID_WEBHOOK_URL }]) {
+        await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: badValue as unknown as string })).rejects.toMatchObject({
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+        });
+      }
 
       expect(fetchWithETag).not.toHaveBeenCalled();
       expect(proxyRequest).not.toHaveBeenCalled();

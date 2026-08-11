@@ -535,14 +535,27 @@ export class CommitteeService {
       });
     }
 
+    // Read as `unknown` first: the static type says `string | null | undefined`, but this body
+    // arrives as raw JSON (the controller casts req.body), so a direct API caller can send any
+    // JSON value — false, 0, {}, []. A truthiness-only check below would let falsy non-strings
+    // through: they'd skip the pattern test, ride the core PUT, and only surface after the write
+    // via the read-back mismatch (or via upstream unmarshalling once the LFXV2-3094 schema
+    // lands). The check below therefore rejects every value that isn't absent, null, or a
+    // string — before any write happens.
+    const rawChatWebhookUrl = (data as CommitteeUpdateData & { chat_webhook_url?: unknown }).chat_webhook_url;
+
     // Normalized once, up front: an empty string must behave identically to omission/null
     // everywhere below it's used (validation skip, the PUT payload, and the read-back
     // comparison) — otherwise a direct API caller sending '' would skip validation (falsy,
     // intentionally) but then fail the read-back check with a spurious mismatch against the
     // `null` getSlackWebhookUrlStrict actually returns for "not configured".
-    const normalizedData: CommitteeUpdateData = { ...data, ...(data.chat_webhook_url === '' && { chat_webhook_url: null }) };
+    const normalizedData: CommitteeUpdateData = { ...data, ...(rawChatWebhookUrl === '' && { chat_webhook_url: null }) };
 
-    if (normalizedData.chat_webhook_url && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(normalizedData.chat_webhook_url)) {
+    if (
+      rawChatWebhookUrl !== undefined &&
+      rawChatWebhookUrl !== null &&
+      (typeof rawChatWebhookUrl !== 'string' || (rawChatWebhookUrl !== '' && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(rawChatWebhookUrl)))
+    ) {
       throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
         operation: 'update_committee',
         service: 'committee_service',
@@ -585,7 +598,12 @@ export class CommitteeService {
       if (normalizedData.chat_webhook_url !== undefined) {
         const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
           resource: 'project',
-          id: currentCommittee.project_uid,
+          // Authorize against the effective post-update project, not the committee's current
+          // one: if this same PUT also moves the committee (committeeData.project_uid lands in
+          // mergedData below), a writer of only the old project could otherwise pair the move
+          // with a webhook they control — and a later legitimate writer of the new project
+          // would send briefs there.
+          id: committeeData.project_uid ?? currentCommittee.project_uid,
           access: 'writer',
         });
         if (!isProjectWriter) {
