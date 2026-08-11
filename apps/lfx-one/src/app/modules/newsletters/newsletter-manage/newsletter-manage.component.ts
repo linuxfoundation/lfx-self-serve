@@ -342,13 +342,7 @@ export class NewsletterManageComponent {
       !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () =>
-      this.subjectFilled() &&
-      this.bodyFilled() &&
-      this.hasContext() &&
-      this.edEmail().length > 0 &&
-      !this.testSending() &&
-      !this.isScheduleReadOnly()
+    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
   );
   // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
@@ -1238,12 +1232,7 @@ export class NewsletterManageComponent {
     // and then flips to 'review' once initViewMode() re-runs off the isScheduleReadOnly
     // observable — draftLoading() keeps both branches hidden in the meantime.
     const initialIsEdit = this.route.snapshot.paramMap.get('id') !== null;
-    const initial = this.deriveViewMode(
-      initialIsEdit,
-      this.route.snapshot.queryParamMap.get('view'),
-      this.route.snapshot.queryParamMap.get('step'),
-      false
-    );
+    const initial = this.deriveViewMode(initialIsEdit, this.route.snapshot.queryParamMap.get('view'), this.route.snapshot.queryParamMap.get('step'), false);
 
     return toSignal(
       combineLatest([toObservable(this.isEditMode), this.route.queryParamMap, toObservable(this.isScheduleReadOnly)]).pipe(
