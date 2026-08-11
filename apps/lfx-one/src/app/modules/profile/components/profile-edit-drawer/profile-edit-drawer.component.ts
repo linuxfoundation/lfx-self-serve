@@ -338,10 +338,11 @@ export class ProfileEditDrawerComponent {
     }
 
     this.avatarUploading.set(true);
-    // No takeUntilDestroyed here, deliberately: the upload itself (not just its data) is the
-    // user-visible operation, and unsubscribing on destroy would abort the underlying HTTP
-    // request. uploadProfilePicture() already applies take(1), so this still satisfies the
-    // no-bare-subscribe rule without risking a silently-dropped in-flight upload on navigation.
+    // No takeUntilDestroyed here — reviewed exception, not an oversight. Added in 6d9ec40e after
+    // it caused in-flight uploads to abort on drawer/route destroy; the upload itself (not just
+    // its data) is the user-visible operation, so unsubscribing early would silently drop it.
+    // uploadProfilePicture() already applies take(1), so no-bare-subscribe is still satisfied
+    // without the leak risk. Do not reinstate takeUntilDestroyed on this subscribe.
     this.userService
       .uploadProfilePicture(file)
       .pipe(finalize(() => this.avatarUploading.set(false)))
