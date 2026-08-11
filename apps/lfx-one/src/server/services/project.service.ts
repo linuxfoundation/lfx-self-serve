@@ -4964,13 +4964,30 @@ export class ProjectService {
    * for the sponsorship dollar total. The foundation rollup (children included) is baked into
    * the project spine, so a single row keyed on the resolved PROJECT_ID covers the foundation.
    *
-   * Only YTD is modeled here (the table has no monthly grain); the *_PERCENT_CHANGE_YTD columns
-   * carry the YoY deltas as fractions (0.52 = +52%), surfaced unchanged as changeFraction.
+   * The *_PERCENT_CHANGE_YTD columns carry the YoY deltas as fractions (0.52 = +52%), surfaced
+   * unchanged as changeFraction.
+   *
+   * MARKETING_EVENT_OVERVIEW has no monthly grain, so a month-scoped period takes a different
+   * path: events, registrations, and speakers are re-aggregated per event from
+   * MARKETING_EVENT_REGISTRATIONS (which carries EVENT_START_DATE), and the metrics with no
+   * per-event column — attendees, countries, organizations, sponsorship — come back null so the
+   * UI dashes them instead of labelling a YTD rollup as a single month.
    */
-  public async getEventsOverviewSummary(foundationSlug: string): Promise<EventsOverviewSummaryResponse> {
+  public async getEventsOverviewSummary(foundationSlug: string, period?: ResolvedPeriodRange): Promise<EventsOverviewSummaryResponse> {
     logger.debug(undefined, 'get_events_overview_summary', 'Fetching events overview summary from Snowflake', {
       foundation_slug: foundationSlug,
+      period: period?.label,
     });
+
+    // Only a month re-aggregates. YTD and trailing ranges fall through to MARKETING_EVENT_OVERVIEW,
+    // whose columns are pre-aggregated year-to-date rollups with no date grain to filter on — a
+    // trailing range cannot narrow them. Re-aggregating trailing from MARKETING_EVENT_REGISTRATIONS
+    // would scope events/registrations/speakers but drop attendees, countries, organizations, and
+    // sponsorship to dashes, and 'last-6' is the default period, so the default view would lose four
+    // of seven tiles. Serving the YTD rollup is the better trade until those metrics have a date grain.
+    if (period && period.type === 'month') {
+      return this.getEventsOverviewSummaryForMonth(foundationSlug, period);
+    }
 
     interface OverviewRow {
       PROJECT_ID: string;
@@ -5069,11 +5086,16 @@ export class ProjectService {
    * joined to sponsorship actuals aggregated from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. A goal
    * of 0 means "no goal required" for that event (the UI renders no progress bar). Defaults to
    * upcoming events only; pass includePast to return the full history.
+   *
+   * When a period is supplied the roster is scoped to events *starting* inside it, so the
+   * dashboard's month selector narrows this list the same way it narrows the paid and email
+   * sections. Without one it falls back to the dashboard's default month range.
    */
-  public async getEventRoster(foundationSlug: string, includePast = false): Promise<EventRosterResponse> {
+  public async getEventRoster(foundationSlug: string, includePast = false, period?: ResolvedPeriodRange): Promise<EventRosterResponse> {
     logger.debug(undefined, 'get_event_roster', 'Fetching event roster from Snowflake', {
       foundation_slug: foundationSlug,
       include_past: includePast,
+      period: period?.label,
     });
 
     interface RosterRow {
@@ -5093,6 +5115,16 @@ export class ProjectService {
     }
 
     const pastFilter = includePast ? '' : 'AND r.EVENT_IS_PAST = FALSE';
+
+    // The period only scopes history. Every month the picker offers is already over, so applying
+    // a month range to the upcoming-events view (EVENT_IS_PAST = FALSE) could only ever return
+    // nothing — upcoming events are forward-looking by definition and aren't "in" a past month.
+    // Narrowing therefore applies solely when the caller asked for past events.
+    // Half-open range so an event starting on the first of the next month belongs to that month.
+    // Binds come after the slug because slug_resolve holds the first placeholder.
+    const applyPeriod = Boolean(period) && includePast;
+    const periodFilter = applyPeriod ? 'AND r.EVENT_START_DATE >= TO_DATE(?) AND r.EVENT_START_DATE < TO_DATE(?)' : '';
+    const periodParams = applyPeriod && period ? [period.startDate, period.endDate] : [];
 
     const query = `
       WITH slug_resolve AS (
@@ -5128,11 +5160,11 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
       INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
       LEFT JOIN sponsorship sp ON r.EVENT_ID = sp.EVENT_ID
-      WHERE 1 = 1 ${pastFilter}
+      WHERE 1 = 1 ${pastFilter} ${periodFilter}
       ORDER BY r.EVENT_START_DATE
     `;
 
-    const result = await this.snowflakeService.execute<RosterRow>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<RosterRow>(query, [foundationSlug, ...periodParams]);
 
     const normalizeScore = (score: string | null): EventCompScore => {
       const s = (score ?? '').toLowerCase();
@@ -7550,6 +7582,59 @@ export class ProjectService {
     const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
     const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
     return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(`${p.uid}#meeting_coordinator`) === true);
+  }
+
+  /**
+   * Month-scoped Events Summary, re-aggregated from MARKETING_EVENT_REGISTRATIONS (one row per
+   * event, carrying EVENT_START_DATE) for events starting inside the month.
+   *
+   * Only the three metrics with a per-event column are derivable this way. Attendees, countries,
+   * organizations, and sponsorship revenue exist solely as pre-aggregated YTD rollups on
+   * MARKETING_EVENT_OVERVIEW / MARKETING_EVENT_SPONSORSHIPS and have no monthly grain anywhere
+   * in the Platinum layer, so they return null. There is likewise no monthly YoY baseline
+   * modeled, so every changeFraction is null.
+   */
+  private async getEventsOverviewSummaryForMonth(foundationSlug: string, period: ResolvedPeriodRange): Promise<EventsOverviewSummaryResponse> {
+    interface MonthRow {
+      PROJECT_ID: string;
+      EVENT_COUNT: number;
+      REGISTRATIONS_COUNT: number;
+      SPEAKERS_COUNT: number;
+    }
+
+    // Speakers uses accepted proposals — a nominated-but-unaccepted proposal is not a speaker.
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        MAX(r.PROJECT_ID) AS PROJECT_ID,
+        COUNT(DISTINCT r.EVENT_ID) AS EVENT_COUNT,
+        IFNULL(SUM(r.COUNT_REGISTRATIONS_ALL_TIME), 0) AS REGISTRATIONS_COUNT,
+        IFNULL(SUM(r.ACCEPTED_SPEAKER_PROPOSALS_ALL_TIME), 0) AS SPEAKERS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
+      WHERE r.EVENT_START_DATE >= TO_DATE(?)
+        AND r.EVENT_START_DATE < TO_DATE(?)
+    `;
+
+    const result = await this.snowflakeService.execute<MonthRow>(query, [foundationSlug, period.startDate, period.endDate]);
+    const row = result.rows?.[0];
+
+    const unavailable: EventsOverviewMetric = { value: null, changeFraction: null };
+
+    return {
+      projectId: row?.PROJECT_ID ?? '',
+      events: { value: row?.EVENT_COUNT ?? 0, changeFraction: null },
+      registrations: { value: row?.REGISTRATIONS_COUNT ?? 0, changeFraction: null },
+      speakers: { value: row?.SPEAKERS_COUNT ?? 0, changeFraction: null },
+      attendees: unavailable,
+      countries: unavailable,
+      organizations: unavailable,
+      sponsorship: unavailable,
+    };
   }
 
   /**
