@@ -22,6 +22,7 @@ import {
 import {
   Committee,
   ShareWeeklyBriefResult,
+  ValidationError,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
@@ -745,7 +746,7 @@ export class WeeklyBriefCardComponent {
             // ServiceValidationError's top-level `error` field is a generic
             // "Validation failed for X" — the actionable text lives in the
             // per-field `errors[]` array.
-            const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
+            const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
             // The send is async — a dropped connection, timeout, or 5xx here
@@ -809,7 +810,7 @@ export class WeeklyBriefCardComponent {
               detail = "This brief can't be shared to Slack right now. Reload and try again.";
             }
           } else if (status === 400) {
-            const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
+            const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
           } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
             // Slack answered synchronously with a rejection (invalid_payload, channel_not_found,
