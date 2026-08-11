@@ -42,6 +42,61 @@
     </div>
   </div>
 
+  @if (isScheduleReadOnly()) {
+    <div
+      class="rounded-lg border border-blue-200 bg-blue-50 px-6 py-5 flex items-center justify-between gap-4"
+      data-testid="newsletter-schedule-readonly-banner">
+      <div class="flex items-center gap-3">
+        <i class="fa-regular fa-clock text-blue-500"></i>
+        <div class="text-sm text-gray-700">{{ scheduleSummary() || 'This newsletter is scheduled.' }} Cancel the schedule to edit.</div>
+      </div>
+      <lfx-button
+        label="Cancel schedule"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        [loading]="cancelingSchedule()"
+        (onClick)="cancelSchedule.emit()"
+        data-testid="newsletter-cancel-schedule-button">
+      </lfx-button>
+    </div>
+  } @else {
+    <div class="rounded-lg border border-gray-200 px-6 py-5 flex flex-col gap-4" data-testid="newsletter-schedule-panel">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="text-sm font-medium text-gray-900">When should this send?</div>
+        <lfx-select-button
+          [form]="form()"
+          control="sendMode"
+          [options]="sendModeOptions"
+          optionLabel="label"
+          optionValue="value"
+          data-testid="newsletter-schedule-mode-toggle">
+        </lfx-select-button>
+      </div>
+
+      @if (sendMode() === 'schedule') {
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-3 flex-wrap">
+            <lfx-calendar
+              [form]="form()"
+              control="scheduleDate"
+              appendTo="body"
+              placeholder="Select date"
+              [minDate]="scheduleMinDate()"
+              [maxDate]="scheduleMaxDate()"
+              data-testid="newsletter-schedule-date"></lfx-calendar>
+            <lfx-time-picker [form]="form()" control="scheduleTime" placeholder="Select time" data-testid="newsletter-schedule-time"></lfx-time-picker>
+          </div>
+          @if (scheduleWindowMessage(); as message) {
+            <div class="text-xs text-amber-600" data-testid="newsletter-schedule-window-error">{{ message }}</div>
+          } @else if (scheduleSummary()) {
+            <div class="text-xs text-gray-500" data-testid="newsletter-schedule-summary">{{ scheduleSummary() }}</div>
+          }
+        </div>
+      }
+    </div>
+  }
+
   <div class="flex items-center justify-end gap-3 flex-wrap">
     <lfx-button
       label="Send test"
@@ -55,15 +110,28 @@
       [ariaLabel]="'Send a test newsletter to ' + edEmail()"
       data-testid="newsletter-send-test-button">
     </lfx-button>
-    <lfx-button
-      label="Send now"
-      icon="fa-regular fa-paper-plane"
-      severity="primary"
-      size="small"
-      [disabled]="!canSend()"
-      [loading]="sending()"
-      (onClick)="send.emit()"
-      data-testid="newsletter-send-now-button">
-    </lfx-button>
+    @if (sendMode() === 'schedule') {
+      <lfx-button
+        label="Schedule"
+        icon="fa-regular fa-clock"
+        severity="primary"
+        size="small"
+        [disabled]="!canSchedule()"
+        [loading]="scheduling()"
+        (onClick)="schedule.emit()"
+        data-testid="newsletter-schedule-submit">
+      </lfx-button>
+    } @else {
+      <lfx-button
+        label="Send now"
+        icon="fa-regular fa-paper-plane"
+        severity="primary"
+        size="small"
+        [disabled]="!canSend()"
+        [loading]="sending()"
+        (onClick)="send.emit()"
+        data-testid="newsletter-send-now-button">
+      </lfx-button>
+    }
   </div>
 </div>

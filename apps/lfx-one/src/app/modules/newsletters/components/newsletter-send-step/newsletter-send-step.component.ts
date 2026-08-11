@@ -1,15 +1,32 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
+import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { CalendarComponent } from '@components/calendar/calendar.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
+import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
+
+const SEND_MODE_OPTIONS = [
+  { label: 'Send now', value: 'now' },
+  { label: 'Schedule', value: 'schedule' },
+];
+
+const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = {
+  past: 'This time has passed — pick a new one.',
+  tooSoon: 'Pick a time at least 30 minutes from now, so it can still be cancelled if needed.',
+  tooFar: 'Pick a time within the next 72 hours.',
+};
 
 @Component({
   selector: 'lfx-newsletter-send-step',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, SelectButtonComponent, CalendarComponent, TimePickerComponent],
   templateUrl: './newsletter-send-step.component.html',
 })
 export class NewsletterSendStepComponent {
+  public readonly form = input.required<FormGroup>();
   public readonly subject = input<string>('');
   public readonly recipientCount = input<number | null>(null);
   public readonly committeeCount = input<number>(0);
@@ -21,7 +38,24 @@ export class NewsletterSendStepComponent {
   public readonly sending = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
   public readonly testSending = input<boolean>(false);
+  public readonly sendMode = input<'now' | 'schedule'>('now');
+  public readonly scheduleMinDate = input<Date | null>(null);
+  public readonly scheduleMaxDate = input<Date | null>(null);
+  public readonly scheduleSummary = input<string>('');
+  public readonly scheduleWindowError = input<NewsletterScheduleWindowError | null>(null);
+  public readonly canSchedule = input<boolean>(false);
+  public readonly scheduling = input<boolean>(false);
+  public readonly isScheduleReadOnly = input<boolean>(false);
+  public readonly cancelingSchedule = input<boolean>(false);
 
   public readonly send = output<void>();
   public readonly sendTest = output<void>();
+  public readonly schedule = output<void>();
+  public readonly cancelSchedule = output<void>();
+
+  protected readonly sendModeOptions = SEND_MODE_OPTIONS;
+  protected readonly scheduleWindowMessage = computed<string | null>(() => {
+    const error = this.scheduleWindowError();
+    return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;
+  });
 }

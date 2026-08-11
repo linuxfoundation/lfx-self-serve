@@ -5,13 +5,28 @@ import { Component, computed, DestroyRef, inject, input, output, Signal } from '
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { CalendarComponent } from '@components/calendar/calendar.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
+const SEND_MODE_OPTIONS = [
+  { label: 'Send now', value: 'now' },
+  { label: 'Schedule', value: 'schedule' },
+];
+
+const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = {
+  past: 'This time has passed — pick a new one.',
+  tooSoon: 'Pick a time at least 30 minutes from now, so it can still be cancelled if needed.',
+  tooFar: 'Pick a time within the next 72 hours.',
+};
+
 @Component({
   selector: 'lfx-newsletter-review',
-  imports: [ButtonComponent, TagComponent],
+  imports: [ButtonComponent, TagComponent, SelectButtonComponent, CalendarComponent, TimePickerComponent],
   templateUrl: './newsletter-review.component.html',
 })
 export class NewsletterReviewComponent {
@@ -33,6 +48,14 @@ export class NewsletterReviewComponent {
   public readonly deleting = input<boolean>(false);
   public readonly committeesError = input<string | null>(null);
   public readonly committeesLoading = input<boolean>(false);
+  public readonly scheduleMinDate = input<Date | null>(null);
+  public readonly scheduleMaxDate = input<Date | null>(null);
+  public readonly scheduleSummary = input<string>('');
+  public readonly scheduleWindowError = input<NewsletterScheduleWindowError | null>(null);
+  public readonly canSchedule = input<boolean>(false);
+  public readonly scheduling = input<boolean>(false);
+  public readonly isScheduleReadOnly = input<boolean>(false);
+  public readonly cancelingSchedule = input<boolean>(false);
 
   // === Outputs ===
   public readonly editAudience = output<void>();
@@ -40,6 +63,8 @@ export class NewsletterReviewComponent {
   public readonly editSend = output<void>();
   public readonly send = output<void>();
   public readonly sendTest = output<void>();
+  public readonly schedule = output<void>();
+  public readonly cancelSchedule = output<void>();
   public readonly preview = output<void>();
   public readonly delete = output<void>();
   public readonly retryCommittees = output<void>();
@@ -48,6 +73,7 @@ export class NewsletterReviewComponent {
   protected readonly committeeUids: Signal<string[]> = this.initControlValue<string[]>('committeeUids', []);
   protected readonly subjectValue: Signal<string> = this.initControlValue<string>('subject', '');
   protected readonly bodyValue: Signal<string> = this.initControlValue<string>('bodyHtml', '');
+  protected readonly sendMode: Signal<'now' | 'schedule'> = this.initControlValue<'now' | 'schedule'>('sendMode', 'now');
 
   // === Derived display values ===
   protected readonly committeeCount = computed(() => this.committeeUids().length);
@@ -71,6 +97,12 @@ export class NewsletterReviewComponent {
   });
   protected readonly audienceEmpty = computed(() => this.committeeCount() === 0);
   protected readonly contentIncomplete = computed(() => !this.hasSubject() || !this.hasBody());
+
+  protected readonly sendModeOptions = SEND_MODE_OPTIONS;
+  protected readonly scheduleWindowMessage = computed<string | null>(() => {
+    const error = this.scheduleWindowError();
+    return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;
+  });
 
   private initControlValue<T>(controlName: string, fallback: T): Signal<T> {
     return toSignal(

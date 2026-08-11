@@ -545,3 +545,26 @@ export function formatRelativeTime(date: Date): string {
 export function formatShortDate(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
+
+/**
+ * Short relative-time label for a future instant ("in 5 min", "in 2 hr", "in
+ * 3 days") — the forward-looking counterpart to `formatRelativeTime`, which
+ * only reads correctly for past instants (negative diffs there collapse to
+ * "just now"). Meant for scheduling summaries, not live countdowns.
+ */
+export function formatFutureRelativeTime(date: Date): string {
+  const timestamp = date.getTime();
+  if (!Number.isFinite(timestamp)) {
+    return 'unknown';
+  }
+  const diffMs = timestamp - Date.now();
+  if (diffMs <= 0) return 'now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'in less than a minute';
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 60) return `in ${diffMin} min`;
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  if (diffHr < 24) return `in ${diffHr} hr`;
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
+}
