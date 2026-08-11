@@ -1753,27 +1753,6 @@ export class CommitteeService {
   }
 
   /**
-   * Strict single-committee Slack-webhook fetch, mirroring {@link hasMailingListStrict}'s
-   * fail-closed contract — propagates an upstream failure instead of silently reporting "no
-   * webhook configured". Deliberately bypasses {@link getCommitteeById}, which strips
-   * `chat_webhook_url` from every response it returns. Used by `updateCommittee`'s read-back
-   * check, where only the URL itself is needed. `shareToSlack` uses
-   * {@link getCommitteeForSlackShare} instead — it needs `name`/`project_uid` too, and fetching
-   * those separately via `getCommitteeById` would mean two upstream round trips (and a TOCTOU
-   * window on the webhook value) for one send. Both are internal call sites allowed to see the
-   * raw credential, and only to act on it directly; never expose it via any controller/route.
-   */
-  public async getSlackWebhookUrlStrict(req: Request, committeeId: string): Promise<string | null> {
-    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeId}`,
-      'GET'
-    );
-    return committee?.chat_webhook_url ?? null;
-  }
-
-  /**
    * Lean single-fetch variant for `shareToSlack`: only `name`, `project_uid`, and the raw webhook
    * URL — not {@link getCommitteeById}'s settings/membership/access-check enrichment, none of
    * which `shareToSlack` reads. See {@link getSlackWebhookUrlStrict}'s doc comment for why this
@@ -1794,6 +1773,30 @@ export class CommitteeService {
       });
     }
     return { name: committee.name, project_uid: committee.project_uid, chat_webhook_url: committee.chat_webhook_url ?? null };
+  }
+
+  /**
+   * Strict single-committee Slack-webhook fetch, mirroring {@link hasMailingListStrict}'s
+   * fail-closed contract — propagates an upstream failure instead of silently reporting "no
+   * webhook configured". Deliberately bypasses {@link getCommitteeById}, which strips
+   * `chat_webhook_url` from every response it returns. Used by `updateCommittee`'s read-back
+   * check, where only the URL itself is needed. `shareToSlack` uses
+   * {@link getCommitteeForSlackShare} instead — it needs `name`/`project_uid` too, and fetching
+   * those separately via `getCommitteeById` would mean two upstream round trips (and a TOCTOU
+   * window on the webhook value) for one send. Both are internal call sites allowed to see the
+   * raw credential, and only to act on it directly; never expose it via any controller/route.
+   * `private` (unlike {@link getCommitteeForSlackShare}, which a different service must call)
+   * enforces that last sentence mechanically rather than by comment alone — its only caller is
+   * `updateCommittee`, in this same class.
+   */
+  private async getSlackWebhookUrlStrict(req: Request, committeeId: string): Promise<string | null> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
+    return committee?.chat_webhook_url ?? null;
   }
 
   /**

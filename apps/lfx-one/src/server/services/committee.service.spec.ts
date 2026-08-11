@@ -405,19 +405,11 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
   });
 
-  describe('getSlackWebhookUrlStrict', () => {
-    it('returns the raw webhook URL when configured', async () => {
-      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL });
-
-      await expect(service.getSlackWebhookUrlStrict(req, COMMITTEE_UID)).resolves.toBe(VALID_WEBHOOK_URL);
-    });
-
-    it('returns null when not configured', async () => {
-      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID });
-
-      await expect(service.getSlackWebhookUrlStrict(req, COMMITTEE_UID)).resolves.toBeNull();
-    });
-  });
+  // getSlackWebhookUrlStrict is private (its only caller is updateCommittee, in this same
+  // class) — its "returns the raw URL when configured" / "returns null when not configured"
+  // behavior is exercised indirectly by updateCommittee's read-back tests below (e.g. "accepts
+  // a well-formed hooks.slack.com URL" and "throws SLACK_WEBHOOK_NOT_PERSISTED..."), not by a
+  // dedicated describe block calling it directly.
 
   describe('getCommitteeForSlackShare', () => {
     it('returns name, project_uid, and the raw webhook URL from a single fetch', async () => {
