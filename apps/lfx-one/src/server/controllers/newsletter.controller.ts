@@ -639,7 +639,20 @@ export class NewsletterController {
     // express.json() defaults req.body to {} for an empty body, so "arm the
     // saved value" (no override) arrives as an object with no scheduled_at
     // key, not as undefined — both must be treated as "no override" here.
-    if (payload === undefined || payload.scheduled_at === undefined || payload.scheduled_at === null) {
+    // A JSON `null` body also reaches this method as `null`, not undefined —
+    // dereferencing `.scheduled_at` on it throws. Primitive/array bodies
+    // (`5`, `"x"`, `[]`) don't throw but must not silently pass through as
+    // "no override" either, since that arms the saved schedule for a
+    // malformed request instead of rejecting it.
+    if (payload === undefined || payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      if (payload === undefined || payload === null) return undefined;
+      throw ServiceValidationError.forField('scheduled_at', 'Request body must be a JSON object', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+    if (payload.scheduled_at === undefined || payload.scheduled_at === null) {
       return undefined;
     }
 

@@ -59,6 +59,7 @@ import {
   EMPTY,
   filter,
   finalize,
+  interval,
   map,
   merge,
   of,
@@ -212,9 +213,23 @@ export class NewsletterManageComponent {
     const iso = combineDateTime(date, time, this.scheduleTimezoneValue());
     return iso || null;
   });
+  // Ticks once a minute (browser only) so scheduleWindowError below re-evaluates purely from
+  // clock advancement — a picked time can drift from 'valid' into 'tooSoon'/'past' on a tab
+  // left open with no form interaction at all. See initScheduleClock.
+  private readonly scheduleClockTick = signal(0);
   // Read off the group (not a single control) since newsletterScheduleWindowValidator()
-  // is attached at the FormGroup level — see the `form` doc comment.
-  public readonly scheduleWindowError = computed<NewsletterScheduleWindowError | null>(() => this.form.errors?.['scheduleWindow'] ?? null);
+  // is attached at the FormGroup level — see the `form` doc comment. `FormGroup.errors` is a
+  // plain getter, not a signal, so this computed must read the mirror signals the validator
+  // actually depends on (mode/date/time/timezone), plus scheduleClockTick for elapsed-time-only
+  // changes, to know when to re-evaluate — otherwise it memoizes the first result forever.
+  public readonly scheduleWindowError = computed<NewsletterScheduleWindowError | null>(() => {
+    this.sendModeValue();
+    this.scheduleDateValue();
+    this.scheduleTimeValue();
+    this.scheduleTimezoneValue();
+    this.scheduleClockTick();
+    return this.form.errors?.['scheduleWindow'] ?? null;
+  });
   public readonly scheduleSummary = computed<string>(() => {
     const iso = this.scheduleAtIso();
     if (!iso) return '';
@@ -297,10 +312,17 @@ export class NewsletterManageComponent {
       !this.submitting() &&
       !this.resolvingSend() &&
       !this.savingDraft() &&
-      !this.hasPendingAudienceAdds()
+      !this.hasPendingAudienceAdds() &&
+      !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
+    () =>
+      this.subjectFilled() &&
+      this.bodyFilled() &&
+      this.hasContext() &&
+      this.edEmail().length > 0 &&
+      !this.testSending() &&
+      !this.isScheduleReadOnly()
   );
   // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
@@ -317,6 +339,7 @@ export class NewsletterManageComponent {
       !this.savingDraft() &&
       !this.scheduling() &&
       !this.hasPendingAudienceAdds() &&
+      !this.isScheduleReadOnly() &&
       this.scheduleAtIso() !== null &&
       this.scheduleWindowError() === null
   );
@@ -331,7 +354,8 @@ export class NewsletterManageComponent {
       this.subjectFilled() &&
       this.bodyFilled() &&
       this.edEmail().length > 0 &&
-      !this.savingDraft()
+      !this.savingDraft() &&
+      !this.isScheduleReadOnly()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => NEWSLETTER_STEP_TITLES[this.currentStep()] ?? '');
@@ -350,6 +374,7 @@ export class NewsletterManageComponent {
     this.initAutosave();
     this.initRecipientCount();
     this.initAudienceNormalization();
+    this.initScheduleClock();
     this.initSchedulePastGuard();
   }
 
@@ -375,9 +400,11 @@ export class NewsletterManageComponent {
     if (this.canGoPrevious()) this.goToStep(this.currentStep() - 1);
   }
 
-  // Enter the stepper at a specific step from the Review screen.
+  // Enter the stepper at a specific step from the Review screen. Upstream rejects any
+  // edit/save on a scheduled newsletter (409 'scheduled') — the review template already hides
+  // these Edit affordances while isScheduleReadOnly(), this is the defense-in-depth backstop.
   protected enterStep(step: number): void {
-    if (step < 1 || step > this.totalSteps) return;
+    if (step < 1 || step > this.totalSteps || this.isScheduleReadOnly()) return;
     if (!this.isEditMode()) {
       this.internalStep.set(step);
       return;
@@ -402,7 +429,7 @@ export class NewsletterManageComponent {
 
   protected onDeleteDraft(): void {
     const id = this.newsletterId();
-    if (!id || this.deletingDraft()) return;
+    if (!id || this.deletingDraft() || this.isScheduleReadOnly()) return;
     const subjectLabel = this.subjectValue().trim() || 'Untitled draft';
     this.confirmationService.confirm({
       key: 'newsletter-manage',
@@ -612,6 +639,22 @@ export class NewsletterManageComponent {
     const timezone = getUserTimezone();
     this.form.controls.scheduleTimezone.setValue(timezone);
     this.scheduleTimezoneValue.set(timezone);
+  }
+
+  /**
+   * FormGroup validators only re-run on a control value change — a picked time that's
+   * currently 'valid' silently drifts into 'tooSoon' (and eventually 'past') purely from the
+   * clock advancing, with no value change to trigger revalidation. Force a revalidation once a
+   * minute and bump scheduleClockTick so the scheduleWindowError computed picks up the result.
+   */
+  private initScheduleClock(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    interval(60_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.form.updateValueAndValidity({ onlySelf: true, emitEvent: false });
+        this.scheduleClockTick.update((n) => n + 1);
+      });
   }
 
   /**
@@ -898,9 +941,35 @@ export class NewsletterManageComponent {
       });
   }
 
+  /**
+   * Same synchronous-settlement edge case as handleSendResponse: a
+   * zero-recipient audience (or a pre-async upstream) can return
+   * status='sent' immediately instead of the usual 'sending' → 'scheduled'
+   * arm-in-progress path. Branch on the real status rather than assuming
+   * every response is still arming — landing on the Scheduled tab for a
+   * newsletter that already settled to Sent would make it invisible there.
+   */
   private handleScheduleResponse(result: NewsletterScheduleResult): void {
     this.newsletterStatus.set(result.newsletter.status);
     this.version.set(result.newsletter.version);
+    if (result.newsletter.status !== 'sending' && result.newsletter.status !== 'scheduled') {
+      if (result.failed > 0) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Sent with errors',
+          detail: `Delivered ${result.sent} of ${result.total_recipients}. ${result.failed} failed.`,
+          life: 8000,
+        });
+      } else {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Newsletter sent',
+          detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}.`,
+        });
+      }
+      this.goToList('sent');
+      return;
+    }
     this.messageService.add({
       severity: 'info',
       summary: 'Scheduling newsletter',

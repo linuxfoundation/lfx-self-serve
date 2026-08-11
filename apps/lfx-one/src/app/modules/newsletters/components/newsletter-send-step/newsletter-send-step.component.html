@@ -95,43 +95,43 @@
         </div>
       }
     </div>
-  }
 
-  <div class="flex items-center justify-end gap-3 flex-wrap">
-    <lfx-button
-      label="Send test"
-      icon="fa-regular fa-paper-plane"
-      severity="secondary"
-      [outlined]="true"
-      size="small"
-      [disabled]="!canSendTest()"
-      [loading]="testSending()"
-      (onClick)="sendTest.emit()"
-      [ariaLabel]="'Send a test newsletter to ' + edEmail()"
-      data-testid="newsletter-send-test-button">
-    </lfx-button>
-    @if (sendMode() === 'schedule') {
+    <div class="flex items-center justify-end gap-3 flex-wrap">
       <lfx-button
-        label="Schedule"
-        icon="fa-regular fa-clock"
-        severity="primary"
-        size="small"
-        [disabled]="!canSchedule()"
-        [loading]="scheduling()"
-        (onClick)="schedule.emit()"
-        data-testid="newsletter-schedule-submit">
-      </lfx-button>
-    } @else {
-      <lfx-button
-        label="Send now"
+        label="Send test"
         icon="fa-regular fa-paper-plane"
-        severity="primary"
+        severity="secondary"
+        [outlined]="true"
         size="small"
-        [disabled]="!canSend()"
-        [loading]="sending()"
-        (onClick)="send.emit()"
-        data-testid="newsletter-send-now-button">
+        [disabled]="!canSendTest()"
+        [loading]="testSending()"
+        (onClick)="sendTest.emit()"
+        [ariaLabel]="'Send a test newsletter to ' + edEmail()"
+        data-testid="newsletter-send-test-button">
       </lfx-button>
-    }
-  </div>
+      @if (sendMode() === 'schedule') {
+        <lfx-button
+          label="Schedule"
+          icon="fa-regular fa-clock"
+          severity="primary"
+          size="small"
+          [disabled]="!canSchedule()"
+          [loading]="scheduling()"
+          (onClick)="schedule.emit()"
+          data-testid="newsletter-schedule-submit">
+        </lfx-button>
+      } @else {
+        <lfx-button
+          label="Send now"
+          icon="fa-regular fa-paper-plane"
+          severity="primary"
+          size="small"
+          [disabled]="!canSend()"
+          [loading]="sending()"
+          (onClick)="send.emit()"
+          data-testid="newsletter-send-now-button">
+        </lfx-button>
+      }
+    </div>
+  }
 </div>

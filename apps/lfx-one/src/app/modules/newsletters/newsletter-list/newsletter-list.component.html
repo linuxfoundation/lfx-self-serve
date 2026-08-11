@@ -84,14 +84,8 @@
           <lfx-empty-state
             [withCard]="false"
             icon="fa-light fa-paper-plane"
-            [title]="statusTab() === 'draft' ? 'No drafts yet' : statusTab() === 'scheduled' ? 'No scheduled newsletters' : 'No sent newsletters yet'"
-            [subtitle]="
-              statusTab() === 'draft'
-                ? 'Start writing your first newsletter and your draft will appear here.'
-                : statusTab() === 'scheduled'
-                  ? 'Schedule a draft to send later and it will appear here until it goes out.'
-                  : 'Send your first newsletter and engagement metrics will show up here.'
-            "
+            [title]="emptyStateCopy().title"
+            [subtitle]="emptyStateCopy().subtitle"
             ctaLabel="Create newsletter"
             ctaIcon="fa-light fa-plus"
             (ctaClick)="goToCreate()">
@@ -198,6 +192,17 @@
                   <td class="text-right">
                     <div class="flex items-center justify-end gap-2">
                       @if (!newsletter.isArming) {
+                        <lfx-button
+                          icon="fa-light fa-eye"
+                          severity="secondary"
+                          size="small"
+                          [text]="true"
+                          ariaLabel="View newsletter"
+                          (onClick)="openPreview(newsletter, $event)"
+                          [attr.data-testid]="'newsletter-view-' + newsletter.id"
+                          pTooltip="Open preview of this scheduled newsletter"
+                          tooltipPosition="top">
+                        </lfx-button>
                         @if (canWrite()) {
                           <lfx-button
                             label="Cancel schedule"

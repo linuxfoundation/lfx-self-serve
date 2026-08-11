@@ -119,6 +119,17 @@ export class NewsletterListComponent {
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
+  // Per-tab empty-state copy, keyed by tab id — avoids nesting ternaries in the template
+  // (repo convention) for what's otherwise a flat lookup with no other tab-specific branching.
+  protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = computed(() => {
+    const copy: Record<'draft' | 'scheduled' | 'sent', { title: string; subtitle: string }> = {
+      draft: { title: 'No drafts yet', subtitle: 'Start writing your first newsletter and your draft will appear here.' },
+      scheduled: { title: 'No scheduled newsletters', subtitle: 'Schedule a draft to send later and it will appear here until it goes out.' },
+      sent: { title: 'No sent newsletters yet', subtitle: 'Send your first newsletter and engagement metrics will show up here.' },
+    };
+    const tab = this.statusTab();
+    return tab === 'optout' ? copy.sent : copy[tab];
+  });
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
   // scheduled labels fall back to UTC there and are replaced on client hydration.
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
