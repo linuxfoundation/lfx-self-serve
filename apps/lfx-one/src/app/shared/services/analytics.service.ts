@@ -1148,10 +1148,10 @@ export class AnalyticsService {
    */
   public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
     return this.http.get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        // Log before degrading — the dashes the tiles fall back to are indistinguishable from
-        // a legitimately empty period, so without this an outage looks like missing data.
-        console.error('Failed to load events overview summary', error);
+      catchError((error: unknown) => {
+        // Log before falling back so an outage stays diagnosable: the null return is
+        // rendered as dashes, which is otherwise indistinguishable from "no data yet".
+        console.error('[analytics] events-overview-summary failed', { foundationSlug, error });
         return of(null);
       })
     );

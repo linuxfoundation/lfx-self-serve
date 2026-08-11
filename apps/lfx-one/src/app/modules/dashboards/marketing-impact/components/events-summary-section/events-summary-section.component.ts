@@ -6,7 +6,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { combineLatest, finalize, map, of, switchMap } from 'rxjs';
+import { finalize, map, of, switchMap } from 'rxjs';
 
 import type { EventsOverviewSummary, EventsSummaryStat } from '@lfx-one/shared/interfaces';
 
@@ -49,7 +49,6 @@ export class EventsSummarySectionComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
-  public readonly selectedPeriod = input<string>('');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
@@ -61,12 +60,13 @@ export class EventsSummarySectionComponent {
 
   // === Private Initializers ===
   private initSummary(): Signal<EventsOverviewSummary | null> {
-    const slug$ = toObservable(this.foundationSlug);
-    const period$ = toObservable(this.selectedPeriod);
-
+    // These tiles are deliberately fixed to year-to-date: the underlying warehouse
+    // views expose only `_YTD` aggregates, so the dashboard period picker is not a
+    // parameter here. Refetching on period change would reload the skeletons without
+    // ever changing a number, which reads as though the tiles were period-scoped.
     return toSignal(
-      combineLatest([slug$, period$]).pipe(
-        switchMap(([slug]) => {
+      toObservable(this.foundationSlug).pipe(
+        switchMap((slug) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
