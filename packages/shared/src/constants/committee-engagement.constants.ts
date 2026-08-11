@@ -20,8 +20,9 @@ export const COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW = '30d';
  * Attendance-rate thresholds (attended / invited) for engagement classification, computed in the
  * BFF so they can be tuned without a dbt deploy once real distributions are observed. Applies once
  * a member has at least one real invite (`invited > 0`) — see
- * `committee-engagement-classifier.utils.ts`'s `classifyCommitteeEngagement` for the `Emeritus` and
- * tenure-clipping (`member_joined_at`) cases these thresholds don't cover.
+ * `committee-engagement-classifier.utils.ts`'s `classifyCommitteeEngagement` for the `Emeritus`,
+ * `LF Staff` (LFXV2-3101), and tenure-clipping (`member_joined_at`) cases these thresholds don't
+ * cover.
  *   rate <= 0            → Inactive (invited, but attended nothing)
  *   0 < rate < medium     → Low
  *   medium <= rate < high → Medium

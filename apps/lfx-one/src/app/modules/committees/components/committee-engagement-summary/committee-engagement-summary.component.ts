@@ -55,10 +55,12 @@ export class CommitteeEngagementSummaryComponent {
   // Explicit aria-labels below embed the displayed value/window — a screen-reader user focusing
   // the tooltip host must hear the metric itself, not just its explanation (LFXV2-1705 review).
   public readonly attendanceRateAriaLabel: Signal<string> = computed(
-    () => `Attendance Rate: ${this.attendanceRateLabel()} — personal attendance across all invited roster members, including Emeritus seats`
+    () =>
+      `Attendance Rate: ${this.attendanceRateLabel()} — personal attendance across all invited roster members, including Emeritus seats but excluding LF Staff seats`
   );
   public readonly activeMembersAriaLabel: Signal<string> = computed(
-    () => `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — active count excludes Emeritus seats; total roster count includes them`
+    () =>
+      `Active Members (${this.windowLabel()}): ${this.activeMembersLabel()} — active count excludes Emeritus and LF Staff seats; total roster count includes them`
   );
 
   public onWindowChange(windowId: string): void {

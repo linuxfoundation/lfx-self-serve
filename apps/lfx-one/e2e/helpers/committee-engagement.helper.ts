@@ -4,10 +4,13 @@
 /**
  * Shared fixtures/mocks for the committee engagement UI specs (LFXV2-1705).
  *
- * The engagement fixture exercises every classification tier the BFF can serve (High / Medium /
- * Low / Inactive-with-invites / Inactive-never-invited / Emeritus) over a roster whose uids match
- * the mocked `/members` response, so the Members-table join and the At-Risk filter behave exactly
- * as they would against the real endpoint. Specs mock the BFF over `page.route` and stay
+ * The engagement fixture exercises six of the seven classification tiers the BFF can serve (High /
+ * Medium / Low / Inactive-with-invites / Inactive-never-invited / Emeritus) over a roster whose
+ * uids match the mocked `/members` response, so the Members-table join and the At-Risk filter
+ * behave exactly as they would against the real endpoint. `LF Staff` (LFXV2-3101) has no fixture
+ * member here — the classifier's own boundary behavior for it is covered by
+ * `committee-engagement-classifier.utils.spec.ts` and `committee-engagement.service.spec.ts`; this
+ * suite doesn't currently assert on its UI rendering. Specs mock the BFF over `page.route` and stay
  * independent of the server's ENGAGEMENT_BACKEND mode.
  */
 

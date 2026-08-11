@@ -34,8 +34,12 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * a member's numbers never imply meetings that happened before their shown join date.
  * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too — including a real `'None'`, which is
  * itself a recorded status and never overwritten — falling back to a hash-derived placeholder only
- * for members with no usable real status (no `voting` recorded, or a blank/falsy `status`). Two
- * scenarios (`Emeritus`, "the Orlin case" — see below) are guaranteed visible somewhere in the
+ * for members with no usable real status (no `voting` recorded, or a blank/falsy `status`). Any
+ * real `role: 'LF Staff'` member (LFXV2-3101) is excluded from the Orlin-slot and reserved
+ * Inactive/Low/Medium demo-pattern eligibility pools, the same way a real (or promoted) `Emeritus`
+ * member is — both roster facts always short-circuit `classifyCommitteeEngagement` regardless of
+ * fabricated numbers, so assigning either role a reserved attendance pattern would silently swallow
+ * it rather than render it. Two scenarios (`Emeritus`, "the Orlin case" — see below) are guaranteed visible somewhere in the
  * roster whenever that's possible without
  * overriding a real, known value; when every member's real data already rules a scenario out
  * (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't demonstrated
@@ -64,17 +68,17 @@ interface MemberIdentity {
 
 interface RosterPlan {
   identities: MemberIdentity[];
-  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member (excluding any `Emeritus`) can take the role without contradicting real tenure data. */
+  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member (excluding any `Emeritus` or real `LF Staff`, LFXV2-3101) can take the role without contradicting real tenure data. */
   orlinIndex: number | null;
   /** Tenure (days) to use for `orlinIndex` when that member has no real join date — computed per committee so the forced counts stay plausible against this committee's own real 30-day meeting cadence; unused when `orlinIndex` is `null` or has real tenure data. */
   orlinFallbackJoinedDaysAgo: number;
   /**
-   * Every sorted index except `orlinIndex` and any `Emeritus` member (real or promoted), in
-   * order — i.e. every member eligible for a reserved pattern. Only the first
-   * `DEMO_ATTENDANCE_PROFILES.length` of these actually receive one (Inactive/Low/Medium); the
-   * rest are organic. Kept as a plain eligibility list rather than pre-sliced so
-   * `buildAttendanceProfile` can compute the same boundary once, from `indexOf`, for both the
-   * tenure default and the pattern assignment.
+   * Every sorted index except `orlinIndex`, any `Emeritus` member (real or promoted), and any real
+   * `LF Staff` member (LFXV2-3101), in order — i.e. every member eligible for a reserved pattern.
+   * Only the first `DEMO_ATTENDANCE_PROFILES.length` of these actually receive one
+   * (Inactive/Low/Medium); the rest are organic. Kept as a plain eligibility list rather than
+   * pre-sliced so `buildAttendanceProfile` can compute the same boundary once, from `indexOf`, for
+   * both the tenure default and the pattern assignment.
    */
   demoAttendanceIndices: number[];
 }
@@ -93,9 +97,10 @@ interface RosterPlan {
  *   value (Emeritus is what proves the classifier's Emeritus short-circuit and the `active_count`
  *   exclusion) for the stronger guarantee of never relabeling a real, recorded status — the same
  *   trade this file makes for tenure data (see the "Known trade-off" note below).
- * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) — the
- *   Emeritus profile always takes precedence in `buildAttendanceProfile`, so an Emeritus candidate
- *   would silently swallow the slot without ever rendering it. Among the rest, the most-recently
+ * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) and
+ *   every real `LF Staff` member (LFXV2-3101) — the Emeritus and LF Staff profiles both always take
+ *   precedence in `classifyCommitteeEngagement`, so either candidate would silently swallow the
+ *   slot without ever rendering it as the intended demo tier. Among the rest, the most-recently
  *   real-joined member is used *only* if their tenure is at least `minOrlinTenureDays` *and* less
  *   than `WINDOW_30D_DAYS` — the upper bound keeps this specifically the "joined *recently*" case
  *   (the ticket's literal example) rather than any tenured member who happens to clear the lower
@@ -146,18 +151,25 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
   }
 
   const isEmeritus = (index: number): boolean => votingStatuses[index] === CommitteeMemberVotingStatus.EMERITUS;
+  // `LF Staff` (LFXV2-3101) always classifies `LF Staff` regardless of attendance numbers, exactly
+  // like Emeritus always classifies `Emeritus` — an LF Staff member assigned the Orlin slot or a
+  // reserved Inactive/Low/Medium demo pattern would silently swallow it the same way an Emeritus
+  // member would, so it's excluded from both eligibility pools the same way. `MEMBER_ROLE` is
+  // always the roster's real role (see the module doc), so this is a real exclusion, not a
+  // hash-derived one.
+  const isLfStaff = (index: number): boolean => sortedMembers[index]?.role?.name === CommitteeMemberRole.LF_STAFF;
 
   let orlinIndex = realJoinedDaysAgo.reduce<number | null>((mostRecentIndex, days, index) => {
-    if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index)) return mostRecentIndex;
+    if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index) || isLfStaff(index)) return mostRecentIndex;
     if (mostRecentIndex === null || days < (realJoinedDaysAgo[mostRecentIndex] as number)) return index;
     return mostRecentIndex;
   }, null);
   if (orlinIndex === null) {
-    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && !isEmeritus(index));
+    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && !isEmeritus(index) && !isLfStaff(index));
     orlinIndex = fallbackIndex === -1 ? null : fallbackIndex;
   }
 
-  const demoAttendanceIndices = sortedMembers.map((_, index) => index).filter((index) => index !== orlinIndex && !isEmeritus(index));
+  const demoAttendanceIndices = sortedMembers.map((_, index) => index).filter((index) => index !== orlinIndex && !isEmeritus(index) && !isLfStaff(index));
 
   return {
     identities: sortedMembers.map((_, index) => ({

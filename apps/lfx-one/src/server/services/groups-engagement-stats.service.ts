@@ -74,10 +74,19 @@ function resolveBackend(): 'mock' | 'live' {
  * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
  * avoid), so it can still diverge from the per-committee detail page for: a roster member the model
  * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
- * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
+ * otherwise resolve via the roster's own `voting.status`; a blank/unparseable `MEMBER_JOINED_AT`
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
  * sources when the roster join has at least one match for that committee; this rollup only has the
- * warehouse row, never a roster fallback).
+ * warehouse row, never a roster fallback); or an `LF Staff` seat (LFXV2-3101) — the detail page's
+ * `classificationInput` passes `role` (from the roster, with a warehouse-`MEMBER_ROLE` fallback) so
+ * an LF Staff member never counts as active there, but `ActiveMemberRow` here deliberately doesn't
+ * select `MEMBER_ROLE` at all (kept minimal for this rollup's no-roster-join design), so
+ * `isCommitteeMemberActive`'s `role` check always sees `undefined` and an LF Staff member with real
+ * attendance still counts as active on this rollup. Left undone here rather than adding the column:
+ * this endpoint is a different feature (LFXV2-1711, the Groups dashboard) than the ticket that
+ * introduced the LF Staff exclusion (LFXV2-3101, the committee detail page), and the two other
+ * divergence sources above already establish that this rollup trades exact per-committee agreement
+ * for avoiding the N+1 roster fetch — the same trade-off, one more cause.
  *
  * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
  * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose

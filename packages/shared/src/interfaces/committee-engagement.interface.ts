@@ -48,7 +48,7 @@ export interface CommitteeMemberEngagement {
   /** `attended / invited`, 0 when `invited` is 0, rounded to 2 decimal places. */
   rate: number;
   classification: CommitteeEngagementClassification;
-  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough for the UI to call out distinctly. */
+  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough for the UI to call out distinctly; also drives the `LF Staff` classification (LFXV2-3101) and its `attendance_rate`/`active_count` exclusion. */
   role: string;
   /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'` — passthrough, drives the `Emeritus` classification. */
   voting_status: string;
@@ -64,7 +64,11 @@ export interface CommitteeEngagementSummary {
    * Emeritus-excluded — a committee with an Emeritus member (high invitation rate, low real
    * attendance, by design) can still show a depressed rate here alongside an `active_count` that
    * ignores that same member. A UI surfacing both side-by-side should call this out rather than
-   * let them appear to contradict.
+   * let them appear to contradict. Known, accepted edge case: a roster made up entirely of `LF
+   * Staff` seats (no non-staff member ever invited) reports `0` here via the same `invited <= 0`
+   * sentinel an empty/never-invited roster already reports — indistinguishable from "no data yet"
+   * at this field alone. Not disambiguated by a separate value, consistent with how this field
+   * already overloads `0` for "nobody was invited" before this ticket.
    */
   attendance_rate: number;
   /**
@@ -103,12 +107,13 @@ export interface CommitteeEngagementResponse {
    * all (a total join-key mismatch — the warehouse's `MEMBER_USER_ID` values don't correspond to any
    * `CommitteeMember.uid` for this committee). All three degrade identically from the caller's point
    * of view. Every member then shows zeroed counts and classifies `Inactive` — except a roster
-   * member with a real `Emeritus` voting status, which still classifies `Emeritus` (a seat-type
-   * fact independent of whether any engagement data exists). The tenure-grace `High` exception
-   * (a member who genuinely joined within the requested window, classified `High` instead of
-   * `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
+   * member with a real `Emeritus` voting status, which still classifies `Emeritus`, or a roster
+   * member with `role: 'LF Staff'` (LFXV2-3101), which still classifies `LF Staff` — both are
+   * seat-type facts independent of whether any engagement data exists. The tenure-grace `High`
+   * exception (a member who genuinely joined within the requested window, classified `High` instead
+   * of `Inactive` off zero invites) does NOT apply when `data_available` is `false` — with no usable
    * data for the whole committee, there is no engagement data to correlate tenure against, so every
-   * non-Emeritus member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
+   * non-Emeritus, non-LF-Staff member classifies `Inactive` and `summary`'s computed fields (`attendance_rate`,
    * `active_count`, `at_risk_count`) are all `0` — `total_count` still reflects the full roster size
    * regardless, since that's roster-known independent of engagement data. Asserting `High` (or a
    * nonzero `active_count`) on literal 0/0 counts would contradict `data_available: false` and
@@ -129,8 +134,8 @@ export interface CommitteeEngagementResponse {
    *
    * The UI should key its "no data available" placeholder state off this flag rather than inferring
    * it from all-zero numbers — `members[]` is roster-complete either way, with `role`/`voting_status`
-   * always populated and counts zeroed on `false` (see above for the roster-Emeritus exception, and
-   * the tenure-grace exception's `data_available:true`-only condition).
+   * always populated and counts zeroed on `false` (see above for the roster-Emeritus and roster-LF-
+   * Staff exceptions, and the tenure-grace exception's `data_available:true`-only condition).
    */
   data_available: boolean;
   /**

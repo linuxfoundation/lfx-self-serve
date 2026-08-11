@@ -941,9 +941,11 @@ export class CommitteeMembersComponent implements OnInit {
   /**
    * Tooltip context for the engagement chip. Emeritus and LF Staff (LFXV2-3101) both get a neutral
    * explainer — neither renders with at-risk styling, and neither's classification is driven by
-   * their real attendance numbers, so a tooltip stating those numbers would be misleading. Chair /
-   * Vice Chair are called out so their (real) attendance reads with role context. Empty string
-   * disables the PrimeNG tooltip.
+   * their real attendance numbers, so this tooltip states the exclusion rather than the numbers
+   * themselves (the Meetings column still shows the real attended/invited count for every row,
+   * chip-neutral seats included — this tooltip only concerns the classification chip). Chair / Vice
+   * Chair are called out so their (real) attendance reads with role context. Empty string disables
+   * the PrimeNG tooltip.
    */
   private resolveEngagementContext(row: CommitteeMemberEngagement): string {
     if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
