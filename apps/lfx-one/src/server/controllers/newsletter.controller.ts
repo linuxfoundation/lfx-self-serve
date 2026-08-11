@@ -636,7 +636,10 @@ export class NewsletterController {
    * discriminating `error` field (`upstreamCode`) the UI branches on.
    */
   private validateScheduleOverride(payload: NewsletterSchedulePayload | undefined, path: string, operation: string): string | undefined {
-    if (payload === undefined || payload === null) {
+    // express.json() defaults req.body to {} for an empty body, so "arm the
+    // saved value" (no override) arrives as an object with no scheduled_at
+    // key, not as undefined — both must be treated as "no override" here.
+    if (payload === undefined || payload.scheduled_at === undefined || payload.scheduled_at === null) {
       return undefined;
     }
 
