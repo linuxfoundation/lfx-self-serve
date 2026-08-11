@@ -43,7 +43,9 @@ export class EventRosterSectionComponent {
    */
   protected readonly emptyMessage = computed(() => {
     if (this.searchTerm().trim()) return 'No events match your search.';
-    return this.includePast() ? 'No events in the selected period.' : 'No upcoming events.';
+    // includePast toggles Upcoming vs All events — it is not a period filter, so the empty copy
+    // must not claim a period the user never selected.
+    return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
 
   // === Protected Methods ===

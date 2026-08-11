@@ -1149,7 +1149,14 @@ export class AnalyticsService {
   public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
     return this.http
       .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
-      .pipe(catchError(() => of(null)));
+      .pipe(
+        catchError((error) => {
+          // Log before degrading — the dashes the tiles fall back to are indistinguishable from
+          // a legitimately empty period, so without this an outage looks like missing data.
+          console.error('Failed to load events overview summary', error);
+          return of(null);
+        })
+      );
   }
 
   /**
@@ -1166,7 +1173,10 @@ export class AnalyticsService {
       // Evict on error so a transient failure doesn't pin every later subscriber
       // to the empty fallback for the rest of the session.
       const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
-        catchError(() => {
+        catchError((error) => {
+          // Log before degrading — an empty roster renders the same "no events" copy as a real
+          // empty result, so an auth expiry or Snowflake outage would otherwise be invisible.
+          console.error('Failed to load event roster', error);
           this.eventRosterCache.delete(key);
           return of({ projectId: '', events: [] });
         }),
