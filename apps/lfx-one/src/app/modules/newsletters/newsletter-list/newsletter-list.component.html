@@ -204,10 +204,13 @@
                           tooltipPosition="top">
                         </lfx-button>
                         @if (canWrite()) {
+                          <!-- Text-style button (not [outlined]) so it doesn't read as a second
+                               state option next to the "Scheduled" tag — matches the Drafts row's
+                               Delete-button-then-tag convention above. -->
                           <lfx-button
                             label="Cancel schedule"
-                            severity="secondary"
-                            [outlined]="true"
+                            severity="danger"
+                            [text]="true"
                             size="small"
                             [loading]="cancelingScheduleId() === newsletter.id"
                             (onClick)="onCancelSchedule(newsletter, $event)"
