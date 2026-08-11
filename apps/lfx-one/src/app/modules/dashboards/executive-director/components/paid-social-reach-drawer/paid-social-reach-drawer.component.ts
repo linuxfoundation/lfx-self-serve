@@ -14,7 +14,7 @@ import { computeMomPct, formatCurrency, formatNumber, splitByPriority, type Mark
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -368,22 +368,22 @@ export class PaidSocialReachDrawerComponent {
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(
-        // Reset on close so a reopen starts from the skeleton instead of the previous
-        // attempt's error. Done here rather than in onClose because the parent binds
-        // [visible] one-way and drives it from its own activeDrawer signal, so ESC and
-        // mask-click close the drawer via visibleChange without ever calling onClose.
-        tap(([isVisible]) => {
-          if (!isVisible) this.status.set('idle');
-        }),
-        filter(([isVisible, slug]) => isVisible && !!slug),
-        map(([, slug]) => slug),
-        // A retry supersedes whatever the last attempt produced. Moving straight to
-        // 'loading' clears a previous failure without ever passing through a state that
-        // renders zeros, and covers retries with no close/reopen (the foundation changing
-        // while the drawer is open) as well as reopens.
-        tap(() => this.status.set('loading')),
-        switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
+        // The close case is handled inside switchMap (not filtered out beforehand) so that
+        // closing while a request is in flight actually reaches switchMap and cancels it.
+        // Filtering `!isVisible` out here would let the in-flight getSocialReach call keep
+        // running after close; its tap/catchError would still land and overwrite the 'idle'
+        // reset with 'loaded'/'failed', which could flash stale data on a quick reopen.
+        switchMap(([isVisible, slug]) => {
+          if (!isVisible || !slug) {
+            this.status.set('idle');
+            return of(null);
+          }
+          // A retry supersedes whatever the last attempt produced. Moving straight to
+          // 'loading' clears a previous failure without ever passing through a state that
+          // renders zeros, and covers retries with no close/reopen (the foundation changing
+          // while the drawer is open) as well as reopens.
+          this.status.set('loading');
+          return this.analyticsService.getSocialReach(slug, undefined, 'last-6').pipe(
             tap(() => this.status.set('loaded')),
             // null, not a zero-filled response: 0 impressions and 0.0x ROAS are legitimate
             // measurements, so returning them here would render a failed request as "this
@@ -399,8 +399,8 @@ export class PaidSocialReachDrawerComponent {
               });
               return of(null);
             })
-          )
-        )
+          );
+        })
       ),
       { initialValue: null }
     );

@@ -29,7 +29,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, map, Observable, of, skip, Subject, switchMap, tap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { BrandHealthDrawerComponent } from '../brand-health-drawer/brand-health-drawer.component';
 import { BrandReachDrawerComponent } from '../brand-reach-drawer/brand-reach-drawer.component';
@@ -177,9 +177,15 @@ const PENDING_ED_EVOLUTION_DATA: EdEvolutionData = {
  * `RevenueImpactResponse` inputs when the summary request failed.
  *
  * This is deliberately not reachable from the Attribution card, which branches on the
- * raw `undefined` and renders an explicit unavailable state instead. The drawers each
- * fetch their own detail data on open and are only reachable by an explicit click, so
- * this placeholder is never presented as a measured figure the way the card would be.
+ * raw `undefined` and renders an explicit unavailable state instead. It is safe today
+ * only because every field on this placeholder is empty/zero and every drawer that reads
+ * `data()` directly (revenue-impact-drawer's attributionChannels/paidMedia/projectBreakdown/
+ * eventRegistrationAttribution, member-acquisition-drawer's revenueImpactData, and this
+ * component's own social-reach data) either length-guards arrays or never reads a numeric
+ * field without one — not because those sections refetch their own summary. paid-social-
+ * reach-drawer's own social-reach panel does refetch independently (see initDrawerData);
+ * the revenueImpact-derived sections above do not. Adding a field that's read without a
+ * guard would silently reintroduce the fabricated-zero problem this PR removes elsewhere.
  */
 const DRAWER_FALLBACK_REVENUE_IMPACT: RevenueImpactResponse = {
   pipelineInfluenced: 0,
@@ -359,7 +365,14 @@ export class MarketingOverviewComponent {
             revenueImpact: safe<RevenueImpactResponse | undefined>('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
             emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
             paidCampaign: safe<SocialReachResponse | undefined>('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
-          })
+          }).pipe(
+            // Without this, switchMap's cancellation of the previous forkJoin leaves toSignal
+            // holding its last-emitted value — including a stale failed/unavailable card — until
+            // the new forkJoin resolves, misreporting the newly-selected foundation as failed
+            // before it has even been requested. Re-emitting the pending sentinel synchronously
+            // on every foundation switch (not just the initial subscription) closes that gap.
+            startWith(PENDING_ED_EVOLUTION_DATA)
+          )
         )
       ),
       // Distinct pending sentinel, NOT EMPTY_ED_EVOLUTION_DATA: that object carries
