@@ -46,3 +46,17 @@ export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 // AAIF incident (LFXV2-2604) measured 37-41s for ~500 recipients, past the
 // 30s abort, so the UI reported failure for sends that actually delivered.
 export const NEWSLETTER_SEND_TIMEOUT_MS = 120_000;
+
+// UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Stricter
+// than the upstream default (NEWSLETTER_SCHEDULE_MIN_LEAD, 5m) because
+// SendGrid refuses to cancel a batch within 10 minutes of send_at
+// (NEWSLETTER_SCHEDULE_CANCEL_BUFFER) — a schedule armed 5 minutes out could
+// never be cancelled. 30 minutes keeps every armed send comfortably
+// cancellable.
+export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 30;
+
+// UI-enforced (and upstream-enforced) maximum horizon for arming a schedule.
+// Matches SendGrid Mail Send's own send_at ceiling — the newsletter-service's
+// NEWSLETTER_SCHEDULE_MAX_HORIZON defaults to and is hard-capped at 72h, so a
+// larger value can never succeed at arm time regardless of what the UI allows.
+export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
