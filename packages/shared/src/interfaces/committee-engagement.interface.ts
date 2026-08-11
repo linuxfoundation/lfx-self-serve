@@ -25,19 +25,20 @@ export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Ina
  * short-circuits to a neutral tier), `role` (`CommitteeMemberRole.LF_STAFF` short-circuits to a
  * neutral tier, LFXV2-3101), and `joinedWithinWindow` (whether `member_joined_at` falls after the
  * requested window's start — tenure clipping, so a brand-new member's zero invites doesn't read as
- * disengagement). Consumed by `committee-engagement-classifier.utils.ts`. `role` is optional only
- * for shape-compatibility with any future minimal-column consumer that can't supply it — both
- * current consumers populate it today: `committee-engagement.service.ts` resolves it roster-first,
- * warehouse `MEMBER_ROLE` as a fallback (LFXV2-3101 review fix — see that call site's own comment
- * for why); `groups-engagement-stats.service.ts` has no live roster to prefer, so it passes
- * warehouse `MEMBER_ROLE` directly (see that class's own doc for the resulting freshness lag versus
- * the roster-first detail page).
+ * disengagement). Consumed by `committee-engagement-classifier.utils.ts`. `role`'s key is required
+ * (value may be `undefined`), not optional — a construction site that forgets it should get a
+ * compile error, not silently reintroduce the bug this ticket fixes (an unmeasured LF Staff seat
+ * counting toward the rate/active sums again). Both current consumers populate it today:
+ * `committee-engagement.service.ts` resolves it roster-first, warehouse `MEMBER_ROLE` as a fallback
+ * (LFXV2-3101 review fix — see that call site's own comment for why); `groups-engagement-stats.
+ * service.ts` has no live roster to prefer, so it passes warehouse `MEMBER_ROLE` directly (see that
+ * class's own doc for the resulting freshness lag versus the roster-first detail page).
  */
 export interface CommitteeEngagementClassificationInput {
   attended: number;
   invited: number;
   votingStatus: string;
-  role?: string;
+  role: string | undefined;
   joinedWithinWindow: boolean;
 }
 

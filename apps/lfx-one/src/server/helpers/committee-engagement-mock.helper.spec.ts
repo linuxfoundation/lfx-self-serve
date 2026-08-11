@@ -259,9 +259,24 @@ describe('generateMockEngagementRows', () => {
       expect(m2?.MEMBER_ROLE).toBe('LF Staff');
       // The Inactive pattern's shape (invited but never attends) is deterministic and
       // committee-wide, independent of which uid holds it — so whichever member now holds it
-      // reproduces the exact numbers the unmodified-roster test above asserts for slot 2.
-      expect(m3?.INVITED_COUNT_30D).toBeGreaterThan(0);
-      expect(m3?.ATTENDED_COUNT_30D).toBe(0);
+      // reproduces the exact numbers the unmodified-roster test above asserts for slot 2, across
+      // EVERY window. Asserting only 30d isn't enough: an organic (hash-derived) member can hit
+      // attended === 0 for a single window by coincidence, same risk the Orlin test above guards
+      // against with its own all-windows check.
+      for (const suffix of ['30D', '90D', 'YTD'] as const) {
+        expect(m3?.[`INVITED_COUNT_${suffix}`]).toBeGreaterThan(0);
+        expect(m3?.[`ATTENDED_COUNT_${suffix}`]).toBe(0);
+      }
+      // And m2 itself must not coincidentally carry that same signature in every window — the real
+      // assertion is that the pattern moved, not merely that m2's 30d number happens to differ.
+      expect(m2).not.toMatchObject({
+        INVITED_COUNT_30D: m3?.INVITED_COUNT_30D,
+        ATTENDED_COUNT_30D: 0,
+        INVITED_COUNT_90D: m3?.INVITED_COUNT_90D,
+        ATTENDED_COUNT_90D: 0,
+        INVITED_COUNT_YTD: m3?.INVITED_COUNT_YTD,
+        ATTENDED_COUNT_YTD: 0,
+      });
     });
 
     it('does not force the literal Orlin counts on a real member whose tenure is too short to plausibly support them', () => {
