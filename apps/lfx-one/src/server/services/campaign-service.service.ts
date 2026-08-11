@@ -209,19 +209,15 @@ export class CampaignServiceClient {
    * between the find and the PUT; re-reading and overwriting would silently discard their work.
    * The user is told instead — see the caller.
    *
-   * A 409 from `create-brief` IS retried, once, as a replace — and the two dispositions are
-   * consistent, not contradictory. A 412 says a write landed between the validator I am holding
-   * and the one the server has; retrying would overwrite a revision I never read. A 409 says
-   * there is no validator to be stale, because the find that ran before the POST answered 404 —
-   * so re-finding and replacing is not an overwrite of unseen work, it is the same second-save
-   * path this method already takes when the find happens a moment later. The interval guard
-   * survives: the retried PUT still carries the re-read `If-Match` and still reports its own 412.
-   *
-   * It is reachable without a second user. The tab bar is not gated on the save (`selectTab`
-   * only sets a signal), so a user can return to Planning and proceed again while the first
-   * request is still open; both finds 404 and the second POST collides. Without the retry the
-   * request that loses is the NEWER one — the user is told their latest brief could not be saved
-   * while an older copy of it sits in the database.
+   * A 409 from `create-brief` is NOT retried as a replace either, for a reason that is easy to
+   * get backwards. Two saves of the same event can both find 404 and both POST; the one that
+   * collides is whichever POST landed second, and that is not the one that STARTED second. A
+   * retry would make the collision's loser the final writer unconditionally, so a slow earlier
+   * save would overwrite a newer brief that had already succeeded — after the UI had shown the
+   * user "Brief saved." Nothing on this side of the connection can order the two. The conflict
+   * is reported instead, and the concurrency it comes from is removed where it is actually
+   * knowable: `campaigns.component.ts` runs a session's saves strictly one at a time, so the
+   * second save finds the first one's brief and takes the ordinary replace path.
    *
    * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
    * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
@@ -237,34 +233,15 @@ export class CampaignServiceClient {
     const existing = await this.findBrief(req, basePath, eventSlug);
 
     if (existing === null) {
-      try {
-        const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
-          req,
-          'LFX_V2_CAMPAIGN_SERVICE',
-          basePath,
-          'POST',
-          undefined,
-          envelope
-        );
-        return this.approveBrief(req, basePath, created, true);
-      } catch (error) {
-        // Not gated on campaign-service's typed body, unlike the 404 above, and it does not need
-        // to be: the cost of misreading a gateway 409 is one extra find, which on a route that is
-        // not answering returns null and rethrows this very error. The 404 needs the gate because
-        // misreading it creates a duplicate row instead.
-        if (!(error instanceof MicroserviceError && error.statusCode === 409)) {
-          throw error;
-        }
-
-        const raced = await this.findBrief(req, basePath, eventSlug);
-        // Nothing to replace: the brief that caused the collision is gone again — archived
-        // between the POST and this find, most likely. Report the conflict rather than looping;
-        // one retry is the whole budget, and a second POST would just race the same way.
-        if (raced === null) {
-          throw error;
-        }
-        return this.replaceBrief(req, basePath, envelope, raced);
-      }
+      const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        basePath,
+        'POST',
+        undefined,
+        envelope
+      );
+      return this.approveBrief(req, basePath, created, true);
     }
 
     return this.replaceBrief(req, basePath, envelope, existing);
@@ -363,6 +340,12 @@ export class CampaignServiceClient {
       // understood the request declined it, so no version was bumped and `writeEtag` still
       // describes the brief in the database.
       //
+      // 412 is the exception, and it is the exception for the opposite reason to the 5xx below.
+      // The approval carries `If-Match: writeEtag`, so a 412 is the server saying that validator
+      // does NOT match what it holds — the brief moved between the write and the approval. The
+      // approval did not commit, but `writeEtag` is still known-stale, which is the one thing a
+      // returned validator must never be.
+      //
       // Everything else is indeterminate, and reporting `writeEtag` for it would be a guess
       // dressed as a fact. A timeout, a connection reset, or a 5xx from the gateway can all
       // follow a commit whose response was lost — `approve-brief` does `version = version + 1`,
@@ -370,7 +353,7 @@ export class CampaignServiceClient {
       // validator at all rather than a wrong one; `null` already means "none available" on this
       // result (see the no-ETag branch above), and the read path re-reads the ETag from the
       // server before every write, so nothing downstream is left without one.
-      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500;
+      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 412;
       logger.warning(
         req,
         'campaign_persist_brief_approve',

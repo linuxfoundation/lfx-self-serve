@@ -275,47 +275,18 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
 
-  // Two saves of the same event can be open at once: the tab bar is not gated on the request, so
-  // the user can return to Planning and proceed again while the first POST is still in flight.
-  // Both finds 404 and the second create collides with the partial unique index. Without the
-  // retry the request that fails is the NEWER one — the user is told their latest brief was not
-  // saved while an older copy of it is what actually landed.
-  it('replaces the racing brief when create collides with a concurrent save', async () => {
-    proxyRequestWithResponse
-      .mockRejectedValueOnce(NOT_FOUND)
-      .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'))
-      // The re-find now sees the brief the other request created.
-      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
-      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }))
-      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"3"' }));
-
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
-      enabled: true,
-      briefId: 'b-1',
-      etag: '"3"',
-      // Not `true`: this call replaced a row it did not create, and the flag is what the caller
-      // would use to tell a first save from a subsequent one.
-      created: false,
-      approved: true,
-    });
-
-    const [, , , method, , , headers] = proxyRequestWithResponse.mock.calls[3] as unknown[];
-    expect(method).toBe('PUT');
-    // The interval guard survives the retry: the PUT carries the validator from the RE-READ, so a
-    // write that lands after it still surfaces as a 412 rather than being overwritten blind.
-    expect(headers).toEqual({ 'If-Match': '"1"' });
-  });
-
-  // One retry is the whole budget. If the colliding brief is gone again by the time the re-find
-  // runs, a second POST would race exactly as the first did.
-  it('reports the conflict when the racing brief has already gone', async () => {
-    proxyRequestWithResponse
-      .mockRejectedValueOnce(NOT_FOUND)
-      .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'))
-      .mockRejectedValueOnce(NOT_FOUND);
+  // A create-409 means another save of this event landed first. It is NOT retried as a replace.
+  // The colliding request is whichever POST arrived second, and that is not necessarily the one
+  // that STARTED second — so a retry would let a slow earlier save overwrite the newer brief that
+  // already succeeded and already told its user "Brief saved." Nothing here can order the two, so
+  // the conflict is reported. Concurrency within one session is removed in the component instead,
+  // by running its saves one at a time.
+  it('reports a create conflict rather than overwriting the brief that won the race', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('conflict');
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(3);
+    // The find and the POST, and nothing after: no re-find, no PUT.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
   // The page is reachable by an ED of any foundation — `executiveDirectorGuard` gates on persona
@@ -363,14 +334,34 @@ describe('CampaignServiceClient.saveBrief', () => {
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockRejectedValueOnce(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      // The write's own validator, still current — and a refusal is what makes that safe to say.
+      // Nothing was committed, so no `version = version + 1` ran.
+      etag: '"1"',
+      created: true,
+      approved: false,
+    });
+  });
+
+  // 412 is a refusal too, but it is the one refusal that also reports the validator is wrong: the
+  // approval sends `If-Match: writeEtag`, so a 412 IS the server saying that is not what it holds.
+  // Returning it anyway would hand the caller a validator known to be stale, which is worse than
+  // handing it none — the next write would 412 on a precondition this layer already knew had
+  // failed, instead of re-reading.
+  it('withholds the write ETag when the approval is refused as stale', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
-      // The write's own validator, still current — and a 412 is what makes that safe to say. A
-      // refusal means nothing was committed, so no `version = version + 1` ran.
-      etag: '"1"',
+      etag: null,
       created: true,
       approved: false,
     });

@@ -290,9 +290,44 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       proceed();
+      // The request now leaves on the save queue rather than inside `proceed`, so the assertion
+      // has to let the queue turn over. The slug is still the one selected at Proceed time.
+      await fixture.whenStable();
 
       expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf');
     });
+  });
+
+  /**
+   * Two saves of the same event must never be in flight together. Each one's find would come back
+   * empty and each would POST, and the create that lands second collides with the partial unique
+   * index on `(project_id, event_slug)`. The server cannot resolve that for us: the collision
+   * identifies the later ARRIVAL, not the later brief, so retrying it as a replace would
+   * sometimes overwrite a newer brief that had already reported success. Ordering them here is
+   * what makes the second save a plain replace of the first.
+   */
+  it("runs a session's saves one at a time", async () => {
+    const first = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(first);
+    proceed();
+    await fixture.whenStable();
+    expect(persistBrief).toHaveBeenCalledTimes(1);
+
+    // Back to Planning and Proceed again while the first request is still open. This needs no
+    // second user: `selectTab` only sets a signal, so the tab bar is live during a save.
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+    await fixture.whenStable();
+
+    expect(persistBrief).toHaveBeenCalledTimes(1);
+
+    first.next({ enabled: true, briefId: 'brief-1', etag: 'W/"1"', created: true, approved: true });
+    // A macrotask, not `whenStable`: the queue hands over across microtasks that the fixture's
+    // stability check does not necessarily drain.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Released only now — and its find will see `brief-1`, so it replaces rather than races.
+    expect(persistBrief).toHaveBeenCalledTimes(2);
   });
 
   it('drops a save that FAILS after the brief was discarded', async () => {

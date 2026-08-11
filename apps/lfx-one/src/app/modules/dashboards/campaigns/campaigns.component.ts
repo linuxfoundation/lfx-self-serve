@@ -10,7 +10,7 @@ import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '
 import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { skip, take } from 'rxjs';
+import { firstValueFrom, skip } from 'rxjs';
 
 import { ButtonComponent } from '../../../shared/components/button/button.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
@@ -83,6 +83,15 @@ export class CampaignsComponent {
    * newer owner of the signal has already set the state it wants.
    */
   private briefPersistenceGeneration = 0;
+
+  /**
+   * The tail of this session's save queue — see `persistBrief` for why saves are serialised.
+   *
+   * A plain promise rather than an RxJS operator because the queue must OUTLIVE the component:
+   * `concatMap` under `takeUntilDestroyed` would abort a save in flight when the user navigates
+   * away, which is exactly the behaviour `persistBrief` documents it must not have.
+   */
+  private persistChain: Promise<void> = Promise.resolve();
 
   /**
    * The foundation the current `briefPersistence` was filed under.
@@ -213,11 +222,30 @@ export class CampaignsComponent {
    * campaign-service outage would strand the user on the Planning tab with an approved brief
    * and nowhere to take it.
    *
-   * `take(1)` rather than `takeUntilDestroyed`: the request must finish and record its outcome
-   * even if the user navigates away mid-flight, and one `HttpClient` POST completes on its own.
+   * `firstValueFrom` rather than `takeUntilDestroyed`: the request must finish and record its
+   * outcome even if the user navigates away mid-flight, and one `HttpClient` POST completes on
+   * its own. Tearing it down on destroy would abort a save the user was told was in progress.
+   *
+   * Chained onto `persistChain` so a session's saves run STRICTLY ONE AT A TIME, which is the
+   * only place this concurrency can be fixed. `selectTab` is not gated on the save, so the user
+   * can return to Planning and proceed again while the first request is open; run both at once
+   * and each finds no brief, each POSTs, and one hits the partial unique index on
+   * `(project_id, event_slug)`. The server cannot resolve that collision for us — the request
+   * that collided is whichever POST arrived second, which is not necessarily the one that
+   * started second, so retrying it as a replace would sometimes overwrite a NEWER brief that had
+   * already reported success. Serialising here makes the ordering knowable: the second save's
+   * find sees the first save's brief and takes the ordinary replace path, so the last Proceed
+   * wins, every time.
+   *
+   * The chain is per-component and never awaited by the caller, so this stays background work.
+   * `.catch()` on each link keeps one failed save from poisoning the chain for the next.
    */
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
+    // Read now, not when the chain reaches this link: the foundation selected when the user hit
+    // Proceed is the one the brief belongs to. A switch while the save is queued bumps the
+    // generation and discards the outcome anyway.
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -229,11 +257,9 @@ export class CampaignsComponent {
       this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
     }
 
-    this.campaignService
-      .persistBrief(brief, this.projectContextService.activeContext()?.slug ?? '')
-      .pipe(take(1))
-      .subscribe({
-        next: (result) => {
+    this.persistChain = this.persistChain.then(() =>
+      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug)).then(
+        (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
           // `briefId` — over a brief the page no longer holds. `enabled` is not brief-specific:
@@ -265,15 +291,19 @@ export class CampaignsComponent {
         // sentence is true in both worlds: with the cutover dark the brief is not durable either,
         // which is exactly what it says. Suppressing it until the state is known would instead
         // swallow the very first failure of a live cutover, silently.
-        error: () => {
+        //
+        // Rejections are absorbed here rather than propagating, so one failed save cannot leave
+        // the chain in a rejected state and take every later save down with it.
+        () => {
           if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set({
             status: 'error',
             briefId: null,
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
           });
-        },
-      });
+        }
+      )
+    );
   }
 
   private resetToPlanning(): void {
