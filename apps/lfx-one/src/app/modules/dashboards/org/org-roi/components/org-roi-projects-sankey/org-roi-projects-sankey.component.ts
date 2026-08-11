@@ -16,7 +16,14 @@ import {
   ORG_LENS_ROI_SANKEY_ORG_NODE_KEY,
   ORG_LENS_ROI_SANKEY_PROJECT_NODE_PREFIX,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiContributionType, OrgLensRoiProjectFlowLink, OrgLensRoiProjectRow, OrgLensRoiProjectSankeyMeasure } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensRoiContributionType,
+  OrgLensRoiProjectFlowLink,
+  OrgLensRoiProjectRow,
+  OrgLensRoiProjectSankeyMeasure,
+  OrgLensRoiSankeyChartData,
+  OrgLensRoiSankeyColorContext,
+} from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 
 /** Where the money goes and where it comes back from, as a flow diagram. */
@@ -120,13 +127,13 @@ export class OrgRoiProjectsSankeyComponent {
     }));
   });
 
-  protected readonly chartData: Signal<unknown> = computed(() => ({
+  protected readonly chartData: Signal<OrgLensRoiSankeyChartData> = computed(() => ({
     datasets: [
       {
         label: this.measureLabel(),
         data: this.links(),
-        colorFrom: (context: { raw?: OrgLensRoiProjectFlowLink }) => this.nodeColor(context.raw?.from ?? ''),
-        colorTo: (context: { raw?: OrgLensRoiProjectFlowLink }) => this.nodeColor(context.raw?.to ?? ''),
+        colorFrom: (context: OrgLensRoiSankeyColorContext) => this.nodeColor(context.raw?.from ?? ''),
+        colorTo: (context: OrgLensRoiSankeyColorContext) => this.nodeColor(context.raw?.to ?? ''),
         colorMode: 'gradient',
         borderWidth: 0,
         // Maps the type-prefixed node keys back to the names a viewer reads.
@@ -155,7 +162,7 @@ export class OrgRoiProjectsSankeyComponent {
           cornerRadius: 6,
           callbacks: {
             // Resolves the node keys to names, so the tooltip never shows `project:<id>`.
-            label: (ctx: { raw?: OrgLensRoiProjectFlowLink }) =>
+            label: (ctx: OrgLensRoiSankeyColorContext) =>
               ctx.raw === undefined ? '' : ` ${labels[ctx.raw.from] ?? ctx.raw.from} → ${labels[ctx.raw.to] ?? ctx.raw.to}: ${formatCurrency(ctx.raw.flow)}`,
           },
         },

@@ -153,6 +153,34 @@ export interface OrgLensRoiProjectFlowLink {
   flow: number;
 }
 
+/** The context a sankey colour callback receives. Only `raw` is read. */
+export interface OrgLensRoiSankeyColorContext {
+  raw?: OrgLensRoiProjectFlowLink;
+}
+
+/**
+ * The sankey dataset this feature builds.
+ *
+ * Described here rather than as `ChartData<'sankey'>`: `chartjs-chart-sankey` exports its types but
+ * does **not** augment Chart.js's `ChartTypeRegistry`, so no `'sankey'` variant of the built-in
+ * chart types exists to reference.
+ */
+export interface OrgLensRoiSankeyDataset {
+  label: string;
+  data: OrgLensRoiProjectFlowLink[];
+  colorFrom: (context: OrgLensRoiSankeyColorContext) => string;
+  colorTo: (context: OrgLensRoiSankeyColorContext) => string;
+  colorMode: 'gradient';
+  borderWidth: number;
+  /** Maps the type-prefixed node keys to the names a viewer reads. */
+  labels: Record<string, string>;
+  size: 'max' | 'min';
+}
+
+export interface OrgLensRoiSankeyChartData {
+  datasets: OrgLensRoiSankeyDataset[];
+}
+
 /** One plotted project of the efficiency view. A view model — never serialized. */
 export interface OrgLensRoiProjectBubblePoint {
   projectId: string;

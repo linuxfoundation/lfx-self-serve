@@ -14,7 +14,7 @@ import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { OrgRoiProjectPickerComponent } from '../org-roi-project-picker/org-roi-project-picker.component';
 import { OrgRoiProjectsBarComponent } from '../org-roi-projects-bar/org-roi-projects-bar.component';
@@ -122,19 +122,24 @@ export class OrgRoiProjectsSectionComponent {
   }
 
   private initProjectRows(): Signal<OrgLensRoiProjectRow[]> {
-    // Keyed by string, not the account object: that object is rewritten in place and would retrigger the fetch.
-    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}`));
+    // A typed pair rather than a delimited string, so nothing has to be parsed back out or cast.
+    //
+    // The dedup the string gave for free has to be restored explicitly: the selected-account object
+    // is rewritten in place, so this recomputes on changes that leave both fields identical, and a
+    // fresh object reference would re-emit and refetch each time.
+    const request$ = toObservable(computed(() => ({ orgUid: this.accountContext.selectedAccount()?.accountId ?? '', method: this.method() }))).pipe(
+      distinctUntilChanged((previous, next) => previous.orgUid === next.orgUid && previous.method === next.method)
+    );
 
     return toSignal(
-      requestKey$.pipe(
-        map((key) => key.split('|') as [string, OrgLensRoiMethod]),
-        filter(([orgUid]) => !!orgUid),
+      request$.pipe(
+        filter(({ orgUid }) => !!orgUid),
         tap(() => {
           this.loading.set(true);
           this.failed.set(false);
           this.forbidden.set(false);
         }),
-        switchMap(([orgUid, method]) =>
+        switchMap(({ orgUid, method }) =>
           this.roiService.getProjects(orgUid, method).pipe(
             tap(() => this.loading.set(false)),
             map((projects) => projects.rows),
