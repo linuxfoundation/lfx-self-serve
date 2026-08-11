@@ -342,7 +342,13 @@ export class NewsletterManageComponent {
       !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
+    () =>
+      this.subjectFilled() &&
+      this.bodyFilled() &&
+      this.hasContext() &&
+      this.edEmail().length > 0 &&
+      !this.testSending() &&
+      !this.isScheduleReadOnly()
   );
   // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
