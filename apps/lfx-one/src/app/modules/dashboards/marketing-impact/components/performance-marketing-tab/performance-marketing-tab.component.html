@@ -36,12 +36,13 @@
         <div class="flex flex-col gap-0" role="table" aria-label="Campaign performance by project" data-testid="performance-marketing-table">
           <!-- Table header -->
           <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
-            <span class="w-40 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PROJECT</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
-            <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
-            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PERF.</span>
+            <!-- Name takes the slack; the metric columns stay fixed so they line up down the table. -->
+            <span class="min-w-0 flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PROJECT</span>
+            <span class="w-24 shrink-0 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SPEND</span>
+            <span class="w-24 shrink-0 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">REVENUE</span>
+            <span class="w-16 shrink-0 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">ROAS</span>
+            <span class="w-24 shrink-0 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">IMPRESSIONS</span>
+            <span class="w-20 shrink-0 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">PERF.</span>
           </div>
 
           <!-- Rows -->
@@ -59,19 +60,22 @@
               (keydown.enter)="row.campaigns.length > 0 && toggleProjectExpand(projectKey)"
               (keydown.space)="$event.preventDefault(); row.campaigns.length > 0 && toggleProjectExpand(projectKey)"
               [attr.tabindex]="row.campaigns.length > 0 ? 0 : null">
-              <div class="flex w-40 items-center gap-1.5" role="cell">
+              <div class="flex min-w-0 flex-1 items-center gap-1.5" role="cell">
                 @if (row.campaigns.length > 0) {
-                  <i class="fa-solid fa-chevron-right text-[9px] text-gray-400 transition-transform" [class.rotate-90]="projectExpanded" aria-hidden="true"></i>
+                  <i
+                    class="fa-solid fa-chevron-right shrink-0 text-[9px] text-gray-400 transition-transform"
+                    [class.rotate-90]="projectExpanded"
+                    aria-hidden="true"></i>
                 } @else {
-                  <span class="w-[9px]"></span>
+                  <span class="w-[9px] shrink-0"></span>
                 }
-                <span class="truncate text-xs font-medium text-gray-700">{{ row.name }}</span>
+                <span class="truncate text-xs font-medium text-gray-700" [title]="row.name">{{ row.name }}</span>
               </div>
-              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.spend }}</span>
-              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.revenue }}</span>
-              <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.roas }}</span>
-              <span class="w-24 text-right text-xs text-gray-500" role="cell">{{ row.impressions }}</span>
-              <div class="flex flex-1 justify-end" role="cell">
+              <span class="w-24 shrink-0 text-right text-xs text-gray-900 tabular-nums" role="cell">{{ row.spend }}</span>
+              <span class="w-24 shrink-0 text-right text-xs text-gray-900 tabular-nums" role="cell">{{ row.revenue }}</span>
+              <span class="w-16 shrink-0 text-right text-xs font-medium text-gray-900 tabular-nums" role="cell">{{ row.roas }}</span>
+              <span class="w-24 shrink-0 text-right text-xs text-gray-500 tabular-nums" role="cell">{{ row.impressions }}</span>
+              <div class="flex w-20 shrink-0 justify-end" role="cell">
                 <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" [class]="row.performanceClass">
                   {{ row.performance }}
                 </span>
@@ -85,13 +89,13 @@
                   class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2 pl-6"
                   role="row"
                   [attr.data-testid]="'campaign-row-' + projectKey + '-' + $index">
-                  <!-- w-40 (parent) minus pl-6 (indent) = 8.5rem -->
-                  <span class="w-[8.5rem] truncate text-[11px] text-gray-500" role="cell">{{ campaign.campaignName }}</span>
-                  <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.spend }}</span>
-                  <span class="w-24 text-right text-[11px] text-gray-500" role="cell">{{ campaign.revenue }}</span>
-                  <span class="w-16 text-right text-[11px] text-gray-500" role="cell">{{ campaign.roas }}</span>
-                  <span class="w-24 text-right text-[11px] text-gray-400" role="cell">{{ campaign.impressions }}</span>
-                  <div class="flex-1" role="cell"></div>
+                  <!-- Flexes with the parent name column; pl-6 supplies the indent. -->
+                  <span class="min-w-0 flex-1 truncate text-[11px] text-gray-500" [title]="campaign.campaignName" role="cell">{{ campaign.campaignName }}</span>
+                  <span class="w-24 shrink-0 text-right text-[11px] text-gray-500 tabular-nums" role="cell">{{ campaign.spend }}</span>
+                  <span class="w-24 shrink-0 text-right text-[11px] text-gray-500 tabular-nums" role="cell">{{ campaign.revenue }}</span>
+                  <span class="w-16 shrink-0 text-right text-[11px] text-gray-500 tabular-nums" role="cell">{{ campaign.roas }}</span>
+                  <span class="w-24 shrink-0 text-right text-[11px] text-gray-400 tabular-nums" role="cell">{{ campaign.impressions }}</span>
+                  <div class="w-20 shrink-0" role="cell"></div>
                 </div>
               }
             }
