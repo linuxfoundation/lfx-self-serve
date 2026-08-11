@@ -54,10 +54,11 @@ export const COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS: FilterPillOption[] = COMMITTEE
 }));
 
 /**
- * Tag severity per engagement classification for the members-table chip. `Emeritus` is
- * deliberately neutral (`secondary`) — an honorific seat state, never at-risk styling — and
- * `Inactive` only reads as a danger signal on the chip; the actual At-Risk filter uses
- * `isCommitteeEngagementRowAtRisk` (Low, or Inactive with real invites), not this map.
+ * Tag severity per engagement classification for the members-table chip. `Emeritus` and
+ * `LF Staff` (LFXV2-3101) are both deliberately neutral (`secondary`) — seat states with no real
+ * attendance expectation, never at-risk styling — and `Inactive` only reads as a danger signal on
+ * the chip; the actual At-Risk filter uses `isCommitteeEngagementRowAtRisk` (Low, or Inactive with
+ * real invites), not this map.
  */
 export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeEngagementClassification, TagSeverity> = {
   High: 'success',
@@ -65,4 +66,5 @@ export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeE
   Low: 'warn',
   Inactive: 'danger',
   Emeritus: 'secondary',
+  'LF Staff': 'secondary',
 };

@@ -374,9 +374,15 @@ export class CommitteeEngagementService {
       const joinedWithinWindow =
         isJoinedWithinWindow(effectiveRow?.MEMBER_JOINED_AT ?? null, windowStart) || (usableData && isJoinedWithinWindow(member.created_at, windowStart));
 
-      const classificationInput = { attended, invited: counts.invited, votingStatus, joinedWithinWindow };
-      totalAttended += attended;
-      totalInvited += counts.invited;
+      const classificationInput = { attended, invited: counts.invited, votingStatus, role, joinedWithinWindow };
+      // LF Staff seats are excluded from the rate sum (LFXV2-3101) — unlike Emeritus, which stays
+      // unconditionally included here (see `CommitteeEngagementSummary.attendance_rate`'s doc):
+      // a staff seat's real 0-attendance would otherwise drag down the whole committee's displayed
+      // rate for a member with no real attendance expectation in the first place.
+      if (role !== CommitteeMemberRole.LF_STAFF) {
+        totalAttended += attended;
+        totalInvited += counts.invited;
+      }
 
       const classification = classifyCommitteeEngagement(classificationInput);
       if (isCommitteeMemberActive(classificationInput)) activeCount++;

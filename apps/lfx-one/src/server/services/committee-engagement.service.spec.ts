@@ -273,6 +273,44 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(0);
     });
 
+    it('classifies an LF Staff member as "LF Staff" regardless of a low real attendance rate, and never at-risk (LFXV2-3101)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ classification: 'LF Staff', role: 'LF Staff' });
+      expect(result.summary.at_risk_count).toBe(0);
+      expect(result.summary.active_count).toBe(0);
+    });
+
+    it("excludes an LF Staff member's attended/invited counts from the aggregate attendance_rate (LFXV2-3101)", async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('staff')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 }), // High, real member
+        row({ MEMBER_USER_ID: 'staff', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 }), // LF Staff, 0 real attendance
+      ]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      // Without the exclusion this would be 10/18 = 0.56; the LF Staff row must not depress it.
+      expect(result.summary.attendance_rate).toBe(1);
+      expect(result.summary.total_count).toBe(2); // roster count is unaffected — only the rate/active/at-risk sums exclude LF Staff
+    });
+
+    it('does not broaden the LF Staff exclusion to a non-staff Observer with low attendance', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'None', MEMBER_VOTING_STATUS: 'Observer', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 2 }),
+      ]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]?.classification).toBe('Low');
+      expect(result.summary.at_risk_count).toBe(1);
+      expect(result.summary.attendance_rate).toBe(0.2);
+    });
+
     it('the new active_count rule counts a Low-classified member (some real attendance) as active', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 100, ATTENDED_COUNT_30D: 10 })]);

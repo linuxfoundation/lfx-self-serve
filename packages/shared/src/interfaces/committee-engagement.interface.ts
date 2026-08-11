@@ -12,23 +12,28 @@ export type CommitteeEngagementDataSource = 'mock' | 'live';
 
 /**
  * Engagement tier derived in the BFF from the member's personal attendance rate.
- * `Emeritus` is a seat-type override, not a rate tier — Emeritus members never classify
- * `Inactive`/`Low` regardless of their real attendance, since they're on the roster for
- * legacy/honorific reasons rather than active participation.
+ * `Emeritus` and `LF Staff` are both seat-type overrides, not rate tiers — neither ever classifies
+ * `Inactive`/`Low` regardless of real attendance: `Emeritus` members are on the roster for
+ * legacy/honorific reasons, and `LF Staff` seats (LFXV2-3101) carry no real attendance expectation,
+ * so treating either as disengaged would be noise, not signal.
  */
-export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus';
+export type CommitteeEngagementClassification = 'High' | 'Medium' | 'Low' | 'Inactive' | 'Emeritus' | 'LF Staff';
 
 /**
  * Classification inputs beyond the raw counts, per LFXV2-1705's finalized model semantics
  * (`platinum_lfx_one_committee_meeting_attendance`, `lf-dbt#2694`): `votingStatus` (`'Emeritus'`
- * short-circuits to a neutral tier) and `joinedWithinWindow` (whether `member_joined_at` falls
- * after the requested window's start — tenure clipping, so a brand-new member's zero invites
- * doesn't read as disengagement). Consumed by `committee-engagement-classifier.utils.ts`.
+ * short-circuits to a neutral tier), `role` (`CommitteeMemberRole.LF_STAFF` short-circuits to a
+ * neutral tier, LFXV2-3101), and `joinedWithinWindow` (whether `member_joined_at` falls after the
+ * requested window's start — tenure clipping, so a brand-new member's zero invites doesn't read as
+ * disengagement). Consumed by `committee-engagement-classifier.utils.ts`. `role` is optional: the
+ * only other consumer of this shape (`groups-engagement-stats.service.ts`, LFXV2-1705) doesn't
+ * query role data and simply gets no LF Staff exclusion, matching its pre-LFXV2-3101 behavior.
  */
 export interface CommitteeEngagementClassificationInput {
   attended: number;
   invited: number;
   votingStatus: string;
+  role?: string;
   joinedWithinWindow: boolean;
 }
 
@@ -54,17 +59,18 @@ export interface CommitteeMemberEngagement {
 /** Aggregate stats for `GET /api/committees/:uid/engagement`. */
 export interface CommitteeEngagementSummary {
   /**
-   * `sum(attended) / sum(invited)` across the full committee roster, 0 when nobody was invited.
-   * Unlike `active_count`/`at_risk_count`, this is NOT Emeritus-excluded — a committee with an
-   * Emeritus member (high invitation rate, low real attendance, by design) can show a
-   * depressed rate here alongside an `active_count` that ignores that same member. A UI
-   * surfacing both side-by-side should call this out rather than let them appear to contradict.
+   * `sum(attended) / sum(invited)` across the full committee roster, excluding `LF Staff` seats
+   * (LFXV2-3101 — a staff seat's real 0-attendance shouldn't depress a committee's rate), but NOT
+   * Emeritus-excluded — a committee with an Emeritus member (high invitation rate, low real
+   * attendance, by design) can still show a depressed rate here alongside an `active_count` that
+   * ignores that same member. A UI surfacing both side-by-side should call this out rather than
+   * let them appear to contradict.
    */
   attendance_rate: number;
   /**
-   * Count of non-Emeritus members with real attendance this window, or who joined within it
-   * (active by definition of being newly on the roster) — broader than "classified High/Medium":
-   * a Low-classified member with some real attendance still counts here. See
+   * Count of non-Emeritus, non-LF-Staff members with real attendance this window, or who joined
+   * within it (active by definition of being newly on the roster) — broader than "classified
+   * High/Medium": a Low-classified member with some real attendance still counts here. See
    * `committee-engagement-classifier.utils.ts`'s `isCommitteeMemberActive`. The "joined within it"
    * clause only applies when `data_available` is `true` — on a zero-row committee, or one whose
    * rows exist but don't join to any roster member, tenure alone can't imply active (see

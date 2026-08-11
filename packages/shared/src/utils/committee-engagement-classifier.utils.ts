@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { COMMITTEE_ENGAGEMENT_RATE_THRESHOLDS } from '../constants/committee-engagement.constants';
-import { CommitteeMemberVotingStatus } from '../enums';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums';
 import type { CommitteeEngagementClassification, CommitteeEngagementClassificationInput } from '../interfaces/committee-engagement.interface';
 
 /**
@@ -37,19 +37,25 @@ export function computeCommitteeEngagementRate(attended: number, invited: number
  * Decision order (see the ticket's Jira thread for the full rationale):
  * 1. `Emeritus` voting status always wins — on the roster for legacy/honorific reasons, real
  *    attendance (often ~5%, per the model's real observed data) shouldn't read as disengagement.
- * 2. No invites yet, but joined within the window: no real opportunity has existed, so this can't
+ * 2. `LF Staff` role wins next (LFXV2-3101) — staff seats are typically added as an Observer with
+ *    no real meeting-attendance expectation, so their real (often 0%) attendance shouldn't read as
+ *    disengagement either. Deliberately keyed on `role`, not `votingStatus === Observer`: a
+ *    non-staff Observer can have real engagement expectations depending on the community, so
+ *    broadening this to all Observers would hide genuine disengagement signal.
+ * 3. No invites yet, but joined within the window: no real opportunity has existed, so this can't
  *    be `Inactive` — tenure, not disengagement. Classified `High` (active by definition) rather
  *    than a new tier, since the ticket's classification set is fixed.
- * 3. No invites, and been a member the whole window: a genuine no-signal veteran — unchanged from
+ * 4. No invites, and been a member the whole window: a genuine no-signal veteran — unchanged from
  *    the original rule.
- * 4-6. Invited at least once: threshold on the real (unrounded) rate as before.
- * 7. Invited at least once, attended nothing: a real disengagement signal regardless of tenure —
- *    unlike case 2, they had an actual opportunity and skipped every one of them, so tenure does
+ * 5-7. Invited at least once: threshold on the real (unrounded) rate as before.
+ * 8. Invited at least once, attended nothing: a real disengagement signal regardless of tenure —
+ *    unlike case 3, they had an actual opportunity and skipped every one of them, so tenure does
  *    not protect this case.
  */
 export function classifyCommitteeEngagement(input: CommitteeEngagementClassificationInput): CommitteeEngagementClassification {
-  const { attended, invited, votingStatus, joinedWithinWindow } = input;
+  const { attended, invited, votingStatus, role, joinedWithinWindow } = input;
   if (votingStatus === CommitteeMemberVotingStatus.EMERITUS) return 'Emeritus';
+  if (role === CommitteeMemberRole.LF_STAFF) return 'LF Staff';
   if (invited <= 0) return joinedWithinWindow ? 'High' : 'Inactive';
 
   const rate = rawCommitteeEngagementRate(attended, invited);
@@ -66,8 +72,8 @@ export function classifyCommitteeEngagement(input: CommitteeEngagementClassifica
  * `Low` members are at risk by definition. A member invited within the window who attended
  * nothing is at risk too, even though `classifyCommitteeEngagement` also calls them `Inactive` —
  * that tier's other member (never invited at all) has no signal to act on, but this one does.
- * `Emeritus` and the tenure-grace `High` (case 2 above) are never at-risk — neither matches `Low`
- * or `Inactive`, so no extra exclusion logic is needed here.
+ * `Emeritus`, `LF Staff` (LFXV2-3101), and the tenure-grace `High` (case 3 above) are never
+ * at-risk — none of them match `Low` or `Inactive`, so no extra exclusion logic is needed here.
  */
 export function isCommitteeMemberAtRisk(input: CommitteeEngagementClassificationInput): boolean {
   const classification = classifyCommitteeEngagement(input);
@@ -77,12 +83,15 @@ export function isCommitteeMemberAtRisk(input: CommitteeEngagementClassification
 /**
  * The "Active Members x/y" summary rule — deliberately broader than "classified High/Medium":
  * per the ticket, the numerator is members with *any* real attendance this window, plus members
- * who joined within it (active by definition of being newly on the roster), excluding Emeritus.
- * A `Low`-classified member (some attendance, just under the Medium threshold) still counts here —
- * this is a distinct rule from `classifyCommitteeEngagement`, not a rollup of its tiers.
+ * who joined within it (active by definition of being newly on the roster), excluding Emeritus
+ * and LF Staff (LFXV2-3101). This function doesn't delegate to `classifyCommitteeEngagement`, so
+ * both exclusions need their own explicit check here, same as the classifier's. A `Low`-classified
+ * member (some attendance, just under the Medium threshold) still counts here — this is a distinct
+ * rule from `classifyCommitteeEngagement`, not a rollup of its tiers.
  */
 export function isCommitteeMemberActive(input: CommitteeEngagementClassificationInput): boolean {
   if (input.votingStatus === CommitteeMemberVotingStatus.EMERITUS) return false;
+  if (input.role === CommitteeMemberRole.LF_STAFF) return false;
   return input.attended > 0 || input.joinedWithinWindow;
 }
 
