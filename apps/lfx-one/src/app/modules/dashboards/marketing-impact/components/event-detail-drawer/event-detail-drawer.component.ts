@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -27,9 +27,16 @@ export class EventDetailDrawerComponent {
   /** Event id to load when the drawer opens. */
   public readonly eventId = input<string | null>(null);
 
+  // === WritableSignals ===
+  /**
+   * Set by the detail stream rather than derived from `detail() === null`. The request emits
+   * `null` on failure, so a derived flag would leave the skeleton up forever on an error
+   * instead of falling through to the empty state.
+   */
+  protected readonly loading = signal(false);
+
   // === Computed Signals ===
   protected readonly detail: Signal<EventDetailResponse | null> = this.initDetail();
-  protected readonly loading = computed(() => this.visible() && this.detail() === null && this.eventId() !== null);
 
   // Registration progress (0–100) when a real goal exists.
   protected readonly regProgress = computed(() => {
@@ -83,8 +90,14 @@ export class EventDetailDrawerComponent {
         skip(1),
         switchMap((open) => {
           const id = this.eventId();
-          if (!open || !id) return of(null);
-          return this.analyticsService.getEventDetail(id).pipe(finalize(() => undefined));
+          if (!open || !id) {
+            this.loading.set(false);
+            return of(null);
+          }
+          this.loading.set(true);
+          // finalize, not a tap on the value — the request emits null on error, and that
+          // still has to clear the skeleton.
+          return this.analyticsService.getEventDetail(id).pipe(finalize(() => this.loading.set(false)));
         })
       ),
       { initialValue: null }
