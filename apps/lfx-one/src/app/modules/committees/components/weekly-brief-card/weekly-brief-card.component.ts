@@ -813,9 +813,15 @@ export class WeeklyBriefCardComponent {
             const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
           } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
-            // Slack answered synchronously with a rejection (invalid_payload, channel_not_found,
-            // etc.) — the POST was never accepted, so nothing was posted. Safe to retry.
-            detail = 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
+            // Slack answered synchronously with a rejection — invalid_payload, channel_not_found,
+            // rate_limited, action_prohibited, etc. (see SLACK_ERROR_TOKEN_PATTERN) — not only a
+            // bad webhook URL, so a single hardcoded "check the webhook URL" message would send a
+            // rate-limited or policy-blocked caller down the wrong troubleshooting path and invite
+            // an immediate retry that just gets rejected again. The server's own message already
+            // embeds the specific reason when it's recognizable (weekly-brief.service.ts's
+            // clientSafeReason); fall back to the generic wording only when it isn't. Either way
+            // the POST was never accepted, so nothing was posted — safe to retry once resolved.
+            detail = err.error?.error ?? 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
             // Ambiguous, same rationale as performShare's identical status-range branch: this
             // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)

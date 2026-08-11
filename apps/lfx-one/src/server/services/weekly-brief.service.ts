@@ -35,6 +35,7 @@ import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
@@ -785,6 +786,18 @@ export class WeeklyBriefService {
    * accepted the message, not that it was merely queued.
    */
   public async shareToSlack(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefToSlackResult> {
+    // Same server-side kill switch as committee.service.ts's updateCommittee, and for the same
+    // reason: WG_WEEKLY_BRIEF_SLACK_FLAG only gates the Angular UI (evaluated through the
+    // OpenFeature Web SDK, which never runs server-side) — without this, a project writer could
+    // trigger a real Slack send via a direct API call while the UI still hides the action.
+    // Checked first, before any upstream call, so a disabled environment fails cheaply.
+    if (!isServerFeatureEnabled(ServerFeatureFlag.WeeklyBriefSlack)) {
+      throw new ConflictError('Slack webhook sharing is not enabled in this environment', 'FEATURE_DISABLED', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
     const { brief } = await this.getCurrentBrief(req, committeeId);
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {

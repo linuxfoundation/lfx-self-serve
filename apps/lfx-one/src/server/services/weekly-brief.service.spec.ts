@@ -145,6 +145,7 @@ import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { MicroserviceError } from '../errors';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
@@ -891,6 +892,9 @@ describe('WeeklyBriefService', () => {
 
     beforeEach(() => {
       process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      // On by default here — the dedicated FEATURE_DISABLED test below covers it off; every other
+      // test in this block exercises what happens once the kill switch is enabled.
+      process.env[ServerFeatureFlag.WeeklyBriefSlack] = 'true';
       getCommitteeForSlackShareMock.mockResolvedValue({
         name: 'Test Committee',
         project_uid: 'project-1',
@@ -920,6 +924,16 @@ describe('WeeklyBriefService', () => {
         throttle: null,
       });
     }
+
+    it('throws 409 FEATURE_DISABLED before any upstream call when the server-side kill switch is off, independent of WG_WEEKLY_BRIEF_SLACK_FLAG which never reaches this method', async () => {
+      delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'FEATURE_DISABLED' });
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(getCommitteeForSlackShareMock).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
 
     it('throws 404 when there is no brief to share', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });

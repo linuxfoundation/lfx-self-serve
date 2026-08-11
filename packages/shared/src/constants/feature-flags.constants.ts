@@ -17,5 +17,13 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * so flipping this flag alone is sufficient to expose the settings card. Default false: the
  * upstream committee-service has no chat_webhook_url field yet, so every save would 409 today —
  * see committee.service.ts's updateCommittee/getSlackWebhookUrlStrict comments.
+ *
+ * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through the OpenFeature Web SDK,
+ * which never runs server-side, so it cannot gate an Express handler. The actual write
+ * (`committee.service.ts`'s `updateCommittee`) and send (`weekly-brief.service.ts`'s
+ * `shareToSlack`) paths are gated independently, server-side, by
+ * `ServerFeatureFlag.WeeklyBriefSlack` (`server-feature-flag.helper.ts`) — an env-var kill switch
+ * that also defaults off. Both must be enabled for the feature to actually be reachable; flipping
+ * only this one hides/shows the UI without changing what a direct API caller can do.
  */
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';

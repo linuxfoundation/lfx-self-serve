@@ -154,6 +154,17 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('rejected') }));
   });
 
+  it("SLACK_SEND_FAILED uses the server's specific rejection reason (e.g. rate_limited) instead of always blaming the webhook URL — a rate-limited or policy-blocked send is not a bad URL", () => {
+    shareWeeklyBriefToSlack.mockReturnValueOnce(
+      throwError(() => ({ status: 502, error: { code: 'SLACK_SEND_FAILED', error: 'Slack rejected the message: rate_limited' } }))
+    );
+
+    shareToSlack();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Slack rejected the message: rate_limited' }));
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('webhook URL') }));
+  });
+
   it('an unclassified 5xx says the send may not have completed — must not be confused with SLACK_SEND_FAILED\'s "safe to retry" claim', () => {
     shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 503, error: {} })));
 

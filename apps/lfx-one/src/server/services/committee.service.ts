@@ -37,6 +37,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
@@ -497,6 +498,21 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
+    // Server-side kill switch, independent of WG_WEEKLY_BRIEF_SLACK_FLAG (the Angular UI's
+    // OpenFeature/GrowthBook flag) — that flag only gates rendering of the settings card, since
+    // the OpenFeature Web SDK it's evaluated through never runs on this server. Without this, any
+    // caller with ordinary project-writer access could configure chat_webhook_url directly against
+    // the API while the UI still hides the card. Checked first, before the impersonation guard
+    // below, so a disabled environment reports the same "not available" outcome regardless of who's
+    // asking.
+    if (data.chat_webhook_url !== undefined && !isServerFeatureEnabled(ServerFeatureFlag.WeeklyBriefSlack)) {
+      throw new ConflictError('Slack webhook sharing is not enabled in this environment', 'FEATURE_DISABLED', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
     // Scoped to this one field, not the whole route: an impersonator repointing chat_webhook_url
     // to a channel they control, then leaving, would let a later legitimate share-slack (itself
     // correctly blocked during impersonation — weekly-brief.route.ts) deliver brief content

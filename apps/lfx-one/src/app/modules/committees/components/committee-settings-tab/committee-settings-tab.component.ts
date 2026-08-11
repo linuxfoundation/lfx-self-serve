@@ -126,6 +126,11 @@ export class CommitteeSettingsTabComponent {
   // visible but the save didn't send it" bug happened in the first place).
   public slackWebhookInputVisible = computed(() => this.editingSlackWebhookUrl() || !this.slackWebhookConfigured());
 
+  // Last committee uid seen by the constructor's patch subscription below — lets it tell "this
+  // component instance got reused for a different committee via route param navigation" apart
+  // from "the same committee's data just refreshed". Undefined only before the first emission.
+  private lastCommitteeUid: string | undefined;
+
   public constructor() {
     // Patch form when committee input changes
     toObservable(this.committee)
@@ -140,7 +145,14 @@ export class CommitteeSettingsTabComponent {
         // across the resulting refresh instead of silently discarding what they typed; a
         // successful save already reset the control itself (see saveSettings' next handler), so
         // this only ever preserves a genuinely unsaved value.
-        const preserveWebhookEdit = this.form.controls.chat_webhook_url.dirty;
+        // But only within the SAME committee: this component instance can be reused across a
+        // route navigation from one committee to another (e.g. /groups/:id -> /groups/:id2)
+        // without being destroyed, and `dirty` alone can't tell that apart from a same-committee
+        // refresh — an unsaved edit for committee A must never survive onto committee B's form,
+        // let alone ride along into committee B's save payload.
+        const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
+        this.lastCommitteeUid = c.uid;
+        const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
         this.form.patchValue({
           member_visibility: c.member_visibility || 'hidden',
           join_mode: c.join_mode || 'invite_only',

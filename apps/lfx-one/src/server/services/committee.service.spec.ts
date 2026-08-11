@@ -80,6 +80,7 @@ vi.mock('../services/logger.service', () => ({
 import type { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from './committee.service';
 
@@ -337,7 +338,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     enrichWithProjectData.mockReset().mockImplementation((_req: unknown, items: unknown[]) => Promise.resolve(items));
     // Pass-through default — most tests here don't care about access-check enrichment itself.
     addAccessToResource.mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
+    // On by default here — this suite's own updateCommittee tests below cover the FEATURE_DISABLED
+    // gate explicitly; every other test in this block exercises what happens once it's enabled.
+    process.env[ServerFeatureFlag.WeeklyBriefSlack] = 'true';
     service = new CommitteeService();
+  });
+
+  afterEach(() => {
+    delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
   });
 
   describe('getCommitteeById', () => {
@@ -437,6 +445,26 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
   });
 
   describe('updateCommittee', () => {
+    it('rejects a chat_webhook_url change (409 FEATURE_DISABLED) when the server-side kill switch is off, before touching upstream — independent of WG_WEEKLY_BRIEF_SLACK_FLAG, which is UI-only and never reaches this method', async () => {
+      delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'FEATURE_DISABLED',
+      });
+
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not gate updates that omit chat_webhook_url on the kill switch', async () => {
+      delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+    });
+
     it('rejects any chat_webhook_url change during impersonation (403 IMPERSONATION_READ_ONLY), before touching upstream — even a well-formed URL, and even a clear (null)', async () => {
       isImpersonating.mockReturnValue(true);
 

@@ -157,6 +157,24 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(component.form.controls.chat_webhook_url.value).toBe('https://hooks.slack.com/services/T1/B1/X');
   });
 
+  it("clears a dirty chat_webhook_url when the committee input switches to a DIFFERENT committee — an unsaved edit for committee A must never survive into committee B's form or save payload", async () => {
+    const OTHER_COMMITTEE: Committee = { ...COMMITTEE, uid: 'committee-2', name: 'Other Committee' };
+
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.markAsDirty();
+    component.editingSlackWebhookUrl.set(true);
+
+    fixture.componentRef.setInput('committee', OTHER_COMMITTEE);
+    await fixture.whenStable();
+
+    expect(component.form.controls.chat_webhook_url.value).toBeNull();
+    expect(component.editingSlackWebhookUrl()).toBe(false);
+
+    component.saveSettings();
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('chat_webhook_url');
+  });
+
   it('nulls chat_webhook_url on a committee refresh when the control is pristine — even if it holds a value (e.g. left over from a prior successful save reset)', async () => {
     // Seeded via setValue + markAsPristine, not left at its initial null — a test asserting
     // null-stays-null after a refresh would pass even if the constructor's
