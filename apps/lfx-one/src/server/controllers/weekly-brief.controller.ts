@@ -386,6 +386,55 @@ export class WeeklyBriefController {
   }
 
   /**
+   * POST /api/committees/:committeeId/weekly-briefs/share-slack
+   *
+   * Same gating shape as {@link shareBrief}: `assertCommitteeRead` (committee#auditor) closes
+   * the existence/state read this method does internally before anything else; the actual send
+   * is authorized separately and more narrowly inside the service
+   * (`project:{project_uid}#writer`).
+   */
+  public async shareToSlack(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'share_weekly_brief_slack', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'share_weekly_brief_slack',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'share_weekly_brief_slack');
+
+      const validation = validateShareBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid share-weekly-brief-to-slack request body', {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const result = await this.weeklyBriefService.shareToSlack(req, committeeId, validation.value.revision);
+
+      logger.success(req, 'share_weekly_brief_slack', startTime, {
+        committee_id: committeeId,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
    *
    * BFF-only feature (LFXV2-3042) — no upstream endpoint, no committee-write involved. Gated by
