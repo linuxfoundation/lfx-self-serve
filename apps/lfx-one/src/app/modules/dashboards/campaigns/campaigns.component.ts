@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { take } from 'rxjs';
+import { skip, take } from 'rxjs';
 
 import { ButtonComponent } from '../../../shared/components/button/button.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
@@ -98,7 +98,7 @@ export class CampaignsComponent {
    * generation counter: a `saved` banner naming a brief in one foundation's table must not be
    * left sitting under another one, whether the response landed before the switch or after it.
    */
-  private lastPersistenceSlug = this.projectContextService.activeContext()?.slug ?? '';
+  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -118,24 +118,27 @@ export class CampaignsComponent {
 
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
-    // `lastPersistenceSlug`. The generation bump is what stops a save already in flight for the
+    // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the
     // previous foundation from writing its outcome under the new one; clearing the signal is what
     // removes a banner that already landed.
+    //
+    // `skip(1)` because `toObservable` replays the CURRENT slug on subscribe, and the foundation
+    // the page opened with is not a switch: `projectQueryParamGuard` has already resolved it
+    // before this component exists. Without the skip, a brief proceeded in the same tick as the
+    // first change detection would have its save dropped by a generation bump that represents
+    // nothing. The computed dedupes by value, so only real changes reach here.
     //
     // `briefOutput` and `selectedTab` are deliberately left alone, unlike `resetToPlanning`. The
     // brief describes an EVENT, not a foundation, and throwing away a generated brief on a stray
     // sidebar click would destroy real work to fix a labelling problem. The consequence is that
     // proceeding after a switch files that brief under the newly selected foundation, which is
     // the only foundation the user has actually asked for by then.
-    effect(() => {
-      const slug = this.projectContextService.activeContext()?.slug ?? '';
-      if (slug === this.lastPersistenceSlug) {
-        return;
-      }
-      this.lastPersistenceSlug = slug;
-      this.briefPersistenceGeneration++;
-      this.briefPersistence.set(IDLE_PERSISTENCE);
-    });
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.briefPersistenceGeneration++;
+        this.briefPersistence.set(IDLE_PERSISTENCE);
+      });
 
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
@@ -238,7 +241,16 @@ export class CampaignsComponent {
           // the one on screen now. Dropping it with the rest would mean a session whose first
           // save happened to resolve after a program switch never learns the cutover is on, and
           // withholds the in-flight banner for the rest of its life.
-          this.briefPersistenceEnabled.set(result.enabled);
+          //
+          // Latched, never cleared, and that direction is the point. During a rollout the two
+          // answers come from different replicas, so an `enabled: false` proves only that ONE
+          // handler had the flag dark — and a superseded response saying so is the stalest
+          // evidence available. Letting it win would put the session back to withholding the
+          // banner for good. The reverse mistake costs a `saving` banner on a save that turns
+          // out to be a no-op, which is the flicker this latch exists to bound, not to prevent.
+          if (result.enabled) {
+            this.briefPersistenceEnabled.set(true);
+          }
 
           if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);

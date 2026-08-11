@@ -209,6 +209,20 @@ export class CampaignServiceClient {
    * between the find and the PUT; re-reading and overwriting would silently discard their work.
    * The user is told instead — see the caller.
    *
+   * A 409 from `create-brief` IS retried, once, as a replace — and the two dispositions are
+   * consistent, not contradictory. A 412 says a write landed between the validator I am holding
+   * and the one the server has; retrying would overwrite a revision I never read. A 409 says
+   * there is no validator to be stale, because the find that ran before the POST answered 404 —
+   * so re-finding and replacing is not an overwrite of unseen work, it is the same second-save
+   * path this method already takes when the find happens a moment later. The interval guard
+   * survives: the retried PUT still carries the re-read `If-Match` and still reports its own 412.
+   *
+   * It is reachable without a second user. The tab bar is not gated on the save (`selectTab`
+   * only sets a signal), so a user can return to Planning and proceed again while the first
+   * request is still open; both finds 404 and the second POST collides. Without the retry the
+   * request that loses is the NEWER one — the user is told their latest brief could not be saved
+   * while an older copy of it sits in the database.
+   *
    * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
    * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
    * `projectQueryParamGuard` seeds the context from `?project=`), while campaign-service scopes
@@ -223,22 +237,54 @@ export class CampaignServiceClient {
     const existing = await this.findBrief(req, basePath, eventSlug);
 
     if (existing === null) {
-      const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
-        req,
-        'LFX_V2_CAMPAIGN_SERVICE',
-        basePath,
-        'POST',
-        undefined,
-        envelope
-      );
-      return this.approveBrief(req, basePath, created, true);
+      try {
+        const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+          req,
+          'LFX_V2_CAMPAIGN_SERVICE',
+          basePath,
+          'POST',
+          undefined,
+          envelope
+        );
+        return this.approveBrief(req, basePath, created, true);
+      } catch (error) {
+        // Not gated on campaign-service's typed body, unlike the 404 above, and it does not need
+        // to be: the cost of misreading a gateway 409 is one extra find, which on a route that is
+        // not answering returns null and rethrows this very error. The 404 needs the gate because
+        // misreading it creates a duplicate row instead.
+        if (!(error instanceof MicroserviceError && error.statusCode === 409)) {
+          throw error;
+        }
+
+        const raced = await this.findBrief(req, basePath, eventSlug);
+        // Nothing to replace: the brief that caused the collision is gone again — archived
+        // between the POST and this find, most likely. Report the conflict rather than looping;
+        // one retry is the whole budget, and a second POST would just race the same way.
+        if (raced === null) {
+          throw error;
+        }
+        return this.replaceBrief(req, basePath, envelope, raced);
+      }
     }
 
-    // `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
-    // version number is NOT a substitute: the design says the ETag "mirrors" the version, which
-    // fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
-    // all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
-    // revision. Fail loudly instead.
+    return this.replaceBrief(req, basePath, envelope, existing);
+  }
+
+  /**
+   * Replace an existing brief and approve the result.
+   *
+   * `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
+   * version number is NOT a substitute: the design says the ETag "mirrors" the version, which
+   * fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
+   * all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
+   * revision. Fail loudly instead.
+   */
+  private async replaceBrief(
+    req: Request,
+    basePath: string,
+    envelope: CampaignServiceBriefEnvelope,
+    existing: { brief: CampaignServiceBrief; etag: string | null }
+  ): Promise<CampaignBriefPersistResult> {
     if (existing.etag === null) {
       throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
     }

@@ -275,6 +275,49 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
 
+  // Two saves of the same event can be open at once: the tab bar is not gated on the request, so
+  // the user can return to Planning and proceed again while the first POST is still in flight.
+  // Both finds 404 and the second create collides with the partial unique index. Without the
+  // retry the request that fails is the NEWER one — the user is told their latest brief was not
+  // saved while an older copy of it is what actually landed.
+  it('replaces the racing brief when create collides with a concurrent save', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'))
+      // The re-find now sees the brief the other request created.
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: '"3"',
+      // Not `true`: this call replaced a row it did not create, and the flag is what the caller
+      // would use to tell a first save from a subsequent one.
+      created: false,
+      approved: true,
+    });
+
+    const [, , , method, , , headers] = proxyRequestWithResponse.mock.calls[3] as unknown[];
+    expect(method).toBe('PUT');
+    // The interval guard survives the retry: the PUT carries the validator from the RE-READ, so a
+    // write that lands after it still surfaces as a 412 rather than being overwritten blind.
+    expect(headers).toEqual({ 'If-Match': '"1"' });
+  });
+
+  // One retry is the whole budget. If the colliding brief is gone again by the time the re-find
+  // runs, a second POST would race exactly as the first did.
+  it('reports the conflict when the racing brief has already gone', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'))
+      .mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('conflict');
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(3);
+  });
+
   // The page is reachable by an ED of any foundation — `executiveDirectorGuard` gates on persona
   // and `projectQueryParamGuard` seeds the context from `?project=` — while campaign-service
   // scopes every brief on its project. A hard-coded `tlf` would file a CNCF ED's brief in TLF's

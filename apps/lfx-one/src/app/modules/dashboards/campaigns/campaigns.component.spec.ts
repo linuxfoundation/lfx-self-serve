@@ -35,11 +35,15 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
-  /** `selectorForm` is protected; a program switch is the real path that discards a brief. */
-  function switchProgram(): void {
+  /**
+   * `selectorForm` is protected; a program switch is the real path that discards a brief. The
+   * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
+   * the same program is a no-op and would leave a test believing it had discarded a brief.
+   */
+  function switchProgram(value: 'events' | 'education' = 'education'): void {
     (
       fixture.componentInstance as unknown as { selectorForm: { controls: { programType: { setValue(v: string): void } } } }
-    ).selectorForm.controls.programType.setValue('education');
+    ).selectorForm.controls.programType.setValue(value);
   }
 
   function tab(): string {
@@ -189,6 +193,41 @@ describe('CampaignsComponent brief persistence', () => {
 
     // …but the next save knows to show the banner, which it could only have learned from the
     // response it dropped.
+    expect(state().status).toBe('saving');
+  });
+
+  /**
+   * The latch only ever turns on. During a rollout the two answers come from different replicas,
+   * so an `enabled: false` is evidence about one handler, not about the deployment — and a
+   * superseded one is the stalest evidence there is. Let it clear the latch and the session goes
+   * back to withholding the in-flight banner permanently, for a cutover that is on.
+   */
+  it('does not let a stale disabled response clear the cutover latch', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+    proceed();
+    switchProgram();
+    await fixture.whenStable();
+
+    persistBrief.mockReturnValue(
+      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
+    );
+    proceed();
+    await fixture.whenStable();
+
+    // The superseded request finally answers, from a replica that had not been rolled yet.
+    late.next({ enabled: false, briefId: '', etag: null, created: false, approved: false });
+    await fixture.whenStable();
+
+    switchProgram('events');
+    await fixture.whenStable();
+    // Really discarded, so the assertion below is about the NEW save rather than the leftover
+    // banner from the one before it.
+    expect(state().status).toBe('off');
+
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+
     expect(state().status).toBe('saving');
   });
 
