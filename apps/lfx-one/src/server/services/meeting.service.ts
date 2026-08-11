@@ -1698,7 +1698,7 @@ export class MeetingService {
       `/itx/meetings/${meetingId}/registrants/self`,
       'POST',
       undefined,
-      payload,
+      payload
     );
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
