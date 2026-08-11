@@ -386,4 +386,14 @@ export interface NewsletterOptOutListResponse {
 // Discriminates the two list shapes the newsletter list page's context/tab
 // switchMap can resolve to, so a single subscribe callback can route each
 // response without a second stream.
-export type NewsletterListLoadResult = { kind: 'newsletters'; response: NewsletterListResponse } | { kind: 'optout'; response: NewsletterOptOutListResponse };
+export type NewsletterListLoadResult =
+  | {
+      kind: 'newsletters';
+      response: NewsletterListResponse;
+      // Non-paginated `status=sending` rows carrying `scheduled_at` — arms in
+      // progress, fetched alongside the paginated `status=scheduled` request
+      // on the Scheduled tab only (see the list-filter trap in the newsletter
+      // service contract). Undefined on every other tab.
+      arming?: NewsletterListItem[];
+    }
+  | { kind: 'optout'; response: NewsletterOptOutListResponse };

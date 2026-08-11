@@ -84,11 +84,13 @@
           <lfx-empty-state
             [withCard]="false"
             icon="fa-light fa-paper-plane"
-            [title]="statusTab() === 'draft' ? 'No drafts yet' : 'No sent newsletters yet'"
+            [title]="statusTab() === 'draft' ? 'No drafts yet' : statusTab() === 'scheduled' ? 'No scheduled newsletters' : 'No sent newsletters yet'"
             [subtitle]="
               statusTab() === 'draft'
                 ? 'Start writing your first newsletter and your draft will appear here.'
-                : 'Send your first newsletter and engagement metrics will show up here.'
+                : statusTab() === 'scheduled'
+                  ? 'Schedule a draft to send later and it will appear here until it goes out.'
+                  : 'Send your first newsletter and engagement metrics will show up here.'
             "
             ctaLabel="Create newsletter"
             ctaIcon="fa-light fa-plus"
@@ -98,13 +100,17 @@
           <lfx-table [value]="rows()" [loading]="loading()" selectionMode="single" dataKey="id" data-testid="newsletter-list-table">
             <ng-template #header>
               <tr>
-                <th class="w-[40%]">Subject</th>
+                <th class="w-[35%]">Subject</th>
                 <th class="w-[15%]">Audience</th>
                 @if (statusTab() === 'sent') {
                   <th class="w-[15%]">Sent</th>
                   <th class="w-[10%] text-right">Recipients</th>
                   <th class="w-[10%] text-right">Open Rate</th>
                   <th class="w-[10%]"></th>
+                } @else if (statusTab() === 'scheduled') {
+                  <th class="w-[20%]">Scheduled for</th>
+                  <th class="w-[10%] text-right">Recipients</th>
+                  <th class="w-[20%]"></th>
                 } @else {
                   <th class="w-[20%]">Updated</th>
                   <th class="w-[10%] text-right">Audience size</th>
@@ -114,9 +120,12 @@
             </ng-template>
 
             <ng-template #body let-newsletter>
-              <tr class="cursor-pointer" (click)="goToRow(newsletter)" [attr.data-testid]="'newsletter-row-' + newsletter.id">
+              <tr
+                [class]="newsletter.isArming ? 'cursor-default' : 'cursor-pointer'"
+                (click)="newsletter.isArming ? null : goToRow(newsletter)"
+                [attr.data-testid]="'newsletter-row-' + newsletter.id">
                 <td>
-                  <span class="lfx-table-name-link text-sm text-gray-900 font-medium">
+                  <span [class]="newsletter.isArming ? 'text-sm text-gray-500 font-medium' : 'lfx-table-name-link text-sm text-gray-900 font-medium'">
                     {{ newsletter.subject || 'Untitled draft' }}
                   </span>
                 </td>
@@ -169,6 +178,41 @@
                         tooltipPosition="top">
                       </lfx-button>
                       <lfx-tag value="Sent" severity="success"></lfx-tag>
+                    </div>
+                  </td>
+                } @else if (statusTab() === 'scheduled') {
+                  <td>
+                    <span
+                      class="text-sm text-gray-700"
+                      role="note"
+                      tabindex="0"
+                      [pTooltip]="newsletter.scheduledTooltip"
+                      tooltipPosition="top"
+                      tooltipEvent="both">
+                      {{ newsletter.isArming ? 'Scheduling…' : newsletter.scheduledLabel || '—' }}
+                    </span>
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm text-gray-700">{{ newsletter.recipientsLabel }}</span>
+                  </td>
+                  <td class="text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      @if (!newsletter.isArming) {
+                        @if (canWrite()) {
+                          <lfx-button
+                            label="Cancel schedule"
+                            severity="secondary"
+                            [outlined]="true"
+                            size="small"
+                            [loading]="cancelingScheduleId() === newsletter.id"
+                            (onClick)="onCancelSchedule(newsletter, $event)"
+                            [attr.data-testid]="'newsletter-cancel-schedule-' + newsletter.id">
+                          </lfx-button>
+                        }
+                        <lfx-tag value="Scheduled" severity="info" [attr.data-testid]="'newsletter-status-scheduled-' + newsletter.id"></lfx-tag>
+                      } @else {
+                        <lfx-tag value="Scheduling…" severity="info" [attr.data-testid]="'newsletter-status-scheduling-' + newsletter.id"></lfx-tag>
+                      }
                     </div>
                   </td>
                 } @else {
