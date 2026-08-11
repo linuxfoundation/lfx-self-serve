@@ -9,17 +9,17 @@ last_updated: 2026-08-10
 intercom_collection: Meetings
 ---
 
-Every project meeting hosted in LFX Self Serve has a join page that does not require an LFX account, including Private and Restricted meetings. Opening the link takes you straight to that meeting's details — there's no list to pick from first.
+Every project meeting hosted in LFX Self Serve has a join page. Opening the link takes you straight to that meeting's details — there's no list to pick from first. A **Private** meeting's link works without an LFX account; a **Restricted** meeting generally doesn't — see "Restricted meetings" below.
 
 ## Steps
 
 1. Open the meeting join link shared by your meeting organizer. The link follows the format: `https://app.lfx.dev/meetings/{meeting-id}`.
 2. The page shows the meeting title, date and time, and a join button (if the meeting is starting soon or already underway). If you're signed in, it also shows who's organizing the meeting. Use the **Copy meeting link** button if you want to save or forward it.
-3. If the meeting is marked **Restricted**, you'll need to submit an email or username that matches an existing registrant to see full join details — see "Restricted meetings" below.
+3. If the meeting is marked **Restricted**, you'll generally need to be signed in and match an existing registrant to see full join details — see "Restricted meetings" below.
 
-## No account required
+## No account required (Private meetings)
 
-The meeting join page (`/meetings/:id`) never requires an LFX account, for any meeting. A **Private** meeting's join link carries the meeting's password as a query parameter, so anyone with the link can join without signing in. A **Restricted** meeting checks the email or username you submit against its registrant list instead of requiring sign-in.
+A **Private** meeting's join link carries the meeting's password as a query parameter, so anyone with the link can join without signing in. A **Restricted** meeting works differently — there's no anonymous form to get past it; you'll generally need to sign in as a registrant, or as the organizer or a linked committee member.
 
 ## Meeting not found
 
@@ -27,7 +27,7 @@ If you open a meeting link and see the **Meeting Not Found** page, it's usually 
 
 ## Restricted meetings
 
-There's no passcode you enter manually. Instead, some meetings are marked **Restricted**, which means only people who submit an email or username matching an existing registrant record can see full join details. If you hit this, ask the meeting organizer to add you as a registrant. Note that the organizer's name and contact link are only shown on the join page to signed-in visitors — if you're not signed in, sign in or ask whoever shared the link with you to reach the organizer on your behalf.
+There's no passcode you enter manually, and no anonymous form to submit an email or username either. A **Restricted** meeting only shows full join details to people who are signed in and match an existing registrant record (by email), plus organizers and members of a committee linked to the meeting. If you land on the **Meeting Not Found** page for a Restricted meeting, ask the meeting organizer to add you as a registrant, then make sure you're signed in. Note that the organizer's name and contact link are only shown on the join page to signed-in visitors — if you're not signed in, sign in or ask whoever shared the link with you to reach the organizer on your behalf.
 
 ## Register for a meeting
 
@@ -43,7 +43,7 @@ If you've been invited to a meeting, the join page shows **Yes**, **No**, and **
 
 ## Meeting materials
 
-The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). Materials are visible to anyone who can view the meeting, with one exception: for a **Private** meeting, you need to sign in to see materials. Only the meeting organizer can add or update materials.
+The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). You need to be **signed in** to see materials — this applies to every meeting, not just Private ones. Only the meeting organizer can add or update materials.
 
 ## After the meeting: recording, transcript, and AI summary
 

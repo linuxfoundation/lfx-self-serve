@@ -15,9 +15,9 @@ Users with **maintainer**, **board-member**, or **executive-director** personas 
 
 ## Does an attendee need an LFX account to join a meeting?
 
-No — no meeting requires an LFX account to view or join. Every meeting has a public join page at `/meetings/:id` that you can share with anyone.
+It depends on the meeting's access setting. Every meeting has a join page at `/meetings/:id`, but only **Private** meetings work without an account.
 
-If a meeting is marked **Private**, the join link carries the meeting's password as part of the URL, so anyone with that link can join without signing in. If a meeting is marked **Restricted**, the attendee needs to submit an email or username that matches an existing registrant record to see full join details — that's a registration check, not a passcode or a login requirement. See "Can I protect a meeting with a passcode?" below.
+If a meeting is marked **Private**, the join link carries the meeting's password as part of the URL, so anyone with that link can join without signing in. If a meeting is marked **Restricted**, there's no anonymous form to get past it — the attendee generally needs to be signed in and match an existing registrant record (by email), or be the organizer or a member of a linked committee. See "Can I protect a meeting with a passcode?" below.
 
 Note that the organizer's name and contact link on the join page are only visible to signed-in visitors, even on an otherwise-public meeting.
 
@@ -39,7 +39,7 @@ This can happen if the link has expired or is no longer valid, the meeting was d
 
 ## Can I protect a meeting with a passcode?
 
-There's no passcode field you enter manually. **Private** meetings do have a password, but it's embedded automatically in the join link when the organizer copies it — you don't type it in separately. Access to a **Restricted** meeting works differently: it only shows full join details to people who match an existing registrant (by email or username). If you need access to a restricted meeting, ask the organizer to add you as a registrant.
+There's no passcode field you enter manually. **Private** meetings do have a password, but it's embedded automatically in the join link when the organizer copies it — you don't type it in separately. Access to a **Restricted** meeting works differently: there's no anonymous form to type an email or username into either. It only shows full join details to people who are signed in and match an existing registrant (by email), plus organizers and linked committee members. If you need access to a restricted meeting, ask the organizer to add you as a registrant, then make sure you're signed in.
 
 ## Why can't I see a meeting I was invited to?
 
@@ -59,4 +59,4 @@ On the meeting's join page, after the meeting has ended, if the organizer enable
 
 ## Where can I find meeting materials?
 
-On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). Anyone who can view the meeting can see its materials, except that a **Private** meeting's materials require signing in first.
+On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). You need to be **signed in** to see materials, for any meeting.

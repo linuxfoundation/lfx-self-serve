@@ -34,7 +34,7 @@ The invitation list shows a running count split as "X from committees" and "Y di
 
 ## Manage meeting materials
 
-On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add are visible to anyone with access to the meeting, except that a **Private** meeting's materials require sign-in to view.
+On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones.
 
 ## Delete a meeting
 
