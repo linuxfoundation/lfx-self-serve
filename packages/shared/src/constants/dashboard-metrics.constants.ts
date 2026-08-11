@@ -1016,7 +1016,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
-          `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
+          // withPendingPlaceholder overrides value/color while pending, but the label
+          // is built here — embedding the live CTR unconditionally would leave a
+          // fabricated "0.0% CTR" on screen next to an em-dash value.
+          pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
           formatNumber(emailTotalOpens) + ' opens',
           emailCtr.monthlyOpens,
           lfxColors.blue[500],
