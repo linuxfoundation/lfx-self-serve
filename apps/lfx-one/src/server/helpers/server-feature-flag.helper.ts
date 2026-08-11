@@ -52,6 +52,12 @@ export enum ServerFeatureFlag {
    * creation is still the legacy path — so a flag-on and a flag-off pod serving the same user
    * across a rolling update disagree only about whether that user's brief was saved, never
    * about which of two systems owns it.
+   *
+   * That property is a consequence of nothing READING briefs, so it expires the moment something
+   * does. A later phase that loads a brief from campaign-service must put the read behind THIS
+   * flag, not behind one of its own: a pod that reads while the write flag is off would find no
+   * brief for a user whose session wrote through the legacy path, and report an empty brief for
+   * one that exists in front of them. Read and write have to flip together.
    */
   CampaignServiceBriefs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS',
 }

@@ -307,6 +307,10 @@ export class CampaignController {
    */
   public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field is present rather than omitted so the response satisfies
+      // CampaignBriefPersistResult on both arms, and the client needs exactly one branch.
+      // `enabled: false` is the whole signal; the remaining values are the empty ones the
+      // client already ignores when it is false, not placeholders standing in for a real save.
       res.json({ enabled: false, briefId: '', etag: null, created: false });
       return;
     }
