@@ -203,6 +203,10 @@ has always lived, in the browser tab, and is lost on reload. Turning it off afte
 leaves already-saved briefs untouched — nothing reads them back yet, so this flag changes only
 whether new briefs are written.
 
+The two flags are independent and gate different endpoints: setting `..._BRIEFS` does not route
+job polling anywhere new, and setting `..._JOBS` does not persist anything. The paragraph below is
+about `..._JOBS` alone.
+
 `LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is necessary but not sufficient: a poll reaches campaign-service only when the job id is
 also a UUID, which is the shape campaign-service mints. Creation is not cut over yet and still
 mints `job_<epoch>_<rand>` ids in this application, so with the flag ON today every real poll
