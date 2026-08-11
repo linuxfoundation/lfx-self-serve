@@ -401,13 +401,28 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug });
+    // Refused, not defaulted, for exactly the reason `persistBrief` refuses: `/foundation/campaigns`
+    // is reachable by an ED of any foundation, and a constant here would read TLF's brief table on
+    // their behalf — offering to restore another foundation's brief, or finding nothing and letting
+    // the next save silently replace the one that does exist.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
 
     try {
-      const result = await this.campaignServiceClient.loadBrief(req, eventSlug);
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
       // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
       // a stored brief exists and this build cannot open it, and nothing else would record it.
-      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, status: result.status, briefId: result.briefId });
+      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });
       res.json(result);
     } catch (error) {
       next(error);

@@ -3,12 +3,13 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
-import { catchError, debounceTime, distinctUntilChanged, of, Subject, Subscription, switchMap } from 'rxjs';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -41,6 +42,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 export class PlanningTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
@@ -143,6 +145,21 @@ export class PlanningTabComponent implements OnInit {
   // === Private State ===
   private briefSubscription: Subscription | null = null;
 
+  /**
+   * The foundation whose brief table the read-back should look in.
+   *
+   * A foundation switch does NOT re-create this component: `/foundation/campaigns` is a
+   * two-segment route in the foundation lens, and `sidebar.component.ts`
+   * `redirectOnContextSwitch` navigates only on a lens change or off an entity page, so a
+   * same-lens pick just moves `?project=` with `Location.replaceState`. The page stays mounted
+   * and `activeContext()` changes underneath it — which makes the foundation part of the lookup
+   * key, not a value that can be read once.
+   *
+   * Built as an observable field rather than inside `ngOnInit` because `toObservable` needs an
+   * injection context, and field initialisers have one.
+   */
+  private readonly activeFoundationSlug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? ''));
+
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
@@ -152,14 +169,31 @@ export class PlanningTabComponent implements OnInit {
     // component; this one must not, and a subscription that drops the stale response is the
     // simpler answer. `catchError` is INSIDE the switchMap so one failed lookup does not
     // terminate the stream and leave every later URL unchecked.
-    this.slugInput$
+    //
+    // Keyed on the foundation as well as the slug — see `activeFoundationSlug$`. A brief belongs
+    // to one foundation's table, so the same event slug is a different lookup under a different
+    // foundation, and `combineLatest` re-runs it when either half moves. `distinctUntilChanged`
+    // compares the PAIR, so a re-emission that changes neither is still dropped.
+    combineLatest([this.slugInput$, this.activeFoundationSlug$])
       .pipe(
         debounceTime(500),
-        distinctUntilChanged(),
-        switchMap((slug) => this.campaignService.loadBrief(slug).pipe(catchError(() => of(null)))),
+        distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
+        switchMap(([slug, project]) => this.campaignService.loadBrief(slug, project).pipe(catchError(() => of(null)))),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((result) => this.applySavedBrief(result));
+
+    // Clear the offer the MOMENT the foundation changes, not when the re-lookup answers. Between
+    // those two points the brief on screen is one that was found in the previous foundation's
+    // table, and the restore button would hand it to the Implementation tab under the new one.
+    // The same eager-clear reasoning as `onUrlInput`, for the other half of the key.
+    //
+    // `skip(1)` because `toObservable` replays the current foundation on subscribe, and the one
+    // the page opened with is not a change.
+    this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.savedBrief.set(null);
+      this.savedBriefWarning.set(null);
+    });
   }
 
   // === Public Methods ===

@@ -414,9 +414,16 @@ export class CampaignServiceClient {
    *
    * `unreadable` rather than `none` when the row cannot be mapped back, for the same reason. The
    * three outcomes are the caller's to render; see `CampaignBriefLoadResult`.
+   *
+   * `projectSlug` is the selected foundation, and it has to be the SAME one `saveBrief` filed
+   * under or the two halves of persistence disagree about which brief belongs to this event.
+   * A constant here would be worse than on the write side: reading TLF's table for a CNCF ED
+   * either finds nothing — a blank Planning tab for an event that already has an approved brief,
+   * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
+   * another foundation's work into theirs.
    */
-  public async loadBrief(req: Request, eventSlug: string): Promise<CampaignBriefLoadResult> {
-    const basePath = `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/briefs`;
+  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
+    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const found = await this.findBrief(req, basePath, eventSlug);
 
     if (found === null) {

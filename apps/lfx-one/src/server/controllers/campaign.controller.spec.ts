@@ -9,8 +9,9 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
+const { saveBrief, loadBrief, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
+  loadBrief: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -24,6 +25,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
+      public loadBrief = loadBrief;
     },
   };
 });
@@ -167,6 +169,164 @@ describe('CampaignController.persistBrief', () => {
 
     // The whole point of the feature is that the user learns the brief is not durable. Answering
     // 200 here would leave them working on a brief they believe is saved.
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The read half of brief persistence. The same flag gates both read and write; they flip
+ * together because a read without a write (or vice versa) is a broken cutover that either hides
+ * a persisted brief or makes one disappear. Tests here assert the boundary: that the flag's state
+ * is consulted, that query params are not defaulted but refused, and that every status the
+ * service can return is passed through unchanged.
+ */
+describe('CampaignController.loadBrief', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function buildLoadReq(query: Record<string, unknown> = { event_slug: 'kubecon-eu-2026', project: 'tlf' }): Request {
+    return { query, path: '/api/campaigns/brief' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('answers a dark cutover without calling campaign-service, signaling the ordinary steady state', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.loadBrief(buildLoadReq(), res, next);
+
+    // The flag being off is the default in every environment and warrants no error. A 4xx/5xx
+    // would fire the client's error arm on the ordinary case and train whoever sees it to ignore
+    // a UI that should never fire.
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null });
+  });
+
+  it('refuses to look up a brief without an event_slug query param', async () => {
+    // Rejected rather than passed through: campaign-service's `find-brief` declares MinLength(1)
+    // on `event_slug`, so an empty one is a 400 naming a field the user never typed — the same
+    // reason `persistBrief` checks upstream. Better to refuse here, saying what is actually
+    // wrong (the derived slug is empty), than to relay campaign-service's complaint about a
+    // field name the user never saw.
+    await controller.loadBrief(buildLoadReq({ event_slug: '', project: 'tlf' }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'event_slug', message: 'event_slug is required', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['no event_slug param at all', { project: 'tlf' }],
+    ['a blank event_slug param', { event_slug: '   ', project: 'tlf' }],
+  ])('refuses %s rather than passing it through', async (_label, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('refuses to look up a brief without a project query param, even though the page itself is scoped by one', async () => {
+    // The page is reachable by an ED of any foundation, and campaign-service files briefs per
+    // project. Defaulting an unresolved context to a constant would silently read one foundation's
+    // brief table on behalf of another, offering to restore the wrong foundation's brief or finding
+    // nothing — and if the user saves after, the update would overwrite whatever brief the
+    // foundation that owns it had. Refusing is the only safe course.
+    await controller.loadBrief(buildLoadReq({ event_slug: 'kubecon-eu-2026', project: '' }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'project', message: 'no foundation is selected; reload the campaigns page from the sidebar', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['no project param at all', { event_slug: 'kubecon-eu-2026' }],
+    ['a blank project param', { event_slug: 'kubecon-eu-2026', project: '   ' }],
+  ])('refuses %s rather than defaulting the foundation', async (_label, query) => {
+    await controller.loadBrief(buildLoadReq(query), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('returns a "none" status when campaign-service has no brief for this slug', async () => {
+    // The ordinary first-time case: the user has not generated a brief yet, so campaign-service
+    // returns nothing. This is not an error, just an empty result that tells the UI "generate one".
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null });
+
+    await controller.loadBrief(buildLoadReq(), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null });
+  });
+
+  it('returns a "loaded" status with the brief when campaign-service reconstructs it successfully', async () => {
+    // A saved brief that this build can deserialize. The brief object is returned unchanged so
+    // the Implementation tab can use it immediately without a second round trip.
+    const mockBrief = {
+      eventDetails: { slug: 'kubecon-eu-2026', name: 'KubeCon EU 2026' },
+      structuredCopy: null,
+      keywords: [],
+    } as unknown as CampaignBriefOutput;
+    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief });
+
+    await controller.loadBrief(buildLoadReq(), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief });
+  });
+
+  it('returns an "unreadable" status with the brief ID when a row exists but cannot be reconstructed', async () => {
+    // A stored brief that has become undeserializable (e.g. a schema change, or a corrupted row).
+    // Returning the ID lets whoever investigates look it up, and the distinct status prevents the
+    // UI from treating this as "no brief" and silently overwriting the orphaned row with a new save.
+    // The client learns "a saved brief exists but could not be opened" and can prompt the user
+    // rather than pretending the slate is clean.
+    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null });
+
+    await controller.loadBrief(buildLoadReq(), res, next);
+
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null });
+  });
+
+  it('sends a failed load to the error middleware instead of returning a degraded result', async () => {
+    // campaign-service returned an error (not a 404 — that is the "none" case). A 500 is not a
+    // "brief not found" outcome and should not be answered as one. Letting it through to the error
+    // middleware preserves the failure signal; swallowing it would train the UI to move on when it
+    // should wait for the service to recover.
+    const failure = new Error('campaign-service returned 500');
+    loadBrief.mockRejectedValue(failure);
+
+    await controller.loadBrief(buildLoadReq(), res, next);
+
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
   });

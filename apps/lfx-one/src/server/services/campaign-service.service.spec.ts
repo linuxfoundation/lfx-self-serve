@@ -30,7 +30,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from './campaign-service.service';
+import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
@@ -524,5 +524,182 @@ describe('CampaignServiceClient.saveBrief', () => {
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toMatchObject({ statusCode: 412 });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A stored brief as `find-brief` returns it, with the four `Any` fields overridable.
+ *
+ * Typed loosely on purpose: upstream declares `event_details`, `copy`, `keywords` and
+ * `targeting` as `Any` and validates none of them, so a spec that could only express
+ * well-formed values would be unable to describe the rows `fromBriefResponse` exists for.
+ */
+function storedBrief(overrides: Record<string, unknown> = {}): any {
+  return {
+    id: 'b-1',
+    project_id: 'tlf',
+    program_type: 'events',
+    event_slug: 'kubecon-eu-2026',
+    status: 'draft',
+    version: 1,
+    platforms: ['google-ads'],
+    event_details: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' },
+    copy: { structured: { headline: 'Register now' }, linkedIn: null, reddit: null, meta: null },
+    keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+    targeting: { campaignGoal: 'conversions', totalBudget: 5000, hsUtm: 'kubecon-eu-2026', driveFolderUrl: 'https://drive.google.com/drive/folders/abc' },
+    ...overrides,
+  };
+}
+
+describe('fromBriefResponse', () => {
+  // The one property that matters most: what a save writes, a load must give back. Anything
+  // this drops is work the user did in the Planning tab and would have to redo, without ever
+  // being told it went missing — the save reported success.
+  it('round-trips a brief written by the save path', async () => {
+    proxyRequestWithResponse.mockReset();
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
+    const original = briefWithSlug('kubecon-eu-2026');
+
+    await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf');
+    const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
+
+    // The stored row IS what was written — the service treats all four fields as opaque JSON.
+    expect(fromBriefResponse(storedBrief(written))).toEqual(original);
+  });
+
+  // `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
+  // without a usable one is unopenable. This is the boundary between `unreadable` and a coerced
+  // partial brief, and it is the only null a brief written by this UI can produce.
+  it.each([
+    ['a missing event_details', undefined],
+    ['a non-object event_details', 'kubecon'],
+    ['an array event_details', []],
+    ['an event_details with neither name nor slug', { city: 'Amsterdam' }],
+    ['an event_details whose name and slug are blank', { name: '  ', slug: '' }],
+  ])('gives up on %s rather than returning a brief nothing can render', (_label, eventDetails) => {
+    expect(fromBriefResponse(storedBrief({ event_details: eventDetails }))).toBeNull();
+  });
+
+  // The service's enum has `membership`; `CampaignProgramType` does not. Rendering one as an
+  // events brief would show the wrong labels, URL help and goal list for a brief this client
+  // did not write. Unreachable from `toBriefInput` today, which is why it must not be assumed.
+  it('gives up on a program_type outside the two this page is built around', () => {
+    expect(fromBriefResponse(storedBrief({ program_type: 'membership' }))).toBeNull();
+  });
+
+  // A missing keyword list costs the user a section, not the brief — so it degrades rather than
+  // failing the whole row. Same for every other field below.
+  it.each([
+    ['a non-array keywords', 'kubecon'],
+    ['a null keywords', null],
+  ])('degrades %s to an empty list rather than failing the row', (_label, keywords) => {
+    expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([]);
+  });
+
+  // A term is the only part of a keyword that carries meaning; match type and intent have
+  // defaults the Keywords tab already uses. Dropping the termless entries keeps the rest.
+  it('drops termless keyword entries and defaults the two enums on the rest', () => {
+    const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
+
+    expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // An unknown platform id reaches a template that indexes icon and label maps by it and
+  // renders blank — a checkbox with no name, which the user cannot act on or remove.
+  it('drops platform ids the page cannot render', () => {
+    expect(fromBriefResponse(storedBrief({ platforms: ['google-ads', 'tiktok-ads'] }))?.selectedPlatforms).toEqual(['google-ads']);
+  });
+
+  it('drops a targeting block whose values do not match their fields', () => {
+    const targeting = { campaignGoal: 'world-domination', totalBudget: 'lots', hsUtm: 42, driveFolderUrl: null };
+
+    expect(fromBriefResponse(storedBrief({ targeting }))).toMatchObject({
+      campaignGoal: null,
+      totalBudget: null,
+      hsUtm: null,
+      // '' not null: `driveFolderUrl` is a non-nullable string on `CampaignBriefOutput`, and the
+      // Implementation tab binds it straight into an input.
+      driveFolderUrl: '',
+    });
+  });
+
+  // `Infinity` and `NaN` are `typeof 'number'` and survive a bare typeof check. A budget of
+  // Infinity reaches a currency pipe and a create request.
+  it.each([
+    ['Infinity', Infinity],
+    ['NaN', Number.NaN],
+  ])('rejects a %s budget rather than passing it to the create request', (_label, totalBudget) => {
+    expect(fromBriefResponse(storedBrief({ targeting: { totalBudget } }))?.totalBudget).toBeNull();
+  });
+
+  // The variant blocks are rendered by iterating `variants`. A block without one is not a
+  // half-populated variant set; it is something else entirely, and the tab would throw on it.
+  it.each([
+    ['a variant block with no variants array', { headline: 'x' }],
+    ['a null variant block', null],
+    ['a string variant block', 'linkedIn copy'],
+  ])('treats %s as absent rather than handing it to the template', (_label, linkedIn) => {
+    expect(fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy).toBeUndefined();
+  });
+
+  it('keeps a variant block that has the array the template iterates', () => {
+    const linkedIn = { variants: [{ headline: 'Join us' }] };
+
+    expect(fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy).toEqual(linkedIn);
+  });
+});
+
+describe('CampaignServiceClient.loadBrief', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  it('reports the brief campaign-service holds for the slug', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf');
+
+    expect(result.status).toBe('loaded');
+    expect(result.briefId).toBe('b-1');
+    expect(result.brief?.eventDetails.name).toBe('KubeCon EU 2026');
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
+  });
+
+  // campaign-service's own typed 404 — the documented first-time case.
+  it('reports none when campaign-service says the slug has no brief', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null });
+  });
+
+  // `unreadable` must stay distinct from `none`, and this is the test that pins it. The save
+  // path is find-then-UPDATE, so a row reported as "no brief" leads the user to generate a
+  // replacement — whose save then silently overwrites the brief that was sitting there.
+  it('reports unreadable, NOT none, for a row it cannot map back', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ event_details: null }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'unreadable', briefId: 'b-1', brief: null });
+  });
+
+  // The read is scoped exactly like the write. `/foundation/campaigns` is reachable by an ED of
+  // any foundation, and a brief lives in one foundation's table — a fixed `tlf` would 403 a CNCF
+  // ED, or offer an LF staffer who also holds TLF access a TLF brief for a CNCF event.
+  it("reads from the caller's foundation rather than a fixed slug", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'cncf');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs');
+  });
+
+  // The gateway 404 again, and read-side it is the same hazard as write-side: reported as
+  // "none", a routing outage invites the user to replace a brief that still exists.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+  ])('rethrows %s rather than reporting none', async (_label, errorBody) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
   });
 });

@@ -81,9 +81,17 @@ export class CampaignService {
    *
    * `HttpParams` rather than string interpolation: an event slug is derived from a pasted URL's
    * last path segment and is not guaranteed to be URL-safe.
+   *
+   * `projectSlug` for the same reason `persistBrief` takes one — briefs are scoped and authorised
+   * per project in campaign-service, and `/foundation/campaigns` is reachable by an ED of any
+   * foundation. Reading without it would either 403 or, for a staffer holding several, offer to
+   * restore a brief filed under a foundation they are not looking at. The server refuses the
+   * request outright when it is missing rather than defaulting.
    */
-  public loadBrief(eventSlug: string): Observable<CampaignBriefLoadResult> {
-    return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', { params: new HttpParams().set('event_slug', eventSlug) });
+  public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
+    return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
+      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
+    });
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
