@@ -1083,14 +1083,25 @@ export class NewsletterManageComponent {
             // branch on the actual status before choosing the toast.
             this.newsletterService
               .getNewsletter(projectUid, id)
-              .pipe(take(1))
+              .pipe(take(1), takeUntilDestroyed(this.destroyRef))
               .subscribe({
                 next: (newsletter) => {
                   this.version.set(newsletter.version);
                   this.newsletterStatus.set(newsletter.status);
+                  // sent/sending must navigate away, same as handleSendError — leaving
+                  // newsletterStatus at 'sent'/'sending' would clear isScheduleReadOnly
+                  // (true only for 'scheduled') and re-enable the edit/send controls on
+                  // a newsletter that has already gone out.
+                  if (newsletter.status === 'sent' || newsletter.status === 'sending') {
+                    this.messageService.add({
+                      severity: 'warn',
+                      summary: 'Already sent',
+                      detail: newsletter.status === 'sent' ? 'This newsletter has already been sent.' : 'This newsletter is already being sent.',
+                    });
+                    this.goToList('sent');
+                    return;
+                  }
                   const copy: Record<string, { summary: string; detail: string }> = {
-                    sent: { summary: 'Already sent', detail: 'This newsletter has already been sent.' },
-                    sending: { summary: 'Already sent', detail: 'This newsletter is already being sent.' },
                     scheduled: { summary: 'Still scheduled', detail: 'The cancellation did not go through — this newsletter is still scheduled.' },
                     draft: { summary: 'Already cancelled', detail: 'This newsletter has already been moved back to Drafts.' },
                   };
