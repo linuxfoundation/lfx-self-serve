@@ -23,6 +23,7 @@ import type {
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
   ParticipatingOrgsSummaryResponse,
+  RevenueImpactResponse,
   TrainingCertificationSummaryResponse,
 } from '../interfaces';
 
@@ -696,6 +697,69 @@ function protoDualSignal(label: string, value: string, data: number[], color: st
   };
 }
 
+/** Caption shown on a card whose request failed, alongside em-dash signal values. */
+const DATA_UNAVAILABLE_CAPTION = 'Data unavailable — could not be loaded';
+
+/**
+ * Caption for a card whose request is still in flight.
+ *
+ * Kept separate from DATA_UNAVAILABLE_CAPTION so the initial loading window does not
+ * announce a failure that has not happened. Both render em-dash values, but only the
+ * unavailable state asserts that the fetch was attempted and failed.
+ */
+const DATA_LOADING_CAPTION = 'Loading…';
+
+/**
+ * A dual-signal row for a card whose data could not be fetched.
+ *
+ * Renders an em-dash instead of a number, with no sparkline and no trend pill, so a
+ * failed request is visually distinguishable from a measured zero. Deliberately keeps
+ * the label and legend dot so the card holds its shape in the carousel — suppressing
+ * the card entirely would read as a layout bug rather than a data problem.
+ */
+function unavailableDualSignal(label: string, color: string): DualSignalRow {
+  return {
+    label,
+    value: '—',
+    color,
+  };
+}
+
+/** Attribution card caption — omits the channel count when no channels are attributed. */
+function attributionCaption(revenueImpact: RevenueImpactResponse): string {
+  const conversion = `${revenueImpact.matchRate.toFixed(0)}% deal conversion`;
+  return revenueImpact.attributionChannels.length > 0 ? `${revenueImpact.attributionChannels.length} channels · ${conversion}` : conversion;
+}
+
+/**
+ * Overrides a single-value or dual-signal card's value-bearing fields with the same
+ * em-dash placeholder used by unavailableDualSignal, while pending is true.
+ *
+ * Only Paid Media and Attribution carry an `undefined` sentinel for a failed/pending
+ * request — every other card's source field is a non-optional zero-filled object, so
+ * without this the pending window renders each of their real-looking values (member
+ * counts, session totals, mention counts, etc.) as if they were measured zeros for the
+ * newly-selected foundation, the exact defect this PR exists to remove elsewhere.
+ */
+function withPendingPlaceholder(card: DashboardMetricCard, pending: boolean): DashboardMetricCard {
+  if (!pending) return card;
+  if (card.customContentType === 'dual-signal') {
+    return {
+      ...card,
+      dualSignals: card.dualSignals?.map((row) => unavailableDualSignal(row.label, row.color ?? '')),
+      caption: DATA_LOADING_CAPTION,
+    };
+  }
+  return {
+    ...card,
+    value: '—',
+    changePercentage: undefined,
+    trend: undefined,
+    chartData: EMPTY_CHART_DATA,
+    subtitle: DATA_LOADING_CAPTION,
+  };
+}
+
 /**
  * Filter options for the ED Evolution prototype dashboard
  */
@@ -792,6 +856,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     revenueImpact,
     education,
   } = data;
+  const { pending } = data;
+
+  // Paid Media and Attribution render em-dashes both while loading and after a failed
+  // request, but only the latter may claim the data "could not be loaded". Anything
+  // else reports a failure during the initial in-flight window.
+  const placeholderCaption = data.pending ? DATA_LOADING_CAPTION : DATA_UNAVAILABLE_CAPTION;
 
   // Education totals. edX is counted in enrollments but has no revenue column in
   // COURSE_PURCHASES, so it is intentionally absent from the revenue sum — adding a 0
@@ -825,7 +895,15 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   });
 
   // Paid month activity: spend OR impressions (a spend-only month is active).
-  const paidActivity = paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0));
+  // Empty when paidCampaign is undefined; the Paid Media card renders its
+  // unavailable state in that case and never reads this.
+  const paidActivity = paidCampaign ? paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0)) : [];
+
+  // Paid Media and Attribution already carry their own undefined-sentinel pending
+  // handling above (paidCampaign/revenueImpact), so they're excluded here to avoid
+  // double-applying the placeholder — everything else has no such sentinel and would
+  // otherwise render its zero-filled PENDING_ED_EVOLUTION_DATA fields as measured data.
+  const selfGuardedDrawerTypes = new Set([DashboardDrawerType.MarketingPaidSocialReach, DashboardDrawerType.RevenueImpact]);
 
   return [
     // Card order is the display order in the Marketing Overview carousel, and the
@@ -1000,7 +1078,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
-          `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
+          // withPendingPlaceholder overrides value/color while pending, but the label
+          // is built here — embedding the live CTR unconditionally would leave a
+          // fabricated "0.0% CTR" on screen next to an em-dash value.
+          pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
           formatNumber(emailTotalOpens) + ' opens',
           emailCtr.monthlyOpens,
           lfxColors.blue[500],
@@ -1032,30 +1113,35 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-paid-media',
       description: 'Paid campaign impressions and spend with return on ad spend.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          `Impressions · ${formatCurrency(paidCampaign.totalSpend)} spend`,
-          formatNumber(paidCampaign.totalReach) + ' impressions',
-          paidCampaign.monthlyData,
-          lfxColors.blue[500],
-          // Activity = spend OR impressions per month: an active month that
-          // delivered zero impressions keeps its real MoM, while zero-filled
-          // no-campaign months stay suppressed.
-          seriesMomChange(paidCampaign.monthlyData, paidActivity),
-          seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
-        ),
-        protoDualSignal(
-          'ROAS',
-          `${paidCampaign.roas.toFixed(1)}x`,
-          // Guard on paidActivity, not monthlyRoas itself: a no-campaign month
-          // reports 0 ROAS, which would otherwise read as a real decline.
-          paidCampaign.monthlyRoas.length > 0 ? paidCampaign.monthlyRoas : [],
-          lfxColors.violet[500],
-          seriesMomChange(paidCampaign.monthlyRoas, paidActivity),
-          seriesTrendDirection(paidCampaign.monthlyRoas, paidActivity)
-        ),
-      ],
-      caption: trendWindow(paidCampaign.monthlyData.length),
+      // undefined means the request failed, not that the foundation spent nothing.
+      // Zero spend and 0.0x ROAS are legitimate measurements, so falling back to
+      // them here would report a failure as a factual figure.
+      dualSignals: paidCampaign
+        ? [
+            protoDualSignal(
+              `Impressions · ${formatCurrency(paidCampaign.totalSpend)} spend`,
+              formatNumber(paidCampaign.totalReach) + ' impressions',
+              paidCampaign.monthlyData,
+              lfxColors.blue[500],
+              // Activity = spend OR impressions per month: an active month that
+              // delivered zero impressions keeps its real MoM, while zero-filled
+              // no-campaign months stay suppressed.
+              seriesMomChange(paidCampaign.monthlyData, paidActivity),
+              seriesTrendDirection(paidCampaign.monthlyData, paidActivity)
+            ),
+            protoDualSignal(
+              'ROAS',
+              `${paidCampaign.roas.toFixed(1)}x`,
+              // Guard on paidActivity, not monthlyRoas itself: a no-campaign month
+              // reports 0 ROAS, which would otherwise read as a real decline.
+              paidCampaign.monthlyRoas.length > 0 ? paidCampaign.monthlyRoas : [],
+              lfxColors.violet[500],
+              seriesMomChange(paidCampaign.monthlyRoas, paidActivity),
+              seriesTrendDirection(paidCampaign.monthlyRoas, paidActivity)
+            ),
+          ]
+        : [unavailableDualSignal('Impressions · spend', lfxColors.blue[500]), unavailableDualSignal('ROAS', lfxColors.violet[500])],
+      caption: paidCampaign ? trendWindow(paidCampaign.monthlyData.length) : placeholderCaption,
       tooltipText: 'Paid campaign impressions with total spend, and return on ad spend over the same window.',
       drawerType: DashboardDrawerType.MarketingPaidSocialReach,
     } as DashboardMetricCard,
@@ -1072,24 +1158,26 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-attribution',
       description: 'Won revenue year-to-date, with paid-ads linear-attributed revenue alongside.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          'Won revenue · YTD',
-          formatCurrency(revenueImpact.revenueAttributed),
-          // No monthly series is exposed for attributed revenue — leave the
-          // sparkline empty rather than borrow an unrelated curve.
-          [],
-          lfxColors.blue[500],
-          // YoY, not MoM: revenueImpact.changePercentage is WON_REVENUE_YOY_CHANGE_PCT.
-          formatYoyChange(revenueImpact.changePercentage),
-          normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
-        ),
-        protoDualSignal('Paid ads · linear', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
-      ],
-      caption:
-        revenueImpact.attributionChannels.length > 0
-          ? `${revenueImpact.attributionChannels.length} channels · ${revenueImpact.matchRate.toFixed(0)}% deal conversion`
-          : `${revenueImpact.matchRate.toFixed(0)}% deal conversion`,
+      // undefined means the request failed, not that the foundation won nothing.
+      // $0 attributed revenue is a legitimate measurement, so a zero fallback here
+      // would be indistinguishable from real data.
+      dualSignals: revenueImpact
+        ? [
+            protoDualSignal(
+              'Won revenue · YTD',
+              formatCurrency(revenueImpact.revenueAttributed),
+              // No monthly series is exposed for attributed revenue — leave the
+              // sparkline empty rather than borrow an unrelated curve.
+              [],
+              lfxColors.blue[500],
+              // YoY, not MoM: revenueImpact.changePercentage is WON_REVENUE_YOY_CHANGE_PCT.
+              formatYoyChange(revenueImpact.changePercentage),
+              normalizeTrend(revenueImpact.changePercentage, revenueImpact.trend)
+            ),
+            protoDualSignal('Paid ads · linear', formatCurrency(revenueImpact.attributionModels.linear), [], lfxColors.violet[500]),
+          ]
+        : [unavailableDualSignal('Won revenue · YTD', lfxColors.blue[500]), unavailableDualSignal('Paid ads · linear', lfxColors.violet[500])],
+      caption: revenueImpact ? attributionCaption(revenueImpact) : placeholderCaption,
       tooltipText:
         "Won revenue year-to-date (WON_REVENUE_YTD) with paid-ads linear-attributed revenue alongside. Deal conversion is the YTD close rate. These are pipeline figures — the drawer's multi-touch models cover a separate six-month window.",
       drawerType: DashboardDrawerType.RevenueImpact,
@@ -1149,5 +1237,5 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
       drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
     } as DashboardMetricCard,
-  ];
+  ].map((card) => (card.drawerType && selfGuardedDrawerTypes.has(card.drawerType) ? card : withPendingPlaceholder(card, pending ?? false)));
 }

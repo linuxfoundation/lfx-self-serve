@@ -5,15 +5,19 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { assertOrgUid, assertOrgLensRead, parseOrgLensRoiMethod, getSummary, getCoverage, getAnnual, logger } = vi.hoisted(() => ({
-  assertOrgUid: vi.fn(),
-  assertOrgLensRead: vi.fn(),
-  parseOrgLensRoiMethod: vi.fn(),
-  getSummary: vi.fn(),
-  getCoverage: vi.fn(),
-  getAnnual: vi.fn(),
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { assertOrgUid, assertOrgLensRead, parseOrgLensRoiMethod, getSummary, getCoverage, getAnnual, getInvestmentBreakdown, getProjects, logger } = vi.hoisted(
+  () => ({
+    assertOrgUid: vi.fn(),
+    assertOrgLensRead: vi.fn(),
+    parseOrgLensRoiMethod: vi.fn(),
+    getSummary: vi.fn(),
+    getCoverage: vi.fn(),
+    getAnnual: vi.fn(),
+    getInvestmentBreakdown: vi.fn(),
+    getProjects: vi.fn(),
+    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  })
+);
 
 vi.mock('../helpers/org-uid.helper', () => ({ assertOrgUid }));
 vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
@@ -23,6 +27,8 @@ vi.mock('../services/org-lens-roi.service', () => ({
     public getSummary = getSummary;
     public getCoverage = getCoverage;
     public getAnnual = getAnnual;
+    public getInvestmentBreakdown = getInvestmentBreakdown;
+    public getProjects = getProjects;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
@@ -66,13 +72,33 @@ describe('OrgLensRoiController — authorization gate', () => {
     getSummary.mockResolvedValue({ hasData: false });
     getCoverage.mockResolvedValue({ coverageReason: 'unmapped' });
     getAnnual.mockResolvedValue({ rows: [] });
+    getInvestmentBreakdown.mockResolvedValue({ rows: [], total: 0 });
+    getProjects.mockResolvedValue({ method: 'logit', rows: [] });
   });
 
+  // Every handler on the controller belongs here. A new endpoint added without a row is silently
+  // exempt from the ordering and refusal coverage below, which is the failure this list exists to
+  // prevent — not merely a gap in the count.
   const handlers = [
     { name: 'getSummary', operation: 'get_org_lens_roi_summary', service: getSummary },
     { name: 'getCoverage', operation: 'get_org_lens_roi_coverage', service: getCoverage },
     { name: 'getAnnual', operation: 'get_org_lens_roi_annual', service: getAnnual },
+    { name: 'getInvestmentBreakdown', operation: 'get_org_lens_roi_investment_breakdown', service: getInvestmentBreakdown },
+    { name: 'getProjects', operation: 'get_org_lens_roi_projects', service: getProjects },
   ] as const;
+
+  it('covers every request handler the controller exposes', () => {
+    // Without this, adding a sixth endpoint and forgetting the list above would leave it with no
+    // authorization coverage at all — and the suite would still report every test passing.
+    const prototype = Object.getPrototypeOf(controller) as Record<string, unknown>;
+    const requestHandlers = Object.getOwnPropertyNames(prototype).filter((key) => {
+      const value = prototype[key];
+      // Express handlers take (req, res, next); `send` and the constructor do not.
+      return key !== 'constructor' && typeof value === 'function' && value.length === 3;
+    });
+
+    expect(requestHandlers.sort()).toEqual(handlers.map((handler) => handler.name).sort());
+  });
 
   describe.each(handlers)('$name', ({ name, operation, service }) => {
     it('validates the org uid and the method, then checks access — all before the service runs', async () => {
