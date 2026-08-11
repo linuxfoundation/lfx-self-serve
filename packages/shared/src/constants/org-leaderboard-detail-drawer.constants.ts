@@ -155,7 +155,7 @@ export const ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES: Record<string, OrgLeade
     rank: 4,
     activityPct: 11,
     score: 62,
-    points: { collab: 18, meeting: 7, event: 5, committee: 6, board: 4, speakers: 5, meetup: 2, sponsor: 2, certified: 2 },
+    points: { collab: 29, meeting: 7, event: 5, committee: 6, board: 4, speakers: 5, meetup: 2, sponsor: 2, certified: 2 },
     counts: { collab: 366, meeting: 85, event: 14, committee: 7, board: 1, speakers: 13, meetup: 6, sponsor: 3, certified: 15 },
   },
   Microsoft: {
