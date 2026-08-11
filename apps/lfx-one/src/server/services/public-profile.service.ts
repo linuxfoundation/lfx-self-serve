@@ -141,7 +141,7 @@ function projectTrainingActivities(value: unknown, req?: Request): PublicProfile
     return statusAllowed && typeAllowed;
   });
   if (droppedForUnknownType > 0) {
-    logger.debug(req, 'project_public_profile', 'Dropped training rows with an unrecognized Type', {
+    logger.warning(req, 'project_public_profile', 'Dropped training rows with an unrecognized Type', {
       dropped_for_unknown_type: droppedForUnknownType,
     });
   }

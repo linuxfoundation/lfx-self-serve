@@ -376,7 +376,7 @@ describe('projectPublicProfile — training_activities allow-list projection', (
       req
     );
 
-    expect(logger.debug).toHaveBeenCalledWith(req, 'project_public_profile', expect.stringContaining('unrecognized Type'), { dropped_for_unknown_type: 2 });
+    expect(logger.warning).toHaveBeenCalledWith(req, 'project_public_profile', expect.stringContaining('unrecognized Type'), { dropped_for_unknown_type: 2 });
   });
 
   it('does not emit the drift signal when every dropped row also fails the Status allow-list', () => {
@@ -390,7 +390,7 @@ describe('projectPublicProfile — training_activities allow-list projection', (
       req
     );
 
-    expect(logger.debug).not.toHaveBeenCalled();
+    expect(logger.warning).not.toHaveBeenCalled();
   });
 
   it('scrubs only a leading epoch year, leaving a value that merely contains 1970 intact (startsWith, not includes)', () => {
