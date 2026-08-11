@@ -287,6 +287,73 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
     });
   });
 
+  describe('getEventsOverviewSummary', () => {
+    const overviewRow = {
+      PROJECT_ID: 'proj-1',
+      REGISTRATIONS_COUNT: 1200,
+      REGISTRATIONS_CHANGE: 0.52,
+      ATTENDEES_COUNT: 800,
+      ATTENDEES_CHANGE: -0.1,
+      SPEAKERS_COUNT: 60,
+      SPEAKERS_CHANGE: 0,
+      COUNTRIES_COUNT: 30,
+      COUNTRIES_CHANGE: null,
+      COMPANIES_COUNT: 45,
+      COMPANIES_CHANGE: 0.2,
+      EVENT_COUNT: 12,
+    };
+
+    // The two reads resolve independently, so the mock is ordered: overview first, sponsorship second.
+    function mockReads(overview: unknown[], sponsorship: unknown[]): void {
+      execute.mockResolvedValueOnce({ rows: overview }).mockResolvedValueOnce({ rows: sponsorship });
+    }
+
+    it('maps both reads, passing through change fractions and preserving null', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 1500000 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.projectId).toBe('proj-1');
+      expect(result.registrations).toEqual({ value: 1200, changeFraction: 0.52 });
+      expect(result.attendees).toEqual({ value: 800, changeFraction: -0.1 });
+      // Zero is a real measured delta, not "no baseline" — it must survive as 0, not become null.
+      expect(result.speakers).toEqual({ value: 60, changeFraction: 0 });
+      expect(result.countries).toEqual({ value: 30, changeFraction: null });
+      expect(result.organizations).toEqual({ value: 45, changeFraction: 0.2 });
+      expect(result.sponsorship).toEqual({ value: 1500000, changeFraction: null });
+    });
+
+    // Events and Sponsorship have no modeled YoY column; the contract is a value with a null
+    // delta, so the UI renders no change indicator rather than a fabricated 0%.
+    it('reports no YoY delta for events and sponsorship', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 42 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.events).toEqual({ value: 12, changeFraction: null });
+      expect(result.sponsorship.changeFraction).toBeNull();
+    });
+
+    it('falls back to zeroed metrics when the foundation has no overview row', async () => {
+      mockReads([], []);
+
+      const result = await service.getEventsOverviewSummary('unknown-slug');
+
+      expect(result.projectId).toBe('');
+      expect(result.registrations).toEqual({ value: 0, changeFraction: null });
+      expect(result.sponsorship).toEqual({ value: 0, changeFraction: null });
+    });
+
+    // Same contract the getSocialReach guard above protects: a Snowflake failure must not be
+    // laundered into a zero-filled 200, which the dashboard would render as measured zeros.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventsOverviewSummary('tlf')).rejects.toBe(failure);
+    });
+  });
+
   describe('getEventDetail', () => {
     const eventRow = {
       EVENT_ID: 'evt-1',

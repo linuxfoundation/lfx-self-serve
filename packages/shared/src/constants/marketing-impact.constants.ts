@@ -62,6 +62,17 @@ export const FOCUS_TO_CLASSIFICATION: Record<MarketingImpactFocusProgram, string
 
 export const VALID_CLASSIFICATIONS: ReadonlySet<string> = new Set(Object.values(FOCUS_TO_CLASSIFICATION).filter((v): v is string => v !== undefined));
 
+/**
+ * An event is "behind goal" once its registration progress falls under this percent of the
+ * stated goal. Chosen as the midpoint of the goal bar's own tone scale — the bar already turns
+ * from `warn` to `critical` at 50% — so the roster's warning icon lights up exactly when the bar
+ * it sits next to goes red. Tune both together, or they will disagree visually.
+ */
+export const BEHIND_GOAL_PERCENT_THRESHOLD = 50;
+
+/** Goal-bar tone boundary: at or above this percent the bar reads as on-track. */
+export const ON_TRACK_PERCENT_THRESHOLD = 80;
+
 /** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering). */
 export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
   all: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),

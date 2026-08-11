@@ -660,7 +660,6 @@ export interface EventRosterRow {
   registrations: { actual: number; goal: number };
   /** Sponsorship revenue in dollars — actual summed from the tier table, goal from the event. */
   sponsorshipRevenue: { actual: number; goal: number };
-  registrationRevenue: { actual: number; goal: number };
   /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
   vsLastYear: number | null;
   compScore: EventCompScore;

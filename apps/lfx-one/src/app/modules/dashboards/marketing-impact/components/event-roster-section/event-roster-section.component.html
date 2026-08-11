@@ -95,6 +95,11 @@
               <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
                 <div
                   class="h-full rounded-full"
+                  role="progressbar"
+                  [attr.aria-valuenow]="row.registrations.percent"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
                   [ngClass]="{
                     'bg-emerald-500': row.registrations.tone === 'good',
                     'bg-amber-500': row.registrations.tone === 'warn',
@@ -117,6 +122,11 @@
               <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
                 <div
                   class="h-full rounded-full"
+                  role="progressbar"
+                  [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
                   [ngClass]="{
                     'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
                     'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',

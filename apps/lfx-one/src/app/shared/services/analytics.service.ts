@@ -1148,9 +1148,14 @@ export class AnalyticsService {
    * Emits null on error so the tiles fall back to dashes rather than measured zeros.
    */
   public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
-    return this.http
-      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
-      .pipe(catchError(() => of(null)));
+    return this.http.get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } }).pipe(
+      catchError((error: unknown) => {
+        // Log before falling back so an outage stays diagnosable: the null return is
+        // rendered as dashes, which is otherwise indistinguishable from "no data yet".
+        console.error('[analytics] events-overview-summary failed', { foundationSlug, error });
+        return of(null);
+      })
+    );
   }
 
   /**
@@ -1167,7 +1172,10 @@ export class AnalyticsService {
       // Evict on error so a transient failure doesn't pin every later subscriber
       // to the empty fallback for the rest of the session.
       const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
-        catchError(() => {
+        catchError((error) => {
+          // Log before degrading — an empty roster renders the same "no events" copy as a real
+          // empty result, so an auth expiry or Snowflake outage would otherwise be invisible.
+          console.error('Failed to load event roster', error);
           this.eventRosterCache.delete(key);
           return of({ projectId: '', events: [] });
         }),

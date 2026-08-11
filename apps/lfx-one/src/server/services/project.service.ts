@@ -132,7 +132,14 @@ import {
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange, summarizeWriterGrants } from '@lfx-one/shared/utils';
+import {
+  computeIsFoundation,
+  getDefaultMarketingImpactMonth,
+  normalizeToUrl,
+  nullifyEmptyStrings,
+  resolvePeriodRange,
+  summarizeWriterGrants,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -5078,8 +5085,6 @@ export class ProjectService {
       REG_GOAL: number | null;
       SPON_ACTUAL: number;
       SPON_GOAL: number | null;
-      REGREV_ACTUAL: number | null;
-      REGREV_GOAL: number | null;
       VS_LY: number | null;
       COMP_SCORE: string | null;
       CFP_STATUS: string | null;
@@ -5109,8 +5114,6 @@ export class ProjectService {
         r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
         IFNULL(sp.SPON_ACTUAL, 0) AS SPON_ACTUAL,
         r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
-        NULL AS REGREV_ACTUAL,
-        r.EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
         r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
         r.COMP_SCORE,
         r.CFP_STATUS
@@ -5134,10 +5137,12 @@ export class ProjectService {
       startDate: row.START_DATE,
       isPast: row.EVENT_IS_PAST,
       country: row.EVENT_COUNTRY ?? '',
-      eventUrl: row.EVENT_URL ?? '',
+      // normalizeToUrl prepends https:// to scheme-less DB URLs and drops unsafe/invalid ones,
+      // matching how events.service.ts binds the same Snowflake column; '' keeps the non-null
+      // contract. Without it a scheme-less value binds as a relative LFX One path.
+      eventUrl: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
       registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
       sponsorshipRevenue: { actual: row.SPON_ACTUAL ?? 0, goal: row.SPON_GOAL ?? 0 },
-      registrationRevenue: { actual: row.REGREV_ACTUAL ?? 0, goal: row.REGREV_GOAL ?? 0 },
       vsLastYear: row.VS_LY,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
