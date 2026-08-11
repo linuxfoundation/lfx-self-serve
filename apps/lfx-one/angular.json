@@ -64,7 +64,7 @@
               "lodash.isempty",
               "quill-delta"
             ],
-            "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions", "pdfkit", "google-ads-api"]
+            "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions", "pdfkit", "google-ads-api", "@aws-sdk/client-s3"]
           },
           "configurations": {
             "production": {
