@@ -233,7 +233,8 @@ interface AttendanceProfile {
 /**
  * The three attendance *patterns* (never identity) demonstrating Inactive/Low/Medium, assigned in
  * `RosterPlan.demoAttendanceIndices` order (not fixed sorted positions — see `planRosterIdentities`
- * for why the assignable set excludes the Orlin and any real-Emeritus members).
+ * for why the assignable set excludes the Orlin slot, any real-Emeritus member, and any real
+ * `LF Staff` member).
  */
 const DEMO_ATTENDANCE_PROFILES: Omit<AttendanceProfile, 'joinedDaysAgo'>[] = [
   { invitationRate: 0.8, attendanceRateOverride: 0 }, // Inactive: invited but never attends.

@@ -87,8 +87,9 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByTestId('members-engagement-chip-m-medium')).toContainText('Medium');
     await expect(page.getByTestId('members-engagement-chip-m-low')).toContainText('Low');
     await expect(page.getByTestId('members-engagement-chip-m-inactive-invited')).toContainText('Inactive');
-    // Emeritus renders its own neutral tier — never Low/Inactive/at-risk styling.
+    // Emeritus and LF Staff both render their own neutral tier — never Low/Inactive/at-risk styling.
     await expect(page.getByTestId('members-engagement-chip-m-emeritus')).toContainText('Emeritus');
+    await expect(page.getByTestId('members-engagement-chip-m-lf-staff')).toContainText('LF Staff');
 
     // computed_at is null in the fixture → the daily-refresh freshness fallback.
     await expect(page.getByTestId('members-engagement-freshness')).toHaveText('Updated daily');
@@ -110,10 +111,11 @@ test.describe('Committee engagement — members table (flag on)', () => {
 
     await expect(page.getByText('Lee Lowturn')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByText('Ira Skipsall')).toBeVisible();
-    // High / never-invited Inactive / Emeritus members are all filtered out.
+    // High / never-invited Inactive / Emeritus / LF Staff members are all filtered out.
     await expect(page.getByText('Harper Chairwood')).toHaveCount(0);
     await expect(page.getByText('Nova Neverasked')).toHaveCount(0);
     await expect(page.getByText('Evan Emeritus')).toHaveCount(0);
+    await expect(page.getByText('Sam Staffer')).toHaveCount(0);
   });
 
   test('switching the window refetches and re-renders the cells', async ({ page }) => {
@@ -194,7 +196,7 @@ test.describe('Committee engagement — overview summary (flag on)', () => {
     test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
     await expect(summary.getByTestId('committee-engagement-summary-attendance-rate')).toContainText('78%', { timeout: ELEMENT_TIMEOUT });
-    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('3/6');
+    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('3/7');
     await expect(summary.getByTestId('committee-engagement-summary-at-risk')).toContainText('2');
     await expect(summary.getByTestId('committee-engagement-summary-freshness')).toHaveText('Updated daily');
   });

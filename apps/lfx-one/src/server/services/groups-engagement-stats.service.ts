@@ -93,8 +93,8 @@ function resolveBackend(): 'mock' | 'live' {
  * `MEMBER_USER_ID` values don't key to any roster member still contributes its warehouse-classified
  * members to this count, while `committee-engagement.service.ts`'s detail page — which now resolves
  * member ids via `resolveMemberV2UidsToV1Ids` (a `committee_member.uid.<v2MemberUid>` NATS key on
- * `lfx.lookup_v1_mapping`, LFXV2-1705) — reports `data_available: false` and every non-Emeritus
- * member `Inactive` for that same committee. This is a real, currently-live divergence between the
+ * `lfx.lookup_v1_mapping`, LFXV2-1705) — reports `data_available: false` and every non-Emeritus,
+ * non-LF-Staff member `Inactive` for that same committee. This is a real, currently-live divergence between the
  * two surfaces, not just a theoretical one. It's intentionally not closed here: this rollup's count
  * only needs distinct warehouse ids, not v2 identity, so it's already correct regardless of id
  * space — resolving member ids here would require a roster fetch per visible committee, reintroducing
@@ -158,9 +158,10 @@ export class GroupsEngagementStatsService {
 
   /**
    * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
-   * it, excluding Emeritus — `isCommitteeMemberActive`, the same function LFXV2-1705 uses) across
-   * the *covered* subset of committees the caller can see (`getMyCommitteeUids` — "mine" semantics,
-   * no scope param, per LFXV2-1711). A member is counted once even if active on multiple covered
+   * it, excluding Emeritus and LF Staff — `isCommitteeMemberActive`, the same function
+   * LFXV2-1705/LFXV2-3101 use) across the *covered* subset of committees the caller can see
+   * (`getMyCommitteeUids` — "mine" semantics, no scope param, per LFXV2-1711). A member is counted
+   * once even if active on multiple covered
    * committees — the model's grain is one row per `(committee_id, member_user_id)`, so a member on
    * N committees produces N rows; deduping by `MEMBER_USER_ID` is what makes this a *member* count
    * rather than a row count. `getMyCommitteeUids` returns v2 committee-service UUIDs; the model is
