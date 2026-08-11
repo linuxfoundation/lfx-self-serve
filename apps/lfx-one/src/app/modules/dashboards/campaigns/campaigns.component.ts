@@ -66,6 +66,22 @@ export class CampaignsComponent {
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(IDLE_PERSISTENCE);
 
+  /**
+   * Which brief `briefPersistence` currently describes.
+   *
+   * A save is not awaited and not cancelled (see `persistBrief`), so its response can land after
+   * the user has already moved on — a program switch or a second Proceed both run
+   * `resetToPlanning`. Without this counter the late response writes `saved` and a `briefId`
+   * for a brief the page no longer holds, which is worse than a stale spinner: the id shown
+   * belongs to a different brief, and `saved` claims durability for the one on screen, which
+   * was never sent anywhere.
+   *
+   * Incremented by every event that changes which brief is current, and compared inside the
+   * subscription. A mismatch means the result is for a superseded brief and is dropped — the
+   * newer owner of the signal has already set the state it wants.
+   */
+  private briefPersistenceGeneration = 0;
+
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
@@ -147,27 +163,36 @@ export class CampaignsComponent {
    * even if the user navigates away mid-flight, and one `HttpClient` POST completes on its own.
    */
   private persistBrief(brief: CampaignBriefOutput): void {
+    const generation = ++this.briefPersistenceGeneration;
     this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
 
     this.campaignService
       .persistBrief(brief)
       .pipe(take(1))
       .subscribe({
-        next: (result) => this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE),
+        next: (result) => {
+          if (generation !== this.briefPersistenceGeneration) return;
+          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);
+        },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
         // fine. Rendering the upstream error text here would say "412 Precondition Failed" to
         // someone who has no way to act on it.
-        error: () =>
+        error: () => {
+          if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set({
             status: 'error',
             briefId: null,
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
-          }),
+          });
+        },
       });
   }
 
   private resetToPlanning(): void {
+    // Before clearing, so an in-flight save for the brief being discarded cannot write its
+    // outcome back over the reset state.
+    this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(IDLE_PERSISTENCE);
     this.selectedTab.set('planning');

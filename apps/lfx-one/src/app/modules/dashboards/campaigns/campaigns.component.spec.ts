@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
-import { NEVER, Observable, throwError } from 'rxjs';
+import { NEVER, Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
@@ -32,6 +32,13 @@ describe('CampaignsComponent brief persistence', () => {
 
   function state(): CampaignBriefPersistenceState {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
+  }
+
+  /** `selectorForm` is protected; a program switch is the real path that discards a brief. */
+  function switchProgram(): void {
+    (
+      fixture.componentInstance as unknown as { selectorForm: { controls: { programType: { setValue(v: string): void } } } }
+    ).selectorForm.controls.programType.setValue('education');
   }
 
   function tab(): string {
@@ -101,5 +108,45 @@ describe('CampaignsComponent brief persistence', () => {
     expect(state().message).toContain('could not be saved');
     // Still handed off: the failure costs persistence, not the campaign setup flow.
     expect(tab()).toBe('implementation');
+  });
+
+  /**
+   * The save is deliberately not cancelled, so its response can arrive after the user has moved
+   * on. It must not be applied then: `saved` would claim durability for whatever brief is on
+   * screen now, and `briefId` would be the id of a different one.
+   */
+  it('drops a save that resolves after the brief was discarded', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+
+    proceed();
+    expect(state().status).toBe('saving');
+
+    // The real reset path: switching program type abandons the brief and returns to Planning.
+    switchProgram();
+    await fixture.whenStable();
+    expect(state().status).toBe('off');
+
+    late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true });
+    await fixture.whenStable();
+
+    expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    expect(tab()).toBe('planning');
+  });
+
+  it('drops a save that FAILS after the brief was discarded', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+
+    proceed();
+    switchProgram();
+    await fixture.whenStable();
+
+    late.error(new Error('500'));
+    await fixture.whenStable();
+
+    // Not 'error': there is no brief on screen to warn about, and the amber banner would be
+    // about work the user already abandoned.
+    expect(state().status).toBe('off');
   });
 });
