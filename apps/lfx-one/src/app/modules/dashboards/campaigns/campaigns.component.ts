@@ -19,15 +19,6 @@ import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-t
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
-/**
- * No brief in flight, and nothing to say about one.
- *
- * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
- * persistence UI at all". A disabled cutover is the default in every environment, so it must
- * look exactly like the ordinary case rather than like a degraded one.
- */
-const IDLE_PERSISTENCE: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
-
 @Component({
   selector: 'lfx-campaigns',
   imports: [
@@ -62,11 +53,22 @@ export class CampaignsComponent {
     deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
   });
 
+  /**
+   * No brief in flight, and nothing to say about one.
+   *
+   * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
+   * persistence UI at all". A disabled cutover is the default in every environment, so it must
+   * look exactly like the ordinary case rather than like a degraded one.
+   *
+   * Declared before briefPersistence because a class field cannot read one declared after it.
+   */
+  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
+
   protected readonly selectedTab = signal<CampaignTab>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
-  protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(IDLE_PERSISTENCE);
+  protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
   /**
    * Which brief `briefPersistence` currently describes.
@@ -146,7 +148,7 @@ export class CampaignsComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.briefPersistenceGeneration++;
-        this.briefPersistence.set(IDLE_PERSISTENCE);
+        this.briefPersistence.set(this.idlePersistence);
       });
 
     // Mirror the program control into the signal. A program switch changes the whole
@@ -279,7 +281,7 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
-          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);
+          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : this.idlePersistence);
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
@@ -311,7 +313,7 @@ export class CampaignsComponent {
     // outcome back over the reset state.
     this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
-    this.briefPersistence.set(IDLE_PERSISTENCE);
+    this.briefPersistence.set(this.idlePersistence);
     this.selectedTab.set('planning');
   }
 }
