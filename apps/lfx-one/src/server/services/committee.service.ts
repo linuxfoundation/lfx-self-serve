@@ -638,10 +638,15 @@ export class CommitteeService {
     // core update (or, on the no-core-update branch, the committee no longer exists), and the
     // mailing_list fallback below dereferences updatedCommittee unconditionally — same rationale
     // as createCommittee's identical guard. Deliberately checked *after* the settings update, not
-    // before — on the no-core-update branch, `updatedCommittee` is only a response-shaping GET, so
-    // an empty body there must not block an otherwise-successful settings write; on the
-    // core-update branch, the PUT has already committed regardless of what this empty response
-    // says. Narrows updatedCommittee to non-null for the rest of the method.
+    // before — but "after" only means the settings write itself isn't skipped; it doesn't mean
+    // this stays quiet about it. On the no-core-update branch, an empty response-shaping GET here
+    // still throws a 502, even though the settings write immediately above already committed
+    // upstream — the caller has no way to learn the settings save succeeded from this response.
+    // That's an accepted, rare-edge-case trade-off (this GET reading empty right after a working
+    // PUT/fetch on the same committee is unlikely — a concurrent delete or a transient upstream
+    // blip), not a designed "don't block the write" guarantee; the write already isn't blocked
+    // either way, only the response is degraded. On the core-update branch, the PUT has already
+    // committed the same way. Narrows updatedCommittee to non-null for the rest of the method.
     if (!updatedCommittee) {
       throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'update_committee',
