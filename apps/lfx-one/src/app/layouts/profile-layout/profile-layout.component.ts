@@ -162,6 +162,11 @@ export class ProfileLayoutComponent {
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
+        // Clear any stash from the redirect that failed — otherwise it outlives this failed
+        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        if (isPlatformBrowser(this.platformId)) {
+          sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
+        }
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
