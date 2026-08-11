@@ -132,7 +132,14 @@ import {
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getDefaultMarketingImpactMonth, nullifyEmptyStrings, resolvePeriodRange, summarizeWriterGrants } from '@lfx-one/shared/utils';
+import {
+  computeIsFoundation,
+  getDefaultMarketingImpactMonth,
+  normalizeToUrl,
+  nullifyEmptyStrings,
+  resolvePeriodRange,
+  summarizeWriterGrants,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
@@ -5078,8 +5085,6 @@ export class ProjectService {
       REG_GOAL: number | null;
       SPON_ACTUAL: number;
       SPON_GOAL: number | null;
-      REGREV_ACTUAL: number | null;
-      REGREV_GOAL: number | null;
       VS_LY: number | null;
       COMP_SCORE: string | null;
       CFP_STATUS: string | null;
@@ -5109,8 +5114,6 @@ export class ProjectService {
         r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
         IFNULL(sp.SPON_ACTUAL, 0) AS SPON_ACTUAL,
         r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
-        NULL AS REGREV_ACTUAL,
-        r.EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
         r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
         r.COMP_SCORE,
         r.CFP_STATUS
@@ -5134,10 +5137,12 @@ export class ProjectService {
       startDate: row.START_DATE,
       isPast: row.EVENT_IS_PAST,
       country: row.EVENT_COUNTRY ?? '',
-      eventUrl: row.EVENT_URL ?? '',
+      // normalizeToUrl prepends https:// to scheme-less DB URLs and drops unsafe/invalid ones,
+      // matching how events.service.ts binds the same Snowflake column; '' keeps the non-null
+      // contract. Without it a scheme-less value binds as a relative LFX One path.
+      eventUrl: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
       registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
       sponsorshipRevenue: { actual: row.SPON_ACTUAL ?? 0, goal: row.SPON_GOAL ?? 0 },
-      registrationRevenue: { actual: row.REGREV_ACTUAL ?? 0, goal: row.REGREV_GOAL ?? 0 },
       vsLastYear: row.VS_LY,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
@@ -5154,8 +5159,11 @@ export class ProjectService {
    * from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. No daily-pacing time-series exists in these
    * tables (that is PCC's prediction service); the drawer deep-links to eventUrl for pacing.
    */
-  public async getEventDetail(eventId: string): Promise<EventDetailResponse | null> {
-    logger.debug(undefined, 'get_event_detail', 'Fetching event detail from Snowflake', { event_id: eventId });
+  public async getEventDetail(eventId: string, foundationSlug: string): Promise<EventDetailResponse | null> {
+    logger.debug(undefined, 'get_event_detail', 'Fetching event detail from Snowflake', {
+      event_id: eventId,
+      foundation_slug: foundationSlug,
+    });
 
     interface EventRow {
       EVENT_ID: string;
@@ -5177,38 +5185,59 @@ export class ProjectService {
       SPONSOR_COUNT: number;
     }
 
+    // Scoped by foundation as well as event id: the id alone carries no ownership, so without the
+    // slug_resolve join any ED could read another foundation's event by guessing its id. A caller
+    // asking for an event outside their foundation gets the same null as a nonexistent one.
     const eventQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
       SELECT
-        EVENT_ID,
-        EVENT_NAME,
-        TO_CHAR(EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
-        EVENT_COUNTRY,
-        EVENT_URL,
-        COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
-        EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
-        EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
-        PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
-        COMP_SCORE,
-        CFP_STATUS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS
-      WHERE EVENT_ID = ?
+        r.EVENT_ID,
+        r.EVENT_NAME,
+        TO_CHAR(r.EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        r.EVENT_COUNTRY,
+        r.EVENT_URL,
+        r.COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        r.COMP_SCORE,
+        r.CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
+      WHERE r.EVENT_ID = ?
       LIMIT 1
     `;
 
+    // SPONSORSHIP_TIER is free text, so NULL and '' both occur and would group separately while
+    // mapping to the same client-side tier name — two rows with an identical track key, one of
+    // which Angular drops. Collapse both to 'Other' before the GROUP BY so they sum into one row.
+    // Scoped by foundation for the same reason as the event query — the tier breakdown is the
+    // sponsorship revenue detail, so leaving it unscoped would leak the numbers the join above
+    // protects.
     const tierQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
       SELECT
-        SPONSORSHIP_TIER,
-        SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS REVENUE,
-        SUM(IFNULL(SPONSORSHIP_COUNT_ALL_TIME, 0)) AS SPONSOR_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
-      WHERE EVENT_ID = ?
-      GROUP BY SPONSORSHIP_TIER
+        COALESCE(NULLIF(TRIM(t.SPONSORSHIP_TIER), ''), 'Other') AS SPONSORSHIP_TIER,
+        SUM(IFNULL(t.SPONSORSHIP_REV_ALL_TIME, 0)) AS REVENUE,
+        SUM(IFNULL(t.SPONSORSHIP_COUNT_ALL_TIME, 0)) AS SPONSOR_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER t
+      INNER JOIN slug_resolve sr ON t.PROJECT_ID = sr.project_id
+      WHERE t.EVENT_ID = ?
+      GROUP BY COALESCE(NULLIF(TRIM(t.SPONSORSHIP_TIER), ''), 'Other')
       ORDER BY REVENUE DESC
     `;
 
     const [eventResult, tierResult] = await Promise.all([
-      this.snowflakeService.execute<EventRow>(eventQuery, [eventId]),
-      this.snowflakeService.execute<TierRow>(tierQuery, [eventId]),
+      this.snowflakeService.execute<EventRow>(eventQuery, [foundationSlug, eventId]),
+      this.snowflakeService.execute<TierRow>(tierQuery, [foundationSlug, eventId]),
     ]);
 
     const row = eventResult.rows?.[0];

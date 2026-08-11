@@ -2824,6 +2824,22 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_event_detail');
 
     try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      // Required alongside eventId: a bare event id would let any ED read another foundation's
+      // sponsorship revenue and goals, since the id alone carries no ownership information.
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_detail',
+        });
+      }
+
       const eventId = getStringQueryParam(req, 'eventId');
 
       if (!eventId) {
@@ -2838,10 +2854,11 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getEventDetail(eventId);
+      const response = await this.projectService.getEventDetail(eventId, foundationSlug);
 
       logger.success(req, 'get_event_detail', startTime, {
         event_id: eventId,
+        foundation_slug: foundationSlug,
         found: response !== null,
       });
 

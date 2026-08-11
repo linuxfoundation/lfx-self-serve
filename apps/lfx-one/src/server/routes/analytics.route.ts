@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
+import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 
 const router = Router();
 
@@ -190,9 +191,18 @@ router.get('/board-meeting-participation-summary', (req, res, next) => analytics
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
-router.get('/events-overview-summary', (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
-router.get('/event-roster', (req, res, next) => analyticsController.getEventRoster(req, res, next));
-router.get('/event-detail', (req, res, next) => analyticsController.getEventDetail(req, res, next));
+// ED-gated: returns per-event sponsorship and registration figures. The marketing-impact
+// page hides these from non-EDs client-side only, so authorization is enforced here with
+// server-verified persona detection rather than trusting the UI guard.
+router.get('/events-overview-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
+// ED-gated: returns per-event registration, attendance and sponsorship goal figures. The
+// marketing-impact page hides these from non-EDs client-side only, so authorization is
+// enforced here with server-verified persona detection rather than trusting the UI guard.
+router.get('/event-roster', requireExecutiveDirector, (req, res, next) => analyticsController.getEventRoster(req, res, next));
+// ED-gated: returns one event's registration and sponsorship figures against goal, plus the
+// per-tier sponsorship breakdown and CFP status. The drawer that opens it is ED-only
+// client-side, so authorization is enforced here with server-verified persona detection.
+router.get('/event-detail', requireExecutiveDirector, (req, res, next) => analyticsController.getEventDetail(req, res, next));
 router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
 router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
