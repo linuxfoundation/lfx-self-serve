@@ -32,6 +32,6 @@ export const PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST: ReadonlySet<string> = new
 /** Certification `Status` values kept on the public certifications list — completed only (myprofile parity). */
 export const PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST: ReadonlySet<string> = new Set(['Completed']);
 
-// Epoch-zero placeholder the artifact writes for a missing date. Training dates matching it are blanked
-// to ''; certifications with such a StartDate are dropped (myprofile's `!StartDate.includes('1970')`).
+// Epoch-zero placeholder for a missing date, matched with `startsWith` (tighter than myprofile's
+// `includes`). Training dates are blanked to ''; certifications drop such a StartDate (and absent ones).
 export const PUBLIC_PROFILE_EPOCH_PLACEHOLDER = '1970';
