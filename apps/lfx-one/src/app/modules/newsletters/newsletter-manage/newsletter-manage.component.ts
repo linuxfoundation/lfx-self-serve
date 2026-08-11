@@ -1227,19 +1227,32 @@ export class NewsletterManageComponent {
   private initViewMode(): Signal<NewsletterManageViewMode> {
     // Initial-value path runs synchronously before isEditMode reacts to the loaded
     // newsletterId; derive editMode from the snapshot id param so first paint is correct.
+    // isScheduleReadOnly() is false at this point (status hydrates after the draft
+    // loads), so a scheduled newsletter briefly resolves via the step/view params below
+    // and then flips to 'review' once initViewMode() re-runs off the isScheduleReadOnly
+    // observable — draftLoading() keeps both branches hidden in the meantime.
     const initialIsEdit = this.route.snapshot.paramMap.get('id') !== null;
-    const initial = this.deriveViewMode(initialIsEdit, this.route.snapshot.queryParamMap.get('view'), this.route.snapshot.queryParamMap.get('step'));
+    const initial = this.deriveViewMode(
+      initialIsEdit,
+      this.route.snapshot.queryParamMap.get('view'),
+      this.route.snapshot.queryParamMap.get('step'),
+      false
+    );
 
     return toSignal(
-      combineLatest([toObservable(this.isEditMode), this.route.queryParamMap]).pipe(
-        map(([editMode, params]) => this.deriveViewMode(editMode, params.get('view'), params.get('step')))
+      combineLatest([toObservable(this.isEditMode), this.route.queryParamMap, toObservable(this.isScheduleReadOnly)]).pipe(
+        map(([editMode, params, readOnly]) => this.deriveViewMode(editMode, params.get('view'), params.get('step'), readOnly))
       ),
       { initialValue: initial }
     );
   }
 
-  private deriveViewMode(isEdit: boolean, view: string | null, step: string | null): NewsletterManageViewMode {
+  private deriveViewMode(isEdit: boolean, view: string | null, step: string | null, readOnly: boolean): NewsletterManageViewMode {
     if (!isEdit) return 'step';
+    // A scheduled newsletter is locked to review regardless of a `?step=` query param —
+    // otherwise a direct/bookmarked link to the stepper would bypass the read-only lock
+    // and still reach the audience/content mutation handlers underneath it.
+    if (readOnly) return 'review';
     if (view === 'review') return 'review';
     // Step param means the user explicitly entered the stepper (or bookmarked / refreshed there).
     if (step) return 'step';
