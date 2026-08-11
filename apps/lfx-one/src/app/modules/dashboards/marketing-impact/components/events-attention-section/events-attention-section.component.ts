@@ -11,6 +11,9 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import type { AttentionSeverity, EventAttentionItem, EventRosterResponse, EventRosterRow } from '@lfx-one/shared/interfaces';
 
+/** How many at-risk items to show before the "see more" toggle. */
+const COLLAPSED_COUNT = 2;
+
 @Component({
   selector: 'lfx-events-attention-section',
   imports: [NgClass],
@@ -31,6 +34,8 @@ export class EventsAttentionSectionComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  /** When true, show every item; otherwise cap at COLLAPSED_COUNT. */
+  protected readonly showAll = signal(false);
 
   // === Computed Signals ===
   private readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -41,6 +46,16 @@ export class EventsAttentionSectionComponent {
    * skeleton while loading — but it must not keep showing the outgoing foundation's events either.
    */
   protected readonly showStrip = computed(() => !this.loading() && this.hasItems());
+
+  /** Items actually rendered: first COLLAPSED_COUNT when collapsed, all when expanded. */
+  protected readonly visibleItems = computed(() => (this.showAll() ? this.items() : this.items().slice(0, COLLAPSED_COUNT)));
+  /** How many items are hidden behind the "see more" toggle. */
+  protected readonly hiddenCount = computed(() => Math.max(0, this.items().length - COLLAPSED_COUNT));
+
+  // === Protected Methods ===
+  protected toggleShowAll(): void {
+    this.showAll.update((v) => !v);
+  }
 
   // === Private Initializers ===
   private initRoster(): Signal<EventRosterResponse> {
@@ -53,7 +68,8 @@ export class EventsAttentionSectionComponent {
             return of({ projectId: '', events: [] });
           }
           this.loading.set(true);
-          // Upcoming only — attention is about events we can still influence.
+          // Upcoming only — attention is about events we can still influence, so the dashboard's
+          // month picker deliberately doesn't apply here: every month it offers is already past.
           //
           // catchError inside the switchMap, not outside: getEventRoster rethrows by design (a
           // roster outage must not read as "no events"), and an error reaching toSignal would

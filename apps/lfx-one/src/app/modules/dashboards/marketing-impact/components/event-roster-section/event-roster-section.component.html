@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="event-roster-section">
+<div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="event-roster-section">
   <!-- Header -->
   <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div class="flex flex-col gap-0.5">
@@ -16,7 +16,7 @@
           [formControl]="search"
           placeholder="Search events…"
           aria-label="Search events"
-          class="w-56 rounded-md border border-gray-200 py-2 pl-8 pr-3 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          class="w-56 rounded-md border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           data-testid="event-roster-search" />
       </div>
       <div class="flex items-center gap-1 rounded-full border border-gray-200 p-1" role="group" aria-label="Event scope">
@@ -65,15 +65,18 @@
       <div class="flex items-center gap-4 border-b border-gray-200 pb-2 text-[11px] font-semibold tracking-wide text-gray-400" role="row">
         <span class="w-24" role="columnheader">DATE</span>
         <span class="flex-1 min-w-[180px]" role="columnheader">NAME</span>
-        <span class="w-52" role="columnheader">REGISTRATIONS</span>
-        <span class="w-52" role="columnheader">SPONSORSHIP REV.</span>
-        <span class="w-28 text-right" role="columnheader">CFP</span>
+        @if (showRegistrations()) {
+          <span class="w-52" role="columnheader">REGISTRATIONS</span>
+        }
+        @if (showSponsorship()) {
+          <span class="w-52" role="columnheader">SPONSORSHIP REV.</span>
+        }
       </div>
 
       <!-- Rows -->
       @for (row of rows(); track row.eventId) {
         <div
-          class="flex cursor-pointer items-center gap-4 border-b border-gray-100 py-3 transition-colors hover:bg-blue-50/40"
+          class="flex cursor-pointer items-center gap-4 border-b border-gray-100 py-1.5 transition-colors hover:bg-blue-50/40"
           role="row"
           tabindex="0"
           (click)="openEvent(row.eventId)"
@@ -90,61 +93,75 @@
             }
           </div>
 
-          <!-- Registrations bar -->
-          <div class="w-52" role="cell">
-            <div class="flex items-baseline justify-between gap-2">
-              <span class="text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
-              @if (row.registrations.hasGoal) {
-                <span class="text-[11px] text-gray-400 tabular-nums">{{ row.registrations.goal }}</span>
-              }
-            </div>
-            @if (row.registrations.hasGoal) {
-              <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                <div
-                  class="h-full rounded-full"
-                  role="progressbar"
-                  [attr.aria-valuenow]="row.registrations.percent"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
-                  [ngClass]="{
-                    'bg-emerald-500': row.registrations.tone === 'good',
-                    'bg-amber-500': row.registrations.tone === 'warn',
-                    'bg-red-400': row.registrations.tone === 'critical',
-                  }"
-                  [style.width.%]="row.registrations.percent"></div>
+          <!-- Registrations bar → B2C drawer (marketing campaigns) -->
+          @if (showRegistrations()) {
+            <div
+              class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
+              role="button"
+              tabindex="0"
+              title="View registrations & marketing campaigns"
+              (click)="openFocused(row.eventId, 'b2c', $event)"
+              (keydown.enter)="openFocused(row.eventId, 'b2c', $event)"
+              (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
+              [attr.data-testid]="'event-roster-b2c-' + row.eventId">
+              <div class="flex items-center gap-2">
+                <span class="w-10 shrink-0 text-right text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
+                @if (row.registrations.hasGoal) {
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      class="h-full rounded-full"
+                      role="progressbar"
+                      [attr.aria-valuenow]="row.registrations.percent"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
+                      [ngClass]="{
+                        'bg-emerald-500': row.registrations.tone === 'good',
+                        'bg-amber-500': row.registrations.tone === 'warn',
+                        'bg-red-400': row.registrations.tone === 'critical',
+                      }"
+                      [style.width.%]="row.registrations.percent"></div>
+                  </div>
+                  <span class="w-8 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.registrations.goal }}</span>
+                }
               </div>
-            }
-          </div>
-
-          <!-- Sponsorship revenue bar -->
-          <div class="w-52" role="cell">
-            <div class="flex items-baseline justify-between gap-2">
-              <span class="text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
-              @if (row.sponsorshipRevenue.hasGoal) {
-                <span class="text-[11px] text-gray-400 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
-              }
             </div>
-            @if (row.sponsorshipRevenue.hasGoal) {
-              <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                <div
-                  class="h-full rounded-full"
-                  role="progressbar"
-                  [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
-                  [ngClass]="{
-                    'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
-                    'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',
-                    'bg-red-400': row.sponsorshipRevenue.tone === 'critical',
-                  }"
-                  [style.width.%]="row.sponsorshipRevenue.percent"></div>
-              </div>
-            }
-          </div>
+          }
 
-          <span class="w-28 truncate text-right text-[11px] text-gray-500" role="cell">{{ row.cfpStatus || '—' }}</span>
+          <!-- Sponsorship revenue bar → B2B drawer (sponsorship & partnerships) -->
+          @if (showSponsorship()) {
+            <div
+              class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
+              role="button"
+              tabindex="0"
+              title="View sponsorship & partnerships"
+              (click)="openFocused(row.eventId, 'b2b', $event)"
+              (keydown.enter)="openFocused(row.eventId, 'b2b', $event)"
+              (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
+              [attr.data-testid]="'event-roster-b2b-' + row.eventId">
+              <div class="flex items-center gap-2">
+                <span class="w-12 shrink-0 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
+                @if (row.sponsorshipRevenue.hasGoal) {
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      class="h-full rounded-full"
+                      role="progressbar"
+                      [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
+                      [ngClass]="{
+                        'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
+                        'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',
+                        'bg-red-400': row.sponsorshipRevenue.tone === 'critical',
+                      }"
+                      [style.width.%]="row.sponsorshipRevenue.percent"></div>
+                  </div>
+                  <span class="w-10 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
+                }
+              </div>
+            </div>
+          }
         </div>
       }
     </div>
@@ -160,4 +177,4 @@
   }
 </div>
 
-<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" [foundationSlug]="foundationSlug()" />
+<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" [focus]="drawerFocus()" />

@@ -123,7 +123,6 @@ export interface EventRosterRowView {
   sponsorshipRevenue: EventRosterBar;
   /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
   atRisk: boolean;
-  cfpStatus: string;
 }
 
 /** Pre-formatted view-model for a single Events Summary stat tile. */

@@ -5,12 +5,12 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, EVENTS_SPLIT_TO_DRAWER_FOCUS, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
 import { eventRegistrationPercent, formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
-import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView } from '@lfx-one/shared/interfaces';
+import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView, EventsSplitView } from '@lfx-one/shared/interfaces';
 
 import { EventDetailDrawerComponent } from '../event-detail-drawer/event-detail-drawer.component';
 
@@ -26,6 +26,8 @@ export class EventRosterSectionComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly selectedPeriod = input<string>('');
+  /** Which half of the Events story to show; `null` shows both columns (the unsplit view). */
+  public readonly eventsSplit = input<EventsSplitView | null>(null);
 
   // === Controls ===
   protected readonly search = new FormControl('', { nonNullable: true });
@@ -41,6 +43,8 @@ export class EventRosterSectionComponent {
   protected readonly skeletons: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly drawerVisible = signal(false);
   protected readonly selectedEventId = signal<string | null>(null);
+  // Which story the open drawer tells: 'b2c' (registrations + campaigns) or 'b2b' (sponsorship).
+  protected readonly drawerFocus = signal<'b2c' | 'b2b'>('b2c');
 
   // === Computed Signals ===
   protected readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -58,14 +62,35 @@ export class EventRosterSectionComponent {
     // must not claim a period the user never selected.
     return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
+  /** Registrations column — hidden in the sponsorship view. */
+  protected readonly showRegistrations = computed(() => this.eventsSplit() !== 'sponsorship');
+  /** Sponsorship revenue column — hidden in the attendance view. */
+  protected readonly showSponsorship = computed(() => this.eventsSplit() !== 'attendance');
 
   // === Protected Methods ===
   protected toggleIncludePast(includePast: boolean): void {
     this.includePast.set(includePast);
   }
 
+  /**
+   * Row-level click. Opens the story matching the active split so a row clicked in the
+   * sponsorship view doesn't land on the registrations drawer; the unsplit view keeps its
+   * long-standing B2C default.
+   */
   protected openEvent(eventId: string): void {
+    const split = this.eventsSplit();
+    this.openFocused(eventId, split ? EVENTS_SPLIT_TO_DRAWER_FOCUS[split] : 'b2c');
+  }
+
+  /**
+   * Open the detail drawer scoped to one story. Called from the individual
+   * column cells so registrations open the B2C (campaigns) view and sponsorship
+   * opens the B2B view. `event` is stopped so the row-level click doesn't also fire.
+   */
+  protected openFocused(eventId: string, focus: 'b2c' | 'b2b', event?: Event): void {
+    event?.stopPropagation();
     this.selectedEventId.set(eventId);
+    this.drawerFocus.set(focus);
     this.drawerVisible.set(true);
   }
 
@@ -126,7 +151,6 @@ export class EventRosterSectionComponent {
       registrations,
       sponsorshipRevenue,
       atRisk,
-      cfpStatus: event.cfpStatus,
     };
   }
 

@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
+import { EVENTS_SPLIT_FOCUS } from '@lfx-one/shared/constants';
 
 import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
@@ -22,9 +23,24 @@ export class OverviewTabComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
-  // Passed through to the summary tiles and the roster, both of which filter by it.
+  /** Scopes the events summary and roster to the picked period; forwarded to both sections. */
   public readonly selectedPeriod = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
-  // null when the split control is hidden, which means "show both attendance and sponsorship".
+  /**
+   * Which half of the Events story to render. `null` means the campaign type does not split
+   * (All, and the non-Events types), so every section renders as it did before the split.
+   */
   public readonly eventsSplit = input<EventsSplitView | null>(null);
+
+  // === Computed Signals ===
+  /**
+   * The events sections are built and verified against the Events campaign type only. Under All
+   * they aggregate across every campaign type, and those cross-type totals are still being
+   * finalized — so All shows a coming-soon placeholder rather than provisional numbers.
+   */
+  protected readonly showEventsSections = computed(() => this.focusProgram() === EVENTS_SPLIT_FOCUS);
+  /** Attendance sections render unless sponsorship is explicitly selected. */
+  protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
+  /** Sponsorship sections render unless attendance is explicitly selected. */
+  protected readonly showSponsorship = computed(() => this.eventsSplit() !== 'attendance');
 }
