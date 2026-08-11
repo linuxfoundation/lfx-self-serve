@@ -710,21 +710,24 @@ export class NewsletterManageComponent {
    * author can't change the picker mid-request — runSchedule re-reads scheduleAtIso() right
    * before the call goes out, so leaving the fields live during that window would let a fresh
    * edit slip in after the value has already been captured for the request but before the
-   * response lands, arming a time the author no longer sees selected.
+   * response lands, arming a time the author no longer sees selected. Repo convention forbids
+   * effect() for imperative side effects (see initSchedulePastGuard above) — bridge the signal
+   * to an observable instead.
    */
   private initScheduleFieldLock(): void {
-    effect(() => {
-      const locked = this.scheduling();
-      const dateControl = this.form.controls.scheduleDate;
-      const timeControl = this.form.controls.scheduleTime;
-      if (locked) {
-        dateControl.disable({ emitEvent: false });
-        timeControl.disable({ emitEvent: false });
-      } else {
-        dateControl.enable({ emitEvent: false });
-        timeControl.enable({ emitEvent: false });
-      }
-    });
+    toObservable(this.scheduling)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((locked) => {
+        const dateControl = this.form.controls.scheduleDate;
+        const timeControl = this.form.controls.scheduleTime;
+        if (locked) {
+          dateControl.disable({ emitEvent: false });
+          timeControl.disable({ emitEvent: false });
+        } else {
+          dateControl.enable({ emitEvent: false });
+          timeControl.enable({ emitEvent: false });
+        }
+      });
   }
 
   private initRecipientCount(): void {
