@@ -93,6 +93,18 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect((heading as HTMLLabelElement).control).toBe(matches[0]);
   });
 
+  // Regression guard for the [id] binding fix: a static id= on chat-channel/website would
+  // silently "work" again (both a `label[for]` and a passing-looking DOM query) while actually
+  // resolving to the non-labelable <lfx-input-text> host, same failure mode the Slack webhook
+  // card had. Table-driven so a future editor "simplifying" [id] back to id= on either card
+  // fails a test instead of shipping an unlabeled field.
+  it.each(['chat-channel', 'website'])('associates the %s label with the native input, not the lfx-input-text host', async (id) => {
+    await fixture.whenStable();
+    const label = fixture.nativeElement.querySelector(`label[for="${id}"]`) as HTMLLabelElement;
+    expect(label).toBeTruthy();
+    expect(label.control?.tagName).toBe('INPUT');
+  });
+
   it('masks the webhook input from Datadog Session Replay — this app runs defaultPrivacyLevel: "allow", so an unmasked field would record the bearer credential verbatim', async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
     await fixture.whenStable();
