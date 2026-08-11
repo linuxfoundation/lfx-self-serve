@@ -280,11 +280,12 @@ export class NewsletterController {
    * validates shape so a malformed override doesn't reach the proxy.
    */
   public async scheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const newsletterUid = this.requireNewsletterUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
-
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
     try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
       const version = parseIfMatch(req);
       const payload = req.body as NewsletterSchedulePayload | undefined;
       const scheduledAtOverride = this.validateScheduleOverride(payload, req.path, 'newsletter_schedule');
@@ -308,11 +309,12 @@ export class NewsletterController {
    * re-arming doesn't require re-entering the time.
    */
   public async cancelScheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const newsletterUid = this.requireNewsletterUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_cancel_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
-
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
     try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_cancel_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
       const version = parseIfMatch(req);
       const result = await this.newsletterService.cancelScheduleNewsletter(req, projectUid, newsletterUid, version);
       logger.success(req, 'newsletter_cancel_schedule', startTime, { newsletter_id: newsletterUid });
