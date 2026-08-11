@@ -40,6 +40,20 @@ export enum ServerFeatureFlag {
    * byte-for-byte.
    */
   CampaignServiceJobs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS',
+
+  /**
+   * Persist the generated brief to lfx-v2-campaign-service when the user leaves the Planning
+   * tab. OFF keeps the brief where it lives today — a signal in `CampaignsComponent`, lost on
+   * reload — and `POST /api/campaigns/brief/persist` answers `{ enabled: false }` without
+   * calling anything.
+   *
+   * Unlike `CampaignServiceJobs` this flag has no id-shape backstop, because there is nothing
+   * to disambiguate: persistence is purely additive. Nothing reads a brief id yet — campaign
+   * creation is still the legacy path — so a flag-on and a flag-off pod serving the same user
+   * across a rolling update disagree only about whether that user's brief was saved, never
+   * about which of two systems owns it.
+   */
+  CampaignServiceBriefs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS',
 }
 
 /**

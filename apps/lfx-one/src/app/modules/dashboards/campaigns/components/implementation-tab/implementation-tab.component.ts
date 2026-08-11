@@ -20,6 +20,7 @@ import { map, startWith, Subscription, take } from 'rxjs';
 import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
+  CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignJobOutcome,
   CampaignKeyword,
@@ -70,6 +71,15 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
+
+  /**
+   * Whether the brief this tab is configuring has been saved.
+   *
+   * Rendered here rather than on the Planning tab because this is where the user spends the
+   * next stretch of work — a "not saved" warning is only useful in front of the person about to
+   * lose something. The default is the `off` state, which renders nothing at all.
+   */
+  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
 
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;

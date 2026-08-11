@@ -1,6 +1,28 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Brief persistence status. Nothing renders in the 'off' state — see briefPersistence. -->
+@switch (briefPersistence().status) {
+  @case ('saving') {
+    <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="implementation-brief-saving">
+      <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Saving this brief…
+    </div>
+  }
+  @case ('saved') {
+    <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
+      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>Brief saved — it will still be here if you reload.
+    </div>
+  }
+  @case ('error') {
+    <div
+      role="alert"
+      class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="implementation-brief-save-error">
+      <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+    </div>
+  }
+}
+
 <!-- Form Step -->
 @if (step() === 'form') {
   <div class="flex flex-col gap-6" data-testid="implementation-form-step">

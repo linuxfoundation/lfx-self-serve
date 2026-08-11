@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignPlatform,
@@ -22,7 +23,7 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
-import { CampaignServiceClient, isCampaignServiceJobId } from '../services/campaign-service.service';
+import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -281,6 +282,61 @@ export class CampaignController {
       const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
       logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Persist the generated brief so it outlives the browser tab.
+   *
+   * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
+   * the whole Planning pass has to be redone. This writes it to campaign-service, which is also
+   * what later phases need — campaign creation, metrics and status writes are all nested under
+   * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
+   *
+   * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
+   * an error for the cutover to be dark — that is the default in every environment until it is
+   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * training whoever sees it to ignore the one signal that matters.
+   *
+   * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
+   * handoff to the Implementation tab works perfectly well without persistence; this repo has
+   * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
+   * UI. A user who is not told keeps working on a brief they believe is saved.
+   */
+  public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      res.json({ enabled: false, briefId: '', etag: null, created: false });
+      return;
+    }
+
+    const brief = req.body as CampaignBriefOutput;
+    if (!brief || typeof brief !== 'object') {
+      next(ServiceValidationError.forField('brief', 'brief is required', { operation: 'campaign_persist_brief', service: 'campaign_controller' }));
+      return;
+    }
+
+    // Checked here rather than left to campaign-service because its 400 names `event_slug`, a
+    // field the user never typed. The slug is derived from the event page URL, so an empty one
+    // means the URL had no usable last path segment — which is what the message should say.
+    const eventSlug = deriveEventSlug(brief);
+    if (eventSlug === null) {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'the brief has no event slug; check the event page URL', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug });
+
+    try {
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug);
+      logger.success(req, 'campaign_persist_brief', startTime, { eventSlug, briefId: result.briefId, created: result.created });
+      res.json(result);
     } catch (error) {
       next(error);
     }

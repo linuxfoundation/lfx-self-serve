@@ -374,6 +374,16 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
     value:
 
+  # Persist the generated campaign brief to campaign-service instead of holding it only in the
+  # browser tab. Same accepted values and same default-deny as the flag above.
+  #
+  # This one has NO id-shape backstop, and does not need one: persistence is additive, so a
+  # flag-on and a flag-off pod serving the same user during a rolling update disagree only about
+  # whether that user's brief was saved — never about which of two systems owns it. Turning it
+  # off again leaves the saved briefs in place; nothing reads them yet.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
+    value:
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

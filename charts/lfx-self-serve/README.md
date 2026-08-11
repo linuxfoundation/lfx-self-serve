@@ -184,18 +184,26 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                       | Description                                                                     | Required | Default |
-| ----------------------------------------------- | ------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | Serves campaign job status from campaign-service; see the accepted values below | No       | off     |
+| Parameter                                         | Description                                                                         | Required | Default |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`   | Serves campaign job status from campaign-service; see the accepted values below     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` | Persists the generated brief in campaign-service instead of only in the browser tab | No       | off     |
 
-`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+Both flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
 operator setting `yes` and expecting it to be ignored would route production traffic at
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
 in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
 
-The flag is necessary but not sufficient: a poll reaches campaign-service only when the job id is
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates `POST /api/campaigns/brief/persist`, which the
+Campaigns page calls when a user approves a brief and moves to the Implementation tab. With it
+off the endpoint answers `{"enabled": false}` at 200 and calls nothing; the brief stays where it
+has always lived, in the browser tab, and is lost on reload. Turning it off after it has been on
+leaves already-saved briefs untouched — nothing reads them back yet, so this flag changes only
+whether new briefs are written.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is necessary but not sufficient: a poll reaches campaign-service only when the job id is
 also a UUID, which is the shape campaign-service mints. Creation is not cut over yet and still
 mints `job_<epoch>_<rand>` ids in this application, so with the flag ON today every real poll
 still goes to the in-process job map. Do not read "flag on, no errors" as a verified cutover —

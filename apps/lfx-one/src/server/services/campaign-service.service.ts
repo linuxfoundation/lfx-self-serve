@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import type { CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -26,6 +26,50 @@ interface CampaignServiceJobPollResponse {
     error?: string;
   }[];
   error?: string;
+}
+
+/**
+ * `brief-input` as lfx-v2-campaign-service accepts it (`design/brief.go`), and `brief` as it
+ * returns it. Local for the same reason as `CampaignServiceJobPollResponse` above.
+ *
+ * Four fields are `Any` in the Goa design — `event_details`, `copy`, `keywords`, `targeting` —
+ * so the service stores whatever JSON it is handed and validates none of it. They are typed
+ * `unknown`-ish here rather than mirrored from `CampaignBriefOutput`, because the adapter below
+ * is the only thing that decides their shape and pinning them would make a UI-side field rename
+ * look like a service contract change.
+ */
+interface CampaignServiceBriefInput {
+  program_type: string;
+  event_slug: string;
+  url?: string;
+  platforms?: string[];
+  event_details?: Record<string, unknown>;
+  copy?: Record<string, unknown>;
+  keywords?: unknown;
+  targeting?: Record<string, unknown>;
+}
+
+interface CampaignServiceBrief {
+  id: string;
+  project_id: string;
+  program_type: string;
+  event_slug: string;
+  status: string;
+  version: number;
+  etag?: string;
+}
+
+/**
+ * The wrapper both `create-brief` and `update-brief` require around the payload.
+ *
+ * The body is `{"brief": {…}}`, NOT the brief object itself. Goa builds the request body from
+ * the payload attributes that are not mapped to the path, headers or query, and the design
+ * declares `Attribute("brief", BriefInput)` without a `Body("brief")` override — so the
+ * attribute name survives into the wire format. Posting a bare brief object produces a 400 on
+ * every required field at once, which reads like a mapping bug rather than a missing wrapper.
+ */
+interface CampaignServiceBriefEnvelope {
+  brief: CampaignServiceBriefInput;
 }
 
 /**
@@ -130,6 +174,128 @@ export class CampaignServiceClient {
       throw error;
     }
   }
+
+  /**
+   * Save the generated brief, creating it the first time and replacing it thereafter.
+   *
+   * campaign-service has no upsert, so this is find-then-create-or-update, and the find is not
+   * an optimisation — `create-brief` on an event that already has a brief is a duplicate row,
+   * and every later `find-brief` for that slug becomes ambiguous. The 404 arm is the documented
+   * happy path, not an error: `design/brief.go:302` calls it "the ordinary first-time-generation
+   * case".
+   *
+   * The 404 is gated on campaign-service's own typed body for the same reason `getJobStatus`
+   * gates its own, and the consequence here is worse. A gateway 404 — the campaign-service route
+   * absent or misrouted, the single most likely first-deploy failure — read as "no brief yet"
+   * would send this to `create-brief` on every save, and the moment the route came up the user
+   * would have one brief row per attempt.
+   *
+   * There is no retry on `PreconditionFailed`. A 412 means another writer replaced this brief
+   * between the find and the PUT; re-reading and overwriting would silently discard their work.
+   * The user is told instead — see the caller.
+   */
+  public async saveBrief(req: Request, brief: CampaignBriefOutput, eventSlug: string): Promise<CampaignBriefPersistResult> {
+    const basePath = `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/briefs`;
+    const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
+    const existing = await this.findBrief(req, basePath, eventSlug);
+
+    if (existing === null) {
+      const created = await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'POST', undefined, envelope);
+      return { enabled: true, briefId: created.id, etag: created.etag ?? null, created: true };
+    }
+
+    // `etag` is not in `Brief`'s Required set, so a response without one is contract-legal even
+    // though the service always sends it. `update-brief` declares `PreconditionRequired` (428)
+    // for a missing `If-Match`, and the version number is NOT a substitute: the design says the
+    // ETag "mirrors" the version, which fixes the correspondence but not the serialisation —
+    // quoting, weak-validator prefix and all. Synthesising one would be a guess that either 428s
+    // or, worse, matches the wrong revision. Fail loudly instead.
+    if (!existing.etag) {
+      throw new Error(`campaign-service returned brief ${existing.id} with no ETag; cannot safely replace it`);
+    }
+
+    const updated = await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `${basePath}/${encodeURIComponent(existing.id)}`,
+      'PUT',
+      undefined,
+      envelope,
+      { 'If-Match': existing.etag }
+    );
+    return { enabled: true, briefId: updated.id, etag: updated.etag ?? null, created: false };
+  }
+
+  /** The saved brief for this event slug, or `null` when campaign-service says there is none. */
+  private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<CampaignServiceBrief | null> {
+    try {
+      return await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', { event_slug: eventSlug });
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * The event slug to file this brief under, or `null` when the brief carries none.
+ *
+ * `find-brief` and `BriefInput` both declare `MinLength(1)` on `event_slug`, and the Planning
+ * tab can reach here with an empty one: when the scrape produced no `eventDetails`, it
+ * synthesises them and derives the slug from the pasted URL's last path segment, which is `''`
+ * for a bare origin or an unparseable string. Posting that is a 400 whose message names a field
+ * the user never filled in. Catching it here lets the caller say what actually went wrong.
+ *
+ * Trimming DETECTS an empty slug; it deliberately does not rewrite the value sent upstream. The
+ * slug is the lookup key for every later find, so normalising it here and not in whatever writes
+ * the next one would make the two disagree.
+ */
+export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
+  const slug = brief.eventDetails?.slug ?? '';
+  return slug.trim().length > 0 ? slug : null;
+}
+
+/**
+ * Map the UI's brief onto `brief-input`.
+ *
+ * `event_details`, `copy`, `keywords` and `targeting` are `Any` in the design — the service
+ * stores them opaquely — so this is the only place their shape is decided, and it is chosen to
+ * round-trip: everything the Implementation tab reads off `CampaignBriefOutput` must survive a
+ * save and a reload.
+ *
+ * `targeting` carries the campaign-level planning fields — goal, budget, the HubSpot UTM and the
+ * Drive folder. `BriefInput` has no first-class home for them, and dropping them would make a
+ * reloaded brief quietly less complete than the one the user approved. They are grouped under
+ * `targeting` because it is the only opaque slot whose meaning ("how this campaign is aimed and
+ * paid for") they fit; if the design later grows real fields for them, this is the one function
+ * that moves.
+ */
+function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignServiceBriefInput {
+  return {
+    // `CampaignProgramType` is `events | education`; the service's enum is
+    // `events | education | membership`. Every UI value is accepted as-is and `membership` is
+    // simply unreachable from here. The default matches the Planning tab's own default.
+    program_type: brief.programType ?? 'events',
+    event_slug: eventSlug,
+    url: brief.eventDetails?.registrationUrl || undefined,
+    platforms: brief.selectedPlatforms,
+    event_details: brief.eventDetails ? { ...brief.eventDetails } : undefined,
+    copy: {
+      structured: brief.structuredCopy,
+      linkedIn: brief.linkedInCopy ?? null,
+      reddit: brief.redditCopy ?? null,
+      meta: brief.metaCopy ?? null,
+    },
+    keywords: brief.keywords,
+    targeting: {
+      campaignGoal: brief.campaignGoal,
+      totalBudget: brief.totalBudget,
+      hsUtm: brief.hsUtm,
+      driveFolderUrl: brief.driveFolderUrl,
+    },
+  };
 }
 
 /**

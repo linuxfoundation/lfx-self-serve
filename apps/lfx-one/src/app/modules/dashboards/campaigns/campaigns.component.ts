@@ -7,7 +7,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
+import { take } from 'rxjs';
 
 import { ButtonComponent } from '../../../shared/components/button/button.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
@@ -15,6 +17,15 @@ import { ImplementationTabComponent } from './components/implementation-tab/impl
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
+
+/**
+ * No brief in flight, and nothing to say about one.
+ *
+ * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
+ * persistence UI at all". A disabled cutover is the default in every environment, so it must
+ * look exactly like the ordinary case rather than like a degraded one.
+ */
+const IDLE_PERSISTENCE: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
 
 @Component({
   selector: 'lfx-campaigns',
@@ -32,6 +43,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 })
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly campaignService = inject(CampaignService);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -52,6 +64,7 @@ export class CampaignsComponent {
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
+  protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(IDLE_PERSISTENCE);
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
@@ -118,10 +131,45 @@ export class CampaignsComponent {
   protected onProceedToImplementation(brief: CampaignBriefOutput): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+    this.persistBrief(brief);
+  }
+
+  /**
+   * Save the approved brief in the background.
+   *
+   * Deliberately NOT awaited before the tab switch above. Nothing in the Implementation tab
+   * needs a brief id yet — campaign creation still runs through the vendor-direct path — so
+   * gating the handoff on a network call would trade a working flow for a spinner, and a
+   * campaign-service outage would strand the user on the Planning tab with an approved brief
+   * and nowhere to take it.
+   *
+   * `take(1)` rather than `takeUntilDestroyed`: the request must finish and record its outcome
+   * even if the user navigates away mid-flight, and one `HttpClient` POST completes on its own.
+   */
+  private persistBrief(brief: CampaignBriefOutput): void {
+    this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+
+    this.campaignService
+      .persistBrief(brief)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE),
+        // The message is intentionally about DURABILITY, not about the HTTP call: what the user
+        // needs to know is that the work in front of them is not saved, and that continuing is
+        // fine. Rendering the upstream error text here would say "412 Precondition Failed" to
+        // someone who has no way to act on it.
+        error: () =>
+          this.briefPersistence.set({
+            status: 'error',
+            briefId: null,
+            message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+          }),
+      });
   }
 
   private resetToPlanning(): void {
     this.briefOutput.set(null);
+    this.briefPersistence.set(IDLE_PERSISTENCE);
     this.selectedTab.set('planning');
   }
 }

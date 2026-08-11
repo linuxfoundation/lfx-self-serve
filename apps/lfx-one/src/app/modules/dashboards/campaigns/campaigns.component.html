@@ -101,7 +101,7 @@
       }
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-          <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
+          <lfx-implementation-tab [briefData]="briefOutput()" [briefPersistence]="briefPersistence()" data-testid="campaigns-implementation-tab" />
         </div>
       }
       @case ('insights') {

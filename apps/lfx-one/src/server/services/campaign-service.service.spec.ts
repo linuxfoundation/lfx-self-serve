@@ -17,10 +17,39 @@ vi.mock('./microservice-proxy.service', () => ({
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
+
 import { MicroserviceError } from '../errors/microservice.error';
-import { adaptJobPollResponse, CampaignServiceClient, isCampaignServiceJobId } from './campaign-service.service';
+import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
+
+function briefWithSlug(slug: string): CampaignBriefOutput {
+  return {
+    eventDetails: {
+      name: 'KubeCon EU 2026',
+      dates: '2026-03-23 to 2026-03-26',
+      city: 'Amsterdam',
+      countryCode: 'NL',
+      audience: 'platform engineers',
+      themes: ['kubernetes'],
+      registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      speakers: [],
+      slug,
+      formatNotes: '',
+    },
+    structuredCopy: { headline: 'Register now' },
+    keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+    hsUtm: 'kubecon-eu-2026',
+    totalBudget: 5000,
+    driveFolderUrl: 'https://drive.google.com/drive/folders/abc',
+    campaignGoal: 'conversions',
+    programType: 'events',
+    selectedPlatforms: ['google-ads'],
+  };
+}
+
+const NOT_FOUND = new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'the resource was not found' } });
 
 describe('adaptJobPollResponse', () => {
   // The poller terminates on `takeWhile((s) => s.status === 'running', true)`. `queued` is the
@@ -171,5 +200,121 @@ describe('CampaignServiceClient.getJobStatus', () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('upstream', statusCode, 'ERR'));
 
     await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode });
+  });
+});
+
+describe('deriveEventSlug', () => {
+  // `planning-tab.component.ts` synthesises event details when the scrape produced none, taking
+  // the slug from the pasted URL's last path segment — which is `''` for a bare origin. Both
+  // `find-brief` and `BriefInput` declare MinLength(1), so an unchecked empty slug is a 400
+  // naming a field the user never filled in.
+  it.each(['', '   ', '\t\n'])('rejects the empty slug the URL fallback can produce (%j)', (slug) => {
+    expect(deriveEventSlug(briefWithSlug(slug))).toBeNull();
+  });
+
+  // Trimming DETECTS emptiness; it must not rewrite the value. The slug is the lookup key for
+  // every later find, so normalising here and not wherever the next one is written would make
+  // the two disagree about which brief belongs to this event.
+  it('returns a padded slug unchanged rather than normalising the lookup key', () => {
+    expect(deriveEventSlug(briefWithSlug(' kubecon-eu-2026 '))).toBe(' kubecon-eu-2026 ');
+  });
+});
+
+describe('CampaignServiceClient.saveBrief', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  // The documented first-time case: `design/brief.go:302` calls a find-brief 404 "the ordinary
+  // first-time-generation case — the caller then generates one and POSTs it to create-brief."
+  it('creates the brief when campaign-service reports none for the slug', async () => {
+    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: '"1"',
+      created: true,
+    });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
+    expect(proxyRequest.mock.calls[1]?.[3]).toBe('POST');
+  });
+
+  // Goa builds the body from the payload attributes it does not map elsewhere, and the design
+  // declares `Attribute("brief", BriefInput)` with no `Body("brief")` override — so the wire
+  // body is `{"brief": {…}}`. A bare brief object 400s on every required field at once, which
+  // reads like a mapping bug rather than a missing wrapper.
+  it('wraps the payload in the brief envelope the Goa design requires', async () => {
+    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026');
+
+    const body = proxyRequest.mock.calls[1]?.[5];
+    expect(Object.keys(body)).toEqual(['brief']);
+    expect(body.brief).toMatchObject({ program_type: 'events', event_slug: 'kubecon-eu-2026', platforms: ['google-ads'] });
+  });
+
+  // `BriefInput` has no first-class field for the goal, budget, UTM or Drive folder. Dropping
+  // them would make a reloaded brief quietly less complete than the one the user approved.
+  it('round-trips the planning fields that BriefInput has no named home for', async () => {
+    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026');
+
+    expect(proxyRequest.mock.calls[1]?.[5].brief.targeting).toEqual({
+      campaignGoal: 'conversions',
+      totalBudget: 5000,
+      hsUtm: 'kubecon-eu-2026',
+      driveFolderUrl: 'https://drive.google.com/drive/folders/abc',
+    });
+  });
+
+  // create-brief on an event that already has one is a duplicate row, and every later
+  // find-brief for that slug is then ambiguous. The find is correctness, not an optimisation.
+  it('replaces the existing brief with If-Match rather than creating a second one', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'b-1', etag: '"7"' }).mockResolvedValueOnce({ id: 'b-1', etag: '"8"' });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: '"8"',
+      created: false,
+    });
+
+    const [, service, path, method, query, , headers] = proxyRequest.mock.calls[1] as unknown[];
+    expect([service, path, method, query]).toEqual(['LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'PUT', undefined]);
+    expect(headers).toEqual({ 'If-Match': '"7"' });
+  });
+
+  // The gateway 404 case, and it is worse here than for job polling: read as "no brief yet",
+  // every save would create a new row the moment the route came up.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+  ])('rethrows %s rather than creating a duplicate brief', async (_label, errorBody) => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toMatchObject({ statusCode: 404 });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  // `etag` is not in `Brief`'s Required set. The version number is not a substitute: the design
+  // says the ETag "mirrors" the version, which fixes the correspondence but not the
+  // serialisation, so a synthesised value either 428s or matches the wrong revision.
+  it('refuses to replace a brief whose response carried no ETag instead of synthesising one', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'b-1', version: 7 });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toThrow(/no ETag/);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  // A 412 means another writer replaced this brief between the find and the PUT. Re-reading and
+  // overwriting would silently discard their work, so the failure is surfaced instead.
+  it('does not retry a PreconditionFailed by re-reading and overwriting', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'b-1', etag: '"7"' }).mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toMatchObject({ statusCode: 412 });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });

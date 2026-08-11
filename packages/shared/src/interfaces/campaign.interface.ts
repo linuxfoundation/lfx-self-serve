@@ -163,6 +163,41 @@ export interface CampaignBriefOutput {
   metaCopy?: MetaBriefCopy;
 }
 
+/**
+ * What `POST /api/campaigns/brief/persist` reports back.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
+ * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * the two want opposite treatment — a disabled flag is the expected steady state and warrants
+ * no UI at all, while a failure means the user's brief is NOT durable and they should be told
+ * before they spend an afternoon on it.
+ *
+ * `created` distinguishes a first save from an update of an existing brief for the same
+ * `event_slug`. It is reported rather than inferred because the client cannot tell: the
+ * find-then-create-or-update decision happens server-side against campaign-service.
+ */
+export interface CampaignBriefPersistResult {
+  enabled: boolean;
+  briefId: string;
+  etag: string | null;
+  created: boolean;
+}
+
+/**
+ * The Implementation tab's view of whether the brief behind it is durable.
+ *
+ * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
+ * and is the reason this state exists at all: a persist failure that is swallowed leaves the
+ * user believing their brief is saved when it is not, and this repo has already been bitten by
+ * a graceful degradation that hid a 100% failure rate behind a clean UI.
+ */
+export interface CampaignBriefPersistenceState {
+  status: 'off' | 'saving' | 'saved' | 'error';
+  briefId: string | null;
+  message: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------

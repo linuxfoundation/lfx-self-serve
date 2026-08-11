@@ -8,6 +8,8 @@ import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
@@ -49,6 +51,18 @@ export class CampaignService {
       method: 'POST',
       body: request,
     });
+  }
+
+  /**
+   * Save the approved brief so it survives a reload.
+   *
+   * Fire-and-forget from the caller's point of view — the Planning → Implementation handoff must
+   * not wait on it, because campaign creation still runs entirely client-side and a slow or
+   * failing save would block work that does not depend on it. The result is reported in the UI
+   * instead of thrown away; see `CampaignBriefPersistenceState`.
+   */
+  public persistBrief(brief: CampaignBriefOutput): Observable<CampaignBriefPersistResult> {
+    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief);
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
