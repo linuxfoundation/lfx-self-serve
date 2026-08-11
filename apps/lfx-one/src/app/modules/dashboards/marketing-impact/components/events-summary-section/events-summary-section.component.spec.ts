@@ -48,7 +48,6 @@ describe('EventsSummarySectionComponent', () => {
     fixture = TestBed.createComponent(EventsSummarySectionComponent);
     fixture.componentRef.setInput('foundationSlug', slug);
     fixture.componentRef.setInput('foundationName', 'The Linux Foundation');
-    fixture.componentRef.setInput('selectedPeriod', 'YTD');
     await fixture.whenStable();
   }
 
