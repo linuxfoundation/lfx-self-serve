@@ -5,7 +5,8 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
+import { formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
@@ -86,9 +87,9 @@ export class EventRosterSectionComponent {
   private toView(event: EventRosterRow): EventRosterRowView {
     const registrations = this.toBar(event.registrations.actual, event.registrations.goal, false);
     const sponsorshipRevenue = this.toBar(event.sponsorshipRevenue.actual, event.sponsorshipRevenue.goal, true);
-    // At-risk = a real registration goal the event is materially behind on, and a low pace vs last year.
-    const behindGoal = registrations.hasGoal && registrations.percent < 50;
-    const atRisk = behindGoal && event.compScore === 'low';
+    // At-risk = a real registration goal the event is materially behind on, and a low pace vs last
+    // year. Shared with the needs-attention strip so the two can't disagree about the same event.
+    const atRisk = isEventAtRisk(registrations.hasGoal, registrations.percent, event.compScore);
 
     return {
       eventId: event.eventId,
@@ -111,9 +112,9 @@ export class EventRosterSectionComponent {
     }
     const percent = Math.min(100, Math.round((actual / goal) * 100));
     let tone: EventRosterBar['tone'] = 'critical';
-    if (percent >= 80) {
+    if (percent >= ON_TRACK_PERCENT_THRESHOLD) {
       tone = 'good';
-    } else if (percent >= 50) {
+    } else if (percent >= BEHIND_GOAL_PERCENT_THRESHOLD) {
       tone = 'warn';
     }
     return { actual: fmt(actual), goal: fmt(goal), percent, hasGoal: true, tone };
@@ -122,7 +123,13 @@ export class EventRosterSectionComponent {
   private formatDate(iso: string): string {
     const [year, month, day] = iso.split('-').map(Number);
     if (!year || !month || !day) return iso;
-    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    // Range-check before Date.UTC: it silently rolls over out-of-range parts (month=13 becomes
+    // January of the next year), which would render a confidently wrong date rather than the raw
+    // value. Showing the unparsed string makes bad warehouse data visible instead of plausible.
+    if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+    return parsed.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

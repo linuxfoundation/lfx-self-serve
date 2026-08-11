@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BEHIND_GOAL_PERCENT_THRESHOLD } from '../constants/marketing-impact.constants';
+
 import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
 
 /** Number of past months to show in the Marketing Impact period picker. */
@@ -164,4 +166,24 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
 function firstOfMonth(year: number, month: number): string {
   const d = new Date(Date.UTC(year, month - 1, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// === Event Roster Helpers ===
+
+/**
+ * Whether an event is materially behind its registration goal. Split from `isEventAtRisk` so the
+ * goal bar's tone and the at-risk badge can never drift apart: both read this one threshold.
+ * An event with no goal is never behind — there is nothing to be behind on.
+ */
+export function isBehindRegistrationGoal(hasGoal: boolean, percent: number): boolean {
+  return hasGoal && percent < BEHIND_GOAL_PERCENT_THRESHOLD;
+}
+
+/**
+ * The single definition of "at risk": materially behind a real registration goal *and* pacing low
+ * against last year. Both the roster's warning icon and the needs-attention strip call this, so a
+ * future tune to either condition moves them together instead of letting one silently disagree.
+ */
+export function isEventAtRisk(hasGoal: boolean, percent: number, compScore: string | null | undefined): boolean {
+  return isBehindRegistrationGoal(hasGoal, percent) && compScore === 'low';
 }
