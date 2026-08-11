@@ -133,7 +133,46 @@ test.describe('Profile edit drawer', () => {
     expect(patchBody?.user_metadata?.given_name).toBe(uniqueName);
   });
 
-  test('S4: About Me saves, the drawer closes, and the panel reflects the bio', async ({ page }) => {
+  test('S4: avatar upload 403 management_token_required redirects to Flow C authorization', async ({ page }) => {
+    // Stub the upload to return the Flow C gate response, and stub the authorize route itself so the
+    // resulting full-page redirect resolves locally instead of depending on real Auth0.
+    let authorizeRequested = false;
+    await page.route('**/api/profile/picture-upload', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'management_token_required',
+            message: 'Profile authorization required',
+            authorize_url: '/api/profile/auth/start?returnTo=/profile',
+          }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/profile/auth/start**', async (route) => {
+      authorizeRequested = true;
+      await route.fulfill({ status: 302, headers: { location: '/profile' } });
+    });
+
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // 1x1 transparent PNG.
+    const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    await page.getByTestId('profile-edit-drawer-avatar-input').setInputFiles({ name: 'avatar.png', mimeType: 'image/png', buffer: tinyPng });
+
+    // The redirect is a real full-page navigation, so assert on the captured request rather than
+    // racing the navigation's own lifecycle.
+    await expect.poll(() => authorizeRequested, { timeout: ELEMENT_TIMEOUT }).toBe(true);
+  });
+
+  test('S5: About Me saves, the drawer closes, and the panel reflects the bio', async ({ page }) => {
     // Stub the write so the real profile is never mutated — assert on drawer-close + optimistic update,
     // and lock in that the bio rides inside the user_metadata envelope.
     let patchBody: { user_metadata?: { bio?: string } } | null = null;

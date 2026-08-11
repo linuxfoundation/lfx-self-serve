@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ProjectTableRow } from './dashboard-metric.interface';
+import type { ProjectTableRow, TrainingCertificationSummaryResponse } from './dashboard-metric.interface';
 
 /** Performance rating for paid project campaigns. */
 export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'EMERGING';
@@ -2645,6 +2645,25 @@ export interface MarketingSplitByPriority {
 }
 
 // ============================================
+// Education (ED Marketing Overview)
+// ============================================
+
+/**
+ * One education category row in the Education drawer breakdown.
+ * Revenue is nullable rather than 0 because edX carries no revenue column in
+ * COURSE_PURCHASES — a 0 would read as "earned nothing" instead of "not tracked".
+ */
+export interface EducationCategoryRow {
+  label: string;
+  enrollments: number;
+  revenue: number | null;
+  /** Share of total enrollments, 0-100; 0 when there are no enrollments at all */
+  enrollmentSharePct: number;
+  /** Pre-rounded share label (e.g. "60%") so the template does not call toFixed() per render */
+  enrollmentShareLabel: string;
+}
+
+// ============================================
 // Social Reach (Marketing Dashboard)
 // ============================================
 
@@ -3491,6 +3510,17 @@ export interface EdEvolutionData {
    */
   paidCampaign: SocialReachResponse | undefined;
   attribution?: MarketingAttributionResponse;
+  /**
+   * Training & certification summary reused from the Health Metrics endpoint.
+   * Declared required-but-undefinable (not `education?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * undefined means "request failed" and suppresses the Education card. The caller maps
+   * the analytics service's all-zeros error fallback (identified by an empty projectId)
+   * to undefined, so a failed request cannot be mistaken for a foundation that genuinely
+   * has no enrollments.
+   */
+  education: TrainingCertificationSummaryResponse | undefined;
   /**
    * True only while the initial request is in flight, before any response or error.
    *
