@@ -200,9 +200,9 @@ export class NewsletterManageComponent {
   public readonly scheduleTimeValue = signal<string>('');
   public readonly scheduleTimezoneValue = signal<string>('UTC');
   // Date-granular picker guard rails (min/max on <lfx-calendar>) — a coarse
-  // first line of defense only. The exact 30m/72h window is the validator's
-  // job (scheduleWindowError()); these just keep the calendar from opening on
-  // a day that could never satisfy it.
+  // first line of defense only. The exact minLead/72h window is the
+  // validator's job (scheduleWindowError()); these just keep the calendar
+  // from opening on a day that could never satisfy it.
   public readonly scheduleMinDate = new Date();
   public readonly scheduleMaxDate = new Date(Date.now() + NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS * 60 * 60 * 1000);
 

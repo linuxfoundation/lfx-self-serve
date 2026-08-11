@@ -291,7 +291,7 @@ test.describe('Newsletter schedule — arm from the review screen', () => {
     await expect(page).toHaveURL(/tab=scheduled/);
   });
 
-  test('a time inside the 30-minute minimum lead disables Schedule with the tooSoon message', async ({ page }) => {
+  test('a time inside the minimum lead disables Schedule with the tooSoon message', async ({ page }) => {
     const tooSoon = new Date(Date.now() + 10 * 60_000).toISOString();
     const draft = buildDraft({ scheduled_at: tooSoon });
     await stubNewsletterApis(page, draft);

@@ -47,13 +47,15 @@ export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 // 30s abort, so the UI reported failure for sends that actually delivered.
 export const NEWSLETTER_SEND_TIMEOUT_MS = 120_000;
 
-// UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Stricter
-// than the upstream default (NEWSLETTER_SCHEDULE_MIN_LEAD, 5m) because
-// SendGrid refuses to cancel a batch within 10 minutes of send_at
-// (NEWSLETTER_SCHEDULE_CANCEL_BUFFER) — a schedule armed 5 minutes out could
-// never be cancelled. 30 minutes keeps every armed send comfortably
-// cancellable.
-export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 30;
+// UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Must be
+// >= the upstream's *effective* floor, which the send orchestrator computes
+// as max(configured NEWSLETTER_SCHEDULE_MIN_LEAD, SendJobTimeout + 5m) —
+// with the deployed SendJobTimeout default of 30m, that floor is 35m
+// regardless of what NEWSLETTER_SCHEDULE_MIN_LEAD is set to. A UI floor
+// below that lets an author pick a time upstream then rejects with a 400 at
+// arm time. 35 minutes also clears SendGrid's 10-minute cancel buffer
+// (NEWSLETTER_SCHEDULE_CANCEL_BUFFER) with room to spare.
+export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 35;
 
 // UI-enforced (and upstream-enforced) maximum horizon for arming a schedule.
 // Matches SendGrid Mail Send's own send_at ceiling — the newsletter-service's

@@ -20,7 +20,7 @@ const SEND_MODE_OPTIONS: { value: 'now' | 'schedule'; label: string; description
 
 const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = {
   past: 'This time has passed — pick a new one.',
-  tooSoon: 'Pick a time at least 30 minutes from now, so it can still be cancelled if needed.',
+  tooSoon: `Pick a time at least ${NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES} minutes from now, so it can still be cancelled if needed.`,
   tooFar: 'Pick a time within the next 72 hours.',
   invalidFormat: 'Enter a valid time, like 9:30 AM.',
 };
