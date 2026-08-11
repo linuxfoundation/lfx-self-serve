@@ -71,6 +71,13 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-configured"]')).toBeNull();
   });
 
+  it('masks the webhook input from Datadog Session Replay — this app runs defaultPrivacyLevel: "allow", so an unmasked field would record the bearer credential verbatim', async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-input"]')?.getAttribute('data-dd-privacy')).toBe('mask');
+  });
+
   it("Remove clears and dirties the control, and emits both startEditingSlackWebhookUrl and removeSlackWebhookStaged — saveSettings' payload gate needs the latter to tell an intentional removal apart from Replace-then-cleared", async () => {
     form.controls['chat_webhook_url'].setValue('https://hooks.slack.com/services/T1/B1/X');
     form.controls['chat_webhook_url'].markAsPristine();
