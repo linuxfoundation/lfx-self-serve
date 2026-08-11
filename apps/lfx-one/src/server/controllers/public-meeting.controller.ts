@@ -566,25 +566,8 @@ export class PublicMeetingController {
           });
         }
 
-        if (meeting.visibility !== MeetingVisibility.PUBLIC) {
-          return next(
-            new AuthorizationError('Registration is not allowed for non-public meetings', {
-              operation: 'register_for_public_meeting',
-              service: 'public_meeting_controller',
-              path: req.path,
-            })
-          );
-        }
-
-        if (meeting.restricted) {
-          return next(
-            new AuthorizationError('Registration is not allowed for restricted meetings', {
-              operation: 'register_for_public_meeting',
-              service: 'public_meeting_controller',
-              path: req.path,
-            })
-          );
-        }
+        const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
+        if (authError) return next(authError);
 
         // Restore user's bearer token before calling self-register so the meeting service
         // can source the identity from the user's JWT rather than the application identity.
@@ -633,27 +616,8 @@ export class PublicMeetingController {
         });
       }
 
-      // Validate the meeting is public
-      if (meeting.visibility !== MeetingVisibility.PUBLIC) {
-        return next(
-          new AuthorizationError('Registration is not allowed for non-public meetings', {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: req.path,
-          })
-        );
-      }
-
-      // Validate the meeting is not restricted
-      if (meeting.restricted) {
-        return next(
-          new AuthorizationError('Registration is not allowed for restricted meetings', {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: req.path,
-          })
-        );
-      }
+      const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
+      if (authError) return next(authError);
 
       // Add the registrant using M2M token
       const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
@@ -694,6 +658,28 @@ export class PublicMeetingController {
       operation,
       service: 'public_meeting_controller',
     });
+  }
+
+  /**
+   * Returns an AuthorizationError if the meeting is non-public or restricted, or null if valid.
+   * Both the authenticated and anonymous registration paths enforce the same constraints.
+   */
+  private checkMeetingIsPublicAndNotRestricted(req: Request, meeting: Pick<Meeting, 'visibility' | 'restricted'>): AuthorizationError | null {
+    if (meeting.visibility !== MeetingVisibility.PUBLIC) {
+      return new AuthorizationError('Registration is not allowed for non-public meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    if (meeting.restricted) {
+      return new AuthorizationError('Registration is not allowed for restricted meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    return null;
   }
 
   /**
