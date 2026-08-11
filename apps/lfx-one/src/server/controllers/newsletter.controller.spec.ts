@@ -231,6 +231,16 @@ describe('NewsletterController.scheduleNewsletter — If-Match + optional overri
     expect(scheduleNewsletter).not.toHaveBeenCalled();
   });
 
+  it('rejects an unknown field instead of silently treating it as no override', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().scheduleNewsletter(reqWithIfMatch('3', { scheduld_at: '2026-08-12T09:00:00.000Z' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(scheduleNewsletter).not.toHaveBeenCalled();
+  });
+
   it('rejects a malformed If-Match header', async () => {
     const next = vi.fn();
 

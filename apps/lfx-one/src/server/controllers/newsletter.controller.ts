@@ -652,6 +652,18 @@ export class NewsletterController {
         path,
       });
     }
+    // Upstream rejects unknown fields on this endpoint. Silently ignoring them here
+    // instead would turn a typo'd key (e.g. "scheduld_at") into an accepted "no
+    // override" body that arms the draft's already-saved schedule rather than the
+    // 400 the caller should get for the malformed request.
+    const unknownKeys = Object.keys(payload).filter((key) => key !== 'scheduled_at');
+    if (unknownKeys.length > 0) {
+      throw ServiceValidationError.forField('scheduled_at', `Unexpected field(s) in request body: ${unknownKeys.join(', ')}`, {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
     if (payload.scheduled_at === undefined || payload.scheduled_at === null) {
       return undefined;
     }
