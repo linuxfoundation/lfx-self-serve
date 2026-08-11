@@ -213,6 +213,19 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(payload).not.toHaveProperty('chat_webhook_url');
   });
 
+  it('does NOT reset the disabled-and-excluded chat_webhook_url control after a successful save of unrelated fields — the success handler used to reset it whenever merely dirty, silently wiping a typed URL that was never actually sent', async () => {
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.markAsDirty();
+
+    impersonating.set(true);
+    await fixture.whenStable();
+
+    component.saveSettings();
+
+    expect(component.form.controls.chat_webhook_url.value).toBe('https://hooks.slack.com/services/T1/B1/X');
+    expect(component.form.controls.chat_webhook_url.dirty).toBe(true);
+  });
+
   it('re-disables chat_webhook_url after a canEdit-driven form.enable() re-enables every control', async () => {
     impersonating.set(true);
     await fixture.whenStable();

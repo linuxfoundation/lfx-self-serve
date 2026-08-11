@@ -280,6 +280,36 @@ export class CommitteeSettingsTabComponent {
   public saveSettings(): void {
     this.saving.set(true);
     const values = this.form.getRawValue();
+    // Gated on the control's own dirty flag, not on whether the input happens to be rendered —
+    // patchValue (constructor) never marks a control dirty, only a real user edit does, so this
+    // is "the user actually typed something" rather than "the input was visible". Gating on
+    // visibility alone would send chat_webhook_url: null on every save for a not-yet-configured
+    // committee (untouched or not), forcing a needless read-back round trip and risking
+    // clobbering a webhook someone else configured after this page loaded.
+    //
+    // A dirty-but-empty control is ambiguous on its own: it's what an explicit Remove looks
+    // like, but it's also what Replace looks like if the user types then backspaces everything
+    // without hitting Cancel. Requiring either a real typed value OR the explicit
+    // slackWebhookRemovalStaged flag (set only by Remove — see that signal's doc comment) keeps
+    // the latter case from silently deleting an already-configured webhook.
+    //
+    // `.enabled`, not just `.dirty`: getRawValue() (unlike .value) includes disabled controls'
+    // values, and disable() never clears .dirty — so a URL typed before impersonation starts
+    // stays dirty and present in `values` even after the impersonation subscription above
+    // disables the control. Without this check, that stale value would still be sent, and the
+    // server rejects the *entire* request (IMPERSONATION_READ_ONLY), blocking every other field
+    // on the same save over a value the user can no longer edit or even see change.
+    //
+    // Captured once, reused in both the payload below AND the success handler: the success
+    // handler resetting the control whenever it's merely *dirty* (regardless of whether this
+    // save actually included it) would silently wipe out a URL that was excluded by the
+    // `.enabled` check above — the user typed it, it was never sent, and then it vanished from
+    // the form too, on a save of completely unrelated fields.
+    const chatWebhookUrlIncludedInSave = !!(
+      this.form.controls.chat_webhook_url.enabled &&
+      this.form.controls.chat_webhook_url.dirty &&
+      (values.chat_webhook_url || this.slackWebhookRemovalStaged())
+    );
     this.committeeService
       .updateCommittee(this.committee().uid, {
         member_visibility: (values.member_visibility as CommitteeMemberVisibility) || undefined,
@@ -292,32 +322,7 @@ export class CommitteeSettingsTabComponent {
         show_meeting_attendees: values.show_meeting_attendees ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
-        // Gated on the control's own dirty flag, not on whether the input happens to be
-        // rendered — patchValue (constructor) never marks a control dirty, only a real user
-        // edit does, so this is "the user actually typed something" rather than "the input was
-        // visible". Gating on visibility alone would send chat_webhook_url: null on every save
-        // for a not-yet-configured committee (untouched or not), forcing a needless read-back
-        // round trip and risking clobbering a webhook someone else configured after this page
-        // loaded.
-        //
-        // A dirty-but-empty control is ambiguous on its own: it's what an explicit Remove looks
-        // like, but it's also what Replace looks like if the user types then backspaces
-        // everything without hitting Cancel. Requiring either a real typed value OR the explicit
-        // slackWebhookRemovalStaged flag (set only by Remove — see that signal's doc comment)
-        // keeps the latter case from silently deleting an already-configured webhook.
-        //
-        // `.enabled`, not just `.dirty`: getRawValue() (unlike .value) includes disabled
-        // controls' values, and disable() never clears .dirty — so a URL typed before
-        // impersonation starts stays dirty and present in `values` even after the impersonation
-        // subscription above disables the control. Without this check, that stale value would
-        // still be sent, and the server rejects the *entire* request (IMPERSONATION_READ_ONLY),
-        // blocking every other field on the same save over a value the user can no longer edit
-        // or even see change.
-        ...(this.form.controls.chat_webhook_url.enabled &&
-        this.form.controls.chat_webhook_url.dirty &&
-        (values.chat_webhook_url || this.slackWebhookRemovalStaged())
-          ? { chat_webhook_url: values.chat_webhook_url || null }
-          : {}),
+        ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
@@ -325,12 +330,13 @@ export class CommitteeSettingsTabComponent {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Settings saved' });
           // Reset locally rather than relying on the refresh triggered by the emit below — that
           // refresh is async (a refetch round-trip) and its timing shouldn't be what keeps this
-          // control's dirty/value state correct.
-          if (this.form.controls.chat_webhook_url.dirty) {
+          // control's dirty/value state correct. Only when this save actually included the
+          // webhook — see chatWebhookUrlIncludedInSave's comment above.
+          if (chatWebhookUrlIncludedInSave) {
             this.form.controls.chat_webhook_url.reset(null);
+            this.editingSlackWebhookUrl.set(false);
+            this.slackWebhookRemovalStaged.set(false);
           }
-          this.editingSlackWebhookUrl.set(false);
-          this.slackWebhookRemovalStaged.set(false);
           this.committeeUpdated.emit();
         },
         error: (err: any) => {
