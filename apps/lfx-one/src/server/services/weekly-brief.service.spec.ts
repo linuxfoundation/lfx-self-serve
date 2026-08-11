@@ -1044,6 +1044,11 @@ describe('WeeklyBriefService', () => {
       mockShareableBrief();
       let cancelled = false;
       const stream = new ReadableStream<Uint8Array>({
+        // Enqueuing (not just closing) matters: per the Streams spec, cancel() on an
+        // already-"closed" stream short-circuits without invoking the underlying source's
+        // cancel algorithm. controller.close() with a pending enqueued chunk defers the
+        // closed transition, so the stream is still "readable" — and cancel() therefore
+        // still reaches this callback — at the moment the service calls it.
         start(controller) {
           controller.enqueue(new TextEncoder().encode('ok'));
           controller.close();
@@ -1057,6 +1062,23 @@ describe('WeeklyBriefService', () => {
       await service.shareToSlack(req, 'committee-1', 1);
 
       expect(cancelled).toBe(true);
+    });
+
+    it('still resolves successfully (and still logs the send) even if draining the success-response body itself rejects', async () => {
+      mockShareableBrief();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('ok'));
+          controller.close();
+        },
+        cancel() {
+          throw new Error('cancel failed');
+        },
+      });
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, statusText: 'status 200', body: stream } as unknown as Response);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({ committee_name: 'Test Committee' });
+      expect(logger.info).toHaveBeenCalledWith(req, 'share_weekly_brief_slack_sent', expect.any(String), expect.any(Object));
     });
 
     it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
