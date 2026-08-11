@@ -5,8 +5,8 @@
   <!-- Header -->
   <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
     <div class="flex flex-col gap-1">
-      <h2 class="text-xl font-semibold text-gray-900" data-testid="marketing-impact-title">Marketing Impact</h2>
-      <p class="text-sm text-gray-500">How are we helping grow and engage?</p>
+      <h2 class="text-xl font-semibold text-gray-900" data-testid="marketing-impact-title">Campaign Impact</h2>
+      <p class="text-sm text-gray-500" data-testid="marketing-impact-subtitle">Marketing Performance Detail Dashboard</p>
       @if (hasFoundation() && contextLabel()) {
         <p class="text-xs text-gray-400" data-testid="marketing-impact-context">{{ contextLabel() }}</p>
       }
@@ -42,7 +42,7 @@
   } @else {
     <!-- Focus filter bar -->
     <div class="flex items-center gap-3" data-testid="marketing-impact-focus-bar">
-      <span class="text-xs font-semibold tracking-wide text-gray-500">FOCUS</span>
+      <span class="shrink-0 text-sm font-semibold text-gray-700">Campaign Type:</span>
       <lfx-filter-pills
         [options]="focusOptions"
         [selectedFilter]="selectedFocus()"
@@ -50,45 +50,81 @@
         data-testid="marketing-impact-focus-pills" />
     </div>
 
-    <!-- Section tabs -->
-    <div class="flex gap-6 border-b border-gray-200" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
-      @for (tab of visibleTabs(); track tab.id) {
-        <button
-          type="button"
-          role="tab"
-          [attr.id]="'mi-tab-' + tab.id"
-          [attr.aria-controls]="'mi-panel-' + tab.id"
-          (click)="onTabChange(tab.id)"
-          [attr.aria-selected]="selectedTab() === tab.id"
-          [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-          [class]="
-            selectedTab() === tab.id
-              ? 'pb-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 -mb-px'
-              : 'pb-2 text-sm font-medium text-gray-500 hover:text-gray-700 -mb-px'
-          "
-          [attr.data-testid]="'marketing-impact-tab-' + tab.id">
-          {{ tab.label }}
-        </button>
-      }
-    </div>
+    <!-- Section tabs — hidden for coming-soon campaign types, which have no per-channel content -->
+    @if (!isComingSoon()) {
+      <div class="flex items-center gap-4">
+        <span class="shrink-0 text-sm font-semibold text-gray-700">Channel Type:</span>
+        <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
+          @for (tab of visibleTabs(); track tab.id) {
+            <button
+              type="button"
+              role="tab"
+              [attr.id]="'mi-tab-' + tab.id"
+              [attr.aria-controls]="'mi-panel-' + tab.id"
+              (click)="onTabChange(tab.id)"
+              [attr.aria-selected]="selectedTab() === tab.id"
+              [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
+              [class]="
+                selectedTab() === tab.id
+                  ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
+                  : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
+              "
+              [attr.data-testid]="'marketing-impact-tab-' + tab.id">
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Events sub-tabs — attendance vs sponsorship, scoped to the Events campaign type -->
+    @if (showEventsSplit()) {
+      <div class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4" role="tablist" aria-label="Events views" data-testid="events-split-tabs">
+        @for (view of eventsSplitOptions; track view.id) {
+          <button
+            type="button"
+            role="tab"
+            [attr.id]="'mi-events-tab-' + view.id"
+            [attr.aria-controls]="'mi-events-panel-' + view.id"
+            (click)="onEventsSplitChange(view.id)"
+            [attr.aria-selected]="selectedEventsSplit() === view.id"
+            [attr.tabindex]="selectedEventsSplit() === view.id ? 0 : -1"
+            [class]="
+              selectedEventsSplit() === view.id
+                ? 'px-3 py-1 rounded-full text-sm font-medium transition-colors bg-blue-500 text-white'
+                : 'px-3 py-1 rounded-full text-sm font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
+            "
+            [attr.data-testid]="'events-split-tab-' + view.id">
+            {{ view.label }}
+          </button>
+        }
+      </div>
+    }
 
     <!-- Tab content -->
     <div class="flex flex-col gap-6" role="tabpanel" [attr.id]="'mi-panel-' + selectedTab()" [attr.aria-labelledby]="'mi-tab-' + selectedTab()">
-      @if (selectedTab() === 'overview') {
+      @if (isComingSoon()) {
+        <!-- Coming soon — only the Events campaign type has content built today -->
+        <div
+          class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-16 text-center"
+          data-testid="marketing-impact-coming-soon">
+          <span class="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-500">
+            <i class="fa-light fa-people-group text-xl" aria-hidden="true"></i>
+          </span>
+          <h3 class="text-base font-semibold text-gray-900">{{ selectedFocusLabel() }} marketing — coming soon</h3>
+          <p class="max-w-md text-sm text-gray-500">
+            {{ selectedFocusLabel() }} campaign impact will appear here once the data connects. In the meantime, explore the All and Events campaign types.
+          </p>
+        </div>
+      } @else if (selectedTab() === 'all') {
         <lfx-overview-tab
           [foundationSlug]="foundationSlug()"
           [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
+          [eventsSplit]="showEventsSplit() ? selectedEventsSplit() : null"
           data-testid="marketing-impact-overview-tab" />
-      } @else if (selectedTab() === 'attribution') {
-        <lfx-attribution-section
-          [foundationSlug]="foundationSlug()"
-          [selectedPeriod]="selectedPeriod()"
-          [foundationName]="foundationName()"
-          [focusProgram]="selectedFocus()"
-          data-testid="marketing-impact-attribution-tab" />
-      } @else if (selectedTab() === 'performance-marketing') {
+      } @else if (selectedTab() === 'paid') {
         <lfx-performance-marketing-tab
           [foundationSlug]="foundationSlug()"
           [selectedPeriod]="selectedPeriod()"
@@ -102,14 +138,14 @@
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-email-tab" />
-      } @else if (selectedTab() === 'web-activity') {
+      } @else if (selectedTab() === 'web') {
         <lfx-web-activity-tab
           [foundationSlug]="foundationSlug()"
           [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
           data-testid="marketing-impact-web-activity-tab" />
-      } @else if (selectedTab() === 'social-accounts') {
+      } @else if (selectedTab() === 'social') {
         <lfx-social-accounts-tab
           [foundationSlug]="foundationSlug()"
           [selectedPeriod]="selectedPeriod()"
