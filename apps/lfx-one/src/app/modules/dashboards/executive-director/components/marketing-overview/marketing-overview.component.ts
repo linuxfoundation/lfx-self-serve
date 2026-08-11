@@ -8,7 +8,12 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 
-import { buildEdEvolutionMetrics, ED_EVOLUTION_FILTER_OPTIONS, NO_TOOLTIP_CHART_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  buildEdEvolutionMetrics,
+  ED_EVOLUTION_FILTER_OPTIONS,
+  HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY,
+  NO_TOOLTIP_CHART_OPTIONS,
+} from '@lfx-one/shared/constants';
 import {
   BrandHealthResponse,
   BrandReachResponse,
@@ -23,6 +28,7 @@ import {
   MetricCategory,
   RevenueImpactResponse,
   SocialReachResponse,
+  TrainingCertificationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 
 import { AnalyticsService } from '@services/analytics.service';
@@ -33,6 +39,7 @@ import { catchError, forkJoin, map, Observable, of, skip, startWith, Subject, sw
 
 import { BrandHealthDrawerComponent } from '../brand-health-drawer/brand-health-drawer.component';
 import { BrandReachDrawerComponent } from '../brand-reach-drawer/brand-reach-drawer.component';
+import { EducationDrawerComponent } from '../education-drawer/education-drawer.component';
 import { EmailCtrDrawerComponent } from '../email-ctr-drawer/email-ctr-drawer.component';
 import { EngagedCommunityDrawerComponent } from '../engaged-community-drawer/engaged-community-drawer.component';
 import { EventGrowthDrawerComponent } from '../event-growth-drawer/event-growth-drawer.component';
@@ -156,6 +163,10 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
   // Explicitly undefined for the same reason as revenueImpact above — zero spend and
   // 0.0x ROAS are real measurements, so the Paid Media card must not fall back to them.
   paidCampaign: undefined,
+  // Explicitly undefined rather than omitted: safe() reads EMPTY_ED_EVOLUTION_DATA[key]
+  // as the per-call error fallback, and the Education card is suppressed on undefined.
+  // A zero-filled summary here would render the card at 0 on a failed request instead.
+  education: undefined,
 };
 
 /**
@@ -225,6 +236,7 @@ const DRAWER_FALLBACK_REVENUE_IMPACT: RevenueImpactResponse = {
     BrandReachDrawerComponent,
     BrandHealthDrawerComponent,
     RevenueImpactDrawerComponent,
+    EducationDrawerComponent,
   ],
   templateUrl: './marketing-overview.component.html',
   styleUrl: './marketing-overview.component.scss',
@@ -269,6 +281,11 @@ export class MarketingOverviewComponent {
   // take a non-nullable input and refetch their own detail data, so they get the
   // placeholder rather than a widened contract.
   protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact ?? DRAWER_FALLBACK_REVENUE_IMPACT);
+  // Falls back to the shared zero summary so the drawer input stays non-optional. The card
+  // is suppressed when there is no education data, so the fallback is not normally reachable.
+  protected readonly educationData = computed<TrainingCertificationSummaryResponse>(
+    () => this.edEvolutionData().education ?? HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY
+  );
 
   // Rendered directly by the carousel, in array order — the category split that used
   // to sit here regrouped the cards and overrode the intended sequence.
@@ -365,6 +382,20 @@ export class MarketingOverviewComponent {
             revenueImpact: safe<RevenueImpactResponse | undefined>('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
             emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
             paidCampaign: safe<SocialReachResponse | undefined>('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
+            // Reuses the Health Metrics training-certification endpoint so the Education
+            // card cannot disagree with that card. 'YTD' matches the default range there.
+            //
+            // getTrainingCertificationSummary() converts HTTP errors into an all-zeros
+            // response (its contract, relied on by the Health Metrics card — not changed
+            // here). That makes a failed request indistinguishable from a foundation with
+            // no training, and both would silently hide this card. Map the all-zeros shape
+            // back to undefined so "request failed" and "genuinely zero enrollments" stay
+            // distinguishable: undefined suppresses the card, real zeros are impossible to
+            // reach here because the card is only built when total enrollments are > 0.
+            education: safe<TrainingCertificationSummaryResponse | undefined>(
+              'education',
+              this.analyticsService.getTrainingCertificationSummary(slug, 'YTD').pipe(map((res) => (res && res.projectId !== '' ? res : undefined)))
+            ),
           }).pipe(
             // Without this, switchMap's cancellation of the previous forkJoin leaves toSignal
             // holding its last-emitted value — including a stale failed/unavailable card — until
