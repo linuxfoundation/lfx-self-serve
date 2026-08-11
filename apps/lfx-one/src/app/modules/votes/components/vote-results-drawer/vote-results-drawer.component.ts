@@ -5,9 +5,11 @@ import { DatePipe, formatDate, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
+  CommentResultPageView,
   MyVoteResponse,
   PollCommentResult,
   RankedQuestionView,
@@ -17,11 +19,13 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, splitIntoParagraphs } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
+import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, shareReplay, startWith, switchMap } from 'rxjs';
@@ -36,8 +40,10 @@ import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, sha
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     SkeletonModule,
+    PaginatorModule,
     ButtonComponent,
     TooltipModule,
+    ExpandableTextComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -62,6 +68,9 @@ export class VoteResultsDrawerComponent {
   // === Outputs ===
   public readonly castVoteRequested = output<string>();
 
+  // === Constants ===
+  protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -72,6 +81,8 @@ export class VoteResultsDrawerComponent {
   protected readonly voteResultsError = signal<boolean>(false);
   /** Distinguishes "my-response request in flight" from "my-response loaded with no row"; without this, a non-participant deep-linking a closed vote would briefly route to State C instead of access-denied. */
   protected readonly myResponseLoading = signal<boolean>(false);
+  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
+  protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
 
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
@@ -95,6 +106,7 @@ export class VoteResultsDrawerComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
+  protected readonly paginatedCommentResults: Signal<CommentResultPageView[]> = this.initPaginatedCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
@@ -116,6 +128,10 @@ export class VoteResultsDrawerComponent {
     const id = this.vote()?.uid;
     if (id) this.castVoteRequested.emit(id);
     this.visible.set(false);
+  }
+
+  protected onCommentPageChange(promptId: string, event: PaginatorState): void {
+    this.commentPaginatorState.update((prev) => new Map(prev).set(promptId, { first: event.first ?? 0, rows: event.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE }));
   }
 
   // === Private Initializers ===
@@ -307,6 +323,34 @@ export class VoteResultsDrawerComponent {
       }
 
       return results.comment_results.filter((cr) => cr.responses.length > 0);
+    });
+  }
+
+  /** Slices each prompt's responses to its current page. The offset is clamped to the last valid
+   *  page so a stale Map entry (e.g. from a previously opened vote with more comments, or after a
+   *  rows-per-page change) can never render an empty page. */
+  private initPaginatedCommentResults(): Signal<CommentResultPageView[]> {
+    return computed(() => {
+      const stateByPrompt = this.commentPaginatorState();
+
+      return this.commentResults().map((cr) => {
+        const totalResponses = cr.responses.length;
+        const state = stateByPrompt.get(cr.prompt.prompt_id);
+        const rows = state?.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE;
+        const lastPageFirst = Math.max(0, Math.ceil(totalResponses / rows) - 1) * rows;
+        const first = Math.min(state?.first ?? 0, lastPageFirst);
+
+        return {
+          ...cr,
+          responses: cr.responses.slice(first, first + rows).map((response) => ({
+            ...response,
+            paragraphs: splitIntoParagraphs(response.comment_text),
+          })),
+          totalResponses,
+          first,
+          rows,
+        };
+      });
     });
   }
 

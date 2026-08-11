@@ -596,6 +596,34 @@ export interface PollCommentResult {
 }
 
 /**
+ * Drawer-side view model for a single comment response
+ * @description PollCommentResponse with `comment_text` pre-split into paragraphs (blank-line
+ * separated, single line breaks preserved within a paragraph) so the template can render
+ * comment paragraphs directly. Assembled by VoteResultsDrawerComponent.
+ */
+export interface CommentResponseView extends PollCommentResponse {
+  /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
+  paragraphs: string[];
+}
+
+/**
+ * Drawer-side view model for one comment prompt's results page
+ * @description PollCommentResult with `responses` decorated for display and sliced to the
+ * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
+ * paginator can render against the full list. Assembled by VoteResultsDrawerComponent.
+ */
+export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
+  /** Page-sliced responses with display-ready paragraph splits */
+  responses: CommentResponseView[];
+  /** Total submitted responses before pagination slicing */
+  totalResponses: number;
+  /** Offset of the first visible response within the full responses list */
+  first: number;
+  /** Current page size (responses per page) */
+  rows: number;
+}
+
+/**
  * Full response from the vote results API
  * @description Aggregated results for all questions and comments in a vote
  * @see GET /votes/{vote_uid}/results

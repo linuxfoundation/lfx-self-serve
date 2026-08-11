@@ -89,6 +89,22 @@ export function stableKeyParity(key: string): 0 | 1 {
   return (sum & 1) as 0 | 1;
 }
 
+/**
+ * Splits plain text (e.g. a textarea-submitted comment) into paragraphs on blank lines.
+ * Two or more consecutive line breaks (lines containing only spaces/tabs count as blank)
+ * separate paragraphs; single line breaks are preserved inside the paragraph for the
+ * template to render (e.g. via `whitespace-pre-line`). Paragraphs are trimmed and empty
+ * results dropped, so empty/whitespace-only input returns `[]`.
+ * @param text - The raw plain-text input
+ * @returns One entry per paragraph, in source order
+ */
+export function splitIntoParagraphs(text: string): string[] {
+  return text
+    .split(/(?:\r?\n[ \t]*){2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+}
+
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();
