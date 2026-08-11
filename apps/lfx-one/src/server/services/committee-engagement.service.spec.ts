@@ -510,6 +510,26 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.attendance_rate).toBe(0);
     });
 
+    it('prefers the live roster voting status over a conflicting/stale warehouse MEMBER_VOTING_STATUS for the LF Staff exclusion (Cursor Bugbot follow-up, LFXV2-3101)', async () => {
+      // The roster and the matched row disagree on voting status — a promotion from Observer to a
+      // real Voting Rep landed on the live roster before the dbt model's next refresh (still
+      // reporting the old 'Observer'). Roster must win, the same way it already does for role —
+      // otherwise this member stays incorrectly excluded (stale role-fresh + votingStatus-stale
+      // combination) until the warehouse catches up.
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never, voting: { status: 'Voting Rep' } as never })]);
+      execute.mockResolvedValueOnce({
+        rows: [row({ MEMBER_USER_ID: 'm1', MEMBER_VOTING_STATUS: 'Observer', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })],
+      });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      // Classifies on real attendance (8/10 = High), NOT the neutral LF Staff tier — the stale
+      // warehouse 'Observer' must not win over the roster's real 'Voting Rep'.
+      expect(result.members[0]).toMatchObject({ role: 'LF Staff', voting_status: 'Voting Rep', classification: 'High' });
+      expect(result.summary.active_count).toBe(1);
+      expect(result.summary.attendance_rate).toBe(0.8);
+    });
+
     it('degrades to a zeroed, data_available:false response when the engagement table is missing', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));

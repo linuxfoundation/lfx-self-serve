@@ -144,13 +144,16 @@ export function isCommitteeMemberActiveEligible(input: Pick<CommitteeEngagementC
  * usually also an active staff seat) but not undefined behavior: the check simply doesn't care
  * what tier the member displayed as.
  *
- * `input.role`'s value is whatever the caller resolved — for `committee-engagement.service.ts`
- * today that's the live roster's `role.name` first, falling back to warehouse `MEMBER_ROLE` only
- * when the roster value is missing (deliberately the OPPOSITE precedence `votingStatus` uses for
- * the Emeritus check, which stays warehouse-first — see that call site's own comment for why: this
- * exclusion needs to reflect a role change the moment it lands on the roster, not lag until the
- * dbt model's next refresh, and the roster's typed `CommitteeMemberRole` is also a safer match
- * target than the warehouse's untyped string).
+ * `input.role`'s and `input.votingStatus`'s values are whatever the caller resolved — for
+ * `committee-engagement.service.ts` today that's the live roster's value first for BOTH fields,
+ * warehouse `MEMBER_ROLE`/`MEMBER_VOTING_STATUS` only as the fallback when the roster value is
+ * missing (Cursor Bugbot follow-up, LFXV2-3101: `votingStatus` used to stay warehouse-first even
+ * after `role` was flipped roster-first, which meant a member promoted from Observer to a real
+ * Voting/Alternate Rep could keep a stale warehouse `Observer` and stay incorrectly excluded here
+ * until the next dbt refresh — this predicate combines both fields into one condition via
+ * `isLfStaffObserverSeat`, so both need equally fresh precedence or the combination itself goes
+ * stale even when each field individually wouldn't). The roster's typed `CommitteeMemberRole`/
+ * `CommitteeMemberVotingStatus` are also safer match targets than the warehouse's untyped strings.
  */
 export function isCommitteeMemberRateEligible(input: CommitteeEngagementClassificationInput): boolean {
   return !isLfStaffObserverSeat(input);

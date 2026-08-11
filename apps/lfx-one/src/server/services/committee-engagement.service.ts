@@ -341,30 +341,38 @@ export class CommitteeEngagementService {
       // violated in practice (a mismatched grain assumption, a future live-read bug) rather than
       // assuming it's already broken — an unclamped value here would produce a >100% rate.
       const attended = Math.min(counts.attended, counts.invited);
-      // `votingStatus` falls back to the roster's own value (already in hand, not warehouse-sourced)
-      // rather than defaulting straight to 'None' when there's no matching row — otherwise a real,
-      // known Emeritus member would silently lose that short-circuit and classify Inactive on every
-      // unmatched/degraded response, even though the roster already knows better. `||`, not `??`,
+      // `votingStatus` prefers the LIVE roster value first, warehouse `MEMBER_VOTING_STATUS` as the
+      // fallback for the same "no matching row" reason both fields fall back to the roster below
+      // (Cursor Bugbot follow-up, LFXV2-3101: this used to be warehouse-first, but `role` just below
+      // is roster-first, and once `isLfStaffObserverSeat` — `committee-engagement-classifier.utils.
+      // ts` — started combining both fields into one exclusion condition, that asymmetry became a
+      // real bug: a member promoted from Observer to a real Voting/Alternate Rep on the live roster
+      // would keep `role`'s LF Staff value fresh but `votingStatus` could still read the stale
+      // pre-promotion `Observer` from the warehouse until the dbt model's next refresh, incorrectly
+      // keeping them in the neutral LF Staff tier). Matching `role`'s precedence direction here
+      // means both fields a combined exclusion check reads are equally fresh, closing that gap —
+      // and, as a side effect, an Emeritus promotion/demotion (which depends on this same field
+      // alone) now also reflects on the roster immediately rather than lagging a refresh, which was
+      // never a deliberate design choice to preserve, just the pre-ticket default. `||`, not `??`,
       // so a blank passthrough falls through too; the real enum value ('None' included) is always a
       // non-empty string. Last-resort default is the documented `None` sentinel rather than '' —
       // matching the mock generator's own voting-status posture, though its actual default differs
       // (`organicVotingStatus()` hash-derives a rep status, never `None`), since that's mock mode's
       // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
-      const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
-      // `role` prefers the LIVE roster value first, unlike `votingStatus` above — deliberately the
-      // opposite precedence (LFXV2-3101 review fix). Before this ticket `role` was pure passthrough
-      // display text, so precedence never mattered functionally; now it also decides the `LF Staff`
-      // exclusion (`isCommitteeMemberRateEligible` et al.), and a warehouse-first order would let a
-      // role promoted or demoted on the roster stay silently wrong here until the dbt model's next
-      // refresh — reintroducing, for `role`, exactly the display/chip contradiction this ticket
-      // exists to remove for `votingStatus`'s Emeritus case. `member.role?.name` is also a typed
+      const votingStatus = member.voting?.status || row?.MEMBER_VOTING_STATUS || CommitteeMemberVotingStatus.NONE;
+      // `role` also prefers the LIVE roster value first (LFXV2-3101 review fix). Before this ticket
+      // `role` was pure passthrough display text, so precedence never mattered functionally; now it
+      // also decides the `LF Staff` exclusion (`isCommitteeMemberRateEligible` et al.), and a
+      // warehouse-first order would let a role promoted or demoted on the roster stay silently wrong
+      // here until the dbt model's next refresh — reintroducing exactly the display/chip
+      // contradiction this ticket exists to remove. `member.role?.name` is also a typed
       // `CommitteeMemberRole`, unlike `row?.MEMBER_ROLE` (an untyped warehouse string) — preferring
       // it first means a live-mode `MEMBER_ROLE` spelling/casing mismatch degrades to the roster's
       // known-good value instead of silently defeating the LF Staff exclusion checks everywhere
       // `role` is used (see `isLfStaffObserverSeat` in `committee-engagement-classifier.utils.ts`
       // for the exact, narrower-than-role-alone condition, LFXV2-3101 follow-up). The warehouse
-      // value remains the fallback for the same "no matching
-      // row" reason `votingStatus` falls back to the roster above, just in the opposite direction.
+      // value remains the fallback for the same "no matching row" reason `votingStatus` falls back
+      // to the roster above.
       const role = member.role?.name || row?.MEMBER_ROLE || CommitteeMemberRole.NONE;
       // Same roster-fallback reasoning as role/voting-status above, but checked independently
       // rather than value-selected: a value-selection fallback (`row value || roster value`) would
