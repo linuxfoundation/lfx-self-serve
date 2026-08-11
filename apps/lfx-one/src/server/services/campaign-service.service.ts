@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
+import type { ApiResponse, CampaignBriefOutput, CampaignBriefPersistResult, CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -49,6 +49,13 @@ interface CampaignServiceBriefInput {
   targeting?: Record<string, unknown>;
 }
 
+/**
+ * `brief` as campaign-service returns it in the response BODY.
+ *
+ * No `etag` field, deliberately: the design maps it to the `ETag` HTTP header on every brief
+ * response, so Goa leaves it out of the generated body struct. Declaring it here would compile
+ * and read `undefined` forever. `readEtag` takes it off the headers instead.
+ */
 interface CampaignServiceBrief {
   id: string;
   project_id: string;
@@ -56,7 +63,6 @@ interface CampaignServiceBrief {
   event_slug: string;
   status: string;
   version: number;
-  etag?: string;
 }
 
 /**
@@ -179,10 +185,12 @@ export class CampaignServiceClient {
    * Save the generated brief, creating it the first time and replacing it thereafter.
    *
    * campaign-service has no upsert, so this is find-then-create-or-update, and the find is not
-   * an optimisation — `create-brief` on an event that already has a brief is a duplicate row,
-   * and every later `find-brief` for that slug becomes ambiguous. The 404 arm is the documented
-   * happy path, not an error: `design/brief.go:302` calls it "the ordinary first-time-generation
-   * case".
+   * an optimisation — it is how the second save of an event reaches `update-brief` at all.
+   * `create-brief` cannot produce a duplicate: migration 000003 puts a partial unique index on
+   * `(project_id, event_slug) WHERE status <> 'archived'`, and `CreateBrief` maps that violation
+   * to `ErrConflict` -> 409. Without the find, every save after the first would simply 409. The
+   * 404 arm is the documented happy path, not an error: `design/brief.go:302` calls it "the
+   * ordinary first-time-generation case".
    *
    * The 404 is gated on campaign-service's own typed body for the same reason `getJobStatus`
    * gates its own, and the consequence here is worse. A gateway 404 — the campaign-service route
@@ -200,36 +208,55 @@ export class CampaignServiceClient {
     const existing = await this.findBrief(req, basePath, eventSlug);
 
     if (existing === null) {
-      const created = await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'POST', undefined, envelope);
-      return { enabled: true, briefId: created.id, etag: created.etag ?? null, created: true };
+      const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        basePath,
+        'POST',
+        undefined,
+        envelope
+      );
+      return { enabled: true, briefId: created.data.id, etag: readEtag(created), created: true };
     }
 
-    // `etag` is not in `Brief`'s Required set, so a response without one is contract-legal even
-    // though the service always sends it. `update-brief` declares `PreconditionRequired` (428)
-    // for a missing `If-Match`, and the version number is NOT a substitute: the design says the
-    // ETag "mirrors" the version, which fixes the correspondence but not the serialisation —
-    // quoting, weak-validator prefix and all. Synthesising one would be a guess that either 428s
-    // or, worse, matches the wrong revision. Fail loudly instead.
-    if (!existing.etag) {
-      throw new Error(`campaign-service returned brief ${existing.id} with no ETag; cannot safely replace it`);
+    // `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
+    // version number is NOT a substitute: the design says the ETag "mirrors" the version, which
+    // fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
+    // all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
+    // revision. Fail loudly instead.
+    if (existing.etag === null) {
+      throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
     }
 
-    const updated = await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(
+    const updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `${basePath}/${encodeURIComponent(existing.id)}`,
+      `${basePath}/${encodeURIComponent(existing.brief.id)}`,
       'PUT',
       undefined,
       envelope,
       { 'If-Match': existing.etag }
     );
-    return { enabled: true, briefId: updated.id, etag: updated.etag ?? null, created: false };
+    return { enabled: true, briefId: updated.data.id, etag: readEtag(updated), created: false };
   }
 
-  /** The saved brief for this event slug, or `null` when campaign-service says there is none. */
-  private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<CampaignServiceBrief | null> {
+  /**
+   * The saved brief for this event slug and its ETag, or `null` when there is none.
+   *
+   * `proxyRequestWithResponse`, not `proxyRequest`, and that is the whole point of this helper:
+   * the ETag is NOT in the JSON body. Every brief response in the design maps it to the HTTP
+   * header instead — `Response(StatusOK, func() { Header("etag:ETag") })` — so Goa omits it from
+   * the generated response body struct (`gen/http/.../server/types.go`,
+   * `FindBriefResponseBody` has no ETag field). Reading `data.etag` yields `undefined` every
+   * time, which would make the second save of any event throw on the guard above rather than
+   * issue its PUT.
+   */
+  private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<{ brief: CampaignServiceBrief; etag: string | null } | null> {
     try {
-      return await this.microserviceProxy.proxyRequest<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', { event_slug: eventSlug });
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+        event_slug: eventSlug,
+      });
+      return { brief: response.data, etag: readEtag(response) };
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return null;
@@ -237,6 +264,19 @@ export class CampaignServiceClient {
       throw error;
     }
   }
+}
+
+/**
+ * The `ETag` response header, or `null` when the response carried none.
+ *
+ * Lower-case key without a fallback: `api-client.service.ts` builds this map with
+ * `Object.fromEntries(response.headers.entries())` over a fetch `Headers`, and the Fetch
+ * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
+ * would be unreachable code that implies the casing is uncertain.
+ */
+function readEtag(response: ApiResponse<unknown>): string | null {
+  const etag = response.headers['etag'];
+  return typeof etag === 'string' && etag.length > 0 ? etag : null;
 }
 
 /**

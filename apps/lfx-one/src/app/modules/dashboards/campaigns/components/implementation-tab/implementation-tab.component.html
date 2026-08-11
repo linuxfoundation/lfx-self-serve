@@ -4,12 +4,32 @@
 <!-- Brief persistence status. Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
   @case ('saving') {
-    <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="implementation-brief-saving">
+    <!--
+      role="status" + aria-live="polite", matching multi-select.component.html: this banner is
+      inserted asynchronously, so without a live region a screen-reader user is never told that
+      the save started. Polite, not assertive — the save runs in the background and must not
+      interrupt whatever the user is reading in the form below.
+    -->
+    <div
+      role="status"
+      aria-live="polite"
+      class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600"
+      data-testid="implementation-brief-saving">
       <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Saving this brief…
     </div>
   }
   @case ('saved') {
-    <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
+    <!--
+      Live region for the same reason as the 'saving' arm above, and it has to be on this arm
+      too: @switch destroys that div and creates this one, so the outcome is a fresh insertion
+      rather than an update to an existing region. Without it the durability result — the one
+      part a user cannot re-derive by looking at the page — is announced to nobody.
+    -->
+    <div
+      role="status"
+      aria-live="polite"
+      class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800"
+      data-testid="implementation-brief-saved">
       <!--
         Says only that the brief was stored, NOT that a reload restores it. Persistence is
         write-only in this phase: nothing loads a saved brief back into the page, so a reload

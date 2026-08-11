@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
 // `@lfx-one/shared/interfaces` are type-only, so esbuild elides them.
-const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
+const { proxyRequest, proxyRequestWithResponse } = vi.hoisted(() => ({ proxyRequest: vi.fn(), proxyRequestWithResponse: vi.fn() }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 
@@ -50,6 +51,22 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
 }
 
 const NOT_FOUND = new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'the resource was not found' } });
+
+/**
+ * An `ApiResponse` as `proxyRequestWithResponse` resolves it.
+ *
+ * The ETag goes in `headers`, never in `data`, because that is where campaign-service actually
+ * puts it: `design/brief.go` maps it to the `ETag` response header on every brief response, so
+ * the generated body struct has no such field. A fake that answered `{ etag }` out of the body
+ * would pass against an implementation that reads `data.etag` and always gets `undefined` —
+ * exactly the bug these specs exist to pin.
+ *
+ * Lower-cased key, matching `api-client.service.ts`, which builds this map from a fetch
+ * `Headers` iteration.
+ */
+function apiResponse<T>(data: T, headers: Record<string, string> = {}): { data: T; status: number; statusText: string; headers: Record<string, string> } {
+  return { data, status: 200, statusText: 'OK', headers };
+}
 
 describe('adaptJobPollResponse', () => {
   // The poller terminates on `takeWhile((s) => s.status === 'running', true)`. `queued` is the
@@ -222,13 +239,13 @@ describe('deriveEventSlug', () => {
 
 describe('CampaignServiceClient.saveBrief', () => {
   beforeEach(() => {
-    proxyRequest.mockReset();
+    proxyRequestWithResponse.mockReset();
   });
 
   // The documented first-time case: `design/brief.go:302` calls a find-brief 404 "the ordinary
   // first-time-generation case — the caller then generates one and POSTs it to create-brief."
   it('creates the brief when campaign-service reports none for the slug', async () => {
-    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026')).resolves.toEqual({
       enabled: true,
@@ -237,8 +254,10 @@ describe('CampaignServiceClient.saveBrief', () => {
       created: true,
     });
 
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
-    expect(proxyRequest.mock.calls[1]?.[3]).toBe('POST');
+    expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', {
+      event_slug: 'kubecon-eu-2026',
+    });
+    expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
 
   // Goa builds the body from the payload attributes it does not map elsewhere, and the design
@@ -246,11 +265,11 @@ describe('CampaignServiceClient.saveBrief', () => {
   // body is `{"brief": {…}}`. A bare brief object 400s on every required field at once, which
   // reads like a mapping bug rather than a missing wrapper.
   it('wraps the payload in the brief envelope the Goa design requires', async () => {
-    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
     await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026');
 
-    const body = proxyRequest.mock.calls[1]?.[5];
+    const body = proxyRequestWithResponse.mock.calls[1]?.[5];
     expect(Object.keys(body)).toEqual(['brief']);
     expect(body.brief).toMatchObject({ program_type: 'events', event_slug: 'kubecon-eu-2026', platforms: ['google-ads'] });
   });
@@ -258,11 +277,11 @@ describe('CampaignServiceClient.saveBrief', () => {
   // `BriefInput` has no first-class field for the goal, budget, UTM or Drive folder. Dropping
   // them would make a reloaded brief quietly less complete than the one the user approved.
   it('round-trips the planning fields that BriefInput has no named home for', async () => {
-    proxyRequest.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce({ id: 'b-1', etag: '"1"' });
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
     await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026');
 
-    expect(proxyRequest.mock.calls[1]?.[5].brief.targeting).toEqual({
+    expect(proxyRequestWithResponse.mock.calls[1]?.[5].brief.targeting).toEqual({
       campaignGoal: 'conversions',
       totalBudget: 5000,
       hsUtm: 'kubecon-eu-2026',
@@ -270,10 +289,19 @@ describe('CampaignServiceClient.saveBrief', () => {
     });
   });
 
-  // create-brief on an event that already has one is a duplicate row, and every later
-  // find-brief for that slug is then ambiguous. The find is correctness, not an optimisation.
-  it('replaces the existing brief with If-Match rather than creating a second one', async () => {
-    proxyRequest.mockResolvedValueOnce({ id: 'b-1', etag: '"7"' }).mockResolvedValueOnce({ id: 'b-1', etag: '"8"' });
+  // The find is how a second save reaches `update-brief` at all — not a duplicate-row guard.
+  // Migration 000003 puts a partial unique index on `(project_id, event_slug) WHERE status <>
+  // 'archived'` and `CreateBrief` maps the violation to `ErrConflict`, so a blind create would
+  // 409 rather than duplicate. Without the find, every save after the first would simply fail.
+  //
+  // This is also the regression test for the ETag being a HEADER: the find's fake answers with
+  // an `etag` header and a body that has none, exactly like the real response. Read the body
+  // instead and `existing.etag` is `undefined`, the guard below fires, and this test fails on
+  // "no ETag" before it ever reaches the PUT.
+  it('replaces the existing brief with the header-derived If-Match rather than creating a second one', async () => {
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }, { etag: '"7"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 8 }, { etag: '"8"' }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026')).resolves.toEqual({
       enabled: true,
@@ -282,39 +310,56 @@ describe('CampaignServiceClient.saveBrief', () => {
       created: false,
     });
 
-    const [, service, path, method, query, , headers] = proxyRequest.mock.calls[1] as unknown[];
+    const [, service, path, method, query, , headers] = proxyRequestWithResponse.mock.calls[1] as unknown[];
     expect([service, path, method, query]).toEqual(['LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'PUT', undefined]);
     expect(headers).toEqual({ 'If-Match': '"7"' });
   });
 
-  // The gateway 404 case, and it is worse here than for job polling: read as "no brief yet",
-  // every save would create a new row the moment the route came up.
+  // A brief body that happens to carry an `etag` key must not be mistaken for the validator.
+  // campaign-service does not send one, but a gateway or a future field addition could, and
+  // silently preferring it would reintroduce the original bug in a form no other test catches.
+  it('takes the validator from the header even when the body carries an etag-shaped field', async () => {
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', etag: '"body-stale"' }, { etag: '"7"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"8"' }));
+
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e');
+
+    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"7"' });
+  });
+
+  // The gateway 404 case. Read as "no brief yet", a routing outage would turn every save of an
+  // already-saved event into a create — which the partial unique index then rejects as a 409.
+  // The user is told their brief conflicts with itself, and the update they asked for is lost.
   it.each([
     ['a plain-text gateway 404 (null body)', null],
     ['an untyped JSON 404', { error: 'not found' }],
-  ])('rethrows %s rather than creating a duplicate brief', async (_label, errorBody) => {
-    proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+  ])('rethrows %s rather than treating it as a first-time generation', async (_label, errorBody) => {
+    proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toMatchObject({ statusCode: 404 });
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
-  // `etag` is not in `Brief`'s Required set. The version number is not a substitute: the design
-  // says the ETag "mirrors" the version, which fixes the correspondence but not the
-  // serialisation, so a synthesised value either 428s or matches the wrong revision.
-  it('refuses to replace a brief whose response carried no ETag instead of synthesising one', async () => {
-    proxyRequest.mockResolvedValueOnce({ id: 'b-1', version: 7 });
+  // A response that reaches us without the header — a proxy that strips it, say. The version
+  // number is not a substitute: the design says the ETag "mirrors" the version, which fixes the
+  // correspondence but not the serialisation, so a synthesised value either 428s or matches the
+  // wrong revision.
+  it('refuses to replace a brief whose response carried no ETag header instead of synthesising one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toThrow(/no ETag/);
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
   // A 412 means another writer replaced this brief between the find and the PUT. Re-reading and
   // overwriting would silently discard their work, so the failure is surfaced instead.
   it('does not retry a PreconditionFailed by re-reading and overwriting', async () => {
-    proxyRequest.mockResolvedValueOnce({ id: 'b-1', etag: '"7"' }).mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"7"' }))
+      .mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e')).rejects.toMatchObject({ statusCode: 412 });
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 });
