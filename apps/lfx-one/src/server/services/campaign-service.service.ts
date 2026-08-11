@@ -236,6 +236,16 @@ export class CampaignServiceClient {
    * between the find and the PUT; re-reading and overwriting would silently discard their work.
    * The user is told instead — see the caller.
    *
+   * A 409 from `create-brief` is NOT retried as a replace either, for a reason that is easy to
+   * get backwards. Two saves of the same event can both find 404 and both POST; the one that
+   * collides is whichever POST landed second, and that is not the one that STARTED second. A
+   * retry would make the collision's loser the final writer unconditionally, so a slow earlier
+   * save would overwrite a newer brief that had already succeeded — after the UI had shown the
+   * user "Brief saved." Nothing on this side of the connection can order the two. The conflict
+   * is reported instead, and the concurrency it comes from is removed where it is actually
+   * knowable: `campaigns.component.ts` runs a session's saves strictly one at a time, so the
+   * second save finds the first one's brief and takes the ordinary replace path.
+   *
    * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
    * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
    * `projectQueryParamGuard` seeds the context from `?project=`), while campaign-service scopes
@@ -261,11 +271,24 @@ export class CampaignServiceClient {
       return this.approveBrief(req, basePath, created, true);
     }
 
-    // `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
-    // version number is NOT a substitute: the design says the ETag "mirrors" the version, which
-    // fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
-    // all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
-    // revision. Fail loudly instead.
+    return this.replaceBrief(req, basePath, envelope, existing);
+  }
+
+  /**
+   * Replace an existing brief and approve the result.
+   *
+   * `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
+   * version number is NOT a substitute: the design says the ETag "mirrors" the version, which
+   * fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
+   * all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
+   * revision. Fail loudly instead.
+   */
+  private async replaceBrief(
+    req: Request,
+    basePath: string,
+    envelope: CampaignServiceBriefEnvelope,
+    existing: { brief: CampaignServiceBrief; etag: string | null }
+  ): Promise<CampaignBriefPersistResult> {
     if (existing.etag === null) {
       throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
     }
@@ -339,13 +362,45 @@ export class CampaignServiceClient {
       );
       return { ...saved, etag: readEtag(approved), approved: true };
     } catch (error) {
-      logger.warning(req, 'campaign_persist_brief_approve', 'brief was saved but could not be approved', {
-        briefId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // The write's own validator, not null: it is still the current one, because the approve
-      // that would have bumped the version is precisely what failed.
-      return { ...saved, etag: writeEtag, approved: false };
+      // Whether the write's ETag is still the current one depends on whether the approval
+      // definitely did NOT happen, and only a 4xx says that. A 4xx is a refusal: something that
+      // understood the request declined it, so no version was bumped and `writeEtag` still
+      // describes the brief in the database.
+      //
+      // 412 is the exception, and it is the exception for the opposite reason to the 5xx below.
+      // The approval carries `If-Match: writeEtag`, so a 412 is the server saying that validator
+      // does NOT match what it holds — the brief moved between the write and the approval. The
+      // approval did not commit, but `writeEtag` is still known-stale, which is the one thing a
+      // returned validator must never be.
+      //
+      // Everything else is indeterminate, and reporting `writeEtag` for it would be a guess
+      // dressed as a fact. A local timeout (surfaced as 408, see below), a connection reset, or
+      // a 5xx from the gateway can all follow a commit whose response was lost —
+      // `approve-brief` does `version = version + 1`,
+      // so if it did commit, the validator being returned here is one version stale. Report no
+      // validator at all rather than a wrong one; `null` already means "none available" on this
+      // result (see the no-ETag branch above), and the read path re-reads the ETag from the
+      // server before every write, so nothing downstream is left without one.
+      // 408 is EXCLUDED even though it is a 4xx. `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts:122` and `:306`), so a
+      // 408 here is our own deadline firing, not campaign-service refusing anything — the
+      // request may well have committed upstream with its response lost, which is precisely the
+      // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
+      // came from the gateway is indistinguishable at this boundary and means the same thing:
+      // the request may or may not have been processed.
+      const definitelyRejected =
+        error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 412 && error.statusCode !== 408;
+      logger.warning(
+        req,
+        'campaign_persist_brief_approve',
+        definitelyRejected ? 'brief was saved but the approval was rejected' : 'brief was saved but the approval outcome is unknown',
+        { briefId, error: error instanceof Error ? error.message : String(error) }
+      );
+      // `approved: false` in BOTH cases, and it is not a claim that the brief is in draft — it is
+      // the absence of a confirmation. It only ever costs a re-approval, which Phase 3 has to be
+      // able to do regardless: it re-checks approval at a version, since anyone may have edited
+      // the brief in between.
+      return { ...saved, etag: definitelyRejected ? writeEtag : null, approved: false };
     }
   }
 

@@ -4,9 +4,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPersistenceState, ProjectContext } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { NEVER, Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,11 +35,15 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
-  /** `selectorForm` is protected; a program switch is the real path that discards a brief. */
-  function switchProgram(): void {
+  /**
+   * `selectorForm` is protected; a program switch is the real path that discards a brief. The
+   * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
+   * the same program is a no-op and would leave a test believing it had discarded a brief.
+   */
+  function switchProgram(value: 'events' | 'education' = 'education'): void {
     (
       fixture.componentInstance as unknown as { selectorForm: { controls: { programType: { setValue(v: string): void } } } }
-    ).selectorForm.controls.programType.setValue('education');
+    ).selectorForm.controls.programType.setValue(value);
   }
 
   function tab(): string {
@@ -161,6 +166,168 @@ describe('CampaignsComponent brief persistence', () => {
 
     expect(state()).toEqual({ status: 'off', briefId: null, message: null });
     expect(tab()).toBe('planning');
+  });
+
+  /**
+   * The other half of the rule above: a superseded response must not write the brief's state, but
+   * it still carries one fact that outlives the brief — whether the cutover is on. Drop that with
+   * the rest and a session whose first save happened to land after a program switch spends the
+   * rest of its life withholding the in-flight banner, for no reason the user can see.
+   */
+  it('still learns the cutover is on from a save that resolved after the brief was discarded', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+
+    proceed();
+    switchProgram();
+    await fixture.whenStable();
+
+    late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
+    await fixture.whenStable();
+
+    // Nothing on screen changed — that part stays guarded.
+    expect(state().status).toBe('off');
+
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+
+    // …but the next save knows to show the banner, which it could only have learned from the
+    // response it dropped.
+    expect(state().status).toBe('saving');
+  });
+
+  /**
+   * The latch only ever turns on. During a rollout the two answers come from different replicas,
+   * so an `enabled: false` is evidence about one handler, not about the deployment — and a
+   * superseded one is the stalest evidence there is. Let it clear the latch and the session goes
+   * back to withholding the in-flight banner permanently, for a cutover that is on.
+   */
+  it('does not let a stale disabled response clear the cutover latch', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+    proceed();
+    switchProgram();
+    await fixture.whenStable();
+
+    persistBrief.mockReturnValue(
+      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
+    );
+    proceed();
+    await fixture.whenStable();
+
+    // The superseded request finally answers, from a replica that had not been rolled yet.
+    late.next({ enabled: false, briefId: '', etag: null, created: false, approved: false });
+    await fixture.whenStable();
+
+    switchProgram('events');
+    await fixture.whenStable();
+    // Really discarded, so the assertion below is about the NEW save rather than the leftover
+    // banner from the one before it.
+    expect(state().status).toBe('off');
+
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+
+    expect(state().status).toBe('saving');
+  });
+
+  /**
+   * `/foundation/campaigns` survives a foundation switch — the sidebar only navigates on a lens
+   * change or off an entity page, and this is neither, so `setFoundation` moves `?project=` with
+   * `Location.replaceState` and leaves the component mounted. The brief id on screen belongs to
+   * one foundation's brief table; it must not stay there under another one.
+   */
+  describe('when the selected foundation changes underneath the page', () => {
+    function selectFoundation(slug: string): void {
+      const ctx = TestBed.inject(ProjectContextService);
+      ctx.setRouteLensKind('foundation');
+      // `syncUrl: false` — the URL sync is the sidebar's job and needs a live router URL; what
+      // this spec is about is the context change it leaves behind.
+      ctx.setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+    }
+
+    beforeEach(async () => {
+      // `projectQueryParamGuard` seeds the context BEFORE the component is created, so every
+      // change this component observes is a real switch. Re-create the fixture with a foundation
+      // already selected rather than letting the initial seed masquerade as one.
+      selectFoundation('tlf');
+      fixture = TestBed.createComponent(CampaignsComponent);
+      await fixture.whenStable();
+    });
+
+    it('clears a banner that already landed for the previous foundation', async () => {
+      persistBrief.mockReturnValue(
+        new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
+      );
+      proceed();
+      await fixture.whenStable();
+      expect(state().briefId).toBe('brief-9');
+
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      // Not 'saved' with tlf's id: that id names a row in tlf's table, and CNCF is selected now.
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    });
+
+    it('drops a save that resolves after the foundation changed', async () => {
+      const late = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(late);
+
+      proceed();
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
+      await fixture.whenStable();
+
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    });
+
+    it('files the brief under the foundation selected at save time', async () => {
+      persistBrief.mockReturnValue(NEVER);
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      proceed();
+      // The request now leaves on the save queue rather than inside `proceed`, so the assertion
+      // has to let the queue turn over. The slug is still the one selected at Proceed time.
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf');
+    });
+  });
+
+  /**
+   * Two saves of the same event must never be in flight together. Each one's find would come back
+   * empty and each would POST, and the create that lands second collides with the partial unique
+   * index on `(project_id, event_slug)`. The server cannot resolve that for us: the collision
+   * identifies the later ARRIVAL, not the later brief, so retrying it as a replace would
+   * sometimes overwrite a newer brief that had already reported success. Ordering them here is
+   * what makes the second save a plain replace of the first.
+   */
+  it("runs a session's saves one at a time", async () => {
+    const first = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(first);
+    proceed();
+    await fixture.whenStable();
+    expect(persistBrief).toHaveBeenCalledTimes(1);
+
+    // Back to Planning and Proceed again while the first request is still open. This needs no
+    // second user: `selectTab` only sets a signal, so the tab bar is live during a save.
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+    await fixture.whenStable();
+
+    expect(persistBrief).toHaveBeenCalledTimes(1);
+
+    first.next({ enabled: true, briefId: 'brief-1', etag: 'W/"1"', created: true, approved: true });
+    // A macrotask, not `whenStable`: the queue hands over across microtasks that the fixture's
+    // stability check does not necessarily drain.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Released only now — and its find will see `brief-1`, so it replaces rather than races.
+    expect(persistBrief).toHaveBeenCalledTimes(2);
   });
 
   it('drops a save that FAILS after the brief was discarded', async () => {

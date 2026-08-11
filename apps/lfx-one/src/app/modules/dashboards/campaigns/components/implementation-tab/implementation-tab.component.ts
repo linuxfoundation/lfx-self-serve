@@ -81,6 +81,26 @@ export class ImplementationTabComponent implements OnInit {
    */
   public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
 
+  /**
+   * Text for the always-present live region in the template.
+   *
+   * Kept separate from the visible banners because the announcement and the banner have
+   * different lifetimes: the banner is created and destroyed by `@switch`, while the region has
+   * to persist so a screen reader treats each new value as a CHANGE rather than an insertion.
+   * Empty in the `off` and `error` states — `off` has nothing to say, and `error` carries its own
+   * `role="alert"`, which would otherwise announce the same text twice.
+   */
+  protected readonly briefPersistenceAnnouncement = computed(() => {
+    switch (this.briefPersistence().status) {
+      case 'saving':
+        return 'Saving this brief.';
+      case 'saved':
+        return 'Brief saved.';
+      default:
+        return '';
+    }
+  });
+
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;

@@ -55,7 +55,11 @@ export class CampaignService {
   }
 
   /**
-   * Save the approved brief so it survives a reload.
+   * Store the approved brief in campaign-service.
+   *
+   * Storage only — nothing reads it back yet, so a reload still loses the brief from the page.
+   * The read path is LFXV2-3108. Saying "survives a reload" here would describe a round trip only
+   * half of which exists.
    *
    * Fire-and-forget from the caller's point of view — the Planning → Implementation handoff must
    * not wait on it, because campaign creation still runs entirely client-side and a slow or

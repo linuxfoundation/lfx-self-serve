@@ -3,14 +3,14 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { take } from 'rxjs';
+import { firstValueFrom, skip } from 'rxjs';
 
 import { ButtonComponent } from '../../../shared/components/button/button.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
@@ -18,15 +18,6 @@ import { ImplementationTabComponent } from './components/implementation-tab/impl
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
-
-/**
- * No brief in flight, and nothing to say about one.
- *
- * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
- * persistence UI at all". A disabled cutover is the default in every environment, so it must
- * look exactly like the ordinary case rather than like a degraded one.
- */
-const IDLE_PERSISTENCE: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
 
 @Component({
   selector: 'lfx-campaigns',
@@ -62,11 +53,22 @@ export class CampaignsComponent {
     deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
   });
 
+  /**
+   * No brief in flight, and nothing to say about one.
+   *
+   * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
+   * persistence UI at all". A disabled cutover is the default in every environment, so it must
+   * look exactly like the ordinary case rather than like a degraded one.
+   *
+   * Declared before briefPersistence because a class field cannot read one declared after it.
+   */
+  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
+
   protected readonly selectedTab = signal<CampaignTab>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
-  protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(IDLE_PERSISTENCE);
+  protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
   /**
    * Which brief `briefPersistence` currently describes.
@@ -85,6 +87,31 @@ export class CampaignsComponent {
   private briefPersistenceGeneration = 0;
 
   /**
+   * The tail of this session's save queue — see `persistBrief` for why saves are serialised.
+   *
+   * A plain promise rather than an RxJS operator because the queue must OUTLIVE the component:
+   * `concatMap` under `takeUntilDestroyed` would abort a save in flight when the user navigates
+   * away, which is exactly the behaviour `persistBrief` documents it must not have.
+   */
+  private persistChain: Promise<void> = Promise.resolve();
+
+  /**
+   * The foundation the current `briefPersistence` was filed under.
+   *
+   * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
+   * change or off an entity page (`sidebar.component.ts` `redirectOnContextSwitch`), and
+   * `/foundation/campaigns` is neither — it is a two-segment route in the foundation lens, so
+   * picking another foundation runs `setFoundation`, which moves the `?project=` param with
+   * `Location.replaceState` and nothing else. The page stays mounted and `activeContext()`
+   * changes underneath it.
+   *
+   * That makes the slug part of what identifies the brief being described, exactly like the
+   * generation counter: a `saved` banner naming a brief in one foundation's table must not be
+   * left sitting under another one, whether the response landed before the switch or after it.
+   */
+  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
    * Whether the server has told us the brief-persistence cutover is on.
    *
    * Starts false meaning UNKNOWN, not off, and only a response can change it: the flag is an
@@ -101,6 +128,29 @@ export class CampaignsComponent {
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
   public constructor() {
+    // Discard the persistence state when the selected foundation changes — see
+    // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the
+    // previous foundation from writing its outcome under the new one; clearing the signal is what
+    // removes a banner that already landed.
+    //
+    // `skip(1)` because `toObservable` replays the CURRENT slug on subscribe, and the foundation
+    // the page opened with is not a switch: `projectQueryParamGuard` has already resolved it
+    // before this component exists. Without the skip, a brief proceeded in the same tick as the
+    // first change detection would have its save dropped by a generation bump that represents
+    // nothing. The computed dedupes by value, so only real changes reach here.
+    //
+    // `briefOutput` and `selectedTab` are deliberately left alone, unlike `resetToPlanning`. The
+    // brief describes an EVENT, not a foundation, and throwing away a generated brief on a stray
+    // sidebar click would destroy real work to fix a labelling problem. The consequence is that
+    // proceeding after a switch files that brief under the newly selected foundation, which is
+    // the only foundation the user has actually asked for by then.
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.briefPersistenceGeneration++;
+        this.briefPersistence.set(this.idlePersistence);
+      });
+
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
     this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -174,11 +224,30 @@ export class CampaignsComponent {
    * campaign-service outage would strand the user on the Planning tab with an approved brief
    * and nowhere to take it.
    *
-   * `take(1)` rather than `takeUntilDestroyed`: the request must finish and record its outcome
-   * even if the user navigates away mid-flight, and one `HttpClient` POST completes on its own.
+   * `firstValueFrom` rather than `takeUntilDestroyed`: the request must finish and record its
+   * outcome even if the user navigates away mid-flight, and one `HttpClient` POST completes on
+   * its own. Tearing it down on destroy would abort a save the user was told was in progress.
+   *
+   * Chained onto `persistChain` so a session's saves run STRICTLY ONE AT A TIME, which is the
+   * only place this concurrency can be fixed. `selectTab` is not gated on the save, so the user
+   * can return to Planning and proceed again while the first request is open; run both at once
+   * and each finds no brief, each POSTs, and one hits the partial unique index on
+   * `(project_id, event_slug)`. The server cannot resolve that collision for us — the request
+   * that collided is whichever POST arrived second, which is not necessarily the one that
+   * started second, so retrying it as a replace would sometimes overwrite a NEWER brief that had
+   * already reported success. Serialising here makes the ordering knowable: the second save's
+   * find sees the first save's brief and takes the ordinary replace path, so the last Proceed
+   * wins, every time.
+   *
+   * The chain is per-component and never awaited by the caller, so this stays background work.
+   * `.catch()` on each link keeps one failed save from poisoning the chain for the next.
    */
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
+    // Read now, not when the chain reaches this link: the foundation selected when the user hit
+    // Proceed is the one the brief belongs to. A switch while the save is queued bumps the
+    // generation and discards the outcome anyway.
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -190,14 +259,29 @@ export class CampaignsComponent {
       this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
     }
 
-    this.campaignService
-      .persistBrief(brief, this.projectContextService.activeContext()?.slug ?? '')
-      .pipe(take(1))
-      .subscribe({
-        next: (result) => {
+    this.persistChain = this.persistChain.then(() =>
+      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug)).then(
+        (result) => {
+          // Latched BEFORE the generation check, unlike everything below it. The check exists to
+          // stop a superseded save writing brief-specific state — a `saved` status and a
+          // `briefId` — over a brief the page no longer holds. `enabled` is not brief-specific:
+          // it is a fact about the deployment, equally true for the brief that was discarded and
+          // the one on screen now. Dropping it with the rest would mean a session whose first
+          // save happened to resolve after a program switch never learns the cutover is on, and
+          // withholds the in-flight banner for the rest of its life.
+          //
+          // Latched, never cleared, and that direction is the point. During a rollout the two
+          // answers come from different replicas, so an `enabled: false` proves only that ONE
+          // handler had the flag dark — and a superseded response saying so is the stalest
+          // evidence available. Letting it win would put the session back to withholding the
+          // banner for good. The reverse mistake costs a `saving` banner on a save that turns
+          // out to be a no-op, which is the flicker this latch exists to bound, not to prevent.
+          if (result.enabled) {
+            this.briefPersistenceEnabled.set(true);
+          }
+
           if (generation !== this.briefPersistenceGeneration) return;
-          this.briefPersistenceEnabled.set(result.enabled);
-          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);
+          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : this.idlePersistence);
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
@@ -209,15 +293,19 @@ export class CampaignsComponent {
         // sentence is true in both worlds: with the cutover dark the brief is not durable either,
         // which is exactly what it says. Suppressing it until the state is known would instead
         // swallow the very first failure of a live cutover, silently.
-        error: () => {
+        //
+        // Rejections are absorbed here rather than propagating, so one failed save cannot leave
+        // the chain in a rejected state and take every later save down with it.
+        () => {
           if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set({
             status: 'error',
             briefId: null,
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
           });
-        },
-      });
+        }
+      )
+    );
   }
 
   private resetToPlanning(): void {
@@ -225,7 +313,7 @@ export class CampaignsComponent {
     // outcome back over the reset state.
     this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
-    this.briefPersistence.set(IDLE_PERSISTENCE);
+    this.briefPersistence.set(this.idlePersistence);
     this.selectedTab.set('planning');
   }
 }

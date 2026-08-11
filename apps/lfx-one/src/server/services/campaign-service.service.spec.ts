@@ -275,6 +275,20 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
 
+  // A create-409 means another save of this event landed first. It is NOT retried as a replace.
+  // The colliding request is whichever POST arrived second, and that is not necessarily the one
+  // that STARTED second — so a retry would let a slow earlier save overwrite the newer brief that
+  // already succeeded and already told its user "Brief saved." Nothing here can order the two, so
+  // the conflict is reported. Concurrency within one session is removed in the component instead,
+  // by running its saves one at a time.
+  it('reports a create conflict rather than overwriting the brief that won the race', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('conflict');
+    // The find and the POST, and nothing after: no re-find, no PUT.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+
   // The page is reachable by an ED of any foundation — `executiveDirectorGuard` gates on persona
   // and `projectQueryParamGuard` seeds the context from `?project=` — while campaign-service
   // scopes every brief on its project. A hard-coded `tlf` would file a CNCF ED's brief in TLF's
@@ -320,17 +334,69 @@ describe('CampaignServiceClient.saveBrief', () => {
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockRejectedValueOnce(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      // The write's own validator, still current — and a refusal is what makes that safe to say.
+      // Nothing was committed, so no `version = version + 1` ran.
+      etag: '"1"',
+      created: true,
+      approved: false,
+    });
+  });
+
+  // 412 is a refusal too, but it is the one refusal that also reports the validator is wrong: the
+  // approval sends `If-Match: writeEtag`, so a 412 IS the server saying that is not what it holds.
+  // Returning it anyway would hand the caller a validator known to be stale, which is worse than
+  // handing it none — the next write would 412 on a precondition this layer already knew had
+  // failed, instead of re-reading.
+  it('withholds the write ETag when the approval is refused as stale', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
-      // The write's own validator, still current: the approve that would have bumped the version
-      // is exactly what failed.
-      etag: '"1"',
+      etag: null,
       created: true,
       approved: false,
     });
+  });
+
+  // The other half of the rule above. A 4xx is a refusal and proves the approval did not commit;
+  // a lost response proves nothing. campaign-service may have committed the approve and bumped
+  // the version before the connection died, in which case the write's ETag is one version stale —
+  // returning it would hand back a validator that is wrong in exactly the case nobody can detect.
+  it('reports no validator when the approval outcome is unknown, rather than a possibly stale one', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      // Not a MicroserviceError: the proxy only wraps a response it received. A socket hang-up
+      // reaches this catch as the raw transport error.
+      .mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      created: true,
+      approved: false,
+    });
+  });
+
+  // A 5xx is a response, but it is not a refusal by the thing that would have done the work — a
+  // gateway 502 can follow a commit whose reply was lost on the way back.
+  it('treats a 5xx approval failure as unknown too, not as a refusal', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockRejectedValueOnce(new MicroserviceError('bad gateway', 502, 'BAD_GATEWAY'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toMatchObject({ etag: null, approved: false });
   });
 
   // Same refusal to guess as the If-Match guard below: without a validator there is no safe
