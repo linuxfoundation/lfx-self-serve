@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   NEWSLETTER_COMMITTEE_CATEGORY,
   NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
+  NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
   NEWSLETTER_STEP_TITLES,
   NEWSLETTER_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
@@ -38,7 +39,7 @@ import {
   isValidEmail,
   stripHtml,
 } from '@lfx-one/shared/utils';
-import { newsletterScheduleWindowValidator } from '@lfx-one/shared/validators';
+import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -123,7 +124,10 @@ export class NewsletterManageComponent {
       bodyHtml: new FormControl<string>('', { nonNullable: true }),
       sendMode: new FormControl<'now' | 'schedule'>('now', { nonNullable: true }),
       scheduleDate: new FormControl<Date | null>(null),
-      scheduleTime: new FormControl<string>('', { nonNullable: true }),
+      // timeFormatValidator rejects an out-of-range free-typed value (e.g. "13:99 PM")
+      // that would otherwise survive into combineDateTime, which normalizes rather
+      // than rejects overflow — see scheduleWindowError()'s 'invalidFormat' branch.
+      scheduleTime: new FormControl<string>('', { nonNullable: true, validators: [timeFormatValidator()] }),
       // Seeded from the browser's resolved IANA zone in the constructor (SSR has
       // no reliable Intl timezone), so this stays 'UTC' until initScheduleTimezone runs.
       scheduleTimezone: new FormControl<string>('UTC', { nonNullable: true }),
@@ -223,12 +227,27 @@ export class NewsletterManageComponent {
   // actually depends on (mode/date/time/timezone), plus scheduleClockTick for elapsed-time-only
   // changes, to know when to re-evaluate — otherwise it memoizes the first result forever.
   public readonly scheduleWindowError = computed<NewsletterScheduleWindowError | null>(() => {
-    this.sendModeValue();
+    const sendMode = this.sendModeValue();
     this.scheduleDateValue();
     this.scheduleTimeValue();
     this.scheduleTimezoneValue();
     this.scheduleClockTick();
+    // Check the control's own format error before the group-level window error —
+    // an out-of-range free-typed time (e.g. "13:99 PM") normalizes into a valid
+    // instant via combineDateTime instead of failing, so scheduleWindow would
+    // otherwise never catch it.
+    if (sendMode === 'schedule' && this.form.controls.scheduleTime.invalid) {
+      return 'invalidFormat';
+    }
     return this.form.errors?.['scheduleWindow'] ?? null;
+  });
+  // Live lower bound for the time picker's dropdown (see TimePickerComponent's
+  // minDateTime input) — re-derived off scheduleClockTick so a tab left open long
+  // enough drops the now-too-soon options from the list rather than only rejecting
+  // them after the fact via scheduleWindowError.
+  public readonly scheduleMinDateTime = computed<Date>(() => {
+    this.scheduleClockTick();
+    return new Date(Date.now() + NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES * 60 * 1000);
   });
   public readonly scheduleSummary = computed<string>(() => {
     const iso = this.scheduleAtIso();
@@ -312,17 +331,12 @@ export class NewsletterManageComponent {
       !this.submitting() &&
       !this.resolvingSend() &&
       !this.savingDraft() &&
+      !this.scheduling() &&
       !this.hasPendingAudienceAdds() &&
       !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () =>
-      this.subjectFilled() &&
-      this.bodyFilled() &&
-      this.hasContext() &&
-      this.edEmail().length > 0 &&
-      !this.testSending() &&
-      !this.isScheduleReadOnly()
+    () => this.subjectFilled() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
   );
   // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
@@ -355,6 +369,7 @@ export class NewsletterManageComponent {
       this.bodyFilled() &&
       this.edEmail().length > 0 &&
       !this.savingDraft() &&
+      !this.scheduling() &&
       !this.isScheduleReadOnly()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
@@ -376,6 +391,7 @@ export class NewsletterManageComponent {
     this.initAudienceNormalization();
     this.initScheduleClock();
     this.initSchedulePastGuard();
+    this.initScheduleFieldLock();
   }
 
   protected goToStep(step: number | undefined): void {
@@ -689,6 +705,28 @@ export class NewsletterManageComponent {
       });
   }
 
+  /**
+   * Disables the date/time controls while an arm request is in flight (scheduling()) so the
+   * author can't change the picker mid-request — runSchedule re-reads scheduleAtIso() right
+   * before the call goes out, so leaving the fields live during that window would let a fresh
+   * edit slip in after the value has already been captured for the request but before the
+   * response lands, arming a time the author no longer sees selected.
+   */
+  private initScheduleFieldLock(): void {
+    effect(() => {
+      const locked = this.scheduling();
+      const dateControl = this.form.controls.scheduleDate;
+      const timeControl = this.form.controls.scheduleTime;
+      if (locked) {
+        dateControl.disable({ emitEvent: false });
+        timeControl.disable({ emitEvent: false });
+      } else {
+        dateControl.enable({ emitEvent: false });
+        timeControl.enable({ emitEvent: false });
+      }
+    });
+  }
+
   private initRecipientCount(): void {
     merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
       .pipe(
@@ -919,8 +957,7 @@ export class NewsletterManageComponent {
 
   private runSchedule(): void {
     const id = this.newsletterId();
-    const scheduledAt = this.scheduleAtIso();
-    if (!id || !scheduledAt) {
+    if (!id || !this.scheduleAtIso()) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Save first',
@@ -942,6 +979,14 @@ export class NewsletterManageComponent {
       .pipe(
         switchMap((saved) => {
           if (!saved) return EMPTY;
+          // Re-read scheduleAtIso() here rather than capturing it before ensureSaved$: the
+          // picker isn't frozen while the confirm dialog's autosave wait is in flight (canSchedule
+          // disables the button once scheduling() flips true, but that only blocks a *new* click —
+          // it doesn't stop the author from continuing to edit the already-open picker). Capturing
+          // the value up front would arm whatever time was selected before the wait, even though
+          // saveDraft(true) just persisted a newer one.
+          const scheduledAt = this.scheduleAtIso();
+          if (!scheduledAt) return EMPTY;
           return this.newsletterService.scheduleNewsletter(this.projectUid(), id, this.version(), scheduledAt);
         }),
         finalize(() => this.scheduling.set(false))
@@ -1301,15 +1346,22 @@ export class NewsletterManageComponent {
     combineLatest([this.form.valueChanges, toObservable(this.edEmail)])
       .pipe(
         debounceTime(1000),
-        // Never autosave while a send is in flight: the PUT would bump the
-        // newsletter's version mid-send and race the upstream status
-        // transition (the direct cause of the LFXV2-2604 duplicate-send
-        // incident). The upstream also rejects edits while status='sending',
-        // but suppressing the write here avoids surfacing that 409 as a
-        // spurious save-error toast.
+        // Never autosave while a send or a schedule arm is in flight: the PUT
+        // would bump the newsletter's version mid-request and race the
+        // upstream status transition (the direct cause of the LFXV2-2604
+        // duplicate-send incident, and the same hazard for scheduleNewsletter
+        // — see runSchedule's ensureSaved$ comment). The upstream also
+        // rejects edits while status='sending', but suppressing the write
+        // here avoids surfacing that 409 as a spurious save-error toast.
         filter(
           ([, email]) =>
-            !this.submitting() && !this.resolvingSend() && !this.isScheduleReadOnly() && this.hasContext() && this.hasAnythingToSave() && email.length > 0
+            !this.submitting() &&
+            !this.resolvingSend() &&
+            !this.scheduling() &&
+            !this.isScheduleReadOnly() &&
+            this.hasContext() &&
+            this.hasAnythingToSave() &&
+            email.length > 0
         ),
         filter(() => !this.snapshotMatchesLastSaved()),
         takeUntilDestroyed(this.destroyRef)
