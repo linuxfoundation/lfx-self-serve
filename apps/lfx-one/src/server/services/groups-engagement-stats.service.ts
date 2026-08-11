@@ -77,16 +77,16 @@ function resolveBackend(): 'mock' | 'live' {
  * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
  * sources when the roster join has at least one match for that committee; this rollup only has the
- * warehouse row, never a roster fallback). An `LF Staff` seat (LFXV2-3101) is NOT one of these
- * divergences, despite superficially looking like the same shape: `MEMBER_ROLE` (unlike the roster
- * fallbacks above) is a column on this same `platinum_lfx_one_committee_meeting_attendance` table
- * `ActiveMemberRow` already reads, so selecting it costs nothing extra — no roster join, no N+1 —
- * and `classificationInput` here passes `role: row.MEMBER_ROLE` accordingly, so an LF Staff member
- * is excluded from `active_members` on this rollup exactly like the detail page excludes it from
- * `active_count`. This rollup has no live roster at all (see the class doc above), so unlike the
- * detail page's roster-first precedence (`committee-engagement.service.ts`'s `role` resolution,
- * LFXV2-3101 review fix), `MEMBER_ROLE` here is the *only* source — there's no live value to prefer
- * over it, and no staleness trade-off to make.
+ * warehouse row, never a roster fallback); or an `LF Staff` seat whose role changed on the live
+ * roster more recently than the dbt model's last refresh (LFXV2-3101) — `MEMBER_ROLE` (unlike the
+ * roster fallbacks above) IS a column on this same `platinum_lfx_one_committee_meeting_attendance`
+ * table `ActiveMemberRow` already reads, so selecting it and passing `role: row.MEMBER_ROLE` into
+ * `classificationInput` costs nothing extra (no roster join, no N+1) and closes the gap for the
+ * common case — but this rollup has no live roster at all to prefer, unlike the detail page's
+ * roster-first precedence (`committee-engagement.service.ts`'s `role` resolution, LFXV2-3101 review
+ * fix: `member.role?.name || row?.MEMBER_ROLE`). So a role promoted onto (or demoted off) the live
+ * roster lands on the detail page immediately but only reaches this rollup at the model's next
+ * refresh — a real, if narrow, divergence window, same family as the other three above.
  *
  * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
  * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose

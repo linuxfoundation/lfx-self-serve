@@ -200,6 +200,12 @@ describe('isCommitteeMemberRateEligible (LFXV2-3101)', () => {
   it('is true for a member with no role set at all (undefined, not LF Staff)', () => {
     expect(isCommitteeMemberRateEligible({ attended: 5, invited: 10, votingStatus: VOTING_REP, joinedWithinWindow: false })).toBe(true);
   });
+
+  it('is false for a member who is BOTH Emeritus and LF Staff, even though they classify Emeritus (the exclusion is role-based, independent of the reported tier)', () => {
+    const input = { attended: 1, invited: 20, votingStatus: EMERITUS, role: LF_STAFF, joinedWithinWindow: false };
+    expect(classifyCommitteeEngagement(input)).toBe('Emeritus');
+    expect(isCommitteeMemberRateEligible(input)).toBe(false);
+  });
 });
 
 describe('isJoinedWithinWindow', () => {

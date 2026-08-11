@@ -103,6 +103,14 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
  * at the one call site, so this asymmetry is stated once in the module that owns every other
  * classification rule, rather than risking a second, easily-missed copy.
  *
+ * Keyed on `input.role` alone, independent of `classifyCommitteeEngagement`'s tier — a member who
+ * is BOTH a real Emeritus (`votingStatus`) and a real LF Staff seat (`role`) classifies `Emeritus`
+ * (voting status wins first in the classifier's decision order) and renders the Emeritus chip, but
+ * is still excluded from the rate sum here, since the exclusion is deliberately role-based, not
+ * classification-based. Rare in practice (an honorific legacy seat is not usually also an active
+ * staff seat) but not undefined behavior: the role check simply doesn't care what tier the member
+ * displayed as.
+ *
  * `input.role`'s value is whatever the caller resolved — for `committee-engagement.service.ts`
  * today that's the live roster's `role.name` first, falling back to warehouse `MEMBER_ROLE` only
  * when the roster value is missing (deliberately the OPPOSITE precedence `votingStatus` uses for

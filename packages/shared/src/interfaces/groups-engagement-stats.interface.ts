@@ -20,8 +20,8 @@
 export interface GroupsEngagementStats {
   /**
    * Distinct members active on any *covered* visible committee — attended >=1 meeting in the
-   * trailing 30 days, or joined within it (tenure grace), excluding Emeritus
-   * (`isCommitteeMemberActive`, the same rule LFXV2-1705 uses). A member active on multiple visible
+   * trailing 30 days, or joined within it (tenure grace), excluding Emeritus and LF Staff seats
+   * (`isCommitteeMemberActive`, the same rule LFXV2-1705/LFXV2-3101 use). A member active on multiple visible
    * committees is counted once, not once per committee. `null` only when `coverage.covered` is `0`
    * or the computation failed — see this interface's doc comment for exactly which cases that
    * covers.
