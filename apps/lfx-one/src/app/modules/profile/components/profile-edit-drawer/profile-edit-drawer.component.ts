@@ -21,7 +21,8 @@ import {
   US_STATES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { codePointLength, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
@@ -55,7 +56,8 @@ export class ProfileEditDrawerComponent {
   // Emits the saved metadata so the host layout can apply an optimistic profile update.
   public readonly saved = output<Partial<UserMetadata>>();
 
-  // Bio length cap, shared with the server validator so the template maxlength stays in sync.
+  // Bio length cap, shared with the server validator. Drives the form's code-point validator and
+  // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
 
   // Profile edit form
@@ -70,7 +72,9 @@ export class ProfileEditDrawerComponent {
     postal_code: ['', [Validators.maxLength(20)]],
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
-    bio: ['', [Validators.maxLength(PROFILE_BIO_MAX_LENGTH)]],
+    // Code-point cap (not Validators.maxLength, which counts UTF-16 units) to match the
+    // auth-service 2000-rune limit; the native maxlength attribute is intentionally dropped.
+    bio: ['', [maxCodePointsValidator(PROFILE_BIO_MAX_LENGTH)]],
     job_title: ['', [Validators.maxLength(100)]],
     // Organization is selected from work-history orgs (a constrained list); the only remaining
     // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
@@ -85,6 +89,11 @@ export class ProfileEditDrawerComponent {
   public readonly saving = signal(false);
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
+
+  // Live code-point count of the bio, backing the "x / max" counter beneath the field. The field is
+  // hard-capped at bioMaxLength on input (see the bio valueChanges sub), so this never exceeds it.
+  // Seeded in populateForm (patchValue runs with emitEvent:false, so valueChanges won't fire on open).
+  public readonly bioLength = signal(0);
 
   // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
   // upload). Every dismissal and save path gates on this so an in-flight change can't be
@@ -209,6 +218,24 @@ export class ProfileEditDrawerComponent {
     this.profileForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.hasChanges.set(this.profileForm.dirty);
     });
+
+    // Hard-cap the bio at the code-point limit as the user types or pastes. Trimming by code point
+    // (not UTF-16 units) is what keeps an emoji-heavy bio accepted up to the real rune limit — the
+    // reason native [maxlength] was removed. Re-emit the capped value with emitEvent:false to avoid a
+    // feedback loop, then reflect the length in the counter.
+    this.profileForm
+      .get('bio')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((bio: string) => {
+        const value = bio ?? '';
+        if (codePointLength(value) > this.bioMaxLength) {
+          const capped = [...value].slice(0, this.bioMaxLength).join('');
+          this.profileForm.get('bio')?.setValue(capped, { emitEvent: false });
+          this.bioLength.set(this.bioMaxLength);
+          return;
+        }
+        this.bioLength.set(codePointLength(value));
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -467,6 +494,9 @@ export class ProfileEditDrawerComponent {
     );
 
     this.selectedCountrySignal.set(countryValue);
+    // patchValue above runs with emitEvent:false, so the bio valueChanges sub won't fire — seed the
+    // counter explicitly from the opened profile so a reopened drawer shows the right count.
+    this.bioLength.set(codePointLength(profile.profile?.bio || ''));
     this.syncOrganizationControl();
   }
 

@@ -356,4 +356,24 @@ test.describe('Profile edit drawer', () => {
     expect(lastPatchBody?.user_metadata, 'second PATCH should send a user_metadata envelope').toBeTruthy();
     expect(lastPatchBody?.user_metadata && 'bio' in lastPatchBody.user_metadata, 'empty bio must stay omitted after reopen').toBe(false);
   });
+
+  test('S8: an over-limit emoji bio is hard-capped at 2000 code points, not UTF-16 units', async ({ page }) => {
+    // Regression for LFXV2-3104: the bio cap counts Unicode code points (runes), not UTF-16 units.
+    // Native [maxlength] was removed because it caps by UTF-16 units and would stop an emoji bio at
+    // ~1000 glyphs; the code-point hard cap must instead trim a 2001-emoji paste (4002 UTF-16 units)
+    // down to exactly 2000 emoji and settle the counter at "2000 / 2000" with no overflow.
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    await bio.fill('😀'.repeat(2001));
+
+    // The field is trimmed by code point to exactly 2000 emoji (not 2000 UTF-16 units, which would be
+    // 1000 emoji), so the value settles at 2000 glyphs and the counter reads 2000 / 2000.
+    await expect(bio, 'over-limit bio should be capped at 2000 code points').toHaveValue('😀'.repeat(2000), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-edit-drawer-about-me-counter')).toHaveText('2000 / 2000');
+  });
 });

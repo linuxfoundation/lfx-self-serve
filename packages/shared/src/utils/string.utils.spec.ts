@@ -3,7 +3,33 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { slugify } from './string.utils';
+import { codePointLength, slugify } from './string.utils';
+
+describe('codePointLength', () => {
+  it('counts ASCII the same as String.length', () => {
+    expect(codePointLength('hello')).toBe(5);
+  });
+
+  it('returns 0 for an empty string', () => {
+    expect(codePointLength('')).toBe(0);
+  });
+
+  it('counts a non-BMP emoji as one code point (String.length counts two UTF-16 units)', () => {
+    expect('😀'.length).toBe(2);
+    expect(codePointLength('😀')).toBe(1);
+  });
+
+  it('measures a repeated emoji by code point, matching the Go rune cap', () => {
+    const bio = '😀'.repeat(2000);
+    expect(bio.length).toBe(4000);
+    expect(codePointLength(bio)).toBe(2000);
+  });
+
+  it('counts BMP characters (including surrogate-free CJK) as one each', () => {
+    expect(codePointLength('café')).toBe(4);
+    expect(codePointLength('日本語')).toBe(3);
+  });
+});
 
 describe('slugify', () => {
   it('lowercases and joins words with a single hyphen', () => {
