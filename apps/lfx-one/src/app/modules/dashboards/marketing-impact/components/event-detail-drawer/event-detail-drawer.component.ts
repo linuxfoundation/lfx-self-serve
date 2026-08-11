@@ -9,14 +9,14 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, lfxColors, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
-import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
+import { formatCompactRounded, formatCurrency, formatNumber, formatPercent } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
+import type { EventDetailResponse, EventPaidCampaign } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-event-detail-drawer',
@@ -35,6 +35,113 @@ export class EventDetailDrawerComponent {
   public readonly eventId = input<string | null>(null);
   /** Foundation the event belongs to; required by the server to scope the read. */
   public readonly foundationSlug = input<string | undefined>();
+  /**
+   * Which story the drawer tells:
+   * - 'b2c' — registrations + the campaigns that drove them
+   * - 'b2b' — sponsorship revenue + sponsors by tier
+   * - 'all' — everything (the default; both sections show)
+   *
+   * Bound from the Events attendance/sponsorship sub-tabs via EVENTS_SPLIT_TO_DRAWER_FOCUS.
+   */
+  public readonly focus = input<'b2c' | 'b2b' | 'all'>('all');
+
+  // === Computed: section visibility from focus ===
+  protected readonly showRegistrations = computed(() => this.focus() !== 'b2b');
+  protected readonly showSponsorship = computed(() => this.focus() !== 'b2c');
+
+  // === Paid performance breakdown (per-campaign rows) ===
+
+  /** Paid-ad campaigns for this event. */
+  protected readonly paidCampaigns = computed(() => this.detail()?.paidCampaigns ?? []);
+
+  /** Totals across every paid campaign — the summary pill above the per-campaign rows. */
+  protected readonly paidTotals = computed(() => {
+    const campaigns = this.paidCampaigns();
+    const spend = campaigns.reduce((sum, c) => sum + c.spend, 0);
+    const conversions = campaigns.reduce((sum, c) => sum + c.conversions, 0);
+    const clicks = campaigns.reduce((sum, c) => sum + c.clicks, 0);
+    const impressions = campaigns.reduce((sum, c) => sum + c.impressions, 0);
+    return {
+      spend,
+      conversions,
+      clicks,
+      impressions,
+      cpa: conversions > 0 ? spend / conversions : null,
+      ctr: impressions > 0 ? (clicks / impressions) * 100 : null,
+    };
+  });
+
+  /**
+   * Per-campaign rows, biggest spender first. `sharePercent` is each campaign's slice of total paid
+   * spend, so the list reads as a budget allocation as well as a performance ranking.
+   */
+  protected readonly paidChannels = computed(() => {
+    const campaigns = this.paidCampaigns();
+    const totalSpend = campaigns.reduce((sum, c) => sum + c.spend, 0);
+    return [...campaigns]
+      .sort((a, b) => b.spend - a.spend)
+      .map((c) => ({
+        ...c,
+        // Same campaign can run on two platforms, so neither field alone is a stable @for key.
+        key: `${c.name}::${c.platform}`,
+        ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : null,
+        sharePercent: totalSpend > 0 ? Math.round((c.spend / totalSpend) * 100) : 0,
+        // Efficiency read against this event's own blended CPA — not an absolute benchmark.
+        tone: this.paidTone(c.cpa, totalSpend, campaigns),
+      }));
+  });
+
+  /** True when any paid spend is recorded for this event. */
+  protected readonly hasPaid = computed(() => this.paidCampaigns().length > 0);
+
+  /**
+   * Whether the per-campaign rows are shown. Starts expanded so the section reads in full by
+   * default; the summary pill stays visible when collapsed, so collapsing trades the campaign
+   * breakdown for a compact summary rather than hiding the numbers entirely.
+   */
+  protected readonly paidExpanded = signal(true);
+
+  // === Email performance breakdown (per-campaign rows) ===
+
+  /** Email campaigns matched to this event. */
+  protected readonly emailCampaigns = computed(() => this.detail()?.emailCampaigns ?? []);
+
+  /**
+   * Totals across every email campaign. Open rate and CTR are recomputed from the summed
+   * counts rather than averaged across campaigns — averaging rates would weight a 50-send
+   * email the same as a 50,000-send one.
+   */
+  protected readonly emailTotals = computed(() => {
+    const campaigns = this.emailCampaigns();
+    const sends = campaigns.reduce((sum, c) => sum + c.sends, 0);
+    const opens = campaigns.reduce((sum, c) => sum + c.opens, 0);
+    const clicks = campaigns.reduce((sum, c) => sum + c.clicks, 0);
+    return {
+      sends,
+      opens,
+      clicks,
+      openRate: sends > 0 ? (opens / sends) * 100 : null,
+      ctr: sends > 0 ? (clicks / sends) * 100 : null,
+    };
+  });
+
+  /** Per-email rows, widest reach first, with each email's share of total sends. */
+  protected readonly emailChannels = computed(() => {
+    const campaigns = this.emailCampaigns();
+    const totalSends = campaigns.reduce((sum, c) => sum + c.sends, 0);
+    return [...campaigns]
+      .sort((a, b) => b.sends - a.sends)
+      .map((c) => ({
+        ...c,
+        sharePercent: totalSends > 0 ? Math.round((c.sends / totalSends) * 100) : 0,
+      }));
+  });
+
+  /** True when any email activity is recorded for this event. */
+  protected readonly hasEmail = computed(() => this.emailCampaigns().length > 0);
+
+  /** Whether the per-email rows are shown; mirrors the paid section's collapse behavior. */
+  protected readonly emailExpanded = signal(true);
 
   // === WritableSignals ===
   /**
@@ -75,7 +182,18 @@ export class EventDetailDrawerComponent {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { display: true, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, color: lfxColors.gray[500], font: { size: 11 } } },
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: {
+          boxWidth: 10,
+          boxHeight: 10,
+          color: lfxColors.gray[500],
+          font: { size: 11 },
+          // Hide the low/high band series from the legend — the shaded area is self-explanatory.
+          filter: (item) => item.text !== 'Predicted high' && item.text !== 'Predicted low',
+        },
+      },
       tooltip: { enabled: true },
     },
     scales: {
@@ -148,6 +266,28 @@ export class EventDetailDrawerComponent {
     this.visible.set(false);
   }
 
+  /** Toggle the paid channel performance breakdown open/closed. */
+  protected togglePaid(): void {
+    this.paidExpanded.update((expanded) => !expanded);
+  }
+
+  /** Toggle the email channel performance breakdown open/closed. */
+  protected toggleEmail(): void {
+    this.emailExpanded.update((expanded) => !expanded);
+  }
+
+  /** Sub-heading under the event name that names the story this drawer tells. */
+  protected focusLabel(): string | null {
+    switch (this.focus()) {
+      case 'b2c':
+        return 'Registrations & marketing campaigns';
+      case 'b2b':
+        return 'Sponsorship & partnerships';
+      default:
+        return null;
+    }
+  }
+
   // === Protected Helpers (template) ===
   protected num(value: number): string {
     return formatNumber(value);
@@ -167,8 +307,36 @@ export class EventDetailDrawerComponent {
     }
   }
 
+  /** Money to one decimal — CPA and other derived figures arrive at full float precision. */
   protected money(value: number): string {
-    return formatCurrency(value);
+    return formatCompactRounded(value, '$');
+  }
+
+  /** Compact money for dense card stats — keeps $1.2K/$11.9M from wrapping the tile. */
+  protected moneyCompact(value: number): string {
+    if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+    return this.money(value);
+  }
+
+  /** Percentage to one decimal, or an em dash when it can't be computed. */
+  protected pct(value: number | null): string {
+    return value === null ? '—' : `${formatPercent(value)}%`;
+  }
+
+  /**
+   * Brand icon per ad platform. Falls back to a generic bullhorn so an unmapped
+   * platform still renders a sensible row rather than an empty gutter.
+   */
+  protected platformIcon(platform: string): string {
+    const p = platform.toLowerCase();
+    if (p.includes('google')) return 'fa-brands fa-google';
+    if (p.includes('linkedin')) return 'fa-brands fa-linkedin';
+    if (p.includes('reddit')) return 'fa-brands fa-reddit-alien';
+    if (p.includes('twitter') || p.includes('x ads')) return 'fa-brands fa-x-twitter';
+    if (p.includes('meta') || p.includes('facebook')) return 'fa-brands fa-meta';
+    if (p.includes('microsoft') || p.includes('bing')) return 'fa-brands fa-microsoft';
+    return 'fa-solid fa-bullhorn';
   }
 
   /** Registration pace vs last year as a signed percent string, or null when no baseline. */
@@ -197,12 +365,46 @@ export class EventDetailDrawerComponent {
   }
 
   // === Private Helpers ===
+
+  /**
+   * Efficiency tone for a platform, judged against this event's own blended CPA rather than an
+   * absolute benchmark — CPAs vary far too much by geo and channel for a fixed threshold to mean
+   * anything. Within 20% of blended reads neutral; materially cheaper is good, pricier is warn.
+   */
+  private paidTone(cpa: number | null, totalSpend: number, campaigns: readonly EventPaidCampaign[]): 'good' | 'warn' | 'none' {
+    if (cpa === null) return 'none';
+    const totalConv = campaigns.reduce((sum, c) => sum + c.conversions, 0);
+    if (totalConv <= 0 || totalSpend <= 0) return 'none';
+    const blended = totalSpend / totalConv;
+    if (cpa <= blended * 0.8) return 'good';
+    if (cpa >= blended * 1.2) return 'warn';
+    return 'none';
+  }
+
   private buildPacingChart(): ChartData<'line'> {
     const points = this.detail()?.pacing.points ?? [];
     const labels = points.map((point) => point.daysToEvent);
     return {
       labels,
       datasets: [
+        // Prediction band (low..high) drawn first so the lines sit on top. The 'high' line
+        // fills down to the 'low' line, shading the confidence range in a faint violet.
+        {
+          label: 'Predicted high',
+          data: points.map((point) => point.predictedHigh),
+          borderColor: 'transparent',
+          backgroundColor: 'rgba(139, 92, 246, 0.08)',
+          pointRadius: 0,
+          fill: '+1',
+        },
+        {
+          label: 'Predicted low',
+          data: points.map((point) => point.predictedLow),
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          fill: false,
+        },
         {
           label: 'Current year',
           data: points.map((point) => point.current),

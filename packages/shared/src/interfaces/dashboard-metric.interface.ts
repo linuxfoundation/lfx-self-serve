@@ -701,6 +701,46 @@ export interface EventChannelAttribution {
   sharePercent: number;
 }
 
+/** One paid-ad campaign's performance for an event. */
+export interface EventPaidCampaign {
+  /** Campaign name as recorded on the ad platform. */
+  name: string;
+  /** Platform the campaign ran on, e.g. "Google Ads", "LinkedIn", "Reddit". */
+  platform: string;
+  spend: number;
+  conversions: number;
+  clicks: number;
+  impressions: number;
+  /** Cost per conversion in dollars; null when no conversions. */
+  cpa: number | null;
+}
+
+/** One email campaign's engagement for an event. */
+export interface EventEmailCampaign {
+  name: string;
+  sends: number;
+  opens: number;
+  clicks: number;
+  /** Open rate as a percentage (0–100). */
+  openRate: number;
+  /** Click-through rate as a percentage (0–100). */
+  ctr: number;
+}
+
+/** Top-level channel-type bucket for the collapsible attribution tree. */
+export type EventChannelType = 'Paid' | 'Social' | 'Email' | 'Web';
+
+/** One channel-type group with its rolled-up totals and the individual channels beneath it. */
+export interface EventChannelGroup {
+  type: EventChannelType;
+  sessions: number;
+  revenue: number;
+  /** Share of the event's total sessions, 0–100. */
+  sharePercent: number;
+  /** Individual channels within this type (the drill-down level). */
+  channels: EventChannelAttribution[];
+}
+
 /**
  * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
  * Mirrors PCC's EventPredictionDrilldown grain.
@@ -764,6 +804,10 @@ export interface EventDetailResponse {
   cfpStatus: string;
   sponsorshipTiers: EventSponsorshipTier[];
   channels: EventChannelAttribution[];
+  /** Paid-ad campaigns matched to this event (empty when none ran). */
+  paidCampaigns: EventPaidCampaign[];
+  /** Email campaigns matched to this event by name (empty when none). */
+  emailCampaigns: EventEmailCampaign[];
   pacing: EventPacing;
 }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CLASSIFICATION_TO_EMAIL_TYPES,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   HEALTH_METRICS_RANGES,
@@ -30,8 +31,10 @@ import {
   EventChannelAttribution,
   EventCompScore,
   EventDetailResponse,
+  EventEmailCampaign,
   EventGrowthResponse,
   EventPacing,
+  EventPaidCampaign,
   EventGrowthTopEvent,
   EventRosterResponse,
   EventRosterRow,
@@ -2462,23 +2465,30 @@ export class ProjectService {
         ORDER BY CTR_LAST_6_MONTHS DESC
       `;
 
-      // Query 4: Per-campaign performance from email_campaign_performance (period range)
-      // Note: EMAIL_CAMPAIGN_PERFORMANCE does not have LF_SUB_DOMAIN_CLASSIFICATION — no classification filter here
+      // Query 4: Per-send performance from email_campaign_performance (period range)
+      // Note: EMAIL_CAMPAIGN_PERFORMANCE does not have LF_SUB_DOMAIN_CLASSIFICATION — no classification filter here.
+      // Grouped by PUBLISHED_DATE (the day-level send date) so the table lists each send separately
+      // rather than collapsing a campaign name across months into a single undated row. The source
+      // model's grain is one row per email per month, so this is a send-level view only insofar as an
+      // email is published once per month — it is not one row per recipient delivery.
+      // Filtered on PUBLISHED_DATE rather than PUBLISHED_MONTH_DATE so a mid-month range boundary
+      // includes only the sends that actually fall inside it, instead of every send in that month.
       const campaignPerfQuery = `
         SELECT
           MARKETING_EMAIL_NAME,
           EMAIL_TYPE,
+          PUBLISHED_DATE,
           SUM(SENDS) AS TOTAL_SENDS,
           SUM(OPENS) AS TOTAL_OPENS,
           SUM(CLICKS) AS TOTAL_CLICKS,
           ROUND(SUM(OPENS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS OPEN_RATE,
           ROUND(SUM(CLICKS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS CTR
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
-        WHERE PUBLISHED_MONTH_DATE >= TO_DATE(?)
-          AND PUBLISHED_MONTH_DATE < TO_DATE(?)
+        WHERE PUBLISHED_DATE >= TO_DATE(?)
+          AND PUBLISHED_DATE < TO_DATE(?)
           ${foundationFilter}
-        GROUP BY MARKETING_EMAIL_NAME, EMAIL_TYPE
-        ORDER BY TOTAL_SENDS DESC
+        GROUP BY MARKETING_EMAIL_NAME, EMAIL_TYPE, PUBLISHED_DATE
+        ORDER BY PUBLISHED_DATE DESC, TOTAL_SENDS DESC
       `;
 
       const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
@@ -2497,6 +2507,7 @@ export class ProjectService {
           .execute<{
             MARKETING_EMAIL_NAME: string;
             EMAIL_TYPE: string;
+            PUBLISHED_DATE: string;
             TOTAL_SENDS: number;
             TOTAL_OPENS: number;
             TOTAL_CLICKS: number;
@@ -2512,6 +2523,7 @@ export class ProjectService {
               rows: [] as {
                 MARKETING_EMAIL_NAME: string;
                 EMAIL_TYPE: string;
+                PUBLISHED_DATE: string;
                 TOTAL_SENDS: number;
                 TOTAL_OPENS: number;
                 TOTAL_CLICKS: number;
@@ -2618,6 +2630,27 @@ export class ProjectService {
         avgCtr: Math.round((row.AVG_CTR ?? 0) * 10) / 10,
       }));
 
+      // EMAIL_CAMPAIGN_PERFORMANCE has no LF_SUB_DOMAIN_CLASSIFICATION column, so the query above
+      // could only be foundation-scoped. Narrow the rows here by their EMAIL_TYPE instead, so a
+      // focused view (e.g. Events) doesn't show newsletter/survey/conversion emails alongside it.
+      // Falls back to the unfiltered rows when the mapping matches nothing, so an unexpected
+      // EMAIL_TYPE vocabulary degrades to over-showing rather than to an empty table.
+      const focusEmailTypes = classification ? CLASSIFICATION_TO_EMAIL_TYPES[classification] : undefined;
+      const allowedEmailTypes = focusEmailTypes ? new Set(focusEmailTypes.map((type) => type.toUpperCase())) : undefined;
+      const scopedPerfRows = allowedEmailTypes
+        ? campaignPerfResult.rows.filter((row) => allowedEmailTypes.has((row.EMAIL_TYPE ?? '').trim().toUpperCase()))
+        : campaignPerfResult.rows;
+      const effectivePerfRows = allowedEmailTypes && scopedPerfRows.length === 0 ? campaignPerfResult.rows : scopedPerfRows;
+
+      if (allowedEmailTypes && scopedPerfRows.length === 0 && campaignPerfResult.rows.length > 0) {
+        logger.warning(undefined, 'get_email_ctr', 'No rows matched the focus EMAIL_TYPE mapping, showing all email types', {
+          foundation_slug: foundationSlug,
+          classification,
+          expected_email_types: [...allowedEmailTypes],
+          actual_email_types: [...new Set(campaignPerfResult.rows.map((row) => row.EMAIL_TYPE))],
+        });
+      }
+
       // Group campaigns by email type and compute per-type aggregates
       const typeMap = new Map<
         string,
@@ -2625,10 +2658,10 @@ export class ProjectService {
           sends: number;
           opens: number;
           clicks: number;
-          campaigns: { name: string; sends: number; opens: number; clicks: number; openRate: number; ctr: number }[];
+          campaigns: { name: string; sendDate: string | null; sends: number; opens: number; clicks: number; openRate: number; ctr: number }[];
         }
       >();
-      for (const row of campaignPerfResult.rows) {
+      for (const row of effectivePerfRows) {
         const existing = typeMap.get(row.EMAIL_TYPE) ?? { sends: 0, opens: 0, clicks: 0, campaigns: [] };
         const sends = row.TOTAL_SENDS ?? 0;
         const opens = row.TOTAL_OPENS ?? 0;
@@ -2638,6 +2671,7 @@ export class ProjectService {
         existing.clicks += clicks;
         existing.campaigns.push({
           name: row.MARKETING_EMAIL_NAME,
+          sendDate: ProjectService.toIsoDate(row.PUBLISHED_DATE),
           sends,
           opens,
           clicks,
@@ -2668,19 +2702,24 @@ export class ProjectService {
           const ctr = Math.round(((data.clicks * 100.0) / data.sends) * 10) / 10;
           return {
             emailType,
-            campaignCount: data.campaigns.length,
+            // Distinct campaign names, not row count: rows are now one-per-send, so a campaign sent
+            // in three months contributes three rows. Counting rows would relabel this column as
+            // "sends" without renaming it.
+            campaignCount: new Set(data.campaigns.map((c) => c.name)).size,
             totalSends: data.sends,
             totalOpens: data.opens,
             totalClicks: data.clicks,
             openRate,
             ctr,
             performance: getPerformanceLabel(openRate, ctr),
+            // Uncapped: the email tab lists every send in the selected period, so a cap here would
+            // silently truncate the table (and understate campaignCount's distinct-name tally).
             campaigns: data.campaigns
               .sort((a, b) => b.sends - a.sends)
-              .slice(0, 10)
               .map((c) => ({
                 campaignName: c.name,
                 emailType,
+                sendDate: c.sendDate,
                 sends: c.sends,
                 opens: c.opens,
                 clicks: c.clicks,
@@ -5349,6 +5388,11 @@ export class ProjectService {
       sharePercent: totalSessions > 0 ? Math.round(((ch.SESSIONS ?? 0) / totalSessions) * 1000) / 10 : 0,
     }));
 
+    // Enrich with paid + email campaign detail. Neither source table has an EVENT_ID, so both
+    // match on the event name (fuzzy substring). Failures degrade to empty arrays — the drawer
+    // still renders the attribution tree without the drill-down.
+    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME);
+
     return {
       eventId: row.EVENT_ID,
       eventName: row.EVENT_NAME,
@@ -5375,6 +5419,8 @@ export class ProjectService {
         sponsorCount: t.SPONSOR_COUNT ?? 0,
       })),
       channels,
+      paidCampaigns,
+      emailCampaigns,
       pacing: await this.getEventPacing(eventId),
     };
   }
@@ -6320,6 +6366,11 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
+               CASE
+                 WHEN SUM(TOTAL_CLICKS_YTD) > 0
+                   THEN SUM(TOTAL_CLICKS_YTD * LAST_TOUCH_CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD)
+                 ELSE 0
+               END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -6332,6 +6383,11 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
+               CASE
+                 WHEN SUM(TOTAL_CLICKS_YTD) > 0
+                   THEN SUM(TOTAL_CLICKS_YTD * LAST_TOUCH_CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD)
+                 ELSE 0
+               END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -7206,8 +7262,10 @@ export class ProjectService {
         SUM(p.CLICKS) AS CLICKS,
         SUM(p.SPEND) AS SPEND,
         SUM(p.IMPRESSIONS) AS IMPRESSIONS,
+        SUM(p.VIEW_THROUGH_CONVERSIONS) AS CONVERSIONS,
         CASE WHEN SUM(p.IMPRESSIONS) > 0 THEN SUM(p.CLICKS) / SUM(p.IMPRESSIONS) * 100 ELSE 0 END AS CTR,
-        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC,
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.VIEW_THROUGH_CONVERSIONS) / SUM(p.CLICKS) * 100 ELSE 0 END AS CONVERSION_RATE
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE p
       INNER JOIN top_keywords k
         ON p.KEYWORD_TEXT = k.KEYWORD_TEXT AND p.KEYWORD_MATCH_TYPE = k.KEYWORD_MATCH_TYPE
@@ -7215,7 +7273,10 @@ export class ProjectService {
         AND p.DATE_DAY < TO_DATE(?)
         ${foundationFilter}
       GROUP BY p.KEYWORD_TEXT, p.KEYWORD_MATCH_TYPE, p.RECORD_TYPE, p.SEARCH_TERM, p.SEARCH_TERM_MATCH_TYPE
-      ORDER BY k.KEYWORD_SPEND DESC, p.RECORD_TYPE
+      -- k.KEYWORD_SPEND is not in the GROUP BY, so it must be aggregated to be a valid ORDER BY
+      -- expression. It is constant within each keyword group (one CTE row per keyword), so MAX()
+      -- preserves the intended "rank keywords by total spend" ordering.
+      ORDER BY MAX(k.KEYWORD_SPEND) DESC, p.RECORD_TYPE
       `;
 
       const attrQuery = `
@@ -7339,6 +7400,150 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Enrich an event with paid-ad + email campaign detail. Neither PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
+   * nor EMAIL_CAMPAIGN_PERFORMANCE carries an EVENT_ID, so both are matched to the event by name
+   * (fuzzy substring on CAMPAIGN_NAME / MARKETING_EMAIL_NAME). Each side degrades to an empty array on
+   * failure or no match, so the drawer's attribution tree still renders without the drill-down.
+   */
+  private async getEventCampaignDetail(eventName: string): Promise<{ paidCampaigns: EventPaidCampaign[]; emailCampaigns: EventEmailCampaign[] }> {
+    interface PaidRow {
+      CAMPAIGN_NAME: string | null;
+      CHANNEL: string | null;
+      SPEND: number | null;
+      CONV: number | null;
+      CLICKS: number | null;
+      IMPR: number | null;
+    }
+    interface EmailRow {
+      NAME: string | null;
+      SENDS: number | null;
+      OPENS: number | null;
+      CLICKS: number | null;
+      OPEN_RATE: number | null;
+      CTR: number | null;
+    }
+
+    // Match on the event name, but also on a year-stripped variant: email subject lines often omit the
+    // trailing year (e.g. "MCP Dev Summit Seoul") while the event name carries it ("… Seoul 2026").
+    // Escape LIKE wildcards first — an unescaped '%' or '_' in an event name would silently widen the
+    // match and pull in unrelated campaigns.
+    const escapeLike = (value: string): string => value.replace(/([\\%_])/g, '\\$1');
+    const raw = eventName.toLowerCase().trim();
+    const rawNoYear = raw.replace(/\b20\d{2}\b/g, '').trim();
+    const lower = escapeLike(raw);
+    const lowerNoYear = escapeLike(rawNoYear);
+
+    // A blank, year-only, or very short event name would match far too broadly ('%%' matches EVERY
+    // campaign in the table), attributing unrelated paid spend and email sends to this one event.
+    // Require a few characters of real signal beyond the year before matching at all.
+    const MIN_MATCH_LENGTH = 4;
+    if (rawNoYear.length < MIN_MATCH_LENGTH) {
+      logger.warning(undefined, 'get_event_campaign_detail', 'Event name too short to match campaigns, skipping enrichment', {
+        event_name: eventName,
+      });
+      return { paidCampaigns: [], emailCampaigns: [] };
+    }
+
+    const match = `%${lower}%`;
+    const matchNoYear = `%${lowerNoYear}%`;
+
+    // Paid: one row per campaign for this event. Grouped by campaign AND channel so a campaign
+    // running on two platforms reads as two rows rather than one blended row with an arbitrary
+    // platform label — the platform is what determines the icon and the efficiency comparison.
+    // Same conversion-column rollout as the social-reach breakdowns on this table: try
+    // LAST_TOUCH_CONVERSIONS, fall back to legacy CONV. Without the fallback this query dies
+    // outright on any warehouse still on the old schema.
+    const paidQuery = (conversionColumn: 'LAST_TOUCH_CONVERSIONS' | 'CONV') => `
+      SELECT
+        CAMPAIGN_NAME,
+        CHANNEL,
+        SUM(IFNULL(SPEND, 0)) AS SPEND,
+        SUM(IFNULL(${conversionColumn}, 0)) AS CONV,
+        SUM(IFNULL(CLICKS, 0)) AS CLICKS,
+        SUM(IFNULL(IMPRESSIONS, 0)) AS IMPR
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
+      WHERE LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\'
+      GROUP BY CAMPAIGN_NAME, CHANNEL
+      ORDER BY SPEND DESC
+      LIMIT 25
+    `;
+
+    // Email: one row per email campaign matched to the event by name.
+    const emailQuery = `
+      SELECT
+        MARKETING_EMAIL_NAME AS NAME,
+        SUM(IFNULL(SENDS, 0)) AS SENDS,
+        SUM(IFNULL(OPENS, 0)) AS OPENS,
+        SUM(IFNULL(CLICKS, 0)) AS CLICKS,
+        -- Recomputed from the summed totals, not AVG of the per-row rates. This table is
+        -- month-grained, so a campaign spanning months collapses several rows here and an
+        -- AVG would weight a 100-send month the same as a 100k-send one.
+        ROUND(SUM(IFNULL(OPENS, 0)) * 100.0 / NULLIF(SUM(IFNULL(SENDS, 0)), 0), 1) AS OPEN_RATE,
+        ROUND(SUM(IFNULL(CLICKS, 0)) * 100.0 / NULLIF(SUM(IFNULL(SENDS, 0)), 0), 1) AS CTR
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
+      WHERE LOWER(MARKETING_EMAIL_NAME) LIKE ? ESCAPE '\\\\'
+      GROUP BY MARKETING_EMAIL_NAME
+      ORDER BY SENDS DESC
+      LIMIT 12
+    `;
+
+    // Map raw channel keys (google_ads, linkedin_ads, …) to display labels.
+    const platformLabel = (channel: string | null): string => {
+      const c = (channel ?? '').toLowerCase();
+      if (c.includes('google')) return 'Google Ads';
+      if (c.includes('linkedin')) return 'LinkedIn';
+      if (c.includes('reddit')) return 'Reddit';
+      if (c.includes('meta') || c.includes('facebook')) return 'Meta';
+      if (c.includes('twitter') || c === 'x_ads') return 'X / Twitter';
+      return channel ?? 'Unknown';
+    };
+
+    // Settled, not Promise.all: paid and email are independent breakdowns, so an email failure
+    // must not also blank out paid campaigns that queried fine (and vice versa).
+    const [paidResult, emailResult] = await Promise.all([
+      this.executeWithLegacyConversionFallback<PaidRow>({
+        primaryQuery: paidQuery('LAST_TOUCH_CONVERSIONS'),
+        legacyQuery: paidQuery('CONV'),
+        params: [match],
+        operation: 'get_event_campaign_detail',
+        foundationSlug: eventName,
+        retryMessage: 'Paid campaign enrichment retrying with legacy CONV column',
+        degradeMessage: 'Paid campaign enrichment failed, degrading to empty',
+      }),
+      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear]).catch((error) => {
+        logger.warning(undefined, 'get_event_campaign_detail', 'Email campaign enrichment failed, degrading to empty', {
+          event_name: eventName,
+          err: error,
+        });
+        return { rows: [] as EmailRow[] };
+      }),
+    ]);
+
+    const paidCampaigns: EventPaidCampaign[] = paidResult.rows
+      .filter((p) => (p.SPEND ?? 0) > 0)
+      .map((p) => ({
+        name: p.CAMPAIGN_NAME ?? 'Untitled campaign',
+        platform: platformLabel(p.CHANNEL),
+        spend: Math.round(p.SPEND ?? 0),
+        conversions: Math.round(p.CONV ?? 0),
+        clicks: p.CLICKS ?? 0,
+        impressions: p.IMPR ?? 0,
+        cpa: (p.CONV ?? 0) > 0 ? Math.round((p.SPEND ?? 0) / (p.CONV ?? 1)) : null,
+      }));
+
+    const emailCampaigns: EventEmailCampaign[] = emailResult.rows.map((e) => ({
+      name: e.NAME ?? 'Untitled email',
+      sends: e.SENDS ?? 0,
+      opens: e.OPENS ?? 0,
+      clicks: e.CLICKS ?? 0,
+      openRate: Math.round((e.OPEN_RATE ?? 0) * 10) / 10,
+      ctr: Math.round((e.CTR ?? 0) * 100) / 100,
+    }));
+
+    return { paidCampaigns, emailCampaigns };
   }
 
   // Runs one IN-clause Snowflake query per source table instead of 4 queries per slug, so a 25-foundation summary fires 4 queries rather than 100.
@@ -7677,7 +7882,7 @@ export class ProjectService {
 
     interface HeadRow {
       DAYS_LEFT: number | null;
-      CURRENT: number | null;
+      CUR_REGS: number | null;
       PRIOR: number | null;
       PRED_AVG: number | null;
       PRED_LOW: number | null;
@@ -7685,36 +7890,57 @@ export class ProjectService {
     }
     interface PointRow {
       DAYS_TO_EVENT: number;
-      CURRENT: number | null;
+      CUR_REGS: number | null;
       PRIOR: number | null;
       PRED_AVG: number | null;
       PRED_LOW: number | null;
       PRED_HIGH: number | null;
     }
 
+    // The daily pacing series lives in the single MARKETING_EVENT_REGISTRATION_PREDICTIONS table,
+    // grained by EVENT_ID x EVENT_REGISTRATION_TYPE x DAYS_TO_EVENT. There is no _DRILLDOWN table.
+    // EVENT_REGISTRATION_TYPE (In Person / Virtual) means an event/day can have multiple rows, so we
+    // SUM across types per DAYS_TO_EVENT to get one point on the curve (never sum types blindly elsewhere).
+    // Headline. FINAL_* columns are event-level constants (identical on every DAYS_TO_EVENT row),
+    // so per registration type we take ANY_VALUE (not SUM across days), then SUM those per-type
+    // finals into one headline. The inner query collapses each type to a single row first.
     const headQuery = `
       SELECT
-        DAYS_LEFT_FROM_YESTERDAY AS DAYS_LEFT,
-        FINAL_CURRENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
-        FINAL_PRIOR_CUMULATIVE_REGISTRATIONS AS PRIOR,
-        FINAL_CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
-        FINAL_CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
-        FINAL_CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
-      WHERE EVENT_ID = ?
-      LIMIT 1
+        MAX(DAYS_LEFT) AS DAYS_LEFT,
+        SUM(CUR_REGS) AS CUR_REGS,
+        SUM(PRIOR) AS PRIOR,
+        SUM(PRED_AVG) AS PRED_AVG,
+        SUM(PRED_LOW) AS PRED_LOW,
+        SUM(PRED_HIGH) AS PRED_HIGH
+      FROM (
+        SELECT
+          EVENT_REGISTRATION_TYPE,
+          ANY_VALUE(DAYS_LEFT_FROM_YESTERDAY) AS DAYS_LEFT,
+          ANY_VALUE(FINAL_CURRENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
+          ANY_VALUE(FINAL_PRIOR_CUMULATIVE_REGISTRATIONS) AS PRIOR,
+          ANY_VALUE(FINAL_CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
+          ANY_VALUE(FINAL_CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
+          ANY_VALUE(FINAL_CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+        WHERE EVENT_ID = ?
+        GROUP BY EVENT_REGISTRATION_TYPE
+      )
     `;
 
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        CURRENT_EVENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
-        PRIOR_EVENT_CUMULATIVE_REGISTRATIONS AS PRIOR,
-        CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
-        CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
-        CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+        -- CURRENT_EVENT_*, not FINAL_CURRENT_* — the FINAL_ columns are event-level constants
+        -- repeated on every DAYS_TO_EVENT row (see headQuery above), so summing one per day would
+        -- draw the current-year line flat at the final total instead of a rising curve.
+        SUM(CURRENT_EVENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
+        SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
+        SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
+        SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
+        SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
       WHERE EVENT_ID = ?
+      GROUP BY DAYS_TO_EVENT
       ORDER BY DAYS_TO_EVENT DESC
     `;
 
@@ -7752,14 +7978,14 @@ export class ProjectService {
       return {
         available: true,
         daysLeft: head.DAYS_LEFT,
-        current: head.CURRENT,
+        current: head.CUR_REGS,
         priorYear: head.PRIOR,
         predictedAvg: head.PRED_AVG,
         predictedLow: head.PRED_LOW,
         predictedHigh: head.PRED_HIGH,
         points: pointsResult.rows.map((p) => ({
           daysToEvent: p.DAYS_TO_EVENT,
-          current: p.CURRENT,
+          current: p.CUR_REGS,
           priorYear: p.PRIOR,
           predictedAvg: p.PRED_AVG,
           predictedLow: p.PRED_LOW,
