@@ -305,7 +305,17 @@ export class CommitteeSettingsTabComponent {
         // everything without hitting Cancel. Requiring either a real typed value OR the explicit
         // slackWebhookRemovalStaged flag (set only by Remove — see that signal's doc comment)
         // keeps the latter case from silently deleting an already-configured webhook.
-        ...(this.form.controls.chat_webhook_url.dirty && (values.chat_webhook_url || this.slackWebhookRemovalStaged())
+        //
+        // `.enabled`, not just `.dirty`: getRawValue() (unlike .value) includes disabled
+        // controls' values, and disable() never clears .dirty — so a URL typed before
+        // impersonation starts stays dirty and present in `values` even after the impersonation
+        // subscription above disables the control. Without this check, that stale value would
+        // still be sent, and the server rejects the *entire* request (IMPERSONATION_READ_ONLY),
+        // blocking every other field on the same save over a value the user can no longer edit
+        // or even see change.
+        ...(this.form.controls.chat_webhook_url.enabled &&
+        this.form.controls.chat_webhook_url.dirty &&
+        (values.chat_webhook_url || this.slackWebhookRemovalStaged())
           ? { chat_webhook_url: values.chat_webhook_url || null }
           : {}),
       })

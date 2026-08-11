@@ -198,6 +198,21 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     expect(component.form.controls.chat_channel.disabled).toBe(false);
   });
 
+  it('omits chat_webhook_url from the save payload once impersonation disables it, even though it stays dirty — getRawValue() includes disabled controls and disable() never clears dirty, so a value typed BEFORE impersonation started must not still be sent, which would otherwise get the whole save rejected (IMPERSONATION_READ_ONLY) over a field the user can no longer edit', async () => {
+    component.form.controls.chat_webhook_url.setValue('https://hooks.slack.com/services/T1/B1/X');
+    component.form.controls.chat_webhook_url.markAsDirty();
+
+    impersonating.set(true);
+    await fixture.whenStable();
+    expect(component.form.controls.chat_webhook_url.disabled).toBe(true);
+    expect(component.form.controls.chat_webhook_url.dirty).toBe(true);
+
+    component.saveSettings();
+
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('chat_webhook_url');
+  });
+
   it('re-disables chat_webhook_url after a canEdit-driven form.enable() re-enables every control', async () => {
     impersonating.set(true);
     await fixture.whenStable();
