@@ -7,8 +7,9 @@ import { AuthorizationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { isImpersonating } from '../utils/auth-helper';
 
-// Guards two distinct classes of "wrong-account write" during impersonation, both of which land
-// on an account other than the one that actually authenticated:
+// Guards three distinct classes of write during impersonation, all of which produce a result
+// wrongly attributed to (or wrongly stored against) an account other than the one that actually
+// authenticated:
 // 1. Profile / account-settings mutations act on the real user's account via the impersonator's
 //    Flow C management token — there is no Custom Token Exchange equivalent for the Auth0
 //    Management API, so a write here would modify the impersonator's own account, not the
@@ -17,6 +18,10 @@ import { isImpersonating } from '../utils/auth-helper';
 //    helpers that return the *target's* identity) land directly in the target's own store — the
 //    opposite mistake, writing into the wrong account in the other direction (e.g. weekly-brief
 //    rating — weekly-brief.route.ts).
+// 3. Real, hard-to-retract, externally-visible actions with no in-payload caller identity to
+//    attribute or correct after the fact — not a wrong-*account* write like 1/2 above, but the
+//    same "produces a result nobody can trace back to the impersonator" failure mode (e.g.
+//    Share to Slack, an incoming-webhook POST with no reply-to equivalent — weekly-brief.route.ts).
 // Block every such write while impersonating; impersonated viewing/reads stay unaffected.
 export function blockDuringImpersonation(req: Request, _res: Response, next: NextFunction): void {
   if (!isImpersonating(req)) {

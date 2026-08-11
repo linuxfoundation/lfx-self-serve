@@ -4,6 +4,12 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
+  SLACK_ERROR_BODY_MAX_LENGTH,
+  SLACK_ERROR_TOKEN_PATTERN,
+  SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  SLACK_MESSAGE_TEXT_MAX_LENGTH,
+  SLACK_WEBHOOK_POST_TIMEOUT_MS,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
@@ -19,6 +25,7 @@ import {
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
+  ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefActionItem,
   WeeklyBriefCurrentResponse,
@@ -29,6 +36,7 @@ import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
@@ -57,6 +65,19 @@ function briefTextToHtml(text: string): string {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escape(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');
+}
+
+/**
+ * Escapes Slack mrkdwn control characters per Slack's own escaping rules
+ * (https://api.slack.com/reference/surfaces/formatting#escaping) — `&`, `<`, `>` are the only
+ * three that matter. Slack's incoming webhooks parse `text` as mrkdwn by default: an unescaped
+ * `<!channel>`/`<!here>` anywhere in `brief_text` (AI-generated from meeting/document titles —
+ * content a broader set of users than project writers can influence, then further editable by
+ * writers) would page the entire channel, and `<https://evil.example|label>` would render as a
+ * deceptive hyperlink.
+ */
+function escapeSlackMrkdwn(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -688,9 +709,12 @@ export class WeeklyBriefService {
     }
 
     // isProjectWriter (checked above) is the newsletter service's actual authorization
-    // boundary, so the caller's own bearer token is used as-is here — no token swap,
-    // and the sender's display name resolves correctly from the caller's own JWT
-    // principal (see NewsletterServiceClient#sendNewsletter's doc comment).
+    // boundary, so the caller's own bearer token is used as-is here — no token swap at
+    // this layer (see NewsletterServiceClient#sendNewsletter's doc comment). The sender's
+    // display name resolves from that token's JWT principal — which, under impersonation,
+    // is the TARGET's principal, since auth.middleware.ts has already swapped
+    // req.bearerToken to the impersonation token by the time this method runs (known
+    // pre-existing gap, tracked in LFXV2-3093; see weekly-brief.route.ts's /share comment).
     const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
       subject,
       body_html: bodyHtml,
@@ -753,6 +777,194 @@ export class WeeklyBriefService {
   }
 
   /**
+   * Shares the current brief to the committee's configured Slack channel via an Incoming
+   * Webhook POST. Precondition chain mirrors {@link shareBrief} exactly (brief exists +
+   * shareable state, revision matches, caller is a project writer, `WEEKLY_BRIEF_BACKEND=live`)
+   * with one swap: "has a mailing list configured" becomes "has a Slack webhook configured".
+   *
+   * Unlike shareBrief's newsletter-service handoff (async accept-then-fan-out), a webhook POST
+   * is synchronous — Slack's own response is authoritative. A resolved promise means Slack
+   * accepted the message, not that it was merely queued.
+   */
+  public async shareToSlack(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefToSlackResult> {
+    // Same server-side kill switch as committee.service.ts's updateCommittee, and for the same
+    // reason: WG_WEEKLY_BRIEF_SLACK_FLAG only gates the Angular UI (evaluated through the
+    // OpenFeature Web SDK, which never runs server-side) — without this, a project writer could
+    // trigger a real Slack send via a direct API call while the UI still hides the action.
+    // Checked first, before any upstream call, so a disabled environment fails cheaply.
+    if (!isServerFeatureEnabled(ServerFeatureFlag.WeeklyBriefSlack)) {
+      throw new ConflictError('Slack webhook sharing is not enabled in this environment', 'FEATURE_DISABLED', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    const { brief } = await this.getCurrentBrief(req, committeeId);
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
+      throw new ResourceNotFoundError('Weekly brief', committeeId, {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+    if (brief.revision !== expectedRevision) {
+      throw new ConflictError('The brief has been updated since you last viewed it. Reload to review the latest version before sharing.', 'REVISION_MISMATCH', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    // One fetch, not two: getCommitteeForSlackShare returns exactly what this method needs
+    // (name, project_uid, the raw webhook URL) from a single upstream call — going through
+    // getCommitteeById (settings/membership/access-check enrichment this method never reads)
+    // plus a second, separate getSlackWebhookUrlStrict call would cost an extra round trip and
+    // open a TOCTOU window on the webhook value between the two reads. See
+    // getSlackWebhookUrlStrict's doc comment for the full rationale.
+    const committee = await this.committeeService.getCommitteeForSlackShare(req, committeeId);
+
+    // Same strict project-writer boundary as shareBrief, for the same reason: sharing is a
+    // deliberate, low-frequency action where misattributing a transient access-check outage as
+    // a permission denial is worse than the extra strict-variant call.
+    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+      resource: 'project',
+      id: committee.project_uid,
+      access: 'writer',
+    });
+    if (!isProjectWriter) {
+      throw new AuthorizationError('Only project writers can share the weekly brief to Slack', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        code: 'NOT_PROJECT_WRITER',
+      });
+    }
+
+    // Re-validated against SLACK_INCOMING_WEBHOOK_URL_PATTERN here, not just trusted from
+    // upstream storage — the BFF's own updateCommittee is not the only possible writer of
+    // chat_webhook_url on the committee record (any client with a token can PUT /committees/:uid
+    // directly), so the stored value is untrusted input at the point of use. Without this, an
+    // arbitrary URL written some other way would turn this into a server-initiated POST of brief
+    // content to an attacker-chosen destination — exactly what the allowlist exists to prevent.
+    // A malformed value is treated the same as "not configured" — from the caller's perspective
+    // both are equally unactionable.
+    const webhookUrl = committee.chat_webhook_url;
+    const isAllowedWebhook = !!webhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl);
+    if (webhookUrl && !isAllowedWebhook) {
+      // Logged, not put in the thrown error's `metadata` — BaseApiError.toResponse() serializes
+      // `metadata` straight into the client-facing JSON body, which would let the response leak
+      // "something is stored" vs. "nothing is configured" per committee. The caller-facing
+      // message/code must stay byte-identical either way; this operator-only signal (never the
+      // URL itself) is the one place that distinction is allowed to exist.
+      logger.warning(req, 'share_weekly_brief_slack', 'Stored chat_webhook_url failed the Slack allowlist — treating as unconfigured', {
+        committee_id: committeeId,
+      });
+    }
+    if (!isAllowedWebhook) {
+      throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    // Preconditions above are enforced regardless of backend mode; only the actual send is
+    // gated on isLive() — same rationale as shareBrief: mock-mode content must never actually
+    // post to a real Slack channel.
+    if (!this.isLive(req)) {
+      throw new ConflictError('Sharing is not available in this environment (WEEKLY_BRIEF_BACKEND is not "live")', 'BACKEND_NOT_LIVE', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
+    // text.length (UTF-16 code units), deliberately not [...text].length (code points) — the
+    // latter is always <= the former for any string, so the two are never actually in tension;
+    // this is a one-sided choice, not a comparison. This guard's job is to pre-empt an opaque 502
+    // from Slack, and Slack's own "40,000 characters" doc doesn't specify an encoding, so the
+    // conservative (larger) count is used here — unlike the controller's brief_text *save*
+    // validation, which uses the code-point count for a different reason (matching upstream's own
+    // declared maxLength exactly, not being conservative). An emoji-heavy brief the editor accepts
+    // at the code-point-based save cap can therefore still be rejected by this UTF-16-based share
+    // guard — a real, if narrow, asymmetry between the two limits, not a bug in either.
+    if (text.length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
+      // Phrased in terms of shortening the brief, not the post-escaping/post-header character
+      // ceiling above — that number (40,000) would be confusing next to the brief editor's own
+      // much smaller cap (WEEKLY_BRIEF_TEXT_MAX_LENGTH, 20,000).
+      throw ServiceValidationError.forField('brief_text', 'Brief is too long to share to Slack. Shorten the brief text and try again.', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      // A redirect response could relocate the POST body off hooks.slack.com entirely —
+      // 'error' rejects the fetch outright instead of silently following it.
+      redirect: 'error',
+      signal: AbortSignal.timeout(SLACK_WEBHOOK_POST_TIMEOUT_MS),
+    }).catch((error: unknown) => {
+      throw new MicroserviceError('Unable to reach Slack — the webhook request failed or timed out', 502, 'SLACK_UNREACHABLE', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        // Redacted, not passed through as-is: getLogContext() logs this message unsanitized
+        // (`sanitize()` only redacts top-level keys, and `original_error` isn't one of them).
+        // Today's undici fetch-failure/abort messages don't embed the request URL, so this is
+        // defense-in-depth against a future fetch/undici version that does.
+        originalError: error instanceof Error ? new Error(error.message.replace(SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN, '[redacted-url]')) : undefined,
+      });
+    });
+
+    if (!response.ok) {
+      // Slack's incoming-webhook error responses are a plain-text body (e.g. `invalid_payload`,
+      // `channel_not_found`, `action_prohibited`), not JSON. Read via a bounded stream reader
+      // rather than response.text() — text() buffers the entire body before any slicing can
+      // happen, so a single huge response (whether from a Slack bug or a misbehaving proxy)
+      // would still be fully materialized in memory even though only SLACK_ERROR_BODY_MAX_LENGTH
+      // characters of it are ever used.
+      const slackErrorText = await this.readBoundedText(response, SLACK_ERROR_BODY_MAX_LENGTH).catch(() => '');
+      // SLACK_ERROR_TOKEN_PATTERN gates what's safe to echo into the client-facing message —
+      // BaseApiError#toResponse puts `message` directly in the client response, and slackErrorText
+      // is otherwise arbitrary third-party content (a Slack-side HTML error page, an intermediary
+      // proxy's response). The untrimmed (but SLACK_ERROR_BODY_MAX_LENGTH-bounded) text still
+      // reaches operators either way, via errorBody.reason below (log-only, and only when the
+      // body was actually readable — see that line's own comment for the empty/unreadable case)
+      // — only this client-safety check trims, so a trailing newline Slack or a proxy might add
+      // doesn't disqualify an otherwise-legitimate token.
+      const trimmedErrorText = slackErrorText.trim();
+      const clientSafeReason = SLACK_ERROR_TOKEN_PATTERN.test(trimmedErrorText) ? trimmedErrorText : '';
+      throw new MicroserviceError(`Slack rejected the message${clientSafeReason ? `: ${clientSafeReason}` : ''}`, 502, 'SLACK_SEND_FAILED', {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+        // status/reason are log-only (MicroserviceError#toResponse never echoes errorBody to the
+        // client except via its details/errors sub-keys) — reason keeps the full truncated body
+        // for operators even when it didn't qualify for the client-facing message above, and
+        // status lets an operator tell a 429 rate-limit apart from a 403 revoked webhook even
+        // when the body itself is empty or unreadable.
+        errorBody: { status: response.status, reason: slackErrorText || 'unknown error' },
+      });
+    }
+
+    // Slack's success body is a tiny, unused 'ok' — drain it so undici releases the connection
+    // back to the pool immediately instead of holding it until the stream is GC'd. The !response.ok
+    // branch above already drains its body via readBoundedText; this is the fetch's only other exit.
+    await response.body?.cancel().catch(() => undefined);
+
+    // shared_by is the one place this action's actor is recorded at all: the webhook POST body
+    // itself carries no caller identity (it's why /share-slack blocks during impersonation in the
+    // first place — see impersonation-readonly.middleware.ts), and unlike shareBrief, a successful
+    // send leaves no other persisted record (e.g. a newsletter draft) an operator could trace back
+    // to a user later. Opaque OIDC sub, not the LFID username, same rationale as rating_recorded
+    // above: this log line is retained indefinitely, and a human-readable username is PII (PR #1361
+    // review — docs/reviews/knowledge-base/security.md's `security/pii-in-logs-and-identifiers`).
+    logger.info(req, 'share_weekly_brief_slack_sent', 'Weekly brief sent to the committee Slack channel', {
+      committee_id: committeeId,
+      shared_by: getEffectiveSub(req),
+    });
+
+    return { committee_name: committee.name };
+  }
+
+  /**
    * Refuses mock mode outright in production instead of silently serving
    * fabricated brief content. `assertCommitteeRead`/`assertCommitteeWrite` gate
    * every request at the controller level regardless of mock or live mode, so a
@@ -780,6 +992,34 @@ export class WeeklyBriefService {
     }
     logger.warning(req, 'weekly_brief_mock_mode', 'Serving mock weekly-brief data — WEEKLY_BRIEF_BACKEND is not "live"', {});
     return false;
+  }
+
+  /**
+   * Reads `response`'s body in chunks and returns at most `maxChars` characters, cancelling the
+   * underlying stream once that many have been read instead of continuing to buffer — unlike
+   * `response.text()`, which always buffers the entire body first regardless of how much of it
+   * ends up used. The accumulator may briefly hold up to one extra transport chunk beyond
+   * `maxChars` between reads; only the final, returned string is guaranteed capped.
+   */
+  private async readBoundedText(response: Response, maxChars: number): Promise<string> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+    const decoder = new TextDecoder();
+    let text = '';
+    try {
+      while (text.length < maxChars) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    return text.slice(0, maxChars);
   }
 
   /**

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ALLOWED_AVATAR_MIME_TYPES,
   AUTH0_TO_CDP_PROVIDER_MAP,
   CDP_DISPLAYABLE_IDENTITY_COMBOS,
   CDP_PLATFORM_ICONS,
@@ -25,12 +26,14 @@ import {
   IdentityDisplayState,
   LinuxAliasData,
   ProfileAuthStatus,
+  ProfilePictureUploadResponse,
   ProfileUpdateRequest,
   ProfileVisibilityUpdateRequest,
   UpdateForwardRequest,
   UserEmail,
   UserMetadata,
   UserMetadataUpdateRequest,
+  UserMetadataUpdateResponse,
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
@@ -45,6 +48,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { ObjectStoreService } from '../services/object-store.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
 import { UserService } from '../services/user.service';
@@ -100,6 +104,7 @@ export class ProfileController {
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
   private forwardsService: ForwardsService = new ForwardsService();
+  private objectStoreService: ObjectStoreService = new ObjectStoreService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
   private userService: UserService = new UserService();
@@ -344,57 +349,123 @@ export class ProfileController {
           updated_fields: response.updated_fields,
         });
       } else {
-        // Create appropriate error based on error type
-        let error: unknown;
+        return next(this.mapUserMetadataUpdateError(response, username, 'update_user_metadata_nats', req.path));
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
 
-        if (response.error === 'Service temporarily unavailable') {
-          // Service unavailable error
-          error = new MicroserviceError(response.message || 'Authentication service temporarily unavailable', 503, 'SERVICE_UNAVAILABLE', {
-            operation: 'update_user_metadata_nats',
-            service: 'auth-service',
-            path: req.path,
-            errorBody: { error: response.error, message: response.message },
-          });
-        } else if (response.error?.includes('authentication') || response.error?.includes('token')) {
-          // Authentication error
-          error = new AuthenticationError(response.message || 'Authentication failed', {
-            operation: 'update_user_metadata_nats',
+  /**
+   * POST /api/profile/picture-upload - Upload a profile picture to the object store and persist
+   * its URL to user_metadata.picture via the existing NATS update path.
+   */
+  public async uploadProfilePicture(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'upload_profile_picture', {
+      content_type: req.headers['content-type'],
+      content_length: req.headers['content-length'],
+    });
+
+    try {
+      const username = await getUsernameFromAuth(req);
+      if (!username) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'upload_profile_picture',
             service: 'profile_controller',
             path: req.path,
-            metadata: { error: response.error },
-          });
-        } else if (response.error?.includes('permission') || response.error?.includes('forbidden')) {
-          // Authorization error
-          error = new AuthorizationError(response.message || 'Insufficient permissions to update user metadata', {
-            operation: 'update_user_metadata_nats',
+          })
+        );
+      }
+
+      const rawContentType = req.headers['content-type'];
+      const contentType = (Array.isArray(rawContentType) ? rawContentType[0] : rawContentType || '').split(';')[0].trim();
+      if (!(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(contentType)) {
+        return next(
+          ServiceValidationError.forField('content-type', `Unsupported image type: ${contentType || 'unknown'}`, {
+            operation: 'upload_profile_picture',
             service: 'profile_controller',
             path: req.path,
-          });
-        } else if (response.error?.includes('not found')) {
-          // Resource not found error
-          error = new ResourceNotFoundError('User', username, {
-            operation: 'update_user_metadata_nats',
+          })
+        );
+      }
+
+      const rawBody: unknown = req.body;
+      if (Array.isArray(rawBody) || typeof rawBody === 'string' || !Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+        return next(
+          ServiceValidationError.forField('body', 'Request body must contain image data', {
+            operation: 'upload_profile_picture',
             service: 'profile_controller',
             path: req.path,
+          })
+        );
+      }
+      const buffer = rawBody;
+
+      // Determine which token to use for the auth-service — same selection as updateUserMetadata.
+      const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'] || '';
+      const isAuthelia = issuerBaseUrl.includes('auth.k8s.orb.local');
+      const isProfileAuthConfigured = this.profileAuthService.isProfileAuthConfigured();
+
+      let token: string;
+
+      if (!isAuthelia && isProfileAuthConfigured) {
+        const mgmtToken = this.profileAuthService.getManagementToken(req);
+        if (!mgmtToken) {
+          logger.warning(req, 'upload_profile_picture', 'Management token required but not present in session', { username });
+
+          res.status(403).json({
+            error: 'management_token_required',
+            message: 'Profile authorization required',
+            authorize_url: '/api/profile/auth/start?returnTo=/profile',
           });
-        } else if (response.error?.includes('validation') || response.error?.includes('invalid')) {
-          // Validation error
-          error = ServiceValidationError.forField('user_metadata', response.message || response.error || 'Invalid user metadata', {
-            operation: 'update_user_metadata_nats',
-            service: 'profile_controller',
-            path: req.path,
-          });
-        } else {
-          // Generic microservice error
-          error = new MicroserviceError(response.message || response.error || 'Failed to update user metadata', 500, 'INTERNAL_ERROR', {
-            operation: 'update_user_metadata_nats',
-            service: 'auth-service',
-            path: req.path,
-            errorBody: { error: response.error, message: response.message },
-          });
+          return;
         }
+        token = mgmtToken;
+      } else {
+        if (!issuerBaseUrl) {
+          return next(
+            new MicroserviceError('M2M_AUTH_ISSUER_BASE_URL is not configured; cannot generate an auth-service token', 500, 'M2M_ISSUER_NOT_CONFIGURED', {
+              operation: 'upload_profile_picture',
+              service: 'profile_controller',
+              path: req.path,
+            })
+          );
+        }
+        const authServiceAudience = new URL('api/v2/', issuerBaseUrl).toString();
+        token = await generateM2MToken(req, { audience: authServiceAudience });
+      }
 
-        return next(error);
+      const { url } = await this.objectStoreService.uploadProfilePicture(req, username, buffer, contentType);
+
+      // CDN_URL_PREFIX unconfigured means there is no absolute URL to persist into
+      // user_metadata.picture (which requires a parseable URL) — surface this as a config
+      // error rather than silently accepting the upload without updating the visible picture.
+      if (!url) {
+        return next(
+          new MicroserviceError('CDN_URL_PREFIX is not configured; cannot generate a public profile picture URL', 500, 'CDN_NOT_CONFIGURED', {
+            operation: 'upload_profile_picture',
+            service: 'object-store',
+            path: req.path,
+          })
+        );
+      }
+
+      const updateRequest: UserMetadataUpdateRequest = {
+        token,
+        username,
+        user_metadata: { picture: url },
+      };
+
+      const response = await this.userService.updateUserMetadata(req, updateRequest);
+
+      if (response.success) {
+        logger.success(req, 'upload_profile_picture', startTime, { username, public_url: url });
+
+        const body: ProfilePictureUploadResponse = { success: true, public_url: url };
+        res.status(201).json(body);
+      } else {
+        return next(this.mapUserMetadataUpdateError(response, username, 'upload_profile_picture', req.path));
       }
     } catch (error) {
       next(error);
@@ -2095,6 +2166,54 @@ export class ProfileController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Maps an auth-service `UserMetadataUpdateResponse` failure to the appropriate typed API error.
+   * Shared by every write path that persists through `userService.updateUserMetadata` (profile
+   * field updates, profile picture upload) so the error classification stays consistent.
+   */
+  private mapUserMetadataUpdateError(response: UserMetadataUpdateResponse, username: string, operation: string, path: string): unknown {
+    if (response.error === 'Service temporarily unavailable') {
+      return new MicroserviceError(response.message || 'Authentication service temporarily unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        operation,
+        service: 'auth-service',
+        path,
+        errorBody: { error: response.error, message: response.message },
+      });
+    } else if (response.error?.includes('authentication') || response.error?.includes('token')) {
+      return new AuthenticationError(response.message || 'Authentication failed', {
+        operation,
+        service: 'profile_controller',
+        path,
+        metadata: { error: response.error },
+      });
+    } else if (response.error?.includes('permission') || response.error?.includes('forbidden')) {
+      return new AuthorizationError(response.message || 'Insufficient permissions to update user metadata', {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    } else if (response.error?.includes('not found')) {
+      return new ResourceNotFoundError('User', username, {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    } else if (response.error?.includes('validation') || response.error?.includes('invalid')) {
+      return ServiceValidationError.forField('user_metadata', response.message || response.error || 'Invalid user metadata', {
+        operation,
+        service: 'profile_controller',
+        path,
+      });
+    }
+
+    return new MicroserviceError(response.message || response.error || 'Failed to update user metadata', 500, 'INTERNAL_ERROR', {
+      operation,
+      service: 'auth-service',
+      path,
+      errorBody: { error: response.error, message: response.message },
+    });
   }
 
   /**

@@ -43,6 +43,7 @@
     "@angular/platform-server": "^20.3.15",
     "@angular/router": "^20.3.15",
     "@angular/ssr": "^20.3.13",
+    "@aws-sdk/client-s3": "^3.1098.0",
     "@datadog/browser-rum": "6.25.4",
     "@fullcalendar/angular": "6.1.20",
     "@fullcalendar/core": "6.1.20",
