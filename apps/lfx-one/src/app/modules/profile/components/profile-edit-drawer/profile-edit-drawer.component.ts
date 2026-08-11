@@ -308,16 +308,16 @@ export class ProfileEditDrawerComponent {
       });
   }
 
-  /**
-   * Validate and upload a newly-selected profile picture. On success, updates the locally-cached
-   * profile (so the drawer's own preview reflects the change if reopened) and emits `saved` so the
-   * host layout refreshes the avatar shown elsewhere in the Me lens.
-   */
   /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
   public triggerAvatarUpload(): void {
     this.avatarInput()?.nativeElement.click();
   }
 
+  /**
+   * Validate and upload a newly-selected profile picture. On success, updates the locally-cached
+   * profile (so the drawer's own preview reflects the change if reopened) and emits `saved` so the
+   * host layout refreshes the avatar shown elsewhere in the Me lens.
+   */
   public onAvatarFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -400,7 +400,7 @@ export class ProfileEditDrawerComponent {
   // Shared by onSubmit and the avatar-upload Flow C stash above, so both apply the same
   // clear-to-empty rules — stashing the raw form value instead would silently drop intentional
   // clears on replay, since the legacy mapper doesn't know about metadataLoaded/freeText.
-  private buildUserMetadataPayload(formValue: any): Partial<UserMetadata> {
+  private buildUserMetadataPayload(formValue: Partial<UserMetadata>): Partial<UserMetadata> {
     // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
     // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
     const metadataLoaded = this.combinedProfile()?.profile != null;
