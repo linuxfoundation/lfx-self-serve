@@ -40,6 +40,17 @@ export enum ServerFeatureFlag {
    * byte-for-byte.
    */
   CampaignServiceJobs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS',
+
+  /**
+   * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
+   * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
+   * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
+   * OpenFeature Web SDK it's evaluated through doesn't run server-side, so without this, a direct
+   * API caller with ordinary project-writer access could configure or use Slack sharing while the
+   * UI still hides it. OFF by default, same as the UI flag, so both must be turned on for the
+   * feature to actually be reachable.
+   */
+  WeeklyBriefSlack = 'LFX_WEEKLY_BRIEF_SLACK_ENABLED',
 }
 
 /**
