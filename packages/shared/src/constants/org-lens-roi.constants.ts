@@ -101,3 +101,97 @@ export const ORG_LENS_ROI_KPI_EXPLANATION = {
   roi: 'Net return divided by investment, shown as a percentage. 100% means you got back your investment again on top of it. Blank when there is no investment to divide by.',
   bcr: 'Total return divided by investment. A benefit-cost ratio of 5× means every dollar of modelled investment is associated with five dollars of modelled return. Always exactly one more than ROI.',
 } as const;
+
+/** The four complementary views of the projects section, in tab order. */
+export const ORG_LENS_ROI_PROJECT_VIEWS = ['bar', 'sankey', 'bubble', 'table'] as const;
+
+export const ORG_LENS_ROI_PROJECT_VIEW_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_VIEWS)[number], string> = {
+  bar: 'Investment vs return',
+  sankey: 'Where it flows',
+  bubble: 'Efficiency',
+  table: 'All projects',
+};
+
+/** The three views driven by the shared project selection; the table always pages the complete set. */
+export const ORG_LENS_ROI_PROJECT_SELECTION_VIEWS = ['bar', 'sankey', 'bubble'] as const;
+
+/** How many projects the shared picker starts with, taken from the top by return. */
+export const ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT = 5;
+
+/** Matches beyond this are not offered; the search box exists to find one project, not to browse. */
+export const ORG_LENS_ROI_PROJECT_PICKER_MAX_MATCHES = 20;
+
+/**
+ * Per-view drawing ceilings. "All" is a legitimate selection on an organization with hundreds of
+ * projects, and no view stays readable at that size — so each draws its leading N and discloses the
+ * shortfall, rather than the selection being silently capped at the picker. The three differ
+ * because legibility does: bars degrade by height, flows by link crossings, points barely at all.
+ */
+export const ORG_LENS_ROI_PROJECT_BAR_MAX_ROWS = 25;
+
+/** Lowest of the three: a flow diagram crosses every link against every other. */
+export const ORG_LENS_ROI_PROJECT_SANKEY_MAX_PROJECTS = 12;
+
+/** Highest of the three: a scatter plot stays legible far longer than bars or flows. */
+export const ORG_LENS_ROI_PROJECT_BUBBLE_MAX_POINTS = 250;
+
+export const ORG_LENS_ROI_PROJECT_SANKEY_MEASURES = ['investment', 'return'] as const;
+
+export const ORG_LENS_ROI_PROJECT_SANKEY_MEASURE_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_SANKEY_MEASURES)[number], string> = {
+  investment: 'Investment',
+  return: 'Return',
+};
+
+/** The single node every investment flow passes through, on its way out to the projects. */
+export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your organization';
+
+export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE = 25;
+
+export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+export const ORG_LENS_ROI_PROJECT_SORT_FIELDS = ['name', 'investment', 'return', 'profit', 'roi', 'bcr', 'breakevenMarkup'] as const;
+
+/** Annotated so adding a sort field without a heading fails here rather than at the template. */
+export const ORG_LENS_ROI_PROJECT_SORT_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_SORT_FIELDS)[number], string> = {
+  name: 'Project',
+  investment: 'Investment',
+  return: 'Return',
+  profit: 'Net return',
+  roi: 'ROI',
+  bcr: 'BCR',
+  breakevenMarkup: 'Breakeven markup',
+};
+
+/** The table opens on the payload's own ordering, so the first page needs no client re-sort. */
+export const ORG_LENS_ROI_PROJECTS_TABLE_DEFAULT_SORT = 'return';
+
+/**
+ * Keyed by contribution type rather than by position, so a category keeps its colour as the stack
+ * order changes from project to project. Ordered against `ORG_LENS_ROI_CONTRIBUTION_TYPES`.
+ */
+export const ORG_LENS_ROI_CATEGORY_COLOR: Record<(typeof ORG_LENS_ROI_CONTRIBUTION_TYPES)[number], string> = {
+  code: lfxColors.blue[600],
+  community: lfxColors.emerald[500],
+  meetings: lfxColors.violet[500],
+  event_attendance: lfxColors.amber[500],
+  event_sponsorship: lfxColors.blue[400],
+  membership_project: lfxColors.emerald[400],
+  membership_tlf: lfxColors.violet[400],
+  educ_courses: lfxColors.amber[400],
+};
+
+/** Return is one series against the stacked investment categories, so it needs a colour of its own. */
+export const ORG_LENS_ROI_RETURN_COLOR = lfxColors.emerald[600];
+
+/** A log axis cannot plot zero, so non-positive values are lifted to this floor and disclosed. */
+export const ORG_LENS_ROI_BUBBLE_LOG_FLOOR = 1;
+
+/**
+ * Translucent fills for the efficiency plot, where bubbles overlap and an opaque one hides those
+ * behind it. These are the alpha forms of `emerald[600]` and `amber[500]`, which the same points
+ * use — at full opacity — for their borders.
+ */
+export const ORG_LENS_ROI_BUBBLE_FILL = {
+  profitable: 'rgba(0, 153, 102, 0.45)',
+  lossMaking: 'rgba(254, 154, 0, 0.55)',
+} as const;

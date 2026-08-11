@@ -2,6 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Page, Route, test } from '@playwright/test';
+// Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
+// @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
+// Importing the real constants rather than restating their values means changing a ceiling or the
+// no-value indicator fails a test instead of silently diverging from what a viewer sees.
+import {
+  ORG_LENS_ROI_NO_VALUE,
+  ORG_LENS_ROI_PROJECT_BAR_MAX_ROWS,
+  ORG_LENS_ROI_PROJECT_BUBBLE_MAX_POINTS,
+  ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT,
+  ORG_LENS_ROI_PROJECT_SANKEY_MAX_PROJECTS,
+} from '@lfx-one/shared/constants/org-lens-roi.constants';
+
+export const PICKER_DEFAULT_COUNT = ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT;
+export const BAR_MAX_ROWS = ORG_LENS_ROI_PROJECT_BAR_MAX_ROWS;
+export const SANKEY_MAX_PROJECTS = ORG_LENS_ROI_PROJECT_SANKEY_MAX_PROJECTS;
+export const BUBBLE_MAX_POINTS = ORG_LENS_ROI_PROJECT_BUBBLE_MAX_POINTS;
+export const NO_VALUE = ORG_LENS_ROI_NO_VALUE;
 
 export const ORG_ROI_URL = '/org/roi';
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
@@ -9,8 +26,7 @@ export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 /**
  * Only the year still in progress is labelled partial, so every year-bearing fixture is anchored to
  * the current year rather than hardcoded — otherwise these assertions would quietly invert next
- * January. A hardcoded end year was one of three defects that reached review on the earlier
- * portfolio-summary work.
+ * January.
  */
 export const CURRENT_YEAR = new Date().getFullYear();
 
@@ -164,6 +180,54 @@ export const NEGATIVE_PROJECTS = MOCK_PROJECT_INPUTS.filter((input) => input.ret
   .sort((a, b) => b.profit - a.profit);
 
 export const NEGATIVE_PROJECTS_TOTAL = NEGATIVE_PROJECTS.reduce((sum, project) => sum + project.profit, 0);
+
+/**
+ * The payload arrives ordered by return descending, and the projects section takes its default
+ * selection straight off the front of it. Derived here rather than listed, so reordering the
+ * fixture above cannot leave this silently describing the wrong five.
+ */
+export const PROJECTS_BY_RETURN = [...MOCK_PROJECT_INPUTS].sort((a, b) => b.return - a.return);
+
+export const DEFAULT_SELECTED_PROJECTS = PROJECTS_BY_RETURN.slice(0, PICKER_DEFAULT_COUNT);
+
+export const UNSELECTED_PROJECT = PROJECTS_BY_RETURN[PICKER_DEFAULT_COUNT];
+
+/**
+ * Several hundred projects, for paging the table and for the truncation disclosures the chart views
+ * show when "All" is selected. Returns descend with the index so the ordering is unambiguous.
+ */
+export const MANY_PROJECT_COUNT = 300;
+
+export const MANY_PROJECT_INPUTS = Array.from({ length: MANY_PROJECT_COUNT }, (unused, index) => ({
+  slug: `project-${String(index).padStart(3, '0')}`,
+  name: `Project ${String(index).padStart(3, '0')}`,
+  expenditure: 1_000_000 + (MANY_PROJECT_COUNT - index) * 1_000,
+  return: (MANY_PROJECT_COUNT - index) * 10_000_000,
+}));
+
+export const MANY_PROJECTS = {
+  method: 'logit',
+  rows: MANY_PROJECT_INPUTS.map((input) => projectRow(input.slug, input.name, input.expenditure, input.return)),
+};
+
+/**
+ * A project with no investment. The warehouse returns NULL — never zero — for a ratio it cannot
+ * divide, and the table must render that as the no-value indicator rather than as 0.
+ */
+export const NO_INVESTMENT_PROJECT = {
+  projectId: 'prj-unmeasured',
+  projectSlug: 'unmeasured',
+  projectName: 'Unmeasured Project',
+  totalExpenditure: 0,
+  totalReturn: 0,
+  profit: 0,
+  roi: null,
+  bcr: null,
+  breakevenMarkup: null,
+  categories: [],
+};
+
+export const PROJECTS_WITH_NULL_RATIOS = { method: 'logit', rows: [...MOCK_PROJECTS.rows, NO_INVESTMENT_PROJECT] };
 
 interface StubOptions {
   hasAccess?: boolean;

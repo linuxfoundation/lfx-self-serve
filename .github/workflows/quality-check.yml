@@ -52,17 +52,38 @@ jobs:
       - name: Build project
         run: yarn build
 
-  # e2e-tests:
-  #   name: E2E Tests
-  #   needs: quality-checks
-  #   uses: ./.github/workflows/e2e-tests.yml
-  #   with:
-  #     node-version: "22"
-  #     test-command: "e2e"
-  #     browser: "chromium" # Use only Chromium for PR testing for faster feedback
-  #     skip-build: false
-  #   secrets:
-  #     TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-  #     TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-  #     AI_API_KEY: ${{ secrets.AI_API_KEY }}
-  #     AI_PROXY_URL: ${{ secrets.AI_PROXY_URL }}
+  # Enabled non-blocking (`blocking: false`): the suite has never executed anywhere, so its first
+  # runs are as likely to expose a bad assertion as a real defect, and gating merges on an unproven
+  # gate would strand the repo. Results land in the summary and the PR comment. Flip `blocking` to
+  # true — and require this check in branch protection — once it has been green for a few runs.
+  #
+  # `blocking: false` covers *test failures* only. A dependency install, a build, or the AWS OIDC
+  # secret fetch failing inside the called workflow still fails this job red, which is intended —
+  # those are infrastructure faults, not unproven assertions.
+  #
+  # `continue-on-error` cannot be used here: a job that calls a reusable workflow only supports
+  # name / needs / if / permissions / uses / with / secrets / strategy / concurrency. The input is
+  # applied to the test step inside the called workflow instead.
+  e2e-tests:
+    name: E2E Tests
+    needs: quality-checks
+    # A called workflow cannot hold more permission than its caller, so these must be granted here
+    # even though e2e-tests.yml declares them: id-token for the AWS OIDC secret fetch, and
+    # pull-requests/issues for the results comment.
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      node-version: "22"
+      test-command: "e2e"
+      browser: "chromium" # Use only Chromium for PR testing for faster feedback
+      skip-build: false
+      blocking: false
+    secrets:
+      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_PROXY_URL: ${{ secrets.AI_PROXY_URL }}

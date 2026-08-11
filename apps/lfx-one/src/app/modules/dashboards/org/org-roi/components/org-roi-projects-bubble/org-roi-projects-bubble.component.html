@@ -1,0 +1,66 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="org-roi-projects-bubble">
+  @if (!hasPoints()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-bubble-empty">
+      <i class="fa-light fa-chart-scatter text-gray-400" aria-hidden="true"></i>
+      <span>Select at least one project to plot its efficiency.</span>
+    </div>
+  } @else {
+    @if (hiddenCount() > 0) {
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-bubble-truncation-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span>Showing the first {{ maxPoints }} of the selected projects. {{ hiddenCount() }} more are selected but not plotted.</span>
+      </p>
+    }
+
+    <div class="h-[420px] w-full" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-projects-bubble-chart">
+      <lfx-chart type="bubble" [data]="chartData()" [options]="chartOptions()" height="100%" />
+    </div>
+
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-scale-note">
+      Both axes are logarithmic: return spans several orders of magnitude across a portfolio, and on a linear scale every project but the largest would sit in
+      the corner. Each bubble's area is proportional to its net return, and an amber bubble lost money. Projects further above the diagonal returned more per
+      dollar invested.
+    </p>
+
+    @if (flooredNames().length > 0) {
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-bubble-floored-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span
+          >A logarithmic axis has no zero, so these projects are drawn at the edge rather than at their true position: {{ flooredNames().join(', ') }}. Their
+          figures in the table below are exact.</span
+        >
+      </p>
+    }
+
+    <!-- The canvas is otherwise the only presentation of these values, and it plots floored
+         coordinates — so this table carries the true figures rather than the plotted ones. -->
+    <table class="sr-only" data-testid="org-roi-projects-bubble-table">
+      <caption>
+        Investment, return and ROI by project
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col">Investment</th>
+          <th scope="col">Return</th>
+          <th scope="col">ROI</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of tableRows(); track row.projectId) {
+          <tr>
+            <th scope="row">{{ row.projectName }}</th>
+            <td>{{ row.investment }}</td>
+            <td>{{ row.return }}</td>
+            <td>{{ row.roi }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-modelled-cost-note">{{ investmentExplanation }}</p>
+  }
+</div>
