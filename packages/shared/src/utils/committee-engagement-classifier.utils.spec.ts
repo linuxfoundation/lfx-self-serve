@@ -9,6 +9,7 @@ import {
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
   isCommitteeMemberAtRisk,
+  isCommitteeMemberRateEligible,
   isJoinedWithinWindow,
 } from './committee-engagement-classifier.utils';
 
@@ -180,6 +181,24 @@ describe('isCommitteeMemberActive', () => {
 
   it('is always false for LF Staff, even with real attendance or a fresh join (LFXV2-3101)', () => {
     expect(isCommitteeMemberActive({ attended: 5, invited: 5, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: true })).toBe(false);
+  });
+});
+
+describe('isCommitteeMemberRateEligible (LFXV2-3101)', () => {
+  it('is false for LF Staff, regardless of real attendance', () => {
+    expect(isCommitteeMemberRateEligible({ attended: 8, invited: 8, votingStatus: VOTING_REP, role: LF_STAFF, joinedWithinWindow: false })).toBe(false);
+  });
+
+  it('is true for Emeritus — unlike every other rule in this file, Emeritus is NOT rate-excluded', () => {
+    expect(isCommitteeMemberRateEligible({ attended: 1, invited: 20, votingStatus: EMERITUS, joinedWithinWindow: false })).toBe(true);
+  });
+
+  it('is true for a real Chair with zero attendance (the carve-out is role-based, not a broad exclusion)', () => {
+    expect(isCommitteeMemberRateEligible({ attended: 0, invited: 3, votingStatus: VOTING_REP, role: CHAIR, joinedWithinWindow: false })).toBe(true);
+  });
+
+  it('is true for a member with no role set at all (undefined, not LF Staff)', () => {
+    expect(isCommitteeMemberRateEligible({ attended: 5, invited: 10, votingStatus: VOTING_REP, joinedWithinWindow: false })).toBe(true);
   });
 });
 

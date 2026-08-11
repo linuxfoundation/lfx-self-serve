@@ -16,6 +16,7 @@ import {
   computeCommitteeEngagementRate,
   isCommitteeMemberActive,
   isCommitteeMemberAtRisk,
+  isCommitteeMemberRateEligible,
   isJoinedWithinWindow,
 } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
@@ -376,10 +377,10 @@ export class CommitteeEngagementService {
 
       const classificationInput = { attended, invited: counts.invited, votingStatus, role, joinedWithinWindow };
       // LF Staff seats are excluded from the rate sum (LFXV2-3101) — unlike Emeritus, which stays
-      // unconditionally included here (see `CommitteeEngagementSummary.attendance_rate`'s doc):
-      // a staff seat's real 0-attendance would otherwise drag down the whole committee's displayed
-      // rate for a member with no real attendance expectation in the first place.
-      if (role !== CommitteeMemberRole.LF_STAFF) {
+      // unconditionally included here (see `CommitteeEngagementSummary.attendance_rate`'s doc). See
+      // `isCommitteeMemberRateEligible`'s doc for why this is a named predicate rather than an
+      // inline check, and for the known role-freshness trade-off it documents.
+      if (isCommitteeMemberRateEligible(classificationInput)) {
         totalAttended += attended;
         totalInvited += counts.invited;
       }

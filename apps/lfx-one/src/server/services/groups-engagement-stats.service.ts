@@ -78,9 +78,10 @@ function resolveBackend(): 'mock' | 'live' {
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
  * sources when the roster join has at least one match for that committee; this rollup only has the
  * warehouse row, never a roster fallback); or an `LF Staff` seat (LFXV2-3101) — the detail page's
- * `classificationInput` passes `role` (from the roster, with a warehouse-`MEMBER_ROLE` fallback) so
- * an LF Staff member never counts as active there, but `ActiveMemberRow` here deliberately doesn't
- * select `MEMBER_ROLE` at all (kept minimal for this rollup's no-roster-join design), so
+ * `classificationInput` passes `role` (warehouse `MEMBER_ROLE`, falling back to the roster's own
+ * `role.name` only when the row is missing) so an LF Staff member never counts as active there, but
+ * `ActiveMemberRow` here deliberately doesn't select `MEMBER_ROLE` at all (kept minimal for this
+ * rollup's no-roster-join design), so
  * `isCommitteeMemberActive`'s `role` check always sees `undefined` and an LF Staff member with real
  * attendance still counts as active on this rollup. Left undone here rather than adding the column:
  * this endpoint is a different feature (LFXV2-1711, the Groups dashboard) than the ticket that

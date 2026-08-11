@@ -59,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     computeCommitteeEngagementRate: actual.computeCommitteeEngagementRate,
     isCommitteeMemberActive: actual.isCommitteeMemberActive,
     isCommitteeMemberAtRisk: actual.isCommitteeMemberAtRisk,
+    isCommitteeMemberRateEligible: actual.isCommitteeMemberRateEligible,
     isJoinedWithinWindow: actual.isJoinedWithinWindow,
   };
 });
@@ -461,6 +462,17 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
 
       expect(result.members[0]).toMatchObject({ role: 'Chair', voting_status: 'Emeritus', classification: 'Emeritus' });
       expect(result.summary.at_risk_count).toBe(0);
+    });
+
+    it('falls back to the roster real role on a degraded (unmatched) member, so a real LF Staff member still short-circuits (LFXV2-3101)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never })]);
+      execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ role: 'LF Staff', classification: 'LF Staff' });
+      expect(result.summary.at_risk_count).toBe(0);
+      expect(result.summary.active_count).toBe(0);
     });
 
     it('does NOT tenure-grace a recently-joined member when the whole committee has no data — classifies Inactive, not High, on a genuinely empty read', async () => {

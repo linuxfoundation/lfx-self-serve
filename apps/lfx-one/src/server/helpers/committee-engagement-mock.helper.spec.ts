@@ -202,6 +202,41 @@ describe('generateMockEngagementRows', () => {
       expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
     });
 
+    it('never assigns the Orlin case to a real LF Staff member, even if they are the most-recently-joined real member — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Regression: classifyCommitteeEngagement short-circuits LF Staff exactly like Emeritus, so an
+      // LF Staff candidate would silently absorb the Orlin slot without ever rendering forced counts.
+      // Mirrors the Emeritus test above.
+      const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const secondMostRecentJoin = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [
+        member('m0', { role: { name: 'LF Staff' } as never, created_at: mostRecentJoin }),
+        member('m1', { created_at: secondMostRecentJoin }),
+        ...ROSTER.slice(2),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      const m1 = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0?.INVITED_COUNT_30D).not.toBe(5);
+      expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
+    });
+
+    it('never assigns a reserved Inactive/Low/Medium demo pattern to a real LF Staff member — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Reserved slot 2 is normally Inactive (see the top-level test above) — putting a real LF
+      // Staff member there must bump the Inactive pattern to the next eligible member instead of
+      // silently swallowing it, mirroring how the Orlin/Emeritus exclusions work.
+      const roster = [ROSTER[0], ROSTER[1], member('m2', { role: { name: 'LF Staff' } as never }), ...ROSTER.slice(3)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m2 = rows.find((r) => r.MEMBER_USER_ID === 'm2');
+      const m3 = rows.find((r) => r.MEMBER_USER_ID === 'm3');
+      expect(m2?.MEMBER_ROLE).toBe('LF Staff');
+      // The Inactive pattern's shape (invited but never attends) is deterministic and
+      // committee-wide, independent of which uid holds it — so whichever member now holds it
+      // reproduces the exact numbers the unmodified-roster test above asserts for slot 2.
+      expect(m3?.INVITED_COUNT_30D).toBeGreaterThan(0);
+      expect(m3?.ATTENDED_COUNT_30D).toBe(0);
+    });
+
     it('does not force the literal Orlin counts on a real member whose tenure is too short to plausibly support them', () => {
       // A member who really joined yesterday cannot honestly show 5 real meetings attended,
       // regardless of the ticket's literal example — the forced counts must stay off unless real

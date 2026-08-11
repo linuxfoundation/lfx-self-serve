@@ -96,6 +96,27 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
 }
 
 /**
+ * Whether a member's `attended`/`invited` counts should feed the committee-wide `attendance_rate`
+ * sum (LFXV2-3101) — `LF Staff` seats are excluded, Emeritus seats deliberately are NOT (see
+ * `CommitteeEngagementSummary.attendance_rate`'s doc for why the two aren't symmetric here, unlike
+ * every other rule in this file). Exported as its own named predicate, not left as an inline check
+ * at the one call site, so this asymmetry is stated once in the module that owns every other
+ * classification rule, rather than risking a second, easily-missed copy.
+ *
+ * `input.role`'s value is whatever the caller resolved — for `committee-engagement.service.ts`
+ * today that's warehouse `MEMBER_ROLE` first, falling back to the live roster's `role.name` only
+ * when the warehouse row is missing (same precedence `votingStatus` already used for the Emeritus
+ * check, chosen there for a different reason — rescuing a missing row, not freshness). A known,
+ * accepted consequence: a member's role change on the live roster (promoted off LF Staff, or newly
+ * assigned to it) doesn't affect this exclusion until the warehouse model's next refresh — this
+ * predicate reports what the measured attendance snapshot says the seat was, not necessarily what
+ * the roster says it is right now.
+ */
+export function isCommitteeMemberRateEligible(input: CommitteeEngagementClassificationInput): boolean {
+  return input.role !== CommitteeMemberRole.LF_STAFF;
+}
+
+/**
  * `false` (fail-safe: no tenure protection) for a missing or unparseable join date. Shared between
  * `committee-engagement.service.ts` (per-member tenure clipping for `GET /:uid/engagement`) and
  * `groups-engagement-stats.service.ts` (the `active_members` rollup for `GET /engagement-stats`) so
