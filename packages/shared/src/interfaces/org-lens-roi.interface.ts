@@ -6,6 +6,9 @@ import type {
   ORG_LENS_ROI_COVERAGE_REASONS,
   ORG_LENS_ROI_METHODS,
   ORG_LENS_ROI_PROJECT_MEASURES,
+  ORG_LENS_ROI_PROJECT_SANKEY_MEASURES,
+  ORG_LENS_ROI_PROJECT_SORT_FIELDS,
+  ORG_LENS_ROI_PROJECT_VIEWS,
 } from '../constants/org-lens-roi.constants';
 
 export type OrgLensRoiMethod = (typeof ORG_LENS_ROI_METHODS)[number];
@@ -108,4 +111,107 @@ export interface OrgLensRoiProjectSlice {
   /** What the arc is sized by. Never negative, because an arc cannot be. */
   weight: number;
   color: string;
+}
+
+export type OrgLensRoiProjectView = (typeof ORG_LENS_ROI_PROJECT_VIEWS)[number];
+
+export type OrgLensRoiProjectSankeyMeasure = (typeof ORG_LENS_ROI_PROJECT_SANKEY_MEASURES)[number];
+
+export type OrgLensRoiProjectSortField = (typeof ORG_LENS_ROI_PROJECT_SORT_FIELDS)[number];
+
+export type OrgLensRoiProjectAriaSort = 'ascending' | 'descending' | 'none';
+
+/** One entry of the shared picker — both the chips already chosen and the search matches on offer. */
+export interface OrgLensRoiProjectOption {
+  projectId: string;
+  projectName: string;
+  /** The project's return, formatted. The picker ranks by return, so this is what it shows. */
+  amount: string;
+}
+
+/** One stacked investment category within a bar. Never rescaled: the parts sum to the whole already. */
+export interface OrgLensRoiProjectBarSegment {
+  type: OrgLensRoiContributionType;
+  label: string;
+  expenditure: number;
+  color: string;
+}
+
+/** One project's row of the comparison bar chart. A view model — never serialized. */
+export interface OrgLensRoiProjectBarRow {
+  projectId: string;
+  projectName: string;
+  segments: OrgLensRoiProjectBarSegment[];
+  totalExpenditure: number;
+  totalReturn: number;
+}
+
+/** One `{from, to, flow}` link of the sankey. A view model — never serialized. */
+export interface OrgLensRoiProjectFlowLink {
+  from: string;
+  to: string;
+  flow: number;
+}
+
+/** The context a sankey colour callback receives. Only `raw` is read. */
+export interface OrgLensRoiSankeyColorContext {
+  raw?: OrgLensRoiProjectFlowLink;
+}
+
+/**
+ * The sankey dataset this feature builds.
+ *
+ * Described here rather than as `ChartData<'sankey'>`: `chartjs-chart-sankey` exports its types but
+ * does **not** augment Chart.js's `ChartTypeRegistry`, so no `'sankey'` variant of the built-in
+ * chart types exists to reference.
+ */
+export interface OrgLensRoiSankeyDataset {
+  label: string;
+  data: OrgLensRoiProjectFlowLink[];
+  colorFrom: (context: OrgLensRoiSankeyColorContext) => string;
+  colorTo: (context: OrgLensRoiSankeyColorContext) => string;
+  colorMode: 'gradient';
+  borderWidth: number;
+  /** Maps the type-prefixed node keys to the names a viewer reads. */
+  labels: Record<string, string>;
+  size: 'max' | 'min';
+}
+
+export interface OrgLensRoiSankeyChartData {
+  datasets: OrgLensRoiSankeyDataset[];
+}
+
+/** One plotted project of the efficiency view. A view model — never serialized. */
+export interface OrgLensRoiProjectBubblePoint {
+  projectId: string;
+  projectName: string;
+  /** Investment, lifted to the log floor when non-positive. */
+  x: number;
+  /** Return, lifted to the log floor when non-positive. */
+  y: number;
+  r: number;
+  /** True when either coordinate was lifted, so the point can be disclosed rather than trusted. */
+  isFloored: boolean;
+}
+
+/**
+ * One row of the projects table, carrying both the raw measures it sorts on and the strings it
+ * renders, so neither formatting nor null handling happens in the template.
+ */
+export interface OrgLensRoiProjectTableRow {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  totalExpenditure: number;
+  totalReturn: number;
+  profit: number;
+  roi: number | null;
+  bcr: number | null;
+  breakevenMarkup: number | null;
+  investmentLabel: string;
+  returnLabel: string;
+  profitLabel: string;
+  roiLabel: string;
+  bcrLabel: string;
+  breakevenMarkupLabel: string;
 }

@@ -22,6 +22,7 @@ import { OrgRoiCategoryDonutComponent } from './components/org-roi-category-donu
 import { OrgRoiEmptyStateComponent } from './components/org-roi-empty-state/org-roi-empty-state.component';
 import { OrgRoiKpiCardsComponent } from './components/org-roi-kpi-cards/org-roi-kpi-cards.component';
 import { OrgRoiProjectsDonutComponent } from './components/org-roi-projects-donut/org-roi-projects-donut.component';
+import { OrgRoiProjectsSectionComponent } from './components/org-roi-projects-section/org-roi-projects-section.component';
 
 const EMPTY_SUMMARY: OrgLensRoiSummary = {
   orgUid: '',
@@ -49,6 +50,7 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
     OrgRoiAnnualTrendComponent,
     OrgRoiCategoryDonutComponent,
     OrgRoiProjectsDonutComponent,
+    OrgRoiProjectsSectionComponent,
     OrgRoiAssumptionsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,
