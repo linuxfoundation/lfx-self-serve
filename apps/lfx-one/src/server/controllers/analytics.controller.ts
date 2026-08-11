@@ -2763,11 +2763,13 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getEventsOverviewSummary(foundationSlug);
+      const period = getValidatedPeriod(req, 'get_events_overview_summary');
+      const response = await this.projectService.getEventsOverviewSummary(foundationSlug, period);
 
       logger.success(req, 'get_events_overview_summary', startTime, {
         foundation_slug: foundationSlug,
         project_id: response.projectId,
+        period: period?.label,
       });
 
       res.json(response);
@@ -2802,11 +2804,13 @@ export class AnalyticsController {
 
       const includePast = getStringQueryParam(req, 'includePast') === 'true';
 
-      const response = await this.projectService.getEventRoster(foundationSlug, includePast);
+      const period = getValidatedPeriod(req, 'get_event_roster');
+      const response = await this.projectService.getEventRoster(foundationSlug, includePast, period);
 
       logger.success(req, 'get_event_roster', startTime, {
         foundation_slug: foundationSlug,
         include_past: includePast,
+        period: period?.label,
         event_count: response.events.length,
       });
 
