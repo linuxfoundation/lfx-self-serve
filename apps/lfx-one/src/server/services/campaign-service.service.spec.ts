@@ -325,12 +325,44 @@ describe('CampaignServiceClient.saveBrief', () => {
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
-      // The write's own validator, still current: the approve that would have bumped the version
-      // is exactly what failed.
+      // The write's own validator, still current — and a 412 is what makes that safe to say. A
+      // refusal means nothing was committed, so no `version = version + 1` ran.
       etag: '"1"',
       created: true,
       approved: false,
     });
+  });
+
+  // The other half of the rule above. A 4xx is a refusal and proves the approval did not commit;
+  // a lost response proves nothing. campaign-service may have committed the approve and bumped
+  // the version before the connection died, in which case the write's ETag is one version stale —
+  // returning it would hand back a validator that is wrong in exactly the case nobody can detect.
+  it('reports no validator when the approval outcome is unknown, rather than a possibly stale one', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      // Not a MicroserviceError: the proxy only wraps a response it received. A socket hang-up
+      // reaches this catch as the raw transport error.
+      .mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      created: true,
+      approved: false,
+    });
+  });
+
+  // A 5xx is a response, but it is not a refusal by the thing that would have done the work — a
+  // gateway 502 can follow a commit whose reply was lost on the way back.
+  it('treats a 5xx approval failure as unknown too, not as a refusal', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockRejectedValueOnce(new MicroserviceError('bad gateway', 502, 'BAD_GATEWAY'));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).resolves.toMatchObject({ etag: null, approved: false });
   });
 
   // Same refusal to guess as the If-Match guard below: without a validator there is no safe

@@ -4,9 +4,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPersistenceState, ProjectContext } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { NEVER, Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -161,6 +162,98 @@ describe('CampaignsComponent brief persistence', () => {
 
     expect(state()).toEqual({ status: 'off', briefId: null, message: null });
     expect(tab()).toBe('planning');
+  });
+
+  /**
+   * The other half of the rule above: a superseded response must not write the brief's state, but
+   * it still carries one fact that outlives the brief — whether the cutover is on. Drop that with
+   * the rest and a session whose first save happened to land after a program switch spends the
+   * rest of its life withholding the in-flight banner, for no reason the user can see.
+   */
+  it('still learns the cutover is on from a save that resolved after the brief was discarded', async () => {
+    const late = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(late);
+
+    proceed();
+    switchProgram();
+    await fixture.whenStable();
+
+    late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
+    await fixture.whenStable();
+
+    // Nothing on screen changed — that part stays guarded.
+    expect(state().status).toBe('off');
+
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+
+    // …but the next save knows to show the banner, which it could only have learned from the
+    // response it dropped.
+    expect(state().status).toBe('saving');
+  });
+
+  /**
+   * `/foundation/campaigns` survives a foundation switch — the sidebar only navigates on a lens
+   * change or off an entity page, and this is neither, so `setFoundation` moves `?project=` with
+   * `Location.replaceState` and leaves the component mounted. The brief id on screen belongs to
+   * one foundation's brief table; it must not stay there under another one.
+   */
+  describe('when the selected foundation changes underneath the page', () => {
+    function selectFoundation(slug: string): void {
+      const ctx = TestBed.inject(ProjectContextService);
+      ctx.setRouteLensKind('foundation');
+      // `syncUrl: false` — the URL sync is the sidebar's job and needs a live router URL; what
+      // this spec is about is the context change it leaves behind.
+      ctx.setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+    }
+
+    beforeEach(async () => {
+      // `projectQueryParamGuard` seeds the context BEFORE the component is created, so every
+      // change this component observes is a real switch. Re-create the fixture with a foundation
+      // already selected rather than letting the initial seed masquerade as one.
+      selectFoundation('tlf');
+      fixture = TestBed.createComponent(CampaignsComponent);
+      await fixture.whenStable();
+    });
+
+    it('clears a banner that already landed for the previous foundation', async () => {
+      persistBrief.mockReturnValue(
+        new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
+      );
+      proceed();
+      await fixture.whenStable();
+      expect(state().briefId).toBe('brief-9');
+
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      // Not 'saved' with tlf's id: that id names a row in tlf's table, and CNCF is selected now.
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    });
+
+    it('drops a save that resolves after the foundation changed', async () => {
+      const late = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(late);
+
+      proceed();
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
+      await fixture.whenStable();
+
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    });
+
+    it('files the brief under the foundation selected at save time', async () => {
+      persistBrief.mockReturnValue(NEVER);
+      selectFoundation('cncf');
+      await fixture.whenStable();
+
+      proceed();
+
+      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf');
+    });
   });
 
   it('drops a save that FAILS after the brief was discarded', async () => {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, effect, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
@@ -85,6 +85,22 @@ export class CampaignsComponent {
   private briefPersistenceGeneration = 0;
 
   /**
+   * The foundation the current `briefPersistence` was filed under.
+   *
+   * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
+   * change or off an entity page (`sidebar.component.ts` `redirectOnContextSwitch`), and
+   * `/foundation/campaigns` is neither — it is a two-segment route in the foundation lens, so
+   * picking another foundation runs `setFoundation`, which moves the `?project=` param with
+   * `Location.replaceState` and nothing else. The page stays mounted and `activeContext()`
+   * changes underneath it.
+   *
+   * That makes the slug part of what identifies the brief being described, exactly like the
+   * generation counter: a `saved` banner naming a brief in one foundation's table must not be
+   * left sitting under another one, whether the response landed before the switch or after it.
+   */
+  private lastPersistenceSlug = this.projectContextService.activeContext()?.slug ?? '';
+
+  /**
    * Whether the server has told us the brief-persistence cutover is on.
    *
    * Starts false meaning UNKNOWN, not off, and only a response can change it: the flag is an
@@ -101,6 +117,26 @@ export class CampaignsComponent {
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
   public constructor() {
+    // Discard the persistence state when the selected foundation changes — see
+    // `lastPersistenceSlug`. The generation bump is what stops a save already in flight for the
+    // previous foundation from writing its outcome under the new one; clearing the signal is what
+    // removes a banner that already landed.
+    //
+    // `briefOutput` and `selectedTab` are deliberately left alone, unlike `resetToPlanning`. The
+    // brief describes an EVENT, not a foundation, and throwing away a generated brief on a stray
+    // sidebar click would destroy real work to fix a labelling problem. The consequence is that
+    // proceeding after a switch files that brief under the newly selected foundation, which is
+    // the only foundation the user has actually asked for by then.
+    effect(() => {
+      const slug = this.projectContextService.activeContext()?.slug ?? '';
+      if (slug === this.lastPersistenceSlug) {
+        return;
+      }
+      this.lastPersistenceSlug = slug;
+      this.briefPersistenceGeneration++;
+      this.briefPersistence.set(IDLE_PERSISTENCE);
+    });
+
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
     this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -195,8 +231,16 @@ export class CampaignsComponent {
       .pipe(take(1))
       .subscribe({
         next: (result) => {
-          if (generation !== this.briefPersistenceGeneration) return;
+          // Latched BEFORE the generation check, unlike everything below it. The check exists to
+          // stop a superseded save writing brief-specific state — a `saved` status and a
+          // `briefId` — over a brief the page no longer holds. `enabled` is not brief-specific:
+          // it is a fact about the deployment, equally true for the brief that was discarded and
+          // the one on screen now. Dropping it with the rest would mean a session whose first
+          // save happened to resolve after a program switch never learns the cutover is on, and
+          // withholds the in-flight banner for the rest of its life.
           this.briefPersistenceEnabled.set(result.enabled);
+
+          if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user

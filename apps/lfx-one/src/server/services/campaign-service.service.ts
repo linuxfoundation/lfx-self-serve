@@ -312,13 +312,30 @@ export class CampaignServiceClient {
       );
       return { ...saved, etag: readEtag(approved), approved: true };
     } catch (error) {
-      logger.warning(req, 'campaign_persist_brief_approve', 'brief was saved but could not be approved', {
-        briefId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // The write's own validator, not null: it is still the current one, because the approve
-      // that would have bumped the version is precisely what failed.
-      return { ...saved, etag: writeEtag, approved: false };
+      // Whether the write's ETag is still the current one depends on whether the approval
+      // definitely did NOT happen, and only a 4xx says that. A 4xx is a refusal: something that
+      // understood the request declined it, so no version was bumped and `writeEtag` still
+      // describes the brief in the database.
+      //
+      // Everything else is indeterminate, and reporting `writeEtag` for it would be a guess
+      // dressed as a fact. A timeout, a connection reset, or a 5xx from the gateway can all
+      // follow a commit whose response was lost — `approve-brief` does `version = version + 1`,
+      // so if it did commit, the validator being returned here is one version stale. Report no
+      // validator at all rather than a wrong one; `null` already means "none available" on this
+      // result (see the no-ETag branch above), and the read path re-reads the ETag from the
+      // server before every write, so nothing downstream is left without one.
+      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500;
+      logger.warning(
+        req,
+        'campaign_persist_brief_approve',
+        definitelyRejected ? 'brief was saved but the approval was rejected' : 'brief was saved but the approval outcome is unknown',
+        { briefId, error: error instanceof Error ? error.message : String(error) }
+      );
+      // `approved: false` in BOTH cases, and it is not a claim that the brief is in draft — it is
+      // the absence of a confirmation. It only ever costs a re-approval, which Phase 3 has to be
+      // able to do regardless: it re-checks approval at a version, since anyone may have edited
+      // the brief in between.
+      return { ...saved, etag: definitelyRejected ? writeEtag : null, approved: false };
     }
   }
 
