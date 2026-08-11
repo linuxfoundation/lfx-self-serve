@@ -21,6 +21,7 @@ import {
   Meeting,
   PastMeeting,
   ProfileAuthStatus,
+  ProfilePictureUploadResponse,
   ProfileUpdateRequest,
   ProfileVisibility,
   ProfileVisibilityUpdateRequest,
@@ -120,6 +121,14 @@ export class UserService {
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
     return this.http.patch('/api/profile', data).pipe(take(1));
+  }
+
+  /**
+   * Upload a new profile picture. Sent as raw bytes with the file's MIME type as
+   * Content-Type (the backend parses this with express.raw, not multipart/form-data).
+   */
+  public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
+    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
   }
 
   // Public-profile visibility methods (LFXV2-2629)

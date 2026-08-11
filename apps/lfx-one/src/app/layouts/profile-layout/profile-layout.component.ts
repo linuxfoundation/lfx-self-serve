@@ -162,6 +162,11 @@ export class ProfileLayoutComponent {
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
+        // Clear any stash from the redirect that failed — otherwise it outlives this failed
+        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        if (isPlatformBrowser(this.platformId)) {
+          sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
+        }
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
@@ -246,25 +251,45 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, userMetadata } — replay the drawer's already-mapped payload verbatim (its
-    // clear-to-empty decision), discarding it past the TTL so a stale return isn't silently replayed.
-    // A pre-LFXV2-2933 bundle wrote { savedAt, form } (raw form value); accept that legacy shape during
-    // the rollout window and map it with the prior omit-empties rules so a save started just before a
-    // mid-Flow-C deploy isn't silently dropped by the new parser.
-    let userMetadata: Partial<UserMetadata>;
+    // Stored as one of: { savedAt, userMetadata } (drawer's mapped text-field save),
+    // { savedAt, avatarPending, userMetadata? } (avatar-upload redirect, mapped and optional), or the
+    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending — mapLegacyFormEnvelope below
+    // preserves its original non-clearing semantics). Discard past the TTL so a stale or abandoned
+    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
+    let userMetadata: Partial<UserMetadata> | undefined;
+    let avatarPending = false;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata>; form?: Partial<UserMetadata> };
+      const envelope = JSON.parse(savedState) as {
+        savedAt?: unknown;
+        userMetadata?: Partial<UserMetadata>;
+        form?: Partial<UserMetadata>;
+        avatarPending?: boolean;
+      };
       if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
+      avatarPending = envelope.avatarPending === true;
       if (envelope.userMetadata) {
         userMetadata = envelope.userMetadata;
       } else if (envelope.form) {
         userMetadata = this.mapLegacyFormEnvelope(envelope.form);
-      } else {
-        return;
       }
     } catch {
+      return;
+    }
+
+    // The selected File can't survive the redirect (sessionStorage can't hold one), so this is the
+    // earliest reliable point to tell the user to re-select their image — a toast shown right before
+    // `window.location.href` in the drawer is wiped by the same-tick navigation before it can be read.
+    if (avatarPending) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Authorization complete',
+        detail: 'Please re-select your image to upload it.',
+      });
+    }
+
+    if (!userMetadata) {
       return;
     }
 
