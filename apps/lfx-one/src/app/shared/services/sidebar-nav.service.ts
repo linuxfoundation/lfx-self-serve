@@ -341,7 +341,7 @@ export class SidebarNavService {
         expanded: true,
         items: [
           {
-            label: 'Marketing Impact',
+            label: 'Campaign Impact',
             icon: 'fa-light fa-bullhorn',
             routerLink: '/foundation/marketing-impact',
             testId: 'sidebar-marketing-impact',

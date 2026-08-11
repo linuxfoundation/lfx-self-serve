@@ -7,16 +7,15 @@ import type { MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
-import { EventsGeoSectionComponent } from '../events-geo-section/events-geo-section.component';
 import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 
 /**
  * Marketing Impact overview tab — the LF Events story: at-risk events, the events summary,
- * the event roster (with the per-event deep-dive drawer), and geographic reach.
+ * and the event roster (with the per-event deep-dive drawer).
  */
 @Component({
   selector: 'lfx-overview-tab',
-  imports: [EventsSummarySectionComponent, EventRosterSectionComponent, EventsAttentionSectionComponent, EventsGeoSectionComponent],
+  imports: [EventsSummarySectionComponent, EventRosterSectionComponent, EventsAttentionSectionComponent],
   templateUrl: './overview-tab.component.html',
 })
 export class OverviewTabComponent {

@@ -60,7 +60,6 @@
         <span class="flex-1 min-w-[180px]" role="columnheader">NAME</span>
         <span class="w-52" role="columnheader">REGISTRATIONS</span>
         <span class="w-52" role="columnheader">SPONSORSHIP REV.</span>
-        <span class="w-28 text-right" role="columnheader">CFP</span>
       </div>
 
       <!-- Rows -->
@@ -82,12 +81,20 @@
             }
           </div>
 
-          <!-- Registrations bar -->
-          <div class="w-52" role="cell">
+          <!-- Registrations bar → B2C drawer (marketing campaigns) -->
+          <div
+            class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
+            role="button"
+            tabindex="0"
+            title="View registrations & marketing campaigns"
+            (click)="openFocused(row.eventId, 'b2c', $event)"
+            (keydown.enter)="openFocused(row.eventId, 'b2c', $event)"
+            (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
+            [attr.data-testid]="'event-roster-b2c-' + row.eventId">
             <div class="flex items-baseline justify-between gap-2">
               <span class="text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
               @if (row.registrations.hasGoal) {
-                <span class="text-[11px] text-gray-400 tabular-nums">{{ row.registrations.goal }}</span>
+                <span class="text-[11px] font-medium text-gray-600 tabular-nums">{{ row.registrations.goal }}</span>
               }
             </div>
             @if (row.registrations.hasGoal) {
@@ -104,12 +111,20 @@
             }
           </div>
 
-          <!-- Sponsorship revenue bar -->
-          <div class="w-52" role="cell">
+          <!-- Sponsorship revenue bar → B2B drawer (sponsorship & partnerships) -->
+          <div
+            class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
+            role="button"
+            tabindex="0"
+            title="View sponsorship & partnerships"
+            (click)="openFocused(row.eventId, 'b2b', $event)"
+            (keydown.enter)="openFocused(row.eventId, 'b2b', $event)"
+            (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
+            [attr.data-testid]="'event-roster-b2b-' + row.eventId">
             <div class="flex items-baseline justify-between gap-2">
               <span class="text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
               @if (row.sponsorshipRevenue.hasGoal) {
-                <span class="text-[11px] text-gray-400 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
+                <span class="text-[11px] font-medium text-gray-600 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
               }
             </div>
             @if (row.sponsorshipRevenue.hasGoal) {
@@ -125,8 +140,6 @@
               </div>
             }
           </div>
-
-          <span class="w-28 truncate text-right text-[11px] text-gray-500" role="cell">{{ row.cfpStatus || '—' }}</span>
         </div>
       }
     </div>
@@ -137,4 +150,4 @@
   }
 </div>
 
-<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" />
+<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" [focus]="drawerFocus()" />

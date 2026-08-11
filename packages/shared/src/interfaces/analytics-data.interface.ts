@@ -3403,7 +3403,6 @@ export interface KeywordPerformanceRow {
   SPEND: number;
   IMPRESSIONS: number;
   CONVERSIONS: number;
-  CONVERSIONS_VALUE: number;
   CTR: number;
   CPC: number;
   CONVERSION_RATE: number;

@@ -11,7 +11,9 @@ import { finalize, of, switchMap } from 'rxjs';
 import type { AttentionSeverity, EventAttentionItem, EventRosterResponse, EventRosterRow } from '@lfx-one/shared/interfaces';
 
 /** How many at-risk events to surface at most. */
-const MAX_ATTENTION_ITEMS = 3;
+const MAX_ATTENTION_ITEMS = 8;
+/** How many to show before the "see more" toggle. */
+const COLLAPSED_COUNT = 2;
 /** Below this registration-to-goal percentage an event is considered behind. */
 const BEHIND_GOAL_THRESHOLD = 50;
 
@@ -28,11 +30,22 @@ export class EventsAttentionSectionComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  /** When true, show every item; otherwise cap at COLLAPSED_COUNT. */
+  protected readonly showAll = signal(false);
 
   // === Computed Signals ===
   private readonly roster: Signal<EventRosterResponse> = this.initRoster();
   protected readonly items: Signal<EventAttentionItem[]> = this.initItems();
   protected readonly hasItems = computed(() => this.items().length > 0);
+  /** Items actually rendered: first COLLAPSED_COUNT when collapsed, all when expanded. */
+  protected readonly visibleItems = computed(() => (this.showAll() ? this.items() : this.items().slice(0, COLLAPSED_COUNT)));
+  /** How many items are hidden behind the "see more" toggle. */
+  protected readonly hiddenCount = computed(() => Math.max(0, this.items().length - COLLAPSED_COUNT));
+
+  // === Protected Methods ===
+  protected toggleShowAll(): void {
+    this.showAll.update((v) => !v);
+  }
 
   // === Private Initializers ===
   private initRoster(): Signal<EventRosterResponse> {
