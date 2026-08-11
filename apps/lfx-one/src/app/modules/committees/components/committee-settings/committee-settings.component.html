@@ -102,7 +102,7 @@
           placeholder="Slack, Discord, or other chat URL"
           size="small"
           styleClass="w-full"
-          id="chat-channel"
+          [id]="'chat-channel'"
           data-testid="settings-chat-channel-input"></lfx-input-text>
         <p class="text-[11.5px] text-gray-400 -mt-1">The platform is auto-detected from the URL.</p>
       </div>
@@ -126,7 +126,7 @@
           placeholder="GitHub, GitLab, or other website URL"
           size="small"
           styleClass="w-full"
-          id="website"
+          [id]="'website'"
           data-testid="settings-website-input"></lfx-input-text>
         <p class="text-[11.5px] text-gray-400 -mt-1">The platform is auto-detected from the URL.</p>
       </div>

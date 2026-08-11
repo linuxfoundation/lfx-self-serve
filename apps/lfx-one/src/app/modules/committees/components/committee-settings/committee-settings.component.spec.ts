@@ -87,6 +87,10 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     const matches = fixture.nativeElement.querySelectorAll('#slack-webhook');
     expect(matches).toHaveLength(1);
     expect(matches[0].tagName).toBe('INPUT');
+    // The direct semantic check: HTMLLabelElement.control is the actual association the browser
+    // (and assistive tech) uses — asserting it directly means this test doesn't depend on the
+    // reviewer re-deriving "first match in tree order, must be labelable" from the count + tag.
+    expect((heading as HTMLLabelElement).control).toBe(matches[0]);
   });
 
   it('masks the webhook input from Datadog Session Replay — this app runs defaultPrivacyLevel: "allow", so an unmasked field would record the bearer credential verbatim', async () => {
