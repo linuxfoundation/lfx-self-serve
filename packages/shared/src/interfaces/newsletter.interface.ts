@@ -240,12 +240,17 @@ export interface NewsletterListParams {
 }
 
 /**
- * Reason a newsletter's schedule form can't be armed, as reported by
- * `newsletterScheduleWindowValidator` — `'past'` is the only case that should
- * clear the picker (the value can no longer save); `'tooSoon'`/`'tooFar'`
- * still save fine and only need to disable the Schedule action.
+ * Reason a newsletter's schedule form can't be armed. `'past'` | `'tooSoon'` |
+ * `'tooFar'` come from `newsletterScheduleWindowValidator` — `'past'` is the
+ * only case that should clear the picker (the value can no longer save);
+ * `'tooSoon'`/`'tooFar'` still save fine and only need to disable the Schedule
+ * action. `'invalidFormat'` comes from the `scheduleTime` control's own
+ * `timeFormatValidator` — the time picker accepts free text, and an
+ * out-of-range value like "13:99 PM" would otherwise survive into
+ * `combineDateTime`, which normalizes rather than rejects overflow, silently
+ * arming a different instant than the author typed.
  */
-export type NewsletterScheduleWindowError = 'past' | 'tooSoon' | 'tooFar';
+export type NewsletterScheduleWindowError = 'past' | 'tooSoon' | 'tooFar' | 'invalidFormat';
 
 export interface NewsletterDailyOpens {
   date: string;

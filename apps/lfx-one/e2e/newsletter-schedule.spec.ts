@@ -370,7 +370,15 @@ test.describe('Newsletter schedule — list screen cancel action', () => {
     const scheduled = buildDraft({ status: 'scheduled', scheduled_at: scheduledAt, version: 2 });
 
     await stubNewsletterApis(page, scheduled, {
-      cancelHandler: (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'cancel_window_closed' }) }),
+      // The BFF's error serializer maps the upstream discriminating code into
+      // `upstreamCode` (see microservice.error.ts) — the component branches on
+      // that field, not the raw upstream `{ error: '<code>' }` shape.
+      cancelHandler: (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Too close to the send time to cancel.', code: 'CONFLICT', upstreamCode: 'cancel_window_closed' }),
+        }),
     });
     await stubScheduledTabApis(page, [scheduled]);
 
