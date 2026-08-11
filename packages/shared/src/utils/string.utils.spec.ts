@@ -63,6 +63,17 @@ describe('capCodePointEdit', () => {
     expect(codePointLength(result)).toBe(2000);
     expect(result.endsWith('😀')).toBe(true);
   });
+
+  it('known limitation: a select-all replace whose paste coincidentally shares a trailing code point can displace one boundary code point', () => {
+    // Select-all + over-cap paste of different content that ends like the previous value ('.'). The
+    // shared '.' is misread as an unchanged suffix, so the result is first-3-of-paste + '.' ("WXY.")
+    // rather than the first 4 code points ("WXYZ"). Documented trade-off — see capCodePointEdit's
+    // "Known limitation" note; a faithful fix needs the input's real selection range. The cap itself
+    // still holds: the result is always exactly `max` code points.
+    const result = capCodePointEdit('abc.', 'WXYZ.', 4);
+    expect(result).toBe('WXY.');
+    expect(codePointLength(result)).toBe(4);
+  });
 });
 
 describe('slugify', () => {

@@ -107,6 +107,11 @@ export function codePointLength(value: string): number {
  * @param next - The candidate value after an edit
  * @param max - The maximum allowed number of code points
  * @returns `next` unchanged when within the cap, otherwise clipped at the changed region to exactly `max`
+ *
+ * Known limitation: string-only prefix/suffix diffing can't distinguish a select-all replace from a
+ * mid-selection replace, so an over-cap paste-over-selection that coincidentally shares a trailing (or
+ * leading) code point with `previous` can displace one boundary code point. The result is still `<= max`
+ * code points; a fully faithful fix needs the input's real selection range rather than a `(prev, next)` diff.
  */
 export function capCodePointEdit(previous: string, next: string, max: number): string {
   const nextCP = [...next];
