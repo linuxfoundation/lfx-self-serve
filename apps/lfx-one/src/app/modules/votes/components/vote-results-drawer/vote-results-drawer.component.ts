@@ -20,7 +20,7 @@ import {
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, splitIntoParagraphs } from '@lfx-one/shared/utils';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, sortCommentResponsesByRecency, splitIntoParagraphs } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -315,6 +315,7 @@ export class VoteResultsDrawerComponent {
     });
   }
 
+  /** Newest-first within each prompt — pagination slices the already-sorted list, so page 1 always shows the most recent comments. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
       const results = this.voteResults();
@@ -322,7 +323,7 @@ export class VoteResultsDrawerComponent {
         return [];
       }
 
-      return results.comment_results.filter((cr) => cr.responses.length > 0);
+      return results.comment_results.filter((cr) => cr.responses.length > 0).map((cr) => ({ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }));
     });
   }
 
