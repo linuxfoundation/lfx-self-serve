@@ -11,13 +11,13 @@
   @case ('saved') {
     <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
       <!--
-        Says only that the brief was stored, NOT that a reload restores it. Persistence is
-        write-only in this phase: nothing loads a saved brief back into the page, so a reload
-        still costs the user their work. Promising otherwise would be the same false assurance
-        the 'error' arm below exists to prevent, pointed the other way. LFXV2-3108 adds the read
-        path behind this same flag; the reload promise belongs in that change, not this one.
+        Names the ACTION a recovery needs, rather than promising a reload just works. It does
+        not: the read is keyed on the event slug, and after a reload the page holds no URL to
+        derive one from, so the brief comes back only once the user pastes the event URL again.
+        "It will still be here if you reload" would be the same false assurance the 'error' arm
+        below exists to prevent, pointed the other way.
       -->
-      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>Brief saved.
+      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>Brief saved. After a reload, re-enter the event URL to restore it.
     </div>
   }
   @case ('error') {

@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
+  CampaignEventDetails,
+  CampaignGoal,
+  CampaignJobStatus,
+  CampaignKeyword,
+  CampaignPlatform,
+  CampaignPlatformResult,
+  CampaignProgramType,
+  LinkedInBriefCopy,
+  MetaBriefCopy,
+  RedditBriefCopy,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -49,6 +63,18 @@ interface CampaignServiceBriefInput {
   targeting?: Record<string, unknown>;
 }
 
+/**
+ * `brief` as campaign-service returns it (`design/brief.go`, `var Brief`).
+ *
+ * The four content fields are declared here as well as on the input above, because the read
+ * path needs them: `Brief` inherits `event_details`, `copy`, `keywords` and `targeting` from
+ * `BriefData` via `Reference`, so a find returns everything a save wrote. They stay `unknown`-ish
+ * for the same reason as on the input — the service validates none of them, so a value coming
+ * back is not evidence of its shape and the adapter has to check rather than trust.
+ *
+ * `Required` upstream is `id, project_id, program_type, event_slug, status, version` — note
+ * `etag` is NOT in that set, which `saveBrief` already relies on and reports rather than guesses.
+ */
 interface CampaignServiceBrief {
   id: string;
   project_id: string;
@@ -57,6 +83,12 @@ interface CampaignServiceBrief {
   status: string;
   version: number;
   etag?: string;
+  url?: string;
+  platforms?: string[];
+  event_details?: unknown;
+  copy?: unknown;
+  keywords?: unknown;
+  targeting?: unknown;
 }
 
 /**
@@ -226,6 +258,29 @@ export class CampaignServiceClient {
     return { enabled: true, briefId: updated.id, etag: updated.etag ?? null, created: false };
   }
 
+  /**
+   * Read back the brief saved for this event slug.
+   *
+   * The inverse of `saveBrief`, and it reuses the same find so the two agree on what "no brief"
+   * means — including the 404 gating. A gateway 404 read as "none" would be worse here than a
+   * thrown error: the page would silently offer a blank Planning tab for an event that already
+   * has an approved brief, and the first save after that is an UPDATE that replaces it.
+   *
+   * `unreadable` rather than `none` when the row cannot be mapped back, for the same reason. The
+   * three outcomes are the caller's to render; see `CampaignBriefLoadResult`.
+   */
+  public async loadBrief(req: Request, eventSlug: string): Promise<CampaignBriefLoadResult> {
+    const basePath = `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/briefs`;
+    const found = await this.findBrief(req, basePath, eventSlug);
+
+    if (found === null) {
+      return { status: 'none', briefId: null, brief: null };
+    }
+
+    const brief = fromBriefResponse(found);
+    return brief === null ? { status: 'unreadable', briefId: found.id, brief: null } : { status: 'loaded', briefId: found.id, brief };
+  }
+
   /** The saved brief for this event slug, or `null` when campaign-service says there is none. */
   private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<CampaignServiceBrief | null> {
     try {
@@ -296,6 +351,160 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       driveFolderUrl: brief.driveFolderUrl,
     },
   };
+}
+
+/**
+ * Rebuild the UI's brief from a stored one — the exact inverse of `toBriefInput`.
+ *
+ * Returns `null` for a row this build cannot represent, which the caller reports as
+ * `unreadable`. Everything here is defensive because the four fields it reads are `Any`
+ * upstream: the service validated none of them on the way in, so a value coming back is not
+ * evidence of its shape. It may also have been written by an OLDER build of this file.
+ *
+ * The line between "coerce" and "give up" is drawn at what the Implementation tab requires.
+ * `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
+ * without a usable one is genuinely unopenable — that is the only `null` this returns for a
+ * brief that came from this UI. A missing keyword list, on the other hand, costs the user a
+ * section, not the brief, so it degrades to `[]`.
+ *
+ * The other `null` is `program_type`: the service's enum has `membership`, `CampaignProgramType`
+ * does not, and the whole page is built around the two it has. Silently rendering a membership
+ * brief as an events one would show the wrong labels, the wrong URL help and the wrong goal
+ * list for a brief someone else's client wrote. Unreachable from here today — `toBriefInput`
+ * can only ever send `events` or `education` — which is exactly why it must not be assumed.
+ */
+export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOutput | null {
+  const eventDetails = asEventDetails(found.event_details);
+  if (eventDetails === null) {
+    return null;
+  }
+
+  if (found.program_type !== 'events' && found.program_type !== 'education') {
+    return null;
+  }
+
+  const copy = asRecord(found.copy) ?? {};
+  const targeting = asRecord(found.targeting) ?? {};
+
+  return {
+    eventDetails,
+    programType: found.program_type as CampaignProgramType,
+    // Narrowed against the union rather than passed through: an unknown platform id reaches a
+    // template that indexes icon and label maps by it, and renders blank rather than erroring.
+    selectedPlatforms: (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORM_IDS.includes(p as CampaignPlatform)),
+    structuredCopy: asRecord(copy['structured']),
+    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn']),
+    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit']),
+    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta']),
+    keywords: asKeywords(found.keywords),
+    campaignGoal: CAMPAIGN_GOAL_IDS.includes(targeting['campaignGoal'] as CampaignGoal) ? (targeting['campaignGoal'] as CampaignGoal) : null,
+    totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
+    hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
+    driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
+  };
+}
+
+/** The platform ids the page can render. Kept next to the only thing that filters against it. */
+const CAMPAIGN_PLATFORM_IDS: readonly CampaignPlatform[] = ['google-ads', 'microsoft-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads', 'twitter-ads'];
+
+const CAMPAIGN_GOAL_IDS: readonly CampaignGoal[] = ['conversions', 'brand-awareness', 'traffic', 'lead-generation', 'engagement'];
+
+/** A plain JSON object, or `null` for anything else — arrays and `null` included. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asTextList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+/**
+ * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.
+ *
+ * Every field is coerced rather than required, because `CampaignEventDetails` is what the SCRAPE
+ * produced and the scrape is best-effort — a brief saved from a page with no listed speakers has
+ * an empty `speakers`, and a brief saved by an older build may not have `formatNotes` at all.
+ * Rejecting those would report a perfectly good brief as unreadable.
+ *
+ * The one thing that IS required is a name or a slug. With neither, the object carries no
+ * identity: the Implementation tab's campaign names are built from them, and the reload would
+ * present an unnamed event the user cannot recognise as theirs.
+ */
+function asEventDetails(value: unknown): CampaignEventDetails | null {
+  const details = asRecord(value);
+  if (details === null) {
+    return null;
+  }
+
+  const name = asText(details['name']);
+  const slug = asText(details['slug']);
+  if (name.trim().length === 0 && slug.trim().length === 0) {
+    return null;
+  }
+
+  return {
+    name,
+    slug,
+    dates: asText(details['dates']),
+    city: asText(details['city']),
+    countryCode: asText(details['countryCode']),
+    audience: asText(details['audience']),
+    themes: asTextList(details['themes']),
+    registrationUrl: asText(details['registrationUrl']),
+    speakers: asTextList(details['speakers']),
+    formatNotes: asText(details['formatNotes']),
+  };
+}
+
+/**
+ * One of the three per-platform copy blocks, or `undefined` when it is absent or unusable.
+ *
+ * `variants` is the discriminator: all three types have one, every consumer iterates it, and a
+ * block without it would reach a template that does `@for (v of copy.variants)`. Their INNER
+ * shape is not validated — doing so would restate the generator's schema in a second place, and
+ * the fields are rendered as text, so a missing one is a blank line rather than a crash.
+ *
+ * `undefined` and not `null`: all three are optional on `CampaignBriefOutput`, and absent is
+ * exactly what a brief generated for a different platform set looks like.
+ */
+function asVariantCopy<T>(value: unknown): T | undefined {
+  const block = asRecord(value);
+  return block !== null && Array.isArray(block['variants']) ? (block as T) : undefined;
+}
+
+/**
+ * The keyword table, dropping entries that carry no term.
+ *
+ * `matchType` and `intentLevel` fall back to their broadest values rather than dropping the row:
+ * they drive a filter chip and a sort, so a wrong one costs ordering, while a dropped keyword
+ * costs the user research they already paid for.
+ */
+function asKeywords(value: unknown): CampaignKeyword[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce<CampaignKeyword[]>((keywords, entry) => {
+    const record = asRecord(entry);
+    const term = asText(record?.['term']);
+    if (record === null || term.trim().length === 0) {
+      return keywords;
+    }
+
+    const matchType = record['matchType'];
+    const intentLevel = record['intentLevel'];
+    keywords.push({
+      term,
+      matchType: matchType === 'Exact' || matchType === 'Phrase' ? matchType : 'Broad',
+      intentLevel: intentLevel === 'High' || intentLevel === 'Low' ? intentLevel : 'Medium',
+      notes: asText(record['notes']),
+    });
+    return keywords;
+  }, []);
 }
 
 /**

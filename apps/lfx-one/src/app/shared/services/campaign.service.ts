@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefRefineRequest,
@@ -63,6 +64,16 @@ export class CampaignService {
    */
   public persistBrief(brief: CampaignBriefOutput): Observable<CampaignBriefPersistResult> {
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief);
+  }
+
+  /**
+   * Load the brief previously saved for this event slug.
+   *
+   * `HttpParams` rather than string interpolation: an event slug is derived from a pasted URL's
+   * last path segment and is not guaranteed to be URL-safe.
+   */
+  public loadBrief(eventSlug: string): Observable<CampaignBriefLoadResult> {
+    return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', { params: new HttpParams().set('event_slug', eventSlug) });
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {

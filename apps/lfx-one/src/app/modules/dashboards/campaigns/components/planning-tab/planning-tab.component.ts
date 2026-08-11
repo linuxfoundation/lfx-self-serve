@@ -8,9 +8,10 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
-import { debounceTime, Subject, Subscription } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, of, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignEventDetails,
@@ -86,6 +87,29 @@ export class PlanningTabComponent implements OnInit {
   protected lastLookedUpEvent = '';
   private readonly urlInput$ = new Subject<string>();
 
+  /**
+   * A brief already saved for the event in the URL field, offered rather than applied.
+   *
+   * Never restored automatically. The user typed a URL to start a campaign; silently replacing
+   * the empty form with someone's earlier work — possibly their own from a month ago — takes a
+   * decision away from them and hides the fact that a stored brief exists at all. The banner
+   * says what was found and leaves the choice.
+   */
+  protected readonly savedBrief = signal<CampaignBriefOutput | null>(null);
+
+  /**
+   * Why no brief is on offer, when that is worth saying.
+   *
+   * Two cases, and both matter because generating over them is destructive: `unreadable` means a
+   * brief EXISTS for this event and this build cannot open it, and a failed lookup means we do
+   * not know. In either case the next save is a find-then-UPDATE that replaces whatever is
+   * there, so the user is told before they spend an afternoon regenerating. `none` sets this to
+   * null — there is nothing to warn about.
+   */
+  protected readonly savedBriefWarning = signal<string | null>(null);
+
+  private readonly slugInput$ = new Subject<string>();
+
   // === Editable Review Signals ===
   protected readonly editSearchHeadlines = signal<string[]>([]);
   protected readonly editSearchDescriptions = signal<string[]>([]);
@@ -122,6 +146,20 @@ export class PlanningTabComponent implements OnInit {
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
+
+    // `switchMap`, so an edited URL cancels the lookup for the previous one. The persist path
+    // needed a generation counter for the same hazard because its request must outlive the
+    // component; this one must not, and a subscription that drops the stale response is the
+    // simpler answer. `catchError` is INSIDE the switchMap so one failed lookup does not
+    // terminate the stream and leave every later URL unchecked.
+    this.slugInput$
+      .pipe(
+        debounceTime(500),
+        distinctUntilChanged(),
+        switchMap((slug) => this.campaignService.loadBrief(slug).pipe(catchError(() => of(null)))),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => this.applySavedBrief(result));
   }
 
   // === Public Methods ===
@@ -137,6 +175,8 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
+    this.savedBrief.set(null);
+    this.savedBriefWarning.set(null);
     this.isEditing.set(false);
     this.isRefining.set(false);
     this.isRefineStreaming.set(false);
@@ -170,6 +210,24 @@ export class PlanningTabComponent implements OnInit {
     const eventName = this.extractEventName(url);
     if (eventName.length > 3) {
       this.urlInput$.next(eventName);
+    }
+
+    // Keyed on the slug, not the event name: the slug is what the brief was filed under, and
+    // `extractSlug` here is the same derivation the save path used. Cleared eagerly so a
+    // half-typed URL cannot leave an offer to restore a DIFFERENT event's brief on screen.
+    const slug = this.extractSlug(url);
+    this.savedBrief.set(null);
+    this.savedBriefWarning.set(null);
+    if (slug.length > 0) {
+      this.slugInput$.next(slug);
+    }
+  }
+
+  /** Hand the saved brief straight to the Implementation tab, skipping generation. */
+  protected restoreSavedBrief(): void {
+    const brief = this.savedBrief();
+    if (brief !== null) {
+      this.proceedToImplementation.emit(brief);
     }
   }
 
@@ -518,6 +576,25 @@ export class PlanningTabComponent implements OnInit {
       recommendedTargetingProfile: profile,
       strategy: strategy ?? undefined,
     };
+  }
+
+  /**
+   * Record what the brief lookup found.
+   *
+   * `null` is the transport failure `catchError` mapped — distinct from every `status` the
+   * server can report, and the only one that means "we do not know".
+   */
+  private applySavedBrief(result: CampaignBriefLoadResult | null): void {
+    if (result === null) {
+      this.savedBrief.set(null);
+      this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
+      return;
+    }
+
+    this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
+    this.savedBriefWarning.set(
+      result.status === 'unreadable' ? 'This event has a saved brief that could not be opened. Generating a new one will replace it.' : null
+    );
   }
 
   private extractEventName(url: string): string {

@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
@@ -340,6 +341,51 @@ export class CampaignController {
     try {
       const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug);
       logger.success(req, 'campaign_persist_brief', startTime, { eventSlug, briefId: result.briefId, created: result.created });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read back the brief saved for an event slug — the other half of `persistBrief`.
+   *
+   * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
+   * while the write is dark would find nothing and look broken, and a write enabled while the
+   * read is dark is what shipped in the previous phase — briefs going into Postgres that nothing
+   * ever brings back. One flag makes "the cutover is on" a single, checkable fact.
+   *
+   * The slug arrives as a query parameter because there is nothing else to key on: the page has
+   * only the event URL the user pasted, and the slug derived from it is what `persistBrief`
+   * filed the brief under.
+   */
+  public async loadBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      res.json({ status: 'off', briefId: null, brief: null } satisfies CampaignBriefLoadResult);
+      return;
+    }
+
+    // Rejected rather than passed through: `find-brief` declares MinLength(1) on `event_slug`,
+    // so an empty one is a 400 from campaign-service naming a field the user never typed — the
+    // same reason `persistBrief` checks its own slug before sending.
+    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'].trim() : '';
+    if (eventSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('event_slug', 'event_slug is required', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug });
+
+    try {
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug);
+      // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
+      // a stored brief exists and this build cannot open it, and nothing else would record it.
+      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, status: result.status, briefId: result.briefId });
       res.json(result);
     } catch (error) {
       next(error);

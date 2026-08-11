@@ -198,6 +198,33 @@ export interface CampaignBriefPersistenceState {
   message: string | null;
 }
 
+/**
+ * What `GET /api/campaigns/brief` reports back — the read half of brief persistence.
+ *
+ * The outcome is a single `status` rather than the `enabled` + payload pair
+ * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
+ * are "no brief". Collapsing them loses the distinction that matters:
+ *
+ * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
+ *   environment and warrants no UI.
+ * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
+ *   first-time case; the user generates one.
+ * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
+ * - `unreadable` — a row EXISTS for this slug but this build cannot reconstruct a
+ *   `CampaignBriefOutput` from it. Reporting that as `none` would be a lie with consequences:
+ *   the user would generate a replacement, and the save path is find-then-UPDATE, so the
+ *   unreadable brief would be silently overwritten rather than repaired or reported. Kept
+ *   distinct so the UI can say "a saved brief exists but could not be opened" and the id is
+ *   available to whoever investigates.
+ *
+ * `briefId` is populated for `loaded` and `unreadable` alike, and null for the other two.
+ */
+export interface CampaignBriefLoadResult {
+  status: 'off' | 'none' | 'loaded' | 'unreadable';
+  briefId: string | null;
+  brief: CampaignBriefOutput | null;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------
