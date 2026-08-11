@@ -6,7 +6,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
-import { formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
+import { eventRegistrationPercent, formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
@@ -89,7 +89,8 @@ export class EventRosterSectionComponent {
     const sponsorshipRevenue = this.toBar(event.sponsorshipRevenue.actual, event.sponsorshipRevenue.goal, true);
     // At-risk = a real registration goal the event is materially behind on, and a low pace vs last
     // year. Shared with the needs-attention strip so the two can't disagree about the same event.
-    const atRisk = isEventAtRisk(registrations.hasGoal, registrations.percent, event.compScore);
+    // A null percent means no goal, which is never "behind".
+    const atRisk = isEventAtRisk(eventRegistrationPercent(event.registrations), event.compScore);
 
     return {
       eventId: event.eventId,

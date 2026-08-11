@@ -171,19 +171,20 @@ function firstOfMonth(year: number, month: number): string {
 // === Event Roster Helpers ===
 
 /**
- * Whether an event is materially behind its registration goal. Split from `isEventAtRisk` so the
- * goal bar's tone and the at-risk badge can never drift apart: both read this one threshold.
- * An event with no goal is never behind — there is nothing to be behind on.
+ * Registration progress as a whole percentage, or null when the event carries no real goal.
+ * A goal of 0/absent means "no goal required", which is not the same as 0% attained.
  */
-export function isBehindRegistrationGoal(hasGoal: boolean, percent: number): boolean {
-  return hasGoal && percent < BEHIND_GOAL_PERCENT_THRESHOLD;
+export function eventRegistrationPercent(registrations: { actual: number; goal: number }): number | null {
+  if (!registrations.goal || registrations.goal <= 0) return null;
+  return Math.round((registrations.actual / registrations.goal) * 100);
 }
 
 /**
- * The single definition of "at risk": materially behind a real registration goal *and* pacing low
- * against last year. Both the roster's warning icon and the needs-attention strip call this, so a
- * future tune to either condition moves them together instead of letting one silently disagree.
+ * Shared at-risk predicate: an event is at risk when it has a real registration goal it is
+ * materially behind on AND it is pacing low against last year. Both the roster's row flag and
+ * the needs-attention strip read this so the two views can never disagree about what "at risk"
+ * means.
  */
-export function isEventAtRisk(hasGoal: boolean, percent: number, compScore: string | null | undefined): boolean {
-  return isBehindRegistrationGoal(hasGoal, percent) && compScore === 'low';
+export function isEventAtRisk(percent: number | null, compScore: string | null | undefined): boolean {
+  return percent !== null && percent < BEHIND_GOAL_PERCENT_THRESHOLD && compScore === 'low';
 }
