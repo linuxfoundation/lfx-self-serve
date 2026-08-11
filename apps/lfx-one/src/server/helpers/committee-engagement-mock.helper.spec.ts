@@ -179,6 +179,21 @@ describe('generateMockEngagementRows', () => {
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
     });
 
+    it('never promotes a real LF Staff member to the fabricated Emeritus fallback — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Regression: without the exclusion, m0 (first index with no real voting status) would be
+      // promoted to a fabricated Emeritus profile — rendering the wrong chip (Emeritus instead of
+      // LF Staff) and, since Emeritus isn't rate-excluded, feeding its fabricated high-invite/
+      // near-zero-attendance numbers into attendance_rate, the exact depression this ticket exists
+      // to prevent.
+      const roster = [member('m0', { role: { name: 'LF Staff' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0?.MEMBER_VOTING_STATUS).not.toBe('Emeritus');
+      // Someone else on the roster still demonstrates the Emeritus scenario.
+      expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(true);
+    });
+
     it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member — a different eligible member takes it instead', () => {
       // Regression: buildAttendanceProfile checks isEmeritus before the Orlin slot, so an
       // Emeritus candidate would silently absorb the role without ever rendering forced counts —
@@ -210,14 +225,26 @@ describe('generateMockEngagementRows', () => {
       const secondMostRecentJoin = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
       const roster = [
         member('m0', { role: { name: 'LF Staff' } as never, created_at: mostRecentJoin }),
-        member('m1', { created_at: secondMostRecentJoin }),
+        // Real (non-null) voting status so m1 isn't itself swept into the Emeritus fallback once
+        // m0 is excluded from it — this test is isolating the Orlin-slot exclusion, not that one.
+        member('m1', { voting: { status: 'Voting Rep' } as never, created_at: secondMostRecentJoin }),
         ...ROSTER.slice(2),
       ];
       const rows = generateMockEngagementRows('committee-1', roster);
       const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
       const m1 = rows.find((r) => r.MEMBER_USER_ID === 'm1');
       expect(m0?.MEMBER_ROLE).toBe('LF Staff');
-      expect(m0?.INVITED_COUNT_30D).not.toBe(5);
+      // A single window's organic count can coincidentally equal 5 (as it does for this seed) — the
+      // Orlin profile's real signature is the *same* forced 5/5 repeating across all three windows,
+      // which an organic (hash-derived, window-scaled) profile essentially never reproduces by chance.
+      expect(m0).not.toMatchObject({
+        INVITED_COUNT_30D: 5,
+        ATTENDED_COUNT_30D: 5,
+        INVITED_COUNT_90D: 5,
+        ATTENDED_COUNT_90D: 5,
+        INVITED_COUNT_YTD: 5,
+        ATTENDED_COUNT_YTD: 5,
+      });
       expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
     });
 

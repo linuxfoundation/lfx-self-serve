@@ -104,13 +104,12 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
  * classification rule, rather than risking a second, easily-missed copy.
  *
  * `input.role`'s value is whatever the caller resolved — for `committee-engagement.service.ts`
- * today that's warehouse `MEMBER_ROLE` first, falling back to the live roster's `role.name` only
- * when the warehouse row is missing (same precedence `votingStatus` already used for the Emeritus
- * check, chosen there for a different reason — rescuing a missing row, not freshness). A known,
- * accepted consequence: a member's role change on the live roster (promoted off LF Staff, or newly
- * assigned to it) doesn't affect this exclusion until the warehouse model's next refresh — this
- * predicate reports what the measured attendance snapshot says the seat was, not necessarily what
- * the roster says it is right now.
+ * today that's the live roster's `role.name` first, falling back to warehouse `MEMBER_ROLE` only
+ * when the roster value is missing (deliberately the OPPOSITE precedence `votingStatus` uses for
+ * the Emeritus check, which stays warehouse-first — see that call site's own comment for why: this
+ * exclusion needs to reflect a role change the moment it lands on the roster, not lag until the
+ * dbt model's next refresh, and the roster's typed `CommitteeMemberRole` is also a safer match
+ * target than the warehouse's untyped string).
  */
 export function isCommitteeMemberRateEligible(input: CommitteeEngagementClassificationInput): boolean {
   return input.role !== CommitteeMemberRole.LF_STAFF;

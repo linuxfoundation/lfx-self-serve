@@ -90,7 +90,11 @@ interface RosterPlan {
  * - `Emeritus`: real `voting.status` wins for every member — including a real `None`, which is a
  *   recorded status like any other, not an absence of one; if nothing on the roster is naturally
  *   `Emeritus`, the first member with no usable real status (no `voting` recorded, or a blank/falsy
- *   `status`) is promoted — but only that one case. If every member already has a real, known status
+ *   `status`) is promoted — but only that one case, and never a real `LF Staff` member (LFXV2-3101):
+ *   promoting one to a fabricated Emeritus profile would render the wrong chip (`Emeritus` instead
+ *   of `LF Staff`) and, since Emeritus is deliberately not rate-excluded, feed its fabricated
+ *   high-invite/near-zero-attendance numbers into `attendance_rate` — the exact depression the LF
+ *   Staff carve-out exists to prevent. If every member already has a real, known status
  *   (including a committee where everyone is `None` — the common case for a committee without
  *   voting enabled), no member is promoted;
  *   this committee's mock output just won't include an `Emeritus` row. This trades away some demo
@@ -140,24 +144,29 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
   const votingStatuses = realVotingStatuses.map(
     (real, index) => real ?? organicVotingStatus(hashToUnitInterval(`${committeeUid}:${sortedMembers[index]?.uid}:voting-status`))
   );
+  // `LF Staff` (LFXV2-3101) always classifies `LF Staff` regardless of attendance numbers, exactly
+  // like Emeritus always classifies `Emeritus` — an LF Staff member assigned the Emeritus-fallback
+  // promotion, the Orlin slot, or a reserved Inactive/Low/Medium demo pattern would silently swallow
+  // whichever one it's assigned to (and, for the Emeritus promotion specifically, would also let a
+  // fabricated high-invite/near-zero-attendance Emeritus profile feed the rate sum, since Emeritus
+  // is deliberately NOT rate-excluded — the exact depression this ticket exists to prevent). Hoisted
+  // above the Emeritus-fallback block below so that block can exclude it too. `MEMBER_ROLE` is
+  // always the roster's real role (see the module doc), so this is a real exclusion, not a
+  // hash-derived one.
+  const isLfStaff = (index: number): boolean => sortedMembers[index]?.role?.name === CommitteeMemberRole.LF_STAFF;
+
   // The two fallback assignments below both prefer "the first member with no real data of the
   // relevant kind" — on a roster with no real data at all (e.g. a bare test fixture), that's the
   // same index for both, so the second fallback must skip whichever index the first one already
-  // claimed, or one member would need to simultaneously be Emeritus and the Orlin case.
+  // claimed, or one member would need to simultaneously be Emeritus and the Orlin case. Both also
+  // skip any real LF Staff member — see the comment on `isLfStaff` above.
   let emeritusFallbackIndex = -1;
   if (!votingStatuses.includes(CommitteeMemberVotingStatus.EMERITUS)) {
-    emeritusFallbackIndex = realVotingStatuses.findIndex((real) => real === null);
+    emeritusFallbackIndex = realVotingStatuses.findIndex((real, index) => real === null && !isLfStaff(index));
     if (emeritusFallbackIndex !== -1) votingStatuses[emeritusFallbackIndex] = CommitteeMemberVotingStatus.EMERITUS;
   }
 
   const isEmeritus = (index: number): boolean => votingStatuses[index] === CommitteeMemberVotingStatus.EMERITUS;
-  // `LF Staff` (LFXV2-3101) always classifies `LF Staff` regardless of attendance numbers, exactly
-  // like Emeritus always classifies `Emeritus` — an LF Staff member assigned the Orlin slot or a
-  // reserved Inactive/Low/Medium demo pattern would silently swallow it the same way an Emeritus
-  // member would, so it's excluded from both eligibility pools the same way. `MEMBER_ROLE` is
-  // always the roster's real role (see the module doc), so this is a real exclusion, not a
-  // hash-derived one.
-  const isLfStaff = (index: number): boolean => sortedMembers[index]?.role?.name === CommitteeMemberRole.LF_STAFF;
 
   let orlinIndex = realJoinedDaysAgo.reduce<number | null>((mostRecentIndex, days, index) => {
     if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index) || isLfStaff(index)) return mostRecentIndex;

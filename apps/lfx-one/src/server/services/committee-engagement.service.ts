@@ -339,25 +339,36 @@ export class CommitteeEngagementService {
       // violated in practice (a mismatched grain assumption, a future live-read bug) rather than
       // assuming it's already broken — an unclamped value here would produce a >100% rate.
       const attended = Math.min(counts.attended, counts.invited);
-      // Falls back to the roster's own role/voting-status (already in hand, not warehouse-sourced)
+      // `votingStatus` falls back to the roster's own value (already in hand, not warehouse-sourced)
       // rather than defaulting straight to 'None' when there's no matching row — otherwise a real,
       // known Emeritus member would silently lose that short-circuit and classify Inactive on every
       // unmatched/degraded response, even though the roster already knows better. `||`, not `??`,
-      // so a blank passthrough falls through too; both fields' real enum values ('None' included)
-      // are always non-empty strings. Last-resort default is the documented `None` sentinel rather
-      // than '' — matching the mock generator's own role default
-      // (`member.role?.name ?? CommitteeMemberRole.NONE`); its voting-status default differs
-      // (`organicVotingStatus()` hash-derives a rep status, never `None`), but that's mock mode's
+      // so a blank passthrough falls through too; the real enum value ('None' included) is always a
+      // non-empty string. Last-resort default is the documented `None` sentinel rather than '' —
+      // matching the mock generator's own voting-status posture, though its actual default differs
+      // (`organicVotingStatus()` hash-derives a rep status, never `None`), since that's mock mode's
       // own no-real-data-fabrication concern, not a contract this live/degraded path needs to match.
       const votingStatus = row?.MEMBER_VOTING_STATUS || member.voting?.status || CommitteeMemberVotingStatus.NONE;
-      const role = row?.MEMBER_ROLE || member.role?.name || CommitteeMemberRole.NONE;
+      // `role` prefers the LIVE roster value first, unlike `votingStatus` above — deliberately the
+      // opposite precedence (LFXV2-3101 review fix). Before this ticket `role` was pure passthrough
+      // display text, so precedence never mattered functionally; now it also decides the `LF Staff`
+      // exclusion (`isCommitteeMemberRateEligible` et al.), and a warehouse-first order would let a
+      // role promoted or demoted on the roster stay silently wrong here until the dbt model's next
+      // refresh — reintroducing, for `role`, exactly the display/chip contradiction this ticket
+      // exists to remove for `votingStatus`'s Emeritus case. `member.role?.name` is also a typed
+      // `CommitteeMemberRole`, unlike `row?.MEMBER_ROLE` (an untyped warehouse string) — preferring
+      // it first means a live-mode `MEMBER_ROLE` spelling/casing mismatch degrades to the roster's
+      // known-good value instead of silently defeating the `=== CommitteeMemberRole.LF_STAFF` checks
+      // everywhere they're used. The warehouse value remains the fallback for the same "no matching
+      // row" reason `votingStatus` falls back to the roster above, just in the opposite direction.
+      const role = member.role?.name || row?.MEMBER_ROLE || CommitteeMemberRole.NONE;
       // Same roster-fallback reasoning as role/voting-status above, but checked independently
       // rather than value-selected: a value-selection fallback (`row value || roster value`) would
       // pick a present-but-unparseable row date over a perfectly good roster one, since both are
       // truthy — `isJoinedWithinWindow` can't tell "unparseable" from "valid but outside the
       // window" from the inside. Checking both and taking either `true` sidesteps that: `created_at`
       // is a required roster field, so it's always available to fall back to, and discarding it here
-      // would cost a recently-joined member their tenure grace (case 2 of the classifier's decision
+      // would cost a recently-joined member their tenure grace (case 3 of the classifier's decision
       // order) whenever the row's own date is missing, blank, or unparseable.
       //
       // The roster `created_at` fallback is gated on `usableData` (`dataAvailable && anyRowMatched`),
