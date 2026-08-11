@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
+import { CommentResponseInput, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
@@ -339,6 +339,13 @@ export class VoteController {
         }
       }
 
+      // Rebuild comment_responses from the validated fields only, so unexpected extra
+      // properties on the client payload never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined = payload.comment_responses?.map((response) => ({
+        prompt_id: response.prompt_id,
+        comment_text: response.comment_text,
+      }));
+
       // Build the upstream payload immutably: when abstaining we drop user_vote_content entirely;
       // when not abstaining we validate each answer and forward the original content. comment_responses
       // is independent of abstain — a voter can abstain and still leave comments — so it's forwarded on both branches.
@@ -349,7 +356,7 @@ export class VoteController {
           vote_uid: payload.vote_uid,
           vote_response_uid: payload.vote_response_uid,
           abstain: true,
-          comment_responses: payload.comment_responses,
+          comment_responses: validatedCommentResponses,
         };
       } else {
         if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
@@ -382,7 +389,7 @@ export class VoteController {
           vote_response_uid: payload.vote_response_uid,
           abstain: false,
           user_vote_content: payload.user_vote_content,
-          comment_responses: payload.comment_responses,
+          comment_responses: validatedCommentResponses,
         };
       }
 
