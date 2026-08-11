@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep import rather than the utils barrel: this is a constants module, and the barrel reaches
+// modules that depend on Angular. `color.utils` itself imports nothing, so there is no cycle.
+import { hexToRgba } from '../utils/color.utils';
 import { lfxColors } from './colors.constants';
 
 export const ORG_LENS_ROI_METHODS = ['logit', 'direct'] as const;
@@ -198,10 +201,10 @@ export const ORG_LENS_ROI_BUBBLE_LOG_FLOOR = 1;
 
 /**
  * Translucent fills for the efficiency plot, where bubbles overlap and an opaque one hides those
- * behind it. These are the alpha forms of `emerald[600]` and `amber[500]`, which the same points
- * use — at full opacity — for their borders.
+ * behind it. Derived from the same palette entries the points use — at full opacity — for their
+ * borders, so a palette change moves fill and border together instead of silently parting them.
  */
 export const ORG_LENS_ROI_BUBBLE_FILL = {
-  profitable: 'rgba(0, 153, 102, 0.45)',
-  lossMaking: 'rgba(254, 154, 0, 0.55)',
+  profitable: hexToRgba(lfxColors.emerald[600], 0.45),
+  lossMaking: hexToRgba(lfxColors.amber[500], 0.55),
 } as const;

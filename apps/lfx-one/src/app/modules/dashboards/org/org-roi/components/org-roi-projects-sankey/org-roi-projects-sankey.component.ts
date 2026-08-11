@@ -171,7 +171,11 @@ export class OrgRoiProjectsSankeyComponent {
   private nodeColor(node: string): string {
     if (node === ORG_LENS_ROI_SANKEY_ORG_NODE_KEY) return this.measure() === 'return' ? ORG_LENS_ROI_RETURN_COLOR : lfxColors.blue[600];
     const type = node.startsWith(ORG_LENS_ROI_SANKEY_CATEGORY_NODE_PREFIX) ? node.slice(ORG_LENS_ROI_SANKEY_CATEGORY_NODE_PREFIX.length) : '';
-    return ORG_LENS_ROI_CATEGORY_COLOR[type as OrgLensRoiContributionType] ?? lfxColors.gray[400];
+    // Looked up as a plain string, not asserted to be a known type. The payload can carry a
+    // contribution type this constant does not know yet, which is exactly what the fallback is
+    // for — asserting would suppress the check that keeps the fallback honest.
+    const colorsByType: Record<string, string> = ORG_LENS_ROI_CATEGORY_COLOR;
+    return colorsByType[type] ?? lfxColors.gray[400];
   }
 
   private projectNode(projectId: string): string {

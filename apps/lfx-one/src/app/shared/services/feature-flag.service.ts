@@ -87,10 +87,6 @@ export class FeatureFlagService {
   }
 
   /**
-   * Get a boolean feature flag as a signal
-   * Returns computed signal that updates automatically when flag changes
-   */
-  /**
    * A value pinned locally for this flag, or `undefined` when none is set.
    *
    * Exposed so a route guard can consult it *before* waiting on the provider. A guard that decides
@@ -101,6 +97,10 @@ export class FeatureFlagService {
     return readFlagOverride(key);
   }
 
+  /**
+   * Get a boolean feature flag as a signal
+   * Returns computed signal that updates automatically when flag changes
+   */
   public getBooleanFlag(key: string, defaultValue: boolean = false): Signal<boolean> {
     return computed(() => {
       // Reactive dependency on context signal
