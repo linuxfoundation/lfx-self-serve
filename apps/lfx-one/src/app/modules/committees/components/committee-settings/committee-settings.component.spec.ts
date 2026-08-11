@@ -71,16 +71,22 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-configured"]')).toBeNull();
   });
 
-  it("doesn't dangle the card heading's for attribute at an element that doesn't exist yet — only points at #slack-webhook while the input is actually rendered", async () => {
+  it("doesn't dangle the card heading's for attribute at an element that doesn't exist yet, and actually associates with the native input (not the non-labelable <lfx-input-text> host) once it does", async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', false);
     await fixture.whenStable();
-    const heading = fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-card"] label');
+    const heading = fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-label"]');
     expect(heading?.getAttribute('for')).toBeNull();
 
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
     await fixture.whenStable();
     expect(heading?.getAttribute('for')).toBe('slack-webhook');
-    expect(fixture.nativeElement.querySelector('#slack-webhook')).not.toBeNull();
+    // Exactly one #slack-webhook element, and it must be the labelable native <input> — not the
+    // <lfx-input-text> host too (a static `id=` on a custom element lands on both, which would
+    // let `for` resolve to the host, the first match in document order, and silently fail to
+    // associate with anything a screen reader can focus).
+    const matches = fixture.nativeElement.querySelectorAll('#slack-webhook');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].tagName).toBe('INPUT');
   });
 
   it('masks the webhook input from Datadog Session Replay — this app runs defaultPrivacyLevel: "allow", so an unmasked field would record the bearer credential verbatim', async () => {

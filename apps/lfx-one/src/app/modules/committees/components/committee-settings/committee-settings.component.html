@@ -142,9 +142,16 @@
             </div>
             <div class="flex-1">
               <!-- for only resolves to a real element while the input branch is rendered — the
-                   "Configured" badge branch has no #slack-webhook element to label, and a
-                   dangling `for` announces this as an orphan label to assistive tech. -->
-              <label [attr.for]="slackWebhookInputVisible() ? 'slack-webhook' : null" class="text-sm font-semibold text-gray-900">Slack Incoming Webhook</label>
+                   "Configured" badge branch has no #slack-webhook control to label, and an
+                   unresolvable `for` is invalid HTML with no accessible name conveyed to
+                   assistive tech (screen readers don't announce it as "orphan"; they just fail
+                   to associate anything). -->
+              <label
+                [attr.for]="slackWebhookInputVisible() ? 'slack-webhook' : null"
+                class="text-sm font-semibold text-gray-900"
+                data-testid="settings-slack-webhook-label"
+                >Slack Incoming Webhook</label
+              >
               <p class="text-xs text-gray-600">Send the weekly brief to a Slack channel with one click</p>
             </div>
           </div>
@@ -181,13 +188,18 @@
                  Replay records input values verbatim at this app's defaultPrivacyLevel: 'allow'
                  (datadog-rum.provider.ts), and the attribute cascades to the native input this
                  wrapper renders. -->
+            <!-- [id] (bound), not a static id=: a static attribute on a custom element lands on
+                 both the <lfx-input-text> host and (via its id input()) the native <input> it
+                 renders — two elements sharing one id, with label[for] resolving to the first
+                 (the non-labelable host) in document order. Binding it keeps the id off the host
+                 entirely, so `for="slack-webhook"` above actually associates with the input. -->
             <lfx-input-text
               [form]="form()"
               control="chat_webhook_url"
               placeholder="https://hooks.slack.com/services/..."
               size="small"
               styleClass="w-full"
-              id="slack-webhook"
+              [id]="'slack-webhook'"
               data-dd-privacy="mask"
               data-testid="settings-slack-webhook-input"></lfx-input-text>
             @if (form().get('chat_webhook_url')?.errors?.['pattern'] && (form().get('chat_webhook_url')?.touched || form().get('chat_webhook_url')?.dirty)) {
