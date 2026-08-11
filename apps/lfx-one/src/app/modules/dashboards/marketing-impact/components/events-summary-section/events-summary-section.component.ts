@@ -51,8 +51,9 @@ export class EventsSummarySectionComponent {
     {
       id: 'organizations',
       key: 'organizations',
-      // Sourced from COMPANIES_COUNT, which counts the organizations attendees work for — not
-      // the ones that sponsored. That makes it an attendance metric despite the name.
+      // Sourced from COMPANIES_COUNT_YTD on MARKETING_EVENT_OVERVIEW, which counts the
+      // organizations attendees work for — not the ones that sponsored. That makes it an
+      // attendance metric despite the name.
       label: 'Total Organizations',
       icon: 'fa-light fa-building',
       iconClass: 'bg-blue-100 text-blue-600',
@@ -156,10 +157,11 @@ export class EventsSummarySectionComponent {
   private initSummary(): Signal<EventsOverviewSummary | null> {
     const slug$ = toObservable(this.foundationSlug);
     const period$ = toObservable(this.selectedPeriod);
+    const split$ = toObservable(this.eventsSplit);
 
     return toSignal(
-      combineLatest([slug$, period$]).pipe(
-        switchMap(([slug, period]) => {
+      combineLatest([slug$, period$, split$]).pipe(
+        switchMap(([slug, period, split]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
@@ -168,10 +170,10 @@ export class EventsSummarySectionComponent {
           // The default (YTD/trailing) period reads all 7 tiles from
           // PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW + MARKETING_EVENT_SPONSORSHIPS. A single
           // month re-aggregates events/registrations/speakers per event instead and returns null
-          // for the four metrics that only exist as YTD rollups. Each metric carries its value
-          // and a YoY change fraction (null when no prior baseline); a null response falls the
-          // whole block back to dashes.
-          return this.analyticsService.getEventsOverviewSummary(slug, period || undefined).pipe(
+          // for the four metrics that only exist as YTD rollups. Sponsorship data is only
+          // available at YTD scope, so omit the period filter when viewing sponsorship.
+          const queryPeriod = split === 'sponsorship' ? undefined : period || undefined;
+          return this.analyticsService.getEventsOverviewSummary(slug, queryPeriod).pipe(
             map((data) =>
               data === null
                 ? null

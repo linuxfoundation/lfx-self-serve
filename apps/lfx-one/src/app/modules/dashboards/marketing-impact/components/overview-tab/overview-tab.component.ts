@@ -34,11 +34,11 @@ export class OverviewTabComponent {
 
   // === Computed Signals ===
   /**
-   * The events sections are built and verified against the Events campaign type only. Under All
-   * they aggregate across every campaign type, and those cross-type totals are still being
-   * finalized — so All shows a coming-soon placeholder rather than provisional numbers.
+   * The events sections render for both the All view (unsplit, eventsSplit=null) and the
+   * Events view (split, eventsSplit='attendance'|'sponsorship'). The All view consolidates
+   * across all campaign types; the Events view shows attendance and sponsorship splits.
    */
-  protected readonly showEventsSections = computed(() => this.focusProgram() === EVENTS_SPLIT_FOCUS);
+  protected readonly showEventsSections = computed(() => this.focusProgram() === EVENTS_SPLIT_FOCUS || this.eventsSplit() !== null);
   /** Attendance sections render unless sponsorship is explicitly selected. */
   protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
   /** Sponsorship sections render unless attendance is explicitly selected. */

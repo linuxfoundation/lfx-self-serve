@@ -88,78 +88,78 @@
 
           <div class="flex flex-1 min-w-[180px] items-center gap-2" role="cell">
             <span class="truncate text-xs font-semibold text-blue-600">{{ row.eventName }}</span>
-            @if (row.atRisk) {
+            @if (row.atRisk && eventsSplit() !== 'sponsorship') {
               <i class="fa-solid fa-circle-exclamation text-xs text-red-500" aria-label="Behind registration goal" title="Behind registration goal"></i>
             }
           </div>
 
           <!-- Registrations bar → B2C drawer (marketing campaigns) -->
           @if (showRegistrations()) {
-            <div
-              class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
-              role="button"
-              tabindex="0"
-              title="View registrations & marketing campaigns"
-              (click)="openFocused(row.eventId, 'b2c', $event)"
-              (keydown.enter)="openFocused(row.eventId, 'b2c', $event)"
-              (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
-              [attr.data-testid]="'event-roster-b2c-' + row.eventId">
-              <div class="flex items-center gap-2">
-                <span class="w-10 shrink-0 text-right text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
-                @if (row.registrations.hasGoal) {
-                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      class="h-full rounded-full"
-                      role="progressbar"
-                      [attr.aria-valuenow]="row.registrations.percent"
-                      aria-valuemin="0"
-                      aria-valuemax="100"
-                      [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
-                      [ngClass]="{
-                        'bg-emerald-500': row.registrations.tone === 'good',
-                        'bg-amber-500': row.registrations.tone === 'warn',
-                        'bg-red-400': row.registrations.tone === 'critical',
-                      }"
-                      [style.width.%]="row.registrations.percent"></div>
-                  </div>
-                  <span class="w-8 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.registrations.goal }}</span>
-                }
-              </div>
+            <div class="w-52" role="cell">
+              <button
+                type="button"
+                class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
+                title="View registrations & marketing campaigns"
+                (click)="openFocused(row.eventId, 'b2c', $event)"
+                (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
+                [attr.data-testid]="'event-roster-b2c-' + row.eventId">
+                <div class="flex items-center gap-2">
+                  <span class="w-10 shrink-0 text-right text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
+                  @if (row.registrations.hasGoal) {
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        class="h-full rounded-full"
+                        role="progressbar"
+                        [attr.aria-valuenow]="row.registrations.percent"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
+                        [ngClass]="{
+                          'bg-emerald-500': row.registrations.tone === 'good',
+                          'bg-amber-500': row.registrations.tone === 'warn',
+                          'bg-red-400': row.registrations.tone === 'critical',
+                        }"
+                        [style.width.%]="row.registrations.percent"></div>
+                    </div>
+                    <span class="w-8 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.registrations.goal }}</span>
+                  }
+                </div>
+              </button>
             </div>
           }
 
           <!-- Sponsorship revenue bar → B2B drawer (sponsorship & partnerships) -->
           @if (showSponsorship()) {
-            <div
-              class="w-52 cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50"
-              role="button"
-              tabindex="0"
-              title="View sponsorship & partnerships"
-              (click)="openFocused(row.eventId, 'b2b', $event)"
-              (keydown.enter)="openFocused(row.eventId, 'b2b', $event)"
-              (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
-              [attr.data-testid]="'event-roster-b2b-' + row.eventId">
-              <div class="flex items-center gap-2">
-                <span class="w-12 shrink-0 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
-                @if (row.sponsorshipRevenue.hasGoal) {
-                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      class="h-full rounded-full"
-                      role="progressbar"
-                      [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
-                      aria-valuemin="0"
-                      aria-valuemax="100"
-                      [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
-                      [ngClass]="{
-                        'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
-                        'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',
-                        'bg-red-400': row.sponsorshipRevenue.tone === 'critical',
-                      }"
-                      [style.width.%]="row.sponsorshipRevenue.percent"></div>
-                  </div>
-                  <span class="w-10 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
-                }
-              </div>
+            <div class="w-52" role="cell">
+              <button
+                type="button"
+                class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
+                title="View sponsorship & partnerships"
+                (click)="openFocused(row.eventId, 'b2b', $event)"
+                (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
+                [attr.data-testid]="'event-roster-b2b-' + row.eventId">
+                <div class="flex items-center gap-2">
+                  <span class="w-12 shrink-0 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
+                  @if (row.sponsorshipRevenue.hasGoal) {
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        class="h-full rounded-full"
+                        role="progressbar"
+                        [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
+                        [ngClass]="{
+                          'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
+                          'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',
+                          'bg-red-400': row.sponsorshipRevenue.tone === 'critical',
+                        }"
+                        [style.width.%]="row.sponsorshipRevenue.percent"></div>
+                    </div>
+                    <span class="w-10 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
+                  }
+                </div>
+              </button>
             </div>
           }
         </div>
