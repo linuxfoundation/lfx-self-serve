@@ -74,8 +74,19 @@ export class OrgRoiProjectsBarComponent {
         if (segment.expenditure !== 0 && !byType.has(segment.type)) byType.set(segment.type, segment);
       }
     }
-    // Canonical order, not first-seen: the stack must read the same way on every project.
-    return ORG_LENS_ROI_CONTRIBUTION_TYPES.map((type) => byType.get(type)).filter((segment): segment is OrgLensRoiProjectBarSegment => segment !== undefined);
+    // Canonical order first, so the stack reads the same way on every project — then anything the
+    // warehouse sent that this constant does not know about yet, appended rather than dropped.
+    //
+    // Filtering to the known vocabulary would silently understate a project: the BFF deliberately
+    // forwards unrecognised contribution types (a seed can gain a ninth before this constant does),
+    // and `unreconciled` sums the payload's own segments, so a dropped category would leave the
+    // chart short of its project's investment with nothing to say so.
+    const known = new Set<string>(ORG_LENS_ROI_CONTRIBUTION_TYPES);
+    const canonical = ORG_LENS_ROI_CONTRIBUTION_TYPES.map((type) => byType.get(type)).filter(
+      (segment): segment is OrgLensRoiProjectBarSegment => segment !== undefined
+    );
+    const unknown = [...byType.values()].filter((segment) => !known.has(segment.type));
+    return [...canonical, ...unknown];
   });
 
   protected readonly chartHeight: Signal<string> = computed(() => `${Math.max(240, this.rows().length * 44 + 80)}px`);
