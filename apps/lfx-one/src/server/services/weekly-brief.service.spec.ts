@@ -1040,6 +1040,25 @@ describe('WeeklyBriefService', () => {
       expect(body.text).toContain('Hello committee');
     });
 
+    it('drains (cancels) the success-response body instead of leaving it unconsumed', async () => {
+      mockShareableBrief();
+      let cancelled = false;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('ok'));
+          controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, statusText: 'status 200', body: stream } as unknown as Response);
+
+      await service.shareToSlack(req, 'committee-1', 1);
+
+      expect(cancelled).toBe(true);
+    });
+
     it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
       mockShareableBrief();
       fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
