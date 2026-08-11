@@ -99,6 +99,12 @@ export class AnalyticsService {
   // back doesn't re-fetch (and potentially error into a zeroed fallback).
   private readonly foundationHealthScoreDistributionCache = new Map<string, Observable<FoundationHealthScoreDistributionResponse>>();
 
+  // Request cache for the event roster, keyed on every argument that changes the
+  // response. The attention section (upcoming only) and the roster table both fetch
+  // on first paint with the same arguments, so without this they fire two identical
+  // requests for one payload.
+  private readonly eventRosterCache = new Map<string, Observable<EventRosterResponse>>();
+
   /**
    * Get active weeks streak data for the current user
    * @returns Observable of active weeks streak response
@@ -1151,11 +1157,24 @@ export class AnalyticsService {
    * Emits an empty roster on error so the table shows its empty state rather than breaking.
    */
   public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
-    const params: Record<string, string> = { foundationSlug };
-    if (includePast) {
-      params['includePast'] = 'true';
+    const key = `${foundationSlug}|${includePast}`;
+    if (!this.eventRosterCache.has(key)) {
+      const params: Record<string, string> = { foundationSlug };
+      if (includePast) {
+        params['includePast'] = 'true';
+      }
+      // Evict on error so a transient failure doesn't pin every later subscriber
+      // to the empty fallback for the rest of the session.
+      const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
+        catchError(() => {
+          this.eventRosterCache.delete(key);
+          return of({ projectId: '', events: [] });
+        }),
+        shareReplay(1)
+      );
+      this.eventRosterCache.set(key, req$);
     }
-    return this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(catchError(() => of({ projectId: '', events: [] })));
+    return this.eventRosterCache.get(key)!;
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {

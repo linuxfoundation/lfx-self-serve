@@ -36,6 +36,15 @@ export class EventRosterSectionComponent {
   protected readonly searchTerm: Signal<string> = toSignal(this.search.valueChanges.pipe(startWith('')), { initialValue: '' });
   protected readonly rows: Signal<EventRosterRowView[]> = this.initRows();
   protected readonly hasRows = computed(() => this.rows().length > 0);
+  /**
+   * The empty state fires whenever there are no rows, which includes an empty roster with no
+   * search active — telling those users their search matched nothing would be wrong. Only claim
+   * a search miss when a term is actually typed.
+   */
+  protected readonly emptyMessage = computed(() => {
+    if (this.searchTerm().trim()) return 'No events match your search.';
+    return this.includePast() ? 'No events in the selected period.' : 'No upcoming events.';
+  });
 
   // === Protected Methods ===
   protected toggleIncludePast(includePast: boolean): void {
