@@ -79,7 +79,8 @@ export class OrgLeaderboardDetailDrawerComponent {
   private initCompany(): Signal<OrgLeaderboardDetailCompany | null> {
     return computed(() => {
       const companies = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES;
-      return companies[this.orgName()] ?? null;
+      const orgName = this.orgName();
+      return Object.hasOwn(companies, orgName) ? companies[orgName] : null;
     });
   }
 
