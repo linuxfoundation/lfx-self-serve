@@ -2741,6 +2741,152 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/events-overview-summary
+   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab
+   * (registrations, attendees, speakers, countries, organizations, events, sponsorship $).
+   */
+  public async getEventsOverviewSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_overview_summary');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_events_overview_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_events_overview_summary',
+        });
+      }
+
+      const response = await this.projectService.getEventsOverviewSummary(foundationSlug);
+
+      logger.success(req, 'get_events_overview_summary', startTime, {
+        foundation_slug: foundationSlug,
+        project_id: response.projectId,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/event-roster
+   * Foundation event roster — one row per event with registration/sponsorship
+   * actual-vs-goal, comparison rating, and CFP status. Defaults to upcoming events;
+   * pass includePast=true for the full history.
+   */
+  public async getEventRoster(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_roster');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_roster',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_roster',
+        });
+      }
+
+      const includePast = getStringQueryParam(req, 'includePast') === 'true';
+
+      const response = await this.projectService.getEventRoster(foundationSlug, includePast);
+
+      logger.success(req, 'get_event_roster', startTime, {
+        foundation_slug: foundationSlug,
+        include_past: includePast,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/event-detail
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   */
+  public async getEventDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_detail');
+
+    try {
+      const eventId = getStringQueryParam(req, 'eventId');
+
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      const response = await this.projectService.getEventDetail(eventId);
+
+      logger.success(req, 'get_event_detail', startTime, {
+        event_id: eventId,
+        found: response !== null,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/event-geo-reach
+   * Geographic registration reach for a foundation (top countries by YTD registrations).
+   */
+  public async getEventGeoReach(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_geo_reach');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_geo_reach',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_geo_reach',
+        });
+      }
+
+      const response = await this.projectService.getEventGeoReach(foundationSlug);
+
+      logger.success(req, 'get_event_geo_reach', startTime, {
+        foundation_slug: foundationSlug,
+        country_count: response.totalCountries,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/brand-reach
    * Get brand reach metrics (total digital reach across social + owned sites)
    */

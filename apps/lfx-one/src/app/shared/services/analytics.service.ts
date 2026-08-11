@@ -57,6 +57,10 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventDetailResponse,
+  EventGeoReachResponse,
+  EventRosterResponse,
+  EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   TrainingCertificationSummaryResponse,
@@ -1132,6 +1136,46 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  /**
+   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab.
+   * Emits null on error so the tiles fall back to dashes rather than measured zeros.
+   */
+  public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
+    return this.http
+      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } })
+      .pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * Foundation event roster (upcoming by default; pass includePast for the full history).
+   * Emits an empty roster on error so the table shows its empty state rather than breaking.
+   */
+  public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (includePast) {
+      params['includePast'] = 'true';
+    }
+    return this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(catchError(() => of({ projectId: '', events: [] })));
+  }
+
+  /**
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   * Emits null on error so the drawer shows its empty state.
+   */
+  public getEventDetail(eventId: string): Observable<EventDetailResponse | null> {
+    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId } }).pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * Geographic registration reach for a foundation (top countries by YTD registrations).
+   * Emits an empty result on error so the panel shows its empty state.
+   */
+  public getEventGeoReach(foundationSlug: string): Observable<EventGeoReachResponse> {
+    return this.http
+      .get<EventGeoReachResponse>('/api/analytics/event-geo-reach', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ projectId: '', totalRegistrations: 0, totalCountries: 0, countries: [] })));
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {

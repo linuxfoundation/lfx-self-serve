@@ -27,8 +27,18 @@ import {
   CreateProjectDocumentRequest,
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
+  EventChannelAttribution,
+  EventCompScore,
+  EventCountryReach,
+  EventDetailResponse,
+  EventGeoReachResponse,
   EventGrowthResponse,
+  EventPacing,
   EventGrowthTopEvent,
+  EventRosterResponse,
+  EventRosterRow,
+  EventsOverviewMetric,
+  EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   FlywheelConversionResponse,
   FoundationActiveContributorsMonthlyDistinctResponse,
@@ -4942,6 +4952,426 @@ export class ProjectService {
   }
 
   /**
+   * Get the foundation-wide Events Summary for the Marketing Impact Overview tab.
+   *
+   * Sourced from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (one row per project,
+   * pre-computed period columns — no date-range filtering) plus MARKETING_EVENT_SPONSORSHIPS
+   * for the sponsorship dollar total. The foundation rollup (children included) is baked into
+   * the project spine, so a single row keyed on the resolved PROJECT_ID covers the foundation.
+   *
+   * Only YTD is modeled here (the table has no monthly grain); the *_PERCENT_CHANGE_YTD columns
+   * carry the YoY deltas as fractions (0.52 = +52%), surfaced unchanged as changeFraction.
+   */
+  public async getEventsOverviewSummary(foundationSlug: string): Promise<EventsOverviewSummaryResponse> {
+    logger.debug(undefined, 'get_events_overview_summary', 'Fetching events overview summary from Snowflake', {
+      foundation_slug: foundationSlug,
+    });
+
+    interface OverviewRow {
+      PROJECT_ID: string;
+      REGISTRATIONS_COUNT: number;
+      REGISTRATIONS_CHANGE: number | null;
+      ATTENDEES_COUNT: number;
+      ATTENDEES_CHANGE: number | null;
+      SPEAKERS_COUNT: number;
+      SPEAKERS_CHANGE: number | null;
+      COUNTRIES_COUNT: number;
+      COUNTRIES_CHANGE: number | null;
+      COMPANIES_COUNT: number;
+      COMPANIES_CHANGE: number | null;
+      EVENT_COUNT: number;
+    }
+
+    interface SponsorshipRow {
+      SPONSORSHIP_REVENUE: number;
+    }
+
+    // MARKETING_EVENT_OVERVIEW is one row per project; the *_PERCENT_CHANGE_YTD columns are
+    // passed through as-is (fractions). COMPANIES maps to the "Organizations" tile.
+    const overviewQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        eo.PROJECT_ID,
+        IFNULL(eo.REGISTRATIONS_COUNT_YTD, 0) AS REGISTRATIONS_COUNT,
+        eo.REGISTRATIONS_PERCENT_CHANGE_YTD AS REGISTRATIONS_CHANGE,
+        IFNULL(eo.ATTENDEES_COUNT_YTD, 0) AS ATTENDEES_COUNT,
+        eo.ATTENDEES_PERCENT_CHANGE_YTD AS ATTENDEES_CHANGE,
+        IFNULL(eo.SPEAKERS_COUNT_YTD, 0) AS SPEAKERS_COUNT,
+        eo.SPEAKERS_PERCENT_CHANGE_YTD AS SPEAKERS_CHANGE,
+        IFNULL(eo.COUNTRIES_COUNT_YTD, 0) AS COUNTRIES_COUNT,
+        eo.COUNTRIES_PERCENT_CHANGE_YTD AS COUNTRIES_CHANGE,
+        IFNULL(eo.COMPANIES_COUNT_YTD, 0) AS COMPANIES_COUNT,
+        eo.COMPANIES_PERCENT_CHANGE_YTD AS COMPANIES_CHANGE,
+        IFNULL(eo.EVENT_COUNT_YTD, 0) AS EVENT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW eo
+      INNER JOIN slug_resolve sr ON eo.PROJECT_ID = sr.project_id
+      LIMIT 1
+    `;
+
+    const sponsorshipQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(SUM(es.SPONSORSHIP_REVENUE_YTD), 0) AS SPONSORSHIP_REVENUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS es
+      INNER JOIN slug_resolve sr ON es.PROJECT_ID = sr.project_id
+    `;
+
+    const [overviewResult, sponsorshipResult] = await Promise.all([
+      this.snowflakeService.execute<OverviewRow>(overviewQuery, [foundationSlug]),
+      this.snowflakeService.execute<SponsorshipRow>(sponsorshipQuery, [foundationSlug]),
+    ]);
+
+    const row = overviewResult.rows?.[0];
+    const sponsorshipRow = sponsorshipResult.rows?.[0];
+
+    if (!row) {
+      logger.warning(undefined, 'get_events_overview_summary', 'No events overview row for foundation', { foundation_slug: foundationSlug });
+    }
+
+    const metric = (value: number | undefined, change: number | null | undefined): EventsOverviewMetric => ({
+      value: value ?? 0,
+      changeFraction: change ?? null,
+    });
+
+    return {
+      projectId: row?.PROJECT_ID ?? '',
+      registrations: metric(row?.REGISTRATIONS_COUNT, row?.REGISTRATIONS_CHANGE),
+      attendees: metric(row?.ATTENDEES_COUNT, row?.ATTENDEES_CHANGE),
+      speakers: metric(row?.SPEAKERS_COUNT, row?.SPEAKERS_CHANGE),
+      countries: metric(row?.COUNTRIES_COUNT, row?.COUNTRIES_CHANGE),
+      organizations: metric(row?.COMPANIES_COUNT, row?.COMPANIES_CHANGE),
+      // MARKETING_EVENT_OVERVIEW has no EVENT_COUNT_PERCENT_CHANGE_YTD, so the
+      // events tile shows a value with no YoY delta.
+      events: metric(row?.EVENT_COUNT, null),
+      // No YoY change is modeled for sponsorship revenue.
+      sponsorship: metric(sponsorshipRow?.SPONSORSHIP_REVENUE, null),
+    };
+  }
+
+  /**
+   * Get the Event Roster for a foundation — one row per event with registration and
+   * sponsorship actual-vs-goal, comparison rating, and CFP status.
+   *
+   * Sourced from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (per event) left
+   * joined to sponsorship actuals aggregated from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. A goal
+   * of 0 means "no goal required" for that event (the UI renders no progress bar). Defaults to
+   * upcoming events only; pass includePast to return the full history.
+   */
+  public async getEventRoster(foundationSlug: string, includePast = false): Promise<EventRosterResponse> {
+    logger.debug(undefined, 'get_event_roster', 'Fetching event roster from Snowflake', {
+      foundation_slug: foundationSlug,
+      include_past: includePast,
+    });
+
+    interface RosterRow {
+      EVENT_ID: string;
+      EVENT_NAME: string;
+      START_DATE: string;
+      EVENT_IS_PAST: boolean;
+      EVENT_COUNTRY: string | null;
+      EVENT_URL: string | null;
+      REG_ACTUAL: number | null;
+      REG_GOAL: number | null;
+      SPON_ACTUAL: number;
+      SPON_GOAL: number | null;
+      REGREV_ACTUAL: number | null;
+      REGREV_GOAL: number | null;
+      VS_LY: number | null;
+      COMP_SCORE: string | null;
+      CFP_STATUS: string | null;
+    }
+
+    const pastFilter = includePast ? '' : 'AND r.EVENT_IS_PAST = FALSE';
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      ),
+      sponsorship AS (
+        SELECT EVENT_ID, SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS SPON_ACTUAL
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
+        GROUP BY EVENT_ID
+      )
+      SELECT
+        r.EVENT_ID,
+        r.EVENT_NAME,
+        TO_CHAR(r.EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        r.EVENT_IS_PAST,
+        r.EVENT_COUNTRY,
+        r.EVENT_URL,
+        r.COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        IFNULL(sp.SPON_ACTUAL, 0) AS SPON_ACTUAL,
+        r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        NULL AS REGREV_ACTUAL,
+        r.EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
+        r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        r.COMP_SCORE,
+        r.CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
+      LEFT JOIN sponsorship sp ON r.EVENT_ID = sp.EVENT_ID
+      WHERE 1 = 1 ${pastFilter}
+      ORDER BY r.EVENT_START_DATE
+    `;
+
+    const result = await this.snowflakeService.execute<RosterRow>(query, [foundationSlug]);
+
+    const normalizeScore = (score: string | null): EventCompScore => {
+      const s = (score ?? '').toLowerCase();
+      return s === 'high' || s === 'medium' || s === 'low' ? s : 'unknown';
+    };
+
+    const events: EventRosterRow[] = result.rows.map((row) => ({
+      eventId: row.EVENT_ID,
+      eventName: row.EVENT_NAME,
+      startDate: row.START_DATE,
+      isPast: row.EVENT_IS_PAST,
+      country: row.EVENT_COUNTRY ?? '',
+      eventUrl: row.EVENT_URL ?? '',
+      registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      sponsorshipRevenue: { actual: row.SPON_ACTUAL ?? 0, goal: row.SPON_GOAL ?? 0 },
+      registrationRevenue: { actual: row.REGREV_ACTUAL ?? 0, goal: row.REGREV_GOAL ?? 0 },
+      vsLastYear: row.VS_LY,
+      compScore: normalizeScore(row.COMP_SCORE),
+      cfpStatus: row.CFP_STATUS ?? '',
+    }));
+
+    return { projectId: '', events };
+  }
+
+  /**
+   * Get per-event detail for the roster drawer — event meta, registration/sponsorship
+   * actual-vs-goal, comparison rating, and a sponsorship-by-tier breakdown.
+   *
+   * Meta comes from MARKETING_EVENT_REGISTRATIONS (one row per event) and the tier breakdown
+   * from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. No daily-pacing time-series exists in these
+   * tables (that is PCC's prediction service); the drawer deep-links to eventUrl for pacing.
+   */
+  public async getEventDetail(eventId: string): Promise<EventDetailResponse | null> {
+    logger.debug(undefined, 'get_event_detail', 'Fetching event detail from Snowflake', { event_id: eventId });
+
+    interface EventRow {
+      EVENT_ID: string;
+      EVENT_NAME: string;
+      START_DATE: string;
+      EVENT_IS_PAST: boolean;
+      EVENT_LOCATION: string | null;
+      EVENT_CITY: string | null;
+      EVENT_COUNTRY: string | null;
+      EVENT_STATUS: string | null;
+      EVENT_URL: string | null;
+      REG_ACTUAL: number | null;
+      REG_GOAL: number | null;
+      REGREV_GOAL: number | null;
+      SPON_GOAL: number | null;
+      VS_LY: number | null;
+      CREATED_LAST_YEAR: boolean | null;
+      COMP_SCORE: string | null;
+      CFP_STATUS: string | null;
+    }
+
+    interface TierRow {
+      SPONSORSHIP_TIER: string | null;
+      REVENUE: number;
+      SPONSOR_COUNT: number;
+    }
+
+    interface ChannelRow {
+      CHANNEL: string | null;
+      SESSIONS: number;
+      UNIQUE_VISITORS: number;
+      REVENUE: number;
+    }
+
+    const eventQuery = `
+      SELECT
+        EVENT_ID,
+        EVENT_NAME,
+        TO_CHAR(EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        EVENT_IS_PAST,
+        EVENT_LOCATION,
+        EVENT_CITY,
+        EVENT_COUNTRY,
+        EVENT_STATUS,
+        EVENT_URL,
+        COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        EVENT_REGISTRATION_REVENUE_GOAL AS REGREV_GOAL,
+        EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        EVENT_CREATED_LAST_YEAR AS CREATED_LAST_YEAR,
+        COMP_SCORE,
+        CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS
+      WHERE EVENT_ID = ?
+      LIMIT 1
+    `;
+
+    const tierQuery = `
+      SELECT
+        SPONSORSHIP_TIER,
+        SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS REVENUE,
+        SUM(IFNULL(SPONSORSHIP_COUNT_ALL_TIME, 0)) AS SPONSOR_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
+      WHERE EVENT_ID = ?
+      GROUP BY SPONSORSHIP_TIER
+      ORDER BY REVENUE DESC
+    `;
+
+    // Marketing-channel attribution for this event (rolled up across the monthly rows).
+    const channelQuery = `
+      SELECT
+        CHANNEL,
+        SUM(IFNULL(SESSIONS, 0)) AS SESSIONS,
+        SUM(IFNULL(UNIQUE_VISITORS, 0)) AS UNIQUE_VISITORS,
+        SUM(IFNULL(LINEAR_REVENUE, 0)) AS REVENUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
+      WHERE RESOLVED_EVENT_ID = ?
+      GROUP BY CHANNEL
+      ORDER BY SESSIONS DESC
+    `;
+
+    const [eventResult, tierResult, channelResult] = await Promise.all([
+      this.snowflakeService.execute<EventRow>(eventQuery, [eventId]),
+      this.snowflakeService.execute<TierRow>(tierQuery, [eventId]),
+      this.snowflakeService.execute<ChannelRow>(channelQuery, [eventId]),
+    ]);
+
+    const row = eventResult.rows?.[0];
+    if (!row) {
+      logger.warning(undefined, 'get_event_detail', 'No event row for id', { event_id: eventId });
+      return null;
+    }
+
+    const normalizeScore = (score: string | null): EventCompScore => {
+      const s = (score ?? '').toLowerCase();
+      return s === 'high' || s === 'medium' || s === 'low' ? s : 'unknown';
+    };
+
+    const sponsorshipActual = tierResult.rows.reduce((sum, t) => sum + (t.REVENUE ?? 0), 0);
+    const totalSessions = channelResult.rows.reduce((sum, ch) => sum + (ch.SESSIONS ?? 0), 0);
+
+    const channels: EventChannelAttribution[] = channelResult.rows.map((ch) => ({
+      channel: ch.CHANNEL ?? 'Unknown',
+      sessions: ch.SESSIONS ?? 0,
+      uniqueVisitors: ch.UNIQUE_VISITORS ?? 0,
+      revenue: ch.REVENUE ?? 0,
+      sharePercent: totalSessions > 0 ? Math.round(((ch.SESSIONS ?? 0) / totalSessions) * 1000) / 10 : 0,
+    }));
+
+    return {
+      eventId: row.EVENT_ID,
+      eventName: row.EVENT_NAME,
+      startDate: row.START_DATE,
+      isPast: row.EVENT_IS_PAST,
+      location: row.EVENT_LOCATION ?? '',
+      city: row.EVENT_CITY ?? '',
+      country: row.EVENT_COUNTRY ?? '',
+      status: row.EVENT_STATUS ?? '',
+      eventUrl: row.EVENT_URL ?? '',
+      registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      // No per-event registration-revenue actual is modeled yet (only the goal).
+      registrationRevenue: { actual: null, goal: row.REGREV_GOAL ?? 0 },
+      sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
+      vsLastYear: row.VS_LY,
+      hasPriorYear: row.CREATED_LAST_YEAR === true,
+      compScore: normalizeScore(row.COMP_SCORE),
+      cfpStatus: row.CFP_STATUS ?? '',
+      sponsorshipTiers: tierResult.rows.map((t) => ({
+        tier: t.SPONSORSHIP_TIER ?? '',
+        revenue: t.REVENUE ?? 0,
+        sponsorCount: t.SPONSOR_COUNT ?? 0,
+      })),
+      channels,
+      pacing: await this.getEventPacing(eventId),
+    };
+  }
+
+  /**
+   * Get geographic registration reach for a foundation — YTD registrations by country,
+   * ranked, from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY. Returns the
+   * top countries plus totals so the UI can render shares. Raw country slugs are title-cased.
+   */
+  public async getEventGeoReach(foundationSlug: string, limit = 12): Promise<EventGeoReachResponse> {
+    logger.debug(undefined, 'get_event_geo_reach', 'Fetching event geo reach from Snowflake', { foundation_slug: foundationSlug });
+
+    interface CountryRow {
+      COUNTRY: string | null;
+      COUNTRY_CODE: string | null;
+      REGS: number;
+    }
+    interface TotalRow {
+      TOTAL_REGS: number;
+      COUNTRY_COUNT: number;
+    }
+
+    const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 50);
+
+    const countryQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT c.COUNTRY, c.COUNTRY_CODE, c.REGISTRATION_COUNT_YTD AS REGS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY c
+      INNER JOIN slug_resolve sr ON c.PROJECT_ID = sr.project_id
+      WHERE c.REGISTRATION_COUNT_YTD > 0
+      ORDER BY c.REGISTRATION_COUNT_YTD DESC
+      LIMIT ${boundedLimit}
+    `;
+
+    const totalQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(SUM(c.REGISTRATION_COUNT_YTD), 0) AS TOTAL_REGS,
+        COUNT(DISTINCT CASE WHEN c.REGISTRATION_COUNT_YTD > 0 THEN c.COUNTRY END) AS COUNTRY_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY c
+      INNER JOIN slug_resolve sr ON c.PROJECT_ID = sr.project_id
+    `;
+
+    const [countryResult, totalResult] = await Promise.all([
+      this.snowflakeService.execute<CountryRow>(countryQuery, [foundationSlug]),
+      this.snowflakeService.execute<TotalRow>(totalQuery, [foundationSlug]),
+    ]);
+
+    const total = totalResult.rows?.[0]?.TOTAL_REGS ?? 0;
+    const totalCountries = totalResult.rows?.[0]?.COUNTRY_COUNT ?? 0;
+
+    // Title-case a raw country slug ("republic_of_korea" -> "Republic Of Korea").
+    const titleCase = (slug: string): string =>
+      slug
+        .split('_')
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+    const countries: EventCountryReach[] = countryResult.rows.map((row) => ({
+      code: (row.COUNTRY_CODE ?? '').toUpperCase(),
+      name: row.COUNTRY ? titleCase(row.COUNTRY) : 'Unknown',
+      registrations: row.REGS ?? 0,
+      sharePercent: total > 0 ? Math.round(((row.REGS ?? 0) / total) * 1000) / 10 : 0,
+    }));
+
+    return { projectId: '', totalRegistrations: total, totalCountries, countries };
+  }
+
+  /**
    * Get Training & Certification summary for a foundation from Snowflake.
    * Two logical reads: ENROLLMENTS for enrollment values and COURSE_PURCHASES for revenue values.
    * Column selection is range-specific, reusing PCC TrainingQueriesService.trainingEnrollment semantics.
@@ -7158,5 +7588,102 @@ export class ProjectService {
     const coordinatorChecks: AccessCheckRequest[] = nonWriters.map((p) => ({ resource: 'project', id: p.uid, access: 'meeting_coordinator' }));
     const coordinatorResults = await this.accessCheckService.checkAccess(req, coordinatorChecks);
     return writerChecked.filter((p) => p.writer === true || coordinatorResults.get(`${p.uid}#meeting_coordinator`) === true);
+  }
+
+  /**
+   * Get the per-event registration-pacing summary + daily curve from the prediction models
+   * (MARKETING_EVENT_REGISTRATION_PREDICTIONS + _DRILLDOWN). These are mirrored from PCC and may
+   * not exist yet; any failure (missing table, no rows) resolves to an unavailable pacing block
+   * so the drawer degrades to its placeholder + PCC link rather than erroring.
+   */
+  private async getEventPacing(eventId: string): Promise<EventPacing> {
+    const unavailable: EventPacing = {
+      available: false,
+      daysLeft: null,
+      current: null,
+      priorYear: null,
+      predictedAvg: null,
+      predictedLow: null,
+      predictedHigh: null,
+      points: [],
+    };
+
+    interface HeadRow {
+      DAYS_LEFT: number | null;
+      CURRENT: number | null;
+      PRIOR: number | null;
+      PRED_AVG: number | null;
+      PRED_LOW: number | null;
+      PRED_HIGH: number | null;
+    }
+    interface PointRow {
+      DAYS_TO_EVENT: number;
+      CURRENT: number | null;
+      PRIOR: number | null;
+      PRED_AVG: number | null;
+      PRED_LOW: number | null;
+      PRED_HIGH: number | null;
+    }
+
+    const headQuery = `
+      SELECT
+        DAYS_LEFT_FROM_YESTERDAY AS DAYS_LEFT,
+        FINAL_CURRENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
+        FINAL_PRIOR_CUMULATIVE_REGISTRATIONS AS PRIOR,
+        FINAL_CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
+        FINAL_CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
+        FINAL_CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+      WHERE EVENT_ID = ?
+      LIMIT 1
+    `;
+
+    const pointsQuery = `
+      SELECT
+        DAYS_TO_EVENT,
+        CURRENT_EVENT_CUMULATIVE_REGISTRATIONS AS CURRENT,
+        PRIOR_EVENT_CUMULATIVE_REGISTRATIONS AS PRIOR,
+        CUMULATIVE_AVG_PREDICTED_REGISTRATIONS AS PRED_AVG,
+        CUMULATIVE_LOW_PREDICTED_REGISTRATIONS AS PRED_LOW,
+        CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS AS PRED_HIGH
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+      WHERE EVENT_ID = ?
+      ORDER BY DAYS_TO_EVENT DESC
+    `;
+
+    try {
+      const [headResult, pointsResult] = await Promise.all([
+        this.snowflakeService.execute<HeadRow>(headQuery, [eventId]),
+        this.snowflakeService.execute<PointRow>(pointsQuery, [eventId]),
+      ]);
+
+      const head = headResult.rows?.[0];
+      if (!head) return unavailable;
+
+      return {
+        available: true,
+        daysLeft: head.DAYS_LEFT,
+        current: head.CURRENT,
+        priorYear: head.PRIOR,
+        predictedAvg: head.PRED_AVG,
+        predictedLow: head.PRED_LOW,
+        predictedHigh: head.PRED_HIGH,
+        points: pointsResult.rows.map((p) => ({
+          daysToEvent: p.DAYS_TO_EVENT,
+          current: p.CURRENT,
+          priorYear: p.PRIOR,
+          predictedAvg: p.PRED_AVG,
+          predictedLow: p.PRED_LOW,
+          predictedHigh: p.PRED_HIGH,
+        })),
+      };
+    } catch (error) {
+      // Tables not materialized yet (or transient) — degrade gracefully.
+      logger.warning(undefined, 'get_event_pacing', 'Pacing prediction tables unavailable', {
+        event_id: eventId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return unavailable;
+    }
   }
 }
