@@ -306,7 +306,9 @@ export class VoteResultsDrawerComponent {
         return [];
       }
 
-      return results.comment_results.filter((cr) => cr.responses.length > 0);
+      // Array.isArray guard: until lfx-v2-voting-service#48 deploys, the live contract returns
+      // { prompt: string, comments: string[] } — skip those entries instead of throwing on undefined responses.
+      return results.comment_results.filter((cr) => Array.isArray(cr.responses) && cr.responses.length > 0);
     });
   }
 
