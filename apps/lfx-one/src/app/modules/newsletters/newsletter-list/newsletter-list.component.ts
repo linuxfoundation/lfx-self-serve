@@ -22,7 +22,13 @@ import {
   NewsletterRow,
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
-import { formatFutureRelativeTime, formatTo12HourInTimezone, getTimezoneUtcOffsetString, getUserTimezone } from '@lfx-one/shared/utils';
+import {
+  formatFutureRelativeTime,
+  formatShortDateInTimezone,
+  formatTo12HourInTimezone,
+  getTimezoneUtcOffsetString,
+  getUserTimezone,
+} from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -288,9 +294,10 @@ export class NewsletterListComponent {
         let scheduledTooltip = '';
         if (n.scheduled_at) {
           const scheduledDate = new Date(n.scheduled_at);
+          const dateLabel = formatShortDateInTimezone(scheduledDate, timezone);
           const timeLabel = formatTo12HourInTimezone(scheduledDate, timezone);
           const offset = getTimezoneUtcOffsetString(timezone, scheduledDate);
-          scheduledLabel = `${timeLabel} (UTC${offset})`;
+          scheduledLabel = `${dateLabel}, ${timeLabel} (UTC${offset})`;
           scheduledTooltip = `${scheduledLabel} — ${formatFutureRelativeTime(scheduledDate)}`;
         }
         return {

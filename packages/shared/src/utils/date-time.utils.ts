@@ -221,6 +221,26 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Formats a Date object to a short month/day format ("Aug 17") in a specific timezone.
+ * `toZonedTime` shifts the instant so the JS Date's *local-machine* getters read as the
+ * target zone's wall-clock values (same trick `formatTo12HourInTimezone` relies on) — so
+ * this reads the shifted date's local month/day rather than reformatting in UTC, which
+ * `formatShortDate` does and would reintroduce the timezone mismatch this function exists to fix.
+ * @param date The date to format (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Date string in short format (e.g., "Aug 17")
+ */
+export function formatShortDateInTimezone(date: Date, timezone: string): string {
+  try {
+    const zonedDate = toZonedTime(date, timezone);
+    return zonedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (error) {
+    console.error('Error formatting date in timezone:', timezone, error);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {

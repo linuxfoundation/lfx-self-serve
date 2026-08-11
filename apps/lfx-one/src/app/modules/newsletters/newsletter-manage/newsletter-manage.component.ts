@@ -661,21 +661,32 @@ export class NewsletterManageComponent {
    * A tab left open past the picked time makes every autosave fail upstream
    * ('scheduled_at must be in the future'). 'past' resets to send-now;
    * 'tooSoon'/'tooFar' are left alone — they still save fine and only need to
-   * disable the Schedule action (see canSchedule).
+   * disable the Schedule action (see canSchedule). Repo convention forbids
+   * effect() for imperative side effects (form patches, toasts) — bridge the
+   * signal to an observable instead.
+   *
+   * Skips while isScheduleReadOnly(): the minute clock (initScheduleClock)
+   * makes scheduleWindowError re-evaluate purely from elapsed time, so once a
+   * deep-linked armed newsletter's scheduled_at passes, this would otherwise
+   * clear the picker and toast "pick a new time or send now" even though
+   * edit/send are intentionally hidden for an armed row — the form here is a
+   * read-only mirror of what's already committed at the provider, not
+   * something the guard should be resetting.
    */
   private initSchedulePastGuard(): void {
-    effect(
-      () => {
-        if (this.scheduleWindowError() !== 'past') return;
+    toObservable(this.scheduleWindowError)
+      .pipe(
+        filter((error) => error === 'past' && !this.isScheduleReadOnly()),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
         this.form.patchValue({ sendMode: 'now', scheduleDate: null, scheduleTime: '' });
         this.messageService.add({
           severity: 'warn',
           summary: 'Scheduled time passed',
           detail: 'Your scheduled time has passed — pick a new time or send now.',
         });
-      },
-      { injector: this.injector }
-    );
+      });
   }
 
   private initRecipientCount(): void {
@@ -945,14 +956,18 @@ export class NewsletterManageComponent {
    * Same synchronous-settlement edge case as handleSendResponse: a
    * zero-recipient audience (or a pre-async upstream) can return
    * status='sent' immediately instead of the usual 'sending' → 'scheduled'
-   * arm-in-progress path. Branch on the real status rather than assuming
-   * every response is still arming — landing on the Scheduled tab for a
-   * newsletter that already settled to Sent would make it invisible there.
+   * arm-in-progress path. Mirror handleSendResponse's positive check on the
+   * one known in-flight status ('sending') rather than a negated check —
+   * 'scheduled' never comes back synchronously (the fan-out job settles to
+   * it later), so treating it as a distinct in-flight branch is both
+   * unreachable and, if the upstream contract ever grows a new status,
+   * would silently misroute it into the "still arming" branch instead of
+   * the settled-outcome one.
    */
   private handleScheduleResponse(result: NewsletterScheduleResult): void {
     this.newsletterStatus.set(result.newsletter.status);
     this.version.set(result.newsletter.version);
-    if (result.newsletter.status !== 'sending' && result.newsletter.status !== 'scheduled') {
+    if (result.newsletter.status !== 'sending') {
       if (result.failed > 0) {
         this.messageService.add({
           severity: 'warn',
