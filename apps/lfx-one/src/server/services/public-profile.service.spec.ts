@@ -363,19 +363,21 @@ describe('projectPublicProfile — training_activities allow-list projection', (
     expect(projectPublicProfile({ training_activities: { Name: 'A' } }).training_activities).toBeUndefined();
   });
 
-  it('emits a drift debug signal counting rows dropped for an unrecognized Type despite an allow-listed Status', () => {
+  it('emits a drift warning signal counting rows dropped for an unrecognized Type despite an allow-listed Status', () => {
     projectPublicProfile(
       {
         training_activities: [
           { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
           { Name: 'Renamed type', Type: 'eLearning', Status: 'Completed' },
           { Name: 'Another renamed type', Type: 'Self-Paced', Status: 'Enrolled' },
+          { Name: 'Known excluded, not drift', Type: 'Bundle', Status: 'Completed' },
           { Name: 'Dropped for status, not type', Type: 'Bundle', Status: 'Cancelled' },
         ],
       },
       req
     );
 
+    // Only the two genuinely-unrecognized Types count; the Completed Bundle is a known excluded type.
     expect(logger.warning).toHaveBeenCalledWith(req, 'project_public_profile', expect.stringContaining('unrecognized Type'), { dropped_for_unknown_type: 2 });
   });
 
@@ -385,6 +387,22 @@ describe('projectPublicProfile — training_activities allow-list projection', (
         training_activities: [
           { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
           { Name: 'Bad type and status', Type: 'Bundle', Status: 'Cancelled' },
+        ],
+      },
+      req
+    );
+
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('does not emit the drift signal for a known excluded Type with an allow-listed Status', () => {
+    projectPublicProfile(
+      {
+        training_activities: [
+          { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
+          { Name: 'Exam', Type: 'Certification Exam', Status: 'Completed' },
+          { Name: 'Sub', Type: 'Subscription', Status: 'Enrolled' },
+          { Name: 'Bundle', Type: 'Bundle', Status: 'Completed' },
         ],
       },
       req

@@ -26,6 +26,10 @@ export const PUBLIC_PROFILE_USERNAME_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 // dropped from trainings; completed certifications surface via `certification_activities`.
 export const PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST: ReadonlySet<string> = new Set(['E-Learning', 'Instructor-Led', 'edX']);
 
+// Training `Type` values deliberately dropped but recognized as normal (exam/subscription/bundle);
+// kept out of the allow-list so the drift signal fires only for a genuinely unrecognized Type, not these.
+export const PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED: ReadonlySet<string> = new Set(['Certification Exam', 'Subscription', 'Bundle']);
+
 /** Enrollment `Status` values kept on the public trainings list (myprofile parity). */
 export const PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST: ReadonlySet<string> = new Set(['Enrolled', 'Completed', 'Started', 'Not started']);
 

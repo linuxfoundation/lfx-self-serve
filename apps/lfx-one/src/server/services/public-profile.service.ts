@@ -18,6 +18,7 @@ import {
   PUBLIC_PROFILE_SERVICE_NAME,
   PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST,
   PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST,
+  PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED,
   PUBLIC_PROFILE_USERNAME_PATTERN,
   PUBLIC_PROFILES_BUCKET_URL_ENV,
 } from '../constants';
@@ -133,9 +134,9 @@ function projectTrainingActivities(value: unknown, req?: Request): PublicProfile
     const type = pickString(activity['Type']);
     const statusAllowed = status !== undefined && PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST.has(status);
     const typeAllowed = type !== undefined && PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST.has(type);
-    // Drift signal: an allow-listed Status with an unrecognized Type means the myprofile Type
-    // vocabulary likely drifted (allow-list duplicated here, no shared contract) — count it for Datadog.
-    if (statusAllowed && !typeAllowed) {
+    // Drift signal: an allow-listed Status with a Type that's neither allow-listed nor a known
+    // excluded type (exam/subscription/bundle) means the myprofile vocabulary likely drifted — count it.
+    if (statusAllowed && type !== undefined && !typeAllowed && !PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED.has(type)) {
       droppedForUnknownType++;
     }
     return statusAllowed && typeAllowed;
