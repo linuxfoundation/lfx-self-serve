@@ -220,9 +220,8 @@ export class ProfileEditDrawerComponent {
       this.hasChanges.set(this.profileForm.dirty);
     });
 
-    // Hard-cap the bio by code point (not UTF-16 units) so emoji-heavy bios reach the real rune
-    // limit; when over, clip only the changed region against the last valid value (emitEvent:false
-    // to avoid a loop) so a mid-string insertion drops the excess input, not trailing content.
+    // Hard-cap the bio by code point (not UTF-16 units) to match the rune limit; when over, clip only
+    // the changed region vs the last valid value (emitEvent:false) so insertions drop excess, not trailing text.
     this.profileForm
       .get('bio')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
