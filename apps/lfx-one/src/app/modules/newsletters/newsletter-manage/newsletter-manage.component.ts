@@ -900,6 +900,7 @@ export class NewsletterManageComponent {
 
   private handleScheduleResponse(result: NewsletterScheduleResult): void {
     this.newsletterStatus.set(result.newsletter.status);
+    this.version.set(result.newsletter.version);
     this.messageService.add({
       severity: 'info',
       summary: 'Scheduling newsletter',
