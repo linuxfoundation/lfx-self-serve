@@ -1071,8 +1071,11 @@ describe('WeeklyBriefService', () => {
           controller.enqueue(new TextEncoder().encode('ok'));
           controller.close();
         },
+        // Rejects rather than throws synchronously — undici's real cancel() is async and rejects
+        // on failure, so this models the actual failure mode .catch() below guards against
+        // instead of depending on the Streams spec's sync-throw-to-rejection conversion.
         cancel() {
-          throw new Error('cancel failed');
+          return Promise.reject(new Error('cancel failed'));
         },
       });
       fetchMock.mockResolvedValueOnce({ ok: true, status: 200, statusText: 'status 200', body: stream } as unknown as Response);
