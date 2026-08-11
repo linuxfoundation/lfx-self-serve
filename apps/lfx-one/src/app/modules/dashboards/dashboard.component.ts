@@ -51,7 +51,14 @@ export class DashboardComponent {
     return this.personaService.allPersonas().length > 1;
   });
 
+  // Returns 'executive-director' for LF Staff too — they share the ED dashboard route.
+  // ExecutiveDirectorDashboardComponent gates its ED-only sections (Pending Actions, Org Involvement,
+  // My Meetings, sidebar) behind currentPersona() === 'executive-director', so LF Staff see only
+  // Foundation Health and Marketing Overview.
   protected readonly foundationDashboardType = computed(() => {
+    if (this.personaService.canViewExecutiveDashboards()) {
+      return 'executive-director';
+    }
     const persona = this.personaService.currentPersona();
     return isBoardScopedPersona(persona) ? persona : 'board-member';
   });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import type {
   BulkKeywordActionRequest,
@@ -899,7 +899,7 @@ export class CampaignProxyService {
     const job = jobs.get(jobId);
     if (!job) {
       logger.warning(req, 'campaign_job_status', `Job ${jobId} not found on this instance — likely routed to a different replica`, { jobId });
-      return { status: 'not_found', error: 'Lost connection to the campaign creation process. Please try again.' };
+      return { status: 'not_found', error: JOB_LOST_MESSAGE };
     }
     return job;
   }

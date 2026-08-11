@@ -16,9 +16,9 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  * the fixed rail's height (mirrors lfx-sidebar's `:host { height: 100% }`); without host sizing
  * the height chain breaks and the rail cannot scroll independently.
  *
- * Rows render only when their value is present. GitHub is sourced from the user's
- * connected identities (bound by the parent); About me and LinkedIn are stubbed for now
- * (no source yet) and therefore stay hidden until wired in a follow-up.
+ * Rows render only when their value is present. About me (from the profile bio) and GitHub
+ * (from the user's connected identities) are sourced and bound by the parent; LinkedIn is
+ * stubbed for now (no source yet) and therefore stays hidden until wired in a follow-up.
  */
 @Component({
   selector: 'lfx-profile-panel',

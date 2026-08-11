@@ -322,7 +322,7 @@ export class SidebarNavService {
       });
     }
 
-    if (this.personaService.currentPersona() === 'executive-director') {
+    if (this.personaService.canViewExecutiveDashboards()) {
       const metricsItems: SidebarMenuItem[] = [
         {
           label: 'Health Metrics',
@@ -353,24 +353,30 @@ export class SidebarNavService {
         items: metricsItems,
       });
 
+      const marketingItems: SidebarMenuItem[] = [
+        {
+          label: 'Marketing Impact',
+          icon: 'fa-light fa-bullhorn',
+          routerLink: '/foundation/marketing-impact',
+          testId: 'sidebar-marketing-impact',
+        },
+      ];
+
+      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Marketing Impact but not Campaigns.
+      if (this.personaService.currentPersona() === 'executive-director') {
+        marketingItems.push({
+          label: 'Campaigns',
+          icon: 'fa-light fa-megaphone',
+          routerLink: '/foundation/campaigns',
+          testId: 'sidebar-marketing-campaigns',
+        });
+      }
+
       items.push({
         label: 'Marketing',
         isSection: true,
         expanded: true,
-        items: [
-          {
-            label: 'Marketing Impact',
-            icon: 'fa-light fa-bullhorn',
-            routerLink: '/foundation/marketing-impact',
-            testId: 'sidebar-marketing-impact',
-          },
-          {
-            label: 'Campaigns',
-            icon: 'fa-light fa-megaphone',
-            routerLink: '/foundation/campaigns',
-            testId: 'sidebar-marketing-campaigns',
-          },
-        ],
+        items: marketingItems,
       });
     }
 

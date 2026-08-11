@@ -12,6 +12,7 @@ import {
   NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
+  NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
   NewsletterSendResult,
   NewsletterTestSendPayload,
@@ -160,6 +161,21 @@ export class NewsletterServiceClient {
       req,
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters/${newsletterUid}/analytics`,
+      'GET'
+    );
+  }
+
+  /**
+   * Per-recipient engagement: who the newsletter went to, delivery outcome,
+   * and every recorded open. PII-gated upstream (requires the `auditor`
+   * relation, fail-closed) — stricter than getAnalytics's `viewer` gate, so
+   * this call can 403 for a user who can see the aggregate analytics.
+   */
+  public async getRecipientEngagement(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterRecipientEngagementResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRecipientEngagementResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/analytics/recipients`,
       'GET'
     );
   }

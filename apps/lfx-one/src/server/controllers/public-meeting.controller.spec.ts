@@ -137,7 +137,7 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
 }
 
 // checkAccess now keys results as "id#access" (e.g. "meeting-1111#organizer").
-function accessMap(entries: Array<[string, boolean]>): Map<string, boolean> {
+function accessMap(entries: [string, boolean][]): Map<string, boolean> {
   return new Map(entries);
 }
 

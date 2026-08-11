@@ -5,7 +5,7 @@
  * Source kind backing an `ActivityFeedItem`.
  * @description Drives icon + tab-navigation choice in the committee Overview "Recent Activity" widget.
  */
-export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey' | 'document';
+export type ActivityFeedItemType = 'meeting' | 'past_meeting' | 'vote' | 'survey' | 'document' | 'note';
 
 /**
  * What clicking an `ActivityFeedItem` does — a discriminated union so each source's action is

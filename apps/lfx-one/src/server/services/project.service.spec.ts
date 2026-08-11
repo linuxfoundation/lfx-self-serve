@@ -7,8 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
-// constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the compatibility
-// tests below use only the Snowflake execute mock, while the others stay trivial.
+// constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
+// suites below use only the `execute` mock, while the others stay trivial.
 const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
@@ -262,6 +262,29 @@ describe('ProjectService — create picker methods', () => {
     for (const params of calls) {
       expect(params['filter_grants'] === 'direct' || typeof params['parent'] === 'string' || typeof params['name'] === 'string').toBe(true);
     }
+  });
+});
+
+describe('ProjectService — Snowflake-backed marketing reads', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  describe('getSocialReach', () => {
+    // Regression guard for the zero-fill bug: this method used to swallow Snowflake failures and
+    // resolve a defaults object, which reached the dashboard as a 200 and rendered "zero spend,
+    // 0.0x ROAS" — indistinguishable from a genuine measurement of zero. The rethrow is the whole
+    // contract the callers' unavailable states depend on, so it needs coverage of its own;
+    // otherwise a later refactor could reinstate the fallback with every test still green.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getSocialReach('tlf', undefined, { start: '2026-01-01', end: '2026-07-01', label: 'test' } as any)).rejects.toBe(failure);
+    });
   });
 });
 

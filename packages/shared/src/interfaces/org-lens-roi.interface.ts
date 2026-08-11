@@ -1,9 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ORG_LENS_ROI_CONTRIBUTION_TYPES, ORG_LENS_ROI_COVERAGE_REASONS, ORG_LENS_ROI_METHODS } from '../constants/org-lens-roi.constants';
+import type {
+  ORG_LENS_ROI_CONTRIBUTION_TYPES,
+  ORG_LENS_ROI_COVERAGE_REASONS,
+  ORG_LENS_ROI_METHODS,
+  ORG_LENS_ROI_PROJECT_MEASURES,
+} from '../constants/org-lens-roi.constants';
 
 export type OrgLensRoiMethod = (typeof ORG_LENS_ROI_METHODS)[number];
+
+/** Which measure the projects donut ranks and sizes projects by. */
+export type OrgLensRoiProjectMeasure = (typeof ORG_LENS_ROI_PROJECT_MEASURES)[number];
 
 export type OrgLensRoiContributionType = (typeof ORG_LENS_ROI_CONTRIBUTION_TYPES)[number];
 
@@ -46,4 +54,58 @@ export interface OrgLensRoiAnnual {
   method: OrgLensRoiMethod;
   rows: OrgLensRoiAnnualRow[];
   apportioned: boolean;
+}
+
+/** One contribution category's modelled investment. Shared by the portfolio breakdown and each project's. */
+export interface OrgLensRoiCategoryRow {
+  type: OrgLensRoiContributionType;
+  label: string;
+  expenditure: number;
+}
+
+export interface OrgLensRoiInvestmentBreakdown {
+  rows: OrgLensRoiCategoryRow[];
+  /** Equals `/summary.totalExpenditure` exactly. A difference is a defect, not a caveat to render. */
+  total: number;
+}
+
+export interface OrgLensRoiProjectRow {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  totalExpenditure: number;
+  totalReturn: number;
+  profit: number;
+  /** Null — never zero — when the project has no investment to divide by. */
+  roi: number | null;
+  bcr: number | null;
+  breakevenMarkup: number | null;
+  /** Sums to `totalExpenditure` by construction; never rescale client-side. */
+  categories: OrgLensRoiCategoryRow[];
+}
+
+export interface OrgLensRoiProjects {
+  method: OrgLensRoiMethod;
+  /** The complete, uncapped project set. */
+  rows: OrgLensRoiProjectRow[];
+}
+
+/** One rendered arc of the category donut. A view model — never serialized, never a wire contract. */
+export interface OrgLensRoiCategorySlice {
+  key: string;
+  label: string;
+  expenditure: number;
+  share: number;
+  color: string;
+}
+
+/** One rendered arc of the projects donut. A view model — never serialized, never a wire contract. */
+export interface OrgLensRoiProjectSlice {
+  key: string;
+  label: string;
+  /** The true signed measure, which is what the label reports. */
+  value: number;
+  /** What the arc is sized by. Never negative, because an arc cannot be. */
+  weight: number;
+  color: string;
 }

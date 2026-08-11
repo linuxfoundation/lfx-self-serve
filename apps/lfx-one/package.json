@@ -10,7 +10,9 @@
     "build:production": "yarn docs:build && ng build --configuration production",
     "build:staging": "yarn docs:build && ng build --configuration staging",
     "watch": "yarn docs:build && ng build --watch --configuration development",
-    "test": "vitest run",
+    "test": "node scripts/run-tests.mjs",
+    "test:server": "vitest run",
+    "test:app": "ng test",
     "start:server": "pm2-runtime ecosystem.config.js",
     "setup:logrotate": "pm2 install pm2-logrotate && pm2 set pm2-logrotate:compress true",
     "logs:server": "pm2 logs --raw",
@@ -100,6 +102,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "@types/compression": "1.8.1",
     "@types/express": "^4.17.17",
+    "@types/jsdom": "^30",
     "@types/node": "^18.18.0",
     "@types/pdfkit": "^0.13.9",
     "@types/sanitize-html": "^2.16.0",
@@ -109,6 +112,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.39.1",
     "gray-matter": "^4.0.3",
+    "jsdom": "^30.0.1",
     "pino-pretty": "^13.1.1",
     "playwright": "1.58.0",
     "pm2": "^6.0.8",
@@ -121,6 +125,6 @@
     "tailwindcss-primeui": "^0.6.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.46.4",
-    "vitest": "^4.1.8"
+    "vitest": "^3.2.4"
   }
 }

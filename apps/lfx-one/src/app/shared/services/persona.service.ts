@@ -45,6 +45,10 @@ export class PersonaService {
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /** Writer on the tenant root project — bypasses nav persona filtering */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
+  /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
+  public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
+  /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
+  public readonly canViewExecutiveDashboards: Signal<boolean>;
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -55,6 +59,7 @@ export class PersonaService {
     this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>(authState.personaProjects ?? {});
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
+    this.canViewExecutiveDashboards = computed(() => this.currentPersona() === 'executive-director' || this.isLFStaff());
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
     // Cookie can't carry personaProjects/detectedProjects, so always refresh from API after hydration.
@@ -131,6 +136,7 @@ export class PersonaService {
         allPersonas: this.allPersonas(),
       });
       this.isRootWriter.set(false);
+      this.isLFStaff.set(false);
       this.personaLoaded.set(true);
       return;
     }
@@ -139,6 +145,7 @@ export class PersonaService {
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
+    this.isLFStaff.set(response.isLFStaff ?? false);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

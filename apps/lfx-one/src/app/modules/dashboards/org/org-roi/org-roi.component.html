@@ -57,19 +57,11 @@
       icon="fa-light fa-triangle-exclamation"
       title="ROI metrics aren't available for this company right now. Please try again."
       data-testid="org-roi-no-analytics-id-state" />
-  } @else if (portfolioLoading()) {
-    <section class="flex flex-col gap-4" data-testid="org-roi-portfolio-loading">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        @for (i of [1, 2, 3, 4]; track i) {
-          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-            <p-skeleton width="4rem" height="1.75rem" />
-            <p-skeleton width="80%" height="0.75rem" />
-          </div>
-        }
-      </div>
-    </section>
   } @else if (portfolioForbidden()) {
+    <!-- Both failure branches sit ahead of the loading one. A failed request clears the summary,
+         which leaves it not matching the selected organization, so a loading condition tested
+         first would swallow every error into a permanent skeleton. Each new request resets these
+         flags, so ordering them first cannot strand a stale error over a fresh load. -->
     <div
       class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
       data-testid="org-roi-forbidden">
@@ -82,12 +74,42 @@
       <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
       <span>ROI metrics couldn't be loaded. Please try again.</span>
     </div>
+  } @else if (portfolioLoading() || !summaryMatchesSelectedOrg()) {
+    <!-- The org-identity check belongs in the loading condition, not only on the figures below:
+         the summary keeps its previous value until the next response lands, and `portfolioLoading`
+         is raised only on the following effect flush. Without it this branch loses to the populated
+         one for that window, putting the previous organization's headline amounts under the newly
+         selected one. -->
+    <section class="flex flex-col gap-4" data-testid="org-roi-portfolio-loading">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="4rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </section>
   } @else if (!hasRoiData()) {
     <lfx-org-roi-empty-state [reason]="coverage().coverageReason" />
   } @else {
     <lfx-org-roi-kpi-cards [summary]="summary()" />
 
     <lfx-org-roi-annual-trend [method]="method()" />
+  }
+
+  <!-- Mounted outside the state chain above, which swaps the whole populated block for a skeleton
+       on every request — including a method-only one. Inside it, the category donut remounted on
+       each method switch and re-issued a read whose response cannot vary by method. Out here it
+       survives the switch. An org change is different and must not survive: `showsFigures()`
+       checks the summary's own orgUid against the selected account, so it goes false immediately
+       rather than leaving one company's figures on another company's page. -->
+  @if (showsFigures()) {
+    <!-- No [method]: category investment has no estimation method in the warehouse. -->
+    <lfx-org-roi-category-donut />
+
+    <lfx-org-roi-projects-donut [method]="method()" />
   }
 
   <!-- Mounted outside the branches above, on the same condition as its trigger. Inside the
