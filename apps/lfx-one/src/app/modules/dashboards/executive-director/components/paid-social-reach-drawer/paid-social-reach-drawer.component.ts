@@ -7,13 +7,14 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createBarChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { computeMomPct, formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -32,11 +33,28 @@ import type {
 @Component({
   selector: 'lfx-paid-social-reach-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, EmptyStateComponent, SkeletonModule, TagComponent],
   templateUrl: './paid-social-reach-drawer.component.html',
   styleUrl: './paid-social-reach-drawer.component.scss',
 })
 export class PaidSocialReachDrawerComponent {
+  /**
+   * Computation placeholder for the null (failed / not-yet-run) case. Rendered only behind
+   * the template's `dataUnavailable` guard, so these zeros never reach the viewer as data.
+   */
+  private static readonly emptyResponse: SocialReachResponse = {
+    totalReach: 0,
+    roas: 0,
+    totalSpend: 0,
+    totalRevenue: 0,
+    changePercentage: 0,
+    trend: 'up',
+    monthlyData: [],
+    monthlyLabels: [],
+    monthlyRoas: [],
+    channelGroups: [],
+  };
+
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -119,10 +137,36 @@ export class PaidSocialReachDrawerComponent {
   };
 
   // === WritableSignals ===
-  protected readonly drawerLoading = signal(false);
+  /**
+   * Single source of truth for what the content area renders. Two independent booleans could
+   * not express "no request has run yet" distinctly from "a request finished with zeros", so
+   * whichever one was cleared first left a frame rendering the other state's UI: clearing the
+   * failure flag on close exposed a zero-filled `@else`, and not clearing it flashed a stale
+   * error on reopen. 'idle' and 'loading' both render the skeleton, so no frame can fall
+   * through to fabricated zeros.
+   */
+  protected readonly status = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
+
+  /** Skeleton covers both idle and in-flight — neither has data worth rendering. */
+  protected readonly drawerLoading: Signal<boolean> = computed(() => this.status() === 'idle' || this.status() === 'loading');
+
+  /** Only ever true after a request has actually failed — never before one has run. */
+  protected readonly dataUnavailable: Signal<boolean> = computed(() => this.status() === 'failed');
 
   // === Computed Signals (lazy-loaded data) ===
-  protected readonly drawerData: Signal<SocialReachResponse> = this.initDrawerData();
+  /**
+   * Raw response, or null when the request failed / has not run yet. Everything downstream
+   * reads `drawerData`, which substitutes an empty response so the existing metric logic
+   * stays null-free.
+   */
+  private readonly drawerResult: Signal<SocialReachResponse | null> = this.initDrawerData();
+
+  /**
+   * Never null, so the derived metrics below keep their existing shape. The zeros here are
+   * only ever rendered behind the template's `dataUnavailable` guard — they are a
+   * placeholder for computation, never presented to the viewer as measured data.
+   */
+  protected readonly drawerData: Signal<SocialReachResponse> = computed(() => this.drawerResult() ?? PaidSocialReachDrawerComponent.emptyResponse);
   protected readonly formattedTotalReach: Signal<string> = computed(() => formatNumber(this.drawerData().totalReach));
   protected readonly formattedTotalRevenue: Signal<string> = computed(() => formatCurrency(this.drawerData().totalRevenue));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
@@ -315,20 +359,7 @@ export class PaidSocialReachDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<SocialReachResponse> {
-    const defaultValue: SocialReachResponse = {
-      totalReach: 0,
-      roas: 0,
-      totalSpend: 0,
-      totalRevenue: 0,
-      changePercentage: 0,
-      trend: 'up',
-      monthlyData: [],
-      monthlyLabels: [],
-      monthlyRoas: [],
-      channelGroups: [],
-    };
-
+  private initDrawerData(): Signal<SocialReachResponse | null> {
     const visible$ = toObservable(this.visible);
     // Match the parent's fallback: the ED overview loads this card's data with 'tlf'
     // when no foundation is selected, so an empty slug here would filter the request
@@ -337,25 +368,41 @@ export class PaidSocialReachDrawerComponent {
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(
-        filter(([isVisible, slug]) => isVisible && !!slug),
-        map(([, slug]) => slug),
-        tap(() => this.drawerLoading.set(true)),
-        switchMap((foundationSlug) =>
-          this.analyticsService.getSocialReach(foundationSlug, undefined, 'last-6').pipe(
-            tap(() => this.drawerLoading.set(false)),
+        // The close case is handled inside switchMap (not filtered out beforehand) so that
+        // closing while a request is in flight actually reaches switchMap and cancels it.
+        // Filtering `!isVisible` out here would let the in-flight getSocialReach call keep
+        // running after close; its tap/catchError would still land and overwrite the 'idle'
+        // reset with 'loaded'/'failed', which could flash stale data on a quick reopen.
+        switchMap(([isVisible, slug]) => {
+          if (!isVisible || !slug) {
+            this.status.set('idle');
+            return of(null);
+          }
+          // A retry supersedes whatever the last attempt produced. Moving straight to
+          // 'loading' clears a previous failure without ever passing through a state that
+          // renders zeros, and covers retries with no close/reopen (the foundation changing
+          // while the drawer is open) as well as reopens.
+          this.status.set('loading');
+          return this.analyticsService.getSocialReach(slug, undefined, 'last-6').pipe(
+            tap(() => this.status.set('loaded')),
+            // null, not a zero-filled response: 0 impressions and 0.0x ROAS are legitimate
+            // measurements, so returning them here would render a failed request as "this
+            // foundation spent nothing" — the exact ambiguity getSocialReach stopped
+            // producing when its own zero-fill fallback was removed. The template renders
+            // an explicit unavailable state on null instead.
             catchError(() => {
-              this.drawerLoading.set(false);
+              this.status.set('failed');
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
                 detail: 'Failed to load paid social reach details.',
               });
-              return of(defaultValue);
+              return of(null);
             })
-          )
-        )
+          );
+        })
       ),
-      { initialValue: defaultValue }
+      { initialValue: null }
     );
   }
 
