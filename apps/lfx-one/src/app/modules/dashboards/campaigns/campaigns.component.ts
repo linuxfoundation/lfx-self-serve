@@ -9,6 +9,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { take } from 'rxjs';
 
 import { ButtonComponent } from '../../../shared/components/button/button.component';
@@ -44,6 +45,7 @@ const IDLE_PERSISTENCE: CampaignBriefPersistenceState = { status: 'off', briefId
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -81,6 +83,19 @@ export class CampaignsComponent {
    * newer owner of the signal has already set the state it wants.
    */
   private briefPersistenceGeneration = 0;
+
+  /**
+   * Whether the server has told us the brief-persistence cutover is on.
+   *
+   * Starts false meaning UNKNOWN, not off, and only a response can change it: the flag is an
+   * environment variable read inside the Express handler, and this application has no channel
+   * that would let the browser learn a server flag before making a request. `persistBrief`
+   * therefore withholds the in-flight banner until the first response, so a dark cutover renders
+   * nothing rather than a spinner. Deliberately NOT reset by `resetToPlanning` — the flag belongs
+   * to the deployment, not to the brief being edited, and re-hiding the banner for every
+   * subsequent save would reintroduce the flicker one brief at a time.
+   */
+  private readonly briefPersistenceEnabled = signal(false);
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
@@ -164,20 +179,36 @@ export class CampaignsComponent {
    */
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
-    this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+
+    // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
+    // of a session cannot know its state until the response arrives — and showing "Saving this
+    // brief…" in the meantime would put a persistence banner in front of every user in every
+    // environment where the cutover is still dark, which is all of them by default. The cost is
+    // that the first save shows no in-flight banner, only its outcome; every later one in the
+    // same session shows both.
+    if (this.briefPersistenceEnabled()) {
+      this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+    }
 
     this.campaignService
-      .persistBrief(brief)
+      .persistBrief(brief, this.projectContextService.activeContext()?.slug ?? '')
       .pipe(take(1))
       .subscribe({
         next: (result) => {
           if (generation !== this.briefPersistenceGeneration) return;
+          this.briefPersistenceEnabled.set(result.enabled);
           this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : IDLE_PERSISTENCE);
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
         // fine. Rendering the upstream error text here would say "412 Precondition Failed" to
         // someone who has no way to act on it.
+        //
+        // Shown even when the flag state is still unknown, unlike the `saving` banner above, and
+        // the asymmetry is on purpose. A failed request tells us nothing about the flag — but the
+        // sentence is true in both worlds: with the cutover dark the brief is not durable either,
+        // which is exactly what it says. Suppressing it until the state is known would instead
+        // swallow the very first failure of a live cutover, silently.
         error: () => {
           if (generation !== this.briefPersistenceGeneration) return;
           this.briefPersistence.set({

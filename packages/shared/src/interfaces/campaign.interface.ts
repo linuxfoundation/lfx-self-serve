@@ -182,6 +182,16 @@ export interface CampaignBriefPersistResult {
   briefId: string;
   etag: string | null;
   created: boolean;
+  /**
+   * Whether the saved brief reached `approved`, the state campaign-service requires before it
+   * will create campaigns or build an audience from it.
+   *
+   * Separate from the save's own success because the two really can differ: campaign-service
+   * writes every brief as `draft` and resets an existing one to `draft` on replace, so approval
+   * is a second call that can fail on its own. When it does, the brief IS durable — which is why
+   * this is a field rather than an error.
+   */
+  approved: boolean;
 }
 
 /**

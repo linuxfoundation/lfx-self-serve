@@ -312,7 +312,23 @@ export class CampaignController {
       // CampaignBriefPersistResult on both arms, and the client needs exactly one branch.
       // `enabled: false` is the whole signal; the remaining values are the empty ones the
       // client already ignores when it is false, not placeholders standing in for a real save.
-      res.json({ enabled: false, briefId: '', etag: null, created: false });
+      res.json({ enabled: false, briefId: '', etag: null, created: false, approved: false });
+      return;
+    }
+
+    // The foundation the user has selected, from the same `?project=<slug>` the page itself is
+    // scoped by. NOT defaulted: `/foundation/campaigns` is reachable by an ED of any foundation,
+    // and campaign-service files briefs per project, so falling back to a constant would put one
+    // foundation's work in another's table. An unresolved context is a bug worth surfacing here
+    // rather than a reason to guess.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
       return;
     }
 
@@ -336,11 +352,17 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug });
+    const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug, projectSlug });
 
     try {
-      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug);
-      logger.success(req, 'campaign_persist_brief', startTime, { eventSlug, briefId: result.briefId, created: result.created });
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug);
+      logger.success(req, 'campaign_persist_brief', startTime, {
+        eventSlug,
+        projectSlug,
+        briefId: result.briefId,
+        created: result.created,
+        approved: result.approved,
+      });
       res.json(result);
     } catch (error) {
       next(error);

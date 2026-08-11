@@ -48,8 +48,8 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
   return { eventDetails: { slug }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
 }
 
-function buildReq(body: unknown): Request {
-  return { body, path: '/api/campaigns/brief/persist' } as unknown as Request;
+function buildReq(body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+  return { body, query, path: '/api/campaigns/brief/persist' } as unknown as Request;
 }
 
 function buildRes(): Response {
@@ -73,7 +73,7 @@ describe('CampaignController.persistBrief', () => {
     res = buildRes();
     next = vi.fn();
     isServerFeatureEnabled.mockReturnValue(true);
-    saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"3"', created: false });
+    saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"3"', created: false, approved: true });
   });
 
   it('answers a dark cutover with enabled:false and never calls campaign-service', async () => {
@@ -85,18 +85,50 @@ describe('CampaignController.persistBrief', () => {
     expect(next).not.toHaveBeenCalled();
     // 200 with a body, not a 4xx/5xx: the flag being off is the default in every environment, so
     // an error status here would fire the client's error arm on the ordinary case.
-    expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false });
+    expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false, approved: false });
   });
 
   it('returns the save result unchanged so the client can tell a create from a replace', async () => {
-    saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true });
+    saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
 
     await controller.persistBrief(buildReq(briefWithSlug('kubecon-eu-2026')), res, next);
 
     expect(saveBrief).toHaveBeenCalledTimes(1);
     expect(saveBrief.mock.calls[0][2]).toBe('kubecon-eu-2026');
-    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true });
+    expect(saveBrief.mock.calls[0][3]).toBe('tlf');
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // The page is reachable by an ED of any foundation, and campaign-service files briefs per
+  // project. Defaulting an unresolved context to a constant would silently write one foundation's
+  // work into another's table, so an absent slug is refused rather than guessed at.
+  it.each([
+    ['no project param at all', {}],
+    ['a blank project param', { project: '   ' }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'] }],
+  ])('refuses %s rather than defaulting the foundation', async (_label, query) => {
+    await controller.persistBrief(buildReq(briefWithSlug('kubecon-eu-2026'), query), res, next);
+
+    expect(saveBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'project', message: 'no foundation is selected; reload the campaigns page from the sidebar', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  // Passed straight through: the client cannot tell a saved-and-approved brief from a saved-only
+  // one otherwise, and Phase 3 refuses to create campaigns from anything still in `draft`.
+  it('reports a saved-but-unapproved brief without turning it into an error', async () => {
+    saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: false });
+
+    await controller.persistBrief(buildReq(briefWithSlug('kubecon-eu-2026')), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: false });
   });
 
   it('refuses a brief with no event slug before spending a round trip', async () => {

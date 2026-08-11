@@ -70,12 +70,40 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
 
     expect(tab()).toBe('implementation');
+  });
+
+  /**
+   * The flag lives on the server and there is no channel that tells the browser its value before
+   * a request is made. So the first save cannot know whether the cutover is on — and rendering
+   * "Saving this brief…" while it finds out would put a persistence banner in front of every user
+   * in every environment where the cutover is dark, which is the default in all of them.
+   */
+  it('shows no in-flight banner while the cutover state is still unknown', async () => {
+    persistBrief.mockReturnValue(NEVER);
+
+    proceed();
+
+    expect(state().status).toBe('off');
+  });
+
+  it('shows the in-flight banner on a later save, once a response has confirmed the cutover is on', async () => {
+    persistBrief.mockReturnValue(
+      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
+    );
+    proceed();
+    await fixture.whenStable();
+
+    switchProgram();
+    await fixture.whenStable();
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+
     expect(state().status).toBe('saving');
   });
 
   it('records the brief id once the save succeeds', async () => {
     persistBrief.mockReturnValue(
-      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true }))
+      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))
     );
 
     proceed();
@@ -85,7 +113,9 @@ describe('CampaignsComponent brief persistence', () => {
   });
 
   it('renders nothing when the cutover is dark', async () => {
-    persistBrief.mockReturnValue(new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: false, briefId: '', etag: null, created: false })));
+    persistBrief.mockReturnValue(
+      new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: false, briefId: '', etag: null, created: false, approved: false }))
+    );
 
     proceed();
     await fixture.whenStable();
@@ -120,14 +150,13 @@ describe('CampaignsComponent brief persistence', () => {
     persistBrief.mockReturnValue(late);
 
     proceed();
-    expect(state().status).toBe('saving');
 
     // The real reset path: switching program type abandons the brief and returns to Planning.
     switchProgram();
     await fixture.whenStable();
     expect(state().status).toBe('off');
 
-    late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true });
+    late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
     await fixture.whenStable();
 
     expect(state()).toEqual({ status: 'off', briefId: null, message: null });
