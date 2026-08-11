@@ -62,21 +62,37 @@
     </div>
   } @else {
     <div class="rounded-lg border border-gray-200 px-6 py-5 flex flex-col gap-4" data-testid="newsletter-schedule-panel">
-      <div class="flex items-center justify-between gap-3 flex-wrap">
-        <div class="text-sm font-medium text-gray-900">When should this send?</div>
-        <lfx-select-button
-          [form]="form()"
-          control="sendMode"
-          [options]="sendModeOptions"
-          optionLabel="label"
-          optionValue="value"
-          data-testid="newsletter-schedule-mode-toggle">
-        </lfx-select-button>
+      <div class="text-sm font-medium text-gray-900">When should this go out?</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="When should this go out?">
+        @for (option of sendModeOptions; track option.value) {
+          <button
+            type="button"
+            [attr.aria-pressed]="sendMode() === option.value"
+            class="flex items-start gap-3 rounded-lg border-2 px-4 py-3 text-left transition-colors"
+            [class.border-blue-500]="sendMode() === option.value"
+            [class.bg-blue-50]="sendMode() === option.value"
+            [class.border-gray-200]="sendMode() !== option.value"
+            (click)="selectSendMode(option.value)"
+            [attr.data-testid]="'newsletter-schedule-mode-' + option.value">
+            <span
+              class="flex h-9 w-9 items-center justify-center rounded-full shrink-0"
+              [class.bg-blue-100]="sendMode() === option.value"
+              [class.text-blue-600]="sendMode() === option.value"
+              [class.bg-gray-100]="sendMode() !== option.value"
+              [class.text-gray-500]="sendMode() !== option.value">
+              <i [class]="option.icon"></i>
+            </span>
+            <span class="flex flex-col gap-0.5 min-w-0">
+              <span class="text-sm font-medium text-gray-900">{{ option.label }}</span>
+              <span class="text-xs text-gray-500">{{ option.description }}</span>
+            </span>
+          </button>
+        }
       </div>
-      <p class="text-xs text-gray-500" data-testid="newsletter-schedule-rules">{{ scheduleRulesText }}</p>
 
       @if (sendMode() === 'schedule') {
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3" data-testid="newsletter-schedule-details">
+          <p class="text-xs text-gray-500" data-testid="newsletter-schedule-rules">{{ scheduleRulesText }}</p>
           <div class="flex items-center gap-3 flex-wrap">
             <lfx-calendar
               [form]="form()"

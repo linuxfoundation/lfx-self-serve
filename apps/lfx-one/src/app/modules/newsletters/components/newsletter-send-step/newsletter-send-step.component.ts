@@ -5,14 +5,17 @@ import { Component, computed, input, output } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
 import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 
-const SEND_MODE_OPTIONS = [
-  { label: 'Send now', value: 'now' },
-  { label: 'Schedule', value: 'schedule' },
+// See newsletter-review.component.ts's identical constant — this component and the
+// review card render the same "when should this go out?" picker as two radio cards
+// rather than a segmented toggle, so each choice reads as its own labeled option
+// instead of a settings flip.
+const SEND_MODE_OPTIONS: { value: 'now' | 'schedule'; label: string; description: string; icon: string }[] = [
+  { value: 'now', label: 'Send immediately', description: 'Goes out as soon as you confirm', icon: 'fa-regular fa-paper-plane' },
+  { value: 'schedule', label: 'Schedule for later', description: 'Pick a date and time to send', icon: 'fa-regular fa-clock' },
 ];
 
 const SCHEDULE_WINDOW_MESSAGES: Record<NewsletterScheduleWindowError, string> = {
@@ -28,7 +31,7 @@ const SCHEDULE_RULES_TEXT = `Pick a time at least ${NEWSLETTER_SCHEDULE_MIN_LEAD
 
 @Component({
   selector: 'lfx-newsletter-send-step',
-  imports: [ButtonComponent, SelectButtonComponent, CalendarComponent, TimePickerComponent],
+  imports: [ButtonComponent, CalendarComponent, TimePickerComponent],
   templateUrl: './newsletter-send-step.component.html',
 })
 export class NewsletterSendStepComponent {
@@ -66,4 +69,11 @@ export class NewsletterSendStepComponent {
     const error = this.scheduleWindowError();
     return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;
   });
+
+  // The radio cards bind directly to the form control (like the date/time pickers below
+  // already do) rather than emitting an output — sendMode is a plain @Input mirror the
+  // parent keeps in sync with the form, the same pattern the select-button toggle used.
+  protected selectSendMode(mode: 'now' | 'schedule'): void {
+    this.form().controls['sendMode']?.setValue(mode);
+  }
 }

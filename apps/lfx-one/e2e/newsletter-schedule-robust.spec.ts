@@ -228,8 +228,9 @@ test.describe('Newsletter schedule — review screen structural contract', () =>
       await expect(page.getByTestId('newsletter-review')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     });
 
-    test('renders the schedule mode toggle and both send-card actions', async ({ page }) => {
-      await expect(page.getByTestId('newsletter-review-schedule-mode-toggle')).toBeAttached();
+    test('renders the schedule mode radio cards and both send-card actions', async ({ page }) => {
+      await expect(page.getByTestId('newsletter-review-schedule-mode-now')).toBeAttached();
+      await expect(page.getByTestId('newsletter-review-schedule-mode-schedule')).toBeAttached();
       await expect(page.getByTestId('newsletter-review-send-test-btn')).toBeAttached();
       await expect(page.getByTestId('newsletter-review-send-now-btn')).toBeAttached();
     });
