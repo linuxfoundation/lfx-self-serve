@@ -5,6 +5,7 @@ import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   VALKEY_CACHE,
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
@@ -12,12 +13,14 @@ import {
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
+  GetWeeklyBriefActionItemsResponse,
   Newsletter,
   NewsletterSendResult,
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
   WeeklyBrief,
+  WeeklyBriefActionItem,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
 } from '@lfx-one/shared/interfaces';
@@ -29,11 +32,12 @@ import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceErr
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
+import { AiService } from './ai.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NewsletterService } from './newsletter.service';
-import { buildWeeklyBriefRatingCacheKey, valkeyService } from './valkey.service';
+import { buildWeeklyBriefActionItemsCacheKey, buildWeeklyBriefRatingCacheKey, valkeyService } from './valkey.service';
 
 /** Shape guard for a stored rating cache entry — shared by the read (`withCallerRating`) and write (`rateBrief`/`clearBriefRating`, for the `previous_rating` log field) paths so a corrupt/legacy entry degrades to a miss in both. */
 function isStoredRating(value: unknown): value is RateWeeklyBriefResponse {
@@ -192,6 +196,7 @@ export class WeeklyBriefService {
   private committeeService: CommitteeService = new CommitteeService();
   private newsletterService: NewsletterService = new NewsletterService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private aiService: AiService = new AiService();
 
   /**
    * GET /committees/:committeeId/weekly-briefs/current
@@ -333,6 +338,116 @@ export class WeeklyBriefService {
       previous_rating: previousRating,
       rating_cache_enabled: valkeyService.isEnabled(),
     });
+  }
+
+  /**
+   * GET /committees/:committeeId/weekly-briefs/action-items (LFXV2-3043)
+   *
+   * AI-extracted follow-up items from the current brief's `brief_text`, surfaced in the
+   * committee Overview page's "My Pending Actions" widget. Extraction runs lfx-one-side,
+   * once per `(committeeId, brief.uid, brief.revision)` triple, cached in Valkey — a cache
+   * hit skips the AI call entirely. A brief that hasn't reached a terminal readable state
+   * (`WEEKLY_BRIEF_SHAREABLE_STATES`) yet, or has no text yet, degrades to an empty list
+   * without calling the AI service at all. Extraction itself failing (AI misconfigured,
+   * proxy error, malformed response) also degrades to an empty list for THIS response — but
+   * is deliberately never cached (see the catch block below), so a transient failure doesn't
+   * pin the brief revision to zero items for the full TTL. Per the ticket, a legitimate empty
+   * extraction (a genuinely quiet week) IS cached, so a quiet week doesn't re-hit the AI proxy
+   * on every page view.
+   *
+   * The Valkey cache is the only thing bounding AI spend on this GET (unlike the agenda/
+   * newsletter paths, which are user-initiated POSTs) — when Valkey isn't CONFIGURED
+   * (`isEnabled()` — no `VALKEY_URL`), this skips extraction entirely rather than firing an
+   * uncached AI call on every single read (full-branch review finding). `isEnabled()` reflects
+   * configuration, not live connection health, though: a configured-but-currently-unreachable
+   * Valkey still passes this guard and falls through to `getJson`'s normal fail-soft timeout
+   * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
+   */
+  public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
+    const { brief } = await this.getCurrentBrief(req, committeeId);
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
+      return { items: [] };
+    }
+
+    if (!valkeyService.isEnabled()) {
+      // DEBUG, not WARN — an unconfigured Valkey is an expected steady-state condition in some
+      // environments (e.g. local dev), not a per-request anomaly; this fires on every
+      // committee-overview page view in that environment and would otherwise drown real signal.
+      logger.debug(req, 'get_weekly_brief_action_items', 'Cache not configured, skipping extraction', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
+      return { items: [] };
+    }
+
+    const cacheKey = buildWeeklyBriefActionItemsCacheKey(committeeId, brief.uid, brief.revision);
+    if (!cacheKey) {
+      // committeeId or brief.uid failed isFilterSafeIdentifier — should never happen for real
+      // upstream identifiers, so this is worth a warning: it means this committee's brief will
+      // return zero action items on every read (fails closed by skipping extraction entirely
+      // rather than hitting the AI proxy uncached on every single read).
+      logger.warning(req, 'get_weekly_brief_action_items', 'Brief uid is not cache-key safe, skipping extraction', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
+      return { items: [] };
+    }
+
+    const cached = await valkeyService.getJson<WeeklyBriefActionItem[]>(cacheKey, (value) => Array.isArray(value));
+    if (cached) {
+      return { items: cached };
+    }
+
+    let items: WeeklyBriefActionItem[];
+    try {
+      const extraction = await this.aiService.extractBriefActionItems(req, { brief_text: brief.brief_text });
+      items = extraction.items.slice(0, WEEKLY_BRIEF_ACTION_ITEMS_MAX).map((item, index) => ({
+        // committeeId, not just brief.uid/revision — the cache key gained this scoping earlier,
+        // but this per-item uid (which HiddenActionsService hashes into the dismiss-cookie
+        // identity) didn't. Without it, the mock-mode brief fixture's shared uid across
+        // committees means dismissing item 0 in one committee hides item 0 in every committee
+        // (PR #1362 review — Copilot).
+        uid: `${committeeId}-${brief.uid}-${brief.revision}-${index}`,
+        text: item.text,
+        suggested_owner_role: item.suggested_owner_role,
+        source_brief_uid: brief.uid,
+        committee_uid: committeeId,
+      }));
+    } catch (error) {
+      // Graceful degradation, not a system failure — WARN, not logger.error (logging-patterns.md).
+      // The brief page must render normally with zero brief-sourced actions and no error toast.
+      // Returns directly instead of falling through to the setJson below — caching this failure
+      // as if it were a legitimate empty extraction would pin the brief revision to zero items
+      // for the full TTL, with no invalidation path short of the brief itself regenerating.
+      logger.warning(req, 'get_weekly_brief_action_items', 'Action-item extraction failed, degrading to empty list', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        err: error,
+      });
+      return { items: [] };
+    }
+
+    const writeSucceeded = await valkeyService.setJson(cacheKey, items, VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS);
+    if (!writeSucceeded) {
+      // isEnabled() (checked above) only reflects configuration, not live connection health — a
+      // configured-but-currently-unreachable Valkey passes that guard and reaches this point.
+      // setJson also fails soft on other faults (oversized value, op timeout), so "unreachable"
+      // isn't the only cause — but every cause here means this extraction ran uncached and the
+      // next read will re-extract too, so it's worth a warning regardless of which fault it was.
+      // The response to the caller is unaffected (the freshly-extracted items are still returned
+      // below) — this only affects whether the NEXT read hits the AI proxy again.
+      logger.warning(
+        req,
+        'get_weekly_brief_action_items',
+        'Extraction result could not be cached — every read of this brief revision will re-invoke the AI proxy until caching recovers',
+        {
+          committee_id: committeeId,
+          brief_uid: brief.uid,
+        }
+      );
+    }
+
+    return { items };
   }
 
   /**

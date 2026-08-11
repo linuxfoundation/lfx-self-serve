@@ -193,6 +193,7 @@ export class LensService {
       hasWriterFoundation: this.writerGrantsService.hasWriterFoundation(),
       hasWriterProject: this.writerGrantsService.hasWriterProject(),
       isOrgLensEnabled: this.isOrgLensEnabled(),
+      isLFStaff: this.personaService.isLFStaff(),
     });
   }
 

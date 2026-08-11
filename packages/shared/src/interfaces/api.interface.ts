@@ -49,6 +49,8 @@ export interface MicroserviceUrls {
   LFX_V2_MEMBER_SERVICE: string;
   /** Committee-service base URL; defaults to LFX_V2_SERVICE. Override to route only `/committees/*` calls elsewhere (e.g. a locally-run committee-service). */
   LFX_V2_COMMITTEE_SERVICE: string;
+  /** Campaign-service base URL; defaults to LFX_V2_SERVICE. Override to route only the project-scoped briefs, campaigns and jobs calls elsewhere (e.g. a locally-run campaign-service). */
+  LFX_V2_CAMPAIGN_SERVICE: string;
 }
 
 /**

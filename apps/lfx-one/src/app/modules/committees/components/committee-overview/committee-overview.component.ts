@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,6 +32,8 @@ import {
   PendingActionItem,
   Survey,
   Vote,
+  WeeklyBriefActionItem,
+  WeeklyBriefState,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
@@ -47,11 +49,13 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
+import { WeeklyBriefService } from '@services/weekly-brief.service';
+import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, startWith, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -92,6 +96,15 @@ export class CommitteeOverviewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly weeklyBriefService = inject(WeeklyBriefService);
+  private readonly hiddenActionsService = inject(HiddenActionsService);
+
+  // Reactive handle on the child card's own `brief` signal (LFXV2-3043, Cursor Bugbot review) —
+  // initBriefActionItems needs to know when a generate/regenerate/save lands a new revision on
+  // the SAME page visit, not just when the committee or the enabled gate changes. The card only
+  // renders when weeklyBriefEnabled() && canEdit(), same precondition initBriefActionItems
+  // already gates on, so this is undefined exactly when the fetch is disabled anyway.
+  private readonly weeklyBriefCardRef = viewChild(WeeklyBriefCardComponent);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -167,11 +180,26 @@ export class CommitteeOverviewComponent {
   // server-merged fetch, no longer derived from four separate source-loading signals.
   public activityFeedLoading = signal(true);
 
+  // Bumped after a BriefAction dismiss (LFXV2-3043) so initPendingActionItems()'s isActionHidden()
+  // reads recompute — mirrors pending-actions.component.ts's hiddenActionsVersion pattern.
+  private readonly hiddenActionsVersion = signal(0);
+
   // Section-level fade-out for "My Pending Actions": true while the CSS collapse animation is in flight;
   // isSectionHidden removes the section from the DOM once the last vote/survey is resolved.
   // isSectionGracePending keeps the section mounted (not yet fading) during the post-empty grace window so a
   // context switch that briefly empties the list doesn't trigger a spurious fade before the new data arrives.
   // Template-only state — protected, matching pending-actions.component.ts.
+  //
+  // This machinery was built around votes/surveys resolving together as a unit. brief action
+  // items (LFXV2-3043) are a third, independently-timed source feeding the same
+  // pendingActionItems() computed, with no dedicated loading gate of its own (see
+  // initBriefActionItems() — deliberately silent per the ticket's "extraction failures degrade
+  // silently" framing). Two known, accepted consequences: (1) brief items can pop in without a
+  // skeleton if votes/surveys have already settled empty; (2) in the rare case where the section
+  // has already faded out (last vote/survey just resolved) and a slow AI extraction resolves with
+  // items afterward, the section reappears rather than staying collapsed. Both are narrow,
+  // low-frequency, and cosmetic (no data-correctness impact) — not worth the added state-machine
+  // complexity of gating fade commitment on all three sources.
   protected readonly isSectionFading = signal(false);
   protected readonly isSectionHidden = signal(false);
   protected readonly isSectionGracePending = signal(false);
@@ -212,11 +240,21 @@ export class CommitteeOverviewComponent {
   // util (also used by committee-members.component.ts's votingRepCount).
   public votingRepsCount: Signal<number> = computed(() => countVotingReps(this.members()));
 
+  // Feature flag: WG Weekly Brief AI Assistant card. Declared ahead of briefActionItems below,
+  // which reads it as part of its fetch trigger — toObservable's async first emission means field
+  // order doesn't matter for correctness today, but a future synchronous source would throw on
+  // reading an as-yet-undeclared field, so this stays ahead of its first reader.
+  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
+
   // Committee-scoped data fetches
   public meetingsCount: Signal<number> = this.initMeetingsCount();
   public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
   public votes: Signal<Vote[]> = this.initVotes();
   public surveys: Signal<Survey[]> = this.initSurveys();
+  // AI-extracted weekly-brief action items (LFXV2-3043) — fetched only when weeklyBriefEnabled();
+  // the BFF itself degrades extraction failures to an empty list, and getActionItems() (the
+  // Angular client) adds a catchError fallback on top for transport-level failures.
+  public briefActionItems: Signal<WeeklyBriefActionItem[]> = this.initBriefActionItems();
 
   // Computed stats from fetched data
   public activeVotesCount: Signal<number> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE).length);
@@ -233,9 +271,6 @@ export class CommitteeOverviewComponent {
   // my-groups-card-grid.component.ts's initCards() precomputed-view-model pattern.
   public activityFeedRows: Signal<ActivityFeedRow[]> = this.initActivityFeedRows();
 
-  // Feature flag: WG Weekly Brief AI Assistant card
-  public readonly weeklyBriefEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag('wg-weekly-brief', false);
-
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
 
@@ -250,6 +285,10 @@ export class CommitteeOverviewComponent {
 
   public pendingActionItems: Signal<CommitteePendingActionRow[]> = this.initPendingActionItems();
   public pendingActionsViewAllTab: Signal<'votes' | 'surveys'> = this.initPendingActionsViewAllTab();
+  // "View All" only has two destinations (the Votes and Surveys tabs) — a list made up entirely
+  // of BriefAction rows has nowhere meaningful to route to, so the button hides rather than
+  // sending the user to a tab with none of what they just saw.
+  public hasNativePendingActions: Signal<boolean> = computed(() => this.pendingActionItems().some((item) => item.type !== 'BriefAction'));
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
   public nextMeeting: Signal<Meeting | null> = computed(() => {
@@ -315,6 +354,13 @@ export class CommitteeOverviewComponent {
   }
 
   public handlePendingActionClick(item: PendingActionItem): void {
+    if (item.type === 'BriefAction') {
+      // Personal, per-user dismissal only (no cross-user state, no backend write) — same
+      // cookie-based mechanism the dashboard's pending-actions widget already uses.
+      this.hiddenActionsService.dismissAction(item);
+      this.hiddenActionsVersion.update((v) => v + 1);
+      return;
+    }
     if (item.type !== 'Vote') {
       this.tabNavigated.emit('surveys');
       return;
@@ -619,6 +665,92 @@ export class CommitteeOverviewComponent {
     );
   }
 
+  // Only fetched when weeklyBriefEnabled() — the same 'wg-weekly-brief' flag gating the brief card
+  // itself. getActionItems() already degrades any transport failure to `{items: []}` internally, so
+  // there's no separate error branch to handle here.
+  //
+  // The flag is folded into the source stream (not just read inside switchMap) so a flag
+  // transition re-triggers this pipeline — weeklyBriefEnabled() is a computed signal that only
+  // resolves once FeatureFlagService finishes initializing; if committee()'s first emission landed
+  // before that resolution, reading the flag only inside switchMap would take the disabled branch
+  // once and never re-evaluate, since committee() itself doesn't change again.
+  //
+  // brief uid/revision/state (read off the card's own `brief` signal via weeklyBriefCardRef)
+  // drive an inner refetch trigger — a generate/regenerate/save can land a new brief revision on
+  // the same page visit without committee uid or the enabled gate ever changing, and the server's
+  // cache key is revision-scoped, so without this the widget would keep showing stale (or empty,
+  // pre-first-generate) items until a full remount/reload (Cursor Bugbot review). `state` alone
+  // isn't enough either: a regenerate's revision bump lands immediately (in the 202 response),
+  // while `state` is still 'generating' until the poll completes — tracking both means both the
+  // revision bump AND the later generating→generated transition each re-trigger a fetch, so the
+  // real content is picked up once it's actually ready rather than only once at 'generating'.
+  // `uid` (the brief's own uid, not the committee's) is in the key too — a weekly window rollover
+  // produces a new brief with a new uid but restarts at revision 1, same as the just-finished
+  // window's first generate; without the brief uid, that rollover would compare equal to the
+  // prior window's {revision: 1, state: 'generated'} and leave the old window's items displayed
+  // even though the server cache is uid-scoped (Copilot review, round 4).
+  //
+  // Filtered to only emit once the child card has actually loaded a brief (non-null) — the card
+  // fetches its own current brief asynchronously, so on an uncached initial load this signal is
+  // null for a beat before the card's own request resolves. Without this filter, that null→loaded
+  // transition itself counted as a "change" and fired a second, concurrent getActionItems call
+  // racing the first — and since the BFF's cache check isn't single-flight, both misses could
+  // each invoke the AI proxy for the same revision (Copilot review, round 4).
+  //
+  // Deliberately kept as its OWN observable rather than folded into the outer `{uid, enabled}`
+  // stream below: `startWith([])` needs to fire once per committee/enabled transition (to clear
+  // the previous committee's items — see below), but NOT on every revision/state change within
+  // the SAME committee visit, or a same-visit generate/regenerate/save would synchronously flash
+  // the whole widget to empty before the refetch resolves (Cursor Bugbot review, round 2 — the
+  // first attempt applied startWith per revision/state change too). Nesting this inside the outer
+  // switchMap means `startWith([])` only wraps the outer transition; inner revision/state-driven
+  // refetches replace the displayed array only once new data arrives, no interim clear.
+  private initBriefActionItems(): Signal<WeeklyBriefActionItem[]> {
+    const briefRevisionState$ = toObservable(
+      computed(() => {
+        const brief = this.weeklyBriefCardRef()?.brief();
+        return brief ? { briefUid: brief.uid, revision: brief.revision, briefState: brief.state } : null;
+      })
+    ).pipe(
+      filter((v): v is { briefUid: string; revision: number; briefState: WeeklyBriefState } => v !== null),
+      distinctUntilChanged((a, b) => a.briefUid === b.briefUid && a.revision === b.revision && a.briefState === b.briefState)
+    );
+
+    return toSignal(
+      // enabled requires canEdit() (committee#writer), not just the feature flag — the backend
+      // endpoint (getActionItems) is gated on committee#auditor via assertCommitteeRead, which
+      // explicitly excludes rank-and-file committee members (see
+      // committee-read-access.helper.ts's doc comment). Without this, every non-writer viewing
+      // Overview with the flag on would fire a guaranteed 401/403 on every page load — dead
+      // weight, degrading silently to an empty list, but a real authorization mismatch between
+      // what this fetch attempts and what the backend permits. Matches the sibling
+      // weekly-brief-card gate one section up: `weeklyBriefEnabled() && canEdit()` (PR #1362
+      // review — Copilot + @dealako).
+      toObservable(computed(() => ({ uid: this.committee()?.uid, enabled: this.weeklyBriefEnabled() && this.canEdit() }))).pipe(
+        filter((state): state is { uid: string; enabled: boolean } => !!state.uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.enabled === b.enabled),
+        // startWith([]) here clears the previous committee's items synchronously on every uid/
+        // enabled change — without it, toSignal retains the last-emitted array until the new
+        // fetch resolves, so a committee switch could briefly re-badge committee A's AI-extracted
+        // items with committee B's name (initPendingActionItems() stamps `badge: this.committee().
+        // name` onto whatever briefActionItems() currently holds). Safe against a spurious fade:
+        // votesLoading()/surveysLoading() are already true for the new committee at this point
+        // (both reset synchronously in their own switchMap), so the section's outer visibility
+        // gate stays satisfied through this transition. Positioned OUTSIDE the inner switchMap
+        // below (not per revision/state change) — see the class-level comment above.
+        switchMap(({ uid, enabled }) =>
+          enabled
+            ? briefRevisionState$.pipe(
+                switchMap(() => this.weeklyBriefService.getActionItems(uid).pipe(map((response) => response.items))),
+                startWith<WeeklyBriefActionItem[]>([])
+              )
+            : of<WeeklyBriefActionItem[]>([])
+        )
+      ),
+      { initialValue: [] }
+    );
+  }
+
   private initPendingActionItems(): Signal<CommitteePendingActionRow[]> {
     return computed(() => {
       const voteItems: PendingActionItem[] = this.pendingVotes().map((vote) => ({
@@ -668,10 +800,26 @@ export class CommitteeOverviewComponent {
         buttonText: 'View',
         date: undefined,
       }));
-      return [...voteItems, ...surveyItems, ...respondedSurveyItems].map((item, index) => {
-        const rowKey = item.buttonLink ? `${item.type}-${item.buttonLink}` : `${item.type}-${item.text}-${index}`;
-        return { ...item, rowKey };
-      });
+      // Read hiddenActionsVersion() so a dismiss (handlePendingActionClick's BriefAction branch)
+      // forces this computed to recompute — isActionHidden() itself reads a cookie, not a signal.
+      this.hiddenActionsVersion();
+      const briefActionItems: PendingActionItem[] = this.briefActionItems()
+        .map((item) => ({
+          type: 'BriefAction' as const,
+          badge: this.committee().name,
+          // suggested_owner_role is informational context, not a separate UI slot — appended
+          // inline rather than adding a dedicated field/badge for a single extra word.
+          text: item.suggested_owner_role ? `${item.text} (${item.suggested_owner_role})` : item.text,
+          icon: 'fa-light fa-list-check',
+          severity: PENDING_ACTION_SEVERITY.BriefAction,
+          buttonText: 'Dismiss',
+          briefActionUid: item.uid,
+        }))
+        .filter((item) => !this.hiddenActionsService.isActionHidden(item));
+      return [...voteItems, ...surveyItems, ...respondedSurveyItems, ...briefActionItems].map((item, index) => ({
+        ...item,
+        rowKey: this.buildPendingActionRowKey(item, index),
+      }));
     });
   }
 
@@ -764,6 +912,18 @@ export class CommitteeOverviewComponent {
         meetingBadge: this.deriveMeetingBadge(item),
       }))
     );
+  }
+
+  // Prefers the stable intrinsic id (briefActionUid) over the buttonLink/text fallback so
+  // dismissing one brief item doesn't shift the index-derived key of unrelated rows.
+  private buildPendingActionRowKey(item: PendingActionItem, index: number): string {
+    if (item.briefActionUid) {
+      return `${item.type}-${item.briefActionUid}`;
+    }
+    if (item.buttonLink) {
+      return `${item.type}-${item.buttonLink}`;
+    }
+    return `${item.type}-${item.text}-${index}`;
   }
 
   // Enrichment scoped to past-meeting rows only (LFXV2-3009): differentiates otherwise-identical

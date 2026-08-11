@@ -152,6 +152,8 @@ export class ProfileIndividualEnrollmentComponent {
 
   // Projects the server state into the display shape once, at the subscription boundary.
   private toDisplayState(state: EnrollmentsState): DisplayEnrollmentsState {
+    // The loading/error arms are structurally identical across both unions (only the loaded arm's
+    // item type differs), so returning `state` verbatim is intentional, not a missed projection.
     if (state.kind !== 'loaded') return state;
     const base = environment.urls.enrollment;
     const items = state.items.map((item): DisplayEnrollment => {
@@ -175,11 +177,11 @@ export class ProfileIndividualEnrollmentComponent {
       const overrides = this.autoRenewOverrides();
       const pending = this.pendingIds();
       const items = state.items.map((item) => {
-        const membershipId = item.membership?.id;
-        const isPending = membershipId ? pending.has(membershipId) : false;
-        if (membershipId && overrides.has(membershipId)) {
-          const autoRenew = overrides.get(membershipId)!;
-          const updatedMembership = { ...item.membership!, autoRenew };
+        const membership = item.membership;
+        const isPending = membership ? pending.has(membership.id) : false;
+        if (membership && overrides.has(membership.id)) {
+          const autoRenew = overrides.get(membership.id) ?? false;
+          const updatedMembership = { ...membership, autoRenew };
           const displayStatus = deriveEnrollmentStatus({ ...item, membership: updatedMembership });
           return { ...item, membership: updatedMembership, displayStatus, severity: enrollmentStatusSeverity(displayStatus), pending: isPending };
         }

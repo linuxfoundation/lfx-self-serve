@@ -12,8 +12,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
 // mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
 // A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
-// upsert/clear round-trip behavior through the public API, not just "was called with X".
-const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valkeyServiceMock, buildWeeklyBriefRatingCacheKeyMock } = vi.hoisted(() => {
+// upsert/clear round-trip behavior through the public API, not just "was called with X". Shared
+// by the action-items tests too — `weekly-brief.service.ts`'s rating and action-items code paths
+// both call the same `valkeyService` singleton import, so both must observe the same mock object.
+const {
+  proxyRequest,
+  proxyRequestWithResponse,
+  MOCK_THROTTLE,
+  valkeyStore,
+  valkeyServiceMock,
+  buildWeeklyBriefRatingCacheKeyMock,
+  extractBriefActionItems,
+  buildCacheKey,
+} = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
     isEnabled: vi.fn(() => true),
@@ -50,6 +61,10 @@ const { proxyRequest, proxyRequestWithResponse, MOCK_THROTTLE, valkeyStore, valk
     buildWeeklyBriefRatingCacheKeyMock: vi.fn((committeeUid: string, briefUid: string, revision: number, username: string) =>
       username === 'unsafe' ? null : `${committeeUid}:${briefUid}:${revision}:${username}`
     ),
+    extractBriefActionItems: vi.fn(),
+    buildCacheKey: vi.fn(
+      (committeeId: string, briefUid: string, revision: number): string | null => `weekly-brief-action-items:${committeeId}:${briefUid}:${revision}`
+    ),
   };
 });
 
@@ -57,13 +72,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
-  VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000 },
+  WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
-}));
-vi.mock('./valkey.service', () => ({
-  buildWeeklyBriefRatingCacheKey: buildWeeklyBriefRatingCacheKeyMock,
-  valkeyService: valkeyServiceMock,
+  AI_MODEL: 'mock-ai-model',
+  VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -89,6 +102,20 @@ vi.mock('./logger.service', () => ({
 vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
 vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
 vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
+// getActionItems' (LFXV2-3043) collaborator — controlled per-test below.
+vi.mock('./ai.service', () => ({
+  AiService: class {
+    public extractBriefActionItems = extractBriefActionItems;
+  },
+}));
+// Single mock for both weekly-brief.service.ts collaborators that live in valkey.service —
+// rating (LFXV2-3042) and action-items (LFXV2-3043) both call the same `valkeyService`
+// singleton import, so they must share one mock object rather than each getting its own.
+vi.mock('./valkey.service', () => ({
+  buildWeeklyBriefRatingCacheKey: buildWeeklyBriefRatingCacheKeyMock,
+  buildWeeklyBriefActionItemsCacheKey: buildCacheKey,
+  valkeyService: valkeyServiceMock,
+}));
 
 import type { Request } from 'express';
 
@@ -136,11 +163,11 @@ describe('WeeklyBriefService', () => {
   beforeEach(() => {
     // Resets call history, drains any leftover `mockResolvedValueOnce` queue, and restores every
     // vi.fn() in the file to its originally-given implementation (including the `logger` spies,
-    // `valkeyServiceMock`, and `isEnabled`'s default `true`) — without this, a `logger.warning`/
-    // `.info` assertion in a later test can pass vacuously against a call an *earlier* test
-    // already recorded, or inherit a leftover one-time override a prior test queued but never
-    // consumed. `vi.clearAllMocks()` alone resets call history but leaves both of those hazards
-    // open — verified empirically against this repo's Vitest version.
+    // `valkeyServiceMock`, `buildCacheKey`, and `isEnabled`'s default `true`) — without this, a
+    // `logger.warning`/`.info` assertion in a later test can pass vacuously against a call an
+    // *earlier* test already recorded, or inherit a leftover one-time override a prior test
+    // queued but never consumed. `vi.clearAllMocks()` alone resets call history but leaves both
+    // of those hazards open — verified empirically against this repo's Vitest version.
     vi.resetAllMocks();
     process.env = { ...originalEnv };
     service = new WeeklyBriefService();
@@ -285,6 +312,167 @@ describe('WeeklyBriefService', () => {
         expect(error).toBeInstanceOf(MicroserviceError);
         expect((error as MicroserviceError).message).not.toMatch(/WEEKLY_BRIEF_BACKEND/);
       }
+    });
+  });
+
+  describe('getActionItems (LFXV2-3043)', () => {
+    beforeEach(() => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      delete process.env['NODE_ENV'];
+    });
+
+    it('caches extraction per revision — a second call for the same revision does not re-invoke AiService (cache hit)', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Onboard the new member' }] });
+
+      const first = await service.getActionItems(req, 'committee-1');
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(1);
+      expect(first.items).toHaveLength(1);
+
+      // Simulate the cache now holding what setJson was just called with.
+      const [, cachedValue] = valkeyServiceMock.setJson.mock.calls[0];
+      valkeyServiceMock.getJson.mockResolvedValueOnce(cachedValue);
+
+      const second = await service.getActionItems(req, 'committee-1');
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(1); // still 1 — no re-extraction
+      expect(second.items).toEqual(first.items);
+    });
+
+    it('a new revision (regeneration) re-invokes AiService and returns new items', async () => {
+      extractBriefActionItems.mockResolvedValueOnce({ items: [{ text: 'Revision 1 item' }] });
+      const before = await service.getActionItems(req, 'committee-1');
+      expect(before.items[0].text).toBe('Revision 1 item');
+
+      await service.saveBrief(req, 'committee-1', { brief_text: 'edited text', revision: 1 }); // bumps revision 1 -> 2
+
+      extractBriefActionItems.mockResolvedValueOnce({ items: [{ text: 'Revision 2 item' }] });
+      const after = await service.getActionItems(req, 'committee-1');
+
+      expect(extractBriefActionItems).toHaveBeenCalledTimes(2);
+      expect(after.items[0].text).toBe('Revision 2 item');
+    });
+
+    it('an empty extraction is cached and returned as {items: []} — not an error', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [] });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(valkeyServiceMock.setJson).toHaveBeenCalledWith(expect.any(String), [], 604800);
+    });
+
+    it('degrades to {items: []} when AiService throws, logging via warning (with err), not error — and does NOT cache the failure', async () => {
+      extractBriefActionItems.mockRejectedValue(new Error('AI service not configured'));
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+      expect(logger.error).not.toHaveBeenCalled();
+      // A transient failure must not be cached as if it were a legitimate empty extraction —
+      // that would pin this brief revision to zero items for the full TTL.
+      expect(valkeyServiceMock.setJson).not.toHaveBeenCalled();
+    });
+
+    it('returns {items: []} without calling AiService when the brief is not in a shareable (terminal readable) state', async () => {
+      const result = await service.getActionItems(req, WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID);
+
+      expect(result).toEqual({ items: [] });
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      expect(buildCacheKey).not.toHaveBeenCalled();
+    });
+
+    it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid), logging a warning', async () => {
+      buildCacheKey.mockReturnValueOnce(null);
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(valkeyServiceMock.getJson).not.toHaveBeenCalled();
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      expect(valkeyServiceMock.setJson).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it('truncates an extraction with more than WEEKLY_BRIEF_ACTION_ITEMS_MAX items to the cap', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: Array.from({ length: 8 }, (_, i) => ({ text: `Item ${i}` })) });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items).toHaveLength(5);
+    });
+
+    it('skips extraction and returns {items: []} when Valkey is disabled, without ever building a cache key', async () => {
+      valkeyServiceMock.isEnabled.mockReturnValue(false);
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(buildCacheKey).not.toHaveBeenCalled();
+      expect(valkeyServiceMock.getJson).not.toHaveBeenCalled();
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+      // DEBUG, not WARN — an unconfigured cache is a steady-state condition in some
+      // environments, not a per-request anomaly worth alerting on every page view.
+      expect(logger.debug).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.any(String),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it('returns {items: []} without calling AiService when brief_text is empty/whitespace-only', async () => {
+      await service.saveBrief(req, 'committee-1', { brief_text: 'x', revision: 1 }); // establish a tracked brief first
+      // Directly exercise the guard via a second save with whitespace-only text — mock-mode saveBrief
+      // doesn't itself validate brief_text (that's the controller's job), so this reaches the service.
+      await service.saveBrief(req, 'committee-1', { brief_text: '   ', revision: 2 });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result).toEqual({ items: [] });
+      expect(extractBriefActionItems).not.toHaveBeenCalled();
+    });
+
+    it('scopes the cache key to the committee, not just the brief uid and revision (mock brief fixture reuses the same uid across committees)', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+
+      await service.getActionItems(req, 'committee-1');
+
+      expect(buildCacheKey).toHaveBeenCalledWith('committee-1', expect.any(String), expect.any(Number));
+    });
+
+    it('scopes each item uid to the committee too, not just the cache key', async () => {
+      // The mock fixture shares one brief uid across committees, so an unscoped item uid would
+      // collide the dismiss-cookie identity across committees (PR #1362 review — Copilot).
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items[0].uid.startsWith('committee-1-')).toBe(true);
+    });
+
+    it('warns (but still returns the freshly-extracted items) when the cache write fails — isEnabled() only reflects configuration, not reachability', async () => {
+      extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Item' }] });
+      valkeyServiceMock.setJson.mockResolvedValue(false); // e.g. Valkey configured but currently unreachable
+
+      const result = await service.getActionItems(req, 'committee-1');
+
+      expect(result.items).toHaveLength(1);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_action_items',
+        expect.stringContaining('could not be cached'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
     });
   });
 

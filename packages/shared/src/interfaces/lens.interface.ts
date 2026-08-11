@@ -26,6 +26,8 @@ export interface LensGrantInputs {
   hasWriterProject: boolean;
   /** Org lens dark-launch flag. */
   isOrgLensEnabled: boolean;
+  /** LF Staff team member — grants foundation-lens access without a board persona. */
+  isLFStaff: boolean;
 }
 
 /**

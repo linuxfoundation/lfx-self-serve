@@ -456,6 +456,20 @@ export interface Committee {
   my_role?: CommitteeMemberRole | 'Member';
   /** Caller's member UID in this committee. Absent for non-members. */
   my_member_uid?: string;
+  /** Source-labeled external entities linked to this committee (e.g. OCG groups/events). Linked activity metadata only — never overrides category, governance, or other LFX-owned attributes. */
+  external_sources?: CommitteeExternalSource[];
+}
+
+/** A single source-labeled external entity linked to a committee (e.g. an OCG group or event). */
+export interface CommitteeExternalSource {
+  provider: 'ocg';
+  entity_type: 'community' | 'group' | 'event';
+  label: string;
+  url: string;
+  external_id?: string;
+  external_category?: string;
+  external_region?: string;
+  external_event_category?: string;
 }
 
 /**

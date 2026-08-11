@@ -54,6 +54,27 @@ export interface GenerateNewsletterResponse {
 }
 
 /**
+ * Request interface for AI weekly-brief action-item extraction
+ */
+export interface ExtractActionItemsRequest {
+  /** The brief's `brief_text` to extract follow-up items from */
+  brief_text: string;
+}
+
+/**
+ * Response interface for AI weekly-brief action-item extraction
+ */
+export interface ExtractActionItemsResponse {
+  /** Extracted action items, empty when the brief has no actionable content */
+  items: {
+    /** Action item description text */
+    text: string;
+    /** Suggested owner role/persona for the item, when the model can infer one */
+    suggested_owner_role?: string;
+  }[];
+}
+
+/**
  * OpenAI chat message interface
  */
 export interface OpenAIChatMessage {

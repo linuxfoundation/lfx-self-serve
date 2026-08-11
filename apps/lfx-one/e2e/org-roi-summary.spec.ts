@@ -1,133 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, Page, Route, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+// Imported from the module, not the `utils` barrel: the barrel re-exports form.utils, which pulls
+// in @angular/common and fails to load outside the Angular app with a JIT compiler error.
+import { formatCurrency, formatPercent } from '@lfx-one/shared/utils/number.utils';
 
-const ORG_ROI_URL = '/org/roi';
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+import {
+  annualRow,
+  CURRENT_YEAR,
+  fulfillJson,
+  gotoOrgRoiPage,
+  MOCK_ACCOUNT_ID,
+  MOCK_ANNUAL,
+  MOCK_CATEGORY_ROWS,
+  MOCK_SUMMARY,
+  ORG_ROI_URL,
+  skipWhenAuthMissing,
+  stubOrgLensContext,
+  SUB_THRESHOLD_CATEGORY_COUNT,
+  TOTAL_INVESTMENT,
+} from './helpers/org-roi.helper';
 
 test.setTimeout(120_000);
 
-function fulfillJson(route: Route, body: unknown): Promise<void> {
-  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-}
+/**
+ * Every expected string below is derived from the fixture through the same formatter the component
+ * uses — never written out by hand. Three defects reached human review that this rule would have
+ * caught on its own, including a benefit-cost expectation of `36.7×` for a fixture that renders
+ * `37.7×`.
+ */
+const EXPECTED_INVESTMENT = formatCurrency(TOTAL_INVESTMENT);
+const EXPECTED_RETURN = formatCurrency(MOCK_SUMMARY.totalReturn);
+const EXPECTED_ROI = `${formatPercent(MOCK_SUMMARY.roi * 100)}%`;
+const EXPECTED_BCR = `${MOCK_SUMMARY.bcr.toFixed(1)}×`;
+const EXPECTED_PROJECT_COUNT = `${MOCK_SUMMARY.nProjects.toLocaleString('en-US')} projects`;
 
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Let malformed URLs fail naturally.
-  }
-}
-
-async function seedSelectedOrgCookie(page: Page): Promise<void> {
-  await page.context().addCookies([
-    {
-      name: 'lfx-selected-account',
-      value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }),
-      domain: 'localhost',
-      path: '/',
-    },
-  ]);
-}
-
-// Only the year still in progress is labelled partial, so the trend fixtures are anchored to the
-// current year rather than hardcoded — otherwise these assertions would quietly invert next January.
-const CURRENT_YEAR = new Date().getFullYear();
-
-const MOCK_SUMMARY = {
-  orgUid: MOCK_ACCOUNT_ID,
-  method: 'logit',
-  hasData: true,
-  nProjects: 407,
-  totalExpenditure: 147932363.97,
-  totalReturn: 5576366821.32,
-  profit: 5428434457.35,
-  roi: 36.695,
-  bcr: 37.695,
-  yearMin: 2010,
-  yearMax: CURRENT_YEAR,
-  dateMin: '2010-01',
-  dateMax: `${CURRENT_YEAR}-08`,
-};
-
-const MOCK_COVERAGE = { orgUid: MOCK_ACCOUNT_ID, hasData: true, coverageReason: 'covered' };
-
-function annualRow(year: number, totalReturn: number, expenditure: number): unknown {
-  return { year, totalReturn, expenditure, profit: totalReturn - expenditure, roi: 36.5, bcr: 37.5 };
-}
-
-const MOCK_ANNUAL = {
-  method: 'logit',
-  rows: [
-    annualRow(CURRENT_YEAR - 2, 1_200_000_000, 32_000_000),
-    annualRow(CURRENT_YEAR - 1, 1_400_000_000, 38_000_000),
-    annualRow(CURRENT_YEAR, 620_000_000, 17_000_000),
-  ],
-  apportioned: true,
-};
-
-async function stubOrgLensContext(page: Page, options: { hasAccess?: boolean; summary?: unknown; coverage?: unknown; annual?: unknown } = {}): Promise<void> {
-  const hasAccess = options.hasAccess ?? true;
-
-  await page.route('**/api/orgs/*/lens/roi/summary*', (route) => fulfillJson(route, options.summary ?? MOCK_SUMMARY));
-  await page.route('**/api/orgs/*/lens/roi/coverage*', (route) => fulfillJson(route, options.coverage ?? MOCK_COVERAGE));
-  await page.route('**/api/orgs/*/lens/roi/annual*', (route) => fulfillJson(route, options.annual ?? MOCK_ANNUAL));
-
-  await page.route('**/api/user/personas*', (route) =>
-    fulfillJson(route, {
-      personas: ['contributor'],
-      personaProjects: {},
-      projects: [],
-      organizations: hasAccess
-        ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }]
-        : [],
-      isRootWriter: false,
-    })
-  );
-
-  await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }] : [])
-  );
-
-  await page.route('**/api/orgs/me/role-grants', (route) =>
-    fulfillJson(route, {
-      writers: hasAccess ? [MOCK_ACCOUNT_ID] : [],
-      auditors: [],
-      cascadingWriters: [],
-      cascadingAuditors: [],
-      username: 'e2e-org-roi',
-      loaded_at: new Date().toISOString(),
-    })
-  );
-
-  await page.route('**/api/nav/org-items*', (route) =>
-    fulfillJson(route, {
-      items: hasAccess
-        ? [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: 'Red Hat, Inc.', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
-        : [],
-      next_page_token: null,
-      upstream_failed: false,
-      total: hasAccess ? 1 : 0,
-    })
-  );
-}
-
-async function gotoOrgRoiPage(page: Page): Promise<void> {
-  await seedSelectedOrgCookie(page);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.goto(ORG_ROI_URL, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await expect(page).not.toHaveURL(/auth0\.com/);
-  if (!page.url().includes('/org/roi')) {
-    test.skip(true, 'org-lens-roi-enabled flag appears off — /org/roi redirected away');
-  }
-}
+const LATEST_ANNUAL = MOCK_ANNUAL.rows[MOCK_ANNUAL.rows.length - 1] as { year: number; totalReturn: number; expenditure: number };
 
 test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   test('renders the page shell and the four headline figures', async ({ page }) => {
@@ -141,11 +50,11 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     const kpi = page.getByTestId('org-roi-kpi-cards');
     await expect(kpi).toBeVisible();
-    await expect(kpi).toContainText('$5.6B');
-    await expect(kpi).toContainText('$147.9M');
-    await expect(kpi).toContainText('3669.5%');
-    await expect(kpi).toContainText('37.7×');
-    await expect(kpi).toContainText('407 projects');
+    await expect(kpi).toContainText(EXPECTED_RETURN);
+    await expect(kpi).toContainText(EXPECTED_INVESTMENT);
+    await expect(kpi).toContainText(EXPECTED_ROI);
+    await expect(kpi).toContainText(EXPECTED_BCR);
+    await expect(kpi).toContainText(EXPECTED_PROJECT_COUNT);
   });
 
   test('discloses that the investment figure is a modelled cost, not compensation', async ({ page }) => {
@@ -230,6 +139,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     // Coverage is method-scoped too: it reports whether *this* method produced figures, so a
     // coverage answer left on the previous method could contradict the summary it explains.
     const coverageRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/coverage') && req.url().includes('method=direct'));
+    const projectsRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
 
     await page.getByTestId('org-roi-assumptions-trigger').click();
     await page.getByTestId('org-roi-assumptions-method-direct').click();
@@ -237,6 +147,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await summaryRequest;
     await annualRequest;
     await coverageRequest;
+    await projectsRequest;
 
     const restoredRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/summary') && req.url().includes('method=direct'));
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -244,6 +155,68 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     await page.getByTestId('org-roi-assumptions-trigger').click();
     await expect(page.getByTestId('org-roi-assumptions-method-direct')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('does not refetch the category breakdown when only the estimation method changes', async ({ page }) => {
+    // Asserting the URL carries no `method=` is not enough — it stayed true while the component
+    // was being torn down and remounted by the loading branch on every switch, re-issuing the
+    // identical request. This counts the requests instead.
+    const breakdownRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/lens/roi/investment-breakdown')) breakdownRequests.push(request.url());
+    });
+
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
+    const beforeSwitch = breakdownRequests.length;
+    expect(beforeSwitch).toBeGreaterThan(0);
+
+    // Wait on a method-scoped sibling so the switch has demonstrably completed before counting.
+    const projectsRefetch = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
+    await page.getByTestId('org-roi-assumptions-trigger').click();
+    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await projectsRefetch;
+
+    expect(breakdownRequests.length).toBe(beforeSwitch);
+    // And it stayed on screen rather than flashing away and back.
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
+  });
+
+  test('hides the figures and the date window when the summary is for another organization', async ({ page }) => {
+    // The summary keeps its previous value while a new request is in flight, so anything derived
+    // from it describes the organization the viewer just left. Both surfaces key off the payload's
+    // own orgUid rather than assuming the summary in hand belongs to the selected account.
+    await stubOrgLensContext(page, { summary: { ...MOCK_SUMMARY, orgUid: '001410000000000XYZ' } });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-page')).toBeVisible();
+    await expect(page.getByTestId('org-roi-window')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-category-donut')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-projects-donut')).toHaveCount(0);
+    // The headline band carries the largest figures on the page, so it is the one surface that
+    // must not slip through: it renders from the same summary and needs the same identity check.
+    await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-annual-trend')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-portfolio-loading')).toBeVisible();
+  });
+
+  test('never sends an estimation method to the category breakdown, which cannot vary by one', async ({ page }) => {
+    // The source table has no MARKUP_METHOD column, so a method-bearing request would imply a
+    // distinction the warehouse does not make — and invite a pointless refetch on every switch.
+    const breakdownUrls: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/lens/roi/investment-breakdown')) breakdownUrls.push(request.url());
+    });
+
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
+
+    expect(breakdownUrls.length).toBeGreaterThan(0);
+    for (const url of breakdownUrls) {
+      expect(url).not.toContain('method=');
+    }
   });
 
   test('explains an unmapped organization without implying a pending fix', async ({ page }) => {
@@ -257,6 +230,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(empty).toBeVisible();
     await expect(empty).toContainText("isn't linked to a contributor community record");
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-category-donut')).toHaveCount(0);
   });
 
   test('explains a mapped-but-unestimated organization without promising later figures', async ({ page }) => {
@@ -310,8 +284,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(table).toContainText('Return');
     // Same figures as the chart, through the same formatter.
     await expect(table).toContainText(`${CURRENT_YEAR}`);
-    await expect(table).toContainText('$620M');
-    await expect(table).toContainText('$17M');
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.totalReturn));
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.expenditure));
     await expect(table).toContainText('partial year');
 
     await expect(page.getByTestId('org-roi-annual-trend-chart')).toHaveAttribute('aria-label', /investment and return by year/i);
@@ -355,7 +329,24 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     for (const body of responses) {
       expect(body).not.toContain('totalExpenditure');
       expect(body).not.toContain('totalReturn');
+      // The category and project payloads also carry investment; a refusal must leak neither.
+      expect(body).not.toContain('expenditure');
+      expect(body).not.toContain('categories');
     }
+  });
+
+  test('surfaces an error rather than a skeleton when the failed request cleared the summary', async ({ page }) => {
+    // A failure empties the summary, so it stops matching the selected organization. If the
+    // org-identity check were tested before the failure branches, every error would render as a
+    // permanent loading skeleton and neither refusal nor outage would ever reach the viewer.
+    await stubOrgLensContext(page);
+    await page.route('**/api/orgs/*/lens/roi/**', (route) =>
+      route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'ROLE_GRANTS_UNAVAILABLE' }) })
+    );
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-error')).toBeVisible();
+    await expect(page.getByTestId('org-roi-portfolio-loading')).toHaveCount(0);
   });
 
   test('distinguishes a 503 verification failure from a 403 refusal', async ({ page }) => {
@@ -396,5 +387,116 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-no-access-state')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toHaveCount(0);
+  });
+});
+
+test.describe('Org Lens ROI Metrics — investment by category', () => {
+  test('renders every above-threshold category with its shared label', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const legend = page.getByTestId('org-roi-category-donut-legend');
+    await expect(page.getByTestId('org-roi-category-donut')).toBeVisible();
+    await expect(legend).toBeVisible();
+
+    // The labels come from the warehouse seed, so the fixture's own labels are the expectation.
+    for (const row of MOCK_CATEGORY_ROWS) {
+      const isSubThreshold = row.expenditure / TOTAL_INVESTMENT < 0.02;
+      if (isSubThreshold) continue;
+      await expect(legend).toContainText(row.label);
+      await expect(legend).toContainText(formatCurrency(row.expenditure));
+    }
+  });
+
+  test('collapses sub-threshold categories into one remainder labelled with its count', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const legend = page.getByTestId('org-roi-category-donut-legend');
+    await expect(legend).toContainText(`Other (${SUB_THRESHOLD_CATEGORY_COUNT} categories)`);
+
+    // The smallest category is $1,190 against a $148M total — a slice too thin to see and a legend
+    // entry too small to read, which is what the display threshold exists to prevent.
+    const smallest = MOCK_CATEGORY_ROWS.reduce((min, row) => (row.expenditure < min.expenditure ? row : min));
+    await expect(legend).not.toContainText(smallest.label);
+  });
+
+  test('reports a category total identical to the KPI investment figure', async ({ page }) => {
+    // The warehouse reconciles these by construction and a dbt singular test asserts it per
+    // account, so any difference here is a defect — never rescaled client-side to force
+    // agreement, which is what the reference implementation does.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    // Tie the rendered total to the category rows themselves, not merely to the fixture's `total`
+    // field: a component that displayed anything else would otherwise pass.
+    const summedFromCategories = formatCurrency(MOCK_CATEGORY_ROWS.reduce((sum, row) => sum + row.expenditure, 0));
+
+    await expect(page.getByTestId('org-roi-category-donut-total')).toHaveText(summedFromCategories);
+    await expect(page.getByTestId('org-roi-kpi-cards')).toContainText(summedFromCategories);
+    expect(summedFromCategories).toBe(EXPECTED_INVESTMENT);
+  });
+
+  test('switches the category display between currency and share of total', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const legend = page.getByTestId('org-roi-category-donut-legend');
+    const code = MOCK_CATEGORY_ROWS[0];
+    const codeShare = `${formatPercent((code.expenditure / TOTAL_INVESTMENT) * 100)}%`;
+
+    await expect(legend).toContainText(formatCurrency(code.expenditure));
+
+    await page.getByTestId('org-roi-category-donut-units-share').click();
+    await expect(legend).toContainText(codeShare);
+    await expect(legend).not.toContainText(formatCurrency(code.expenditure));
+
+    await page.getByTestId('org-roi-category-donut-units-amount').click();
+    await expect(legend).toContainText(formatCurrency(code.expenditure));
+    // The total stays a currency figure in both modes — it is the reconciliation anchor.
+    await expect(page.getByTestId('org-roi-category-donut-total')).toHaveText(EXPECTED_INVESTMENT);
+  });
+
+  test('carries the modelled-cost disclosure on the category breakdown', async ({ page }) => {
+    // The surface the privacy audit was most concerned about: 19.4% of covered organizations have a
+    // single code contributor, so "Code Contribution: $101.9M" can read as one person's pay.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const note = page.getByTestId('org-roi-category-donut-modelled-cost-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('modelled cost');
+    await expect(note).toContainText('not actual or reported compensation');
+    await expect(note).toContainText('same for every organization');
+    await expect(note).toContainText('No salary, payroll, or invoice data is used.');
+  });
+
+  test('names the chart for assistive technology and lists its values as text', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveAttribute('aria-label', /doughnut chart of modelled investment/i);
+    await expect(page.getByTestId('org-roi-category-donut-legend')).toBeVisible();
+  });
+
+  test('shows an empty category breakdown without erroring', async ({ page }) => {
+    await stubOrgLensContext(page, { investmentBreakdown: { rows: [], total: 0 } });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
+  });
+
+  test('says so rather than drawing a blank chart when categories sum to zero', async ({ page }) => {
+    // Rows present but nothing to draw from them. Keying the template off the row count alone
+    // rendered an empty canvas beside an empty legend, which reads as a broken widget.
+    await stubOrgLensContext(page, {
+      investmentBreakdown: { rows: MOCK_CATEGORY_ROWS.map((row) => ({ ...row, expenditure: 0 })), total: 0 },
+    });
+    await gotoOrgRoiPage(page);
+
+    await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
+    await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-category-donut-legend')).toHaveCount(0);
   });
 });
