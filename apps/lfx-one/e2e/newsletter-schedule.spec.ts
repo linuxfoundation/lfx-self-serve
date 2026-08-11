@@ -332,6 +332,26 @@ test.describe('Newsletter schedule — arm from the review screen', () => {
     // Must stay on the review screen — a 503 is not a reason to navigate away.
     await expect(page.getByTestId('newsletter-review')).toBeVisible();
   });
+
+  test('a deep-linked ?step= on a scheduled newsletter still lands on review, not the stepper', async ({ page }) => {
+    const scheduledAt = new Date(Date.now() + 45 * 60_000).toISOString();
+    const scheduled = buildDraft({ status: 'scheduled', scheduled_at: scheduledAt, version: 2 });
+    await stubNewsletterApis(page, scheduled);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await page.goto(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${MOCK_NEWSLETTER_ID}/edit?project=${MOCK_FOUNDATION_SLUG}&step=2`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    // isScheduleReadOnly() must win over the bookmarked step param — otherwise a
+    // direct link to the stepper would bypass the read-only lock on an armed schedule.
+    await expect(page.getByTestId('newsletter-review'), 'a scheduled newsletter must render review even with ?step=2').toBeVisible({
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    await expect(page.getByTestId('newsletter-manage-stepper')).not.toBeVisible();
+  });
 });
 
 test.describe('Newsletter schedule — list screen cancel action', () => {
