@@ -347,13 +347,22 @@ export class CampaignServiceClient {
       // returned validator must never be.
       //
       // Everything else is indeterminate, and reporting `writeEtag` for it would be a guess
-      // dressed as a fact. A timeout, a connection reset, or a 5xx from the gateway can all
-      // follow a commit whose response was lost — `approve-brief` does `version = version + 1`,
+      // dressed as a fact. A local timeout (surfaced as 408, see below), a connection reset, or
+      // a 5xx from the gateway can all follow a commit whose response was lost —
+      // `approve-brief` does `version = version + 1`,
       // so if it did commit, the validator being returned here is one version stale. Report no
       // validator at all rather than a wrong one; `null` already means "none available" on this
       // result (see the no-ETag branch above), and the read path re-reads the ETag from the
       // server before every write, so nothing downstream is left without one.
-      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 412;
+      // 408 is EXCLUDED even though it is a 4xx. `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts:122` and `:306`), so a
+      // 408 here is our own deadline firing, not campaign-service refusing anything — the
+      // request may well have committed upstream with its response lost, which is precisely the
+      // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
+      // came from the gateway is indistinguishable at this boundary and means the same thing:
+      // the request may or may not have been processed.
+      const definitelyRejected =
+        error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 412 && error.statusCode !== 408;
       logger.warning(
         req,
         'campaign_persist_brief_approve',
