@@ -926,6 +926,11 @@ export class WeeklyBriefService {
       });
     }
 
+    // Slack's success body is a tiny, unused 'ok' — drain it so undici releases the connection
+    // back to the pool immediately instead of holding it until the stream is GC'd. The !response.ok
+    // branch above already drains its body via readBoundedText; this is the fetch's only other exit.
+    await response.body?.cancel().catch(() => undefined);
+
     // shared_by is the one place this action's actor is recorded at all: the webhook POST body
     // itself carries no caller identity (it's why /share-slack blocks during impersonation in the
     // first place — see impersonation-readonly.middleware.ts), and unlike shareBrief, a successful
