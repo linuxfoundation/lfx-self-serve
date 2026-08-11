@@ -360,8 +360,10 @@ export class CommitteeEngagementService {
       // exists to remove for `votingStatus`'s Emeritus case. `member.role?.name` is also a typed
       // `CommitteeMemberRole`, unlike `row?.MEMBER_ROLE` (an untyped warehouse string) — preferring
       // it first means a live-mode `MEMBER_ROLE` spelling/casing mismatch degrades to the roster's
-      // known-good value instead of silently defeating the `=== CommitteeMemberRole.LF_STAFF` checks
-      // everywhere they're used. The warehouse value remains the fallback for the same "no matching
+      // known-good value instead of silently defeating the LF Staff exclusion checks everywhere
+      // `role` is used (see `isLfStaffObserverSeat` in `committee-engagement-classifier.utils.ts`
+      // for the exact, narrower-than-role-alone condition, LFXV2-3101 follow-up). The warehouse
+      // value remains the fallback for the same "no matching
       // row" reason `votingStatus` falls back to the roster above, just in the opposite direction.
       const role = member.role?.name || row?.MEMBER_ROLE || CommitteeMemberRole.NONE;
       // Same roster-fallback reasoning as role/voting-status above, but checked independently

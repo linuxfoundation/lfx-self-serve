@@ -158,8 +158,8 @@ export class GroupsEngagementStatsService {
 
   /**
    * Counts distinct active members (attended >=1 meeting in the trailing 30 days, or joined within
-   * it, excluding Emeritus and LF Staff — `isCommitteeMemberActive`, the same function
-   * LFXV2-1705/LFXV2-3101 use) across the *covered* subset of committees the caller can see
+   * it, excluding Emeritus and LF Staff+Observer seats — `isCommitteeMemberActive`, the same
+   * function LFXV2-1705/LFXV2-3101 use) across the *covered* subset of committees the caller can see
    * (`getMyCommitteeUids` — "mine" semantics, no scope param, per LFXV2-1711). A member is counted
    * once even if active on multiple covered
    * committees — the model's grain is one row per `(committee_id, member_user_id)`, so a member on

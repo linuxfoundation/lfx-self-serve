@@ -275,9 +275,11 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(0);
     });
 
-    it('classifies an LF Staff member as "LF Staff" regardless of a low real attendance rate, and never at-risk (LFXV2-3101)', async () => {
+    it('classifies an LF Staff + Observer member as "LF Staff" regardless of a low real attendance rate, and never at-risk (LFXV2-3101)', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
-      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 })]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'LF Staff', MEMBER_VOTING_STATUS: 'Observer', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 }),
+      ]);
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
@@ -286,21 +288,53 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(0);
     });
 
-    it("excludes an LF Staff member's attended/invited counts from the aggregate attendance_rate (LFXV2-3101)", async () => {
+    it('does NOT classify an LF Staff + Voting Rep member as "LF Staff" — only Observer-status staff seats are excluded (LFXV2-3101 follow-up, Jordan Evans review)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
+      // row()'s default MEMBER_VOTING_STATUS is 'Voting Rep' — deliberately left unset here to
+      // exercise that default, not overridden to Observer.
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 9 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      // Classifies on real attendance (9/10 = High), same as any other real Voting Rep — an ED or
+      // staff member serving as a real board/committee voting representative is a genuine
+      // participant, not a silenced staff-only seat.
+      expect(result.members[0]).toMatchObject({ classification: 'High', role: 'LF Staff' });
+      expect(result.summary.active_count).toBe(1);
+      expect(result.summary.eligible_count).toBe(1);
+    });
+
+    it("excludes an LF Staff + Observer member's attended/invited counts from the aggregate attendance_rate (LFXV2-3101)", async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('staff')]);
       generateMockEngagementRows.mockReturnValueOnce([
         row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 }), // High, real member
-        row({ MEMBER_USER_ID: 'staff', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 }), // LF Staff, 0 real attendance
+        row({ MEMBER_USER_ID: 'staff', MEMBER_ROLE: 'LF Staff', MEMBER_VOTING_STATUS: 'Observer', INVITED_COUNT_30D: 8, ATTENDED_COUNT_30D: 0 }), // LF Staff + Observer, 0 real attendance
       ]);
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
-      // Without the exclusion this would be 10/18 = 0.56; the LF Staff row must not depress it.
+      // Without the exclusion this would be 10/18 = 0.56; the LF Staff + Observer row must not depress it.
       expect(result.summary.attendance_rate).toBe(1);
-      expect(result.summary.total_count).toBe(2); // roster count is unaffected — only the rate/active/eligible/at-risk sums exclude LF Staff
+      expect(result.summary.total_count).toBe(2); // roster count is unaffected — only the rate/active/eligible/at-risk sums exclude LF Staff + Observer
       // eligible_count (the active_count ratio denominator, LFXV2-3101 review fix) excludes the
-      // LF Staff member too — 1/1, not 1/2, so the ratio can read 100% for this committee.
+      // LF Staff + Observer member too — 1/1, not 1/2, so the ratio can read 100% for this committee.
       expect(result.summary.eligible_count).toBe(1);
+    });
+
+    it('does NOT exclude an LF Staff + Voting Rep member from attendance_rate or eligible_count (LFXV2-3101 follow-up)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('staff-rep')]);
+      generateMockEngagementRows.mockReturnValueOnce([
+        row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 }),
+        row({ MEMBER_USER_ID: 'staff-rep', MEMBER_ROLE: 'LF Staff', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 0 }), // LF Staff + real Voting Rep (row() default)
+      ]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      // 10/20 = 0.5 — the LF Staff + Voting Rep member's real 0 attendance DOES count, unlike the
+      // Observer-status case above.
+      expect(result.summary.attendance_rate).toBe(0.5);
+      expect(result.summary.eligible_count).toBe(2);
+      expect(result.summary.total_count).toBe(2);
     });
 
     it("excludes an Emeritus member from eligible_count, the active_count ratio's denominator (LFXV2-3101 review fix)", async () => {
@@ -464,7 +498,9 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       // (LF Staff) before the dbt model's next refresh (still reporting the old 'None'). Roster
       // must win: this is exactly the scenario commit dfba24c02's precedence flip fixes.
       getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never })]);
-      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'None', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })] });
+      execute.mockResolvedValueOnce({
+        rows: [row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'None', MEMBER_VOTING_STATUS: 'Observer', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })],
+      });
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
 
@@ -499,8 +535,8 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.at_risk_count).toBe(0);
     });
 
-    it('falls back to the roster real role on a degraded (unmatched) member, so a real LF Staff member still short-circuits (LFXV2-3101)', async () => {
-      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never })]);
+    it('falls back to the roster real role/voting-status on a degraded (unmatched) member, so a real LF Staff + Observer member still short-circuits (LFXV2-3101)', async () => {
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never, voting: { status: 'Observer' } as never })]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
 
       const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');

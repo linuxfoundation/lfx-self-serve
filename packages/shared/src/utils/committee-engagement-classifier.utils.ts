@@ -34,14 +34,29 @@ export function computeCommitteeEngagementRate(attended: number, invited: number
 }
 
 /**
+ * Whether a member is an LF Staff seat with Observer voting status specifically — the actual
+ * exclusion condition every "LF Staff" rule in this file keys on, not `role === LF_STAFF` alone
+ * (LFXV2-3101 follow-up review fix). Staff seats are typically added as an Observer with no real
+ * meeting-attendance expectation, which is what the exclusion exists to protect — but an LF Staff
+ * member who is a Voting Rep or Alternate Voting Rep (e.g. an ED or staff member serving as a real
+ * board/committee voting representative) is a genuine participant and should classify/count
+ * normally, the same as any other member. Excluding them anyway would silence real engagement
+ * signal for exactly the population — real participants — every rule in this file exists to
+ * measure. Scoped to `role`+`Observer` specifically, not broadened to every Observer regardless of
+ * role: a non-staff Observer can still have real engagement expectations depending on the
+ * community, so excluding all Observers would hide genuine disengagement signal in the other
+ * direction.
+ */
+function isLfStaffObserverSeat(input: Pick<CommitteeEngagementClassificationInput, 'role' | 'votingStatus'>): boolean {
+  return input.role === CommitteeMemberRole.LF_STAFF && input.votingStatus === CommitteeMemberVotingStatus.OBSERVER;
+}
+
+/**
  * Decision order (see the ticket's Jira thread for the full rationale):
  * 1. `Emeritus` voting status always wins — on the roster for legacy/honorific reasons, real
  *    attendance (often ~5%, per the model's real observed data) shouldn't read as disengagement.
- * 2. `LF Staff` role wins next (LFXV2-3101) — staff seats are typically added as an Observer with
- *    no real meeting-attendance expectation, so their real (often 0%) attendance shouldn't read as
- *    disengagement either. Deliberately keyed on `role`, not `votingStatus === Observer`: a
- *    non-staff Observer can have real engagement expectations depending on the community, so
- *    broadening this to all Observers would hide genuine disengagement signal.
+ * 2. `LF Staff` + `Observer` wins next (LFXV2-3101) — see `isLfStaffObserverSeat`'s doc for exactly
+ *    why it's this two-part condition and not `role` alone.
  * 3. No invites yet, but joined within the window: no real opportunity has existed, so this can't
  *    be `Inactive` — tenure, not disengagement. Classified `High` (active by definition) rather
  *    than a new tier, since the ticket's classification set is fixed.
@@ -53,9 +68,9 @@ export function computeCommitteeEngagementRate(attended: number, invited: number
  *    not protect this case.
  */
 export function classifyCommitteeEngagement(input: CommitteeEngagementClassificationInput): CommitteeEngagementClassification {
-  const { attended, invited, votingStatus, role, joinedWithinWindow } = input;
+  const { attended, invited, votingStatus, joinedWithinWindow } = input;
   if (votingStatus === CommitteeMemberVotingStatus.EMERITUS) return 'Emeritus';
-  if (role === CommitteeMemberRole.LF_STAFF) return 'LF Staff';
+  if (isLfStaffObserverSeat(input)) return 'LF Staff';
   if (invited <= 0) return joinedWithinWindow ? 'High' : 'Inactive';
 
   const rate = rawCommitteeEngagementRate(attended, invited);
@@ -72,8 +87,9 @@ export function classifyCommitteeEngagement(input: CommitteeEngagementClassifica
  * `Low` members are at risk by definition. A member invited within the window who attended
  * nothing is at risk too, even though `classifyCommitteeEngagement` also calls them `Inactive` —
  * that tier's other member (never invited at all) has no signal to act on, but this one does.
- * `Emeritus`, `LF Staff` (LFXV2-3101), and the tenure-grace `High` (case 3 above) are never
- * at-risk — none of them match `Low` or `Inactive`, so no extra exclusion logic is needed here.
+ * `Emeritus`, `LF Staff`+`Observer` (LFXV2-3101), and the tenure-grace `High` (case 3 above) are
+ * never at-risk — none of them match `Low` or `Inactive`, so no extra exclusion logic is needed
+ * here.
  */
 export function isCommitteeMemberAtRisk(input: CommitteeEngagementClassificationInput): boolean {
   const classification = classifyCommitteeEngagement(input);
@@ -84,14 +100,15 @@ export function isCommitteeMemberAtRisk(input: CommitteeEngagementClassification
  * The "Active Members x/y" summary rule — deliberately broader than "classified High/Medium":
  * per the ticket, the numerator is members with *any* real attendance this window, plus members
  * who joined within it (active by definition of being newly on the roster), excluding Emeritus
- * and LF Staff (LFXV2-3101). This function doesn't delegate to `classifyCommitteeEngagement`, so
- * both exclusions need their own explicit check here, same as the classifier's. A `Low`-classified
- * member (some attendance, just under the Medium threshold) still counts here — this is a distinct
- * rule from `classifyCommitteeEngagement`, not a rollup of its tiers.
+ * and LF Staff+Observer seats (LFXV2-3101, see `isLfStaffObserverSeat`'s doc for the two-part
+ * condition). This function doesn't delegate to `classifyCommitteeEngagement`, so both exclusions
+ * need their own explicit check here, same as the classifier's. A `Low`-classified member (some
+ * attendance, just under the Medium threshold) still counts here — this is a distinct rule from
+ * `classifyCommitteeEngagement`, not a rollup of its tiers.
  */
 export function isCommitteeMemberActive(input: CommitteeEngagementClassificationInput): boolean {
   if (input.votingStatus === CommitteeMemberVotingStatus.EMERITUS) return false;
-  if (input.role === CommitteeMemberRole.LF_STAFF) return false;
+  if (isLfStaffObserverSeat(input)) return false;
   return input.attended > 0 || input.joinedWithinWindow;
 }
 
@@ -100,32 +117,32 @@ export function isCommitteeMemberActive(input: CommitteeEngagementClassification
  * could ever contribute to it, independent of whether *this* member happens to be active right
  * now. This is `CommitteeEngagementSummary.eligible_count`'s per-member rule, the correct
  * denominator for displaying `active_count` as a ratio (LFXV2-3101 review fix): counting Emeritus
- * and LF Staff seats in the denominator while `isCommitteeMemberActive` always excludes them from
- * the numerator means a committee that seats either could never read 100% active regardless of
- * real participation — the same shape of bug the ticket fixed for the At-Risk filter, just showing
- * up in the ratio instead. Attendance-independent by design (unlike `isCommitteeMemberActive`,
- * which mixes the exclusion with an attendance check) — a never-attended non-Emeritus/non-staff
- * member is still eligible, just not active.
+ * and LF Staff+Observer seats in the denominator while `isCommitteeMemberActive` always excludes
+ * them from the numerator means a committee that seats either could never read 100% active
+ * regardless of real participation — the same shape of bug the ticket fixed for the At-Risk
+ * filter, just showing up in the ratio instead. Attendance-independent by design (unlike
+ * `isCommitteeMemberActive`, which mixes the exclusion with an attendance check) — a
+ * never-attended non-Emeritus/non-staff member is still eligible, just not active.
  */
 export function isCommitteeMemberActiveEligible(input: Pick<CommitteeEngagementClassificationInput, 'votingStatus' | 'role'>): boolean {
-  return input.votingStatus !== CommitteeMemberVotingStatus.EMERITUS && input.role !== CommitteeMemberRole.LF_STAFF;
+  return input.votingStatus !== CommitteeMemberVotingStatus.EMERITUS && !isLfStaffObserverSeat(input);
 }
 
 /**
  * Whether a member's `attended`/`invited` counts should feed the committee-wide `attendance_rate`
- * sum (LFXV2-3101) — `LF Staff` seats are excluded, Emeritus seats deliberately are NOT (see
- * `CommitteeEngagementSummary.attendance_rate`'s doc for why the two aren't symmetric here, unlike
- * every other rule in this file). Exported as its own named predicate, not left as an inline check
- * at the one call site, so this asymmetry is stated once in the module that owns every other
- * classification rule, rather than risking a second, easily-missed copy.
+ * sum (LFXV2-3101) — `LF Staff`+`Observer` seats are excluded, Emeritus seats deliberately are NOT
+ * (see `CommitteeEngagementSummary.attendance_rate`'s doc for why the two aren't symmetric here,
+ * unlike every other rule in this file). Exported as its own named predicate, not left as an
+ * inline check at the one call site, so this asymmetry is stated once in the module that owns
+ * every other classification rule, rather than risking a second, easily-missed copy.
  *
- * Keyed on `input.role` alone, independent of `classifyCommitteeEngagement`'s tier — a member who
- * is BOTH a real Emeritus (`votingStatus`) and a real LF Staff seat (`role`) classifies `Emeritus`
- * (voting status wins first in the classifier's decision order) and renders the Emeritus chip, but
- * is still excluded from the rate sum here, since the exclusion is deliberately role-based, not
- * classification-based. Rare in practice (an honorific legacy seat is not usually also an active
- * staff seat) but not undefined behavior: the role check simply doesn't care what tier the member
- * displayed as.
+ * Delegates to `isLfStaffObserverSeat`, independent of `classifyCommitteeEngagement`'s tier — a
+ * member who is BOTH a real Emeritus (`votingStatus`) and a real LF Staff+Observer seat classifies
+ * `Emeritus` (voting status wins first in the classifier's decision order) and renders the
+ * Emeritus chip, but is still excluded from the rate sum here, since the exclusion is deliberately
+ * seat-type-based, not classification-based. Rare in practice (an honorific legacy seat is not
+ * usually also an active staff seat) but not undefined behavior: the check simply doesn't care
+ * what tier the member displayed as.
  *
  * `input.role`'s value is whatever the caller resolved — for `committee-engagement.service.ts`
  * today that's the live roster's `role.name` first, falling back to warehouse `MEMBER_ROLE` only
@@ -136,7 +153,7 @@ export function isCommitteeMemberActiveEligible(input: Pick<CommitteeEngagementC
  * target than the warehouse's untyped string).
  */
 export function isCommitteeMemberRateEligible(input: CommitteeEngagementClassificationInput): boolean {
-  return input.role !== CommitteeMemberRole.LF_STAFF;
+  return !isLfStaffObserverSeat(input);
 }
 
 /**

@@ -87,9 +87,13 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByTestId('members-engagement-chip-m-medium')).toContainText('Medium');
     await expect(page.getByTestId('members-engagement-chip-m-low')).toContainText('Low');
     await expect(page.getByTestId('members-engagement-chip-m-inactive-invited')).toContainText('Inactive');
-    // Emeritus and LF Staff both render their own neutral tier — never Low/Inactive/at-risk styling.
+    // Emeritus and LF Staff + Observer both render their own neutral tier — never
+    // Low/Inactive/at-risk styling.
     await expect(page.getByTestId('members-engagement-chip-m-emeritus')).toContainText('Emeritus');
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff')).toContainText('LF Staff');
+    // An LF Staff member who is a real Voting Rep classifies on real attendance, NOT the neutral
+    // LF Staff tier (LFXV2-3101 follow-up, Jordan Evans review).
+    await expect(page.getByTestId('members-engagement-chip-m-lf-staff-rep')).toContainText('High');
 
     // computed_at is null in the fixture → the daily-refresh freshness fallback.
     await expect(page.getByTestId('members-engagement-freshness')).toHaveText('Updated daily');
@@ -116,6 +120,8 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByText('Nova Neverasked')).toHaveCount(0);
     await expect(page.getByText('Evan Emeritus')).toHaveCount(0);
     await expect(page.getByText('Sam Staffer')).toHaveCount(0);
+    // Real 80% attendance — not at-risk, filtered out same as any other well-engaged member.
+    await expect(page.getByText('Priya Repstaff')).toHaveCount(0);
   });
 
   test('switching the window refetches and re-renders the cells', async ({ page }) => {
@@ -196,8 +202,10 @@ test.describe('Committee engagement — overview summary (flag on)', () => {
     test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
     await expect(summary.getByTestId('committee-engagement-summary-attendance-rate')).toContainText('78%', { timeout: ELEMENT_TIMEOUT });
-    // 3/5, not 3/7 — the denominator is eligible_count (roster minus Emeritus/LF Staff), not total_count.
-    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('3/5');
+    // 4/6, not 4/8 — the denominator is eligible_count (roster minus Emeritus/LF Staff+Observer),
+    // not total_count. active_count is 4 (m-high, m-medium, m-low, m-lf-staff-rep — the real Voting
+    // Rep LF Staff member counts like any other real member).
+    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('4/6');
     await expect(summary.getByTestId('committee-engagement-summary-at-risk')).toContainText('2');
     await expect(summary.getByTestId('committee-engagement-summary-freshness')).toHaveText('Updated daily');
   });
