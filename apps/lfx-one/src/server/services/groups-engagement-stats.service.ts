@@ -23,7 +23,7 @@ const COMMITTEE_UID_CHUNK_SIZE = 100;
 
 type ActiveMemberRow = Pick<
   CommitteeEngagementWarehouseRow,
-  'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'INVITED_COUNT_30D' | 'ATTENDED_COUNT_30D'
+  'MEMBER_USER_ID' | 'MEMBER_JOINED_AT' | 'MEMBER_VOTING_STATUS' | 'MEMBER_ROLE' | 'INVITED_COUNT_30D' | 'ATTENDED_COUNT_30D'
 > & { COMMITTEE_ID: string };
 
 /**
@@ -74,20 +74,19 @@ function resolveBackend(): 'mock' | 'live' {
  * roster join per visible committee, which would reintroduce the N+1 fetch this endpoint exists to
  * avoid), so it can still diverge from the per-committee detail page for: a roster member the model
  * hasn't picked up yet (a very recent join); a blank `MEMBER_VOTING_STATUS` the detail page would
- * otherwise resolve via the roster's own `voting.status`; a blank/unparseable `MEMBER_JOINED_AT`
+ * otherwise resolve via the roster's own `voting.status`; or a blank/unparseable `MEMBER_JOINED_AT`
  * the detail page would still resolve via the roster's own `created_at` (`buildResponse` ORs both
  * sources when the roster join has at least one match for that committee; this rollup only has the
- * warehouse row, never a roster fallback); or an `LF Staff` seat (LFXV2-3101) — the detail page's
- * `classificationInput` passes `role` (warehouse `MEMBER_ROLE`, falling back to the roster's own
- * `role.name` only when the row is missing) so an LF Staff member never counts as active there, but
- * `ActiveMemberRow` here deliberately doesn't select `MEMBER_ROLE` at all (kept minimal for this
- * rollup's no-roster-join design), so
- * `isCommitteeMemberActive`'s `role` check always sees `undefined` and an LF Staff member with real
- * attendance still counts as active on this rollup. Left undone here rather than adding the column:
- * this endpoint is a different feature (LFXV2-1711, the Groups dashboard) than the ticket that
- * introduced the LF Staff exclusion (LFXV2-3101, the committee detail page), and the two other
- * divergence sources above already establish that this rollup trades exact per-committee agreement
- * for avoiding the N+1 roster fetch — the same trade-off, one more cause.
+ * warehouse row, never a roster fallback). An `LF Staff` seat (LFXV2-3101) is NOT one of these
+ * divergences, despite superficially looking like the same shape: `MEMBER_ROLE` (unlike the roster
+ * fallbacks above) is a column on this same `platinum_lfx_one_committee_meeting_attendance` table
+ * `ActiveMemberRow` already reads, so selecting it costs nothing extra — no roster join, no N+1 —
+ * and `classificationInput` here passes `role: row.MEMBER_ROLE` accordingly, so an LF Staff member
+ * is excluded from `active_members` on this rollup exactly like the detail page excludes it from
+ * `active_count`. This rollup has no live roster at all (see the class doc above), so unlike the
+ * detail page's roster-first precedence (`committee-engagement.service.ts`'s `role` resolution,
+ * LFXV2-3101 review fix), `MEMBER_ROLE` here is the *only* source — there's no live value to prefer
+ * over it, and no staleness trade-off to make.
  *
  * A larger case in the same family, deliberately NOT wired the same way: this rollup dedupes purely
  * on the warehouse's own `MEMBER_USER_ID` with no roster join at all, so a committee whose
@@ -253,6 +252,7 @@ export class GroupsEngagementStatsService {
             attended: Math.min(Math.max(row.ATTENDED_COUNT_30D, 0), invited),
             invited, // unused by isCommitteeMemberActive; kept only for the clamp above
             votingStatus: row.MEMBER_VOTING_STATUS,
+            role: row.MEMBER_ROLE,
             joinedWithinWindow: isJoinedWithinWindow(row.MEMBER_JOINED_AT, windowStart),
           };
           if (isCommitteeMemberActive(classificationInput)) activeUids.add(row.MEMBER_USER_ID);
@@ -330,7 +330,7 @@ export class GroupsEngagementStatsService {
   private queryActiveMemberChunk(warehouseCommitteeIds: string[]): Promise<{ rows: ActiveMemberRow[] }> {
     const placeholders = warehouseCommitteeIds.map(() => '?').join(', ');
     const sql = `
-      SELECT COMMITTEE_ID, MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, INVITED_COUNT_30D, ATTENDED_COUNT_30D
+      SELECT COMMITTEE_ID, MEMBER_USER_ID, MEMBER_JOINED_AT, MEMBER_VOTING_STATUS, MEMBER_ROLE, INVITED_COUNT_30D, ATTENDED_COUNT_30D
       FROM ${committeeEngagementTable()}
       WHERE COMMITTEE_ID IN (${placeholders})
     `;

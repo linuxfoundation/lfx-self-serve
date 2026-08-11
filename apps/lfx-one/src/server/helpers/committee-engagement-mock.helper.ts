@@ -35,15 +35,15 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too — including a real `'None'`, which is
  * itself a recorded status and never overwritten — falling back to a hash-derived placeholder only
  * for members with no usable real status (no `voting` recorded, or a blank/falsy `status`). Any
- * real `role: 'LF Staff'` member (LFXV2-3101) is excluded from the Orlin-slot and reserved
- * Inactive/Low/Medium demo-pattern eligibility pools, the same way a real (or promoted) `Emeritus`
- * member is — both roster facts always short-circuit `classifyCommitteeEngagement` regardless of
- * fabricated numbers, so assigning either role a reserved attendance pattern would silently swallow
- * it rather than render it. Two scenarios (`Emeritus`, "the Orlin case" — see below) are guaranteed visible somewhere in the
- * roster whenever that's possible without
- * overriding a real, known value; when every member's real data already rules a scenario out
- * (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't demonstrated
- * for this specific committee rather than being faked.
+ * real `role: 'LF Staff'` member (LFXV2-3101) is excluded from the Emeritus-fallback promotion, the
+ * Orlin slot, and the reserved Inactive/Low/Medium demo-pattern pool, the same way a real (or
+ * promoted) `Emeritus` member is excluded from the Orlin/demo pools — both roster facts always
+ * short-circuit `classifyCommitteeEngagement` regardless of fabricated numbers, so assigning either
+ * one a reserved slot would silently swallow it rather than render it. Two scenarios (`Emeritus`,
+ * "the Orlin case" — see below) are guaranteed visible somewhere in the roster whenever that's
+ * possible without overriding a real, known value; when every member's real data already rules a
+ * scenario out (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't
+ * demonstrated for this specific committee rather than being faked.
  *
  * Every number is derived from stable inputs only — `committeeUid`, `member.uid`, `window`,
  * the member's real `created_at`/`voting.status` where present, the rest of the roster's identity

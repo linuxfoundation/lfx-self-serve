@@ -439,6 +439,21 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(sql).toContain('COMMITTEE_MEETINGS_YTD');
     });
 
+    it('prefers the live roster role over a conflicting/stale warehouse MEMBER_ROLE for the LF Staff exclusion (LFXV2-3101 review fix)', async () => {
+      // The roster and the matched row disagree on role — a role promoted onto the live roster
+      // (LF Staff) before the dbt model's next refresh (still reporting the old 'None'). Roster
+      // must win: this is exactly the scenario commit dfba24c02's precedence flip fixes.
+      getCommitteeMembers.mockResolvedValueOnce([member('m1', { role: { name: 'LF Staff' } as never })]);
+      execute.mockResolvedValueOnce({ rows: [row({ MEMBER_USER_ID: 'm1', MEMBER_ROLE: 'None', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 8 })] });
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      expect(result.members[0]).toMatchObject({ role: 'LF Staff', classification: 'LF Staff' });
+      expect(result.summary.active_count).toBe(0);
+      // This member's real 10/8 attendance is excluded from the rate sum once role wins LF Staff.
+      expect(result.summary.attendance_rate).toBe(0);
+    });
+
     it('degrades to a zeroed, data_available:false response when the engagement table is missing', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       execute.mockRejectedValueOnce(new Error('Snowflake query execution failed: Object does not exist or not authorized.'));
