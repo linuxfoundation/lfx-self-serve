@@ -5,9 +5,6 @@ import { BEHIND_GOAL_PERCENT_THRESHOLD } from '../constants/marketing-impact.con
 
 import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
 
-/** Number of past months to show in the Marketing Impact period picker. */
-const MONTH_COUNT = 12;
-
 /** Returns the default reporting month (previous calendar month, UTC). */
 export function getDefaultMarketingImpactMonth(): string {
   const now = new Date();
@@ -82,37 +79,31 @@ export function computeMomPct(arr: number[] | undefined): number | null {
 const PERIOD_PRESETS = ['ytd', 'last-3', 'last-6'] as const;
 const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-/** Builds grouped period options: presets first, then individual months. */
+/**
+ * Builds the period options: trailing-range presets only. Individual months were removed from the
+ * picker — resolvePeriodRange still accepts a YYYY-MM value so existing deep links and any stored
+ * month period keep resolving instead of failing closed.
+ */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
-  const now = new Date();
-  const currentYear = now.getUTCFullYear();
-  const presets: MarketingImpactPeriodOption[] = [
+  const currentYear = new Date().getUTCFullYear();
+  return [
     { label: `Year to Date (${currentYear})`, value: 'ytd' },
     { label: 'Last 3 months', value: 'last-3' },
     { label: 'Last 6 months', value: 'last-6' },
   ];
-
-  const months: MarketingImpactPeriodOption[] = [];
-  for (let i = 1; i <= MONTH_COUNT; i++) {
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-    months.push({ label, value });
-  }
-
-  return [...presets, ...months];
 }
 
 /**
- * Returns the default period value, which is 'ytd' — not a calendar month. Month periods
- * re-aggregate from the event-grained tables and can only supply events/registrations/speakers,
- * so defaulting to one dashed four of the seven summary tiles on the landing view.
+ * Returns the default period value: 'ytd', the widest preset the picker offers.
+ *
+ * A month is deliberately not the default. Month periods re-aggregate from the event-grained
+ * tables and can only supply events/registrations/speakers — attendees, countries, organizations
+ * and sponsorship come back null — so defaulting to one dashed four of the seven summary tiles on
+ * the landing view. Months are no longer in the picker at all (see
+ * buildMarketingImpactPeriodOptions), though resolvePeriodRange still accepts a YYYY-MM value so
+ * existing deep links keep working.
  */
 export function getDefaultMarketingImpactPeriod(): string {
-  // YTD, not the previous month: month periods re-aggregate from the event-grained tables, which
-  // can only supply events/registrations/speakers — attendees, countries, organizations and
-  // sponsorship come back null. Defaulting to a month therefore dashed four of the seven summary
-  // tiles on the landing view. Month stays selectable for the three metrics that support it.
   return 'ytd';
 }
 

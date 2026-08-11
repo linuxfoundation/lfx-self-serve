@@ -61,16 +61,21 @@
       }
     </div>
 
-    <!-- Top campaigns table -->
+    <!-- Email sends table -->
     <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-top-campaigns">
-      <h4 class="text-sm font-semibold text-gray-900">Top campaigns by sends</h4>
+      <div class="flex items-baseline justify-between gap-3">
+        <h4 class="text-sm font-semibold text-gray-900">Email sends</h4>
+        <span class="text-[11px] text-gray-500" data-testid="email-campaigns-count">{{ topCampaignsCountLabel() }}</span>
+      </div>
 
       @if (hasTopCampaigns()) {
-        <div class="flex flex-col gap-0" role="table" aria-label="Top campaigns by sends" data-testid="email-campaigns-table">
+        <!-- Unbounded row count — scrolls within the card so the page doesn't grow without limit. -->
+        <div class="flex max-h-[32rem] flex-col gap-0 overflow-y-auto" role="table" aria-label="Email sends" data-testid="email-campaigns-table">
           <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+          <div class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white pb-2" role="row">
             <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
             <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+            <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SEND DATE</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
@@ -78,10 +83,11 @@
           </div>
 
           <!-- Rows -->
-          @for (row of topCampaigns(); track row.type + '|' + row.name; let idx = $index) {
+          @for (row of topCampaigns(); track row.type + '|' + row.name + '|' + row.sendDate; let idx = $index) {
             <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
-              <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell">{{ row.name }}</span>
+              <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell" [title]="row.name">{{ row.name }}</span>
               <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>
+              <span class="w-24 text-xs text-gray-500" role="cell">{{ row.sendDate }}</span>
               <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
               <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
               <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
@@ -91,7 +97,7 @@
         </div>
       } @else {
         <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
-          <p class="text-sm text-gray-500">No campaign data available.</p>
+          <p class="text-sm text-gray-500">No email sends in this period.</p>
         </div>
       }
     </div>
