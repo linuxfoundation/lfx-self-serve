@@ -95,6 +95,9 @@ export class ProfileEditDrawerComponent {
   public readonly bioLength = signal(0);
   // Last within-cap bio value; the valueChanges sub reverts to it when an edit exceeds the cap.
   private lastValidBio = '';
+  // Bio value seeded from the opened profile; a rejected over-cap edit that clips back to it must
+  // not leave the control dirty (would enable Save on a no-op).
+  private seededBio = '';
 
   // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
   // upload). Every dismissal and save path gates on this so an in-flight change can't be
@@ -228,10 +231,16 @@ export class ProfileEditDrawerComponent {
       .subscribe((bio: string) => {
         const value = bio ?? '';
         if (codePointLength(value) > this.bioMaxLength) {
+          const bioControl = this.profileForm.get('bio');
           const capped = capCodePointEdit(this.lastValidBio, value, this.bioMaxLength);
-          this.profileForm.get('bio')?.setValue(capped, { emitEvent: false });
+          bioControl?.setValue(capped, { emitEvent: false });
           this.lastValidBio = capped;
           this.bioLength.set(codePointLength(capped));
+          // A fully-rejected over-cap edit leaves the bio at the seeded value; clear the dirty flag
+          // Angular set on the keystroke so Save doesn't enable on a no-op (native maxlength parity).
+          if (capped === this.seededBio) {
+            bioControl?.markAsPristine();
+          }
           return;
         }
         this.lastValidBio = value;
@@ -497,7 +506,8 @@ export class ProfileEditDrawerComponent {
     this.selectedCountrySignal.set(countryValue);
     // patchValue above runs with emitEvent:false, so the bio valueChanges sub won't fire — seed the
     // counter and last-valid baseline from the opened profile so a reopened drawer is consistent.
-    this.lastValidBio = profile.profile?.bio || '';
+    this.seededBio = profile.profile?.bio || '';
+    this.lastValidBio = this.seededBio;
     this.bioLength.set(codePointLength(this.lastValidBio));
     this.syncOrganizationControl();
   }
