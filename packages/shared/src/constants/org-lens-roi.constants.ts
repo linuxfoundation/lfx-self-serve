@@ -145,6 +145,16 @@ export const ORG_LENS_ROI_PROJECT_SANKEY_MEASURE_LABELS: Record<(typeof ORG_LENS
 /** The single node every investment flow passes through, on its way out to the projects. */
 export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your organization';
 
+/**
+ * Sankey identifies a node by its key, so the keys are type-prefixed ids and display names are
+ * supplied separately. Keying on the name alone merged two projects sharing one, and let a project
+ * named after a contribution category — or after the organization node — join that node and form a
+ * cycle.
+ */
+export const ORG_LENS_ROI_SANKEY_ORG_NODE_KEY = 'org';
+export const ORG_LENS_ROI_SANKEY_PROJECT_NODE_PREFIX = 'project:';
+export const ORG_LENS_ROI_SANKEY_CATEGORY_NODE_PREFIX = 'category:';
+
 export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE = 25;
 
 export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];

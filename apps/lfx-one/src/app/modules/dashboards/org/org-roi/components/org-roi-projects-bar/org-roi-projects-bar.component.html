@@ -52,6 +52,9 @@
         <tr>
           <th scope="col">Project</th>
           <th scope="col">Investment</th>
+          @for (column of categoryColumns(); track column.type) {
+            <th scope="col">{{ column.label }}</th>
+          }
           <th scope="col">Return</th>
         </tr>
       </thead>
@@ -60,6 +63,9 @@
           <tr>
             <th scope="row">{{ row.projectName }}</th>
             <td>{{ row.investment }}</td>
+            @for (amount of row.categories; track $index) {
+              <td>{{ amount }}</td>
+            }
             <td>{{ row.return }}</td>
           </tr>
         }

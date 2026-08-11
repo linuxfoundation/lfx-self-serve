@@ -52,6 +52,8 @@ export class OrgRoiProjectsTableComponent {
 
   protected readonly hasRows: Signal<boolean> = computed(() => this.totalRecords() > 0);
 
+  protected readonly countLabel: Signal<string> = computed(() => `${this.totalRecords().toLocaleString('en-US')} projects`);
+
   protected readonly rows: Signal<OrgLensRoiProjectTableRow[]> = computed(() => {
     const field = this.sortField();
     const direction = this.sortDir() === 'asc' ? 1 : -1;
@@ -106,8 +108,11 @@ export class OrgRoiProjectsTableComponent {
     const tieBreak = this.compareProjectIds(a.projectId, b.projectId);
 
     if (field === 'name') {
-      // Codepoint order again, for the same SSR reason as the tie-break above.
-      return (Number(a.projectName > b.projectName) - Number(a.projectName < b.projectName)) * direction || tieBreak;
+      // A locale comparison here, unlike the tie-break above. A project name is read by a person,
+      // and codepoint order sorts by ASCII value — every capitalised name ahead of every lowercase
+      // one, and accented names last. The locale is pinned so Node and the browser agree, which is
+      // the SSR hydration concern that makes an *unpinned* comparison unusable.
+      return a.projectName.localeCompare(b.projectName, 'en-US') * direction || tieBreak;
     }
 
     const left = this.sortValue(a, field);

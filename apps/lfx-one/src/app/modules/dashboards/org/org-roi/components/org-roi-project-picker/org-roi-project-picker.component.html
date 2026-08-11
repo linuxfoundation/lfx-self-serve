@@ -53,16 +53,15 @@
   }
 
   <div class="flex flex-col gap-2">
-    <label class="flex flex-col gap-1 text-xs text-gray-600">
-      <span class="sr-only">Search projects to add</span>
-      <input
-        type="search"
-        [ngModel]="query()"
-        (ngModelChange)="query.set($event)"
-        placeholder="Add a project by name"
-        class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-        data-testid="org-roi-project-picker-search" />
-    </label>
+    <lfx-input-text
+      [form]="searchForm"
+      control="query"
+      placeholder="Add a project by name"
+      icon="fa-light fa-search"
+      size="small"
+      styleClass="w-full"
+      autocomplete="off"
+      dataTest="org-roi-project-picker-search" />
 
     @if (hasQuery()) {
       <!-- Announced rather than only drawn: a search that silently returns nothing is

@@ -64,11 +64,15 @@ export class OrgRoiProjectsBubbleComponent {
 
   protected readonly hasPoints: Signal<boolean> = computed(() => this.points().length > 0);
 
-  protected readonly flooredNames: Signal<string[]> = computed(() =>
+  private readonly flooredNames: Signal<string[]> = computed(() =>
     this.points()
       .filter((point) => point.isFloored)
       .map((point) => point.projectName)
   );
+
+  protected readonly hasFlooredPoints: Signal<boolean> = computed(() => this.flooredNames().length > 0);
+
+  protected readonly flooredLabel: Signal<string> = computed(() => this.flooredNames().join(', '));
 
   protected readonly chartSummaryLabel: Signal<string> = computed(
     () =>

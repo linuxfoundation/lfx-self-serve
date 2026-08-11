@@ -85,14 +85,31 @@ export class OrgRoiProjectsBarComponent {
       `Horizontal bar chart comparing modelled investment, stacked by contribution category, against return for ${this.rows().length} projects. The same figures are listed in the table below.`
   );
 
-  /** The accessible equivalent of the canvas: the same figures as real text. */
-  protected readonly tableRows: Signal<{ projectId: string; projectName: string; investment: string; return: string }[]> = computed(() =>
-    this.rows().map((row) => ({
-      projectId: row.projectId,
-      projectName: row.projectName,
-      investment: formatCurrency(row.totalExpenditure),
-      return: formatCurrency(row.totalReturn),
-    }))
+  /** Column headings for the accessible table: one per category actually drawn, in stack order. */
+  protected readonly categoryColumns: Signal<{ type: string; label: string }[]> = computed(() =>
+    this.presentTypes().map((category) => ({ type: category.type, label: category.label }))
+  );
+
+  /**
+   * The accessible equivalent of the canvas.
+   *
+   * Carries a cell per contribution category, not just the totals. The stack composition *is* what
+   * this chart shows — a text alternative giving only investment and return would describe a
+   * different, simpler chart, and leave a screen-reader user unable to read the one on the page.
+   */
+  protected readonly tableRows: Signal<{ projectId: string; projectName: string; investment: string; return: string; categories: string[] }[]> = computed(
+    () => {
+      const columns = this.presentTypes();
+      return this.rows().map((row) => ({
+        projectId: row.projectId,
+        projectName: row.projectName,
+        investment: formatCurrency(row.totalExpenditure),
+        return: formatCurrency(row.totalReturn),
+        // Absent categories render as a zero rather than a blank, so every row has the same shape
+        // and a missing category is stated rather than left to be inferred from an empty cell.
+        categories: columns.map((column) => formatCurrency(row.segments.find((segment) => segment.type === column.type)?.expenditure ?? 0)),
+      }));
+    }
   );
 
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => {

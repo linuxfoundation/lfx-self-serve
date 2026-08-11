@@ -4,20 +4,23 @@
 import { expect, Page, Route, test } from '@playwright/test';
 // Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
 // @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
-// Importing the real constants rather than restating their values means changing a ceiling or the
-// no-value indicator fails a test instead of silently diverging from what a viewer sees.
-import {
-  ORG_LENS_ROI_NO_VALUE,
-  ORG_LENS_ROI_PROJECT_BAR_MAX_ROWS,
-  ORG_LENS_ROI_PROJECT_BUBBLE_MAX_POINTS,
-  ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT,
-  ORG_LENS_ROI_PROJECT_SANKEY_MAX_PROJECTS,
-} from '@lfx-one/shared/constants/org-lens-roi.constants';
+import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 
-export const PICKER_DEFAULT_COUNT = ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT;
-export const BAR_MAX_ROWS = ORG_LENS_ROI_PROJECT_BAR_MAX_ROWS;
-export const SANKEY_MAX_PROJECTS = ORG_LENS_ROI_PROJECT_SANKEY_MAX_PROJECTS;
-export const BUBBLE_MAX_POINTS = ORG_LENS_ROI_PROJECT_BUBBLE_MAX_POINTS;
+/**
+ * Written down here rather than imported from the component constants, deliberately.
+ *
+ * These four numbers are a product contract — how many projects each view promises to draw, and how
+ * many the default selection starts with. Importing them would make the assertions restate the
+ * implementation: changing the bar cap from 25 to 24 would move the component and the expectation
+ * together and the truncation test would still pass, having stopped testing anything. A silent
+ * change to any of these should fail here and make someone confirm it was intended.
+ */
+export const PICKER_DEFAULT_COUNT = 5;
+export const BAR_MAX_ROWS = 25;
+export const SANKEY_MAX_PROJECTS = 12;
+export const BUBBLE_MAX_POINTS = 250;
+
+/** Imported, unlike the ceilings above: a rendering detail rather than a promise to the viewer. */
 export const NO_VALUE = ORG_LENS_ROI_NO_VALUE;
 
 export const ORG_ROI_URL = '/org/roi';

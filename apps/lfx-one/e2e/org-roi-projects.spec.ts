@@ -278,13 +278,13 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-project-picker-search').fill(UNSELECTED_PROJECT.name);
+    await page.locator('[data-test="org-roi-project-picker-search"]').fill(UNSELECTED_PROJECT.name);
     await expect(page.getByTestId('org-roi-project-picker-match-count')).toContainText('1 project matches.');
 
     await page.getByTestId(`org-roi-project-picker-add-prj-${UNSELECTED_PROJECT.slug}`).click();
     await expect(page.getByTestId('org-roi-project-picker-chips')).toContainText(UNSELECTED_PROJECT.name);
     // Adding clears the query, so the box is ready for the next search rather than still filtered.
-    await expect(page.getByTestId('org-roi-project-picker-search')).toHaveValue('');
+    await expect(page.locator('[data-test="org-roi-project-picker-search"]')).toHaveValue('');
   });
 
   test('reports how many projects a search actually matched, not how many it drew', async ({ page }) => {
@@ -293,7 +293,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await stubOrgLensContext(page, { projects: MANY_PROJECTS });
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-project-picker-search').fill('Project');
+    await page.locator('[data-test="org-roi-project-picker-search"]').fill('Project');
     const label = page.getByTestId('org-roi-project-picker-match-count');
     // Every project bar the five already selected matches the shared prefix.
     await expect(label).toContainText(`${(MANY_PROJECT_COUNT - PICKER_DEFAULT_COUNT).toLocaleString('en-US')} projects match`);
@@ -349,7 +349,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await gotoOrgRoiPage(page);
 
     const selected = DEFAULT_SELECTED_PROJECTS[0];
-    await page.getByTestId('org-roi-project-picker-search').fill(selected.name);
+    await page.locator('[data-test="org-roi-project-picker-search"]').fill(selected.name);
     await expect(page.getByTestId('org-roi-project-picker-match-count')).toContainText('No unselected project matches that name.');
   });
 

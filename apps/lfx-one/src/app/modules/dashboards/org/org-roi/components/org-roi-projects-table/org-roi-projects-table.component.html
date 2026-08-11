@@ -8,9 +8,7 @@
       <span>No projects are available for this organization.</span>
     </div>
   } @else {
-    <p class="text-xs text-gray-500" data-testid="org-roi-projects-table-count">
-      {{ totalRecords().toLocaleString('en-US') }} projects. Sorting and paging apply to this visit only.
-    </p>
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-table-count">{{ countLabel() }}. Sorting and paging apply to this visit only.</p>
 
     <lfx-table
       [value]="rows()"

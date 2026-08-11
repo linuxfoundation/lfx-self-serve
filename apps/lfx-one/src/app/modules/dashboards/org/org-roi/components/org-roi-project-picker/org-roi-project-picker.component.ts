@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, Signal, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, computed, input, output, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT, ORG_LENS_ROI_PROJECT_PICKER_MAX_MATCHES } from '@lfx-one/shared/constants';
 import type { OrgLensRoiProjectOption } from '@lfx-one/shared/interfaces';
 
@@ -15,7 +17,7 @@ import type { OrgLensRoiProjectOption } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-org-roi-project-picker',
-  imports: [FormsModule],
+  imports: [InputTextComponent, ReactiveFormsModule],
   templateUrl: './org-roi-project-picker.component.html',
 })
 export class OrgRoiProjectPickerComponent {
@@ -33,7 +35,10 @@ export class OrgRoiProjectPickerComponent {
 
   protected readonly defaultCount = ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT;
 
-  protected readonly query = signal('');
+  /** The LFX input wrappers are reactive-forms only, so the search box is a control, not ngModel. */
+  protected readonly searchForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
+
+  private readonly query: Signal<string> = toSignal(this.searchForm.controls.query.valueChanges, { initialValue: '' });
 
   private readonly optionsById: Signal<Map<string, OrgLensRoiProjectOption>> = computed(
     () => new Map(this.options().map((option) => [option.projectId, option]))
@@ -90,12 +95,12 @@ export class OrgRoiProjectPickerComponent {
         .slice(0, this.defaultCount)
         .map((option) => option.projectId)
     );
-    this.query.set('');
+    this.searchForm.controls.query.setValue('');
   }
 
   public selectAll(): void {
     this.selectionChange.emit(this.options().map((option) => option.projectId));
-    this.query.set('');
+    this.searchForm.controls.query.setValue('');
   }
 
   public selectNone(): void {
@@ -105,7 +110,7 @@ export class OrgRoiProjectPickerComponent {
   public add(projectId: string): void {
     if (this.selectedIds().includes(projectId)) return;
     this.selectionChange.emit([...this.selectedIds(), projectId]);
-    this.query.set('');
+    this.searchForm.controls.query.setValue('');
   }
 
   public remove(projectId: string): void {

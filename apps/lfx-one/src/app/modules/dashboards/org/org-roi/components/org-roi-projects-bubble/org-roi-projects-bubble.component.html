@@ -19,18 +19,21 @@
       <lfx-chart type="bubble" [data]="chartData()" [options]="chartOptions()" height="100%" />
     </div>
 
+    <!-- Describes the encoding actually rendered. An earlier version pointed at a break-even
+         diagonal that is never drawn — and could not be, since the axes are scaled independently,
+         so the corner-to-corner line is not y = x. -->
     <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-scale-note">
       Both axes are logarithmic: return spans several orders of magnitude across a portfolio, and on a linear scale every project but the largest would sit in
-      the corner. Each bubble's area is proportional to its net return, and an amber bubble lost money. Projects further above the diagonal returned more per
-      dollar invested.
+      the corner. Bubbles are sized by how large a project's net return is, and an amber bubble lost money. The further a project sits towards the top-left, the
+      more it returned per dollar invested.
     </p>
 
-    @if (flooredNames().length > 0) {
+    @if (hasFlooredPoints()) {
       <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-bubble-floored-note">
         <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
         <span
-          >A logarithmic axis has no zero, so these projects are drawn at the edge rather than at their true position: {{ flooredNames().join(', ') }}. Their
-          figures in the table below are exact.</span
+          >A logarithmic axis has no zero, so these projects are drawn at the edge rather than at their true position: {{ flooredLabel() }}. Their figures in
+          the table below are exact.</span
         >
       </p>
     }

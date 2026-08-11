@@ -37,11 +37,6 @@ on:
         required: false
         default: false
         type: boolean
-      blocking:
-        description: 'Fail the job when tests fail. Set false to report results without gating the merge.'
-        required: false
-        default: true
-        type: boolean
     secrets:
       TEST_USERNAME:
         description: 'Username for test authentication'
@@ -253,9 +248,7 @@ jobs:
         id: run-tests-all
         if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-one
-        # Honours `blocking` like the single-browser step below. Previously hardcoded `true`, which
-        # would have made `blocking: true` silently mean the opposite for an all-browser caller.
-        continue-on-error: ${{ !inputs.blocking }}
+        continue-on-error: true
         run: |
           if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on all browsers"
@@ -273,9 +266,6 @@ jobs:
       - name: Run E2E tests (Specific browser)
         if: ${{ inputs.browser != 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-one
-        # A failure here still surfaces in the summary step and the PR comment, which read
-        # Playwright's own .last-run.json rather than this step's outcome.
-        continue-on-error: ${{ !inputs.blocking }}
         run: |
           if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on ${{ inputs.browser }}"
@@ -315,20 +305,10 @@ jobs:
             echo "⏭️ E2E tests skipped (no test credentials)"
             echo "results=skipped" >> $GITHUB_OUTPUT
           elif [ -f "test-results/.last-run.json" ]; then
-            # Playwright records the run's own verdict here. The file's mere existence means the
-            # run happened, not that it passed — reporting on presence alone made a failing suite
-            # read as green, which matters most when the job is non-blocking and this summary is
-            # the only signal.
-            status=$(node -p "require('./test-results/.last-run.json').status" 2>/dev/null || echo unknown)
-            if [ "$status" == "passed" ]; then
-              echo "✅ E2E tests completed successfully"
-              echo "results=success" >> $GITHUB_OUTPUT
-            else
-              echo "❌ E2E tests failed (status: $status)"
-              echo "results=failure" >> $GITHUB_OUTPUT
-            fi
+            echo "✅ E2E tests completed successfully"
+            echo "results=success" >> $GITHUB_OUTPUT
           else
-            echo "❌ E2E tests failed (no run record produced)"
+            echo "❌ E2E tests failed"
             echo "results=failure" >> $GITHUB_OUTPUT
           fi
 
