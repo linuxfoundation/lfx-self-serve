@@ -179,6 +179,22 @@ describe('generateMockEngagementRows', () => {
       expect(rows.find((r) => r.MEMBER_USER_ID === 'm0')?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
     });
 
+    it('never promotes a real LF Staff + Observer member to the fabricated Emeritus fallback — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Regression: without the exclusion, m0 would be promoted to a fabricated Emeritus profile —
+      // rendering the wrong chip (Emeritus instead of LF Staff) and, since Emeritus isn't
+      // rate-excluded, feeding its fabricated high-invite/near-zero-attendance numbers into
+      // attendance_rate, the exact depression this ticket exists to prevent. Real (Observer) voting
+      // status set explicitly so this doesn't depend on the organic hash-derived fallback landing
+      // on Observer by chance.
+      const roster = [member('m0', { role: { name: 'LF Staff' } as never, voting: { status: 'Observer' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0?.MEMBER_VOTING_STATUS).not.toBe('Emeritus');
+      // Someone else on the roster still demonstrates the Emeritus scenario.
+      expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(true);
+    });
+
     it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member — a different eligible member takes it instead', () => {
       // Regression: buildAttendanceProfile checks isEmeritus before the Orlin slot, so an
       // Emeritus candidate would silently absorb the role without ever rendering forced counts —
@@ -200,6 +216,111 @@ describe('generateMockEngagementRows', () => {
       expect(m0?.MEMBER_VOTING_STATUS).toBe('Emeritus');
       expect(m0?.INVITED_COUNT_30D).not.toBe(5);
       expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
+    });
+
+    it('never assigns the Orlin case to a real LF Staff + Observer member, even if they are the most-recently-joined real member — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Regression: classifyCommitteeEngagement short-circuits LF Staff + Observer exactly like
+      // Emeritus, so an LF Staff + Observer candidate would silently absorb the Orlin slot without
+      // ever rendering forced counts. Mirrors the Emeritus test above. Real (Observer) voting
+      // status set explicitly so this doesn't depend on the organic hash-derived fallback landing
+      // on Observer by chance.
+      const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const secondMostRecentJoin = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [
+        member('m0', { role: { name: 'LF Staff' } as never, voting: { status: 'Observer' } as never, created_at: mostRecentJoin }),
+        // Real (non-null) voting status so m1 isn't itself swept into the Emeritus fallback once
+        // m0 is excluded from it — this test is isolating the Orlin-slot exclusion, not that one.
+        member('m1', { voting: { status: 'Voting Rep' } as never, created_at: secondMostRecentJoin }),
+        ...ROSTER.slice(2),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      const m1 = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      // A single window's organic count can coincidentally equal 5 (as it does for this seed) — the
+      // Orlin profile's real signature is the *same* forced 5/5 repeating across all three windows,
+      // which an organic (hash-derived, window-scaled) profile essentially never reproduces by chance.
+      expect(m0).not.toMatchObject({
+        INVITED_COUNT_30D: 5,
+        ATTENDED_COUNT_30D: 5,
+        INVITED_COUNT_90D: 5,
+        ATTENDED_COUNT_90D: 5,
+        INVITED_COUNT_YTD: 5,
+        ATTENDED_COUNT_YTD: 5,
+      });
+      expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
+    });
+
+    it('DOES assign the Orlin case to a real LF Staff + Voting Rep member — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
+      // A real Voting Rep who happens to be LF Staff never classifies 'LF Staff' under the
+      // narrowed rule, so they're eligible for the Orlin slot exactly like any other real member.
+      const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [
+        member('m0', { role: { name: 'LF Staff' } as never, voting: { status: 'Voting Rep' } as never, created_at: mostRecentJoin }),
+        ...ROSTER.slice(1),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
+      expect(m0).toMatchObject({
+        INVITED_COUNT_30D: 5,
+        ATTENDED_COUNT_30D: 5,
+        INVITED_COUNT_90D: 5,
+        ATTENDED_COUNT_90D: 5,
+        INVITED_COUNT_YTD: 5,
+        ATTENDED_COUNT_YTD: 5,
+      });
+    });
+
+    it('never assigns a reserved Inactive/Low/Medium demo pattern to a real LF Staff + Observer member — a different eligible member takes it instead (LFXV2-3101)', () => {
+      // Reserved slot 2 is normally Inactive (see the top-level test above) — putting a real LF
+      // Staff + Observer member there must bump the Inactive pattern to the next eligible member
+      // instead of silently swallowing it, mirroring how the Orlin/Emeritus exclusions work. Real
+      // (Observer) voting status set explicitly so this doesn't depend on the organic hash-derived
+      // fallback landing on Observer by chance.
+      const roster = [ROSTER[0], ROSTER[1], member('m2', { role: { name: 'LF Staff' } as never, voting: { status: 'Observer' } as never }), ...ROSTER.slice(3)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m2 = rows.find((r) => r.MEMBER_USER_ID === 'm2');
+      const m3 = rows.find((r) => r.MEMBER_USER_ID === 'm3');
+      expect(m2?.MEMBER_ROLE).toBe('LF Staff');
+      // The Inactive pattern's shape (invited but never attends) is deterministic and
+      // committee-wide, independent of which uid holds it — so whichever member now holds it
+      // reproduces the exact numbers the unmodified-roster test above asserts for slot 2, across
+      // EVERY window. Asserting only 30d isn't enough: an organic (hash-derived) member can hit
+      // attended === 0 for a single window by coincidence, same risk the Orlin test above guards
+      // against with its own all-windows check.
+      for (const suffix of ['30D', '90D', 'YTD'] as const) {
+        expect(m3?.[`INVITED_COUNT_${suffix}`]).toBeGreaterThan(0);
+        expect(m3?.[`ATTENDED_COUNT_${suffix}`]).toBe(0);
+      }
+      // And m2 itself must not coincidentally carry that same signature in every window — the real
+      // assertion is that the pattern moved, not merely that m2's 30d number happens to differ.
+      expect(m2).not.toMatchObject({
+        INVITED_COUNT_30D: m3?.INVITED_COUNT_30D,
+        ATTENDED_COUNT_30D: 0,
+        INVITED_COUNT_90D: m3?.INVITED_COUNT_90D,
+        ATTENDED_COUNT_90D: 0,
+        INVITED_COUNT_YTD: m3?.INVITED_COUNT_YTD,
+        ATTENDED_COUNT_YTD: 0,
+      });
+    });
+
+    it('DOES assign a reserved demo pattern to a real LF Staff + Voting Rep member at slot 2 — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
+      const roster = [
+        ROSTER[0],
+        ROSTER[1],
+        member('m2', { role: { name: 'LF Staff' } as never, voting: { status: 'Voting Rep' } as never }),
+        ...ROSTER.slice(3),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m2 = rows.find((r) => r.MEMBER_USER_ID === 'm2');
+      expect(m2?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m2?.MEMBER_VOTING_STATUS).toBe('Voting Rep');
+      for (const suffix of ['30D', '90D', 'YTD'] as const) {
+        expect(m2?.[`INVITED_COUNT_${suffix}`]).toBeGreaterThan(0);
+        expect(m2?.[`ATTENDED_COUNT_${suffix}`]).toBe(0);
+      }
     });
 
     it('does not force the literal Orlin counts on a real member whose tenure is too short to plausibly support them', () => {
