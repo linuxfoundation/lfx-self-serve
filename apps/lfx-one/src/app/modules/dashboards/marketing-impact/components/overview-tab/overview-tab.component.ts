@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
-import { EVENTS_SPLIT_FOCUS } from '@lfx-one/shared/constants';
 
 import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
@@ -34,11 +33,12 @@ export class OverviewTabComponent {
 
   // === Computed Signals ===
   /**
-   * The events sections render for both the All view (unsplit, eventsSplit=null) and the
-   * Events view (split, eventsSplit='attendance'|'sponsorship'). The All view consolidates
-   * across all campaign types; the Events view shows attendance and sponsorship splits.
+   * The events sections always render. They serve both the All view (unsplit,
+   * eventsSplit=null, consolidating across campaign types) and the Events view (split,
+   * eventsSplit='attendance'|'sponsorship'). There is no third case: the focus programs
+   * with no content (COMING_SOON_FOCUS_PROGRAMS) are gated by the parent's coming-soon
+   * branch and never reach this component.
    */
-  protected readonly showEventsSections = computed(() => this.focusProgram() === EVENTS_SPLIT_FOCUS || this.eventsSplit() !== null);
   /** Attendance sections render unless sponsorship is explicitly selected. */
   protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
   /** Sponsorship sections render unless attendance is explicitly selected. */
