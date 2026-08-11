@@ -71,6 +71,18 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-configured"]')).toBeNull();
   });
 
+  it("doesn't dangle the card heading's for attribute at an element that doesn't exist yet — only points at #slack-webhook while the input is actually rendered", async () => {
+    fixture.componentRef.setInput('slackWebhookInputVisible', false);
+    await fixture.whenStable();
+    const heading = fixture.nativeElement.querySelector('[data-testid="settings-slack-webhook-card"] label');
+    expect(heading?.getAttribute('for')).toBeNull();
+
+    fixture.componentRef.setInput('slackWebhookInputVisible', true);
+    await fixture.whenStable();
+    expect(heading?.getAttribute('for')).toBe('slack-webhook');
+    expect(fixture.nativeElement.querySelector('#slack-webhook')).not.toBeNull();
+  });
+
   it('masks the webhook input from Datadog Session Replay — this app runs defaultPrivacyLevel: "allow", so an unmasked field would record the bearer credential verbatim', async () => {
     fixture.componentRef.setInput('slackWebhookInputVisible', true);
     await fixture.whenStable();

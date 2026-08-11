@@ -141,7 +141,10 @@
               <i class="fa-brands fa-slack text-sm"></i>
             </div>
             <div class="flex-1">
-              <label for="slack-webhook" class="text-sm font-semibold text-gray-900">Slack Incoming Webhook</label>
+              <!-- for only resolves to a real element while the input branch is rendered — the
+                   "Configured" badge branch has no #slack-webhook element to label, and a
+                   dangling `for` announces this as an orphan label to assistive tech. -->
+              <label [attr.for]="slackWebhookInputVisible() ? 'slack-webhook' : null" class="text-sm font-semibold text-gray-900">Slack Incoming Webhook</label>
               <p class="text-xs text-gray-600">Send the weekly brief to a Slack channel with one click</p>
             </div>
           </div>
