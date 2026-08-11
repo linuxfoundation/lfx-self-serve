@@ -8,7 +8,7 @@ import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegist
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { AuthorizationError } from '../errors/authentication.error';
+import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
   applyHostKeyVisibility,
@@ -530,14 +530,19 @@ export class PublicMeetingController {
         return next(validationError);
       }
 
-      const originalToken = req.bearerToken;
-      const isAuthenticated = req.oidc?.isAuthenticated() && originalToken !== undefined;
+      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+        return next(
+          new AuthenticationError('Authentication required to register for a meeting', {
+            operation: 'register_for_public_meeting',
+            service: 'public_meeting_controller',
+            path: req.path,
+          })
+        );
+      }
 
-      if (isAuthenticated) {
-        // Authenticated path: validate name fields only (email comes from JWT), then use the
-        // self-register endpoint so the meeting service enforces identity and public-only access.
-        if (!registrantData.first_name || !registrantData.last_name) {
-          const validationError = ServiceValidationError.fromFieldErrors(
+      if (!registrantData.first_name || !registrantData.last_name) {
+        return next(
+          ServiceValidationError.fromFieldErrors(
             {
               first_name: !registrantData.first_name ? 'First name is required' : [],
               last_name: !registrantData.last_name ? 'Last name is required' : [],
@@ -548,64 +553,10 @@ export class PublicMeetingController {
               service: 'public_meeting_controller',
               path: req.path,
             }
-          );
-
-          return next(validationError);
-        }
-
-        // Fetch the meeting with M2M to enforce public + non-restricted at the BFF layer,
-        // then restore the user's token before forwarding to the self-register endpoint.
-        await this.setupM2MToken(req);
-        const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
-
-        if (!meeting) {
-          throw new ResourceNotFoundError('Meeting', meetingId, {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: `/itx/meetings/${meetingId}`,
-          });
-        }
-
-        const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
-        if (authError) return next(authError);
-
-        // Restore user's bearer token before calling self-register so the meeting service
-        // can source the identity from the user's JWT rather than the application identity.
-        req.bearerToken = originalToken;
-
-        const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
-
-        logger.success(req, 'register_for_public_meeting', startTime, {
-          meeting_id: meetingId,
-          registrant_uid: newRegistrant.uid,
-        });
-
-        return void res.status(201).json(newRegistrant);
-      }
-
-      // Anonymous path: email is required in the body. Use M2M token for the full registrant flow.
-      if (!registrantData.email || !registrantData.first_name || !registrantData.last_name) {
-        const validationError = ServiceValidationError.fromFieldErrors(
-          {
-            email: !registrantData.email ? 'Email is required' : [],
-            first_name: !registrantData.first_name ? 'First name is required' : [],
-            last_name: !registrantData.last_name ? 'Last name is required' : [],
-          },
-          'Registration data validation failed',
-          {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: req.path,
-          }
+          )
         );
-
-        return next(validationError);
       }
 
-      // Generate M2M token
-      const m2mToken = await this.setupM2MToken(req);
-
-      // Fetch the meeting to validate it's public and non-restricted
       const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
 
       if (!meeting) {
@@ -619,8 +570,7 @@ export class PublicMeetingController {
       const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
       if (authError) return next(authError);
 
-      // Add the registrant using M2M token
-      const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
+      const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
 
       logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_id: meetingId,

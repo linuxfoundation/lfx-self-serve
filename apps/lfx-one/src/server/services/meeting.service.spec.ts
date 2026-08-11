@@ -303,6 +303,8 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
     expect(path).toBe('/itx/meetings/mtg-1/registrants/self');
     expect(method).toBe('POST');
     expect(body).toMatchObject({ first_name: 'Alice', last_name: 'Liddell' });
+    expect(body).not.toHaveProperty('email');
+    expect(body).not.toHaveProperty('username');
     expect(result).toEqual(registrant);
   });
 

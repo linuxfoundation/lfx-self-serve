@@ -36,7 +36,6 @@ const {
     getMeetingHostKey: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
-    addMeetingRegistrantWithM2M: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -432,7 +431,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
   function buildRegisterReq(authenticated: boolean, body: Record<string, any> = {}, hasUserToken = true) {
     const req = {
-      body: { meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', email: 'alice@example.com', ...body },
+      body: { meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', ...body },
       headers: {},
       bearerToken: hasUserToken ? 'user-token' : undefined,
       oidc: { isAuthenticated: () => authenticated },
@@ -447,25 +446,22 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new PublicMeetingController();
-    generateM2MTokenMock.mockResolvedValue('m2m-token');
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
-    meetingSvc.addMeetingRegistrantWithM2M.mockResolvedValue({ uid: 'reg-1' });
   });
 
-  it('authenticated path — calls addMeetingRegistrantSelf and returns 201', async () => {
+  it('calls addMeetingRegistrantSelf with user token and returns 201', async () => {
     const { req, res, next } = buildRegisterReq(true);
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, req.body);
-    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
   });
 
-  it('authenticated path — restores user bearer token before calling self-register', async () => {
+  it('passes user bearer token unchanged to addMeetingRegistrantSelf', async () => {
     const { req, res, next } = buildRegisterReq(true);
     let tokenAtCallTime: string | undefined;
     meetingSvc.addMeetingRegistrantSelf.mockImplementation((r: any) => {
@@ -478,7 +474,16 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(tokenAtCallTime).toBe('user-token');
   });
 
-  it('authenticated path — missing first_name returns validation error without calling the service', async () => {
+  it('unauthenticated request returns 401 without calling the service', async () => {
+    const { req, res, next } = buildRegisterReq(false);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('missing first_name returns validation error without calling the service', async () => {
     const { req, res, next } = buildRegisterReq(true, { first_name: '' });
 
     await controller.registerForPublicMeeting(req, res, next);
@@ -487,7 +492,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
   });
 
-  it('authenticated path — non-public meeting returns authorization error', async () => {
+  it('non-public meeting returns authorization error', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE }));
     const { req, res, next } = buildRegisterReq(true);
 
@@ -497,7 +502,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
   });
 
-  it('authenticated path — restricted meeting returns authorization error', async () => {
+  it('restricted meeting returns authorization error', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true }));
     const { req, res, next } = buildRegisterReq(true);
 
@@ -507,33 +512,12 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
   });
 
-  it('anonymous path — calls addMeetingRegistrantWithM2M and returns 201', async () => {
-    const { req, res, next } = buildRegisterReq(false);
-
-    await controller.registerForPublicMeeting(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.addMeetingRegistrantWithM2M).toHaveBeenCalledWith(req, req.body, 'm2m-token');
-    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(201);
-  });
-
-  it('anonymous path — missing email returns validation error', async () => {
-    const { req, res, next } = buildRegisterReq(false, { email: '' });
+  it('missing meeting_id returns validation error', async () => {
+    const { req, res, next } = buildRegisterReq(true, { meeting_id: '' });
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
-  });
-
-  it('missing meeting_id returns validation error for both paths', async () => {
-    const { req, res, next } = buildRegisterReq(false, { meeting_id: '' });
-
-    await controller.registerForPublicMeeting(req, res, next);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
   });
 });

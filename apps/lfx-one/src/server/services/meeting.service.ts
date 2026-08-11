@@ -1642,38 +1642,6 @@ export class MeetingService {
   }
 
   /**
-   * Creates a new meeting registrant using M2M token (for public endpoints)
-   * @param req - Express request object
-   * @param registrantData - Registrant data to create
-   * @param m2mToken - M2M token for authentication
-   * @returns The created meeting registrant
-   */
-  public async addMeetingRegistrantWithM2M(req: Request, registrantData: CreateMeetingRegistrantRequest, m2mToken: string): Promise<MeetingRegistrant> {
-    const startTime = logger.startOperation(req, 'add_meeting_registrant_with_m2m', { meeting_id: registrantData.meeting_id });
-
-    const sanitizedPayload = logger.sanitize({ registrantData });
-    logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
-
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
-      req,
-      'LFX_V2_SERVICE',
-      `/itx/meetings/${registrantData.meeting_id}/registrants`,
-      'POST',
-      undefined,
-      registrantData,
-      { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
-    );
-
-    logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
-      meeting_id: registrantData.meeting_id,
-      registrant_uid: newRegistrant.uid,
-      host: registrantData.host || false,
-    });
-
-    return newRegistrant;
-  }
-
-  /**
    * Registers the authenticated user as a meeting registrant using their bearer token.
    * Email and username are sourced from the user's JWT by the meeting service — they must
    * not be included in the payload. Only public meetings are supported; private meetings
@@ -1698,7 +1666,8 @@ export class MeetingService {
       `/itx/meetings/${meetingId}/registrants/self`,
       'POST',
       undefined,
-      payload
+      payload,
+      { 'X-Sync': 'true' }
     );
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
