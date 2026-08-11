@@ -21,7 +21,7 @@ import {
   US_STATES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
-import { codePointLength, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
@@ -93,6 +93,8 @@ export class ProfileEditDrawerComponent {
   // Live code-point count of the bio, backing the "x / max" counter. Seeded in populateForm
   // (patchValue uses emitEvent:false) and hard-capped at bioMaxLength by the valueChanges sub.
   public readonly bioLength = signal(0);
+  // Last within-cap bio value; the valueChanges sub reverts to it when an edit exceeds the cap.
+  private lastValidBio = '';
 
   // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
   // upload). Every dismissal and save path gates on this so an in-flight change can't be
@@ -219,18 +221,21 @@ export class ProfileEditDrawerComponent {
     });
 
     // Hard-cap the bio by code point (not UTF-16 units) so emoji-heavy bios reach the real rune
-    // limit; re-emit the trimmed value with emitEvent:false to avoid a loop, then update the counter.
+    // limit; when over, clip only the changed region against the last valid value (emitEvent:false
+    // to avoid a loop) so a mid-string insertion drops the excess input, not trailing content.
     this.profileForm
       .get('bio')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((bio: string) => {
         const value = bio ?? '';
         if (codePointLength(value) > this.bioMaxLength) {
-          const capped = [...value].slice(0, this.bioMaxLength).join('');
+          const capped = capCodePointEdit(this.lastValidBio, value, this.bioMaxLength);
           this.profileForm.get('bio')?.setValue(capped, { emitEvent: false });
-          this.bioLength.set(this.bioMaxLength);
+          this.lastValidBio = capped;
+          this.bioLength.set(codePointLength(capped));
           return;
         }
+        this.lastValidBio = value;
         this.bioLength.set(codePointLength(value));
       });
   }
@@ -492,8 +497,9 @@ export class ProfileEditDrawerComponent {
 
     this.selectedCountrySignal.set(countryValue);
     // patchValue above runs with emitEvent:false, so the bio valueChanges sub won't fire — seed the
-    // counter explicitly from the opened profile so a reopened drawer shows the right count.
-    this.bioLength.set(codePointLength(profile.profile?.bio || ''));
+    // counter and last-valid baseline from the opened profile so a reopened drawer is consistent.
+    this.lastValidBio = profile.profile?.bio || '';
+    this.bioLength.set(codePointLength(this.lastValidBio));
     this.syncOrganizationControl();
   }
 

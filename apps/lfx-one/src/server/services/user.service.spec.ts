@@ -64,5 +64,13 @@ describe('UserService.validateUserMetadata', () => {
     it('accepts metadata without a bio', () => {
       expect(service.validateUserMetadata({} as UserMetadata)).toBe(true);
     });
+
+    it('rejects a non-string bio (e.g. an array from an untyped req.body) with a clear message', () => {
+      expect(() => service.validateUserMetadata({ bio: ['a', 'b'] } as unknown as UserMetadata)).toThrow('Bio must be a string');
+    });
+
+    it('rejects a numeric bio rather than throwing a raw "not iterable" TypeError', () => {
+      expect(() => service.validateUserMetadata({ bio: 42 } as unknown as UserMetadata)).toThrow('Bio must be a string');
+    });
   });
 });

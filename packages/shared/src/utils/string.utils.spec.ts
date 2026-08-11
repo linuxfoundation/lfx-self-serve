@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { codePointLength, slugify } from './string.utils';
+import { capCodePointEdit, codePointLength, slugify } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -28,6 +28,40 @@ describe('codePointLength', () => {
   it('counts BMP characters (including surrogate-free CJK) as one each', () => {
     expect(codePointLength('café')).toBe(4);
     expect(codePointLength('日本語')).toBe(3);
+  });
+});
+
+describe('capCodePointEdit', () => {
+  it('returns the value unchanged when within the cap', () => {
+    expect(capCodePointEdit('ab', 'abc', 5)).toBe('abc');
+  });
+
+  it('clips an over-cap paste into an empty field to exactly max code points', () => {
+    expect(capCodePointEdit('', '😀'.repeat(2001), 2000)).toBe('😀'.repeat(2000));
+  });
+
+  it('drops the inserted char, not trailing content, when inserting at the start of a full field', () => {
+    const full = 'a'.repeat(2000);
+    // Insert 'z' at the front → 'z' + 2000 a's; the excess 'z' is rejected, the 2000 a's are kept.
+    expect(capCodePointEdit(full, `z${full}`, 2000)).toBe(full);
+  });
+
+  it('drops the inserted run in the middle, preserving the head and tail', () => {
+    // previous = "aaXbb" style: insert a long run between head and tail of a full value.
+    const previous = `${'a'.repeat(1000)}${'b'.repeat(1000)}`;
+    const next = `${'a'.repeat(1000)}${'x'.repeat(50)}${'b'.repeat(1000)}`;
+    expect(capCodePointEdit(previous, next, 2000)).toBe(previous);
+  });
+
+  it('rejects an over-cap append, keeping the existing content', () => {
+    const full = '😀'.repeat(2000);
+    expect(capCodePointEdit(full, `${full}😀`, 2000)).toBe(full);
+  });
+
+  it('counts by code point so the clip lands on a whole emoji, never a lone surrogate', () => {
+    const result = capCodePointEdit('', '😀'.repeat(2001), 2000);
+    expect(codePointLength(result)).toBe(2000);
+    expect(result.endsWith('😀')).toBe(true);
   });
 });
 

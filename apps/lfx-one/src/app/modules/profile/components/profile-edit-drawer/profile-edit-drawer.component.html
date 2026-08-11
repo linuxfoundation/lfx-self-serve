@@ -92,7 +92,16 @@
               data-testid="profile-edit-drawer-about-me">
             </lfx-textarea>
             <div class="mt-1 flex justify-end">
-              <span class="text-xs text-slate-500" data-testid="profile-edit-drawer-about-me-counter"> {{ bioLength() }} / {{ bioMaxLength }} </span>
+              <!-- Atomic live region so screen readers hear the running count (and hitting the cap) as one message. -->
+              <span
+                class="text-xs text-slate-500"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                [attr.aria-label]="bioLength() + ' of ' + bioMaxLength + ' characters used'"
+                data-testid="profile-edit-drawer-about-me-counter">
+                {{ bioLength() }} / {{ bioMaxLength }}
+              </span>
             </div>
           </div>
 
