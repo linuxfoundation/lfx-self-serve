@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signa
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { SkeletonModule } from 'primeng/skeleton';
 import { buildHealthMetricsYearOptions, getYearForRange, HEALTH_METRICS_STATUS_COUNT, HEALTH_METRICS_SUMMARY_CARDS } from '@lfx-one/shared/constants';
+import { formatPercent } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
@@ -129,7 +130,7 @@ export class HealthMetricsComponent {
       }
 
       if (config.key === 'flywheel' && data.flywheel) {
-        card.changePercentage = `${data.flywheel.changePercentage >= 0 ? '+' : ''}${data.flywheel.changePercentage.toFixed(2)}%`;
+        card.changePercentage = `${data.flywheel.changePercentage >= 0 ? '+' : ''}${formatPercent(data.flywheel.changePercentage)}%`;
         card.trend = data.flywheel.trend as 'up' | 'down';
       }
 
@@ -186,7 +187,7 @@ export class HealthMetricsComponent {
       case 'currency':
         return `$${this.formatSoftwareValue(value)}`;
       case 'percentage':
-        return `${value.toFixed(2)}%`;
+        return `${formatPercent(value)}%`;
       case 'count':
       default:
         return value.toLocaleString();

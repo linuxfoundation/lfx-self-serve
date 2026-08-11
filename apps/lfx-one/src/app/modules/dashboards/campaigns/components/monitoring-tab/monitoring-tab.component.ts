@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { formatCompactRounded, formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 
 import type {
@@ -329,7 +330,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected formatLinkedInPct(n: number): string {
-    return `${n.toFixed(2)}%`;
+    return `${formatPercent(n)}%`;
   }
 
   protected setRedditAccount(key: string): void {
@@ -439,7 +440,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected formatCurrency(value: number): string {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return formatCompactRounded(value, '$');
   }
 
   protected formatNumber(value: number): string {
@@ -447,6 +448,6 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   protected formatPct(value: number): string {
-    return `${value.toFixed(2)}%`;
+    return `${formatPercent(value)}%`;
   }
 }
