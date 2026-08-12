@@ -5258,7 +5258,9 @@ export class ProjectService {
       eventName: row.EVENT_NAME,
       startDate: row.START_DATE,
       country: row.EVENT_COUNTRY ?? '',
-      eventUrl: row.EVENT_URL ?? '',
+      // Same normalization as the roster read above: a scheme-less warehouse URL bound to [href]
+      // would resolve as a relative LFX One path rather than failing safely.
+      eventUrl: normalizeToUrl(row.EVENT_URL ?? '') ?? '',
       registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
       sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
       vsLastYear: row.VS_LY,

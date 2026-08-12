@@ -51,6 +51,11 @@
           <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
             <div
               class="h-full rounded-full"
+              role="progressbar"
+              [attr.aria-valuenow]="regProgress()"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-label]="'Registrations: ' + view()?.registrationsActual + ' of ' + view()?.registrationsGoal + ' goal'"
               [ngClass]="{
                 'bg-emerald-500': regProgress()! >= 80,
                 'bg-amber-500': regProgress()! >= 50 && regProgress()! < 80,
@@ -74,6 +79,11 @@
           <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
             <div
               class="h-full rounded-full"
+              role="progressbar"
+              [attr.aria-valuenow]="sponProgress()"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-label]="'Sponsorship revenue: ' + view()?.sponsorshipActual + ' of ' + view()?.sponsorshipGoal + ' goal'"
               [ngClass]="{
                 'bg-emerald-500': sponProgress()! >= 80,
                 'bg-amber-500': sponProgress()! >= 50 && sponProgress()! < 80,

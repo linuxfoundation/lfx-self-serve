@@ -136,6 +136,25 @@ describe('EventDetailDrawerComponent', () => {
     expect(document.querySelector('[data-testid="event-detail-skeleton"]')).toBeNull();
   });
 
+  // The roster's bars already expose progressbar semantics; the drawer shows the same metrics
+  // and must not be the one place AT can't read completion.
+  it('exposes both goal bars to assistive technology', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1');
+
+    const bars = document.querySelectorAll('[role="progressbar"]');
+    expect(bars).toHaveLength(2);
+    // 900/1000 registrations, 500000/1000000 sponsorship.
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('90');
+    expect(bars[1].getAttribute('aria-valuenow')).toBe('50');
+    for (const bar of Array.from(bars)) {
+      expect(bar.getAttribute('aria-valuemin')).toBe('0');
+      expect(bar.getAttribute('aria-valuemax')).toBe('100');
+      expect(bar.getAttribute('aria-label')).toBeTruthy();
+    }
+  });
+
   it('renders the sponsorship tier breakdown', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 
