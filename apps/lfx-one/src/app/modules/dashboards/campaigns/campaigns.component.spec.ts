@@ -414,8 +414,46 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      // No inherited ownership: the new brief must prove its own.
+      // No inherited ownership: the new brief must prove its own. What clears it here is
+      // `resetToPlanning` emptying the map, NOT the response being superseded — the record now
+      // happens before the generation check, because ownership does not expire when the user
+      // navigates away. See the queued-save test below for the case that distinction protects.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+    });
+
+    /**
+     * A superseded save still created a row, and the next save of that event must be able to
+     * name it.
+     *
+     * Saves are serialised, so a second Proceed while the first is in flight queues behind it.
+     * When the record sat AFTER the generation check, the first response — discarded for display
+     * because the user had moved on — never filed its id, so the queued save captured null, found
+     * the row the first one had just created, and was deterministically refused as
+     * `unowned-brief-exists`. The user is told their own brief belongs to someone else.
+     *
+     * Recording before the check is safe because the KEY is `(project, event)`: a late response
+     * files its id under the event it actually saved, and cannot reach another event's brief.
+     */
+    it('hands a queued save the id its predecessor created for the same event', async () => {
+      const first = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(first);
+      proceed();
+      await fixture.whenStable();
+
+      // Proceed again for the SAME event while the first request is still open. The second save
+      // queues; its ownership must be resolved when it STARTS, not now.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenCalledTimes(1);
+
+      first.next({ enabled: true, briefId: 'b-1', etag: 'W/"1"', created: true, approved: true });
+      // A macrotask, not `whenStable`: the queue hands over across microtasks the fixture's
+      // stability check does not necessarily drain.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(persistBrief).toHaveBeenCalledTimes(2);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
     });
 
     /**
