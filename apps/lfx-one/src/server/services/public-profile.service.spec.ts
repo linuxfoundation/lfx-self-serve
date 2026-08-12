@@ -184,6 +184,13 @@ describe('projectPublicProfile', () => {
     const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
     expect(projected.basic?.avatarUrl).toBeUndefined();
   });
+
+  it('omits basic.avatarUrl instead of throwing when CDN_URL_PREFIX is a bare hostname (misconfigured)', () => {
+    process.env['CDN_URL_PREFIX'] = 'avatars-public.dev.downloads.lfx.community';
+    expect(() => projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe')).not.toThrow();
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
+    expect(projected.basic?.avatarUrl).toBeUndefined();
+  });
 });
 
 describe('PublicProfileService.getPublicProfile', () => {

@@ -68,6 +68,18 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== undefined) : [];
 }
 
+// deriveAvatarUrl throws when CDN_URL_PREFIX is set but misconfigured (not an absolute http(s) URL) —
+// that's the right behavior for the upload path (a real config error worth failing loudly), but this
+// endpoint has no LogoURL-fallback signal for it, so a bad env var must degrade to "no avatarUrl"
+// rather than 500 the whole public-profile response.
+function safeDeriveAvatarUrl(username: string): string | undefined {
+  try {
+    return deriveAvatarUrl(username) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function projectBasic(value: unknown, username?: string): PublicProfileBasic | undefined {
   const basic = asRecord(value);
   if (!basic) {
@@ -82,7 +94,7 @@ function projectBasic(value: unknown, username?: string): PublicProfileBasic | u
   return {
     Name: pickString(basic['Name']),
     LogoURL: pickString(basic['LogoURL']),
-    avatarUrl: (username && deriveAvatarUrl(username)) || undefined,
+    avatarUrl: (username && safeDeriveAvatarUrl(username)) || undefined,
     TwitterID: pickString(basic['TwitterID']),
     LinkedInID: pickString(basic['LinkedInID']),
     GithubID: pickString(basic['GithubID']),
