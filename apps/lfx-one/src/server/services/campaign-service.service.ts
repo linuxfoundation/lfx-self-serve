@@ -89,7 +89,9 @@ interface CampaignServiceBrief {
   status: string;
   version: number;
   // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
-  // these come back on the find whether or not a given phase renders them.
+  // these come back on the find whether or not this phase renders them. Declared for the create
+  // reconciliation, which has to tell THIS request's row from another writer's — not because the
+  // write path reads them.
   url?: string;
   platforms?: string[];
   event_details?: unknown;
@@ -676,26 +678,69 @@ export class CampaignServiceClient {
  * would be unreachable code that implies the casing is uncertain.
  */
 /**
- * Whether a stored brief could be the one this request sent.
+ * Whether a stored brief is the one this request sent.
  *
-/**
- * Whether a stored brief could be the one this request sent.
+ * Compares the WHOLE payload, opaque blobs included. Two rounds of review narrowed this: first
+ * only `program_type` and `event_slug`, then `url` and `platforms` as well. Both times I excluded
+ * the four `Any` fields on the reasoning that the service round-trips them without interpreting,
+ * so key order and whitespace might not survive and a mismatch would reject a row that really is
+ * ours — stranding the user, which this reconciliation exists to prevent.
  *
- * Compares the first-class columns campaign-service returns on a find. An early round compared
- * only `program_type` and `event_slug` on the reasoning that the response type declared nothing
- * else — but the type was under-declaring: `Brief` Reference()s `BriefData`, so `url` and
- * `platforms` come back regardless, on the base branch too.
+ * That reasoning was wrong, and checkably so: the columns are `JSONB`
+ * (`000002_create_brief_campaign_tables.up.sql`), which normalises key order and strips
+ * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialised text — is
+ * therefore stable across the round trip, and the hazard I kept citing does not exist.
  *
- * The four `Any` blobs stay excluded even here, where this branch DOES decode them. The service
- * round-trips them without interpreting, so key order and JSON normalisation are not guaranteed
- * to survive, and a mismatch there would reject a row that really is ours — the failure this
- * reconciliation exists to prevent.
+ * It matters because the first-class columns alone do not discriminate: two briefs for the same
+ * event normally share program, slug, url AND platform selection, differing only in the generated
+ * copy. Without the blobs, a lost create could adopt another writer's row, approve it, and report
+ * this caller's unsaved content as saved.
  */
 function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
   const storedPlatforms = stored.platforms ?? [];
   const sentPlatforms = sent.platforms ?? [];
   const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
-  return stored.program_type === sent.program_type && stored.event_slug === sent.event_slug && (stored.url ?? '') === (sent.url ?? '') && samePlatforms;
+  return (
+    stored.program_type === sent.program_type &&
+    stored.event_slug === sent.event_slug &&
+    (stored.url ?? '') === (sent.url ?? '') &&
+    samePlatforms &&
+    deepEqual(stored.event_details, sent.event_details) &&
+    deepEqual(stored.copy, sent.copy) &&
+    deepEqual(stored.keywords, sent.keywords) &&
+    deepEqual(stored.targeting, sent.targeting)
+  );
+}
+
+/**
+ * Structural equality over parsed JSON values.
+ *
+ * Key ORDER is deliberately ignored — that is the whole point, since it is the property the
+ * round trip does not preserve and the reason a text comparison would be wrong. Arrays stay
+ * order-SENSITIVE: a reordered platform or keyword list is a different payload, not the same one
+ * written differently.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  // `null` and `undefined` both mean "absent" here: `toBriefInput` omits a field the UI left
+  // empty, and the service stores SQL NULL for it, so the two sides spell the same absence
+  // differently on a row that really is ours.
+  if (a === null || a === undefined || b === null || b === undefined) {
+    return (a ?? null) === (b ?? null);
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (typeof a !== 'object' || typeof b !== 'object') {
+    return false;
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  const bk = Object.keys(bo);
+  return ak.length === bk.length && ak.every((k) => k in bo && deepEqual(ao[k], bo[k]));
 }
 
 function readEtag(response: ApiResponse<unknown>): string | null {

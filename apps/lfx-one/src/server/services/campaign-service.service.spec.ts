@@ -524,19 +524,13 @@ describe('CampaignServiceClient.saveBrief', () => {
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND) // the initial find: nothing there yet
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
-      .mockResolvedValueOnce(
-        apiResponse(
-          {
-            id: 'b-1',
-            version: 1,
-            program_type: 'events',
-            event_slug: 'e',
-            url: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
-            platforms: ['google-ads'],
-          },
-          { etag: '"1"' }
-        )
-      )
+      // Built from the POST body the client actually sent — read off the recorded call rather
+      // than hand-copied, so the fixture cannot drift from `toBriefInput`. A committed row echoes
+      // what was written, blobs included, which is what makes it recognisable as ours.
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 1, ...envelope.brief }, { etag: '"1"' }));
+      })
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
 
     const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
@@ -583,6 +577,43 @@ describe('CampaignServiceClient.saveBrief', () => {
       );
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
+  it("does not adopt another writer's row that differs only in the generated copy", async () => {
+    // The case the first-class columns cannot catch, and the reason the opaque blobs are now
+    // compared: two briefs for the SAME event normally share program, slug, url and platform
+    // selection, differing only in what the generator produced. Without the blobs this row is
+    // adopted, approved, and the caller's unsaved content reported as saved.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(
+          apiResponse({ id: 'other', version: 1, ...envelope.brief, copy: { structured: { headline: 'someone else wrote this' } } }, { etag: '"1"' })
+        );
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
+  it('adopts a row whose blobs differ only in key order', async () => {
+    // JSONB normalises key order on storage, which is why the comparison is STRUCTURAL rather
+    // than textual — and why my earlier objection to comparing the blobs at all was wrong. A row
+    // that really is ours must still be recognised when the keys come back reordered.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        const details = envelope.brief['event_details'] as Record<string, unknown>;
+        const reordered = Object.fromEntries(Object.entries(details).reverse());
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 1, ...envelope.brief, event_details: reordered }, { etag: '"1"' }));
+      })
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    expect(result.briefId).toBe('b-1');
   });
 
   it('does not adopt a row for a different event or program', async () => {
