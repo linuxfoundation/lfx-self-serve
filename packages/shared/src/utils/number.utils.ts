@@ -76,7 +76,10 @@ export function formatCompact(abs: number, sign: string, prefix = ''): string {
  */
 export function formatCompactRounded(num: number, prefix = ''): string {
   if (!Number.isFinite(num)) return `${prefix}0`;
-  const rounded = Math.round(num * 10) / 10;
+  // toFixed, not Math.round: Math.round resolves halves toward +Infinity, so -3.75 would round to
+  // -3.7 while 3.75 rounds to 3.8 — understating negative derived values. toFixed rounds away
+  // from zero on both signs, matching formatPercent.
+  const rounded = Number(num.toFixed(1));
   return formatCompact(Math.abs(rounded), rounded < 0 ? '-' : '', prefix);
 }
 

@@ -5,8 +5,13 @@ import { NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { SkeletonModule } from 'primeng/skeleton';
-import { buildHealthMetricsYearOptions, getYearForRange, HEALTH_METRICS_STATUS_COUNT, HEALTH_METRICS_SUMMARY_CARDS } from '@lfx-one/shared/constants';
-import { formatPercent } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsYearOptions,
+  getYearForRange,
+  HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES,
+  HEALTH_METRICS_STATUS_COUNT,
+  HEALTH_METRICS_SUMMARY_CARDS,
+} from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
@@ -130,7 +135,7 @@ export class HealthMetricsComponent {
       }
 
       if (config.key === 'flywheel' && data.flywheel) {
-        card.changePercentage = `${data.flywheel.changePercentage >= 0 ? '+' : ''}${formatPercent(data.flywheel.changePercentage)}%`;
+        card.changePercentage = `${data.flywheel.changePercentage >= 0 ? '+' : ''}${data.flywheel.changePercentage.toFixed(HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES)}%`;
         card.trend = data.flywheel.trend as 'up' | 'down';
       }
 
@@ -187,7 +192,10 @@ export class HealthMetricsComponent {
       case 'currency':
         return `$${this.formatSoftwareValue(value)}`;
       case 'percentage':
-        return `${formatPercent(value)}%`;
+        // The only percentage summary card is the flywheel conversion rate, which declares its
+        // own precision. Using formatPercent's single decimal here made the strip disagree with
+        // the flywheel detail card for the same number, and rendered sub-0.05 moves as +0.0%.
+        return `${value.toFixed(HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES)}%`;
       case 'count':
       default:
         return value.toLocaleString();

@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
-import { formatCompactRounded, formatPercent } from '@lfx-one/shared/utils';
+import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 
 import type {
@@ -439,8 +439,14 @@ export class MonitoringTabComponent implements OnInit {
     return 'bg-red-500';
   }
 
+  /**
+   * Two decimals for every monetary figure on this tab. Budgets and spend are cents-denominated
+   * amounts a user reconciles against the ad platform's own reporting, and avgCpc is typically
+   * under a dollar — one-decimal rounding would turn $10.04 into $10 and a $0.42 CPC into $0.4.
+   * `formatCompactRounded` is for derived figures with unbounded precision (CPA), not these.
+   */
   protected formatCurrency(value: number): string {
-    return formatCompactRounded(value, '$');
+    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
   protected formatNumber(value: number): string {
