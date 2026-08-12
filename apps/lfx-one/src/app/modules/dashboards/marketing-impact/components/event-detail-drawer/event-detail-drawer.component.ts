@@ -4,6 +4,7 @@
 import { NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -73,6 +74,8 @@ export class EventDetailDrawerComponent {
       registrationsGoal: formatNumber(d.registrations.goal),
       sponsorshipActual: formatCurrency(d.sponsorshipRevenue.actual),
       sponsorshipGoal: formatCurrency(d.sponsorshipRevenue.goal),
+      registrationsTone: this.barTone(this.regProgress()),
+      sponsorshipTone: this.barTone(this.sponProgress()),
       tiers: d.sponsorshipTiers.map((tier) => ({
         tier: tier.tier,
         label: tier.tier || 'Other',
@@ -83,6 +86,17 @@ export class EventDetailDrawerComponent {
   });
 
   // === Private Helpers ===
+  /**
+   * Goal-bar tone from the shared thresholds rather than literals, so the drawer's colours and the
+   * roster's bar + at-risk icon move together when either threshold is tuned.
+   */
+  private barTone(percent: number | null): 'good' | 'warn' | 'critical' | null {
+    if (percent === null) return null;
+    if (percent >= ON_TRACK_PERCENT_THRESHOLD) return 'good';
+    if (percent >= BEHIND_GOAL_PERCENT_THRESHOLD) return 'warn';
+    return 'critical';
+  }
+
   /** Registration pace vs last year as a signed percent string, or null when no baseline. */
   private formatVsLastYear(vsLastYear: number | null): string | null {
     if (vsLastYear === null) return null;
