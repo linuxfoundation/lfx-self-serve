@@ -300,6 +300,9 @@ export class VotesDashboardComponent {
         tap((response: PaginatedResponse<Vote>) => {
           if (response.page_token) {
             this.pageTokens[index] = response.page_token;
+          } else {
+            // No next page — drop any stale tokens cached for pages beyond this one (e.g. after data shrank).
+            this.pageTokens.length = index;
           }
         })
       );
