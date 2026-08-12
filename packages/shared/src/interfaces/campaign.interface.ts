@@ -211,9 +211,11 @@ export interface CampaignBriefPersistResult {
    * server's find hits a row nobody read. `briefId` carries the row that blocked the save, so a
    * caller can offer to open it rather than only reporting failure.
    *
-   * While persistence is write-only (LFXV2-3098) this is every collision, because there is no
-   * read path and so no way for a caller to hold a brief id at all. LFXV2-3108 adds the read and
-   * narrows the refusal to callers whose id does not match.
+   * This is the collision a caller reaches when it cannot NAME the stored brief — a fresh
+   * session, a second tab, or a reload, none of which can learn the id of a brief they did not
+   * write while persistence is write-only (LFXV2-3098). A caller that created the brief in this
+   * same session does hold its id and takes the ordinary replace path instead. LFXV2-3108 adds
+   * the read that lets a reloaded page name the row too.
    *
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
    * and the caller's next step is a CHOICE rather than a retry.

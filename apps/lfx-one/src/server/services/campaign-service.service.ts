@@ -252,11 +252,18 @@ export class CampaignServiceClient {
     // anything about the slug — normalising the two slug derivations would close one route and
     // leave the other open.
     //
-    // `knownBriefId` defaults to null and IN THIS PHASE is always null: persistence is
-    // write-only, so there is no read path and nothing can hand a caller the id of a stored
-    // brief. The parameter exists now rather than later so the guard lands with the write it
-    // protects; LFXV2-3108 adds the read and starts supplying a real id, at which point a
-    // restored brief replaces its own row and everything else still refuses.
+    // `knownBriefId` defaults to null, and there are two ways a caller comes to hold one.
+    //
+    // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
+    // successful save returns, so the second Proceed of a session sends it and takes the ordinary
+    // replace path. An earlier version of this comment said the parameter "is always null in this
+    // phase" — that was true when it was written and my own later change to record the created id
+    // falsified it, which is exactly the kind of claim a comment should not make about the
+    // future.
+    //
+    // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
+    // learn the id of a brief it did not write, so those callers arrive with null and are refused.
+    // LFXV2-3108 adds the read that closes that half.
     if (existing !== null && knownBriefId !== existing.brief.id) {
       return {
         enabled: true,
