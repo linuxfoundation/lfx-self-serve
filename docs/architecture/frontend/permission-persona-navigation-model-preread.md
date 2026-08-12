@@ -117,8 +117,8 @@ Me item or create action + resolved target object (project, foundation, committe
 ```
 
 The target is usually Foundation/Project and the permission is `writer`, but
-that's the common case, not the only one. For creates, the shipped flow (PR
-#1193) resolves a committee/group target for meetings, surveys, and votes:
+that's the common case, not the only one. For creates, the shipped flow
+(PR #1193) resolves a committee/group target for meetings, surveys, and votes:
 `writerGuard` accepts `committee.writer` for those three features when a
 `committee_uid` is present, and accepts `project.meeting_coordinator` when
 the target is a project and no meeting object exists yet — each create
