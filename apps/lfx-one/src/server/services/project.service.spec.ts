@@ -17,6 +17,9 @@ const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  // The real mapping: the email focus filter reads this, so stubbing it empty would make every
+  // focused view look correctly-empty regardless of the filtering logic under test.
+  CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
   // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
   // asserted SQL diverge from what production actually sends.
   EMAIL_CAMPAIGN_LIMIT: 12,
@@ -494,6 +497,26 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       for (const [sql, binds] of campaignReads) {
         expect(sql).toContain('FOUNDATION_SLUG = ?');
         expect(binds).toContain('cncf');
+      }
+    });
+
+    // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
+    // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
+    // date bound last year's spend lands on this year's drawer.
+    it("bounds the campaign match to this edition's run-up window", async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        expect(sql).toContain("DATEADD('MONTH', -12,");
+        expect(sql).toContain("DATEADD('MONTH', 1,");
+        // The event's own start date bounds both ends of the window.
+        expect(binds.slice(-2)).toEqual([eventRow.START_DATE, eventRow.START_DATE]);
       }
     });
 

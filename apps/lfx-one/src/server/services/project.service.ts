@@ -2635,17 +2635,20 @@ export class ProjectService {
       // EMAIL_CAMPAIGN_PERFORMANCE has no LF_SUB_DOMAIN_CLASSIFICATION column, so the query above
       // could only be foundation-scoped. Narrow the rows here by their EMAIL_TYPE instead, so a
       // focused view (e.g. Events) doesn't show newsletter/survey/conversion emails alongside it.
-      // Falls back to the unfiltered rows when the mapping matches nothing, so an unexpected
-      // EMAIL_TYPE vocabulary degrades to over-showing rather than to an empty table.
+      //
+      // No fallback to the unfiltered rows when the mapping matches nothing: under an Events focus
+      // that renders newsletters and surveys as event analytics, which is a wrong answer rather
+      // than a partial one. An empty table is honest, and the warning below still names the
+      // EMAIL_TYPE vocabulary that failed to match so the mapping can be corrected.
       const focusEmailTypes = classification ? CLASSIFICATION_TO_EMAIL_TYPES[classification] : undefined;
       const allowedEmailTypes = focusEmailTypes ? new Set(focusEmailTypes.map((type) => type.toUpperCase())) : undefined;
       const scopedPerfRows = allowedEmailTypes
         ? campaignPerfResult.rows.filter((row) => allowedEmailTypes.has((row.EMAIL_TYPE ?? '').trim().toUpperCase()))
         : campaignPerfResult.rows;
-      const effectivePerfRows = allowedEmailTypes && scopedPerfRows.length === 0 ? campaignPerfResult.rows : scopedPerfRows;
+      const effectivePerfRows = scopedPerfRows;
 
       if (allowedEmailTypes && scopedPerfRows.length === 0 && campaignPerfResult.rows.length > 0) {
-        logger.warning(undefined, 'get_email_ctr', 'No rows matched the focus EMAIL_TYPE mapping, showing all email types', {
+        logger.warning(undefined, 'get_email_ctr', 'No rows matched the focus EMAIL_TYPE mapping, returning an empty breakdown', {
           foundation_slug: foundationSlug,
           classification,
           expected_email_types: [...allowedEmailTypes],
@@ -5393,7 +5396,7 @@ export class ProjectService {
     // Enrich with paid + email campaign detail. Neither source table has an EVENT_ID, so both
     // match on the event name (fuzzy substring). Failures degrade to empty arrays — the drawer
     // still renders the attribution tree without the drill-down.
-    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug);
+    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug, row.START_DATE);
 
     return {
       eventId: row.EVENT_ID,
@@ -7412,7 +7415,8 @@ export class ProjectService {
    */
   private async getEventCampaignDetail(
     eventName: string,
-    foundationSlug: string
+    foundationSlug: string,
+    eventStartDate: string | null
   ): Promise<{ paidCampaigns: EventPaidCampaign[]; emailCampaigns: EventEmailCampaign[] }> {
     interface PaidRow {
       CAMPAIGN_NAME: string | null;
@@ -7457,6 +7461,18 @@ export class ProjectService {
     // FOUNDATION_SLUG and are filtered on it everywhere else, so do the same here.
     const campaignScope = buildFoundationFilter(foundationSlug);
 
+    // Name matching alone cannot separate editions: the year-stripped pattern exists to catch
+    // campaigns that omit the year, but it equally matches the 2025 edition of a 2026 event, so
+    // last year's spend would be attributed to this year's event. Bound the match to the run-up
+    // window around this edition — a year before the event through a month after, which covers a
+    // typical campaign cycle without reaching back into the previous edition.
+    // Omitted (unbounded) when the event carries no start date, which is rare and where a wide
+    // match is still better than an empty breakdown.
+    const editionFilter = eventStartDate ? "AND {col} >= DATEADD('MONTH', -12, TO_DATE(?)) AND {col} < DATEADD('MONTH', 1, TO_DATE(?))" : '';
+    const paidEdition = editionFilter.replaceAll('{col}', 'CAMPAIGN_MONTH');
+    const emailEdition = editionFilter.replaceAll('{col}', 'PUBLISHED_DATE');
+    const editionParams = eventStartDate ? [eventStartDate, eventStartDate] : [];
+
     const match = `%${lower}%`;
     const matchNoYear = `%${lowerNoYear}%`;
 
@@ -7477,6 +7493,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE (LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\' OR LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\')
         ${campaignScope.filterAnd}
+        ${paidEdition}
       GROUP BY CAMPAIGN_NAME, CHANNEL
       ORDER BY SPEND DESC
       -- Capped: the drawer is a top-spenders view, not a ledger. The client labels its summary
@@ -7500,6 +7517,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
       WHERE LOWER(MARKETING_EMAIL_NAME) LIKE ? ESCAPE '\\\\'
         ${campaignScope.filterAnd}
+        ${emailEdition}
       GROUP BY MARKETING_EMAIL_NAME
       ORDER BY SENDS DESC
       -- Same contract as the paid cap above: a top-sends view, labelled as such client-side.
@@ -7525,13 +7543,13 @@ export class ProjectService {
       this.executeWithLegacyConversionFallback<PaidRow>({
         primaryQuery: paidQuery('LAST_TOUCH_CONVERSIONS'),
         legacyQuery: paidQuery('CONV'),
-        params: [match, matchNoYear, ...campaignScope.params],
+        params: [match, matchNoYear, ...campaignScope.params, ...editionParams],
         operation: 'get_event_campaign_detail',
         foundationSlug,
         retryMessage: 'Paid campaign enrichment retrying with legacy CONV column',
         degradeMessage: 'Paid campaign enrichment failed, degrading to empty',
       }),
-      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear, ...campaignScope.params]).catch((error) => {
+      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear, ...campaignScope.params, ...editionParams]).catch((error) => {
         logger.warning(undefined, 'get_event_campaign_detail', 'Email campaign enrichment failed, degrading to empty', {
           event_name: eventName,
           err: error,

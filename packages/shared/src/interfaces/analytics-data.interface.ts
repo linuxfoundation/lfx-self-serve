@@ -2890,6 +2890,13 @@ export interface EmailCtrCampaignGroup {
 export interface EmailCampaignPerformance {
   campaignName: string;
   emailType: string;
+  /**
+   * Day-level send date. The breakdown groups by PUBLISHED_DATE so a campaign sent more than once
+   * lists each send separately — without this field those rows are indistinguishable, both to a
+   * reader and to an @for track expression.
+   * Null when the warehouse row carries no publish date.
+   */
+  sendDate: string | null;
   sends: number;
   opens: number;
   clicks: number;
