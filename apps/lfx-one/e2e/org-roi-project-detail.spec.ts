@@ -105,13 +105,19 @@ test.describe('Org Lens ROI project detail — figures', () => {
     // `logit` request first. If that payload were rendered, the heading would read "Direct markup"
     // over logit return and ratios — and because investment is method-invariant, only some of the
     // figures would be wrong, which is harder to notice than all of them.
-    await stubOrgLensContext(page, { projectDetail: { ...(mockProjectDetail(DETAIL_PROJECT.slug) as object), method: 'logit' } });
+    // The payload is the default-method one the helper already builds; the mismatch comes entirely
+    // from seeding `direct` as the stored preference below.
+    await stubOrgLensContext(page, { projectDetail: mockProjectDetail(DETAIL_PROJECT.slug) });
     await page.addInitScript((key) => window.localStorage.setItem(key as string, 'direct'), ORG_LENS_ROI_METHOD_STORAGE_KEY);
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
     await expect(page.getByTestId('org-roi-project-detail-subtitle')).toContainText('Direct markup');
     await expect(page.getByTestId('org-roi-project-detail-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-project-detail-page')).not.toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
+    // The heading still names the project: a payload for the wrong method is wrong about the
+    // figures, not about which project the URL points at, so withholding the name too would hide
+    // correct information rather than protect anyone from incorrect information.
+    await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
   });
 
   test('carries an explanation for every one of the five figures', async ({ page }) => {

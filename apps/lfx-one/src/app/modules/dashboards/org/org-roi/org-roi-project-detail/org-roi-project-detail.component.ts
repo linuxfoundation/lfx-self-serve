@@ -44,7 +44,8 @@ export class OrgRoiProjectDetailComponent {
   /**
    * Honoured, not offered. The estimation method control lives in the portfolio page's assumptions
    * drawer; arriving here on `direct` and being shown `logit` figures would change the basis of the
-   * numbers without saying so.
+   * numbers without saying so. It is therefore part of the render gate below, not just a request
+   * parameter — figures priced on a method the viewer is no longer on do not render at all.
    */
   protected readonly method = signal<OrgLensRoiMethod>(ORG_LENS_ROI_DEFAULT_METHOD);
 
@@ -80,15 +81,25 @@ export class OrgRoiProjectDetailComponent {
   private readonly annual: Signal<OrgLensRoiProjectAnnual | null> = computed(() => this.payload().annual);
 
   /**
-   * Whether the payload in hand describes the organization now selected, the project now in the
-   * URL, **and** the estimation method now in effect. All three, because all three can change
-   * under a payload that has already landed.
+   * Whether the payload in hand describes the organization now selected and the project now in the
+   * URL — the project's *identity*, not its figures.
    *
    * The organization half is the check the portfolio page makes on its summary: a request in flight
-   * during a switch leaves the previous figures on screen under the new name. The project half has
-   * no analogue there — this route is navigated project-to-project and Angular reuses the component
-   * instance across that, so checking the organization alone would pass, because it has not
-   * changed, and one project's figures would render under another's name.
+   * during a switch leaves the previous content on screen under the new name. The project half has
+   * no analogue there, because this route is keyed by a slug and the component outlives a change to
+   * it, so checking the organization alone would pass — it has not changed — while one project's
+   * content rendered under another's name.
+   */
+  private readonly projectMatchesRoute: Signal<boolean> = computed(() => {
+    const selected = this.accountContext.selectedAccount()?.accountId ?? '';
+    const detail = this.detail();
+    if (detail === null || selected === '') return false;
+    return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug();
+  });
+
+  /**
+   * Identity **plus** the estimation method now in effect — the condition the figures need, and
+   * deliberately stricter than the name needs.
    *
    * The method half covers the first load specifically. The stored preference is restored in
    * `afterNextRender`, so a viewer who chose `direct` issues a `logit` request first; if that lands
@@ -96,21 +107,20 @@ export class OrgRoiProjectDetailComponent {
    * Investment is method-invariant, so only some of the figures would be wrong — which is worse
    * than all of them, being harder to notice.
    *
-   * All three are synchronous signal reads, so they flip in the same change-detection pass as the
-   * change, unlike the `toObservable`-driven loading flag which settles one effect flush later.
+   * All three reads are synchronous, so they flip in the same change-detection pass as the change,
+   * unlike the `toObservable`-driven loading flag which settles one effect flush later.
    */
-  private readonly payloadMatchesRoute: Signal<boolean> = computed(() => {
-    const selected = this.accountContext.selectedAccount()?.accountId ?? '';
-    const detail = this.detail();
-    if (detail === null || selected === '') return false;
-    return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug() && detail.method === this.method();
-  });
+  private readonly payloadMatchesRoute: Signal<boolean> = computed(() => this.projectMatchesRoute() && this.detail()?.method === this.method());
 
   protected readonly showsFigures: Signal<boolean> = computed(() => !this.forbidden() && !this.failed() && !this.missing() && this.payloadMatchesRoute());
 
-  /** Falls back to the slug rather than the stale payload's name, for the same window. */
+  /**
+   * Gated on identity alone, not on the method. A payload for the wrong method still names the
+   * right project, so gating the heading on it too would replace a correct name with a raw slug for
+   * the whole of the first-load window — hiding information rather than protecting anyone from it.
+   */
   protected readonly projectName: Signal<string> = computed(
-    () => (this.payloadMatchesRoute() ? this.detail()?.project.projectName : null) ?? this.projectSlug()
+    () => (this.projectMatchesRoute() ? this.detail()?.project.projectName : null) ?? this.projectSlug()
   );
 
   /**

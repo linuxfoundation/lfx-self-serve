@@ -79,6 +79,8 @@ export class OrgRoiProjectsTableComponent {
   });
 
   /**
+   * Navigates to the project's ROI detail.
+   *
    * Clicks inside the first cell's anchor are left alone — the router already handles those, and
    * intercepting them would navigate twice. A modifier-click anywhere in the row is left alone for
    * the same reason: it means "open elsewhere", and routing the current tab would take away a
