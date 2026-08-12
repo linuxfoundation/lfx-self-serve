@@ -307,10 +307,18 @@ export class VotesDashboardComponent {
     const walk = (index: number): Observable<PaginatedResponse<Vote>> =>
       fetchSingle(index).pipe(
         switchMap((response: PaginatedResponse<Vote>) => {
+          // A directly fetched target page that is empty with no next token means the cached cursor was stale (data shrank
+          // after the token was cached) — treat as exhaustion and fall back to page 1 with a fresh token chain.
           if (index === pageIndex) {
+            if (index > 0 && !response.page_token && !response.data.length) {
+              this.pageTokens = [];
+              this.currentFirst.set(0);
+              return fetchSingle(0);
+            }
             return of(response);
           }
           if (!response.page_token) {
+            this.pageTokens = [];
             this.currentFirst.set(0);
             return index === 0 ? of(response) : fetchSingle(0);
           }
