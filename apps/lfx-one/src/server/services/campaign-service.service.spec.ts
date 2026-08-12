@@ -581,6 +581,38 @@ describe('CampaignServiceClient.saveBrief', () => {
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
   });
 
+  it('recovers a create that commits AFTER the reconciliation first looks', async () => {
+    // Aborting our local fetch does not stop campaign-service. The write can still be in flight
+    // upstream, so the first read legitimately 404s and the commit lands a moment later.
+    // Returning on that 404 left the caller without the id and every later save refused as
+    // unowned -- the stranding this function exists to prevent, in a narrower window.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // the initial find: nothing there yet
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockRejectedValueOnce(NOT_FOUND) // first reconciliation read: the commit has not landed
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 1, ...envelope.brief }, { etag: '"1"' }));
+      })
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    expect(result.briefId).toBe('b-1');
+    expect(result.created).toBe(true);
+  });
+
+  it('gives up rather than guessing when the create never resolves', async () => {
+    // Bounded: the request has already spent part of its own budget on the failed POST, so the
+    // retry cannot chase a late commit indefinitely. When the attempts run out the ORIGINAL
+    // failure is reported -- the honest answer, and one the user can retry from.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockRejectedValue(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+  });
+
   it("does not adopt another writer's row that differs only in the generated copy", async () => {
     // The case the first-class columns cannot catch, and the reason the opaque blobs are now
     // compared: two briefs for the SAME event normally share program, slug, url and platform

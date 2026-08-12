@@ -349,18 +349,37 @@ export class CampaignServiceClient {
       return null;
     }
 
-    // The RAW response, not `findBrief`'s narrowed shape: `approveBrief` reads both the body and
-    // the ETag header off it, so handing it a bare brief threw
-    // `Cannot read properties of undefined (reading 'id')` on the one path that exists to make
-    // recovery reliable.
-    let found: ApiResponse<CampaignServiceBrief>;
-    try {
-      found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
-        event_slug: eventSlug,
-      });
-    } catch {
-      // The reconciliation read failed too. Nothing is known, so report the original failure
-      // rather than a second one describing the recovery attempt.
+    // Read more than once, with a delay between attempts, because a single immediate GET does not
+    // settle an ambiguous POST. Aborting our local fetch does not stop campaign-service: the
+    // request may still be in flight upstream, so the first read can legitimately 404 and the
+    // commit land a moment later. Returning on that 404 would leave the caller without the id and
+    // every later save refused as unowned — the exact stranding this function exists to prevent,
+    // just moved to a narrower window.
+    //
+    // BOUNDED, and deliberately short. This runs inside a request that has already spent part of
+    // its own 30s budget on the POST that failed, so the retry cannot chase a late commit
+    // indefinitely. Two extra reads a second apart cover a commit that lands just after the
+    // abort; anything later is reported as a failure rather than guessed at, which is the honest
+    // answer and leaves the user able to retry.
+    let found: ApiResponse<CampaignServiceBrief> | null = null;
+    for (let attempt = 0; attempt < reconcileReadAttempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, reconcileReadDelayMs));
+      }
+      try {
+        found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+          event_slug: eventSlug,
+        });
+        break;
+      } catch (readError) {
+        // A 404 is "not there YET" on this path, not "not there": the write may still be in
+        // flight upstream. Any other read failure says nothing at all. Both are worth another
+        // look while attempts remain; when they run out, report the ORIGINAL failure rather than
+        // one describing the recovery attempt.
+        void readError;
+      }
+    }
+    if (found === null) {
       return null;
     }
     if (found.data === undefined || found.data.version !== 1 || !storedBriefMatches(found.data, envelope.brief)) {
@@ -598,6 +617,18 @@ export class CampaignServiceClient {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
+/**
+ * How many times the lost-create reconciliation reads before giving up, and how long it waits
+ * between attempts.
+ *
+ * Three reads a second apart, i.e. up to ~2s added to a request that has already spent part of
+ * its 30s budget on the failed POST. Enough for a commit that lands just after our abort; short
+ * enough that a save which is genuinely never going to resolve still fails promptly instead of
+ * holding the user on a spinner.
+ */
+const reconcileReadAttempts = 3;
+const reconcileReadDelayMs = 1000;
+
 /**
  * Whether a stored brief is the one this request sent.
  *
