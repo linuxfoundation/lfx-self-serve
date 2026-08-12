@@ -21,6 +21,14 @@ export const VOTE_LABEL = {
 } as const;
 
 /**
+ * Max sequential page requests when walking cursor tokens for a direct page jump in the votes dashboard
+ * @description Cursor pagination only returns the *next* page's token, so an uncached page jump (e.g. clicking
+ * "last page" on a cold token cache) walks forward one request per page. This bound caps that serial walk — on
+ * overflow the paginator clamps to the last reached page. Matches the meetings-dashboard cursor-walk bound.
+ */
+export const VOTES_PAGE_WALK_LIMIT = 10;
+
+/**
  * Poll status display labels
  * @description Human-readable labels for poll statuses
  */

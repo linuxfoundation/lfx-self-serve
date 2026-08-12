@@ -630,6 +630,100 @@ export interface EventsSummaryResponse {
   sponsorshipProgressPct: number;
 }
 
+/**
+ * A single Events Summary metric: its period value and the period-over-period change.
+ * `changeFraction` is a ratio from Snowflake (0.52 = +52%), not a percentage; null when
+ * there is no prior-period baseline to compare against.
+ */
+export interface EventsOverviewMetric {
+  value: number;
+  changeFraction: number | null;
+}
+
+/** Comparison rating for an upcoming event's registration pace (from COMP_SCORE). */
+export type EventCompScore = 'high' | 'medium' | 'low' | 'unknown';
+
+/**
+ * One event row for the Event Roster table, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS joined to sponsorship actuals.
+ * Goals of 0 mean "no goal required" — the UI renders no progress bar in that case (matches PCC).
+ */
+export interface EventRosterRow {
+  eventId: string;
+  eventName: string;
+  /** Event start date, ISO (YYYY-MM-DD). */
+  startDate: string;
+  isPast: boolean;
+  country: string;
+  /** Public event URL (Cvent etc.) for the row link-out; '' when unknown. */
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  /** Sponsorship revenue in dollars — actual summed from the tier table, goal from the event. */
+  sponsorshipRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  compScore: EventCompScore;
+  /** CFP / speaking-proposal status text, e.g. "Review Complete"; '' when none. */
+  cfpStatus: string;
+}
+
+/** Event Roster response for a foundation: upcoming (default) or all events. */
+export interface EventRosterResponse {
+  projectId: string;
+  events: EventRosterRow[];
+}
+
+/** One sponsorship tier row for the per-event detail drawer. */
+export interface EventSponsorshipTier {
+  /** Tier name (Diamond, Gold, Platinum, …); '' when unlabeled. */
+  tier: string;
+  /** Sponsorship revenue in dollars for this tier at this event. */
+  revenue: number;
+  /** Number of sponsors in this tier. */
+  sponsorCount: number;
+}
+
+/**
+ * Per-event detail for the roster drawer, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (event meta + goals) and
+ * MARKETING_EVENT_SPONSORSHIPS_BY_TIER (tier breakdown). No daily-pacing time-series is
+ * available in these tables — that lives in PCC's prediction service, linked via eventUrl.
+ */
+export interface EventDetailResponse {
+  eventId: string;
+  eventName: string;
+  startDate: string;
+  country: string;
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  sponsorshipRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  compScore: EventCompScore;
+  cfpStatus: string;
+  sponsorshipTiers: EventSponsorshipTier[];
+}
+
+/**
+ * Foundation-wide events summary for the Marketing Impact Overview tab, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (per-project, pre-computed period
+ * columns) + MARKETING_EVENT_SPONSORSHIPS. One row per foundation slug (project spine rolls
+ * children up). Counts are for the selected period (YTD by default).
+ */
+export interface EventsOverviewSummaryResponse {
+  /** Snowflake PROJECT_ID echoed for PCC deep-link navigation; '' when the slug resolves to nothing. */
+  projectId: string;
+  registrations: EventsOverviewMetric;
+  attendees: EventsOverviewMetric;
+  speakers: EventsOverviewMetric;
+  countries: EventsOverviewMetric;
+  /** "Organizations" tile — COMPANIES_COUNT in the source model. */
+  organizations: EventsOverviewMetric;
+  events: EventsOverviewMetric;
+  /** Sponsorship revenue in dollars; no YoY change is modeled, so changeFraction is null. */
+  sponsorship: EventsOverviewMetric;
+}
+
 // ============================================
 // Training & Certification (Health Metrics Card)
 // ============================================

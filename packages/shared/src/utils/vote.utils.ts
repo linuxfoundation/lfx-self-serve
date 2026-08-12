@@ -4,12 +4,14 @@
 import { addDays } from 'date-fns';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION } from '../constants/poll.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
   CommentPromptFormValue,
   CreatePollCommentPrompt,
   CreatePollQuestion,
   CreateVoteRequest,
+  CursorWalkOutcome,
   PollCommentPrompt,
   PollQuestion,
   QuestionFormValue,
@@ -256,4 +258,68 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
+}
+
+/**
+ * Records a page's cursor in the token chain, preserving the invariant that index `i` holds the token for page `i + 1`
+ * @description When the fetched page has a next token, stores it at `pageTokens[fetchedIndex]`; when the cursor is
+ * exhausted (no next token), truncates the chain so stale tokens for pages beyond `fetchedIndex` are dropped.
+ * Returns a new array rather than mutating in place.
+ * @param pageTokens - Current cached cursor chain
+ * @param fetchedIndex - Index of the page whose response produced (or lacked) the token
+ * @param pageToken - Next-page cursor from the response, or undefined when the cursor is exhausted
+ * @returns The updated token chain
+ */
+export function recordPageToken(pageTokens: readonly string[], fetchedIndex: number, pageToken: string | undefined): string[] {
+  if (pageToken) {
+    const next = pageTokens.slice();
+    next[fetchedIndex] = pageToken;
+    return next;
+  }
+  return pageTokens.slice(0, fetchedIndex);
+}
+
+/**
+ * Finds the nearest page fetchable directly from the cached cursor chain
+ * @description Cursor pagination only returns the *next* page's token, so page 0 needs no token and page `p`
+ * needs `pageTokens[p - 1]` (index `i` holds the token for page `i + 1`). Scans back from the target and
+ * returns the closest page whose token is cached, or 0 when none is.
+ * @param pageTokens - Cached cursor chain (index `i` = token for page `i + 1`)
+ * @param pageIndex - Target page the paginator wants
+ * @returns Page index to start the forward walk from
+ */
+export function findCursorWalkStartIndex(pageTokens: readonly string[], pageIndex: number): number {
+  for (let i = pageIndex; i > 0; i--) {
+    if (pageTokens[i - 1]) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Resolves the terminal action once a cursor walk stops (target reached, cursor exhausted, or request ceiling hit)
+ * @description Pure decision for the page-jump walk: an empty target page with no next token or an exhausted cursor
+ * both mean the data shrank after tokens were cached, so the walk restarts from page 1 with a fresh chain; a live
+ * cursor short of the target means the ceiling truncated the walk, so the paginator clamps to the last fetched page.
+ * @param response - Final page response emitted by the walk
+ * @param fetchedIndex - Index of the last successfully fetched page
+ * @param pageIndex - Target page the paginator wanted
+ * @returns CursorWalkOutcome telling the caller to show, restart, or clamp
+ */
+export function resolveCursorWalkOutcome<T>(response: PaginatedResponse<T>, fetchedIndex: number, pageIndex: number): CursorWalkOutcome {
+  const exhausted = !response.page_token;
+
+  if (fetchedIndex === pageIndex) {
+    if (pageIndex > 0 && exhausted && !response.data.length) {
+      return { action: 'restart', refetch: true };
+    }
+    return { action: 'show' };
+  }
+
+  if (exhausted) {
+    return { action: 'restart', refetch: fetchedIndex > 0 };
+  }
+
+  return { action: 'clamp', clampIndex: fetchedIndex };
 }
