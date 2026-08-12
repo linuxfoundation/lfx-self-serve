@@ -12,10 +12,8 @@ import {
   DETAIL_LOSS_PROJECT,
   DETAIL_PROJECT,
   gotoOrgRoiPage,
-  fulfillJson,
   gotoOrgRoiProjectDetail,
   MOCK_ACCOUNT_ID,
-  MOCK_PROJECT_INPUTS,
   mockProjectAnnual,
   mockProjectDetail,
   NO_VALUE,
@@ -235,20 +233,24 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
   test('leaks no ROI figure in any response on the refused path', async ({ page }) => {
     // Asserting only that the UI hides the figures would pass against a handler that refused and
     // leaked at the same time, so this reads the response bodies.
-    const bodies: string[] = [];
+    //
+    // The body promises are collected and awaited rather than pushed from a floating `.then()`:
+    // reading a bare array can run before any body has resolved, and a loop over an empty array
+    // passes having inspected nothing — the assertion would report success precisely when it had
+    // checked the least. The count assertion below is the second half of that guard.
+    const bodies: Promise<string>[] = [];
     page.on('response', (response) => {
       if (!response.url().includes('/lens/roi/')) return;
-      void response
-        .text()
-        .then((text) => bodies.push(text))
-        .catch(() => undefined);
+      bodies.push(response.text().catch(() => ''));
     });
 
     await stubOrgLensContext(page, { projectDetailStatus: 403 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
     await expect(page.getByTestId('org-roi-project-detail-forbidden')).toBeVisible();
 
-    for (const body of bodies) {
+    const settled = await Promise.all(bodies);
+    expect(settled.length).toBeGreaterThan(0);
+    for (const body of settled) {
       expect(body).not.toContain('totalExpenditure');
       expect(body).not.toContain('totalReturn');
     }
@@ -267,28 +269,13 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
     await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
   });
 
-  test("never shows one project's figures under another's name while switching between them", async ({ page }) => {
-    // The component instance is reused across a project-to-project navigation and the payload keeps
-    // its previous value until the next response lands, so without an identity check on the slug
-    // the previous project's investment and ROI render under the new project's URL.
-    const second = MOCK_PROJECT_INPUTS.find((input) => input.slug !== DETAIL_PROJECT.slug) as (typeof MOCK_PROJECT_INPUTS)[number];
-
-    await stubOrgLensContext(page);
-    await page.route('**/api/orgs/*/lens/roi/projects/*', async (route) => {
-      const slug = new URL(route.request().url()).pathname.split('/').pop() ?? '';
-      // The second project answers slowly, which is the window the check has to survive.
-      if (slug === second.slug) await new Promise((resolve) => setTimeout(resolve, 1_500));
-      return fulfillJson(route, mockProjectDetail(slug));
-    });
-
-    await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
-    await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
-
-    await page.goto(orgRoiProjectDetailUrl(second.slug), { waitUntil: 'domcontentloaded' });
-    // The first project's figures must never appear on the second project's URL, at any point.
-    await expect(page.getByTestId('org-roi-project-detail-page')).not.toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
-    await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(second.name, { timeout: 15_000 });
-  });
+  // There is deliberately no case here for a project-to-project navigation reusing the component.
+  // Nothing in the product links one project detail to another — every route in comes from the
+  // table and the only way out is back to it — so that navigation cannot be driven through the UI,
+  // and a `page.goto()` between two detail URLs is a full document load that rebuilds the component
+  // rather than reusing it. A test written that way asserts nothing about the race it names. The
+  // identity guard still checks the slug, because a URL edit or a history entry can reach it, and
+  // the estimation-method case above exercises that same guard through a path the UI does produce.
 
   test('reaches the same project the table row named', async ({ page }) => {
     await stubOrgLensContext(page);

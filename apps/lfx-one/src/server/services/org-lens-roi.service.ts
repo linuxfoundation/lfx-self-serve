@@ -232,14 +232,15 @@ export class OrgLensRoiService {
    * guessed at in the template or discovered by the viewer hitting a dead page.
    */
   public async getProjectDetail(req: Request, accountId: string, projectSlug: string, method: OrgLensRoiMethod): Promise<OrgLensRoiProjectDetail | null> {
+    const slug = this.normalizeSlug(projectSlug);
     return this.withNullableOrgCache(
       accountId,
-      `${ORG_LENS_ROI_CACHE_KEY.projectDetail}:${method}:${encodeURIComponent(projectSlug)}`,
+      `${ORG_LENS_ROI_CACHE_KEY.projectDetail}:${method}:${encodeURIComponent(slug)}`,
       OrgLensRoiService.isProjectDetail,
       async () => {
         logger.debug(req, 'get_org_lens_roi_project_detail', 'Cache miss; querying Snowflake', {
           account_id: accountId,
-          project_slug: projectSlug,
+          project_slug: slug,
           method,
         });
         const sql = `
@@ -270,12 +271,12 @@ export class OrgLensRoiService {
         -- one this endpoint answers with, rather than leaving that to the warehouse's row order.
         ORDER BY p.PROJECT_ID, b.DISPLAY_ORDER
       `;
-        const result = await this.snowflakeService.execute<OrgLensRoiProjectDetailWarehouseRow>(sql, [accountId, projectSlug, method]);
+        const result = await this.snowflakeService.execute<OrgLensRoiProjectDetailWarehouseRow>(sql, [accountId, slug, method]);
         const projects = this.groupProjectRows(result.rows);
         if (projects.length > 1) {
           logger.warning(req, 'get_org_lens_roi_project_detail', 'Expected at most one project for the slug', {
             account_id: accountId,
-            project_slug: projectSlug,
+            project_slug: slug,
             method,
             projects: projects.length,
           });
@@ -300,19 +301,31 @@ export class OrgLensRoiService {
    * and "your project, no yearly breakdown" stay distinguishable. Reading the annual table alone
    * would collapse both into zero rows, and the first must be a 404 while the second is a 200 with
    * an empty distribution. The unmatched side of the join carries a null YEAR and is dropped.
+   *
+   * The projects side is narrowed to a single `PROJECT_ID` — the same one `getProjectDetail`
+   * resolves, by the same `MIN()` ordering. Were a slug ever to map to two ids, the detail endpoint
+   * would describe one project while this one merged both and emitted a year twice, so the chart
+   * would contradict the figures printed above it.
    */
   public async getProjectAnnual(req: Request, accountId: string, projectSlug: string, method: OrgLensRoiMethod): Promise<OrgLensRoiProjectAnnual | null> {
+    const slug = this.normalizeSlug(projectSlug);
     return this.withNullableOrgCache(
       accountId,
-      `${ORG_LENS_ROI_CACHE_KEY.projectAnnual}:${method}:${encodeURIComponent(projectSlug)}`,
+      `${ORG_LENS_ROI_CACHE_KEY.projectAnnual}:${method}:${encodeURIComponent(slug)}`,
       OrgLensRoiService.isProjectAnnual,
       async () => {
         logger.debug(req, 'get_org_lens_roi_project_annual', 'Cache miss; querying Snowflake', {
           account_id: accountId,
-          project_slug: projectSlug,
+          project_slug: slug,
           method,
         });
         const sql = `
+        WITH project AS (
+          SELECT MIN(PROJECT_ID) AS PROJECT_ID
+          FROM ${this.projectsTable()}
+          WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ? AND MARKUP_METHOD = ?
+          HAVING COUNT(*) > 0
+        )
         SELECT
           a.YEAR,
           a.TOTAL_RETURN,
@@ -320,17 +333,16 @@ export class OrgLensRoiService {
           a.PROFIT,
           a.ROI,
           a.BCR
-        FROM ${this.projectsTable()} p
+        FROM project p
         LEFT JOIN ${this.projectAnnualTable()} a
-          ON a.ACCOUNT_ID = p.ACCOUNT_ID AND a.PROJECT_ID = p.PROJECT_ID AND a.MARKUP_METHOD = p.MARKUP_METHOD
-        WHERE p.ACCOUNT_ID = ? AND p.PROJECT_SLUG = ? AND p.MARKUP_METHOD = ?
+          ON a.ACCOUNT_ID = ? AND a.PROJECT_ID = p.PROJECT_ID AND a.MARKUP_METHOD = ?
         ORDER BY a.YEAR
       `;
-        const result = await this.snowflakeService.execute<OrgLensRoiProjectAnnualWarehouseRow>(sql, [accountId, projectSlug, method]);
+        const result = await this.snowflakeService.execute<OrgLensRoiProjectAnnualWarehouseRow>(sql, [accountId, slug, method, accountId, method]);
         if (result.rows.length === 0) return null;
         return {
           method,
-          projectSlug,
+          projectSlug: slug,
           rows: result.rows
             .filter((row): row is OrgLensRoiAnnualWarehouseRow => row.YEAR !== null && row.YEAR !== undefined)
             .map((row) => this.mapAnnualRow(row)),
@@ -630,6 +642,16 @@ export class OrgLensRoiService {
   private toNullableCount(value: unknown): number | null {
     const parsed = this.toNullableNumber(value);
     return parsed === null ? null : Math.round(parsed);
+  }
+
+  /**
+   * Project slugs are stored lowercase, and `org-lens-project-detail.service.ts` normalizes the same
+   * way before querying. Without this a mixed-case deep link would 404 here while resolving under
+   * `/org/projects/{slug}` — the two surfaces would disagree about which URLs exist, which is
+   * exactly the slug-space parity the onward link between them depends on.
+   */
+  private normalizeSlug(projectSlug: string): string {
+    return projectSlug.trim().toLowerCase();
   }
 
   private toNullableLabel(value: unknown): string | null {
