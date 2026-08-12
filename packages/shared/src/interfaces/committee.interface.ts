@@ -428,12 +428,12 @@ export interface Committee {
    * value doesn't match `SLACK_INCOMING_WEBHOOK_URL_PATTERN`, not just presence, since this repo's
    * write path isn't the only possible writer of the field. The raw `chat_webhook_url` is a bearer
    * credential and is deliberately never returned by any read — see
-   * {@link CommitteeUpdateData.chat_webhook_url}. This boolean is the only signal reads get.
+   * {@link CommitteeSettingsData.chat_webhook_url}. This boolean is the only signal reads get.
    *
-   * Populated only by `GET /committees/:uid` (`getCommitteeById`), unlike `has_mailing_list`,
-   * which list endpoints enrich too. Absence on a list result (`getCommittees`,
-   * `getCommitteesByIds`, etc.) means "not looked up here", not "not configured" — check the
-   * single-committee endpoint before relying on it being `false`.
+   * Sourced from `GET /committees/:uid/settings` (fetched by `getCommitteeById` alongside the base
+   * committee resource), unlike `has_mailing_list`, which list endpoints enrich too. Absence on a
+   * list result (`getCommittees`, `getCommitteesByIds`, etc.) means "not looked up here", not "not
+   * configured" — check the single-committee endpoint before relying on it being `false`.
    */
   has_slack_webhook?: boolean;
 
@@ -583,11 +583,6 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   mailing_list?: string | null;
   /** Update or clear chat channel */
   chat_channel?: string | null;
-  /**
-   * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
-   * Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
-   */
-  chat_webhook_url?: string | null;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */
@@ -607,6 +602,13 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
+  /**
+   * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
+   * Lives on the settings sub-resource, not the base committee object, per LFXV2-3094 — the
+   * webhook is deliberately kept off the base resource so it isn't visible to every committee
+   * viewer. Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
+   */
+  chat_webhook_url?: string | null;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */

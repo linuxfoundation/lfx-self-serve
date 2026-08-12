@@ -104,11 +104,12 @@ export class CommitteeSettingsTabComponent {
 
   // Dark-launch gate for the whole Slack webhook card — mirrors committee-overview.component.ts's
   // 'wg-weekly-brief' flag on the brief card itself, but as its own flag: the upstream
-  // committee-service has no chat_webhook_url field yet (see committee.service.ts's
-  // updateCommittee/getSlackWebhookUrlStrict comments), so every save deterministically fails
-  // with 409 SLACK_WEBHOOK_NOT_PERSISTED today. Rendering the card unconditionally would show
-  // every user a dead end; this keeps it hidden until the upstream schema change lands and the
-  // flag is flipped on.
+  // committee-service declares chat_webhook_url on the settings resource per PR #177
+  // (LFXV2-3094), but #177 is not yet merged/deployed as of this writing (see
+  // committee.service.ts's updateCommittee/getSlackWebhookUrlStrict comments), so every save
+  // still deterministically fails with 409 SLACK_WEBHOOK_NOT_PERSISTED today. Rendering the card
+  // unconditionally would show every user a dead end; this keeps it hidden until the upstream
+  // schema change is deployed and the flag is flipped on.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
