@@ -437,7 +437,10 @@ export class CampaignController {
    */
   public async loadBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
-      res.json({ status: 'off', briefId: null, brief: null } satisfies CampaignBriefLoadResult);
+      // `approved: false` is not a claim about any stored row -- with the flag off nothing was
+      // read. It is the safe default the field documents: never assert approval that was not
+      // observed.
+      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
       return;
     }
 
