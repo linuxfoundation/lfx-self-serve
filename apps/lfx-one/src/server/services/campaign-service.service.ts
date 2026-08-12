@@ -293,9 +293,17 @@ export class CampaignServiceClient {
     // learn the id of a brief it did not write, so those callers arrive with null and are refused.
     // LFXV2-3108 adds the read that closes that half.
     if (existing !== null && knownBriefId !== existing.brief.id) {
+      // The id is deliberately WITHHELD on this refusal. Returning it told a caller the id of a
+      // brief it was just told it does not own — and `etag_fallback` then let it replay that id
+      // as proof of ownership, overwriting content it had never opened. Omit the id and the
+      // replay has nothing to replay.
+      //
+      // Nothing needs it: the UI renders only the message for this conflict, never the id, and a
+      // caller that legitimately owns the brief already holds its id from the save that created
+      // or loaded it.
       return {
         enabled: true,
-        briefId: existing.brief.id,
+        briefId: '',
         etag: null,
         created: false,
         approved: false,

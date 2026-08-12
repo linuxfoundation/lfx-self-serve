@@ -294,12 +294,27 @@ describe('CampaignServiceClient.saveBrief', () => {
    * Two routes reach a save with no id and only one is a slug mismatch; a reload or a second tab
    * is enough. That is why the guard keys on ownership rather than on the slug.
    */
+  it('does not hand back the id of a brief the caller was told it does not own', async () => {
+    // The id was the whole attack. A caller could omit `brief_id`, read `existing.brief.id` out
+    // of this refusal, then replay it with `etag_fallback=1` -- the ownership check accepts the
+    // echoed id as proof and the fallback supplies a freshly read validator, overwriting content
+    // the caller never opened. Withholding the id leaves the replay nothing to replay.
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'someone-elses', version: 3 }, { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+
+    expect(result.conflict).toBe('unowned-brief-exists');
+    expect(result.briefId).toBe('');
+    // Belt and braces: the id must not appear anywhere in the payload.
+    expect(JSON.stringify(result)).not.toContain('someone-elses');
+  });
+
   it('refuses to replace a stored brief the caller cannot prove it owns', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
     const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
 
-    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: 'b-1', created: false, approved: false });
+    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: '', created: false, approved: false });
     // One upstream call — the find. No PUT was attempted.
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
@@ -311,7 +326,7 @@ describe('CampaignServiceClient.saveBrief', () => {
 
     const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-999');
 
-    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: 'b-1' });
+    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: '' });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
