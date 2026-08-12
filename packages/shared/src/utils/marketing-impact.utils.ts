@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BEHIND_GOAL_PERCENT_THRESHOLD } from '../constants/marketing-impact.constants';
+
 import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
 
 /** Number of past months to show in the Marketing Impact period picker. */
@@ -164,4 +166,25 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
 function firstOfMonth(year: number, month: number): string {
   const d = new Date(Date.UTC(year, month - 1, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// === Event Roster Helpers ===
+
+/**
+ * Registration progress as a whole percentage, or null when the event carries no real goal.
+ * A goal of 0/absent means "no goal required", which is not the same as 0% attained.
+ */
+export function eventRegistrationPercent(registrations: { actual: number; goal: number }): number | null {
+  if (!registrations.goal || registrations.goal <= 0) return null;
+  return Math.round((registrations.actual / registrations.goal) * 100);
+}
+
+/**
+ * Shared at-risk predicate: an event is at risk when it has a real registration goal it is
+ * materially behind on AND it is pacing low against last year. Both the roster's row flag and
+ * the needs-attention strip read this so the two views can never disagree about what "at risk"
+ * means.
+ */
+export function isEventAtRisk(percent: number | null, compScore: string | null | undefined): boolean {
+  return percent !== null && percent < BEHIND_GOAL_PERCENT_THRESHOLD && compScore === 'low';
 }

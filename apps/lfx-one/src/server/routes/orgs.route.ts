@@ -141,6 +141,10 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/roi/annual', (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
   router.get('/:orgUid/lens/roi/investment-breakdown', (req, res, next) => orgLensRoiController.getInvestmentBreakdown(req, res, next));
   router.get('/:orgUid/lens/roi/projects', (req, res, next) => orgLensRoiController.getProjects(req, res, next));
+  // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
+  // be captured as a project slug.
+  router.get('/:orgUid/lens/roi/projects/:projectSlug/annual', (req, res, next) => orgLensRoiController.getProjectAnnual(req, res, next));
+  router.get('/:orgUid/lens/roi/projects/:projectSlug', (req, res, next) => orgLensRoiController.getProjectDetail(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

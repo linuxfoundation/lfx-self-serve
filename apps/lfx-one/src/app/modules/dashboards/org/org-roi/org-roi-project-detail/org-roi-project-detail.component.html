@@ -1,0 +1,205 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-roi-project-detail-page">
+  <header class="flex flex-col gap-2" data-testid="org-roi-project-detail-header">
+    <a routerLink="/org/roi" class="inline-flex w-fit items-center gap-2 text-sm text-gray-500 hover:text-gray-700" data-testid="org-roi-project-detail-back">
+      <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+      Back to ROI Metrics
+    </a>
+    <h1 class="font-display font-light text-2xl" data-testid="org-roi-project-detail-title">{{ projectName() }}</h1>
+    <p class="text-sm text-gray-500" data-testid="org-roi-project-detail-subtitle">
+      What your organization invested in this project and what came back, priced with the {{ methodLabel() }} estimate.
+    </p>
+  </header>
+
+  @if (!hasAnalyticsId()) {
+    <!-- Ahead of the loading branch, and for a stronger reason than the failure branches: with no
+         analytics id no request is ever issued, so the skeleton below would never resolve. -->
+    <div
+      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
+      data-testid="org-roi-project-detail-no-analytics-id">
+      <i class="fa-light fa-building text-gray-400" aria-hidden="true"></i>
+      <span>Select a company to view ROI metrics for one of its projects.</span>
+    </div>
+  } @else if (forbidden()) {
+    <!-- Both failure branches and the not-found one sit ahead of the loading branch. A failed
+         request clears the payload, which leaves it not matching the selected organization, so a
+         loading condition tested first would swallow every 403, 404 and 503 into a permanent
+         skeleton. Each new request resets these flags, so ordering them first cannot strand a
+         stale error over a fresh load. -->
+    <div
+      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
+      data-testid="org-roi-project-detail-forbidden">
+      <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+      <span>You do not have Org Lens access for this organization.</span>
+    </div>
+  } @else if (missing()) {
+    <!-- A 404, not an empty state with zeros: the slug is not a project this organization has ROI
+         for, and showing zeros would assert a measurement that was never made. -->
+    <section
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+      data-testid="org-roi-project-detail-not-found">
+      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+        <i class="fa-light fa-circle-question text-2xl" aria-hidden="true"></i>
+      </div>
+      <h2 class="text-base font-semibold text-gray-900" data-testid="org-roi-project-detail-not-found-title">No ROI figures for this project</h2>
+      <p class="max-w-md text-sm text-gray-600" data-testid="org-roi-project-detail-not-found-description">
+        This project isn't one your organization has modelled ROI for. It may belong to a different organization, or your organization may have no measured
+        contribution activity on it.
+      </p>
+      <a routerLink="/org/roi" class="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="org-roi-project-detail-not-found-back">
+        Back to ROI Metrics
+      </a>
+    </section>
+  } @else if (failed()) {
+    <!-- Separate from the forbidden branch: a 503 must not read as a permissions message. -->
+    <div
+      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
+      data-testid="org-roi-project-detail-error">
+      <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
+      <span>This project's ROI couldn't be loaded. Please try again.</span>
+    </div>
+  } @else if (loading() || !showsFigures()) {
+    <!-- The identity check belongs in the loading condition, not only on the figures below: the
+         payload keeps its previous value until the next response lands, so without it this branch
+         loses to the populated one for that window — showing the previous organization, project or
+         estimation method's amounts under the current one's heading. -->
+    <section class="flex flex-col gap-4" data-testid="org-roi-project-detail-loading">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        @for (i of [1, 2, 3, 4, 5]; track i) {
+          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+            <p-skeleton width="4rem" height="1.75rem" />
+            <p-skeleton width="80%" height="0.75rem" />
+          </div>
+        }
+      </div>
+      <p-skeleton width="100%" height="280px" />
+    </section>
+  } @else {
+    <div class="flex flex-col gap-3" data-testid="org-roi-project-detail-kpi-cards">
+      <lfx-stat-card-grid [cards]="cards()" [columns]="5" />
+
+      @if (isLossMaking()) {
+        <p class="text-xs text-amber-700" data-testid="org-roi-project-detail-loss-note">
+          This project's modelled return is less than its modelled investment. That is a real outcome for a meaningful share of projects, not a gap in the data.
+        </p>
+      }
+
+      <details class="group rounded-lg border border-gray-200 bg-white" data-testid="org-roi-project-detail-explanations">
+        <summary
+          class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          data-testid="org-roi-project-detail-explanations-toggle">
+          <i class="fa-light fa-circle-info text-gray-400" aria-hidden="true"></i>
+          How these figures are calculated
+          <i class="fa-light fa-chevron-down ml-auto text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true"></i>
+        </summary>
+        <!-- The same wording the portfolio band uses, rendered from the shared constant rather than
+             paraphrased, so the two surfaces cannot drift apart when either is edited. -->
+        <dl class="flex flex-col gap-4 border-t border-gray-200 px-4 py-4">
+          <div class="flex flex-col gap-1" data-testid="org-roi-project-detail-explanation-total-expenditure">
+            <dt class="text-sm font-semibold text-gray-900">Investment</dt>
+            <dd class="text-sm text-gray-600">{{ explanation.totalExpenditure }}</dd>
+          </div>
+          <div class="flex flex-col gap-1" data-testid="org-roi-project-detail-explanation-total-return">
+            <dt class="text-sm font-semibold text-gray-900">Return</dt>
+            <dd class="text-sm text-gray-600">{{ explanation.totalReturn }}</dd>
+          </div>
+          <div class="flex flex-col gap-1" data-testid="org-roi-project-detail-explanation-profit">
+            <dt class="text-sm font-semibold text-gray-900">Net Return</dt>
+            <dd class="text-sm text-gray-600">{{ explanation.profit }}</dd>
+          </div>
+          <div class="flex flex-col gap-1" data-testid="org-roi-project-detail-explanation-roi">
+            <dt class="text-sm font-semibold text-gray-900">ROI</dt>
+            <dd class="text-sm text-gray-600">{{ explanation.roi }}</dd>
+          </div>
+          <div class="flex flex-col gap-1" data-testid="org-roi-project-detail-explanation-bcr">
+            <dt class="text-sm font-semibold text-gray-900">Benefit-Cost Ratio</dt>
+            <dd class="text-sm text-gray-600">{{ explanation.bcr }}</dd>
+          </div>
+        </dl>
+      </details>
+    </div>
+
+    <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-roi-project-detail-annual">
+      <h2 class="text-base font-semibold text-gray-900">Investment by year</h2>
+
+      @if (!hasYearRows()) {
+        <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-project-detail-annual-empty">
+          <i class="fa-light fa-chart-column text-gray-400" aria-hidden="true"></i>
+          <span>No yearly breakdown is available for this project.</span>
+        </div>
+      } @else {
+        <div class="h-[280px]" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-project-detail-annual-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+        </div>
+
+        <!-- The canvas is otherwise the only presentation of these values, so it is unreadable to a
+             screen reader. This table carries them, plus the per-year return the single-series
+             chart deliberately leaves out. -->
+        <table class="sr-only" data-testid="org-roi-project-detail-annual-table">
+          <caption>
+            Investment and return by year
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Year</th>
+              <th scope="col">Investment</th>
+              <th scope="col">Return</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of yearRows(); track row.year) {
+              <tr>
+                <th scope="row">{{ row.year }}{{ row.isPartial ? ' (partial year)' : '' }}</th>
+                <td>{{ row.investmentLabel }}</td>
+                <td>{{ row.returnLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <div class="flex flex-col gap-1 border-t border-gray-100 pt-3">
+          @if (apportioned()) {
+            <p class="text-xs text-gray-500" data-testid="org-roi-project-detail-apportionment-note">
+              Yearly figures are apportioned from this project's lifetime totals by each year's share of investment — they are not measured independently for
+              each year, so movement between years reflects when the activity happened rather than a change in performance.
+            </p>
+          }
+          @if (efficiencyConstant()) {
+            <!-- Driven by the payload's flag rather than stated as copy: per-project ROI and
+                 benefit-cost ratio are identical in every year because the apportionment share
+                 cancels out of both, so no per-year efficiency series is drawn anywhere on this
+                 page and the constancy is stated instead of left to be inferred. -->
+            <p class="text-xs text-gray-500" data-testid="org-roi-project-detail-efficiency-constant-note">
+              This project's ROI and benefit-cost ratio are the same in every year by construction — the yearly split divides investment and return in the same
+              proportion. A year-by-year efficiency figure would not show improvement or decline, so none is shown.
+            </p>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-roi-project-detail-onward">
+      @if (hasOrgLensProject()) {
+        <a
+          [routerLink]="orgProjectLink()"
+          class="inline-flex w-fit items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+          data-testid="org-roi-project-detail-onward-link">
+          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          View this project in Org Lens
+        </a>
+        <p class="text-xs text-gray-500">Participation, influence and people for this project, alongside the economics shown here.</p>
+      } @else {
+        <!-- Not rendered as a disabled link: measured 2026-08-05, 32.4% of ROI
+             organization-project pairs have no Org Lens catalog row, so this is a routine outcome
+             and a link that 404s would be worse than none. -->
+        <p class="text-xs text-gray-500" data-testid="org-roi-project-detail-onward-unavailable">
+          This project doesn't have an Org Lens project page for your organization, so there is no wider view to link to. ROI covers every project your
+          organization contributed to, which is a broader set than the projects tracked in Org Lens.
+        </p>
+      }
+    </section>
+  }
+</main>

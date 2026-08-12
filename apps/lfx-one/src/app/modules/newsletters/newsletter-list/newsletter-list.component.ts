@@ -22,13 +22,22 @@ import {
   NewsletterRow,
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
+import {
+  formatFutureRelativeTime,
+  formatShortDateInTimezone,
+  formatTo12HourInTimezone,
+  getTimezoneUtcOffsetString,
+  getUserTimezone,
+} from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, from, map, mergeMap, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, forkJoin, from, map, mergeMap, of, switchMap, take } from 'rxjs';
+
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -65,6 +74,7 @@ export class NewsletterListComponent {
   // === Tab options ===
   protected readonly statusTabOptions: FilterPillOption[] = [
     { id: 'draft', label: 'Drafts' },
+    { id: 'scheduled', label: 'Scheduled' },
     { id: 'sent', label: 'Sent' },
     { id: 'optout', label: 'Opt-out' },
   ];
@@ -72,6 +82,10 @@ export class NewsletterListComponent {
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
+  // `status=sending` rows carrying `scheduled_at` — arms in progress. Populated
+  // only while `statusTab() === 'scheduled'`; prepended to `newsletters` for
+  // display since they aren't paginated (see initLoadOnContextOrTab).
+  protected readonly armingNewsletters = signal<NewsletterListItem[]>([]);
   protected readonly optOuts = signal<NewsletterOptOut[]>([]);
   protected readonly optOutsLoadFailed = signal<boolean>(false);
   protected readonly loading = signal<boolean>(false);
@@ -79,6 +93,7 @@ export class NewsletterListComponent {
   protected readonly nextPageToken = signal<string | undefined>(undefined);
   protected readonly deletingId = signal<string | null>(null);
   protected readonly removingOptOutId = signal<string | null>(null);
+  protected readonly cancelingScheduleId = signal<string | null>(null);
   protected readonly previewVisible = signal<boolean>(false);
   protected readonly selectedNewsletter = signal<NewsletterListItem | null>(null);
   // Upstream authorizes opt-out removal for the `writer` relation only, while the
@@ -108,22 +123,36 @@ export class NewsletterListComponent {
   // === Reactive context ===
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
-  protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0);
+  protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
+  // Per-tab empty-state copy, keyed by tab id — avoids nesting ternaries in the template
+  // (repo convention) for what's otherwise a flat lookup with no other tab-specific branching.
+  protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = computed(() => {
+    const copy: Record<'draft' | 'scheduled' | 'sent', { title: string; subtitle: string }> = {
+      draft: { title: 'No drafts yet', subtitle: 'Start writing your first newsletter and your draft will appear here.' },
+      scheduled: { title: 'No scheduled newsletters', subtitle: 'Schedule a draft to send later and it will appear here until it goes out.' },
+      sent: { title: 'No sent newsletters yet', subtitle: 'Send your first newsletter and engagement metrics will show up here.' },
+    };
+    const tab = this.statusTab();
+    return tab === 'optout' ? copy.sent : copy[tab];
+  });
+  // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
+  // scheduled labels fall back to UTC there and are replaced on client hydration.
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // Pre-compute per-row labels so the template doesn't call functions-with-args.
   protected readonly rows: Signal<NewsletterRow[]> = this.initRows();
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
-    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout') {
+    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout' || tabFromQuery === 'scheduled') {
       this.statusTab.set(tabFromQuery);
     }
     this.initLoadOnContextOrTab();
   }
 
   protected onStatusTabChange(tab: string): void {
-    if (tab === 'draft' || tab === 'sent' || tab === 'optout') {
+    if (tab === 'draft' || tab === 'sent' || tab === 'optout' || tab === 'scheduled') {
       this.statusTab.set(tab);
     }
   }
@@ -133,6 +162,13 @@ export class NewsletterListComponent {
   }
 
   protected goToRow(item: NewsletterListItem): void {
+    // A scheduled (or arming) row 409s on any edit upstream — open the preview
+    // drawer instead of navigating, same treatment as a sent row.
+    if (this.statusTab() === 'scheduled') {
+      this.selectedNewsletter.set(item);
+      this.previewVisible.set(true);
+      return;
+    }
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
     // Carry the newsletter's own project_uid in the URL instead of relying on
     // ambient context — see newsletters.routes.ts for the rationale.
@@ -167,9 +203,11 @@ export class NewsletterListComponent {
           if (generation !== this.loadGeneration) {
             return;
           }
-          this.newsletters.update((current) => [...current, ...response.newsletters]);
+          // Same arming-row exclusion as the initial Sent-tab load — see initLoadOnContextOrTab.
+          const newsletters = status === 'sent' ? response.newsletters.filter((n) => !(n.status === 'sending' && n.scheduled_at)) : response.newsletters;
+          this.newsletters.update((current) => [...current, ...newsletters]);
           this.nextPageToken.set(response.next_page_token);
-          this.loadOpenRates(response.newsletters);
+          this.loadOpenRates(newsletters);
         },
         error: (err: HttpErrorResponse) => {
           // A stale request's failure is irrelevant to the context now on screen.
@@ -196,6 +234,23 @@ export class NewsletterListComponent {
     });
   }
 
+  protected onCancelSchedule(item: NewsletterRow, event: Event): void {
+    event.stopPropagation();
+    const projectUid = this.projectUid();
+    if (!projectUid) return;
+    this.confirmationService.confirm({
+      key: 'newsletter-list',
+      header: 'Cancel schedule?',
+      message: `This will cancel the "${item.subject || 'Untitled draft'}" schedule and return it to Drafts. Your picked time is kept, so you can re-schedule it later.`,
+      icon: 'pi pi-times-circle',
+      acceptLabel: 'Cancel schedule',
+      rejectLabel: 'Keep scheduled',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runCancelSchedule(projectUid, item),
+    });
+  }
+
   protected onRemoveOptOut(optOut: NewsletterOptOut, event: Event): void {
     event.stopPropagation();
     // Capture the project uid at dialog-open time: reading it on accept could
@@ -219,7 +274,12 @@ export class NewsletterListComponent {
     return computed(() => {
       const analyticsMap = this.openRateAnalytics();
       const pendingIds = this.openRatePendingIds();
-      return this.newsletters().map((n) => {
+      const timezone = this.viewerTimezone;
+      // Arming rows lead the list — they're the newest schedule activity and
+      // aren't part of the paginated response, so they'd otherwise land in an
+      // arbitrary position relative to `next_page_token` pages.
+      const items = [...this.armingNewsletters(), ...this.newsletters()];
+      return items.map((n) => {
         const analytics = analyticsMap.get(n.id);
         const total = n.total_recipients ?? 0;
         const opens = n.unique_opens ?? analytics?.unique_opens ?? 0;
@@ -229,6 +289,17 @@ export class NewsletterListComponent {
         const openRateLabel = hasOpenRate ? `${Math.round(openRate * 100)}%` : '—';
         // Don't fabricate "0 of N opened" when analytics are missing or failed.
         const openRateTooltip = hasOpenRate ? `${opens} of ${total} recipients opened` : 'Analytics not available';
+        const isArming = n.status === 'sending' && !!n.scheduled_at;
+        let scheduledLabel = '';
+        let scheduledTooltip = '';
+        if (n.scheduled_at) {
+          const scheduledDate = new Date(n.scheduled_at);
+          const dateLabel = formatShortDateInTimezone(scheduledDate, timezone);
+          const timeLabel = formatTo12HourInTimezone(scheduledDate, timezone);
+          const offset = getTimezoneUtcOffsetString(timezone, scheduledDate);
+          scheduledLabel = `${dateLabel}, ${timeLabel} (UTC${offset})`;
+          scheduledTooltip = `${scheduledLabel} — ${formatFutureRelativeTime(scheduledDate)}`;
+        }
         return {
           ...n,
           openRateLabel,
@@ -237,6 +308,9 @@ export class NewsletterListComponent {
           openRateAria: hasOpenRate ? `Open rate ${openRateLabel}, ${openRateTooltip}` : 'Open rate not available',
           recipientsLabel: n.total_recipients !== undefined && n.total_recipients !== null ? String(n.total_recipients) : '—',
           groupsLabel: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`,
+          scheduledLabel,
+          scheduledTooltip,
+          isArming,
         };
       });
     });
@@ -259,6 +333,7 @@ export class NewsletterListComponent {
           this.selectedNewsletter.set(null);
           this.nextPageToken.set(undefined);
           this.newsletters.set([]);
+          this.armingNewsletters.set([]);
           this.optOuts.set([]);
           this.optOutsLoadFailed.set(false);
           if (uid !== this.lastLoadedUid) {
@@ -283,8 +358,40 @@ export class NewsletterListComponent {
               })
             );
           }
+          // `status=scheduled` alone misses arms still fanning out, and
+          // `status=sent` matches both settled sends AND those same in-flight
+          // arms (upstream's `sending` bucket covers both) — see the
+          // list-filter trap in the plan. Handle both edge cases here so
+          // neither tab shows or hides the wrong rows.
+          if (status === 'scheduled') {
+            return forkJoin({
+              scheduled: this.newsletterService.listNewsletters(uid, { status: 'scheduled' }),
+              sending: this.newsletterService.listNewsletters(uid, { status: 'sending' }),
+            }).pipe(
+              map(
+                (results): NewsletterListLoadResult => ({
+                  kind: 'newsletters',
+                  response: results.scheduled,
+                  arming: results.sending.newsletters.filter((n) => !!n.scheduled_at),
+                })
+              ),
+              catchError((err: HttpErrorResponse) => {
+                this.loading.set(false);
+                this.showLoadError(err);
+                return EMPTY;
+              })
+            );
+          }
           return this.newsletterService.listNewsletters(uid, { status }).pipe(
-            map((response): NewsletterListLoadResult => ({ kind: 'newsletters', response })),
+            map(
+              (response): NewsletterListLoadResult => ({
+                kind: 'newsletters',
+                // A `sending` row carrying `scheduled_at` is an arm in progress, not
+                // a send in progress — it belongs on the Scheduled tab, not here.
+                response:
+                  status === 'sent' ? { ...response, newsletters: response.newsletters.filter((n) => !(n.status === 'sending' && n.scheduled_at)) } : response,
+              })
+            ),
             catchError((err: HttpErrorResponse) => {
               this.loading.set(false);
               this.showLoadError(err);
@@ -301,6 +408,7 @@ export class NewsletterListComponent {
           return;
         }
         this.newsletters.set(result.response.newsletters);
+        this.armingNewsletters.set(result.arming ?? []);
         this.nextPageToken.set(result.response.next_page_token);
         this.loadOpenRates(result.response.newsletters);
       });
@@ -351,6 +459,55 @@ export class NewsletterListComponent {
           });
         },
       });
+  }
+
+  private runCancelSchedule(projectUid: string, item: NewsletterRow): void {
+    this.cancelingScheduleId.set(item.id);
+    this.newsletterService
+      .cancelSchedule(projectUid, item.id, item.version)
+      .pipe(
+        take(1),
+        finalize(() => this.cancelingScheduleId.set(null))
+      )
+      .subscribe({
+        next: () => {
+          this.newsletters.update((current) => current.filter((n) => n.id !== item.id));
+          this.armingNewsletters.update((current) => current.filter((n) => n.id !== item.id));
+          this.messageService.add({ severity: 'success', summary: 'Schedule cancelled', detail: 'The newsletter is back in Drafts.' });
+        },
+        error: (err: HttpErrorResponse) => this.handleCancelScheduleError(err, item.id),
+      });
+  }
+
+  // A cancel racing the 5-minute settlement sweep fails `If-Match` (412) rather
+  // than surfacing the upstream's 409 `already_sent` — the sweep bumps
+  // `version` when it flips the row to `sent` before this request lands. Both
+  // outcomes are the same real-world event from the viewer's perspective, so
+  // they share one branch and one refresh; `cancel_window_closed` (too close
+  // to send time to cancel) is a distinct, non-error outcome and keeps the row.
+  private handleCancelScheduleError(err: HttpErrorResponse, id: string): void {
+    const upstreamCode = err?.error?.upstreamCode;
+    if (err.status === 409 && upstreamCode === 'cancel_window_closed') {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Too late to cancel',
+        detail: 'Too close to the send time to cancel. This newsletter will go out as scheduled.',
+        life: 8000,
+      });
+      return;
+    }
+    if ((err.status === 409 && upstreamCode === 'already_sent') || err.status === 412) {
+      this.messageService.add({ severity: 'warn', summary: 'Already sent', detail: 'This newsletter has already been sent.' });
+      this.newsletters.update((current) => current.filter((n) => n.id !== id));
+      this.armingNewsletters.update((current) => current.filter((n) => n.id !== id));
+      return;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Cancel failed',
+      detail: extractErrorMessage(err, 'Could not cancel the schedule. Please try again.'),
+      life: 8000,
+    });
   }
 
   // Fan out one analytics call per newly loaded sent row to fill the Open Rate

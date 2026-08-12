@@ -172,6 +172,32 @@ test.describe('Profile edit drawer', () => {
     await expect.poll(() => authorizeRequested, { timeout: ELEMENT_TIMEOUT }).toBe(true);
   });
 
+  test('S4b: an over-2MB avatar is rejected client-side and never uploaded', async ({ page }) => {
+    // Regression for LFXV2-2628: MAX_AVATAR_SIZE_BYTES was lowered from 20MB to 2MB. Assert the
+    // rejection boundary sits at the new limit and that no request reaches the upload route.
+    let uploadRequested = false;
+    await page.route('**/api/profile/picture-upload', async (route) => {
+      uploadRequested = true;
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // A valid PNG header followed by padding, sized just over the 2MB (2 * 1024 * 1024 bytes) cap.
+    const oversizedPng = Buffer.concat([
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      Buffer.alloc(2 * 1024 * 1024 + 1),
+    ]);
+    await page.getByTestId('profile-edit-drawer-avatar-input').setInputFiles({ name: 'oversized-avatar.png', mimeType: 'image/png', buffer: oversizedPng });
+
+    await expect(page.locator('.p-toast'), 'error toast should appear').toContainText('Image must be 2MB or smaller.', { timeout: ELEMENT_TIMEOUT });
+    expect(uploadRequested, 'the oversized file must never reach the upload route').toBe(false);
+  });
+
   test('S5: About Me saves, the drawer closes, and the panel reflects the bio', async ({ page }) => {
     // Stub the write so the real profile is never mutated — assert on drawer-close + optimistic update,
     // and lock in that the bio rides inside the user_metadata envelope.
@@ -355,5 +381,23 @@ test.describe('Profile edit drawer', () => {
 
     expect(lastPatchBody?.user_metadata, 'second PATCH should send a user_metadata envelope').toBeTruthy();
     expect(lastPatchBody?.user_metadata && 'bio' in lastPatchBody.user_metadata, 'empty bio must stay omitted after reopen').toBe(false);
+  });
+
+  test('S8: an over-limit emoji bio is hard-capped at 2000 code points, not UTF-16 units', async ({ page }) => {
+    // Regression for LFXV2-3104: the cap counts code points, not UTF-16 units — a 2001-emoji paste
+    // (4002 UTF-16 units) is trimmed to exactly 2000 emoji, where native [maxlength] would stop at ~1000.
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const bio = page.getByTestId('profile-edit-drawer-about-me').locator('textarea');
+    await bio.fill('😀'.repeat(2001));
+
+    // The field is trimmed by code point to exactly 2000 emoji (not 2000 UTF-16 units, which would be
+    // 1000 emoji), so the value settles at 2000 glyphs and the counter reads 2000 / 2000.
+    await expect(bio, 'over-limit bio should be capped at 2000 code points').toHaveValue('😀'.repeat(2000), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('profile-edit-drawer-about-me-counter')).toHaveText('2000 / 2000');
   });
 });

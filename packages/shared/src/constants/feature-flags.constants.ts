@@ -27,3 +27,14 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * only this one hides/shows the UI without changing what a direct API caller can do.
  */
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
+
+/**
+ * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
+ * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
+ *
+ * This is the supported way to pin a flag in an e2e run. Flag-gated routes are otherwise untestable
+ * — the SDK evaluates against an anonymous context before the authenticated one, so a flag targeted
+ * at named users reads false in that window and a route guard can redirect before the real value
+ * lands.
+ */
+export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';

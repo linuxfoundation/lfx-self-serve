@@ -1,0 +1,77 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="org-roi-projects-bar">
+  @if (!hasProjects()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-bar-empty">
+      <i class="fa-light fa-chart-simple text-gray-400" aria-hidden="true"></i>
+      <span>Select at least one project to compare investment against return.</span>
+    </div>
+  } @else {
+    @if (hiddenCount() > 0) {
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-bar-truncation-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span
+          >Showing the first {{ maxRows }} of the selected projects. {{ hiddenCount() }} more are selected but not drawn — a bar each would not be readable. Use
+          the table to see every project.</span
+        >
+      </p>
+    }
+
+    <div class="w-full" [style.height]="chartHeight()" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-projects-bar-chart">
+      <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions()" height="100%" />
+    </div>
+
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-bar-scale-note">
+      Investment and return are drawn on separate scales — return is typically tens of times larger, and on a shared scale the investment categories would be
+      invisible. Compare each bar's own composition, not the two bars' lengths.
+    </p>
+
+    @if (unreconciled().length > 0) {
+      <!-- Categories sum to a project's investment by construction. When they do not, that is a
+           defect in the metric layer, so it is reported rather than corrected here. -->
+      <div
+        class="flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900"
+        data-testid="org-roi-projects-bar-reconciliation-warning">
+        <span class="font-medium">Some category breakdowns do not add up to their project's investment.</span>
+        <ul class="flex flex-col gap-0.5">
+          @for (entry of unreconciled(); track entry.projectName) {
+            <li>{{ entry.projectName }}: off by {{ entry.difference }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <!-- The canvas is otherwise the only presentation of these values. `sr-only` keeps the table
+         out of the visual layout without hiding it from assistive technology. -->
+    <table class="sr-only" data-testid="org-roi-projects-bar-table">
+      <caption>
+        Investment and return by project
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Project</th>
+          <th scope="col">Investment</th>
+          @for (column of categoryColumns(); track column.type) {
+            <th scope="col">{{ column.label }}</th>
+          }
+          <th scope="col">Return</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of tableRows(); track row.projectId) {
+          <tr>
+            <th scope="row">{{ row.projectName }}</th>
+            <td>{{ row.investment }}</td>
+            @for (amount of row.categories; track $index) {
+              <td>{{ amount }}</td>
+            }
+            <td>{{ row.return }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-bar-modelled-cost-note">{{ investmentExplanation }}</p>
+  }
+</div>

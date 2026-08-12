@@ -12,9 +12,10 @@ import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
  * CanMatch guard for the Profile "My CLAs" tab (`/profile/clas`), gating the
- * read-only EasyCLA view behind the `my-clas-enabled` flag. Mirrors
- * orgLensEnabledGuard: SSR defers to the browser, the browser waits for the
- * flag provider to be READY, and it fails closed to the default profile tab.
+ * read-only EasyCLA view behind the `my-clas-enabled` flag. SSR defers to the
+ * browser; the browser waits up to 5 s for the flag provider to be READY, then
+ * fails open (allows the route) if LD is unreachable so users aren't silently
+ * redirected away from a feature that is enabled for them in production.
  */
 export const myClasEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -36,9 +37,12 @@ export const myClasEnabledGuard: CanMatchFn = async () => {
         catchError(() => of(false))
       )
     );
-    // Provider never became ready (no client id / LD unreachable) → fail closed.
+    // Provider never became ready in time (LD slow / unreachable) → fail open so users
+    // aren't silently redirected away from a route the flag is enabled for in production.
+    // Log so the team can monitor frequency and detect drift if the flag scope ever narrows.
     if (!ready) {
-      return router.parseUrl('/profile');
+      console.warn('myClasEnabledGuard: LD provider not ready after 5 s — failing open');
+      return true;
     }
   }
 
