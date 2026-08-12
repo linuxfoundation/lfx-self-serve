@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EventsAttentionSectionComponent } from './events-attention-section.component';
@@ -160,6 +160,28 @@ describe('EventsAttentionSectionComponent', () => {
     await render([row()], 'tlf');
 
     expect(fixture.nativeElement.style.display).toBe('contents');
+  });
+
+  // getEventRoster rethrows by design. An error reaching toSignal poisons the signal, so every
+  // later read would throw during change detection and take the whole Overview tab down — this
+  // supplementary strip must fail closed instead.
+  it('renders nothing when the roster fails rather than breaking the tab', async () => {
+    const getEventRoster = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [EventsAttentionSectionComponent],
+      providers: [{ provide: AnalyticsService, useValue: { getEventRoster } }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EventsAttentionSectionComponent);
+    fixture.componentRef.setInput('foundationSlug', 'tlf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Reading these must not throw — that is the regression.
+    expect(items()).toHaveLength(0);
+    expect(fixture.nativeElement.style.display).toBe('none');
   });
 
   // toSignal holds the previous roster until the next request emits, so without gating on the

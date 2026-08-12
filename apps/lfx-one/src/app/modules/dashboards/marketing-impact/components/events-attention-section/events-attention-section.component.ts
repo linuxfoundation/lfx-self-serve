@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CRITICAL_ATTENTION_PERCENT_THRESHOLD, MAX_ATTENTION_ITEMS } from '@lfx-one/shared/constants';
 import { eventRegistrationPercent, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import type { AttentionSeverity, EventAttentionItem, EventRosterResponse, EventRosterRow } from '@lfx-one/shared/interfaces';
 
@@ -54,7 +54,17 @@ export class EventsAttentionSectionComponent {
           }
           this.loading.set(true);
           // Upcoming only — attention is about events we can still influence.
-          return this.analyticsService.getEventRoster(slug, false).pipe(finalize(() => this.loading.set(false)));
+          //
+          // catchError inside the switchMap, not outside: getEventRoster rethrows by design (a
+          // roster outage must not read as "no events"), and an error reaching toSignal would
+          // poison the signal permanently — every later read from items()/showStrip() and the host
+          // display binding would throw during change detection, and switching foundations could
+          // not recover because the outer stream is already dead. This strip is supplementary, so
+          // a failure omits it rather than taking the Overview tab down with it.
+          return this.analyticsService.getEventRoster(slug, false).pipe(
+            catchError(() => of({ projectId: '', events: [] })),
+            finalize(() => this.loading.set(false))
+          );
         })
       ),
       { initialValue: { projectId: '', events: [] } }
