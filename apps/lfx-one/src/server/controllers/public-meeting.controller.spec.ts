@@ -527,4 +527,14 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
   });
+
+  it('restores user token when getMeetingById throws', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    meetingSvc.getMeetingById.mockRejectedValue(new Error('upstream error'));
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(req.bearerToken).toBe('user-token');
+    expect(next).toHaveBeenCalledTimes(1);
+  });
 });

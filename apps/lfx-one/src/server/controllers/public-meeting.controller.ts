@@ -557,8 +557,13 @@ export class PublicMeetingController {
         );
       }
 
-      await this.setupM2MToken(req);
-      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      let meeting: Awaited<ReturnType<typeof this.meetingService.getMeetingById>>;
+      try {
+        await this.setupM2MToken(req);
+        meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      } finally {
+        req.bearerToken = userToken;
+      }
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', meetingId, {
@@ -571,7 +576,6 @@ export class PublicMeetingController {
       const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
       if (authError) return next(authError);
 
-      req.bearerToken = userToken;
       const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
 
       logger.success(req, 'register_for_public_meeting', startTime, {
