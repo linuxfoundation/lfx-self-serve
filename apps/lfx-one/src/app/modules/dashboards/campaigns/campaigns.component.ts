@@ -133,7 +133,10 @@ export class CampaignsComponent {
   private briefPersistenceGeneration = 0;
 
   /**
-   * Bumped only when the page DISCARDS what it owns: `resetToPlanning`, or a foundation switch.
+   * Bumped only when the page DISCARDS what it owns, which today means `resetToPlanning` alone.
+   *
+   * NOT a foundation switch: that handler clears the banner but deliberately keeps the map, whose
+   * keys already name the foundation each id belongs to.
    *
    * Separate from `briefPersistenceGeneration`, which a queued sibling save also bumps. That
    * conflation is what made ownership impossible to place: checking the display counter after a
@@ -208,8 +211,14 @@ export class CampaignsComponent {
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
+        // Only the DISPLAY counter. `ownershipGeneration` is deliberately not bumped: this
+        // handler clears the banner but leaves `knownBriefIds` alone, because the map is keyed by
+        // foundation and each one's ids stay valid for it. Bumping it here would make an
+        // in-flight save that lands after a switch fail the ownership guard and drop the id of a
+        // row it just created — so returning to that foundation and proceeding again would be
+        // refused as unowned. A switch relabels which foundation is on screen; it discards
+        // nothing, which is exactly the distinction that counter exists to draw.
         this.briefPersistenceGeneration++;
-        this.ownershipGeneration++;
         this.briefPersistence.set(this.idlePersistence);
       });
 

@@ -434,6 +434,33 @@ describe('CampaignsComponent brief persistence', () => {
      * Recording before the check is safe because the KEY is `(project, event)`: a late response
      * files its id under the event it actually saved, and cannot reach another event's brief.
      */
+    it('keeps an id recorded by a save that lands after a foundation switch', async () => {
+      // The switch clears the BANNER but deliberately keeps `knownBriefIds` — the map is keyed by
+      // foundation, so each one's ids stay valid for it. An in-flight save that finishes after
+      // the switch must therefore still record: it created a real row under TLF, and dropping its
+      // id means returning to TLF and proceeding again is refused as unowned for a row this very
+      // session made.
+      const first = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(first);
+      proceed();
+      await fixture.whenStable();
+
+      selectFoundation('cncf');
+      await fixture.whenStable();
+      first.next({ enabled: true, briefId: 'tlf-1', etag: 'W/"1"', created: true, approved: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Back to TLF and proceed the same event again: the id from that late response must be
+      // there to name the row it created.
+      selectFoundation('tlf');
+      await fixture.whenStable();
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1');
+    });
+
     it('hands a queued save the id its predecessor created for the same event', async () => {
       const first = new Subject<CampaignBriefPersistResult>();
       persistBrief.mockReturnValue(first);
