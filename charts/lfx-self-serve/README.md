@@ -119,6 +119,11 @@ environment:
 | `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
 | `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
 | `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
 
 ### Environment Variables
 
