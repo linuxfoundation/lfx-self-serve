@@ -195,7 +195,9 @@ export class EmailTabComponent {
             // Codepoint comparison, not localeCompare: these are opaque YYYY-MM-DD identifiers,
             // and a locale-sensitive collation could order them differently on the server than in
             // the browser — which would make the SSR-rendered list reshuffle on hydration.
-            return b.sendDate < a.sendDate ? -1 : b.sendDate > a.sendDate ? 1 : 0;
+            if (b.sendDate < a.sendDate) return -1;
+            if (b.sendDate > a.sendDate) return 1;
+            return 0;
           }
           return b.sends - a.sends;
         })
