@@ -213,7 +213,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   it('translates campaign-service own typed 404 into the not_found status the in-process path returns', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'the resource was not found' } }));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).resolves.toEqual({
       status: 'not_found',
       error: JOB_LOST_MESSAGE,
     });
@@ -230,7 +230,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   ])('rethrows %s rather than reporting the job lost', async (_label, errorBody) => {
     proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode: 404 });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
   });
 
   // Only 404. Anything else means the status is UNKNOWN, and reporting unknown as `not_found`
@@ -238,7 +238,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   it.each([401, 500, 503])('rethrows a %i rather than reporting the job lost', async (statusCode) => {
     proxyRequest.mockRejectedValue(new MicroserviceError('upstream', statusCode, 'ERR'));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).rejects.toMatchObject({ statusCode });
   });
 });
 
