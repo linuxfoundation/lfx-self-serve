@@ -391,6 +391,31 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).toBe('error');
       expect(state().message).toContain('Someone else changed this brief');
       expect(state().message).not.toContain('was not opened here');
+      // Must NOT advise a reload. Nothing reads a brief back in this phase, so a reload shows
+      // nothing new AND drops the in-memory brief plus the ownership map — turning the next save
+      // into `unowned-brief-exists` for a row this session owns. Strictly worse than staying put.
+      expect(state().message).not.toContain('Reload');
+    });
+
+    it('lets a retry through after a stale-brief conflict instead of dead-ending', async () => {
+      // First save records id + ETag.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      // Another writer moves the row: the save is refused with the stale validator.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+
+      // The retry must NOT re-send the rejected ETag. Keeping it would make every attempt fail
+      // identically — a permanent dead end for a save this session is entitled to make. Ownership
+      // is untouched, because the 412 disputed the version, not who owns the row.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null);
     });
 
     it('treats a padded slug as a different brief from the unpadded one', async () => {
