@@ -45,11 +45,13 @@ export function isFoundationAuditorOrgSelectorEnabled(): boolean {
 /**
  * LFXV2-2750 — surfaces member organizations of foundations the caller audits, view-only, in the org-selector.
  *
- * **Foundation-scoped and strictly bounded.** Two earlier designs failed on real data:
+ * **Foundation-scoped and strictly bounded.** An earlier design failed on real data:
  *  - *Eager, fully paginated*: deep-paginated every audited foundation's roster (page 12+, query-service 500s)
  *    and hung the dropdown for minutes on a broad-access caller.
- *  - *Name-search driven*: `/query/resources?type=b2b_org&name=…` returns nothing — the `b2b_org` index is not
- *    name-searchable (verified: even "linux" returns 0 while The Linux Foundation exists and resolves by tag).
+ *
+ * The roster read itself was blocked until LFXV2-2752: `project_membership` docs carried no usable
+ * foundation-pivot tag (root cause LFXV2-2733 — docs were indexed with an empty `project_uid`). That's
+ * fixed and reindexed; `tags:project_uid:<foundation-uid>` is now the supported pivot (see `collectMemberOrgUids`).
  *
  * So the shape here is: foundations are a small set (~56), which makes enumerate + one batched
  * `project:<uid>#auditor` check cheap. The expensive part — roster reads — is bounded hard:
@@ -161,7 +163,7 @@ export class FoundationAuditorOrgsService {
       type: 'project',
       filters: [`funding:${ProjectFunding.Funded}`, 'funding_model:Membership'],
       filters_or: [`stage:${ProjectStage.Active}`, `stage:${ProjectStage.FormationEngaged}`],
-      per_page: ORG_ROLE_GRANTS_HARD_CAP,
+      page_size: ORG_ROLE_GRANTS_HARD_CAP,
     });
 
     const foundations: AuditedFoundation[] = [];
@@ -171,12 +173,10 @@ export class FoundationAuditorOrgsService {
       // legal_entity_type negation isn't filterable upstream — re-check locally.
       if (!project || !computeIsFoundation(project)) continue;
       const uid = project.uid;
-      const slug = project.slug;
-      // uid feeds the access-check tuple; slug feeds the `project_slug:` membership filter.
+      // uid feeds both the access-check tuple and the `project_uid:` membership pivot tag.
       if (!uid || !isFilterSafeIdentifier(uid) || seen.has(uid)) continue;
-      if (!slug || !isFilterSafeIdentifier(slug)) continue;
       seen.add(uid);
-      foundations.push({ uid, slug });
+      foundations.push({ uid });
     }
     return foundations;
   }
@@ -192,7 +192,7 @@ export class FoundationAuditorOrgsService {
         chunk.map((f) => ({ resource: 'project', id: f.uid, access: 'auditor' }))
       );
       for (const foundation of chunk) {
-        if (results.get(foundation.uid) === true) audited.push(foundation);
+        if (results.get(`${foundation.uid}#auditor`) === true) audited.push(foundation);
       }
     }
     return audited;
@@ -200,8 +200,8 @@ export class FoundationAuditorOrgsService {
 
   /**
    * M2M: FIRST PAGE ONLY of each audited foundation's roster, through a bounded-concurrency pool.
-   * Filters by `project_slug` (a DATA field) — mirroring OrgMembershipResolverService. `project_uid`/`project_slug`
-   * are not tags on project_membership docs, so a `tags:` lookup silently returns nothing.
+   * Pivots by `tags:project_uid:<uid>` (LFXV2-2752) — the supported foundation→members lookup on
+   * `project_membership` docs.
    */
   private async collectMemberOrgUids(req: Request, foundations: AuditedFoundation[]): Promise<string[]> {
     const rostersByIndex: ProjectMembershipDoc[][] = new Array(foundations.length);
@@ -216,8 +216,8 @@ export class FoundationAuditorOrgsService {
           'GET',
           {
             type: 'project_membership',
-            filters_all: `project_slug:${foundations[index].slug}`,
-            per_page: FOUNDATION_AUDITOR_ROSTER_PAGE_SIZE,
+            tags: `project_uid:${foundations[index].uid}`,
+            page_size: FOUNDATION_AUDITOR_ROSTER_PAGE_SIZE,
           }
         );
         rostersByIndex[index] = (response?.resources ?? []).map((r) => r.data).filter(Boolean);
@@ -260,7 +260,7 @@ export class FoundationAuditorOrgsService {
       const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'b2b_org',
         tags: chunk.map((uid) => `b2b_org_uid:${uid}`),
-        per_page: Math.min(chunk.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
+        page_size: Math.min(chunk.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
       });
 
       for (const resource of response?.resources ?? []) {

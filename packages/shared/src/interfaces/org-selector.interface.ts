@@ -316,10 +316,8 @@ export interface AccessAwareOrgsCacheEntry {
 
 /** LFXV2-2750 — a foundation (project) the caller holds the FGA `auditor` relation on. */
 export interface AuditedFoundation {
-  /** Project uid — interpolated into the `project:<uid>#auditor` access-check tuple. */
+  /** Project uid — interpolated into both the `project:<uid>#auditor` access-check tuple and the `project_uid:` membership pivot tag. */
   uid: string;
-  /** Project slug — interpolated into the `project_slug:` project_membership data filter. */
-  slug: string;
 }
 
 /** LFXV2-2750 — a member org of an audited foundation, resolved by the search-driven lookup. */
