@@ -465,10 +465,22 @@ export class CampaignServiceClient {
       return { status: 'none', briefId: null, brief: null };
     }
 
-    // `found.etag` is deliberately dropped. It is the write path's concurrency token, and this
-    // read hands its result to a component that may sit on it for minutes before the user
-    // restores anything — by which time the validator would be stale. The save path re-reads it
-    // at the moment it needs one, so carrying a copy here could only ever be the wrong copy.
+    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
+    //
+    // The reason for dropping it: this read hands its result to a component that may sit on it
+    // for minutes before the user restores anything, so a carried validator would usually be
+    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
+    //
+    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
+    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
+    // than rejected — last-write-wins between two people editing the same brief, where a
+    // carried validator would have produced a 412 and a chance to reconcile.
+    //
+    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
+    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
+    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
+    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
+    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
     const brief = fromBriefResponse(found.brief);
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null }
