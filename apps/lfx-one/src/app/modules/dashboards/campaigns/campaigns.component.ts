@@ -78,67 +78,6 @@ export class CampaignsComponent {
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
   /**
-   * Which brief `briefPersistence` currently describes.
-   *
-   * A save is not awaited and not cancelled (see `persistBrief`), so its response can land after
-   * the user has already moved on — a program switch or a second Proceed both run
-   * `resetToPlanning`. Without this counter the late response writes `saved` and a `briefId`
-   * for a brief the page no longer holds, which is worse than a stale spinner: the id shown
-   * belongs to a different brief, and `saved` claims durability for the one on screen, which
-   * was never sent anywhere.
-   *
-   * Incremented by every event that changes which brief is current, and compared inside the
-   * subscription. A mismatch means the result is for a superseded brief and is dropped — the
-   * newer owner of the signal has already set the state it wants.
-   */
-  /**
-   * The campaign-service brief id this session has established ownership of, or null.
-   *
-   * TWO sources on this branch, and both are genuine proof: the page LOADED the brief from
-   * campaign-service (the restore path), or it CREATED the brief itself on an earlier save.
-   * Recording the created id is what stops the second Proceed of a session being refused as
-   * unowned — a user editing and re-proceeding would otherwise be told their own brief belongs
-   * to someone else.
-   *
-   * Sent with the next save as proof: the server refuses to replace a stored brief for a caller
-   * that cannot name it, because a reload or a second tab is enough to reach a save that would
-   * otherwise overwrite content the user never saw (LFXV2-3200).
-   *
-   * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
-   * brief, a different event, claim ownership of the previous one's row.
-   *
-   * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
-   * over. That switch does not re-create this component and deliberately keeps the brief (see the
-   * constructor), so with one slot: saving under TLF then under CNCF overwrites TLF's id, and
-   * switching back to TLF replays CNCF's id against TLF's row — an update the user does own,
-   * refused. Merely tagging the slot with its slug fixes the wrong id but not the loss: returning
-   * to TLF would then create a second row instead of replacing the one this session made.
-   *
-   * Keyed by BOTH halves of the server's own identity for a brief, `(project_id, event_slug)`, so
-   * an id can only ever be replayed against the row it names. That makes the invariant structural
-   * rather than something each future code path has to remember, and it applies to both sources
-   * above: a restored id is as event- and foundation-specific as a created one.
-   *
-   * An earlier revision keyed only the foundation and claimed the event half was covered because
-   * "every event change goes through `resetToPlanning`". That premise is false — `selectTab` sets
-   * the tab directly, so returning to Planning by clicking the tab recreates the planning form
-   * without any reset. Restore event A, click Planning, generate a brief for event B: with a
-   * foundation-only key, B's save would carry A's id and the server would accept an overwrite of
-   * a brief this session never loaded, which is precisely what the guard exists to prevent.
-   *
-   * The event half is derived exactly as the write path derives the key it sends
-   * (`deriveEventSlug` in `campaign-service.service.ts`): `eventDetails.slug` EXACTLY as
-   * stored, with trimming used only to test emptiness — that helper returns the untrimmed
-   * original, and that exact string is what goes on the wire as `event_slug`.
-   *
-   * It is duplicated rather than imported because that module is SERVER-side and this component
-   * runs in the browser; deriving it any other way would let the lookup and the request disagree
-   * about which row is being claimed, so the two must be changed together.
-   *
-   * A plain field rather than a signal: nothing renders it, and it answers "may this save
-   * replace?" at the moment a request is built.
-   */
-  /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
    * rules forbid — and which would read badly here anyway, since the three cases are unrelated
    * situations rather than degrees of one.
@@ -199,6 +138,53 @@ export class CampaignsComponent {
    * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
    * validator sends none, and the server's ownership check still decides whether it may replace.
    */
+  /**
+   * The campaign-service brief id this session has established ownership of, or null.
+   *
+   * TWO sources on this branch, and both are genuine proof: the page LOADED the brief from
+   * campaign-service (the restore path), or it CREATED the brief itself on an earlier save.
+   * Recording the created id is what stops the second Proceed of a session being refused as
+   * unowned — a user editing and re-proceeding would otherwise be told their own brief belongs
+   * to someone else.
+   *
+   * Sent with the next save as proof: the server refuses to replace a stored brief for a caller
+   * that cannot name it, because a reload or a second tab is enough to reach a save that would
+   * otherwise overwrite content the user never saw (LFXV2-3200).
+   *
+   * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
+   * brief, a different event, claim ownership of the previous one's row.
+   *
+   * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
+   * over. That switch does not re-create this component and deliberately keeps the brief (see the
+   * constructor), so with one slot: saving under TLF then under CNCF overwrites TLF's id, and
+   * switching back to TLF replays CNCF's id against TLF's row — an update the user does own,
+   * refused. Merely tagging the slot with its slug fixes the wrong id but not the loss: returning
+   * to TLF would then create a second row instead of replacing the one this session made.
+   *
+   * Keyed by BOTH halves of the server's own identity for a brief, `(project_id, event_slug)`, so
+   * an id can only ever be replayed against the row it names. That makes the invariant structural
+   * rather than something each future code path has to remember, and it applies to both sources
+   * above: a restored id is as event- and foundation-specific as a created one.
+   *
+   * An earlier revision keyed only the foundation and claimed the event half was covered because
+   * "every event change goes through `resetToPlanning`". That premise is false — `selectTab` sets
+   * the tab directly, so returning to Planning by clicking the tab recreates the planning form
+   * without any reset. Restore event A, click Planning, generate a brief for event B: with a
+   * foundation-only key, B's save would carry A's id and the server would accept an overwrite of
+   * a brief this session never loaded, which is precisely what the guard exists to prevent.
+   *
+   * The event half is derived exactly as the write path derives the key it sends
+   * (`deriveEventSlug` in `campaign-service.service.ts`): `eventDetails.slug` EXACTLY as
+   * stored, with trimming used only to test emptiness — that helper returns the untrimmed
+   * original, and that exact string is what goes on the wire as `event_slug`.
+   *
+   * It is duplicated rather than imported because that module is SERVER-side and this component
+   * runs in the browser; deriving it any other way would let the lookup and the request disagree
+   * about which row is being claimed, so the two must be changed together.
+   *
+   * A plain field rather than a signal: nothing renders it, and it answers "may this save
+   * replace?" at the moment a request is built.
+   */
   private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
 
   /**
@@ -241,6 +227,20 @@ export class CampaignsComponent {
    */
   private ownershipEpochs = new Map<string, number>();
 
+  /**
+   * Which brief `briefPersistence` currently describes.
+   *
+   * A save is not awaited and not cancelled (see `persistBrief`), so its response can land after
+   * the user has already moved on — a program switch or a second Proceed both run
+   * `resetToPlanning`. Without this counter the late response writes `saved` and a `briefId`
+   * for a brief the page no longer holds, which is worse than a stale spinner: the id shown
+   * belongs to a different brief, and `saved` claims durability for the one on screen, which
+   * was never sent anywhere.
+   *
+   * Incremented by every event that changes which brief is current, and compared inside the
+   * subscription. A mismatch means the result is for a superseded brief and is dropped — the
+   * newer owner of the signal has already set the state it wants.
+   */
   private briefPersistenceGeneration = 0;
 
   /**

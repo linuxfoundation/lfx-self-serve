@@ -43,7 +43,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
  * part of any contract between the tiers. Two repo rules meet here and an intersection is the
- * only form satisfying both — `CLAUDE.md:176` prohibits the local `interface Foo {}` form inside
+ * only form satisfying both — CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule prohibits the local `interface Foo {}` form inside
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */

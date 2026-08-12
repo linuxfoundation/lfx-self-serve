@@ -174,7 +174,7 @@ export class CampaignServiceClient {
    * Bounds on the lost-write reconciliation: how many times it reads, how long it waits between
    * attempts, and the WALL-CLOCK budget the whole loop may spend.
    *
-   * Instance members rather than module constants: `CLAUDE.md:176` keeps shared values in
+   * Instance members rather than module constants: CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
    * `@lfx-one/shared`, and these are neither shared nor meaningful outside this client.
    *
    * The wall-clock bound is the one that actually holds. An earlier revision counted only the
@@ -814,15 +814,6 @@ export class CampaignServiceClient {
 }
 
 /**
- * The `ETag` response header, or `null` when the response carried none.
- *
- * Lower-case key without a fallback: `api-client.service.ts` builds this map with
- * `Object.fromEntries(response.headers.entries())` over a fetch `Headers`, and the Fetch
- * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
- * would be unreachable code that implies the casing is uncertain.
- */
-
-/**
  * Whether a stored brief is the one this request sent.
  *
  * Compares the WHOLE payload, opaque blobs included. Two rounds of review narrowed this: first
@@ -895,6 +886,14 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return [...keys].every((k) => deepEqual(ao[k], bo[k]));
 }
 
+/**
+ * The `ETag` response header, or `null` when the response carried none.
+ *
+ * Lower-case key without a fallback: `api-client.service.ts` builds this map with
+ * `Object.fromEntries(response.headers.entries())` over a fetch `Headers`, and the Fetch
+ * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
+ * would be unreachable code that implies the casing is uncertain.
+ */
 function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
