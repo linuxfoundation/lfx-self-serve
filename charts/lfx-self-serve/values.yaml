@@ -377,10 +377,27 @@ environment:
   # Persist the generated campaign brief to campaign-service instead of holding it only in the
   # browser tab. Same accepted values and same default-deny as the flag above.
   #
-  # This one has NO id-shape backstop, and does not need one: persistence is additive, so a
-  # flag-on and a flag-off pod serving the same user during a rolling update disagree only about
-  # whether that user's brief was saved — never about which of two systems owns it. Turning it
-  # off again leaves the saved briefs in place; nothing reads them yet.
+  # This one has NO id-shape backstop. It is no longer write-only: the flag now also gates the
+  # brief READ-BACK (`GET /api/campaigns/brief` and the Planning tab's restore offer), so the
+  # earlier "nothing reads them yet" no longer holds and neither does the safety argument built
+  # on it.
+  #
+  # What a mixed rollout actually costs, stated plainly. Requests are not sticky to a pod, so
+  # during a RollingUpdate one user's lookup can land flag-on and their next save flag-off, or
+  # the reverse:
+  #
+  #   - a lookup on a flag-off pod answers `off`, so a stored brief is not offered and the user
+  #     regenerates. Their save then lands on a flag-on pod, finds the row, and is refused as
+  #     `unowned-brief-exists` — a confusing but SAFE outcome; nothing is overwritten.
+  #   - a restore on a flag-on pod followed by a save on a flag-off pod is a no-op save. The
+  #     stored brief is untouched.
+  #
+  # Both directions are recoverable and neither loses stored content, which is why this is a
+  # rollout caveat rather than a blocker. It is still worse than the write-only version, so:
+  # prefer a no-overlap rollout (scale to one replica, or `maxSurge: 0` with `maxUnavailable: 1`)
+  # when flipping this flag, and expect transient `unowned-brief-exists` refusals if you do not.
+  #
+  # Turning it off again leaves the saved briefs in place; they simply stop being offered.
   LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
     value:
 
