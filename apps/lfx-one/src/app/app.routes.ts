@@ -128,6 +128,9 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
           },
           {
+            // Componentless parent, so the dark-launch guard is declared once and the project
+            // detail child is matched by it rather than by a second guard of its own. A looser
+            // copy would be a way into the unfinished feature while the flag is off.
             path: 'roi',
             canMatch: [orgLensRoiEnabledGuard],
             data: {
@@ -136,7 +139,20 @@ export const routes: Routes = [
               description: "Modelled return on your organization's open source investment.",
               icon: 'fa-light fa-chart-mixed-up-circle-dollar',
             },
-            loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+            children: [
+              {
+                path: '',
+                loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+              },
+              {
+                path: 'projects/:projectSlug',
+                data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
+                loadComponent: () =>
+                  import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then(
+                    (m) => m.OrgRoiProjectDetailComponent
+                  ),
+              },
+            ],
           },
           {
             // INFO: Future Epic implementation — the Governance page is hidden; deep links
