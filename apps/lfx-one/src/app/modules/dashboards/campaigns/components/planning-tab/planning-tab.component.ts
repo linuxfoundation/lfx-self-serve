@@ -279,8 +279,24 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
-    this.savedBrief.set(null);
-    this.savedBriefWarning.set(null);
+    // The restore offer is deliberately NOT cleared here, unlike everything above it.
+    //
+    // Cancel and New Brief discard the GENERATED brief. They say nothing about the STORED one,
+    // which is still there and still the user's, and the offer is how they reach it without
+    // regenerating. The offer's validity depends on `(slug, foundation)` alone — reset changes
+    // neither — so what was true before it is still true after.
+    //
+    // Clearing it stranded the offer permanently rather than merely hiding it. `onUrlChange`
+    // issues a lookup only when the slug CHANGES (`currentSlug` records what was last looked up),
+    // and reset leaves the url field untouched, so retyping the same url is correctly a no-op and
+    // no keystroke could bring the offer back. Re-pushing the slug does not work either: the
+    // pipeline's `distinctUntilChanged` drops the unchanged `(slug, project)` pair, which is the
+    // same trap the comment in `onUrlChange` already warns about. The next Proceed then created a
+    // second row and hit the unowned-brief conflict.
+    //
+    // `savedBriefId` is left in step with `savedBrief` by saying nothing about either — the pair
+    // is only ever written together, which is what `restoreSavedBrief`'s both-or-neither guard
+    // depends on.
     this.isEditing.set(false);
     this.isRefining.set(false);
     this.isRefineStreaming.set(false);

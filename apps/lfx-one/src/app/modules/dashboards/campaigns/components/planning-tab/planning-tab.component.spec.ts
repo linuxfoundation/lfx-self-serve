@@ -127,11 +127,32 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(savedBriefWarning()).toBeNull();
   });
 
+  it('keeps the restore offer across Cancel', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(savedBrief()).toEqual(exampleBrief);
+
+    // Cancel / New Brief. It discards the GENERATED brief; it says nothing about the stored one,
+    // which is still there and still the user's.
+    (fixture.componentInstance as unknown as { reset(): void }).reset();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    // Clearing it stranded the offer permanently rather than hiding it: `onUrlChange` issues a
+    // lookup only when the slug CHANGES, and reset leaves the url untouched, so retyping the same
+    // url is correctly a no-op and no keystroke could bring the offer back. The next Proceed then
+    // created a second row and hit the unowned-brief conflict.
+    expect(savedBrief()).toEqual(exampleBrief);
+    // And no re-fetch is needed to achieve it — the offer depends on `(slug, foundation)`, which
+    // reset does not touch. A second lookup here would mean the fix was papering over a clear.
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+  });
+
   it('warns about an unreadable brief when lookup returns status=unreadable', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) =>
-        s.next({ status: 'unreadable', brief: null, briefId: 'brief-456' })
-      )
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'unreadable', brief: null, briefId: 'brief-456' }))
     );
 
     await typeEventUrl('https://events.example.com/old-event');
