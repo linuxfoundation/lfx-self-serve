@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { computeMomPct, formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -38,6 +38,10 @@ export class EmailTabComponent {
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
+  protected readonly topCampaignsCountLabel = computed(() => {
+    const count = this.topCampaigns().length;
+    return `${formatNumber(count)} ${count === 1 ? 'send' : 'sends'}`;
+  });
 
   // === Private Initializers ===
   private initEmailData(): Signal<EmailCtrResponse | null> {
@@ -144,7 +148,7 @@ export class EmailTabComponent {
           label: 'Click-Through Rate',
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
-          value: `${(data.currentCtr ?? 0).toFixed(2)}%`,
+          value: `${formatPercent(data.currentCtr ?? 0)}%`,
           momChange: formatChangePct(changePct, 'MoM'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),
@@ -169,7 +173,7 @@ export class EmailTabComponent {
           sends: formatNumber(et.totalSends),
           opens: formatNumber(et.totalOpens),
           openRate: `${et.openRate.toFixed(1)}%`,
-          ctr: `${et.ctr.toFixed(2)}%`,
+          ctr: `${formatPercent(et.ctr)}%`,
         })
       );
     });
@@ -180,20 +184,46 @@ export class EmailTabComponent {
       const data = this.emailData();
       if (!data?.emailTypeBreakdown?.length) return [];
 
+      // Every send in the selected period, newest first — deliberately uncapped so the table is a
+      // complete listing rather than a top-N. Undated rows sort last so they can't head the table.
       const allCampaigns = data.emailTypeBreakdown.flatMap((et) => et.campaigns ?? []);
       return allCampaigns
-        .sort((a, b) => b.sends - a.sends)
-        .slice(0, 5)
+        .sort((a, b) => {
+          if (a.sendDate !== b.sendDate) {
+            if (!a.sendDate) return 1;
+            if (!b.sendDate) return -1;
+            // Codepoint comparison, not localeCompare: these are opaque YYYY-MM-DD identifiers,
+            // and a locale-sensitive collation could order them differently on the server than in
+            // the browser — which would make the SSR-rendered list reshuffle on hydration.
+            if (b.sendDate < a.sendDate) return -1;
+            if (b.sendDate > a.sendDate) return 1;
+            return 0;
+          }
+          return b.sends - a.sends;
+        })
         .map(
           (c): TopCampaignRow => ({
             name: c.campaignName,
             type: c.emailType,
+            sendDate: c.sendDate ? this.formatSendDate(c.sendDate) : '—',
             sends: formatNumber(c.sends),
             opens: formatNumber(c.opens),
             openRate: `${c.openRate.toFixed(1)}%`,
-            ctr: `${c.ctr.toFixed(2)}%`,
+            ctr: `${formatPercent(c.ctr)}%`,
           })
         );
+    });
+  }
+
+  /** Formats a YYYY-MM-DD send date as "Jul 14, 2026", parsing parts explicitly to avoid TZ drift. */
+  private formatSendDate(iso: string): string {
+    const [year, month, day] = iso.split('-').map(Number);
+    if (!year || !month || !day) return iso;
+    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
     });
   }
 }

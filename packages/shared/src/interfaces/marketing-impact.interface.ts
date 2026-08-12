@@ -213,10 +213,12 @@ export interface EmailTypeRow {
   ctr: string;
 }
 
-/** View-model row for the top campaigns table. */
+/** View-model row for the email sends table. */
 export interface TopCampaignRow {
   name: string;
   type: string;
+  /** Formatted send date (e.g. "Jul 14, 2026"), or an em dash when the source row has no date. */
+  sendDate: string;
   sends: string;
   opens: string;
   openRate: string;

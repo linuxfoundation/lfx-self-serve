@@ -2890,6 +2890,8 @@ export interface EmailCtrCampaignGroup {
 export interface EmailCampaignPerformance {
   campaignName: string;
   emailType: string;
+  /** Day-level publish/send date as YYYY-MM-DD, or null when the source row carries no usable date. */
+  sendDate: string | null;
   sends: number;
   opens: number;
   clicks: number;
