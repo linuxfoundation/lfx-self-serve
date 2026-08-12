@@ -380,7 +380,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(otherBrief);
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null, false);
     });
 
     it("still replays an event's own id when that event is proceeded again", async () => {
@@ -396,7 +396,10 @@ describe('CampaignsComponent brief persistence', () => {
       // `null` ETag alongside a real id: a restore has no load-time validator to carry
       // (LFXV2-3204), so ownership is proven while the staleness check falls back to the
       // freshly read one until this session's own save returns a validator.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null);
+      // `true` — a restore is an explicit decision to work from the stored brief, so its absent
+      // validator is permission rather than an unknown. Marking it unknown would refuse the first
+      // save after every restore, which is this feature's main path.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
     it('sends the created brief id on the next save of the same session', async () => {

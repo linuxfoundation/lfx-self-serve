@@ -381,11 +381,21 @@ export class CampaignsComponent {
     // there — or, worse, accepted against a brief this session never loaded.
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
-      // No ETag from a restore. The read path deliberately drops the load-time validator
-      // (LFXV2-3204), so this session's first save after a restore has none of its own and falls
-      // back to the freshly read one. The id is still full proof of OWNERSHIP; only the
-      // staleness check is unavailable until that save returns a validator of its own.
-      this.knownBriefIds.set(key, { id: briefId, etag: null });
+      // No ETag from a restore: the read path deliberately drops the load-time validator
+      // (LFXV2-3204). Classified `'overwrite'` rather than `'unknown'`, and the distinction is
+      // the one the base branch draws — whether anyone DECIDED to save without a validator.
+      //
+      // A restore is a decision. The user was shown the stored brief's content and chose to work
+      // from it, so the page knows which version it is editing even though it was not handed the
+      // token for it. That is unlike an indeterminate write, where nothing was displayed and
+      // nothing was chosen. Marking it `'unknown'` would refuse the first save after every
+      // restore, which is this feature's main path.
+      //
+      // The residual risk is real and is what LFXV2-3204 closes: another writer changing the row
+      // between the load and the save is overwritten rather than producing a 412. That is a
+      // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
+      // response — and the user has at least seen the content they are replacing.
+      this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
     this.onProceedToImplementation(brief, true);
   }
