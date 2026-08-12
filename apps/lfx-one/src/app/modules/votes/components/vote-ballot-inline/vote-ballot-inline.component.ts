@@ -51,7 +51,7 @@ export class VoteBallotInlineComponent {
   protected readonly allowAbstain = computed(() => !!this.vote().allow_abstain);
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
-  protected readonly commentPromptMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 

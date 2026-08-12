@@ -11,6 +11,16 @@ import { escapeHtml, extractUrls } from '@lfx-one/shared';
 export class LinkifyPipe implements PipeTransform {
   private readonly sanitizer = inject(DomSanitizer);
 
+  /**
+   * Renders text with its URLs as anchor tags, escaping everything else.
+   * @description Three phases: (1) extract and validate URLs from the RAW text (before escaping
+   * alters characters like `&`), swapping each for a `\x00i\x00` placeholder so replaced output is
+   * never re-scanned — duplicate or prefix-overlapping URLs can't nest anchors into already-inserted
+   * markup; (2) escape all prose so user text renders literally; (3) restore the pre-built anchors
+   * and sanitize. Returns trusted SafeHtml for [innerHTML] binding.
+   * @param value - Raw user text (comment body, description, etc.)
+   * @returns Sanitized HTML with valid URLs linkified; empty string for null/undefined input
+   */
   public transform(value: string | null | undefined): SafeHtml {
     if (!value) {
       return '';
@@ -37,7 +47,9 @@ export class LinkifyPipe implements PipeTransform {
       html = html.replaceAll(`\x00${index}\x00`, anchor);
     });
 
-    // Sanitize and return the HTML content
-    return this.sanitizer.sanitize(SecurityContext.HTML, html) || '';
+    // Sanitize, then mark trusted so the declared SafeHtml return type is honest — the string was
+    // just run through SecurityContext.HTML, so bypassing carries no extra risk, and binding via
+    // [innerHTML] skips a redundant second sanitize pass.
+    return this.sanitizer.bypassSecurityTrustHtml(this.sanitizer.sanitize(SecurityContext.HTML, html) || '');
   }
 }

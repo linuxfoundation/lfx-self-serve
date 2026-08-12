@@ -45,6 +45,12 @@
               [attr.data-testid]="'vote-results-comments-paginator-' + commentResult.prompt.prompt_id">
             </p-paginator>
           }
+          <!-- The BFF caps each prompt's list at VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT; disclose truncation honestly. -->
+          @if (commentResult.total_responses && commentResult.total_responses > commentResult.totalResponses) {
+            <p class="text-xs text-slate-500" [attr.data-testid]="'vote-results-comments-truncated-' + commentResult.prompt.prompt_id">
+              Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
+            </p>
+          }
         </div>
       }
     </ng-template>

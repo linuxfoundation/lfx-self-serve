@@ -24,6 +24,16 @@ describe('extractUrls', () => {
     expect(extractUrls('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual(['https://en.wikipedia.org/wiki/Foo_(bar)']);
   });
 
+  it('re-trims punctuation exposed by stripping an unmatched bracket', () => {
+    expect(extractUrls('(see https://example.com/page.)')).toEqual(['https://example.com/page']);
+    expect(extractUrls('(https://example.com/page,)')).toEqual(['https://example.com/page']);
+  });
+
+  it('trims curly quotes (U+2019/U+201D) that close around a URL in prose', () => {
+    expect(extractUrls('“See https://example.com/page” for details')).toEqual(['https://example.com/page']);
+    expect(extractUrls('it’s at https://example.com/page’')).toEqual(['https://example.com/page']);
+  });
+
   it('returns an empty array for empty or URL-free text', () => {
     expect(extractUrls('')).toEqual([]);
     expect(extractUrls('no links here')).toEqual([]);

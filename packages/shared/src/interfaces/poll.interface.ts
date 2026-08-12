@@ -591,8 +591,17 @@ export interface PollCommentResponse {
 export interface PollCommentResult {
   /** Comment prompt definition */
   prompt: PollCommentPrompt;
-  /** Submitted voter responses */
+  /**
+   * Submitted voter responses. The BFF caps this at `VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT`
+   * (most recent first); compare against `total_responses` to detect truncation.
+   */
   responses: PollCommentResponse[];
+  /**
+   * Total submitted responses before the BFF per-prompt cap. Set by the BFF results endpoint;
+   * absent when talking to the upstream service directly. Greater than `responses.length` only
+   * when the list was truncated.
+   */
+  total_responses?: number;
 }
 
 /**

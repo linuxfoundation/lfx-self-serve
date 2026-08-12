@@ -92,23 +92,33 @@ const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
  * @returns The URL with prose trailing punctuation removed
  */
 function trimTrailingPunctuation(url: string): string {
-  let end = url.length;
-  while (end > 0 && TRAILING_PUNCTUATION_CHARS.has(url.charAt(end - 1))) {
-    end--;
-  }
-  let trimmed = url.slice(0, end);
+  let trimmed = url;
 
-  let lastChar = trimmed.charAt(trimmed.length - 1);
-  let opener = TRAILING_BRACKETS[lastChar];
-  while (opener) {
-    const opens = trimmed.split(opener).length - 1;
-    const closes = trimmed.split(lastChar).length - 1;
-    if (closes <= opens) {
-      break;
+  // Fixpoint loop: stripping an unmatched bracket can expose new trailing punctuation
+  // (`https://example.com/page.)` → strip `)` → now-trailing `.`), so the two passes
+  // re-run until neither strips anything. Each pass visits each char at most once.
+  let changed = true;
+  while (changed && trimmed.length > 0) {
+    changed = false;
+
+    while (trimmed.length > 0 && TRAILING_PUNCTUATION_CHARS.has(trimmed.charAt(trimmed.length - 1))) {
+      trimmed = trimmed.slice(0, -1);
+      changed = true;
     }
-    trimmed = trimmed.slice(0, -1);
-    lastChar = trimmed.charAt(trimmed.length - 1);
-    opener = TRAILING_BRACKETS[lastChar];
+
+    let lastChar = trimmed.charAt(trimmed.length - 1);
+    let opener = TRAILING_BRACKETS[lastChar];
+    while (opener) {
+      const opens = trimmed.split(opener).length - 1;
+      const closes = trimmed.split(lastChar).length - 1;
+      if (closes <= opens) {
+        break;
+      }
+      trimmed = trimmed.slice(0, -1);
+      changed = true;
+      lastChar = trimmed.charAt(trimmed.length - 1);
+      opener = TRAILING_BRACKETS[lastChar];
+    }
   }
 
   return trimmed;

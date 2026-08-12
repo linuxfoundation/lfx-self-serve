@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
@@ -15,6 +16,7 @@ import {
   Vote,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
+import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -239,6 +241,17 @@ export class VoteService {
     logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
 
     const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+
+    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
+    // responses at the most recent N to keep the payload linear in prompt count rather than
+    // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
+    // reported via total_responses so the UI can disclose truncation.
+    for (const commentResult of results.comment_results ?? []) {
+      commentResult.total_responses = commentResult.responses.length;
+      if (commentResult.responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT) {
+        commentResult.responses = sortCommentResponsesByRecency(commentResult.responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT);
+      }
+    }
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,

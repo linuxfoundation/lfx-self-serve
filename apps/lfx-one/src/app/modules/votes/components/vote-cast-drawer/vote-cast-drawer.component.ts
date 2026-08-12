@@ -97,7 +97,7 @@ export class VoteCastDrawerComponent {
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
-  protected readonly commentPromptMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 

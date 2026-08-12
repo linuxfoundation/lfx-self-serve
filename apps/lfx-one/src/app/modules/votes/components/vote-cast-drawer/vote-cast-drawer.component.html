@@ -170,12 +170,12 @@
                 </lfx-textarea>
                 <div class="flex justify-between">
                   @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
-                    <p class="text-red-500 text-xs">Comment must be {{ commentPromptMaxLength }} characters or fewer.</p>
+                    <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
                   } @else {
                     <span></span>
                   }
                   <span class="text-xs text-slate-400" [attr.data-testid]="'vote-cast-comment-counter-' + commentData.prompt.prompt_id">
-                    {{ commentData.control.value | codePointLength }}/{{ commentPromptMaxLength }}
+                    {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
                   </span>
                 </div>
               </div>
