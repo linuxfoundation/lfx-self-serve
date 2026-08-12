@@ -125,6 +125,21 @@ export class CampaignsComponent {
   private briefPersistenceGeneration = 0;
 
   /**
+   * Bumped only when the page DISCARDS what it owns: `resetToPlanning`, or a foundation switch.
+   *
+   * Separate from `briefPersistenceGeneration`, which a queued sibling save also bumps. That
+   * conflation is what made ownership impossible to place: checking the display counter after a
+   * response, a save superseded by ANOTHER SAVE OF THE SAME EVENT looked identical to one
+   * superseded by a reset, so recording behind that check lost the row a queued predecessor had
+   * created and the next save of that event was refused as unowned. Not checking at all let a
+   * late response re-file an id after a reset had cleared it.
+   *
+   * A response may record ownership when nothing has been discarded since it left, which is
+   * exactly this counter and not the other one.
+   */
+  private ownershipGeneration = 0;
+
+  /**
    * The tail of this session's save queue — see `persistBrief` for why saves are serialised.
    *
    * A plain promise rather than an RxJS operator because the queue must OUTLIVE the component:
@@ -186,6 +201,7 @@ export class CampaignsComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.briefPersistenceGeneration++;
+        this.ownershipGeneration++;
         this.briefPersistence.set(this.idlePersistence);
       });
 
@@ -282,6 +298,9 @@ export class CampaignsComponent {
    */
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
+    // NOT incremented — a save does not discard what the page owns. Captured so the response can
+    // tell "nothing was discarded while I was in flight" from "a sibling save queued behind me".
+    const ownershipAtSend = this.ownershipGeneration;
     // Read now, not when the chain reaches this link: the foundation selected when the user hit
     // Proceed is the one the brief belongs to. A switch while the save is queued bumps the
     // generation and discards the outcome anyway.
@@ -293,8 +312,15 @@ export class CampaignsComponent {
     //
     // Only an id issued under THIS foundation is ours to replay; one from another foundation
     // names a row in a different project and would be refused there.
+    // The KEY is captured here — it identifies the brief the user hit Proceed on, and reading it
+    // later would key this save by whatever is on screen when the queue reaches it.
+    //
+    // The LOOKUP is deliberately not. Saves are serialised, so this one may sit behind another
+    // save of the same event; resolving ownership now would capture null while the predecessor is
+    // still in flight, and the queued request would then find the row that predecessor created
+    // and be refused as unowned — telling a user their own brief belongs to someone else. It is
+    // resolved when this queue item actually begins, below.
     const ownershipKey = this.ownershipKey(projectSlug, brief);
-    const knownBriefId = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -306,8 +332,12 @@ export class CampaignsComponent {
       this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
     }
 
-    this.persistChain = this.persistChain.then(() =>
-      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
+    this.persistChain = this.persistChain.then(() => {
+      // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
+      // read late because it is keyed by `(project, event)`: only a save of THIS event can have
+      // filed it, whatever else happened while this one waited.
+      const knownBriefId = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -327,25 +357,39 @@ export class CampaignsComponent {
             this.briefPersistenceEnabled.set(true);
           }
 
-          // Recorded only while this save's brief is STILL the one on screen — the generation
-          // check, same as the banner below it.
+          // Recorded BEFORE the generation check, and deliberately so — the two answer different
+          // questions and this round is the third attempt to make one of them serve both.
           //
-          // An earlier version latched this before the check "for the same reason `enabled` is",
-          // which was wrong: `enabled` is a fact about the DEPLOYMENT and equally true for every
-          // brief, while a brief id is the most brief-specific thing there is. Latching it early
-          // let a response land after `resetToPlanning` had cleared the id and re-assign it — so
-          // the NEXT brief, a different event, inherited ownership of the previous one's row.
-          // That is the exact hazard the generation check exists to prevent.
+          // The generation check asks "is this response still worth SHOWING?". Ownership asks
+          // "which row does this session hold?", and the answer does not expire because the user
+          // navigated. The row exists either way.
           //
-          // The superseded case that motivated the early latch is handled by keying on the BRIEF
-          // rather than on timing: a save whose brief is gone has no id worth keeping, because
-          // any future save is for a different brief and must prove its own ownership. The row
-          // it created is not lost — the next save for that event finds it and is refused,
-          // which is the correct answer for a caller that can no longer name it.
+          // Both earlier placements were right about one hazard and wrong about the other. Before
+          // the check with a bare scalar, a late response re-assigned ownership after
+          // `resetToPlanning` had cleared it, so the NEXT brief — a different event — inherited
+          // the previous one's row. Moving it after the check fixed that and lost the row a
+          // superseded save had created: the next Proceed for the SAME event captured null, found
+          // that row and was refused as unowned, telling a user their own brief was someone
+          // else's. A comment here once claimed that refusal was "the correct answer"; it is not,
+          // it is the bug.
           //
-          // Only on a real write: a refused save names the row that BLOCKED it, and adopting
-          // that id would hand this session ownership of exactly the brief it was told it does
-          // not own.
+          // Two things make recording here correct. The KEY is `(project, event)` — the server's
+          // own identity for a brief — so a late response files its id under the event it
+          // actually saved and cannot reach a different event's brief. And the guard is
+          // `ownershipGeneration`, which only a DISCARD bumps, so a save superseded by a queued
+          // sibling still records while one superseded by a reset does not.
+          //
+          // Only on a real write: a refused save names the row that BLOCKED it, and adopting that
+          // id would hand this session ownership of exactly the brief it was told it does not own.
+          if (
+            ownershipAtSend === this.ownershipGeneration &&
+            result.enabled &&
+            result.conflict === undefined &&
+            result.briefId !== '' &&
+            ownershipKey !== null
+          ) {
+            this.knownBriefIds.set(ownershipKey, result.briefId);
+          }
 
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
@@ -364,11 +408,6 @@ export class CampaignsComponent {
               message: 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
             });
             return;
-          }
-          if (result.conflict === undefined && result.briefId !== '') {
-            if (ownershipKey !== null) {
-              this.knownBriefIds.set(ownershipKey, result.briefId);
-            }
           }
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
@@ -393,8 +432,8 @@ export class CampaignsComponent {
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
           });
         }
-      )
-    );
+      );
+    });
   }
 
   /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
@@ -414,6 +453,7 @@ export class CampaignsComponent {
     // Before clearing, so an in-flight save for the brief being discarded cannot write its
     // outcome back over the reset state.
     this.briefPersistenceGeneration++;
+    this.ownershipGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(this.idlePersistence);
     this.knownBriefIds.clear();
