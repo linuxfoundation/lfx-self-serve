@@ -369,6 +369,32 @@ describe('CampaignsComponent brief persistence', () => {
      * brief this session never loaded. That is exactly the case LFXV2-3200's guard exists to
      * refuse, so a key too coarse to tell A from B disarms it.
      */
+    it('adopts the program of a restored brief instead of leaving the selector wrong', async () => {
+      // The lookup is keyed on `(event_slug, project)` with no program type, so an Events brief
+      // can be offered while the page sits on Education. Leaving the selector wrong is not merely
+      // cosmetic: correcting it runs `resetToPlanning`, which clears the brief AND the ownership
+      // map, so the row just restored becomes unowned and the next save is refused.
+      const internals = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { programType: { setValue(v: string): void } } };
+        selectedProgramType(): string;
+      };
+      internals.selectorForm.controls.programType.setValue('education');
+      await fixture.whenStable();
+      expect(internals.selectedProgramType()).toBe('education');
+
+      const eventsBrief = { ...brief, programType: 'events' } as CampaignBriefOutput;
+      persistBrief.mockReturnValue(NEVER);
+      restore(eventsBrief, 'restored-a');
+      await fixture.whenStable();
+
+      // The selector followed the brief...
+      expect(internals.selectedProgramType()).toBe('events');
+      // ...and ownership survived, because no reset ran.
+      proceed(eventsBrief);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(eventsBrief, expect.anything(), 'restored-a', null, true);
+    });
+
     it('does not lend a RESTORED brief id to another event', async () => {
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');

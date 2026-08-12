@@ -387,6 +387,24 @@ export class CampaignsComponent {
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
+    // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
+    // carries no program type, so an Events brief can be offered while the page sits on
+    // Education, and restoring it would leave the selector describing one program while the brief
+    // on screen belongs to another.
+    //
+    // It has to happen HERE rather than being left to the user, because the correction is a trap:
+    // changing the selector runs `resetToPlanning`, which clears `briefOutput` AND
+    // `knownBriefIds` — so the row they just restored becomes unowned and their next save is
+    // refused. Setting it before the handoff means the valueChanges subscription sees no change
+    // by the time the brief lands, and nothing is reset.
+    //
+    // Driven through the CONTROL, not the signal: the subscription mirrors the control into
+    // `selectedProgramType`, so writing the signal alone would leave the visible selector showing
+    // the old program.
+    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
+      this.selectorForm.controls.programType.setValue(brief.programType);
+    }
+
     // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
     // resting state in one place.
     //
