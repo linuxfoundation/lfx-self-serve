@@ -43,8 +43,28 @@
       </ng-template>
 
       <ng-template #body let-row>
-        <tr [attr.data-testid]="'org-roi-projects-table-row-' + row.projectId">
-          <td class="truncate" [attr.title]="row.projectName">{{ row.projectName }}</td>
+        <!-- The whole row navigates, but the accessible target is the link in the first cell: a
+             click handler on `tr` is unreachable by keyboard, and a row is not a control. The
+             handler ignores clicks that originate inside the anchor, and modifier-clicks anywhere,
+             so neither is handled twice or robbed of "open in a new tab". A row whose slug is
+             missing stays inert, and does not advertise itself as clickable either. -->
+        <tr
+          [class.cursor-pointer]="row.projectSlug"
+          [class.hover:bg-gray-50]="row.projectSlug"
+          [attr.data-testid]="'org-roi-projects-table-row-' + row.projectId"
+          (click)="openProject(row, $event)">
+          <td class="truncate" [attr.title]="row.projectName">
+            @if (row.projectSlug) {
+              <a
+                [routerLink]="['/org/roi/projects', row.projectSlug]"
+                class="text-blue-600 hover:text-blue-700 hover:underline"
+                [attr.data-testid]="'org-roi-projects-table-link-' + row.projectId">
+                {{ row.projectName }}
+              </a>
+            } @else {
+              {{ row.projectName }}
+            }
+          </td>
           <td class="text-right tabular-nums">{{ row.investmentLabel }}</td>
           <td class="text-right tabular-nums">{{ row.returnLabel }}</td>
           <td class="text-right tabular-nums" [class.text-amber-700]="row.profit < 0">{{ row.profitLabel }}</td>

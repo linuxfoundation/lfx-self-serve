@@ -25,6 +25,15 @@ export interface OrgLensRoiAnnualWarehouseRow {
   BCR: number | null;
 }
 
+/**
+ * The per-project annual read, driven from `ORG_LENS_ROI_PROJECTS` so an existing project with no
+ * yearly breakdown stays distinguishable from a slug that is not this organization's project at
+ * all. `YEAR` is null on the join's unmatched side — the first case — and those rows are dropped.
+ */
+export interface OrgLensRoiProjectAnnualWarehouseRow extends Omit<OrgLensRoiAnnualWarehouseRow, 'YEAR'> {
+  YEAR: number | null;
+}
+
 export interface OrgLensRoiCoverageWarehouseRow {
   HAS_ROI: number;
   IS_MAPPED: number;
@@ -55,4 +64,13 @@ export interface OrgLensRoiProjectWarehouseRow {
   CONTRIBUTION_TYPE: string | null;
   CONTRIBUTION_LABEL: string | null;
   CATEGORY_EXPENDITURE: number | null;
+}
+
+/**
+ * The single-project read: the same shape, plus a count of the project's `ORG_LENS_PROJECTS` rows
+ * for this organization. Zero means `/org/projects/{slug}` has nothing to show, which is the case
+ * for a measured 32.4% of ROI organization-project pairs.
+ */
+export interface OrgLensRoiProjectDetailWarehouseRow extends OrgLensRoiProjectWarehouseRow {
+  CATALOG_ROWS: number;
 }
