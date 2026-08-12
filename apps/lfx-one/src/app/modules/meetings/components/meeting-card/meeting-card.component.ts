@@ -78,7 +78,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, pairwise, switchMap, take, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -263,6 +263,11 @@ export class MeetingCardComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.refreshAttachments$.next());
+
+    // Reset post-registration flag if this card instance is reused for a different meeting.
+    toObservable(this.meetingInput)
+      .pipe(map((m) => m?.id), distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.registeredInSession.set(false));
   }
 
   public ngOnInit(): void {

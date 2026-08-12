@@ -353,6 +353,12 @@ export class MeetingJoinComponent implements OnInit {
         this.optimisticAddedAttachments.set([]);
       });
 
+    // Reset post-registration optimistic flag when navigating to a different meeting so a
+    // previous registration doesn't grant registrant-list access for an unrelated meeting.
+    toObservable(this.meeting)
+      .pipe(map((m) => m?.id), distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.optimisticInvited.set(false));
+
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
     this.pastMeetingParticipants = this.initializePastMeetingParticipants();
