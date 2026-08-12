@@ -61,7 +61,7 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<CampaignBriefOutput>();
+  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string }>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
@@ -136,6 +136,9 @@ export class PlanningTabComponent implements OnInit {
     }
     return this.savedBriefWarning() ?? '';
   });
+
+  /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
+  private savedBriefId: string | null = null;
 
   private readonly slugInput$ = new Subject<string>();
 
@@ -256,6 +259,7 @@ export class PlanningTabComponent implements OnInit {
     // the page opened with is not a change.
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.savedBrief.set(null);
+      this.savedBriefId = null;
       this.savedBriefWarning.set(null);
     });
   }
@@ -340,6 +344,7 @@ export class PlanningTabComponent implements OnInit {
     if (slug !== this.currentSlug) {
       this.currentSlug = slug;
       this.savedBrief.set(null);
+      this.savedBriefId = null;
       this.savedBriefWarning.set(null);
     }
     if (slug.length > 0) {
@@ -350,8 +355,10 @@ export class PlanningTabComponent implements OnInit {
   /** Hand the saved brief straight to the Implementation tab, skipping generation. */
   protected restoreSavedBrief(): void {
     const brief = this.savedBrief();
-    if (brief !== null) {
-      this.restoreSavedBriefRequested.emit(brief);
+    // Both, or neither. A restore without its id would reach the parent as an unowned save and
+    // be refused — a worse outcome than not offering the button, so the guard covers the pair.
+    if (brief !== null && this.savedBriefId !== null) {
+      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId });
     }
   }
 
@@ -711,11 +718,16 @@ export class PlanningTabComponent implements OnInit {
   private applySavedBrief(result: CampaignBriefLoadResult | null): void {
     if (result === null) {
       this.savedBrief.set(null);
+      this.savedBriefId = null;
       this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
       return;
     }
 
+    // The id travels WITH the brief, because the parent needs it to prove ownership on the next
+    // save (LFXV2-3200). Kept in step with `savedBrief` — set together, cleared together — so
+    // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
+    this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
     this.savedBriefWarning.set(
       result.status === 'unreadable' ? 'This event has a saved brief that could not be opened. Generating a new one will replace it.' : null
     );

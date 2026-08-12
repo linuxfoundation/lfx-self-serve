@@ -192,6 +192,21 @@ export interface CampaignBriefPersistResult {
    * this is a field rather than an error.
    */
   approved: boolean;
+  /**
+   * Why the save was REFUSED, when it was. Absent means the save happened.
+   *
+   * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
+   * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
+   * row. Replacing would overwrite content the user was never shown, and the two routes into
+   * that state (a slug-derivation mismatch, or simply a reload or second tab) are documented on
+   * `saveBrief`. `briefId` carries the row that blocked it, so a caller can offer to load and
+   * merge rather than only reporting failure.
+   *
+   * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
+   * and the caller's next step is a CHOICE (load the existing one, or file under a different
+   * event) rather than a retry.
+   */
+  conflict?: 'unowned-brief-exists';
 }
 
 /**

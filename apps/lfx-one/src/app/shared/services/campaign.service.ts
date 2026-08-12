@@ -70,10 +70,16 @@ export class CampaignService {
    * — the server reads `req.body` as one — and because `?project=<slug>` is already how this
    * application names the active foundation on every route it scopes.
    */
-  public persistBrief(brief: CampaignBriefOutput, projectSlug: string): Observable<CampaignBriefPersistResult> {
-    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, {
-      params: new HttpParams().set('project', projectSlug),
-    });
+  public persistBrief(brief: CampaignBriefOutput, projectSlug: string, knownBriefId: string | null = null): Observable<CampaignBriefPersistResult> {
+    // `brief_id` is sent only when the page HOLDS one — i.e. the brief on screen was loaded from
+    // campaign-service. It is the caller's proof of ownership, and its absence is meaningful:
+    // the server refuses to replace a stored brief for a caller that cannot name it, so a
+    // freshly generated brief creates and never overwrites one it has not seen (LFXV2-3200).
+    let params = new HttpParams().set('project', projectSlug);
+    if (knownBriefId !== null && knownBriefId !== '') {
+      params = params.set('brief_id', knownBriefId);
+    }
+    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
   }
 
   /**

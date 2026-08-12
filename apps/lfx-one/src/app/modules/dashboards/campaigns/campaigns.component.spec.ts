@@ -294,7 +294,11 @@ describe('CampaignsComponent brief persistence', () => {
       // has to let the queue turn over. The slug is still the one selected at Proceed time.
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf');
+      // The third argument is the known brief id, null here: this brief was generated rather
+      // than restored, so the page can claim no ownership and the save must CREATE. Asserted
+      // rather than relaxed to `expect.anything()` — a generated brief silently carrying an id
+      // would let it replace a stored brief nobody looked at (LFXV2-3200).
+      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null);
     });
   });
 

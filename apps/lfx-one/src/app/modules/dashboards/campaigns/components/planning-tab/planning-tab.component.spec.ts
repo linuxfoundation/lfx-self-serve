@@ -343,15 +343,39 @@ describe('PlanningTabComponent brief read-back', () => {
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
 
-    const restored: CampaignBriefOutput[] = [];
+    const restored: { brief: CampaignBriefOutput; briefId: string }[] = [];
     const generated: CampaignBriefOutput[] = [];
-    fixture.componentInstance.restoreSavedBriefRequested.subscribe((b) => restored.push(b));
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((e) => restored.push(e));
     fixture.componentInstance.proceedToImplementation.subscribe((b) => generated.push(b));
 
     (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
     await fixture.whenStable();
 
-    expect(restored).toEqual([exampleBrief]);
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123' }]);
     expect(generated).toEqual([]);
+  });
+
+  /**
+   * The restore carries the brief ID, and that is load-bearing rather than incidental.
+   *
+   * The parent sends it with the next save as proof of ownership; without it the server treats
+   * the save as unowned and REFUSES to replace, so a restored brief could never be saved back
+   * (LFXV2-3200). Asserted separately from the channel test above because the two can regress
+   * independently — emitting on the right output with a missing id is a silent half-fix.
+   */
+  it('carries the brief id with the restored brief', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-xyz' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    const restored: { brief: CampaignBriefOutput; briefId: string }[] = [];
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((e) => restored.push(e));
+
+    (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
+    await fixture.whenStable();
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].briefId).toBe('brief-xyz');
   });
 });

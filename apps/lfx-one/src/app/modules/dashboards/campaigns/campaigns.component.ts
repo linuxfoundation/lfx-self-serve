@@ -84,6 +84,20 @@ export class CampaignsComponent {
    * subscription. A mismatch means the result is for a superseded brief and is dropped — the
    * newer owner of the signal has already set the state it wants.
    */
+  /**
+   * The campaign-service brief id the page currently HOLDS, or null.
+   *
+   * Non-null only when the brief on screen came out of storage — set by the restore path, and
+   * cleared whenever the brief is discarded. It is sent with the next save as proof of
+   * ownership: the server refuses to replace a stored brief for a caller that cannot name it,
+   * because a reload or a second tab is enough to reach a save that would otherwise overwrite
+   * content the user never saw (LFXV2-3200).
+   *
+   * A plain field rather than a signal: nothing renders it, and it answers "may this save
+   * replace?" at the moment a request is built.
+   */
+  private knownBriefId: string | null = null;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -232,14 +246,21 @@ export class CampaignsComponent {
       // restored brief — attributing one brief's id to another. The restored brief is already
       // durable, so the state it lands in is the resting one, not `saving`.
       this.briefPersistenceGeneration++;
-      this.briefPersistence.set(this.idlePersistence);
+      // The restored brief's id is RETAINED, not cleared: it is the page's proof that the brief
+      // on screen came out of campaign-service, and the next save sends it so the server will
+      // replace that row rather than refusing as unowned (LFXV2-3200). Status stays `off`
+      // because nothing is in flight — the id is provenance, not progress.
+      this.briefPersistence.set({ status: 'off', briefId: this.knownBriefId, message: null });
       return;
     }
     this.persistBrief(brief);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
+    // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
+    // resting state in one place.
+    this.knownBriefId = briefId;
     this.onProceedToImplementation(brief, true);
   }
 
@@ -288,7 +309,7 @@ export class CampaignsComponent {
     }
 
     this.persistChain = this.persistChain.then(() =>
-      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug)).then(
+      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, this.knownBriefId)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -342,6 +363,9 @@ export class CampaignsComponent {
     this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(this.idlePersistence);
+    // Cleared with the brief it belonged to. A stale id here would let the NEXT brief — a
+    // different event entirely — claim ownership of the previous one's row and replace it.
+    this.knownBriefId = null;
     this.selectedTab.set('planning');
   }
 }

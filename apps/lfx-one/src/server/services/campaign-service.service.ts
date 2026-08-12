@@ -254,10 +254,45 @@ export class CampaignServiceClient {
    * where the partial unique index on `(project_id, event_slug)` then collides it with unrelated
    * TLF work for the same event.
    */
-  public async saveBrief(req: Request, brief: CampaignBriefOutput, eventSlug: string, projectSlug: string): Promise<CampaignBriefPersistResult> {
+  public async saveBrief(
+    req: Request,
+    brief: CampaignBriefOutput,
+    eventSlug: string,
+    projectSlug: string,
+    knownBriefId: string | null
+  ): Promise<CampaignBriefPersistResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
     const existing = await this.findBrief(req, basePath, eventSlug);
+
+    // A row exists that the caller cannot prove it owns: REFUSE rather than replace.
+    //
+    // This is the guard for LFXV2-3200. Without it the update branch below is reachable by a
+    // caller that never saw the stored brief, and it overwrites content the user was never
+    // shown. Two routes lead there and only one involves a slug mismatch:
+    //
+    //   1. The lookup's slug (last path segment of the pasted URL) and the save's slug
+    //      (`brief.eventDetails.slug`, from the scrape) diverge, so the Restore offer never
+    //      appears, the user regenerates, and THIS find hits the row the offer missed.
+    //   2. No divergence at all — a reload, or a second tab. The page holds no brief id
+    //      because nothing loaded one, the slugs match perfectly, and the save still replaces
+    //      a brief whose contents the caller never read.
+    //
+    // Route 2 is why normalising the two slug derivations is not the fix: it would close route
+    // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
+    // "the user is editing the brief they are looking at" from "a fresh session happens to
+    // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
+    // from `loadBrief`, so it exists only when the brief on screen came out of storage.
+    if (existing !== null && knownBriefId !== existing.brief.id) {
+      return {
+        enabled: true,
+        briefId: existing.brief.id,
+        etag: null,
+        created: false,
+        approved: false,
+        conflict: 'unowned-brief-exists',
+      };
+    }
 
     if (existing === null) {
       const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
