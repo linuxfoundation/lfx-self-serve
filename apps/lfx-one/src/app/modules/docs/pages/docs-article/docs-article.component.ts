@@ -74,6 +74,28 @@ export class DocsArticleComponent {
     return a.siblings.map((slug) => this.docsManifest.getArticle(slug)).filter((s): s is DocsArticle => Boolean(s));
   });
 
+  /**
+   * The stable "More in this topic" list: every non-landing article in the
+   * topic, *including* the one currently in view, so the active page stays in
+   * place (highlighted) instead of dropping out of the rail on navigation.
+   *
+   * The build-time `siblings` list excludes the current article and — on a
+   * leaf page — the topic landing (the landing is surfaced by the breadcrumb).
+   * We re-insert the current leaf and re-sort so the rendered set is identical
+   * no matter which article in the topic is open. Returns `[]` when the
+   * article has no peers, so a lone article still hides the rail entirely.
+   */
+  protected readonly topicArticles = computed(() => {
+    const current = this.article();
+    const peers = this.siblings();
+    if (!current || peers.length === 0) return [];
+    if (current.isTopicLanding) return peers;
+    return [...peers, current].sort((a, b) => this.byDisplayOrderThenSlug(a, b));
+  });
+
+  /** Slug of the article currently in view, for the active-item highlight. */
+  protected readonly activeSlug = computed(() => this.article()?.slug ?? '');
+
   public constructor() {
     // SEO sync — re-applies head tags whenever `article()` changes. We
     // deliberately use `toObservable` + `takeUntilDestroyed` rather than
@@ -90,6 +112,17 @@ export class DocsArticleComponent {
   /** Navigates to the previous page in browser history (back button in the top bar). */
   protected goBack(): void {
     this.location.back();
+  }
+
+  /**
+   * Tailwind classes for a "More in this topic" link. The active entry (the
+   * article currently in view) is highlighted; the rest keep the default
+   * gray-with-hover treatment.
+   */
+  protected siblingLinkClasses(slug: string): string {
+    const base =
+      'block rounded-md px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
+    return slug === this.activeSlug() ? `${base} bg-blue-50 font-medium text-primary` : `${base} text-gray-700 hover:bg-blue-50 hover:text-primary`;
   }
 
   @HostListener('click', ['$event'])
@@ -122,6 +155,14 @@ export class DocsArticleComponent {
 
     event.preventDefault();
     void this.router.navigateByUrl(href);
+  }
+
+  /** Mirrors the docs build's sibling sort: `displayOrder` ascending, then slug. */
+  private byDisplayOrderThenSlug(a: DocsArticle, b: DocsArticle): number {
+    const aOrder = typeof a.displayOrder === 'number' ? a.displayOrder : Number.POSITIVE_INFINITY;
+    const bOrder = typeof b.displayOrder === 'number' ? b.displayOrder : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.slug.localeCompare(b.slug);
   }
 
   private findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
