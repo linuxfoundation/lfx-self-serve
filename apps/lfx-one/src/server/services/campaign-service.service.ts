@@ -496,7 +496,9 @@ export class CampaignServiceClient {
     if (found.data === undefined || !versionIsAcceptable(found.data.version) || !storedBriefMatches(found.data, envelope.brief)) {
       return null;
     }
-    logger.warning(req, 'campaign_persist_brief_reconciled', 'a create whose response was lost had in fact committed', {
+    // "write", not "create": this helper now serves the replace path too, and labelling a
+    // recovered PUT as a create points production diagnostics at the wrong operation.
+    logger.warning(req, 'campaign_persist_brief_reconciled', 'a write whose response was lost had in fact committed', {
       briefId: found.data.id,
       error: error instanceof Error ? error.message : String(error),
     });
