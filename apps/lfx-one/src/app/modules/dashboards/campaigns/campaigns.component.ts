@@ -404,25 +404,6 @@ export class CampaignsComponent {
             this.knownBriefIds.set(ownershipKey, { id: result.briefId, etag: result.etag });
           }
 
-          // A stale-brief refusal DROPS the validator, and belongs here beside the record above
-          // rather than in the banner branch below — for the same reason. Both answer "what does
-          // this session hold?", which does not expire because the user navigated, while the
-          // generation check below answers "is this still worth showing?". Behind that check the
-          // clear silently never ran whenever another Proceed had already superseded this
-          // response, which is exactly when a retry is in flight and needs it most.
-          //
-          // The ETag is known-WRONG: the server has just said it does not match, so keeping it
-          // would make every retry re-send the same rejected validator and fail identically — a
-          // permanent dead end for a save this session is entitled to make. The brief id is kept,
-          // because the 412 disputed the version, not who owns the row; the next attempt falls
-          // back to the freshly read validator, like a caller that has never seen one.
-          if (result.conflict === 'stale-brief' && ownershipAtSend === this.ownershipGeneration && ownershipKey !== null) {
-            const owned = this.knownBriefIds.get(ownershipKey);
-            if (owned !== undefined) {
-              this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null });
-            }
-          }
-
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
@@ -438,6 +419,31 @@ export class CampaignsComponent {
             // "not written", but `unowned-brief-exists` says this session may not replace that
             // brief at all, while `stale-brief` says it may — someone else just got there first.
             //
+            // DROP the stale validator, but only HERE — after the generation check, i.e. only on
+            // the path that actually shows the warning. Clearing it is not neutral bookkeeping
+            // like recording one: it LICENSES the next save to overwrite, because with no
+            // last-seen validator the server falls back to its own fresh read and the precondition
+            // stops protecting anyone.
+            //
+            // An earlier round put this beside the record site, before the check, reasoning that
+            // both answer "what does this session hold?". That was wrong. A record is a fact about
+            // a write that happened; a clear is permission for a write that has not. If save A is
+            // refused with a 412 while save B is already queued, clearing early suppresses A's
+            // warning as superseded AND hands B a clean slate — B then overwrites the competing
+            // writer with nobody ever told. The permission must not outrun the warning that earns
+            // it.
+            //
+            // The cost is the dead end this clear exists to prevent, in exactly the superseded
+            // case: A's validator survives, so a retry re-sends it and fails again. That is the
+            // correct trade — a repeated refusal is recoverable and visible, a silent overwrite of
+            // someone else's work is neither. The next save the user actually sees refused clears
+            // it and gets through.
+            if (result.conflict === 'stale-brief' && ownershipKey !== null) {
+              const owned = this.knownBriefIds.get(ownershipKey);
+              if (owned !== undefined) {
+                this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null });
+              }
+            }
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,

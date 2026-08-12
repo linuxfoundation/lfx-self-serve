@@ -397,6 +397,33 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().message).not.toContain('Reload');
     });
 
+    it('does not hand a queued save a clean slate when the 412 was never shown', async () => {
+      // A is refused with a 412 while B is already queued. Clearing the validator early would
+      // suppress A's warning as superseded AND hand B an empty slate — the server would then fall
+      // back to its own fresh read and B would overwrite the competing writer with nobody told.
+      // The permission to overwrite must not outrun the warning that earns it.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      // A leaves, and is refused — but only after B has queued behind it.
+      const a = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(a);
+      proceed();
+      await fixture.whenStable();
+
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      a.next({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // B must still carry the last-seen validator, so the server can refuse it too. A repeated
+      // refusal is recoverable and visible; a silent overwrite of someone else's work is neither.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+    });
+
     it('lets a retry through after a stale-brief conflict instead of dead-ending', async () => {
       // First save records id + ETag.
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
