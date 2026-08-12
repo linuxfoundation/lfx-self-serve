@@ -155,6 +155,19 @@ describe('EventDetailDrawerComponent', () => {
     }
   });
 
+  // The bar colours read the same shared thresholds as the roster's bar and at-risk icon, so
+  // tuning either constant moves both views together instead of letting them disagree.
+  it('colours the goal bars from the shared thresholds', async () => {
+    // 800/1000 = 80%, exactly the on-track boundary; 400/1000 = 40%, below the behind-goal one.
+    await setup(vi.fn().mockReturnValue(of(detail({ registrations: { actual: 800, goal: 1000 }, sponsorshipRevenue: { actual: 400000, goal: 1000000 } }))));
+
+    await open('evt-1');
+
+    const bars = document.querySelectorAll('[role="progressbar"]');
+    expect(bars[0].classList.contains('bg-emerald-500')).toBe(true);
+    expect(bars[1].classList.contains('bg-red-400')).toBe(true);
+  });
+
   it('renders the sponsorship tier breakdown', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 

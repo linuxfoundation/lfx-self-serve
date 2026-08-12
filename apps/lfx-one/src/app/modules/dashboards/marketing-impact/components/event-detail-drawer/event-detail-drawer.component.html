@@ -57,9 +57,9 @@
               aria-valuemax="100"
               [attr.aria-label]="'Registrations: ' + view()?.registrationsActual + ' of ' + view()?.registrationsGoal + ' goal'"
               [ngClass]="{
-                'bg-emerald-500': regProgress()! >= 80,
-                'bg-amber-500': regProgress()! >= 50 && regProgress()! < 80,
-                'bg-red-400': regProgress()! < 50,
+                'bg-emerald-500': view()?.registrationsTone === 'good',
+                'bg-amber-500': view()?.registrationsTone === 'warn',
+                'bg-red-400': view()?.registrationsTone === 'critical',
               }"
               [style.width.%]="regProgress()"></div>
           </div>
@@ -85,9 +85,9 @@
               aria-valuemax="100"
               [attr.aria-label]="'Sponsorship revenue: ' + view()?.sponsorshipActual + ' of ' + view()?.sponsorshipGoal + ' goal'"
               [ngClass]="{
-                'bg-emerald-500': sponProgress()! >= 80,
-                'bg-amber-500': sponProgress()! >= 50 && sponProgress()! < 80,
-                'bg-red-400': sponProgress()! < 50,
+                'bg-emerald-500': view()?.sponsorshipTone === 'good',
+                'bg-amber-500': view()?.sponsorshipTone === 'warn',
+                'bg-red-400': view()?.sponsorshipTone === 'critical',
               }"
               [style.width.%]="sponProgress()"></div>
           </div>
