@@ -74,11 +74,7 @@
           <ul class="flex flex-col gap-2" data-testid="docs-article-siblings">
             @for (entry of topicArticles(); track entry.slug) {
               <li>
-                <a
-                  [routerLink]="entry.url"
-                  [attr.aria-current]="entry.slug === activeSlug() ? 'page' : null"
-                  [class]="siblingLinkClasses(entry.slug)"
-                  data-testid="docs-article-sibling-link">
+                <a [routerLink]="entry.url" [attr.aria-current]="entry.ariaCurrent" [class]="entry.linkClass" data-testid="docs-article-sibling-link">
                   {{ entry.title }}
                 </a>
               </li>

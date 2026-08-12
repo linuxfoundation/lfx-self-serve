@@ -4,7 +4,7 @@ description: Make your LFX profile public or private and control which sections 
 audience: [all]
 product_area: Profile
 tags: [profile, public-profile, visibility, privacy, settings]
-last_updated: 2026-08-11
+last_updated: 2026-08-12
 intercom_collection: Profile
 ---
 
@@ -51,6 +51,8 @@ When your profile is public, you control each section with a toggle. Turning a s
 **About me** and **Personal information** sit under **General profile information** — turning the general information off also turns those two off.
 
 When you first make your profile public, **General profile information**, **About me**, and **Personal information** are turned on for you. You can adjust any of them afterward.
+
+> **Note:** Some toggles are available in the drawer but do not yet add anything to your public profile page. Today the sections that actually appear are **General profile information**, **About me**, **Project contributions**, **Training enrollment**, **Certifications**, and **Badges**. **Committees & groups**, **Event speaking**, **Skills**, and **Personal information** can be enabled but are not shown on the public page yet.
 
 ## Saving changes
 

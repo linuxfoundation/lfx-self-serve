@@ -5,7 +5,7 @@ audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, bio, photo, location]
 last_generated: 2026-05-22
-last_updated: 2026-08-11
+last_updated: 2026-08-12
 intercom_collection: Profile
 ---
 
@@ -25,9 +25,11 @@ Your personal details are edited in the **Edit Profile** drawer, not directly on
 4. Update the fields you want to change (see the tables below).
 5. Select **Save Changes**. The button stays disabled until you have made a change.
 
+> **Two changes apply immediately, not on Save:** uploading a **profile picture** and selecting a **primary email address** each save on their own as soon as you make them. Closing the drawer with **Cancel** does not undo those two — it only discards unsaved text fields (About Me, name, job title, location, and so on).
+
 ### Profile picture
 
-Select the pencil button on your avatar to upload a new image.
+Select the pencil button on your avatar to upload a new image. The upload happens immediately when you pick a file — it is not held until **Save Changes**.
 
 - **Accepted formats:** PNG, JPEG, or WEBP.
 - **Maximum size:** 2 MB.
@@ -45,7 +47,7 @@ Select the pencil button on your avatar to upload a new image.
 
 ### Primary email address
 
-Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/).
+Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. Choosing a new primary email applies immediately — it is saved as soon as you select it, not on **Save Changes**. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/).
 
 ### Location information
 

@@ -4,7 +4,7 @@ description: What your public LFX profile page shows to visitors, its URL, and h
 audience: [all]
 product_area: Profile
 tags: [profile, public-profile, visibility, contributions]
-last_updated: 2026-08-11
+last_updated: 2026-08-12
 intercom_collection: Profile
 ---
 
@@ -37,7 +37,9 @@ You control each of these sections individually. If you turn a section off, or h
 
 ## When your profile is private
 
-If your profile is set to private — or a visitor opens a `/u/<username>` link that does not exist — the page shows a short "profile not available" message instead of any profile content. Nothing about your account is exposed.
+If your profile is set to private, a visitor who opens your `/u/<username>` link sees a **Private Profile** message instead of any profile content — none of your sections, contributions, or personal details are shown. The page confirms that the username belongs to a private profile; it simply withholds the content.
+
+A link to a username that does not exist shows a different **Profile Not Found** message, so the two cases are distinguishable.
 
 ## Keeping your public profile up to date
 

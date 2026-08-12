@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DOCS_CANONICAL_ORIGIN } from '@lfx-one/shared/constants';
-import type { DocsArticle } from '@lfx-one/shared/interfaces';
+import type { DocsArticle, DocsSiblingLink } from '@lfx-one/shared/interfaces';
 import { isDocsPath } from '@lfx-one/shared/utils';
 import { map } from 'rxjs/operators';
 
@@ -84,17 +84,18 @@ export class DocsArticleComponent {
    * We re-insert the current leaf and re-sort so the rendered set is identical
    * no matter which article in the topic is open. Returns `[]` when the
    * article has no peers, so a lone article still hides the rail entirely.
+   *
+   * Each entry is mapped to a `DocsSiblingLink` with its active-state class and
+   * `aria-current` value precomputed, so the template needs no per-item method
+   * call (`docs/reviews/frontend-checklist.md` §63-81).
    */
-  protected readonly topicArticles = computed(() => {
+  protected readonly topicArticles = computed<DocsSiblingLink[]>(() => {
     const current = this.article();
     const peers = this.siblings();
     if (!current || peers.length === 0) return [];
-    if (current.isTopicLanding) return peers;
-    return [...peers, current].sort((a, b) => this.byDisplayOrderThenSlug(a, b));
+    const ordered = current.isTopicLanding ? peers : [...peers, current].sort((a, b) => this.byDisplayOrderThenSlug(a, b));
+    return ordered.map((entry) => this.toSiblingLink(entry, entry.slug === current.slug));
   });
-
-  /** Slug of the article currently in view, for the active-item highlight. */
-  protected readonly activeSlug = computed(() => this.article()?.slug ?? '');
 
   public constructor() {
     // SEO sync — re-applies head tags whenever `article()` changes. We
@@ -112,17 +113,6 @@ export class DocsArticleComponent {
   /** Navigates to the previous page in browser history (back button in the top bar). */
   protected goBack(): void {
     this.location.back();
-  }
-
-  /**
-   * Tailwind classes for a "More in this topic" link. The active entry (the
-   * article currently in view) is highlighted; the rest keep the default
-   * gray-with-hover treatment.
-   */
-  protected siblingLinkClasses(slug: string): string {
-    const base =
-      'block rounded-md px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
-    return slug === this.activeSlug() ? `${base} bg-blue-50 font-medium text-primary` : `${base} text-gray-700 hover:bg-blue-50 hover:text-primary`;
   }
 
   @HostListener('click', ['$event'])
@@ -157,12 +147,31 @@ export class DocsArticleComponent {
     void this.router.navigateByUrl(href);
   }
 
-  /** Mirrors the docs build's sibling sort: `displayOrder` ascending, then slug. */
+  /**
+   * Mirrors the docs build's sibling sort: `displayOrder` ascending, then slug.
+   * The slug tie-break uses raw codepoint comparison (`<`/`>`) to match the
+   * build's `sortByDisplayOrderThenAlpha` exactly — `localeCompare` applies
+   * locale collation that can differ between the SSR (Node) and browser
+   * renders of this same rail, which would reorder identical input.
+   */
   private byDisplayOrderThenSlug(a: DocsArticle, b: DocsArticle): number {
     const aOrder = typeof a.displayOrder === 'number' ? a.displayOrder : Number.POSITIVE_INFINITY;
     const bOrder = typeof b.displayOrder === 'number' ? b.displayOrder : Number.POSITIVE_INFINITY;
     if (aOrder !== bOrder) return aOrder - bOrder;
-    return a.slug.localeCompare(b.slug);
+    if (a.slug < b.slug) return -1;
+    if (a.slug > b.slug) return 1;
+    return 0;
+  }
+
+  /**
+   * Builds a render-ready rail link, precomputing the active-state Tailwind
+   * class and `aria-current` value so the template stays method-free.
+   */
+  private toSiblingLink(article: DocsArticle, isActive: boolean): DocsSiblingLink {
+    const base =
+      'block rounded-md px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
+    const linkClass = isActive ? `${base} bg-blue-50 font-medium text-primary` : `${base} text-gray-700 hover:bg-blue-50 hover:text-primary`;
+    return { slug: article.slug, url: article.url, title: article.title, linkClass, ariaCurrent: isActive ? 'page' : null };
   }
 
   private findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
