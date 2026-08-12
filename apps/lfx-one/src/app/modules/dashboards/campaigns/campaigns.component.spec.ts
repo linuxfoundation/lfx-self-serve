@@ -26,9 +26,12 @@ describe('CampaignsComponent brief persistence', () => {
   let persistBrief: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<CampaignsComponent>;
 
+  /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
+  const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
   /** `onProceedToImplementation` is protected; the spec drives it as the Planning tab's output would. */
-  function proceed(): void {
-    (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(brief);
+  function proceed(b: CampaignBriefOutput = brief): void {
+    (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -292,6 +295,29 @@ describe('CampaignsComponent brief persistence', () => {
      * their own brief belongs to someone else. Creating a brief is the strongest proof of
      * ownership there is; this pins that the page keeps it.
      */
+    /**
+     * Ownership belongs to a BRIEF, not to a session or a foundation.
+     *
+     * `selectTab` sets the tab directly, so clicking back to Planning recreates the planning form
+     * without going through `resetToPlanning`. Save event A, click Planning, generate a brief for
+     * event B: an ownership key naming only the foundation would hand B's save the id of A's row,
+     * and the server — given a name it recognises — would accept an overwrite of a brief that was
+     * never approved as B. A key too coarse to tell A from B disarms the guard it feeds.
+     */
+    it("does not lend one event's brief id to another event", async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-a', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      // Back to Planning by clicking the tab — no reset runs — then proceed with another event.
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      persistBrief.mockReturnValue(NEVER);
+      proceed(otherBrief);
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null);
+    });
+
     it('sends the created brief id on the next save of the same session', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
 
