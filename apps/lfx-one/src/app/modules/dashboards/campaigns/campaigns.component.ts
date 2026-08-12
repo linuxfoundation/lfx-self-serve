@@ -132,7 +132,7 @@ export class CampaignsComponent {
    * replace?" at the moment a request is built.
 
    */
-  private knownBriefIds = new Map<string, string>();
+  private knownBriefIds = new Map<string, { id: string; etag: string | null }>();
 
   private briefPersistenceGeneration = 0;
 
@@ -314,7 +314,7 @@ export class CampaignsComponent {
       const restoredKey = this.ownershipKey(this.activeFoundationSlug(), brief);
       this.briefPersistence.set({
         status: 'off',
-        briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey) ?? null),
+        briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
         message: null,
       });
       return;
@@ -332,7 +332,11 @@ export class CampaignsComponent {
     // there — or, worse, accepted against a brief this session never loaded.
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
-      this.knownBriefIds.set(key, briefId);
+      // No ETag from a restore. The read path deliberately drops the load-time validator
+      // (LFXV2-3204), so this session's first save after a restore has none of its own and falls
+      // back to the freshly read one. The id is still full proof of OWNERSHIP; only the
+      // staleness check is unavailable until that save returns a validator of its own.
+      this.knownBriefIds.set(key, { id: briefId, etag: null });
     }
     this.onProceedToImplementation(brief, true);
   }
@@ -406,8 +410,8 @@ export class CampaignsComponent {
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
       // filed it, whatever else happened while this one waited.
-      const knownBriefId = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
+      const known = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -458,7 +462,10 @@ export class CampaignsComponent {
             result.briefId !== '' &&
             ownershipKey !== null
           ) {
-            this.knownBriefIds.set(ownershipKey, result.briefId);
+            // The ETag goes with the id: it is this caller's LAST-SEEN version, and sending it
+            // on the next save is what makes the If-Match a real precondition rather than a
+            // header the save re-derives from its own read.
+            this.knownBriefIds.set(ownershipKey, { id: result.briefId, etag: result.etag });
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
@@ -472,11 +479,17 @@ export class CampaignsComponent {
           // must never say. It carries `error` rather than a new state: the user's position is
           // exactly that of a failed save, and the remedy is the same.
           if (result.conflict !== undefined) {
+            // The two conflicts are different situations and must not share a sentence. Both mean
+            // "not written", but `unowned-brief-exists` says this session may not replace that
+            // brief at all, while `stale-brief` says it may — someone else just got there first,
+            // so the work is intact and reloading shows the newer version.
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
               message:
-                'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
+                result.conflict === 'stale-brief'
+                  ? 'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.'
+                  : 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
             });
             return;
           }

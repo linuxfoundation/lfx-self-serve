@@ -262,7 +262,8 @@ export class CampaignServiceClient {
     brief: CampaignBriefOutput,
     eventSlug: string,
     projectSlug: string,
-    knownBriefId: string | null
+    knownBriefId: string | null = null,
+    knownEtag: string | null = null
   ): Promise<CampaignBriefPersistResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
@@ -309,7 +310,7 @@ export class CampaignServiceClient {
       return this.approveBrief(req, basePath, created, true);
     }
 
-    return this.replaceBrief(req, basePath, envelope, existing);
+    return this.replaceBrief(req, basePath, envelope, existing, knownEtag);
   }
 
   /**
@@ -371,21 +372,53 @@ export class CampaignServiceClient {
     req: Request,
     basePath: string,
     envelope: CampaignServiceBriefEnvelope,
-    existing: { brief: CampaignServiceBrief; etag: string | null }
+    existing: { brief: CampaignServiceBrief; etag: string | null },
+    knownEtag: string | null
   ): Promise<CampaignBriefPersistResult> {
     if (existing.etag === null) {
       throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
     }
 
-    const updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
-      req,
-      'LFX_V2_CAMPAIGN_SERVICE',
-      `${basePath}/${encodeURIComponent(existing.brief.id)}`,
-      'PUT',
-      undefined,
-      envelope,
-      { 'If-Match': existing.etag }
-    );
+    // The caller's LAST-SEEN validator when it has one, and only the freshly-read one as a
+    // fallback. Using the find's ETag unconditionally made this header ceremonial: that find runs
+    // inside this very save, so its validator always matches and the 412 can never fire. It looks
+    // like optimistic concurrency and provides none — if another writer updated the row after
+    // this tab last saw it, the PUT would re-fetch THEIR validator and silently overwrite their
+    // content.
+    //
+    // The fallback still matters: a caller that has never seen an ETag (the first save of a
+    // session that adopts an existing row) has no validator to send, and refusing that save
+    // outright would be worse than a race it cannot yet detect. It is the ownership check above
+    // that decides whether such a caller may replace at all.
+    const validator = knownEtag ?? existing.etag;
+
+    let updated;
+    try {
+      updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodeURIComponent(existing.brief.id)}`,
+        'PUT',
+        undefined,
+        envelope,
+        { 'If-Match': validator }
+      );
+    } catch (error) {
+      // A 412 is the validator doing its job: this caller owns the brief but another writer moved
+      // it since the caller last saw it. Reported as a conflict rather than an error because the
+      // save was REFUSED, not failed — nothing was overwritten, which is the outcome the header
+      // exists to produce. It is a distinct value from `unowned-brief-exists` because the remedy
+      // differs: this caller may replace the brief once it has seen the newer version.
+      //
+      // Only when the caller supplied its own validator. With the fallback, the ETag came from
+      // the find inside this same save, so a 412 means something changed in the microseconds
+      // between the two calls — indistinguishable to the user from an ordinary failure, and not
+      // a stale-view story worth telling.
+      if (knownEtag !== null && error instanceof MicroserviceError && error.statusCode === 412) {
+        return { enabled: true, briefId: existing.brief.id, etag: null, created: false, approved: false, conflict: 'stale-brief' };
+      }
+      throw error;
+    }
     return this.approveBrief(req, basePath, updated, false);
   }
 

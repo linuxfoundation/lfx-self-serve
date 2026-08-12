@@ -361,7 +361,10 @@ export class CampaignController {
       // caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can
       // replace a stored brief the user never saw, which a reload or a second tab reaches.
       const knownBriefId = typeof req.query['brief_id'] === 'string' && req.query['brief_id'].trim() !== '' ? req.query['brief_id'] : null;
-      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId);
+      // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
+      // anything, and the id without the ETag is the ceremonial-header case this fixes.
+      const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag);
       logger.success(req, 'campaign_persist_brief', startTime, {
         eventSlug,
         projectSlug,

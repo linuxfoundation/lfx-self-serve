@@ -70,16 +70,22 @@ export class CampaignService {
    * — the server reads `req.body` as one — and because `?project=<slug>` is already how this
    * application names the active foundation on every route it scopes.
    */
-  public persistBrief(brief: CampaignBriefOutput, projectSlug: string, knownBriefId: string | null = null): Observable<CampaignBriefPersistResult> {
+  public persistBrief(
+    brief: CampaignBriefOutput,
+    projectSlug: string,
+    knownBriefId: string | null = null,
+    knownEtag: string | null = null
+  ): Observable<CampaignBriefPersistResult> {
     // `brief_id` is sent only when this session has established ownership of that row, which on
     // this branch has TWO sources: the page loaded the brief from campaign-service, or it created
-    // the brief itself on an earlier save. Either is proof; its absence is what matters — the
-    // server refuses to replace a stored brief for a caller that cannot name it, so a freshly
-    // generated brief creates and never overwrites one it has not seen, and a second save in the
-    // same session updates the brief it made (LFXV2-3200).
+    // the brief itself on an earlier save. Either is proof; its absence is
     let params = new HttpParams().set('project', projectSlug);
     if (knownBriefId !== null && knownBriefId !== '') {
       params = params.set('brief_id', knownBriefId);
+      // Only alongside the id. An ETag on its own names no row, and the server pairs them.
+      if (knownEtag !== null && knownEtag !== '') {
+        params = params.set('etag', knownEtag);
+      }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
   }
