@@ -196,12 +196,23 @@ operator setting `yes` and expecting it to be ignored would route production tra
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
 in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
 
-`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates `POST /api/campaigns/brief/persist`, which the
-Campaigns page calls when a user approves a brief and moves to the Implementation tab. With it
-off the endpoint answers `{"enabled": false}` at 200 and calls nothing; the brief stays where it
-has always lived, in the browser tab, and is lost on reload. Turning it off after it has been on
-leaves already-saved briefs untouched — nothing reads them back yet, so this flag changes only
-whether new briefs are written.
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
+(`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the
+Implementation tab) and the READ-BACK (`GET /api/campaigns/brief` and the Planning tab's restore
+offer). With it off both answer "off" and call nothing; the brief stays where it has always
+lived, in the browser tab, and is lost on reload.
+
+Read and write share one flag deliberately — a pod that read while the write flag was off would
+report an empty brief for one sitting in front of the user.
+
+Because the read exists, an overlapping rollout is no longer free. Requests are not sticky, so a
+lookup can land flag-off (brief not offered, user regenerates) while the following save lands
+flag-on (finds the row, refuses as `unowned-brief-exists`). Confusing, but safe — nothing is
+overwritten in either direction. Prefer a no-overlap rollout when flipping this flag; see
+`values.yaml` for the detail.
+
+Turning it off after it has been on leaves already-saved briefs untouched; they simply stop being
+offered.
 
 The two flags are independent and gate different endpoints: setting `..._BRIEFS` does not route
 job polling anywhere new, and setting `..._JOBS` does not persist anything. The paragraph below is

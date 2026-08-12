@@ -126,19 +126,6 @@ export class CampaignsComponent {
   };
 
   /**
-   * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
-   * treatment on the next save:
-   *
-   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
-   *   is real, so falling back to the freshly read validator is what they asked for.
-   * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
-   *   was warned and nothing was decided; falling back here would bypass the precondition
-   *   silently and could overwrite an intervening writer without ever showing a conflict.
-   *
-   * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
-   * validator sends none, and the server's ownership check still decides whether it may replace.
-   */
-  /**
    * The campaign-service brief id this session has established ownership of, or null.
    *
    * TWO sources on this branch, and both are genuine proof: the page LOADED the brief from
@@ -151,8 +138,12 @@ export class CampaignsComponent {
    * that cannot name it, because a reload or a second tab is enough to reach a save that would
    * otherwise overwrite content the user never saw (LFXV2-3200).
    *
-   * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
-   * brief, a different event, claim ownership of the previous one's row.
+   * NOT cleared by `resetToPlanning`, and that is the point of keying it. An earlier revision did
+   * clear it, on the reasoning that a stale id would let the next brief claim the previous one's
+   * row — but the key already prevents that: an id filed under `(foundation, event A)` can never
+   * be replayed for event B. Clearing it instead STRANDED the row, because discarding the
+   * on-screen brief does not delete the stored one, and the next save of that same event then
+   * arrived with no id and was refused as unowned.
    *
    * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
    * over. That switch does not re-create this component and deliberately keeps the brief (see the
@@ -184,6 +175,19 @@ export class CampaignsComponent {
    *
    * A plain field rather than a signal: nothing renders it, and it answers "may this save
    * replace?" at the moment a request is built.
+   *
+   * ### Why `absence` encodes a REASON rather than just a missing validator
+   * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
+   * treatment on the next save:
+   *
+   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
+   *   is real, so falling back to the freshly read validator is what they asked for.
+   * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
+   *   was warned and nothing was decided; falling back here would bypass the precondition
+   *   silently and could overwrite an intervening writer without ever showing a conflict.
+   *
+   * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
+   * validator sends none, and the server's ownership check still decides whether it may replace.
    */
   private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
 
