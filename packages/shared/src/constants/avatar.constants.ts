@@ -11,5 +11,5 @@ export const MYPROFILE_AVATAR_PROD_BASE = 'https://platform-logos-myprofile-api-
 /** MIME types accepted for user-uploaded profile pictures. SVG excluded (XSS risk); GIF excluded (no animation need). */
 export const ALLOWED_AVATAR_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
-/** Maximum profile picture upload size in bytes (20MB), per the LFX object-store design contract. */
-export const MAX_AVATAR_SIZE_BYTES = 20 * 1024 * 1024;
+/** Maximum profile picture upload size in bytes (2MB). */
+export const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024;
