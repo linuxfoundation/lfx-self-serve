@@ -180,6 +180,24 @@ describe('UserService profile visibility', () => {
     });
   });
 
+  describe('Salesforce ID guard', () => {
+    // Both public methods fail fast with a 502 when the gateway profile lacks an ID, rather than
+    // issuing preference calls against an undefined sfid.
+    it('rejects getProfileVisibility with 502 when the gateway profile has no ID', async () => {
+      mockProfile({ ID: null });
+
+      await expect(service.getProfileVisibility(req)).rejects.toMatchObject({ statusCode: 502 });
+    });
+
+    it('rejects updateProfileVisibility with 502 when the gateway profile has no ID', async () => {
+      mockProfile({ ID: null });
+
+      await expect(
+        service.updateProfileVisibility(req, { isPublic: true, sections: { basic: true } } as unknown as ProfileVisibilityUpdateRequest)
+      ).rejects.toMatchObject({ statusCode: 502 });
+    });
+  });
+
   describe('updateProfileVisibility → sanitizeVisibilitySections', () => {
     it('coerces non-boolean values to false and drops unknown keys before persisting', async () => {
       mockProfile({ IsPublic: true }); // flag unchanged → only the preference is written
@@ -306,6 +324,18 @@ describe('UserService profile visibility', () => {
       await service.updateProfileVisibility(req, { isPublic: false, sections: {} } as unknown as ProfileVisibilityUpdateRequest);
 
       expect(order).toEqual(['isPublic', 'sections']);
+    });
+  });
+
+  describe('updateProfileVisibility IsPublic payload', () => {
+    it('sends the next IsPublic and the profile AccountID in the /me PATCH when the flag changes', async () => {
+      mockProfile({ IsPublic: false }); // Account.ID defaults to 'acct-1'
+      routeGateway(null);
+
+      await service.updateProfileVisibility(req, { isPublic: true, sections: { basic: true } } as unknown as ProfileVisibilityUpdateRequest);
+
+      const meCall = gw.mock.calls.find((c) => c[2].method === 'PATCH' && c[1].endsWith('/me'));
+      expect(meCall?.[2].body).toEqual({ IsPublic: true, AccountID: 'acct-1' });
     });
   });
 });
