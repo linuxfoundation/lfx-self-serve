@@ -78,7 +78,7 @@ import {
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
-import { catchError, Observable, of, shareReplay } from 'rxjs';
+import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
 /**
  * Analytics service for fetching analytics data from Snowflake
@@ -1169,15 +1169,16 @@ export class AnalyticsService {
       if (includePast) {
         params['includePast'] = 'true';
       }
-      // Evict on error so a transient failure doesn't pin every later subscriber
-      // to the empty fallback for the rest of the session.
+      // The error propagates rather than degrading to an empty roster: "no upcoming events" and
+      // "we couldn't load your events" are different statements, and collapsing an outage or an
+      // expired session into the former misreports a failure as real data. Subscribers render an
+      // explicit failure state. The cache entry is evicted first so a retry re-requests instead
+      // of replaying the failure.
       const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
-        catchError((error) => {
-          // Log before degrading — an empty roster renders the same "no events" copy as a real
-          // empty result, so an auth expiry or Snowflake outage would otherwise be invisible.
-          console.error('Failed to load event roster', error);
+        catchError((error: unknown) => {
+          console.error('[analytics] event-roster failed', { foundationSlug, includePast, error });
           this.eventRosterCache.delete(key);
-          return of({ projectId: '', events: [] });
+          return throwError(() => error);
         }),
         shareReplay(1)
       );
