@@ -315,7 +315,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(otherBrief);
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null);
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null);
     });
 
     it('sends the created brief id on the next save of the same session', async () => {
@@ -323,13 +323,16 @@ describe('CampaignsComponent brief persistence', () => {
 
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
 
       proceed();
       await fixture.whenStable();
 
       // Now owned: the id the first save returned goes back with the second.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
+      // The ETag rides with the id: it is this caller's last-seen version, and sending it is
+      // what makes the server's If-Match a real precondition rather than one re-derived from
+      // the save's own read.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
     });
 
     /**
@@ -359,7 +362,7 @@ describe('CampaignsComponent brief persistence', () => {
       // `resetToPlanning` emptying the map, NOT the response being superseded — the record now
       // happens before the generation check, because ownership does not expire when the user
       // navigates away. See the queued-save test below for the case that distinction protects.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
     });
 
     /**
@@ -375,6 +378,21 @@ describe('CampaignsComponent brief persistence', () => {
      * Recording before the check is safe because the KEY is `(project, event)`: a late response
      * files its id under the event it actually saved, and cannot reach another event's brief.
      */
+    it('reports a stale-brief conflict distinctly from an unowned one', async () => {
+      // The two conflicts are different situations. `unowned-brief-exists` means this session may
+      // not replace that brief at all; `stale-brief` means it may — another writer just got there
+      // first — so the message must say the work is intact and reloading shows their version.
+      // Sharing one sentence would tell a user who CAN save that they cannot.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+      proceed();
+      await fixture.whenStable();
+
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('Someone else changed this brief');
+      expect(state().message).not.toContain('was not opened here');
+    });
+
     it('treats a padded slug as a different brief from the unpadded one', async () => {
       // `deriveEventSlug` trims only to TEST emptiness — it returns the untrimmed original, and
       // that exact string goes on the wire as `event_slug`, which campaign-service compares
@@ -392,7 +410,7 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       // Must NOT inherit the unpadded brief's id: it names a different row.
-      expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null);
+      expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null, null);
     });
 
     it('keeps an id recorded by a save that lands after a foundation switch', async () => {
@@ -419,7 +437,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', 'W/"1"');
     });
 
     it('hands a queued save the id its predecessor created for the same event', async () => {
@@ -441,7 +459,10 @@ describe('CampaignsComponent brief persistence', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(persistBrief).toHaveBeenCalledTimes(2);
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
+      // The ETag rides with the id: it is this caller's last-seen version, and sending it is
+      // what makes the server's If-Match a real precondition rather than one re-derived from
+      // the save's own read.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', 'W/"1"');
     });
 
     /**
@@ -457,7 +478,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
     });
 
     it('files the brief under the foundation selected at save time', async () => {
@@ -472,7 +493,7 @@ describe('CampaignsComponent brief persistence', () => {
 
       // The third argument is the known brief id, null here: nothing has been saved yet in this
       // session, so the page can claim no ownership and the save must CREATE.
-      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null);
+      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null, null);
     });
 
     it("never replays one foundation's brief id against another foundation", async () => {
@@ -480,7 +501,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null, null);
 
       // Switch to CNCF and save. The brief survives the switch by design, but the OWNERSHIP does
       // not: `tlf-1` names a row in a different project, so this must create rather than replace.
@@ -489,7 +510,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'cncf-1', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null, null);
 
       // Back to TLF. A single scalar would now hold `cncf-1` and send it here, and the server
       // would refuse an update against a row this session genuinely owns. The id TLF issued is
@@ -499,7 +520,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"2"', created: false, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"');
     });
   });
 

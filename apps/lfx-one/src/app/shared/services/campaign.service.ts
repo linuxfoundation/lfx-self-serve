@@ -69,7 +69,12 @@ export class CampaignService {
    * — the server reads `req.body` as one — and because `?project=<slug>` is already how this
    * application names the active foundation on every route it scopes.
    */
-  public persistBrief(brief: CampaignBriefOutput, projectSlug: string, knownBriefId: string | null = null): Observable<CampaignBriefPersistResult> {
+  public persistBrief(
+    brief: CampaignBriefOutput,
+    projectSlug: string,
+    knownBriefId: string | null = null,
+    knownEtag: string | null = null
+  ): Observable<CampaignBriefPersistResult> {
     // `brief_id` is sent only when this session has established ownership of that row — in this
     // phase, by having created it. It is the caller's proof: the server refuses to replace a
     // stored brief for a caller that cannot name it, so a first save creates and a second save
@@ -78,6 +83,10 @@ export class CampaignService {
     let params = new HttpParams().set('project', projectSlug);
     if (knownBriefId !== null && knownBriefId !== '') {
       params = params.set('brief_id', knownBriefId);
+      // Only alongside the id. An ETag on its own names no row, and the server pairs them.
+      if (knownEtag !== null && knownEtag !== '') {
+        params = params.set('etag', knownEtag);
+      }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
   }

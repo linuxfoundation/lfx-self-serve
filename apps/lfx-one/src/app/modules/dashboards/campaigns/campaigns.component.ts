@@ -121,7 +121,7 @@ export class CampaignsComponent {
    * component runs in the browser; deriving it any other way would let the lookup and the request
    * disagree about which row is being claimed, so the two must be changed together.
    */
-  private knownBriefIds = new Map<string, string>();
+  private knownBriefIds = new Map<string, { id: string; etag: string | null }>();
 
   private briefPersistenceGeneration = 0;
 
@@ -346,8 +346,8 @@ export class CampaignsComponent {
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
       // filed it, whatever else happened while this one waited.
-      const knownBriefId = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
+      const known = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -398,7 +398,10 @@ export class CampaignsComponent {
             result.briefId !== '' &&
             ownershipKey !== null
           ) {
-            this.knownBriefIds.set(ownershipKey, result.briefId);
+            // The ETag goes with the id: it is this caller's LAST-SEEN version, and sending it
+            // on the next save is what makes the If-Match a real precondition rather than a
+            // header the save re-derives from its own read.
+            this.knownBriefIds.set(ownershipKey, { id: result.briefId, etag: result.etag });
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
@@ -412,10 +415,17 @@ export class CampaignsComponent {
           // must never say. It surfaces as `error` because the user's position is exactly that
           // of a failed save, and the remedy is the same.
           if (result.conflict !== undefined) {
+            // The two conflicts are different situations and must not share a sentence. Both mean
+            // "not written", but `unowned-brief-exists` says this session may not replace that
+            // brief at all, while `stale-brief` says it may — someone else just got there first,
+            // so the work is intact and reloading shows the newer version.
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message: 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
+              message:
+                result.conflict === 'stale-brief'
+                  ? 'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.'
+                  : 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
             });
             return;
           }

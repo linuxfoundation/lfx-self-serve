@@ -195,6 +195,11 @@ export interface CampaignBriefPersistResult {
   /**
    * Why the save was REFUSED, when it was. Absent means the save happened.
    *
+   * `stale-brief`: the caller named the row and owns it, but another writer changed it since the
+   * caller last saw it, so the replace was refused with a 412 rather than overwriting their work.
+   * Distinct from `unowned-brief-exists` because the remedy differs: this caller may replace the
+   * brief, it just needs to see the newer version first.
+   *
    * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
    * prove it owns it. Replacing would overwrite content the user was never shown — a reload or a
    * second tab is enough to reach that, since the page then generates from scratch and the
@@ -208,7 +213,7 @@ export interface CampaignBriefPersistResult {
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
    * and the caller's next step is a CHOICE rather than a retry.
    */
-  conflict?: 'unowned-brief-exists';
+  conflict?: 'unowned-brief-exists' | 'stale-brief';
 }
 
 /**

@@ -508,6 +508,42 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(headers).toEqual({ 'If-Match': '"7"' });
   });
 
+  it("sends the CALLER's last-seen validator, not the one this save just read", async () => {
+    // The point of the whole change. Using the find's ETag makes the If-Match ceremonial: that
+    // find runs inside this very save, so its validator always matches and the 412 can never
+    // fire. If another writer moved the row after this tab last saw it, the PUT would re-fetch
+    // THEIR validator and silently overwrite their content.
+    proxyRequestWithResponse
+      // The find sees version 9 — someone else has written since this caller saw version 7.
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 9 }, { etag: '"9"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 10 }, { etag: '"10"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 11 }, { etag: '"11"' }));
+
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', '"7"');
+
+    const [, , , , , , headers] = proxyRequestWithResponse.mock.calls[1] as unknown[];
+    // `"7"`, not `"9"`: the server must be the one to decide this is stale.
+    expect(headers).toEqual({ 'If-Match': '"7"' });
+  });
+
+  it('reports a 412 on the replace as a stale-brief conflict, not an error', async () => {
+    // Two writers: this caller owns the brief and named it, but another writer moved it since.
+    // The save was REFUSED, not failed — nothing was overwritten, which is the outcome the
+    // precondition exists to produce — so it surfaces as a conflict the UI can explain.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 9 }, { etag: '"9"' }))
+      .mockRejectedValueOnce(new MicroserviceError('Precondition Failed', 412, 'PRECONDITION_FAILED', {}));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', '"7"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      created: false,
+      approved: false,
+      conflict: 'stale-brief',
+    });
+  });
+
   // A brief body that happens to carry an `etag` key must not be mistaken for the validator.
   // campaign-service does not send one, but a gateway or a future field addition could, and
   // silently preferring it would reintroduce the original bug in a form no other test catches.
