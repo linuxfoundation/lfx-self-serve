@@ -939,13 +939,22 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   /**
-   * Tooltip context for the engagement chip. Emeritus gets the honorific explainer (it renders as
-   * a neutral state, never at-risk styling); Chair / Vice Chair / LF Staff seats are called out so
-   * their attendance reads with role context. Empty string disables the PrimeNG tooltip.
+   * Tooltip context for the engagement chip. Emeritus and LF Staff+Observer (LFXV2-3101, narrowed
+   * to this two-part condition in a follow-up review — an LF Staff member who is a real Voting Rep
+   * or Alternate Voting Rep is a genuine participant, not excluded) both get a neutral explainer —
+   * neither renders with at-risk styling, and neither's classification is driven by their real
+   * attendance numbers, so this tooltip states the exclusion rather than the numbers themselves
+   * (the Meetings column still shows the real attended/invited count for every row, chip-neutral
+   * seats included — this tooltip only concerns the classification chip). Chair / Vice Chair / a
+   * real (non-excluded) LF Staff seat are called out so their (real) attendance reads with role
+   * context. Empty string disables the PrimeNG tooltip.
    */
   private resolveEngagementContext(row: CommitteeMemberEngagement): string {
     if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
       return 'Emeritus seat — honorific status; attendance expectations do not apply';
+    }
+    if (row.role === CommitteeMemberRole.LF_STAFF && row.voting_status === CommitteeMemberVotingStatus.OBSERVER) {
+      return 'LF Staff seat — excluded from engagement metrics; attendance expectations do not apply';
     }
     if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {
       return `${row.role} — attended ${row.attended} of ${row.invited} invited meetings`;

@@ -64,6 +64,7 @@
   },
   "dependencies": {
     "@stripe/stripe-js": "^9.7.0",
-    "chart.js": "^4.5.1"
+    "chart.js": "^4.5.1",
+    "chartjs-chart-sankey": "0.15.0"
   }
 }

@@ -46,6 +46,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildInvitationActions,
+  codePointLength,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
   normalizeIndexedMeetingAiSummary,
@@ -265,9 +266,17 @@ export class UserService {
       throw new Error('Job title is too long');
     }
 
-    // Validate bio if provided (basic length check)
-    if (metadata?.bio && metadata.bio.length > PROFILE_BIO_MAX_LENGTH) {
-      throw new Error(`Bio is too long (max ${PROFILE_BIO_MAX_LENGTH} characters)`);
+    // Bio arrives from a cast (not runtime-checked) req.body, so guard the type before counting:
+    // a non-string would either slip past the length check (arrays) or throw a raw TypeError (numbers).
+    if (metadata?.bio !== undefined && metadata?.bio !== null) {
+      if (typeof metadata.bio !== 'string') {
+        throw new Error('Bio must be a string');
+      }
+      // Count code points (not UTF-16 units) to match the auth-service PROFILE_BIO_MAX_LENGTH rune
+      // cap — otherwise emoji/non-BMP bios would be rejected at roughly half the real allowance.
+      if (codePointLength(metadata.bio) > PROFILE_BIO_MAX_LENGTH) {
+        throw new Error(`Bio is too long (max ${PROFILE_BIO_MAX_LENGTH} characters)`);
+      }
     }
 
     return true;
