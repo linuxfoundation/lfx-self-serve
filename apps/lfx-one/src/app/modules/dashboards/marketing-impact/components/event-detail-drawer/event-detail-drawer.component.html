@@ -18,7 +18,7 @@
                run straight into the country separator. -->
           {{ view()?.dateLabel }}
           @if (detail()?.country) {
-            · {{ detail()?.country }}
+            <span>&nbsp;· {{ detail()?.country }}</span>
           }
         </p>
       }
@@ -102,16 +102,18 @@
         </div>
       }
 
-      <!-- Pacing lives in PCC (prediction service); deep-link out -->
+      <!-- eventUrl is the public event page (Cvent / events.linuxfoundation.org), not a PCC
+           prediction view — there is no PCC event deep-link in this app to point at, so the
+           label describes where the link actually goes. -->
       @if (d.eventUrl) {
         <a
           [href]="d.eventUrl"
           target="_blank"
           rel="noopener noreferrer"
           class="flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-          data-testid="event-detail-pcc-link">
+          data-testid="event-detail-event-link">
           <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-          View registration pacing &amp; prediction in PCC
+          View event page
         </a>
       }
     </div>
