@@ -155,12 +155,19 @@ export class CampaignsComponent {
     // them on a blank Planning tab wondering where the brief went.
     'unowned-brief-exists':
       'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to work from the stored brief.',
-    // Says "reload", which the base branch deliberately does not: THIS branch adds the read path,
-    // so a reload re-looks-up the stored brief and offers it for restore. The advice is
-    // actionable here — the user sees the other writer's version instead of losing their own
-    // ownership state, which is what made the same sentence harmful before LFXV2-3108 existed.
+    // Does NOT advise a reload, even though this branch adds the read path that would make one
+    // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
+    // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
+    // the work currently on screen. Telling the user to reload throws that work away to reach a
+    // state they can already get to by clicking Proceed again.
+    //
+    // An earlier revision said "Reload and re-enter the event URL to see their changes" — added
+    // while restoring reload advice this branch had dropped, without noticing it contradicts the
+    // promotion added on the base. `unowned-brief-exists` above is the conflict that genuinely
+    // needs reload advice: there the session may NOT replace, so the stored brief has to be
+    // loaded before anything can proceed.
     'stale-brief':
-      'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload and re-enter the event URL to see their changes.',
+      'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
     // Says "try again" rather than naming another writer, because none is known to exist: the
     // problem is that this page cannot prove which version it last saw, not that someone else

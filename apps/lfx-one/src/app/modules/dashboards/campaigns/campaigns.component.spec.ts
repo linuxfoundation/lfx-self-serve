@@ -465,7 +465,7 @@ describe('CampaignsComponent brief persistence', () => {
     it('reports a stale-brief conflict distinctly from an unowned one', async () => {
       // The two conflicts are different situations. `unowned-brief-exists` means this session may
       // not replace that brief at all; `stale-brief` means it may — another writer just got there
-      // first — so the message must say the work is intact and reloading shows their version.
+      // first — so the message must say the work is intact and can be saved by proceeding again.
       // Sharing one sentence would tell a user who CAN save that they cannot.
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
 
@@ -475,11 +475,12 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).toBe('error');
       expect(state().message).toContain('Someone else changed this brief');
       expect(state().message).not.toContain('was not opened here');
-      // DOES advise a reload on this branch, unlike the base. LFXV2-3108 adds the read path, so
-      // a reload re-looks-up the stored brief and offers it for restore — the user sees the other
-      // writer's version instead of losing their own ownership state, which is what made the same
-      // sentence harmful while nothing could read a brief back.
-      expect(state().message).toContain('Reload and re-enter the event URL to see their changes');
+      // Must NOT advise a reload, even though this branch adds the read path that would make one
+      // work. A stale-brief refusal PROMOTES this session to explicit overwrite permission, so the
+      // next Proceed saves the work on screen — telling the user to reload throws that work away
+      // to reach a state they can already get to by clicking Proceed again.
+      expect(state().message).toContain('Proceed again to save your version');
+      expect(state().message).not.toContain('Reload');
     });
 
     it('does not confirm a write that was superseded before it could be approved', async () => {
