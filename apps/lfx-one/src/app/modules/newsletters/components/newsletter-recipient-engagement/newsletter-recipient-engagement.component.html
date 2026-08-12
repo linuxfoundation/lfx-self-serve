@@ -75,6 +75,10 @@
             <th>Engagement</th>
             <th>Opens</th>
             <th>Last opened</th>
+            @if (showClicks()) {
+              <th data-testid="newsletter-recipient-engagement-header-clicks">Clicks</th>
+              <th data-testid="newsletter-recipient-engagement-header-last-clicked">Last clicked</th>
+            }
           </tr>
         </ng-template>
 
@@ -82,13 +86,13 @@
         <ng-template #body let-row>
           <tr [attr.data-testid]="'newsletter-recipient-engagement-row-' + row.email">
             <td class="w-8">
-              @if (row.open_count > 0) {
+              @if (row.open_count > 0 || row.click_count > 0) {
                 <button
                   type="button"
                   class="text-gray-400 hover:text-gray-600"
                   (click)="toggleTimeline(row.email)"
                   [attr.aria-expanded]="expandedEmails().has(row.email)"
-                  [attr.aria-label]="(expandedEmails().has(row.email) ? 'Collapse' : 'Expand') + ' open timeline for ' + row.displayName"
+                  [attr.aria-label]="(expandedEmails().has(row.email) ? 'Collapse' : 'Expand') + ' engagement timeline for ' + row.displayName"
                   [attr.data-testid]="'newsletter-recipient-engagement-expand-' + row.email">
                   <i class="fa-light" [class.fa-chevron-down]="expandedEmails().has(row.email)" [class.fa-chevron-right]="!expandedEmails().has(row.email)"></i>
                 </button>
@@ -131,22 +135,53 @@
                 <span class="text-sm text-gray-400">—</span>
               }
             </td>
+            @if (showClicks()) {
+              <td data-testid="newsletter-recipient-engagement-cell-clicks">
+                <lfx-badge [value]="row.click_count" severity="info" />
+              </td>
+              <td data-testid="newsletter-recipient-engagement-cell-last-clicked">
+                @if (row.last_clicked_at) {
+                  <span class="text-sm text-gray-700" [title]="row.last_clicked_at | date: 'MMM d, y, h:mm a'">{{ row.lastClickedRelative }}</span>
+                } @else {
+                  <span class="text-sm text-gray-400">—</span>
+                }
+              </td>
+            }
           </tr>
           @if (expandedEmails().has(row.email)) {
             <tr [attr.data-testid]="'newsletter-recipient-engagement-timeline-' + row.email">
               <td></td>
-              <td colspan="5" class="bg-gray-50 py-3">
-                <div class="flex flex-col gap-1 pl-2">
-                  <span class="text-xs uppercase tracking-wide text-gray-500">Open timeline</span>
-                  <ul class="flex flex-col gap-1">
-                    <!-- track $index, not the value: opened_at_list is second-precision (upstream SendGrid),
-                         so two opens in the same second collide on value and throw NG0955. -->
-                    @for (openedAt of row.opened_at_list; track $index) {
-                      <li class="text-sm text-gray-700">{{ openedAt | date: 'MMM d, y, h:mm a' }}</li>
+              <td [attr.colspan]="timelineColspan()" class="bg-gray-50 py-3">
+                <div class="flex flex-col gap-3 pl-2">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs uppercase tracking-wide text-gray-500">Open timeline</span>
+                    <ul class="flex flex-col gap-1">
+                      <!-- track $index, not the value: opened_at_list is second-precision (upstream SendGrid),
+                           so two opens in the same second collide on value and throw NG0955. -->
+                      @for (openedAt of row.opened_at_list; track $index) {
+                        <li class="text-sm text-gray-700">{{ openedAt | date: 'MMM d, y, h:mm a' }}</li>
+                      }
+                    </ul>
+                    @if (row.open_count > row.opened_at_list.length) {
+                      <span class="text-xs text-gray-400">+{{ row.open_count - row.opened_at_list.length }} earlier opens</span>
                     }
-                  </ul>
-                  @if (row.open_count > row.opened_at_list.length) {
-                    <span class="text-xs text-gray-400">+{{ row.open_count - row.opened_at_list.length }} earlier opens</span>
+                  </div>
+                  @if (showClicks()) {
+                    <div class="flex flex-col gap-1" data-testid="newsletter-recipient-engagement-click-timeline">
+                      <span class="text-xs uppercase tracking-wide text-gray-500">Click timeline</span>
+                      <ul class="flex flex-col gap-1">
+                        <!-- track $index, not the value: clicked_at_list is second-precision (upstream
+                             SendGrid), so two clicks in the same second collide on value and throw NG0955. -->
+                        @for (clickedAt of row.clicked_at_list; track $index) {
+                          <li class="text-sm text-gray-700">{{ clickedAt | date: 'MMM d, y, h:mm a' }}</li>
+                        } @empty {
+                          <li class="text-sm text-gray-400">No clicks recorded</li>
+                        }
+                      </ul>
+                      @if (row.click_count > row.clicked_at_list.length) {
+                        <span class="text-xs text-gray-400">+{{ row.click_count - row.clicked_at_list.length }} earlier clicks</span>
+                      }
+                    </div>
                   }
                 </div>
               </td>
@@ -157,7 +192,7 @@
         <!-- Empty Message Template -->
         <ng-template #emptymessage>
           <tr>
-            <td colspan="6" class="text-center py-8">
+            <td [attr.colspan]="columnCount()" class="text-center py-8">
               <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
               <p class="text-sm text-gray-500">No recipients match this filter</p>
             </td>
