@@ -1003,13 +1003,18 @@ test.describe('API Response Validation', () => {
 
 test.describe('Events Summary Tiles', () => {
   /**
-   * The YTD events summary lives on the Marketing Impact page, not the ED dashboard,
-   * so this suite navigates there directly rather than reusing switchToExecutiveDirector.
-   * The route is ED-guarded; a non-ED session is redirected away and the section never
-   * renders, which is why every assertion is scoped to the section testid.
+   * The YTD events summary lives on the Marketing Impact page, not the ED dashboard, but the
+   * route is ED-guarded: a non-ED session is redirected away and the section never renders.
+   * Switch persona on the dashboard first, then navigate — without this the suite would assert
+   * against a redirected page and pass only because nothing it looks for exists.
    */
 
   const MARKETING_IMPACT_URL = '/foundation/marketing-impact?project=tlf';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+  });
 
   // The seven metrics the section promises. Asserting the set — not just the count —
   // catches a tile silently dropped or renamed, which a length check would pass.
@@ -1017,6 +1022,10 @@ test.describe('Events Summary Tiles', () => {
 
   test('renders every YTD events tile with a value', async ({ page }) => {
     await page.goto(MARKETING_IMPACT_URL);
+
+    // Prove the ED guard let us through. Without this, a persona regression would surface as a
+    // confusing "section not visible" failure rather than naming the actual cause.
+    await expect(page).toHaveURL(/marketing-impact/);
 
     const section = page.locator('[data-testid="events-summary-section"]');
     await expect(section).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
