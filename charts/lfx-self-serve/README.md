@@ -125,6 +125,8 @@ environment:
 | `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
 | `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
 
+`tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
+
 ### Environment Variables
 
 #### Application Configuration
