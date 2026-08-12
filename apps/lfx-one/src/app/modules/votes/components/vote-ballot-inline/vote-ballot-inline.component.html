@@ -37,23 +37,24 @@
           <label [for]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id" class="text-xs font-medium text-gray-700">
             {{ commentData.prompt.prompt }}
           </label>
+          <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
+               the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
           <lfx-textarea
             [form]="commentForm"
             [control]="commentData.prompt.prompt_id"
             [id]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id"
             [rows]="2"
-            [maxlength]="commentPromptMaxLength"
             styleClass="w-full text-xs"
             [dataTest]="'dashboard-pending-actions-vote-comment-textarea-' + commentData.prompt.prompt_id">
           </lfx-textarea>
           <div class="flex justify-between">
-            @if (commentData.control.touched && commentData.control.errors?.['maxlength']) {
+            @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
               <p class="text-red-500 text-xs">Comment must be {{ commentPromptMaxLength }} characters or fewer.</p>
             } @else {
               <span></span>
             }
             <span class="text-xs text-gray-400" [attr.data-testid]="'dashboard-pending-actions-vote-comment-counter-' + commentData.prompt.prompt_id">
-              {{ commentData.control.value.length }}/{{ commentPromptMaxLength }}
+              {{ commentData.control.value | codePointLength }}/{{ commentPromptMaxLength }}
             </span>
           </div>
         </div>

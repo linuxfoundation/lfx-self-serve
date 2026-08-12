@@ -25,7 +25,7 @@ import {
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
-import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
+import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -276,7 +276,7 @@ export class VoteManageComponent {
    */
   public createCommentPromptFormGroup(): FormGroup {
     return new FormGroup({
-      prompt: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+      prompt: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
     });
   }
 
@@ -429,7 +429,7 @@ export class VoteManageComponent {
 
     for (const commentPrompt of formValue.commentPrompts) {
       const commentPromptGroup = new FormGroup({
-        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
       });
       commentPromptsArray.push(commentPromptGroup);
     }

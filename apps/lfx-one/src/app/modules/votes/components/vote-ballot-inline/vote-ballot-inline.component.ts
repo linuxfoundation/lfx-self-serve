@@ -9,15 +9,17 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-ballot-inline',
-  imports: [ReactiveFormsModule, CheckboxModule, ButtonComponent, RadioButtonComponent, TextareaComponent],
+  imports: [ReactiveFormsModule, CheckboxModule, ButtonComponent, RadioButtonComponent, TextareaComponent, CodePointLengthPipe],
   templateUrl: './vote-ballot-inline.component.html',
   styleUrl: './vote-ballot-inline.component.scss',
 })
@@ -191,7 +193,7 @@ export class VoteBallotInlineComponent {
       if (this.commentForm.contains(prompt.prompt_id)) continue;
       this.commentForm.addControl(
         prompt.prompt_id,
-        new FormControl('', { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
+        new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
         { emitEvent: false }
       );
     }

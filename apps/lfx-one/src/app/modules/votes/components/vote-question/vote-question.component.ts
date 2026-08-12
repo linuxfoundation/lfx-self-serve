@@ -4,6 +4,7 @@
 import { Component, computed, input, Signal } from '@angular/core';
 import { AbstractControl, FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { trimmedRequired } from '@lfx-one/shared/validators';
+import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -13,7 +14,7 @@ import { InputTextModule } from 'primeng/inputtext';
 
 @Component({
   selector: 'lfx-vote-question',
-  imports: [ReactiveFormsModule, TextareaComponent, SelectComponent, ButtonComponent, InputTextModule],
+  imports: [ReactiveFormsModule, TextareaComponent, SelectComponent, ButtonComponent, InputTextModule, CodePointLengthPipe],
   templateUrl: './vote-question.component.html',
 })
 export class VoteQuestionComponent {

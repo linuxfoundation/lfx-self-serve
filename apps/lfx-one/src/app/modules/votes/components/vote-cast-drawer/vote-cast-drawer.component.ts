@@ -13,7 +13,9 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -37,6 +39,7 @@ import { catchError, filter, finalize, of, shareReplay, startWith, Subject, swit
     TextareaComponent,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
+    CodePointLengthPipe,
     DatePipe,
   ],
   templateUrl: './vote-cast-drawer.component.html',
@@ -112,7 +115,7 @@ export class VoteCastDrawerComponent {
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
 
-    // Comment textarea input emits statusChanges (e.g. maxlength violation); bump formVersion so submitDisabled re-evaluates commentForm.valid.
+    // Comment textarea input emits statusChanges (e.g. max-code-points violation); bump formVersion so submitDisabled re-evaluates commentForm.valid.
     this.commentForm.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
 
     // Abstain toggle disables answer controls without losing their values.
@@ -333,7 +336,7 @@ export class VoteCastDrawerComponent {
       if (this.commentForm.contains(prompt.prompt_id)) continue;
       this.commentForm.addControl(
         prompt.prompt_id,
-        new FormControl('', { nonNullable: true, validators: [Validators.maxLength(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
+        new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
         { emitEvent: false }
       );
     }

@@ -3,6 +3,7 @@
 
 import { CommentResponseInput, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -329,7 +330,8 @@ export class VoteController {
             );
           }
 
-          if (response.comment_text.length > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
+          // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
+          if (codePointLength(response.comment_text) > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
             throw ServiceValidationError.forField(
               `comment_responses[${index}].comment_text`,
               `comment_text must be ${VOTE_COMMENT_RESPONSE_MAX_LENGTH} characters or fewer`,
