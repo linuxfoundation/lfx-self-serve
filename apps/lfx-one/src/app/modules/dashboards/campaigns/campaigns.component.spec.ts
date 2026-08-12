@@ -303,6 +303,43 @@ describe('CampaignsComponent brief persistence', () => {
     expect(state().status).toBe('error');
     expect(state().message).toContain('already has a saved brief');
   });
+    /**
+     * The SECOND Proceed of a session must update the brief the first one created.
+     *
+     * The ownership guard refuses a save that cannot name the stored row, so without handing the
+     * created id back the second save is refused — telling a user editing and re-proceeding that
+     * their own brief belongs to someone else. Creating a brief is the strongest proof of
+     * ownership there is; this pins that the page keeps it.
+     */
+    it('sends the created brief id on the next save of the same session', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+
+      proceed();
+      await fixture.whenStable();
+
+      // Now owned: the id the first save returned goes back with the second.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
+    });
+
+    /**
+     * ...and a program switch drops it. The next brief is a different event, so inheriting the
+     * previous one's id would let it claim ownership of a row it has nothing to do with.
+     */
+    it('forgets the brief id when the program changes', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      switchProgram();
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
+    });
 
     it('files the brief under the foundation selected at save time', async () => {
       persistBrief.mockReturnValue(NEVER);
@@ -318,6 +355,8 @@ describe('CampaignsComponent brief persistence', () => {
       // than restored, so the page can claim no ownership and the save must CREATE. Asserted
       // rather than relaxed to `expect.anything()` — a generated brief silently carrying an id
       // would let it replace a stored brief nobody looked at (LFXV2-3200).
+      // The third argument is the known brief id, null here: nothing has been saved yet in this
+      // session, so the page can claim no ownership and the save must CREATE.
       expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null);
     });
   });

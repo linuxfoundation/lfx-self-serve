@@ -355,11 +355,11 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug, projectSlug });
 
     try {
-      // The brief id the CLIENT holds, if the brief on screen came out of storage. Absent for a
-      // freshly generated brief, which is the ordinary case and the one that must CREATE. It is
-      // the caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save
-      // can replace a stored brief the user never saw, which a reload or a second tab is enough
-      // to reach.
+      // The brief id the CLIENT holds, when this session has established ownership of that row —
+      // either by loading the brief or by having created it on an earlier save. Absent on a first
+      // save of a brief nobody has seen, which is the ordinary case and must CREATE. It is the
+      // caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can
+      // replace a stored brief the user never saw, which a reload or a second tab reaches.
       const knownBriefId = typeof req.query['brief_id'] === 'string' && req.query['brief_id'].trim() !== '' ? req.query['brief_id'] : null;
       const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId);
       logger.success(req, 'campaign_persist_brief', startTime, {

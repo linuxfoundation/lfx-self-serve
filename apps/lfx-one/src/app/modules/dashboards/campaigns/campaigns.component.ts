@@ -85,13 +85,20 @@ export class CampaignsComponent {
    * newer owner of the signal has already set the state it wants.
    */
   /**
-   * The campaign-service brief id the page currently HOLDS, or null.
+   * The campaign-service brief id this session has established ownership of, or null.
    *
-   * Non-null only when the brief on screen came out of storage — set by the restore path, and
-   * cleared whenever the brief is discarded. It is sent with the next save as proof of
-   * ownership: the server refuses to replace a stored brief for a caller that cannot name it,
-   * because a reload or a second tab is enough to reach a save that would otherwise overwrite
-   * content the user never saw (LFXV2-3200).
+   * TWO sources on this branch, and both are genuine proof: the page LOADED the brief from
+   * campaign-service (the restore path), or it CREATED the brief itself on an earlier save.
+   * Recording the created id is what stops the second Proceed of a session being refused as
+   * unowned — a user editing and re-proceeding would otherwise be told their own brief belongs
+   * to someone else.
+   *
+   * Sent with the next save as proof: the server refuses to replace a stored brief for a caller
+   * that cannot name it, because a reload or a second tab is enough to reach a save that would
+   * otherwise overwrite content the user never saw (LFXV2-3200).
+   *
+   * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
+   * brief, a different event, claim ownership of the previous one's row.
    *
    * A plain field rather than a signal: nothing renders it, and it answers "may this save
    * replace?" at the moment a request is built.
@@ -354,6 +361,9 @@ export class CampaignsComponent {
             });
             return;
           }
+          // Recorded BEFORE the banner: the next save in this session must be able to prove it
+          // owns this row, or the guard refuses a user re-proceeding on their own brief.
+          this.knownBriefId = result.briefId;
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user

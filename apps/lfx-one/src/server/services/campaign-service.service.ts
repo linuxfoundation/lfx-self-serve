@@ -244,7 +244,10 @@ export class CampaignServiceClient {
    * user "Brief saved." Nothing on this side of the connection can order the two. The conflict
    * is reported instead, and the concurrency it comes from is removed where it is actually
    * knowable: `campaigns.component.ts` runs a session's saves strictly one at a time, so the
-   * second save finds the first one's brief and takes the ordinary replace path.
+   * second save finds the first one's brief and takes the replace path — which it is entitled
+   * to, because the first save recorded the created id and the second sends it back as proof of
+   * ownership. Without that hand-back the guard below would refuse a user re-proceeding on their
+   * own brief.
    *
    * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
    * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
