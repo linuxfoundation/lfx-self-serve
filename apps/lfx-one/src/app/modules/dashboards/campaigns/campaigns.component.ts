@@ -98,7 +98,7 @@ export class CampaignsComponent {
    */
   protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
 
-  constructor() {
+  public constructor() {
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
     this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {

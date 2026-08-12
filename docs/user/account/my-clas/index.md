@@ -2,16 +2,16 @@
 title: My CLAs
 description: View your signed Individual and Employee CLAs in LFX Self Serve, and understand why an agreement might not appear.
 audience: [all]
-product_area: Profile
-tags: [profile, cla, easycla, icla, ecla, identities]
+product_area: Account
+tags: [account, cla, easycla, icla, ecla, identities]
 last_generated: 2026-08-04
-last_updated: 2026-08-04
-intercom_collection: Profile
+last_updated: 2026-08-11
+intercom_collection: Account
 ---
 
 These steps apply to any signed-in user on LFX Self Serve.
 
-**My CLAs** is a read-only Profile tab that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. My CLAs answers: _which agreements have I signed, and under which projects am I covered?_
+**My CLAs** is a read-only tab under the Profile & Account hub that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. My CLAs answers: _which agreements have I signed, and under which projects am I covered?_
 
 You cannot sign a CLA from this page. Signing happens outside My CLAs, and the signing process may evolve; this page only shows agreements already on file.
 
@@ -20,7 +20,7 @@ For broader EasyCLA concepts (what a CLA is, project and corporate consoles, tro
 ## Where do I find My CLAs?
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Profile** from the left navigation sidebar.
+2. Select [**Profile & Account**](/profile) from the left navigation sidebar.
 3. Open the **My CLAs** tab, or go directly to `/profile/clas`.
 
 Agreements are matched from your signed-in session and your linked [Email and GitHub identities](/profile/identities). You never search or type a project name here.
@@ -87,7 +87,7 @@ No. My CLAs is read-only. Signing happens outside this tab, and the process may 
 
 ## Related
 
-- [Profile overview](../) — Profile tabs and navigation
-- [Profile FAQ](../faq/) — short answers to common Profile questions, including My CLAs
-- [Edit your profile](../edit-profile/) — personal details, affiliations, and account settings
+- [Account overview](../) — all account areas and navigation
+- [Account FAQ](../faq/) — short answers to common account questions, including My CLAs
+- [Edit your profile](../../profile/edit-profile/) — name, photo, About Me, primary email, and location
 - [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts, consoles, and troubleshooting outside Self Serve

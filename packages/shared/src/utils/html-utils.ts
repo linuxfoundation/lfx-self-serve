@@ -32,6 +32,38 @@ function decodeHtmlEntities(s: string): string {
   });
 }
 
+const HTML_ESCAPE_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * Escapes the five HTML-significant characters (`& < > " '`) so a string can be
+ * safely embedded in markup. Single-pass is load-bearing: one regex replaces all
+ * special characters at once, so an input like `&amp;` becomes `&amp;amp;` rather
+ * than having its freshly-written `&` re-escaped by a later replace call.
+ * Pure string ops — SSR-safe.
+ *
+ * @param text - The raw text to escape
+ * @returns The text with HTML-significant characters entity-encoded
+ *
+ * @example
+ * ```typescript
+ * escapeHtml('I use <div> & "quotes"')
+ * // Returns: "I use &lt;div&gt; &amp; &quot;quotes&quot;"
+ *
+ * escapeHtml(null)
+ * // Returns: ""
+ * ```
+ */
+export function escapeHtml(text: string | null | undefined): string {
+  if (!text) return '';
+  return text.replace(/[&<>"']/g, (char) => HTML_ESCAPE_ENTITIES[char]);
+}
+
 /**
  * Strips HTML-like tag sequences until the string is stable. The inner
  * `[^<>]*` class is load-bearing: it disallows nested `<` inside a tag body,
