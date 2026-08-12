@@ -57,6 +57,8 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventDetailResponse,
+  EventRosterResponse,
   EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   ParticipatingOrgsSummaryResponse,
@@ -97,6 +99,12 @@ export class AnalyticsService {
   // the drawer chart reuse one request per foundation so navigating away and
   // back doesn't re-fetch (and potentially error into a zeroed fallback).
   private readonly foundationHealthScoreDistributionCache = new Map<string, Observable<FoundationHealthScoreDistributionResponse>>();
+
+  // Request cache for the event roster, keyed on every argument that changes the
+  // response. The attention section (upcoming only) and the roster table both fetch
+  // on first paint with the same arguments, so without this they fire two identical
+  // requests for one payload.
+  private readonly eventRosterCache = new Map<string, Observable<EventRosterResponse>>();
 
   /**
    * Get active weeks streak data for the current user
@@ -1148,6 +1156,48 @@ export class AnalyticsService {
         return of(null);
       })
     );
+  }
+
+  /**
+   * Foundation event roster (upcoming by default; pass includePast for the full history).
+   * Emits an empty roster on error so the table shows its empty state rather than breaking.
+   */
+  public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
+    const key = `${foundationSlug}|${includePast}`;
+    if (!this.eventRosterCache.has(key)) {
+      const params: Record<string, string> = { foundationSlug };
+      if (includePast) {
+        params['includePast'] = 'true';
+      }
+      // Evict on error so a transient failure doesn't pin every later subscriber
+      // to the empty fallback for the rest of the session.
+      const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
+        catchError((error) => {
+          // Log before degrading — an empty roster renders the same "no events" copy as a real
+          // empty result, so an auth expiry or Snowflake outage would otherwise be invisible.
+          console.error('Failed to load event roster', error);
+          this.eventRosterCache.delete(key);
+          return of({ projectId: '', events: [] });
+        }),
+        shareReplay(1)
+      );
+      this.eventRosterCache.set(key, req$);
+    }
+    return this.eventRosterCache.get(key)!;
+  }
+
+  /**
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   * Emits null on error so the drawer shows its empty state.
+   */
+  /**
+   * Event detail for one event. `foundationSlug` is required and server-enforced: the event id
+   * alone carries no ownership, so the query is scoped to the foundation rather than trusting it.
+   * Resolves to `null` for a genuinely missing event and throws on transport/authorization
+   * failures, so the drawer can tell "no such event" apart from "we could not load it".
+   */
+  public getEventDetail(eventId: string, foundationSlug: string): Observable<EventDetailResponse | null> {
+    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId, foundationSlug } });
   }
 
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {
