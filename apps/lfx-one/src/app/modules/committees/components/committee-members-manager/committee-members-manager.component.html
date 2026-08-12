@@ -13,7 +13,13 @@
 
   <div class="flex items-center mb-4">
     <div class="flex items-center gap-3">
-      <lfx-button size="small" label="Invite by email" icon="fa-light fa-envelope" data-testid="invite-by-email-button" (click)="openInviteByEmailDialog()">
+      <lfx-button
+        size="small"
+        label="Invite by email"
+        icon="fa-light fa-envelope"
+        [disabled]="loading() || committeeLoading()"
+        data-testid="invite-by-email-button"
+        (click)="openInviteByEmailDialog()">
       </lfx-button>
       <lfx-button
         size="small"

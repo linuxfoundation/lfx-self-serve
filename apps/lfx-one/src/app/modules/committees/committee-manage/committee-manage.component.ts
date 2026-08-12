@@ -7,14 +7,14 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { COMMITTEE_FORM_STEPS, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { COMMITTEE_FORM_STEPS, COMMITTEE_INVITE_CONCURRENCY, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { Committee, MemberPendingChanges } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { BehaviorSubject, catchError, concat, EMPTY, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
@@ -222,27 +222,18 @@ export class CommitteeManageComponent {
     // Create mode - process member changes then navigate
     this.submitting.set(true);
 
-    const operations = this.buildMemberOperations();
-
-    // If no operations, just navigate
-    if (operations.length === 0) {
+    // Nothing staged — just navigate
+    if (!this.hasMemberUpdates()) {
       this.submitting.set(false);
       this.router.navigate(['/groups']);
       return;
     }
 
-    // Execute operations sequentially using concat
-    concat(...operations)
-      .pipe(
-        toArray(),
-        finalize(() => this.submitting.set(false))
-      )
+    this.flushMemberUpdates()
+      .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
         next: (results) => {
-          const totalSuccess = results.reduce((sum, result) => sum + result.success, 0);
-          const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
-
-          this.showMemberOperationToast(totalSuccess, totalFailed, totalSuccess + totalFailed);
+          this.showMemberOperationToast(results);
           this.router.navigate(['/groups']);
         },
         error: (err: HttpErrorResponse) => {
@@ -299,27 +290,19 @@ export class CommitteeManageComponent {
     // Prepare committee update
     const updateCommittee$ = this.committeeService.updateCommittee(this.committeeId()!, committeeData);
 
-    // Prepare member operations
-    const memberOperations = this.buildMemberOperations();
-    const members$ = memberOperations.length > 0 ? concat(...memberOperations).pipe(toArray()) : of([]);
-
     // Execute both operations in parallel
     forkJoin({
       committee: updateCommittee$,
-      members: members$,
+      members: this.flushMemberUpdates(),
     })
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
         next: (result: { committee: Committee; members: { type: string; success: number; failed: number }[] }) => {
           const memberResults = result.members;
 
-          // Calculate member operation results
-          const totalSuccess = memberResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.success, 0);
-          const totalFailed = memberResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.failed, 0);
-
           // Show success message
-          if (totalSuccess > 0 || totalFailed > 0) {
-            this.showMemberOperationToast(totalSuccess, totalFailed, totalSuccess + totalFailed);
+          if (memberResults.length > 0) {
+            this.showMemberOperationToast(memberResults);
           } else {
             this.messageService.add({
               severity: 'success',
@@ -529,10 +512,8 @@ export class CommitteeManageComponent {
     }
   }
 
-  private buildMemberOperations() {
+  private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges) {
     const operations: ReturnType<typeof this.createMemberOperation>[] = [];
-    const committeeId = this.committeeId()!;
-    const memberUpdates = this.memberUpdates();
 
     // Add delete operation if there are members to delete
     if (memberUpdates.toDelete.length > 0) {
@@ -555,14 +536,34 @@ export class CommitteeManageComponent {
       }
     }
 
-    // Send staged bulk email invites — deferred here so they only fire on wizard completion (LFXV2-2606)
-    if (memberUpdates.toInvite.length > 0) {
-      for (const invite of memberUpdates.toInvite) {
-        operations.push(this.createMemberOperation('invite', () => this.committeeService.createCommitteeInvite(committeeId, invite)));
-      }
-    }
-
     return operations;
+  }
+
+  /**
+   * Flush every staged member change. Deletes/updates/adds run sequentially (member mutations may
+   * have ordering requirements), then staged bulk email invites — deferred until wizard completion
+   * (LFXV2-2606) — run with the same bounded concurrency as the immediate-send invite path
+   * (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
+   */
+  private flushMemberUpdates(): Observable<{ type: string; success: number; failed: number }[]> {
+    const committeeId = this.committeeId()!;
+    const memberUpdates = this.memberUpdates();
+
+    const memberOperations = this.buildMemberOperations(committeeId, memberUpdates);
+    const memberOps$ = memberOperations.length > 0 ? concat(...memberOperations) : EMPTY;
+
+    const invites = memberUpdates.toInvite;
+    const inviteOps$ =
+      invites.length > 0
+        ? from(invites).pipe(
+            mergeMap(
+              (invite) => this.createMemberOperation('invite', () => this.committeeService.createCommitteeInvite(committeeId, invite)),
+              COMMITTEE_INVITE_CONCURRENCY
+            )
+          )
+        : EMPTY;
+
+    return concat(memberOps$, inviteOps$).pipe(toArray());
   }
 
   private createMemberOperation(type: string, operation: () => Observable<unknown>) {
@@ -572,27 +573,35 @@ export class CommitteeManageComponent {
     );
   }
 
-  private showMemberOperationToast(totalSuccess: number, totalFailed: number, totalOperations: number): void {
+  private showMemberOperationToast(results: { type: string; success: number; failed: number }[]): void {
+    const totalSuccess = results.reduce((sum, result) => sum + result.success, 0);
+    const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
+    const totalOperations = totalSuccess + totalFailed;
+    // Invite-only flushes shouldn't read as "member(s) updated" — swap in invite-specific wording.
+    const allInvites = results.length > 0 && results.every((result) => result.type === 'invite');
+    const noun = allInvites ? 'invitation(s)' : 'member(s)';
+    const verb = allInvites ? 'sent' : 'updated';
+
     if (totalSuccess === totalOperations) {
       // All successful
       this.messageService.add({
         severity: 'success',
         summary: 'Success',
-        detail: `${this.committeeLabel} and ${totalSuccess} member(s) updated successfully`,
+        detail: allInvites ? `${totalSuccess} ${noun} ${verb} successfully` : `${this.committeeLabel} and ${totalSuccess} ${noun} ${verb} successfully`,
       });
     } else if (totalSuccess > 0 && totalFailed > 0) {
       // Partial success
       this.messageService.add({
         severity: 'warn',
         summary: 'Partial Success',
-        detail: `${totalSuccess} member(s) updated successfully, ${totalFailed} failed`,
+        detail: `${totalSuccess} ${noun} ${verb} successfully, ${totalFailed} failed`,
       });
     } else if (totalFailed === totalOperations) {
       // All failed
       this.messageService.add({
         severity: 'error',
         summary: 'Operation Failed',
-        detail: `Failed to update ${totalFailed} member(s)`,
+        detail: `Failed to ${allInvites ? 'send' : 'update'} ${totalFailed} ${noun}`,
       });
     }
   }

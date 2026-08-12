@@ -74,6 +74,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Writable signals for state management
   public membersWithState: WritableSignal<CommitteeMemberWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
+  public committeeLoading: WritableSignal<boolean> = signal(true);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
 
@@ -83,7 +84,12 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Bulk email invites staged in the wizard, deduped by normalized email. These are collected
   // client-side and flushed by the wizard on completion (POST /invites) — never sent immediately,
   // so cancelling the wizard sends nothing (LFXV2-2606). Surfaced as a "Pending invitations" list.
-  public readonly pendingInvites = signal<CreateCommitteeInviteRequest[]>([]);
+  // Seeded from the input so revisiting Step 4 (which recreates this component) doesn't drop
+  // invites already staged in a previous visit.
+  public readonly pendingInvites = signal<CreateCommitteeInviteRequest[]>(this.memberUpdates().toInvite);
+
+  // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
+  private readonly loadingInvites = signal(false);
 
   // Simple computed signals
   public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted'));
@@ -138,6 +144,11 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public openInviteByEmailDialog(): void {
+    if (this.loadingInvites()) {
+      return;
+    }
+    this.loadingInvites.set(true);
+
     const committeeId = this.committeeId();
     // Existing server-side invites only matter in edit mode (a fresh group has none). Fetch them so
     // the dialog can dedupe against already-invited people; ignore failures and fall back to none.
@@ -154,12 +165,17 @@ export class CommitteeMembersManagerComponent implements OnInit {
         )
       : of([] as CommitteeInvite[]);
 
-    existing$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((serverInvites) => {
-      // getCommitteeInvites returns every status; only pending ones should block re-inviting.
-      // Accepted invitees are already members; declined/revoked ones must be re-invitable.
-      const pending = serverInvites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
-      this.openCollectInviteDialog(pending);
-    });
+    existing$
+      .pipe(
+        finalize(() => this.loadingInvites.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((serverInvites) => {
+        // getCommitteeInvites returns every status; only pending ones should block re-inviting.
+        // Accepted invitees are already members; declined/revoked ones must be re-invitable.
+        const pending = serverInvites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
+        this.openCollectInviteDialog(pending);
+      });
   }
 
   /** Remove a staged (not-yet-sent) invite from the pending list. */
@@ -275,6 +291,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       closable: true,
       data: {
         committee: this.committee(),
+        mode: 'invite',
         collectOnly: true,
         existingMembers: this.visibleMembers(),
         existingInvites: [...serverInvites, ...stagedAsInvites],
@@ -453,7 +470,10 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   private loadCommittee(): void {
     const committeeId = this.committeeId();
-    if (!committeeId) return;
+    if (!committeeId) {
+      this.committeeLoading.set(false);
+      return;
+    }
 
     this.committeeService
       .getCommittee(committeeId)
@@ -462,7 +482,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
         catchError((error) => {
           console.error('Failed to load committee:', error);
           return of(null);
-        })
+        }),
+        finalize(() => this.committeeLoading.set(false))
       )
       .subscribe((committee) => {
         this.committee.set(committee);
@@ -501,6 +522,16 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   private emitMemberUpdates(): void {
     const members = this.membersWithState();
+
+    // A staged invite whose email now also matches an added/edited member would otherwise queue
+    // both a member-create op and an invite op for the same person on Done. Drop it from the
+    // pending list rather than just the emit, so the "Pending invitations" UI doesn't lie either.
+    const activeMemberEmails = new Set(members.filter((m) => m.state !== 'deleted').map((m) => (m.email ?? '').trim().toLowerCase()));
+    const toInvite = this.pendingInvites().filter((invite) => !activeMemberEmails.has((invite.invitee_email ?? '').trim().toLowerCase()));
+    if (toInvite.length !== this.pendingInvites().length) {
+      this.pendingInvites.set(toInvite);
+    }
+
     this.memberUpdatesChange.emit({
       toAdd: members.filter((m) => m.state === 'new').map((m) => this.stripMetadata(m)),
       toUpdate: members
@@ -510,7 +541,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
           changes: this.stripMetadata(m), // Pass entire member object, not just changed fields
         })),
       toDelete: members.filter((m) => m.state === 'deleted').map((m) => m.uid),
-      toInvite: this.pendingInvites(),
+      toInvite,
     });
   }
 
