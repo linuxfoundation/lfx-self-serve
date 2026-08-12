@@ -397,6 +397,22 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().message).not.toContain('Reload');
     });
 
+    it('does not confirm a write that was superseded before it could be approved', async () => {
+      // The write landed, but the approval's If-Match was refused: another writer replaced the
+      // brief in between, so the row may no longer hold this content. The component renders any
+      // non-conflict result as "Brief saved.", which would confirm durability for content that is
+      // gone — the one thing this banner must never say.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: true, approved: false, conflict: 'superseded-after-write' }));
+
+      proceed();
+      await fixture.whenStable();
+
+      expect(state().status).toBe('error');
+      // Nor does it say "not saved": the write DID land. The honest message is that it may have
+      // been overtaken since.
+      expect(state().message).toContain('saved, but someone else changed it');
+    });
+
     it('does not hand a queued save a clean slate when the 412 was never shown', async () => {
       // A is refused with a 412 while B is already queued. Clearing the validator early would
       // suppress A's warning as superseded AND hand B an empty slate — the server would then fall
