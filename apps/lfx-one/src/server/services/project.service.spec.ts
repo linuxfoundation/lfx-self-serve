@@ -45,9 +45,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
     '../../../../../packages/shared/src/utils/project.utils'
   );
+  // The real normalizeToUrl, not a stub: the roster and detail reads both depend on it to reject
+  // scheme-less/unsafe warehouse URLs, so a stub would let that regress with tests still green.
+  const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
+    '../../../../../packages/shared/src/utils/url.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
+    normalizeToUrl: urlUtils.normalizeToUrl,
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: vi.fn(),
     resolvePeriodRange: vi.fn(),
@@ -418,6 +424,24 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       execute.mockRejectedValue(failure);
 
       await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+
+    // The drawer binds eventUrl straight to [href]; a scheme-less warehouse value would resolve
+    // as a relative LFX One path rather than the external event page.
+    it('normalizes a scheme-less event URL instead of passing it through raw', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'events.example.org/kubecon' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('https://events.example.org/kubecon');
+    });
+
+    it('drops an unsafe event URL rather than exposing it', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'javascript:alert(1)' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('');
     });
   });
 });

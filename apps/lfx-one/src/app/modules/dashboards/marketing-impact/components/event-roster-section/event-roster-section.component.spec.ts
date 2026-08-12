@@ -180,6 +180,24 @@ describe('EventRosterSectionComponent', () => {
     });
   });
 
+  // The scope toggles are styled buttons, so colour alone conveys the active option — AT needs
+  // aria-pressed to announce which scope is selected.
+  it('announces which scope toggle is active', async () => {
+    await render([row()], 'tlf');
+
+    const upcoming = fixture.nativeElement.querySelector('[data-testid="event-roster-upcoming"]');
+    const all = fixture.nativeElement.querySelector('[data-testid="event-roster-all"]');
+    expect(upcoming.getAttribute('aria-pressed')).toBe('true');
+    expect(all.getAttribute('aria-pressed')).toBe('false');
+
+    fixture.componentInstance['toggleIncludePast'](true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(upcoming.getAttribute('aria-pressed')).toBe('false');
+    expect(all.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('refetches when the past-events toggle changes', async () => {
     await render([row()], 'tlf');
     expect(getEventRoster).toHaveBeenCalledWith('tlf', false);
