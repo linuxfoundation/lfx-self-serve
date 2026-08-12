@@ -81,9 +81,14 @@ export class DocsArticleComponent {
    *
    * The build-time `siblings` list excludes the current article and — on a
    * leaf page — the topic landing (the landing is surfaced by the breadcrumb).
-   * We re-insert the current leaf and re-sort so the rendered set is identical
-   * no matter which article in the topic is open. Returns `[]` when the
-   * article has no peers, so a lone article still hides the rail entirely.
+   * We re-insert the current leaf and re-sort so that, for a topic with two or
+   * more leaves, the rendered set is identical no matter which leaf is open.
+   * Returns `[]` when the article has no peers, hiding the rail — that covers a
+   * truly lone article and the single leaf of a one-leaf topic, whose only
+   * potential peer (the landing) is filtered out. (A one-leaf topic is thus
+   * asymmetric: its landing still lists the leaf, but the leaf shows nothing.
+   * No such topic exists today — every `docs/user` topic has two or more
+   * leaves.)
    *
    * Each entry is mapped to a `DocsSiblingLink` with its active-state class and
    * `aria-current` value precomputed, so the template needs no per-item method
