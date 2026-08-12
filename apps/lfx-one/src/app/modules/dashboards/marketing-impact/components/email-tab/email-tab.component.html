@@ -69,8 +69,15 @@
       </div>
 
       @if (hasTopCampaigns()) {
-        <!-- Unbounded row count — scrolls within the card so the page doesn't grow without limit. -->
-        <div class="flex max-h-[32rem] flex-col gap-0 overflow-y-auto" role="table" aria-label="Email sends" data-testid="email-campaigns-table">
+        <!-- Unbounded row count — scrolls within the card so the page doesn't grow without limit.
+             tabindex="0" so keyboard-only users can focus the region and scroll to the rows below
+             the fold; without it the overflow is reachable by pointer only. -->
+        <div
+          class="flex max-h-[32rem] flex-col gap-0 overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          tabindex="0"
+          role="table"
+          aria-label="Email sends"
+          data-testid="email-campaigns-table">
           <!-- Table header -->
           <div class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white pb-2" role="row">
             <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
