@@ -17,7 +17,11 @@ const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
+  // asserted SQL diverge from what production actually sends.
+  EMAIL_CAMPAIGN_LIMIT: 12,
   EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
+  PAID_CAMPAIGN_LIMIT: 25,
   getYearForRange: vi.fn(),
   HEALTH_METRICS_RANGES: {},
   isHealthMetricsRange: vi.fn(),
@@ -472,6 +476,41 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       for (const [sql, binds] of scoped) {
         expect(sql).toContain('slug_resolve');
         expect(binds).toEqual(['tlf', 'evt-1']);
+      }
+    });
+
+    // The campaign enrichment matches on an event-NAME substring, which is not a scope: another
+    // foundation can run a campaign whose name contains the same words, and this feeds an ED-only
+    // response. A non-umbrella caller must therefore carry FOUNDATION_SLUG into both reads.
+    it('scopes the paid and email campaign lookups to a non-umbrella foundation', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        expect(sql).toContain('FOUNDATION_SLUG = ?');
+        expect(binds).toContain('cncf');
+      }
+    });
+
+    // The umbrella foundation deliberately spans every project, so it stays unfiltered — the same
+    // exception buildFoundationFilter makes everywhere else. Asserted so a later "tighten the
+    // scope" change cannot silently blank the umbrella view.
+    it('leaves the umbrella foundation unfiltered on the campaign lookups', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql] of campaignReads) {
+        expect(sql).not.toContain('FOUNDATION_SLUG = ?');
       }
     });
 

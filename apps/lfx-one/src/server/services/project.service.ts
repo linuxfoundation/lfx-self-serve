@@ -5,9 +5,11 @@ import {
   CLASSIFICATION_TO_EMAIL_TYPES,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
+  EMAIL_CAMPAIGN_LIMIT,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
+  PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_HEALTH_SCORE_CATEGORIES,
@@ -5391,7 +5393,7 @@ export class ProjectService {
     // Enrich with paid + email campaign detail. Neither source table has an EVENT_ID, so both
     // match on the event name (fuzzy substring). Failures degrade to empty arrays — the drawer
     // still renders the attribution tree without the drill-down.
-    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME);
+    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug);
 
     return {
       eventId: row.EVENT_ID,
@@ -7408,7 +7410,10 @@ export class ProjectService {
    * (fuzzy substring on CAMPAIGN_NAME / MARKETING_EMAIL_NAME). Each side degrades to an empty array on
    * failure or no match, so the drawer's attribution tree still renders without the drill-down.
    */
-  private async getEventCampaignDetail(eventName: string): Promise<{ paidCampaigns: EventPaidCampaign[]; emailCampaigns: EventEmailCampaign[] }> {
+  private async getEventCampaignDetail(
+    eventName: string,
+    foundationSlug: string
+  ): Promise<{ paidCampaigns: EventPaidCampaign[]; emailCampaigns: EventEmailCampaign[] }> {
     interface PaidRow {
       CAMPAIGN_NAME: string | null;
       CHANNEL: string | null;
@@ -7447,6 +7452,11 @@ export class ProjectService {
       return { paidCampaigns: [], emailCampaigns: [] };
     }
 
+    // Name matching alone is not a scope: an event name substring can appear in another
+    // foundation's campaigns, and this feeds an ED-only response. Both tables carry
+    // FOUNDATION_SLUG and are filtered on it everywhere else, so do the same here.
+    const campaignScope = buildFoundationFilter(foundationSlug);
+
     const match = `%${lower}%`;
     const matchNoYear = `%${lowerNoYear}%`;
 
@@ -7466,9 +7476,13 @@ export class ProjectService {
         SUM(IFNULL(IMPRESSIONS, 0)) AS IMPR
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE (LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\' OR LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\')
+        ${campaignScope.filterAnd}
       GROUP BY CAMPAIGN_NAME, CHANNEL
       ORDER BY SPEND DESC
-      LIMIT 25
+      -- Capped: the drawer is a top-spenders view, not a ledger. The client labels its summary
+      -- "top N by spend" rather than "every campaign" so the pill never claims a total it does
+      -- not cover. Raising this cap widens the summary with it.
+      LIMIT ${PAID_CAMPAIGN_LIMIT}
     `;
 
     // Email: one row per email campaign matched to the event by name.
@@ -7485,9 +7499,11 @@ export class ProjectService {
         ROUND(SUM(IFNULL(CLICKS, 0)) * 100.0 / NULLIF(SUM(IFNULL(SENDS, 0)), 0), 1) AS CTR
       FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
       WHERE LOWER(MARKETING_EMAIL_NAME) LIKE ? ESCAPE '\\\\'
+        ${campaignScope.filterAnd}
       GROUP BY MARKETING_EMAIL_NAME
       ORDER BY SENDS DESC
-      LIMIT 12
+      -- Same contract as the paid cap above: a top-sends view, labelled as such client-side.
+      LIMIT ${EMAIL_CAMPAIGN_LIMIT}
     `;
 
     // Map raw channel keys (google_ads, linkedin_ads, …) to display labels.
@@ -7509,13 +7525,13 @@ export class ProjectService {
       this.executeWithLegacyConversionFallback<PaidRow>({
         primaryQuery: paidQuery('LAST_TOUCH_CONVERSIONS'),
         legacyQuery: paidQuery('CONV'),
-        params: [match, matchNoYear],
+        params: [match, matchNoYear, ...campaignScope.params],
         operation: 'get_event_campaign_detail',
-        foundationSlug: eventName,
+        foundationSlug,
         retryMessage: 'Paid campaign enrichment retrying with legacy CONV column',
         degradeMessage: 'Paid campaign enrichment failed, degrading to empty',
       }),
-      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear]).catch((error) => {
+      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear, ...campaignScope.params]).catch((error) => {
         logger.warning(undefined, 'get_event_campaign_detail', 'Email campaign enrichment failed, degrading to empty', {
           event_name: eventName,
           err: error,

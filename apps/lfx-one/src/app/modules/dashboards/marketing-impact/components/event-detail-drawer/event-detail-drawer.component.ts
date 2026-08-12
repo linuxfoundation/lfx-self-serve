@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { BEHIND_GOAL_PERCENT_THRESHOLD, lfxColors, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, EMAIL_CAMPAIGN_LIMIT, lfxColors, ON_TRACK_PERCENT_THRESHOLD, PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { formatCompactRounded, formatNumber, formatPercent } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -40,7 +40,11 @@ export class EventDetailDrawerComponent {
   /** Paid-ad campaigns for this event. */
   protected readonly paidCampaigns = computed(() => this.detail()?.paidCampaigns ?? []);
 
-  /** Totals across every paid campaign — the summary pill above the per-campaign rows. */
+  /**
+   * Totals across the paid campaigns this drawer received. The server returns the top campaigns
+   * by spend (PAID_CAMPAIGN_LIMIT), so on an event that exceeds the cap this is a top-N summary,
+   * not an event-wide total — `paidTruncated` drives the label that says so.
+   */
   protected readonly paidTotals = computed(() => {
     const campaigns = this.paidCampaigns();
     const spend = campaigns.reduce((sum, c) => sum + c.spend, 0);
@@ -77,6 +81,9 @@ export class EventDetailDrawerComponent {
       }));
   });
 
+  /** True when the server capped the paid list, so the summary covers only the rows shown. */
+  protected readonly paidTruncated = computed(() => this.paidCampaigns().length >= PAID_CAMPAIGN_LIMIT);
+
   /** True when any paid spend is recorded for this event. */
   protected readonly hasPaid = computed(() => this.paidCampaigns().length > 0);
 
@@ -93,7 +100,8 @@ export class EventDetailDrawerComponent {
   protected readonly emailCampaigns = computed(() => this.detail()?.emailCampaigns ?? []);
 
   /**
-   * Totals across every email campaign. Open rate and CTR are recomputed from the summed
+   * Totals across the email campaigns this drawer received — top sends, capped server-side the
+   * same way as paid. Open rate and CTR are recomputed from the summed
    * counts rather than averaged across campaigns — averaging rates would weight a 50-send
    * email the same as a 50,000-send one.
    */
@@ -122,6 +130,9 @@ export class EventDetailDrawerComponent {
         sharePercent: totalSends > 0 ? Math.round((c.sends / totalSends) * 100) : 0,
       }));
   });
+
+  /** True when the server capped the email list; mirrors paidTruncated. */
+  protected readonly emailTruncated = computed(() => this.emailCampaigns().length >= EMAIL_CAMPAIGN_LIMIT);
 
   /** True when any email activity is recorded for this event. */
   protected readonly hasEmail = computed(() => this.emailCampaigns().length > 0);

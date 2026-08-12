@@ -273,7 +273,13 @@
             data-testid="event-detail-paid-toggle">
             <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform" [class.rotate-90]="paidExpanded()" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-gray-900">Paid campaigns</span>
-            <span class="text-xs text-gray-500">{{ paidChannels().length }} campaign{{ paidChannels().length === 1 ? '' : 's' }}</span>
+            <span class="text-xs text-gray-500">
+              @if (paidTruncated()) {
+                top {{ paidChannels().length }} by spend
+              } @else {
+                {{ paidChannels().length }} campaign{{ paidChannels().length === 1 ? '' : 's' }}
+              }
+            </span>
 
             <!-- Summary pill: the whole channel's performance at a glance -->
             <span
@@ -373,7 +379,13 @@
             data-testid="event-detail-email-toggle">
             <i class="fa-solid fa-chevron-right text-[10px] text-gray-400 transition-transform" [class.rotate-90]="emailExpanded()" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-gray-900">Email campaigns</span>
-            <span class="text-xs text-gray-500">{{ emailChannels().length }} email{{ emailChannels().length === 1 ? '' : 's' }}</span>
+            <span class="text-xs text-gray-500">
+              @if (emailTruncated()) {
+                top {{ emailChannels().length }} by sends
+              } @else {
+                {{ emailChannels().length }} email{{ emailChannels().length === 1 ? '' : 's' }}
+              }
+            </span>
 
             <span
               class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full bg-gray-50 px-3 py-1 text-xs tabular-nums"

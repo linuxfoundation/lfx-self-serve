@@ -182,3 +182,15 @@ export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet
   membership: COMING_SOON_TABS,
   lfCorporate: COMING_SOON_TABS,
 };
+
+/**
+ * How many paid campaigns the per-event drawer requests, ordered by spend. The drawer is a
+ * top-spenders view rather than a ledger, so an event with more campaigns than this shows its
+ * biggest and labels the summary as covering only those — see paidTruncated in
+ * EventDetailDrawerComponent. The server cap and that label must move together, which is why the
+ * number lives here rather than being inlined in the SQL.
+ */
+export const PAID_CAMPAIGN_LIMIT = 25;
+
+/** Same contract as PAID_CAMPAIGN_LIMIT, for the per-event email list (ordered by sends). */
+export const EMAIL_CAMPAIGN_LIMIT = 12;
