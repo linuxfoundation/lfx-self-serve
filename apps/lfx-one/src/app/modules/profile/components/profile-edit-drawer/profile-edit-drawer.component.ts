@@ -370,7 +370,7 @@ export class ProfileEditDrawerComponent {
     }
 
     if (file.size > MAX_AVATAR_SIZE_BYTES) {
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Image must be 20MB or smaller.' });
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Image must be 2MB or smaller.' });
       return;
     }
 
