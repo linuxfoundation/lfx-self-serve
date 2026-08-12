@@ -127,6 +127,24 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(savedBriefWarning()).toBeNull();
   });
 
+  it('replaces the offer as soon as a different event url is typed', async () => {
+    // The concern behind the eager-clear invariant: the page must never offer event A while the
+    // field names event B. A partial url is the only window where that could happen, and it
+    // closes on the next keystroke because any valid url yields a non-empty slug that clears.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(savedBrief()).toEqual(exampleBrief);
+
+    // Event B has no stored brief. The offer for A must be gone, not merely replaced later.
+    campaignService.loadBrief.mockReturnValue(new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'none', brief: null, briefId: null })));
+    await typeEventUrl('https://events.example.com/oss-na-2026');
+
+    expect(savedBrief()).toBeNull();
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('oss-na-2026', 'foundation-a');
+  });
+
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
