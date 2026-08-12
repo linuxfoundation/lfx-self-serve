@@ -818,7 +818,7 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     eventDetails: { ...eventDetails, slug: eventSlug, registrationUrl },
     programType: found.program_type as CampaignProgramType,
     selectedPlatforms,
-    structuredCopy: asRecord(copy['structured']),
+    structuredCopy: asStructuredCopy(copy['structured']),
     // Each platform requires exactly the string fields ITS variant interface declares, because
     // those are the ones consumers dereference without checking:
     //   LinkedIn — `variant.introText.length` (implementation-tab.component.html:338)
@@ -929,6 +929,76 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
  * absent field already produces and what the consumers already handle
  * (`variants().length === 0` disables submit).
  */
+/**
+ * The snake_case per-platform blocks the Implementation tab actually restores from.
+ *
+ * This is the path this app's OWN round-trip takes, and it was the one left unhardened. Planning's
+ * Proceed emits `structuredCopy` and never sets `metaCopy`/`redditCopy`, and
+ * `populateFromBrief` reads `structuredCopy['meta_ads']` FIRST and only falls back to the
+ * camelCase blocks — so every element guard added to `asVariantCopy` sat on a branch that this
+ * app's own briefs never reach.
+ *
+ * The dereferences are the same shape as the camelCase side, on differently-named fields:
+ * `v.primary_text` (implementation-tab.component.ts:578) on Meta variants, and Reddit variants
+ * cast straight into a typed signal the template then reads. A `null` element throws.
+ *
+ * Unknown keys are preserved untouched: this blob is opaque and another client may store blocks
+ * this build does not render, so dropping them would lose content the next writer still owns.
+ */
+function asStructuredCopy(value: unknown): Record<string, unknown> | null {
+  const structured = asRecord(value);
+  if (structured === null) {
+    return null;
+  }
+  const cleaned: Record<string, unknown> = { ...structured };
+  for (const [key, required] of STRUCTURED_VARIANT_BLOCKS) {
+    const block = asRecord(cleaned[key]);
+    if (block === null) {
+      continue;
+    }
+    cleaned[key] = { ...block, variants: objectElementsWith(block['variants'], required) };
+  }
+  for (const [key, fields] of STRUCTURED_STRING_LISTS) {
+    const block = asRecord(cleaned[key]);
+    if (block === null) {
+      continue;
+    }
+    const coerced: Record<string, unknown> = { ...block };
+    for (const field of fields) {
+      if (field in coerced) {
+        coerced[field] = stringElements(coerced[field]);
+      }
+    }
+    cleaned[key] = coerced;
+  }
+  return cleaned;
+}
+
+/**
+ * Which snake_case block carries variants, and the fields its consumer dereferences.
+ *
+ * `google_search` is absent deliberately: it has no variants array, only `headlines` and
+ * `descriptions`, which are string lists handled below.
+ */
+const STRUCTURED_VARIANT_BLOCKS: readonly (readonly [string, readonly string[]])[] = [
+  ['meta_ads', ['primary_text', 'headline']],
+  ['reddit_promoted', ['headline']],
+];
+
+/**
+ * The string-list fields inside structured blocks, by block.
+ *
+ * `google_search.headlines` reaches a `for...of` in `populateFromBrief`
+ * (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" rather than
+ * degrading — a different failure from the variant case, and one the variant filter does not
+ * touch. The others are cast straight into typed signals the template iterates.
+ */
+const STRUCTURED_STRING_LISTS: readonly (readonly [string, readonly string[]])[] = [
+  ['google_search', ['headlines', 'descriptions']],
+  ['meta_ads', ['recommended_geos']],
+  ['reddit_promoted', ['recommended_subreddits', 'recommended_interests', 'recommended_keywords', 'recommended_geos']],
+];
+
 /**
  * The required string fields of each platform's variant interface.
  *

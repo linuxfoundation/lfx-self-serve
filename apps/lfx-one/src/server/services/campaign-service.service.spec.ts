@@ -829,6 +829,45 @@ describe('fromBriefResponse', () => {
     expect(restored?.variants).toEqual(linkedIn.variants);
   });
 
+  it('hardens the structuredCopy blocks the Implementation tab actually restores from', () => {
+    // This is the path this app's OWN round-trip takes. Planning's Proceed emits `structuredCopy`
+    // and never sets `metaCopy`/`redditCopy`, and `populateFromBrief` reads
+    // `structuredCopy['meta_ads']` FIRST — so the guards on the camelCase side sat on a branch
+    // this app's briefs never reach. `v.primary_text` (implementation-tab.component.ts:578) then
+    // threw on a null element.
+    const structured = {
+      meta_ads: { variants: [null, { primary_text: 'p', headline: 'h' }, { headline: 'no primary text' }] },
+      reddit_promoted: { variants: [null, { headline: 'r' }] },
+    };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy as Record<string, { variants: unknown[] }>;
+
+    expect(restored['meta_ads'].variants).toEqual([{ primary_text: 'p', headline: 'h' }]);
+    expect(restored['reddit_promoted'].variants).toEqual([{ headline: 'r' }]);
+  });
+
+  it('leaves structuredCopy blocks it does not render untouched', () => {
+    // The blob is opaque and another client may store blocks this build does not know. Dropping
+    // them would lose content the next writer still owns.
+    const structured = { future_platform: { anything: [null, 1] } };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy;
+
+    expect(restored).toEqual(structured);
+  });
+
+  it('coerces a non-array string list rather than letting for...of throw', () => {
+    // `google_search.headlines` reaches a `for...of` in populateFromBrief
+    // (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" — a
+    // different failure from the variant case, and one the variant filter does not touch.
+    const structured = { google_search: { headlines: 42, descriptions: ['keep', 7, null] } };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy as Record<string, Record<string, unknown>>;
+
+    expect(restored['google_search']['headlines']).toEqual([]);
+    expect(restored['google_search']['descriptions']).toEqual(['keep']);
+  });
+
   it('drops a LinkedIn variant missing the field the template dereferences', () => {
     // `headline` alone used to survive, and the template then threw on `introText.length`.
     // Required fields are now each variant interface's own string set, so this cannot drift.
