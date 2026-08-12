@@ -599,6 +599,28 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(result.created).toBe(true);
   });
 
+  it('stops re-reading once a slow read has spent the budget', async () => {
+    // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
+    // client's own 30s default. Counting only the sleeps -- as an earlier revision's "~2s"
+    // claim did -- understated the worst case by an order of magnitude: three hung GETs plus
+    // delays is ~92s of a serialised save queue blocked before the original failure surfaces.
+    //
+    // A read that overruns the budget must therefore stop the loop rather than be followed by
+    // two more. This one takes longer than reconcileReadBudgetMs; exactly one reconciliation
+    // read should be attempted.
+    let reconcileReads = 0;
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockImplementation(() => {
+        reconcileReads++;
+        return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 5100));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    expect(reconcileReads).toBe(1);
+  }, 20000);
+
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
     // retry cannot chase a late commit indefinitely. When the attempts run out the ORIGINAL

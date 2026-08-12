@@ -435,13 +435,21 @@ export class CampaignServiceClient {
     // every later save refused as unowned — the exact stranding this function exists to prevent,
     // just moved to a narrower window.
     //
-    // BOUNDED, and deliberately short. This runs inside a request that has already spent part of
-    // its own 30s budget on the POST that failed, so the retry cannot chase a late commit
-    // indefinitely. Two extra reads a second apart cover a commit that lands just after the
-    // abort; anything later is reported as a failure rather than guessed at, which is the honest
-    // answer and leaves the user able to retry.
+    // BOUNDED by attempts AND by wall clock. This runs inside a request that has already spent
+    // part of its own budget on the POST that failed, and each read here carries the client's own
+    // 30s timeout that this layer cannot shorten — so counting only the sleeps, as an earlier
+    // revision did, understated the worst case by an order of magnitude. Two extra reads a second
+    // apart cover a commit that lands just after the abort; a read that hangs instead consumes
+    // the budget and stops the loop rather than being followed by two more.
     let found: ApiResponse<CampaignServiceBrief> | null = null;
+    const startedAt = Date.now();
     for (let attempt = 0; attempt < reconcileReadAttempts; attempt++) {
+      // Checked before each attempt, not only between sleeps: a read that hung for the client's
+      // full 30s has already outlived any window a late commit was going to land in, and a second
+      // one would just block the save queue again.
+      if (attempt > 0 && Date.now() - startedAt >= reconcileReadBudgetMs) {
+        break;
+      }
       if (attempt > 0) {
         await new Promise((resolve) => setTimeout(resolve, reconcileReadDelayMs));
       }
@@ -697,16 +705,22 @@ export class CampaignServiceClient {
  * would be unreachable code that implies the casing is uncertain.
  */
 /**
- * How many times the lost-create reconciliation reads before giving up, and how long it waits
- * between attempts.
+ * Bounds on the lost-create reconciliation: how many times it reads, how long it waits between
+ * attempts, and the WALL-CLOCK budget the whole loop may spend.
  *
- * Three reads a second apart, i.e. up to ~2s added to a request that has already spent part of
- * its 30s budget on the failed POST. Enough for a commit that lands just after our abort; short
- * enough that a save which is genuinely never going to resolve still fails promptly instead of
- * holding the user on a spinner.
+ * The wall-clock bound is the one that actually holds. An earlier revision counted only the
+ * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
+ * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
+ * GETs plus the delays is ~92s of a session's save queue blocked before the original failure even
+ * surfaces — and these saves are serialised, so the next Proceed waits behind it.
+ *
+ * `reconcileReadBudgetMs` is checked BEFORE each attempt, so a single hung read cannot be
+ * followed by another. It cannot cut a read already in flight — nothing at this layer can — but
+ * it caps the amplification at one hung request rather than three.
  */
 const reconcileReadAttempts = 3;
 const reconcileReadDelayMs = 1000;
+const reconcileReadBudgetMs = 5000;
 
 /**
  * Whether a stored brief is the one this request sent.
