@@ -350,7 +350,7 @@ export class CampaignsComponent {
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message: 'This event already has a saved brief that was not opened here. Reload the page to work from it — saving now would replace it.',
+              message: 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
             });
             return;
           }

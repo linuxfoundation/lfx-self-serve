@@ -332,6 +332,27 @@ describe('PlanningTabComponent brief read-back', () => {
   });
 
   /**
+   * Clearing the URL field and retyping the SAME one must leave the offer intact.
+   *
+   * The naive guard — clear whenever the slug differs — loses it: emptying the field sets the
+   * tracked slug to '' with no lookup issued, so retyping clears the offer again and pushes a
+   * slug `distinctUntilChanged` may drop as unchanged, leaving nothing to re-fetch it. The
+   * tracked slug therefore records what was last LOOKED UP rather than what was last typed.
+   */
+  it('keeps the restore offer when the url is cleared and the same one retyped', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(savedBrief()).toEqual(exampleBrief);
+
+    await typeEventUrl('');
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    expect(savedBrief()).toEqual(exampleBrief);
+  });
+
+  /**
    * Restoring must emit on `restoreSavedBriefRequested`, NOT `proceedToImplementation`.
    *
    * The parent persists whatever arrives on `proceedToImplementation`. A restored brief came

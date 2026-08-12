@@ -335,21 +335,26 @@ export class PlanningTabComponent implements OnInit {
     // generated brief, which does not exist until after generation and so cannot serve the
     // pre-generation offer this feature is for. Tracked as LFXV2-3200.
     //
-    // Cleared eagerly so a half-typed URL cannot leave an offer to restore a DIFFERENT event's
-    // brief on screen.
-    // Cleared only when the SLUG actually changes. Clearing on every keystroke looks safer but
-    // is not: `distinctUntilChanged` drops an unchanged (slug, foundation) pair, so editing the
-    // URL and arriving back at the same slug — or clearing the field and retyping it — would
-    // wipe the offer and then issue no lookup to restore it. The offer would be gone for a brief
-    // that exists, with nothing left to re-fetch it.
+    // Cleared only when the slug changes AND a lookup will follow to replace what was cleared.
+    //
+    // Two ways to get this wrong, and the naive version hits both. Clearing on every keystroke
+    // wipes the offer while `distinctUntilChanged` drops the unchanged pair, so nothing re-fetches
+    // it. Clearing whenever the slug differs has the same end: emptying the field sets
+    // `currentSlug` to '' with no lookup issued, and retyping the SAME url then clears again and
+    // pushes a slug the pipeline may drop as unchanged — the offer gone for a brief that exists.
+    //
+    // Advancing `currentSlug` only on the branch that also emits keeps the two in step: the field
+    // records what was last LOOKED UP, not what was last typed, so an empty field leaves both the
+    // offer and the key alone and retyping the same url is correctly a no-op with the offer still
+    // on screen.
     const slug = this.extractSlug(url);
-    if (slug !== this.currentSlug) {
-      this.currentSlug = slug;
-      this.savedBrief.set(null);
-      this.savedBriefId = null;
-      this.savedBriefWarning.set(null);
-    }
     if (slug.length > 0) {
+      if (slug !== this.currentSlug) {
+        this.currentSlug = slug;
+        this.savedBrief.set(null);
+        this.savedBriefId = null;
+        this.savedBriefWarning.set(null);
+      }
       this.slugInput$.next(slug);
     }
   }
