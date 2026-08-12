@@ -54,7 +54,7 @@
     @if (!isComingSoon()) {
       <div class="flex items-center gap-4">
         <span class="shrink-0 text-sm font-semibold text-gray-700">Channel Type:</span>
-        <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
+        <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Campaign impact sections" data-testid="marketing-impact-tabs">
           @for (tab of visibleTabs(); track tab.id) {
             <button
               type="button"
