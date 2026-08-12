@@ -430,6 +430,29 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
+    it('drops a save that resolves after the user restored a different brief', async () => {
+      // `onProceedToImplementation(brief, true)` bumps `briefPersistenceGeneration` precisely so a
+      // save still in flight for the brief the user just REPLACED cannot write its `saved` state
+      // and briefId onto the restored one — attributing one brief's id to another. The restore
+      // tests all used NEVER, so that bump was never exercised.
+      const inFlight = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(inFlight);
+      proceed();
+      await fixture.whenStable();
+
+      // The user restores a DIFFERENT brief while that save is still open.
+      restore(otherBrief, 'restored-b');
+      await fixture.whenStable();
+
+      // The earlier save now answers. Its outcome belongs to a brief no longer on screen.
+      inFlight.next({ enabled: true, briefId: 'stale-a', etag: '"1"', created: true, approved: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // It must NOT paint `saved` over the restored brief, nor hand it `stale-a`.
+      expect(state().briefId).not.toBe('stale-a');
+      expect(state().status).not.toBe('saved');
+    });
+
     it('does not lend a RESTORED brief id to another event', async () => {
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');

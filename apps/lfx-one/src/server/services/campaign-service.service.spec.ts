@@ -1189,15 +1189,6 @@ describe('fromBriefResponse', () => {
     expect(restored?.['recommendedGeoTargets']).toEqual([]);
   });
 
-  /**
-   * Completeness, not just correctness.
-   *
-   * The first version of `VARIANT_COPY_ARRAY_FIELDS` named four fields and missed four more,
-   * each a `string[]` a consumer iterates — a partial list is worse than none, because it reads
-   * as exhaustive. This drives every field the two brief-copy interfaces declare as an array,
-   * so adding one to an interface without adding it to the coercion list fails here rather than
-   * throwing on a user's Restore.
-   */
   it('reads a brief whose identity is only in the top-level event_slug', () => {
     // event_details is opaque JSON another client may fill differently. The top-level column is
     // the REQUIRED key this row was retrieved by, so a blob with neither name nor slug is still
@@ -1258,6 +1249,15 @@ describe('fromBriefResponse', () => {
     expect(reddit['recommendedSubreddits']).toEqual(['r/k8s']);
   });
 
+  /**
+   * Completeness, not just correctness.
+   *
+   * The first version of `VARIANT_COPY_ARRAY_FIELDS` named four fields and missed four more,
+   * each a `string[]` a consumer iterates — a partial list is worse than none, because it reads
+   * as exhaustive. This drives every field the two brief-copy interfaces declare as an array,
+   * so adding one to an interface without adding it to the coercion list fails here rather than
+   * throwing on a user's Restore.
+   */
   it('coerces every array field the platform copy blocks declare', () => {
     const arrayFields = [
       'recommendedGeoTargets',

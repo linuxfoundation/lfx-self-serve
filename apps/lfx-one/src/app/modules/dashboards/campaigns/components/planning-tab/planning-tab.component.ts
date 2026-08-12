@@ -294,12 +294,12 @@ export class PlanningTabComponent implements OnInit {
     // regenerating. The offer's validity depends on `(slug, foundation)` alone — reset changes
     // neither — so what was true before it is still true after.
     //
-    // Clearing it stranded the offer permanently rather than merely hiding it. `onUrlChange`
+    // Clearing it stranded the offer permanently rather than merely hiding it. `onUrlInput`
     // issues a lookup only when the slug CHANGES (`currentSlug` records what was last looked up),
     // and reset leaves the url field untouched, so retyping the same url is correctly a no-op and
     // no keystroke could bring the offer back. Re-pushing the slug does not work either: the
     // pipeline's `distinctUntilChanged` drops the unchanged `(slug, project)` pair, which is the
-    // same trap the comment in `onUrlChange` already warns about. The next Proceed then created a
+    // same trap the comment in `onUrlInput` already warns about. The next Proceed then created a
     // second row and hit the unowned-brief conflict.
     //
     // `savedBriefId` is left in step with `savedBrief` by saying nothing about either — the pair
@@ -387,7 +387,7 @@ export class PlanningTabComponent implements OnInit {
   protected restoreSavedBrief(): void {
     // Refuse when the field no longer names the event this offer was fetched for. The offer is
     // deliberately KEPT while the url is empty or half-typed — clearing it there strands it, since
-    // `onUrlChange` only issues a lookup when the slug CHANGES and retyping the same url is a
+    // `onUrlInput` only issues a lookup when the slug CHANGES and retyping the same url is a
     // no-op — but keeping it visible must not mean acting on it. Mid-edit toward event B, the
     // panel still reads "A brief was already saved for <A>", and restoring then hands the
     // Implementation tab a brief for an event the user is in the middle of leaving.

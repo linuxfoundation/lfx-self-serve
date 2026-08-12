@@ -137,7 +137,6 @@ export class CampaignsComponent {
    *
    * A plain field rather than a signal: nothing renders it, and it answers "may this save
    * replace?" at the moment a request is built.
-
    */
   /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
@@ -206,9 +205,12 @@ export class CampaignsComponent {
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
    *
    * The `programType` subscription treats a change as the user choosing a different program and
-   * calls `resetToPlanning`, which discards the brief and the ownership map. That is right for a
-   * user switching programs and wrong for this: the program is not changing away from the brief,
-   * it is catching up TO it.
+   * calls `resetToPlanning`, which discards the brief on screen. That is right for a user
+   * switching programs and wrong for this: the program is not changing away from the brief, it is
+   * catching up TO it.
+   *
+   * (`resetToPlanning` no longer clears `knownBriefIds` — the row still exists upstream, so its
+   * id stays valid. Only the on-screen brief is discarded.)
    *
    * An earlier revision relied on statement order alone — the adopt runs before the ownership
    * write and before `onProceedToImplementation`, so a reset triggered here is undone by both.
@@ -423,9 +425,10 @@ export class CampaignsComponent {
     // on screen belongs to another.
     //
     // It has to happen HERE rather than being left to the user, because the correction is a trap:
-    // changing the selector runs `resetToPlanning`, which clears `briefOutput` AND
-    // `knownBriefIds` — so the row they just restored becomes unowned and their next save is
-    // refused.
+    // changing the selector runs `resetToPlanning`, which discards `briefOutput` — so the brief
+    // they just restored is thrown away and they are back on an empty Planning tab. (Ownership
+    // survives: `resetToPlanning` no longer clears `knownBriefIds`, because the upstream row is
+    // still there. It is the BRIEF that is lost, not the right to save it.)
     //
     // The subscription DOES fire for this write — an earlier comment here claimed it saw no
     // change, which was wrong. `adoptingRestoredProgram` is what stops it resetting, rather than
