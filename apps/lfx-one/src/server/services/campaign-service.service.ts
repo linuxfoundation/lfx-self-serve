@@ -276,18 +276,90 @@ export class CampaignServiceClient {
     }
 
     if (existing === null) {
-      const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
-        req,
-        'LFX_V2_CAMPAIGN_SERVICE',
-        basePath,
-        'POST',
-        undefined,
-        envelope
-      );
+      let created;
+      try {
+        created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+          req,
+          'LFX_V2_CAMPAIGN_SERVICE',
+          basePath,
+          'POST',
+          undefined,
+          envelope
+        );
+      } catch (error) {
+        // An INDETERMINATE create is the one failure this phase cannot walk away from. If the
+        // POST committed but its response was lost — a timeout, a reset, a gateway 5xx — the
+        // caller never learns the id, and with no read path every later save finds that row with
+        // no id to name it and is refused as `unowned-brief-exists`. The user's work is stranded
+        // behind a row they created seconds earlier.
+        //
+        // campaign-service declares no idempotency key on the brief endpoints, so the only
+        // reconciliation available is to look again.
+        const reconciled = await this.reconcileLostCreate(req, basePath, eventSlug, envelope, error);
+        if (reconciled === null) {
+          throw error;
+        }
+        created = reconciled;
+      }
       return this.approveBrief(req, basePath, created, true);
     }
 
     return this.replaceBrief(req, basePath, envelope, existing, knownEtag);
+  }
+
+  /**
+   * After an ambiguous create failure, find out whether the POST actually committed.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the create did not happen
+   * or the row cannot be claimed — in which case the caller rethrows the original error, which is
+   * the honest outcome for a save whose fate is unknown.
+   *
+   * Two conditions have to hold before adopting a row, and both matter:
+   *
+   * - `version === 1`. A higher version means the row has been written more than once, so it is
+   *   not the untouched product of this POST, and adopting it would hand this session ownership
+   *   of edits it never made.
+   * - the stored payload matches what this request sent. Without it, a row another writer created
+   *   in the same window would be adopted, and the next save would replace THEIR brief under this
+   *   caller's id — the precise overwrite the ownership guard exists to prevent.
+   *
+   * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
+   * the accurate answer. Only genuinely indeterminate failures reach the lookup.
+   */
+  private async reconcileLostCreate(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    envelope: CampaignServiceBriefEnvelope,
+    error: unknown
+  ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+    if (definitelyRejected) {
+      return null;
+    }
+
+    // The RAW response, not `findBrief`'s narrowed shape: `approveBrief` reads both the body and
+    // the ETag header off it, so handing it a bare brief threw
+    // `Cannot read properties of undefined (reading 'id')` on the one path that exists to make
+    // recovery reliable.
+    let found: ApiResponse<CampaignServiceBrief>;
+    try {
+      found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+        event_slug: eventSlug,
+      });
+    } catch {
+      // The reconciliation read failed too. Nothing is known, so report the original failure
+      // rather than a second one describing the recovery attempt.
+      return null;
+    }
+    if (found.data === undefined || found.data.version !== 1 || !storedBriefMatches(found.data, envelope.brief)) {
+      return null;
+    }
+    logger.warning(req, 'campaign_persist_brief_reconciled', 'a create whose response was lost had in fact committed', {
+      briefId: found.data.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return found;
   }
 
   /**
@@ -502,6 +574,26 @@ export class CampaignServiceClient {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
+/**
+ * Whether a stored brief could be the one this request sent.
+ *
+ * Compares the identifying columns this branch's response type declares — `program_type` and
+ * `event_slug`. It is deliberately NOT widened: `CampaignServiceBrief` here lists only the fields
+ * the write path reads, because the read path is LFXV2-3108's, and adding `url`/`platforms` to
+ * the type purely to strengthen a comparison would claim this branch consumes them.
+ *
+ * The check is therefore weaker than it looks, and the `version === 1` condition beside it is
+ * doing most of the work: a row at version 1 for this event, matching program and slug, was
+ * created by exactly one POST in this window. Another writer creating a DIFFERENT brief for the
+ * SAME event slug in the gap between our POST and our re-read would still be adopted. That
+ * window is small and the alternative — stranding the user behind an unnameable row — is worse
+ * and certain rather than rare. LFXV2-3108 widens the type for the read path, at which point
+ * this can compare the payload properly.
+ */
+function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
+  return stored.program_type === sent.program_type && stored.event_slug === sent.event_slug;
+}
+
 function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
