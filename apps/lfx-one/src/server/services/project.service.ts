@@ -7463,12 +7463,22 @@ export class ProjectService {
 
     // Name matching alone cannot separate editions: the year-stripped pattern exists to catch
     // campaigns that omit the year, but it equally matches the 2025 edition of a 2026 event, so
-    // last year's spend would be attributed to this year's event. Bound the match to the run-up
-    // window around this edition — a year before the event through a month after, which covers a
-    // typical campaign cycle without reaching back into the previous edition.
+    // last year's spend would be attributed to this year's event.
+    //
+    // The window is nine months back, not twelve: most of these events run annually, and a full
+    // twelve-month lookback reaches the previous edition's own campaign month — the exact overlap
+    // this filter exists to prevent. Nine months still covers a normal run-up.
+    //
+    // Bounds are truncated to month starts because CAMPAIGN_MONTH is month-grained (the other
+    // reads of this table bound it with month-aligned period ranges). Day-level arithmetic off a
+    // mid-month event date would clip the first lookback month and include the trailing month only
+    // when the day-of-month happened to line up.
+    //
     // Omitted (unbounded) when the event carries no start date, which is rare and where a wide
     // match is still better than an empty breakdown.
-    const editionFilter = eventStartDate ? "AND {col} >= DATEADD('MONTH', -12, TO_DATE(?)) AND {col} < DATEADD('MONTH', 1, TO_DATE(?))" : '';
+    const editionFilter = eventStartDate
+      ? "AND {col} >= DATE_TRUNC('MONTH', DATEADD('MONTH', -9, TO_DATE(?))) AND {col} < DATE_TRUNC('MONTH', DATEADD('MONTH', 2, TO_DATE(?)))"
+      : '';
     const paidEdition = editionFilter.replaceAll('{col}', 'CAMPAIGN_MONTH');
     const emailEdition = editionFilter.replaceAll('{col}', 'PUBLISHED_DATE');
     const editionParams = eventStartDate ? [eventStartDate, eventStartDate] : [];

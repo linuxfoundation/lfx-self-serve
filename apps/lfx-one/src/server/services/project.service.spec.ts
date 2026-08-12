@@ -502,7 +502,8 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
-    // date bound last year's spend lands on this year's drawer.
+    // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so
+    // an annual event's window stops short of the previous edition's own campaign month.
     it("bounds the campaign match to this edition's run-up window", async () => {
       mockReads([eventRow], []);
 
@@ -513,8 +514,10 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       );
       expect(campaignReads.length).toBeGreaterThan(0);
       for (const [sql, binds] of campaignReads) {
-        expect(sql).toContain("DATEADD('MONTH', -12,");
-        expect(sql).toContain("DATEADD('MONTH', 1,");
+        // Month-truncated, because CAMPAIGN_MONTH/PUBLISHED_DATE are month-grained: day-level
+        // bounds off a mid-month event date clip the first lookback month.
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', -9,");
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', 2,");
         // The event's own start date bounds both ends of the window.
         expect(binds.slice(-2)).toEqual([eventRow.START_DATE, eventRow.START_DATE]);
       }
