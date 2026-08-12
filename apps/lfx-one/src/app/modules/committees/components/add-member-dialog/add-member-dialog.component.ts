@@ -291,7 +291,10 @@ export class AddMemberDialogComponent {
 
     // Disable the submit button up front — org resolution below is async, and leaving it enabled
     // during that window allows a double-click that fires a second resolve → invite chain. Cancel
-    // stays enabled throughout (see the template) since closing the dialog mid-resolution is safe.
+    // stays enabled in collect-only mode (see the template) — staging is synchronous and closing
+    // mid-resolution is safe there — but stays disabled while submitting in the immediate-send
+    // modes, since canceling mid-flight can abort in-progress member/invite POSTs after some have
+    // already succeeded, with no summary toast and no parent refresh.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 

@@ -213,6 +213,7 @@
       severity="secondary"
       [outlined]="true"
       (onClick)="onCancel()"
+      [disabled]="!collectOnly && submitting()"
       size="small"
       type="button"
       data-testid="add-member-cancel"></lfx-button>

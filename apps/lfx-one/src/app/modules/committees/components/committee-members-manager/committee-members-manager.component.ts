@@ -84,9 +84,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Bulk email invites staged in the wizard, deduped by normalized email. These are collected
   // client-side and flushed by the wizard on completion (POST /invites) — never sent immediately,
   // so cancelling the wizard sends nothing (LFXV2-2606). Surfaced as a "Pending invitations" list.
-  // Seeded from the input so revisiting Step 4 (which recreates this component) doesn't drop
-  // invites already staged in a previous visit.
-  public readonly pendingInvites = signal<CreateCommitteeInviteRequest[]>(this.memberUpdates().toInvite);
+  // Hydrated from the input in ngOnInit (not here) — signal inputs apply after field
+  // initializers run, so reading memberUpdates() at this point would only ever see its default.
+  public readonly pendingInvites = signal<CreateCommitteeInviteRequest[]>([]);
 
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
@@ -132,6 +132,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public ngOnInit(): void {
+    // Rehydrate from the parent-bound input now that it's applied (see the field comment above).
+    this.pendingInvites.set(this.memberUpdates().toInvite);
+
     this.initializeMembers();
     this.loadCommittee();
 
