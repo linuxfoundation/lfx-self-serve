@@ -30,6 +30,38 @@
     }
   </div>
 
+  @if (commentPromptsData().length > 0) {
+    <div class="flex flex-col gap-2" [formGroup]="commentForm" data-testid="dashboard-pending-actions-vote-comments">
+      @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
+        <div class="flex flex-col gap-1" [attr.data-testid]="'dashboard-pending-actions-vote-comment-' + commentData.prompt.prompt_id">
+          <label [for]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id" class="text-xs font-medium text-gray-700">
+            {{ commentData.prompt.prompt }} <span class="font-normal text-gray-400">(optional)</span>
+          </label>
+          <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
+               the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
+          <lfx-textarea
+            [form]="commentForm"
+            [control]="commentData.prompt.prompt_id"
+            [id]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id"
+            [rows]="2"
+            styleClass="w-full text-xs"
+            [dataTest]="'dashboard-pending-actions-vote-comment-textarea-' + commentData.prompt.prompt_id">
+          </lfx-textarea>
+          <div class="flex justify-between">
+            @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
+              <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
+            } @else {
+              <span></span>
+            }
+            <span class="text-xs text-gray-400" [attr.data-testid]="'dashboard-pending-actions-vote-comment-counter-' + commentData.prompt.prompt_id">
+              {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
+            </span>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
   <div class="flex items-center justify-end gap-2 pt-1">
     @if (allowAbstain()) {
       <label class="flex items-center gap-1.5 text-xs text-gray-600" data-testid="dashboard-pending-actions-vote-abstain-label">
