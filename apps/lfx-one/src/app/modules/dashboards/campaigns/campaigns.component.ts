@@ -84,6 +84,20 @@ export class CampaignsComponent {
    * subscription. A mismatch means the result is for a superseded brief and is dropped — the
    * newer owner of the signal has already set the state it wants.
    */
+  /**
+   * The campaign-service brief id this session has established ownership of, or null.
+   *
+   * Set by a SUCCESSFUL save: creating a brief is the strongest proof of ownership there is, and
+   * without recording it the second Proceed of a session is refused as unowned — a user editing
+   * and re-proceeding would be told their own brief belongs to someone else. In this phase that
+   * is the only way it becomes non-null, since persistence is write-only and nothing can load an
+   * existing brief; LFXV2-3108 adds the read and a second source.
+   *
+   * Cleared by `resetToPlanning` with the brief it belonged to. A stale id would let the NEXT
+   * brief — a different event — claim ownership of the previous one's row.
+   */
+  private knownBriefId: string | null = null;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -249,6 +263,11 @@ export class CampaignsComponent {
     // generation and discards the outcome anyway.
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
+    // Snapshotted alongside the slug, and for a sharper reason: read inside the queued callback
+    // instead, a save that completed while THIS one waited would hand its id to a different
+    // brief — ownership of a row this payload has never seen.
+    const knownBriefId = this.knownBriefId;
+
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
     // brief…" in the meantime would put a persistence banner in front of every user in every
@@ -260,7 +279,7 @@ export class CampaignsComponent {
     }
 
     this.persistChain = this.persistChain.then(() =>
-      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug)).then(
+      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -298,6 +317,9 @@ export class CampaignsComponent {
             });
             return;
           }
+          // Recorded BEFORE the banner: the next save in this session must be able to prove it
+          // owns this row, or the guard refuses a user re-proceeding on their own brief.
+          this.knownBriefId = result.briefId;
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
@@ -331,6 +353,7 @@ export class CampaignsComponent {
     this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(this.idlePersistence);
+    this.knownBriefId = null;
     this.selectedTab.set('planning');
   }
 }
