@@ -303,7 +303,7 @@ describe('ClaService.getMyClas', () => {
     expect(calledUrl).toContain('githubUsername=octocat');
   });
 
-  it('duplicates single-valued github keys when email is multi-valued, to survive the gateway multi-value strip (lfx-gateway#114)', async () => {
+  it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveEmail.mockReturnValue('alice@x.org');
     getEffectiveSub.mockReturnValue('auth0|abc');
@@ -321,41 +321,8 @@ describe('ClaService.getMyClas', () => {
 
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    // 3 verified emails -> email is multi-valued, so the lone github keys are padded to 2 so the
-    // gateway keeps them (it forwards only multi-valued params once any param repeats); the backend de-dupes.
-    expect(params.getAll('email').length).toBeGreaterThan(1);
-    expect(params.getAll('githubId')).toEqual(['13434323', '13434323']);
-    expect(params.getAll('githubUsername')).toEqual(['octocat', 'octocat']);
-    // lfUsername stays single-valued (harmless: the backend derives the principal from the X-USERNAME header).
-    expect(params.getAll('lfUsername')).toEqual(['alice']);
-    // The padded values are byte-identical (a repeated single value, not two distinct ids), so the
-    // backend collapses them via pre-authorization de-dupe — no double-count (FR-003, BFF half).
-    expect(new Set(params.getAll('githubId')).size).toBe(1);
-    expect(new Set(params.getAll('githubUsername')).size).toBe(1);
-  });
-
-  it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present (survives the strip)', async () => {
-    getEffectiveUsername.mockReturnValue('alice');
-    getEffectiveEmail.mockReturnValue('alice@x.org');
-    getEffectiveSub.mockReturnValue('auth0|abc');
-    getUserEmails.mockResolvedValueOnce({
-      primary_email: 'alice@x.org',
-      alternate_emails: [
-        { email: 'alice@work.com', verified: true },
-        { email: 'alice@personal.com', verified: true },
-      ],
-    });
-    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
-
-    await new ClaService().getMyClas(req);
-
-    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
-    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    // Invariant, NOT the padding mechanism: a multi-email caller's github keys must reach the backend.
-    // Stays true after the #114 padding is removed and the gateway stops stripping single-value params.
-    expect(params.getAll('githubId')).toContain('13434323');
-    expect(params.getAll('githubUsername')).toContain('octocat');
+    expect(params.getAll('githubId')).toEqual(['13434323']);
+    expect(params.getAll('githubUsername')).toEqual(['octocat']);
   });
 
   it('does not duplicate github keys on the single-email path (no-regression, FR-002)', async () => {
@@ -369,13 +336,12 @@ describe('ClaService.getMyClas', () => {
 
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    // One email -> nothing is multi-valued -> no padding: byte-for-byte the pre-#114 query.
     expect(params.getAll('email')).toEqual(['alice@x.org']);
     expect(params.getAll('githubId')).toEqual(['13434323']);
     expect(params.getAll('githubUsername')).toEqual(['octocat']);
   });
 
-  it('under impersonation, pads and forwards the TARGET user github keys with the target token (FR-009)', async () => {
+  it('under impersonation, forwards the TARGET user github keys with the target token (FR-009)', async () => {
     isImpersonating.mockReturnValue(true);
     // getEffective* return the *target* identity during impersonation.
     getEffectiveUsername.mockReturnValue('alice');
@@ -396,7 +362,7 @@ describe('ClaService.getMyClas', () => {
 
     const [, calledUrl, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    expect(params.getAll('githubId')).toContain('13434323'); // target's key, padded, present
+    expect(params.getAll('githubId')).toContain('13434323');
     expect(params.getAll('githubUsername')).toContain('octocat');
     expect(opts.bearerToken).toBe('target-token'); // runs under the target's token, not the impersonator's
   });
