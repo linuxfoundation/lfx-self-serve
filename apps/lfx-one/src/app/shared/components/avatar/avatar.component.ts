@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { AvatarProps } from '@lfx-one/shared/interfaces';
 import { AvatarModule } from 'primeng/avatar';
 
@@ -52,6 +53,15 @@ export class AvatarComponent {
   // Output events
   public readonly onClick = output<Event>();
   public readonly onImageError = output<Event>();
+
+  public constructor() {
+    // Reset the error flag whenever a caller swaps to a different image URL (e.g. a multi-source
+    // fallback chain retrying with a new candidate) — otherwise a URL that later succeeds still
+    // renders blank because a previous, different URL failed earlier in this component's lifetime.
+    toObservable(this.image)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.imageErrorSignal.set(false));
+  }
 
   // Event handlers
   protected handleClick(event: Event): void {
