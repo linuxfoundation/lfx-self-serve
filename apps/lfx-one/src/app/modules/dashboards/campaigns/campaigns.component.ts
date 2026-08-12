@@ -436,6 +436,16 @@ export class CampaignsComponent {
     // same session shows both.
     if (this.briefPersistenceEnabled()) {
       this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+    } else {
+      // Clear rather than leave whatever was there. The flag being unknown is the FIRST save of a
+      // session — but a first save that FAILED leaves an error banner and does not flip the flag,
+      // so the next Proceed took this branch with that banner still on screen and showed the
+      // previous brief's failure over the new save until its own request finished.
+      //
+      // Idle, not `saving`: the reason this branch shows no in-flight banner is unchanged — with
+      // the cutover dark, which is the default everywhere, a spinner would appear for every user
+      // in an environment where nothing is being saved at all.
+      this.briefPersistence.set(this.idlePersistence);
     }
 
     this.persistChain = this.persistChain.then(() => {

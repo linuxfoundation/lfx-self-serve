@@ -88,6 +88,8 @@ interface CampaignServiceBrief {
   event_slug: string;
   status: string;
   version: number;
+  // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
+  // these come back on the find whether or not a given phase renders them.
   url?: string;
   platforms?: string[];
   event_details?: unknown;
@@ -662,15 +664,18 @@ export class CampaignServiceClient {
 /**
  * Whether a stored brief could be the one this request sent.
  *
- * On the base branch this could compare only `program_type` and `event_slug`, because
- * `CampaignServiceBrief` there declares just the columns the write path reads. This branch adds
- * the read path and with it `url` and `platforms`, so the comparison is strengthened here —
- * which is the half the base branch's comment said would land with LFXV2-3108.
+/**
+ * Whether a stored brief could be the one this request sent.
  *
- * The opaque `Any` blobs stay excluded: the service round-trips them without interpreting, so key
- * order and JSON normalisation are not guaranteed to survive, and a mismatch there would reject a
- * row that really is ours. These first-class columns are enough to tell this payload from another
- * writer's brief for the same event, which is the only question being asked.
+ * Compares the first-class columns campaign-service returns on a find. An early round compared
+ * only `program_type` and `event_slug` on the reasoning that the response type declared nothing
+ * else — but the type was under-declaring: `Brief` Reference()s `BriefData`, so `url` and
+ * `platforms` come back regardless, on the base branch too.
+ *
+ * The four `Any` blobs stay excluded even here, where this branch DOES decode them. The service
+ * round-trips them without interpreting, so key order and JSON normalisation are not guaranteed
+ * to survive, and a mismatch there would reject a row that really is ours — the failure this
+ * reconciliation exists to prevent.
  */
 function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
   const storedPlatforms = stored.platforms ?? [];
