@@ -178,7 +178,7 @@ export class MeetingCardComponent implements OnInit {
   // Computed signals for invited/registration status to ensure reactivity after registration
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
-    () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
+    () => this.authenticated() && !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)

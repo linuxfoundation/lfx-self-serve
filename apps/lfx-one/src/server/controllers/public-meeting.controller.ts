@@ -500,15 +500,11 @@ export class PublicMeetingController {
 
   /**
    * POST /public/api/meetings/register
-   * Registers a user to a public, non-restricted meeting.
+   * Registers an authenticated user to a public, non-restricted meeting.
    *
-   * Authenticated users: calls POST /itx/meetings/{id}/registrants/self with the user's
-   * bearer token. Email is sourced from the user's JWT by the meeting service — the body
-   * email field is ignored. The meeting service enforces the public-only constraint.
-   *
-   * Anonymous users: falls back to the M2M path (POST /itx/meetings/{id}/registrants).
-   * Email must be provided in the request body. The BFF validates public and non-restricted
-   * constraints before forwarding.
+   * Calls POST /itx/meetings/{id}/registrants/self with the user's bearer token. Email and
+   * username are sourced from the caller's JWT by the meeting service — the body email field
+   * is not forwarded. Authentication is required; unauthenticated requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
