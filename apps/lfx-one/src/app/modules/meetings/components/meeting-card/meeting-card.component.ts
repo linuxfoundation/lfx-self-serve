@@ -266,7 +266,12 @@ export class MeetingCardComponent implements OnInit {
 
     // Reset post-registration flag if this card instance is reused for a different meeting.
     toObservable(this.meetingInput)
-      .pipe(map((m) => m?.id), distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        map((m) => m?.id),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe(() => this.registeredInSession.set(false));
   }
 

@@ -355,8 +355,15 @@ export class MeetingJoinComponent implements OnInit {
 
     // Reset post-registration optimistic flag when navigating to a different meeting so a
     // previous registration doesn't grant registrant-list access for an unrelated meeting.
+    // Use getMeetingSeriesUid (not meeting.id) because past-occurrence composite ids differ
+    // from the live-series uid — occurrence navigation must not clear the flag.
     toObservable(this.meeting)
-      .pipe(map((m) => m?.id), distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        map((m) => (m ? getMeetingSeriesUid(m) : undefined)),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe(() => this.optimisticInvited.set(false));
 
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
