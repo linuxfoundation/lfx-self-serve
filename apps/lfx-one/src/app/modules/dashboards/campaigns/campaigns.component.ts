@@ -468,6 +468,25 @@ export class CampaignsComponent {
             this.knownBriefIds.set(ownershipKey, { id: result.briefId, etag: result.etag });
           }
 
+          // A stale-brief refusal DROPS the validator, and belongs here beside the record above
+          // rather than in the banner branch below — for the same reason. Both answer "what does
+          // this session hold?", which does not expire because the user navigated, while the
+          // generation check below answers "is this still worth showing?". Behind that check the
+          // clear silently never ran whenever another Proceed had already superseded this
+          // response, which is exactly when a retry is in flight and needs it most.
+          //
+          // The ETag is known-WRONG: the server has just said it does not match, so keeping it
+          // would make every retry re-send the same rejected validator and fail identically — a
+          // permanent dead end for a save this session is entitled to make. The brief id is kept,
+          // because the 412 disputed the version, not who owns the row; the next attempt falls
+          // back to the freshly read validator, like a caller that has never seen one.
+          if (result.conflict === 'stale-brief' && ownershipAtSend === this.ownershipGeneration && ownershipKey !== null) {
+            const owned = this.knownBriefIds.get(ownershipKey);
+            if (owned !== undefined) {
+              this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null });
+            }
+          }
+
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
@@ -481,14 +500,19 @@ export class CampaignsComponent {
           if (result.conflict !== undefined) {
             // The two conflicts are different situations and must not share a sentence. Both mean
             // "not written", but `unowned-brief-exists` says this session may not replace that
-            // brief at all, while `stale-brief` says it may — someone else just got there first,
-            // so the work is intact and reloading shows the newer version.
+            // brief at all, while `stale-brief` says it may — someone else just got there first.
+            //
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
               message:
                 result.conflict === 'stale-brief'
-                  ? 'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.'
+                  ? // Says "reload" again, which the base branch deliberately did not: this
+                    // branch ADDS the read path, so a reload re-looks-up the stored brief and
+                    // offers it for restore. There the advice is actionable — the user sees the
+                    // other writer's version rather than losing their own ownership state, which
+                    // is what made the same sentence harmful before LFXV2-3108 existed.
+                    'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.'
                   : 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
             });
             return;

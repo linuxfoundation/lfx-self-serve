@@ -453,6 +453,32 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).toBe('error');
       expect(state().message).toContain('Someone else changed this brief');
       expect(state().message).not.toContain('was not opened here');
+      // DOES advise a reload on this branch, unlike the base. LFXV2-3108 adds the read path, so
+      // a reload re-looks-up the stored brief and offers it for restore — the user sees the other
+      // writer's version instead of losing their own ownership state, which is what made the same
+      // sentence harmful while nothing could read a brief back.
+      expect(state().message).toContain('Reload to see their changes');
+    });
+
+    it('lets a retry through after a stale-brief conflict instead of dead-ending', async () => {
+      // First save records id + ETag.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      // Another writer moves the row: the save is refused with the stale validator.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+
+      // The retry must NOT re-send the rejected ETag. Keeping it would make every attempt fail
+      // identically — a permanent dead end for a save this session is entitled to make. Ownership
+      // is untouched, because the 412 disputed the version, not who owns the row.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null);
     });
 
     it('treats a padded slug as a different brief from the unpadded one', async () => {
