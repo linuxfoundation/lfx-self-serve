@@ -195,6 +195,12 @@ export interface CampaignBriefPersistResult {
   /**
    * Why the save was REFUSED, when it was. Absent means the save happened.
    *
+   * `unverified-validator`: this caller owns the brief but holds no trustworthy last-seen
+   * version — its previous write returned no ETag, or that write's approval outcome was
+   * indeterminate. The save is refused rather than sent with a validator this request read
+   * itself, which would bypass the precondition and could overwrite an intervening writer
+   * silently. Distinct from `stale-brief`, where a validator WAS sent and the server rejected it.
+   *
    * `superseded-after-write`: the PUT committed, but the approval that follows it was refused
    * with a 412 — the row's version moved in between, so another writer replaced the brief after
    * this save wrote it. The write is durable but may no longer be what the row HOLDS, so it must
@@ -220,7 +226,7 @@ export interface CampaignBriefPersistResult {
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
    * and the caller's next step is a CHOICE rather than a retry.
    */
-  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write';
+  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
 }
 
 /**

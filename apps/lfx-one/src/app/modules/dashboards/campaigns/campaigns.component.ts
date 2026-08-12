@@ -142,9 +142,26 @@ export class CampaignsComponent {
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
+    // Says "try again" rather than naming another writer, because none is known to exist: the
+    // problem is that this page cannot prove which version it last saw, not that someone else
+    // changed it. A retry re-reads and usually succeeds.
+    'unverified-validator': 'This brief could not be saved safely because its last saved version is unconfirmed. Try again to save it.',
   };
 
-  private knownBriefIds = new Map<string, { id: string; etag: string | null }>();
+  /**
+   * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
+   * treatment on the next save:
+   *
+   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
+   *   is real, so falling back to the freshly read validator is what they asked for.
+   * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
+   *   was warned and nothing was decided; falling back here would bypass the precondition
+   *   silently and could overwrite an intervening writer without ever showing a conflict.
+   *
+   * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
+   * validator sends none, and the server's ownership check still decides whether it may replace.
+   */
+  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
 
   private briefPersistenceGeneration = 0;
 
@@ -380,7 +397,10 @@ export class CampaignsComponent {
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
       // filed it, whatever else happened while this one waited.
       const known = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null)).then(
+      // `allowFallback` says the caller has no validator BY CHOICE — the stale-brief warning was
+      // shown and the user proceeded. Without it, an absent validator means "unknown", and the
+      // server refuses rather than substituting one it read itself.
+      return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null, known?.absence === 'overwrite')).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -434,7 +454,14 @@ export class CampaignsComponent {
             // The ETag goes with the id: it is this caller's LAST-SEEN version, and sending it
             // on the next save is what makes the If-Match a real precondition rather than a
             // header the save re-derives from its own read.
-            this.knownBriefIds.set(ownershipKey, { id: result.briefId, etag: result.etag });
+            // A null etag here is UNKNOWN, not permission: the write returned no validator, or
+            // its approval outcome was indeterminate. The next save must not silently fall back
+            // to a freshly read one on the strength of it.
+            this.knownBriefIds.set(ownershipKey, {
+              id: result.briefId,
+              etag: result.etag,
+              ...(result.etag === null ? { absence: 'unknown' as const } : {}),
+            });
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
@@ -474,7 +501,9 @@ export class CampaignsComponent {
             if (result.conflict === 'stale-brief' && ownershipKey !== null) {
               const owned = this.knownBriefIds.get(ownershipKey);
               if (owned !== undefined) {
-                this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null });
+                // EXPLICIT: the user has just been shown the stale-brief warning. The next save
+                // may take the freshly read validator, which is what proceeding means.
+                this.knownBriefIds.set(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
               }
             }
             this.briefPersistence.set({

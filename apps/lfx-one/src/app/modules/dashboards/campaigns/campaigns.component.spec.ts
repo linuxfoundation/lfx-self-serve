@@ -334,7 +334,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(otherBrief);
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null, false);
     });
 
     it('sends the created brief id on the next save of the same session', async () => {
@@ -342,7 +342,7 @@ describe('CampaignsComponent brief persistence', () => {
 
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
 
       proceed();
       await fixture.whenStable();
@@ -351,7 +351,7 @@ describe('CampaignsComponent brief persistence', () => {
       // The ETag rides with the id: it is this caller's last-seen version, and sending it is
       // what makes the server's If-Match a real precondition rather than one re-derived from
       // the save's own read.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
     });
 
     /**
@@ -381,7 +381,7 @@ describe('CampaignsComponent brief persistence', () => {
       // `resetToPlanning` emptying the map, NOT the response being superseded — the record now
       // happens before the generation check, because ownership does not expire when the user
       // navigates away. See the queued-save test below for the case that distinction protects.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
     });
 
     /**
@@ -456,7 +456,7 @@ describe('CampaignsComponent brief persistence', () => {
 
       // B must still carry the last-seen validator, so the server can refuse it too. A repeated
       // refusal is recoverable and visible; a silent overwrite of someone else's work is neither.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
     });
 
     it('lets a retry through after a stale-brief conflict instead of dead-ending', async () => {
@@ -469,7 +469,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
 
       // The retry must NOT re-send the rejected ETag. Keeping it would make every attempt fail
       // identically — a permanent dead end for a save this session is entitled to make. Ownership
@@ -477,7 +477,10 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(NEVER);
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null);
+      // `true` — this is the EXPLICIT overwrite path. The user was shown the stale-brief warning
+      // and proceeded, so the absent validator is a decision rather than an unknown, and the
+      // server may fall back to the one it reads. An unwarned null must NOT reach this state.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, true);
     });
 
     it('treats a padded slug as a different brief from the unpadded one', async () => {
@@ -497,7 +500,7 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       // Must NOT inherit the unpadded brief's id: it names a different row.
-      expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null, null, false);
     });
 
     it('keeps an id recorded by a save that lands after a foundation switch', async () => {
@@ -524,7 +527,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', 'W/"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', 'W/"1"', false);
     });
 
     it('hands a queued save the id its predecessor created for the same event', async () => {
@@ -549,7 +552,7 @@ describe('CampaignsComponent brief persistence', () => {
       // The ETag rides with the id: it is this caller's last-seen version, and sending it is
       // what makes the server's If-Match a real precondition rather than one re-derived from
       // the save's own read.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', 'W/"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', 'W/"1"', false);
     });
 
     /**
@@ -565,7 +568,7 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
     });
 
     it('files the brief under the foundation selected at save time', async () => {
@@ -580,7 +583,7 @@ describe('CampaignsComponent brief persistence', () => {
 
       // The third argument is the known brief id, null here: nothing has been saved yet in this
       // session, so the page can claim no ownership and the save must CREATE.
-      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null, null);
+      expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null, null, false);
     });
 
     it("never replays one foundation's brief id against another foundation", async () => {
@@ -588,7 +591,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null, null, false);
 
       // Switch to CNCF and save. The brief survives the switch by design, but the OWNERSHIP does
       // not: `tlf-1` names a row in a different project, so this must create rather than replace.
@@ -597,7 +600,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'cncf-1', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null, null);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null, null, false);
 
       // Back to TLF. A single scalar would now hold `cncf-1` and send it here, and the server
       // would refuse an update against a row this session genuinely owns. The id TLF issued is
@@ -607,7 +610,7 @@ describe('CampaignsComponent brief persistence', () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"2"', created: false, approved: true }));
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"');
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"', false);
     });
   });
 

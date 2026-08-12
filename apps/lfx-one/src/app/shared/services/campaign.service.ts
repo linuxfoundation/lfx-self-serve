@@ -73,7 +73,8 @@ export class CampaignService {
     brief: CampaignBriefOutput,
     projectSlug: string,
     knownBriefId: string | null = null,
-    knownEtag: string | null = null
+    knownEtag: string | null = null,
+    allowEtagFallback = false
   ): Observable<CampaignBriefPersistResult> {
     // `brief_id` is sent only when this session has established ownership of that row — in this
     // phase, by having created it. It is the caller's proof: the server refuses to replace a
@@ -86,6 +87,11 @@ export class CampaignService {
       // Only alongside the id. An ETag on its own names no row, and the server pairs them.
       if (knownEtag !== null && knownEtag !== '') {
         params = params.set('etag', knownEtag);
+      } else if (allowEtagFallback) {
+        // No validator BY CHOICE: the user saw the stale-brief warning and proceeded. Without
+        // this the server cannot tell that from "the write returned no ETag", and substituting a
+        // freshly read validator for the second would bypass the precondition silently.
+        params = params.set('etag_fallback', '1');
       }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
