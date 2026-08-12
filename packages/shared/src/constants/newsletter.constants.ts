@@ -39,6 +39,12 @@ export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
 // global one.
 export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 
+// Upstream caps the `top_links` click-analytics breakdown at the 20 highest-click
+// links (lfx-v2-newsletter-service PR #76). Mirrored here so the "Top clicked
+// links" card's display note and defensive display slice can't drift from
+// upstream or from each other.
+export const NEWSLETTER_TOP_LINKS_LIMIT = 20;
+
 // Per-request timeout for the send endpoint, overriding the API client's 30s
 // default. The new upstream accepts sends in well under a second (202 +
 // background fan-out), but while a pre-async newsletter-service is deployed
