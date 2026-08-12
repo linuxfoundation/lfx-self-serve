@@ -184,7 +184,18 @@ export class PlanningTabComponent implements OnInit {
    * Built as an observable field rather than inside `ngOnInit` because `toObservable` needs an
    * injection context, and field initialisers have one.
    */
-  private readonly activeFoundationSlug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? ''));
+  /**
+   * The active foundation slug, coalesced to `''` when there is no context.
+   *
+   * Shared by the lookup pipeline and the stale-response guard rather than each reading
+   * `activeContext()?.slug` for itself: the guard compares the value a response was REQUESTED
+   * with against the value now current, and the pipeline's `?? ''` means an absent context
+   * reaches it as `''`. A guard re-deriving the raw `undefined` would compare `'' !== undefined`
+   * and discard every legitimate response while no foundation is selected.
+   */
+  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
 
   // === Lifecycle ===
   public ngOnInit(): void {
@@ -220,7 +231,7 @@ export class PlanningTabComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ slug, project, result }) => {
-        if (slug !== this.currentSlug || project !== this.projectContextService.activeContext()?.slug) {
+        if (slug !== this.currentSlug || project !== this.activeFoundationSlug()) {
           return;
         }
         this.applySavedBrief(result);
