@@ -100,10 +100,25 @@ export class CampaignsComponent {
    * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
    * brief, a different event, claim ownership of the previous one's row.
    *
+   * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
+   * over. That switch does not re-create this component and deliberately keeps the brief (see the
+   * constructor), so with one slot: saving under TLF then under CNCF overwrites TLF's id, and
+   * switching back to TLF replays CNCF's id against TLF's row — an update the user does own,
+   * refused. Merely tagging the slot with its slug fixes the wrong id but not the loss: returning
+   * to TLF would then create a second row instead of replacing the one this session made.
+   *
+   * A map keyed by slug matches how the server identifies a brief, `(project_id, event_slug)`: an
+   * id can only be replayed to the project that issued it, and every project keeps its own. That
+   * makes the invariant structural rather than something each future reset path must remember.
+   * It applies to BOTH sources above: a restored id is as foundation-specific as a created one.
+   *
+   * The event half needs no key: every event change goes through `resetToPlanning`, which clears
+   * the map with the brief it belonged to.
+   *
    * A plain field rather than a signal: nothing renders it, and it answers "may this save
    * replace?" at the moment a request is built.
    */
-  private knownBriefId: string | null = null;
+  private knownBriefIdBySlug = new Map<string, string>();
 
   private briefPersistenceGeneration = 0;
 
@@ -257,7 +272,7 @@ export class CampaignsComponent {
       // on screen came out of campaign-service, and the next save sends it so the server will
       // replace that row rather than refusing as unowned (LFXV2-3200). Status stays `off`
       // because nothing is in flight — the id is provenance, not progress.
-      this.briefPersistence.set({ status: 'off', briefId: this.knownBriefId, message: null });
+      this.briefPersistence.set({ status: 'off', briefId: this.knownBriefIdBySlug.get(this.activeFoundationSlug()) ?? null, message: null });
       return;
     }
     this.persistBrief(brief);
@@ -267,7 +282,10 @@ export class CampaignsComponent {
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
     // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
     // resting state in one place.
-    this.knownBriefId = briefId;
+    //
+    // Filed under the foundation it was loaded from, like a created id: a restored id names a row
+    // in exactly one project, so replaying it to another would be refused there.
+    this.knownBriefIdBySlug.set(this.activeFoundationSlug(), briefId);
     this.onProceedToImplementation(brief, true);
   }
 
@@ -305,12 +323,15 @@ export class CampaignsComponent {
     // generation and discards the outcome anyway.
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
-    // Snapshotted for the SAME reason, and here the reason is sharper. `knownBriefId` is the
+    // Snapshotted for the SAME reason, and here the reason is sharper. A known brief id is the
     // proof that THIS brief came out of storage. Read inside the queued callback instead, a
     // restore landing between Proceed and execution would attach the restored brief's id to a
     // GENERATED brief — handing it ownership of a row it has never seen and inverting the guard
     // into a licence to overwrite, which is precisely what LFXV2-3200 exists to prevent.
-    const knownBriefId = this.knownBriefId;
+    //
+    // Only an id issued under THIS foundation is ours to replay; one from another foundation
+    // names a row in a different project and would be refused there.
+    const knownBriefId = this.knownBriefIdBySlug.get(projectSlug) ?? null;
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -343,18 +364,25 @@ export class CampaignsComponent {
             this.briefPersistenceEnabled.set(true);
           }
 
-          // Latched BEFORE the generation check, for the same reason `enabled` is: the ROW
-          // exists regardless of which brief is now on screen. Recorded after the check instead,
-          // a superseded save would never record the id it just created — so a second Proceed
-          // while the first was in flight would send null and be refused against a row this
-          // session made moments earlier.
+          // Recorded only while this save's brief is STILL the one on screen — the generation
+          // check, same as the banner below it.
           //
-          // Only on a real write. A refused save (`conflict`) names the row that BLOCKED it, and
-          // adopting that id would hand this session ownership of exactly the brief it was told
-          // it does not own — turning the guard into a way through itself.
-          if (result.enabled && result.conflict === undefined && result.briefId !== '') {
-            this.knownBriefId = result.briefId;
-          }
+          // An earlier version latched this before the check "for the same reason `enabled` is",
+          // which was wrong: `enabled` is a fact about the DEPLOYMENT and equally true for every
+          // brief, while a brief id is the most brief-specific thing there is. Latching it early
+          // let a response land after `resetToPlanning` had cleared the id and re-assign it — so
+          // the NEXT brief, a different event, inherited ownership of the previous one's row.
+          // That is the exact hazard the generation check exists to prevent.
+          //
+          // The superseded case that motivated the early latch is handled by keying on the BRIEF
+          // rather than on timing: a save whose brief is gone has no id worth keeping, because
+          // any future save is for a different brief and must prove its own ownership. The row
+          // it created is not lost — the next save for that event finds it and is refused,
+          // which is the correct answer for a caller that can no longer name it.
+          //
+          // Only on a real write: a refused save names the row that BLOCKED it, and adopting
+          // that id would hand this session ownership of exactly the brief it was told it does
+          // not own.
 
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
@@ -373,6 +401,9 @@ export class CampaignsComponent {
               message: 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
             });
             return;
+          }
+          if (result.conflict === undefined && result.briefId !== '') {
+            this.knownBriefIdBySlug.set(projectSlug, result.briefId);
           }
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
@@ -409,7 +440,7 @@ export class CampaignsComponent {
     this.briefPersistence.set(this.idlePersistence);
     // Cleared with the brief it belonged to. A stale id here would let the NEXT brief — a
     // different event entirely — claim ownership of the previous one's row and replace it.
-    this.knownBriefId = null;
+    this.knownBriefIdBySlug.clear();
     this.selectedTab.set('planning');
   }
 }

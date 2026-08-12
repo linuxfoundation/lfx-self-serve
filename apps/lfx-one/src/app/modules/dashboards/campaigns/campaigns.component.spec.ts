@@ -326,26 +326,30 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
-     * A superseded save must still record the row it created.
+     * A SUPERSEDED save must NOT record the row it created.
      *
-     * The id is latched BEFORE the generation check, like `enabled` is: the row exists
-     * regardless of which brief is now on screen. Recorded after the check, a second Proceed
-     * while the first was in flight would bump the generation, drop the id, and then be refused
-     * against a brief this very session had just created.
+     * The opposite of this was asserted for one round, and it was wrong. A brief id is the most
+     * brief-specific thing the response carries, so it belongs behind the generation check with
+     * the banner — not latched early like `enabled`, which is a fact about the deployment. Left
+     * early, a response landing after `resetToPlanning` re-assigns the id and the NEXT brief, a
+     * different event, inherits ownership of the previous one's row.
+     *
+     * Nothing is lost by forgetting it: the next save for that event finds the row and is
+     * refused, which is the correct answer for a caller that can no longer name it.
      */
-    it('records the created id even when the save is superseded', async () => {
+    it('does not record the created id when the save is superseded', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
 
       proceed();
-      // Supersede it before the response is applied — the same bump a second Proceed causes.
+      // Supersede it before the response is applied.
       switchProgram();
       await fixture.whenStable();
 
       proceed();
       await fixture.whenStable();
 
-      // The row from the discarded save is still this session's to replace.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
+      // No inherited ownership: the new brief must prove its own.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null);
     });
 
     /**
@@ -381,6 +385,33 @@ describe('CampaignsComponent brief persistence', () => {
       // The third argument is the known brief id, null here: nothing has been saved yet in this
       // session, so the page can claim no ownership and the save must CREATE.
       expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null);
+    });
+
+    it("never replays one foundation's brief id against another foundation", async () => {
+      // Save under TLF: this session now owns TLF's row and records its id.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null);
+
+      // Switch to CNCF and save. The brief survives the switch by design, but the OWNERSHIP does
+      // not: `tlf-1` names a row in a different project, so this must create rather than replace.
+      selectFoundation('cncf');
+      await fixture.whenStable();
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'cncf-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null);
+
+      // Back to TLF. A single scalar would now hold `cncf-1` and send it here, and the server
+      // would refuse an update against a row this session genuinely owns. The id TLF issued is
+      // the only one that may be replayed to TLF.
+      selectFoundation('tlf');
+      await fixture.whenStable();
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1');
     });
   });
 
