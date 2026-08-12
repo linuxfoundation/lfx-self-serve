@@ -43,11 +43,22 @@
         [deleting]="deletingDraft()"
         [committeesError]="committeesError()"
         [committeesLoading]="committeesLoading()"
+        [scheduleMinDate]="scheduleMinDate"
+        [scheduleMaxDate]="scheduleMaxDate"
+        [scheduleMinDateTime]="scheduleMinDateTime()"
+        [scheduleSummary]="scheduleSummary()"
+        [scheduleWindowError]="scheduleWindowError()"
+        [canSchedule]="canSchedule()"
+        [scheduling]="scheduling()"
+        [isScheduleReadOnly]="isScheduleReadOnly()"
+        [cancelingSchedule]="cancelingSchedule()"
         (editAudience)="enterStep(1)"
         (editContent)="enterStep(2)"
         (editSend)="enterStep(3)"
         (send)="onSend()"
         (sendTest)="onSendTest()"
+        (schedule)="onSchedule()"
+        (cancelSchedule)="onCancelSchedule()"
         (preview)="openPreviewDrawer()"
         (delete)="onDeleteDraft()"
         (retryCommittees)="retryCommittees()">
@@ -195,6 +206,7 @@
               <p-step-panel [value]="3" data-testid="newsletter-manage-panel-3">
                 <ng-template #content>
                   <lfx-newsletter-send-step
+                    [form]="form"
                     [subject]="form.controls.subject.value"
                     [recipientCount]="recipientCount()"
                     [committeeCount]="form.controls.committeeUids.value.length"
@@ -206,8 +218,20 @@
                     [sending]="submitting()"
                     [canSendTest]="canSendTest()"
                     [testSending]="testSending()"
+                    [sendMode]="sendModeValue()"
+                    [scheduleMinDate]="scheduleMinDate"
+                    [scheduleMaxDate]="scheduleMaxDate"
+                    [scheduleMinDateTime]="scheduleMinDateTime()"
+                    [scheduleSummary]="scheduleSummary()"
+                    [scheduleWindowError]="scheduleWindowError()"
+                    [canSchedule]="canSchedule()"
+                    [scheduling]="scheduling()"
+                    [isScheduleReadOnly]="isScheduleReadOnly()"
+                    [cancelingSchedule]="cancelingSchedule()"
                     (send)="onSend()"
-                    (sendTest)="onSendTest()">
+                    (sendTest)="onSendTest()"
+                    (schedule)="onSchedule()"
+                    (cancelSchedule)="onCancelSchedule()">
                   </lfx-newsletter-send-step>
                 </ng-template>
               </p-step-panel>

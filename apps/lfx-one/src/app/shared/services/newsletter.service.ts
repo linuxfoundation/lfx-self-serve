@@ -10,6 +10,7 @@ import {
   MyNewsletter,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
@@ -17,6 +18,7 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -121,6 +123,29 @@ export class NewsletterService {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
     return this.http
       .post<NewsletterSendResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/send`, {}, { headers })
+      .pipe(take(1));
+  }
+
+  /**
+   * Arm a saved (or overridden) `scheduled_at` at the send provider. Omit
+   * `scheduledAt` to arm the value already saved on the draft.
+   */
+  public scheduleNewsletter(projectUid: string, newsletterUid: string, version: number, scheduledAt?: string): Observable<NewsletterScheduleResult> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    const body = scheduledAt ? { scheduled_at: scheduledAt } : {};
+    return this.http
+      .post<NewsletterScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/schedule`, body, { headers })
+      .pipe(take(1));
+  }
+
+  /**
+   * Revert an armed newsletter to `draft`. Upstream retains `scheduled_at` so
+   * re-arming doesn't require re-entering the time.
+   */
+  public cancelSchedule(projectUid: string, newsletterUid: string, version: number): Observable<NewsletterCancelScheduleResult> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http
+      .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
       .pipe(take(1));
   }
 

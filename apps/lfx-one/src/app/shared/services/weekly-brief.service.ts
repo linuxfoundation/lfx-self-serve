@@ -11,6 +11,7 @@ import {
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
+  ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
@@ -87,6 +88,19 @@ export class WeeklyBriefService {
    */
   public shareWeeklyBrief(committeeId: string, revision: number): Observable<ShareWeeklyBriefResult> {
     return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share`, { revision }).pipe(take(1));
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/share-slack
+   *
+   * No `catchError` — the caller handles 404 (no brief) / 409 (no Slack webhook configured /
+   * stale revision / backend not live) / 502 (Slack rejected the message or was unreachable)
+   * states by classifying the error itself, same as `shareWeeklyBrief`.
+   */
+  public shareWeeklyBriefToSlack(committeeId: string, revision: number): Observable<ShareWeeklyBriefToSlackResult> {
+    return this.http
+      .post<ShareWeeklyBriefToSlackResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share-slack`, { revision })
+      .pipe(take(1));
   }
 
   /**
