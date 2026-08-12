@@ -145,6 +145,28 @@ describe('CampaignsComponent — email delivery channel', () => {
    * switch. The email panel renders a placeholder today, which is precisely why this would go
    * unnoticed until the real staging form lands.
    */
+  it('does not claim a brief is ready when none has been generated', () => {
+    // The Implement tab is directly clickable — no disabled binding — so this panel is reachable
+    // before anything has been generated, and "Your brief is ready" is then simply false, told to
+    // someone who has not started. The rest of the panel explains what is missing from the
+    // channel, which is true either way.
+    internals().selectorForm.controls.deliveryType.setValue('email');
+    internals().selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    const pending = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-implementation-pending"]');
+    expect(pending, 'the pending panel must render').not.toBeNull();
+    expect(pending?.textContent).not.toContain('Your brief is ready');
+    expect(pending?.textContent).toContain('Staging an email clones');
+
+    internals().onEmailProceedToImplementation({ eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput);
+    internals().selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    const withBrief = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-implementation-pending"]');
+    expect(withBrief?.textContent).toContain('Your brief is ready');
+  });
+
   it('clears both delivery types when the program changes', () => {
     const emailBrief = { eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput;
     internals().onProceedToImplementation(exampleBrief);

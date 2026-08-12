@@ -105,9 +105,19 @@
             data-testid="campaigns-email-implementation-pending">
             <i class="fa-light fa-envelope-open-text text-3xl text-gray-400" aria-hidden="true"></i>
             <h2 class="text-base font-semibold text-gray-900">Email staging is not wired up yet</h2>
+            <!--
+              The brief sentence is gated on there BEING a brief. This tab is directly clickable
+              with no disabled binding, so it is reachable before anything has been generated —
+              and "Your brief is ready" is then simply false, told to someone who has not started.
+              The rest of the panel is true either way: it explains what is missing from the
+              channel, which does not depend on the user's progress.
+            -->
             <p class="max-w-md text-sm text-gray-500">
-              Your brief is ready. Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint
-              that is still in review.
+              @if (emailBriefOutput()) {
+                Your brief is ready.
+              }
+              Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint that is still in
+              review.
             </p>
           </div>
         </div>
