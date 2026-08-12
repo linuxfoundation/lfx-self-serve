@@ -140,6 +140,7 @@ export class MeetingCardComponent implements OnInit {
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public drawerGuestCount: WritableSignal<number> = signal(0);
+  private readonly registeredInSession: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -178,7 +179,7 @@ export class MeetingCardComponent implements OnInit {
   // Computed signals for invited/registration status to ensure reactivity after registration
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
-    () => this.authenticated() && !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
+    () => this.authenticated() && !this.isInvited() && !this.registeredInSession() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)
@@ -327,6 +328,7 @@ export class MeetingCardComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
+        this.registeredInSession.set(true);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
