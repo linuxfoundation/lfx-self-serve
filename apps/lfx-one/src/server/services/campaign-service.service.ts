@@ -668,12 +668,27 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
   const copy = asRecord(found.copy) ?? {};
   const targeting = asRecord(found.targeting) ?? {};
 
+  // Narrowed against the union rather than passed through: an unknown platform id reaches a
+  // template that indexes icon and label maps by it, and renders blank rather than erroring.
+  const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
+
+  // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —
+  // not a brief with no platforms. `populateFromBrief` applies the selection only when it is
+  // non-empty (`if (brief.selectedPlatforms?.length)`), so an empty array leaves its default of
+  // `google-ads` standing: a Reddit-only brief would restore as a Google Ads campaign, with the
+  // user's real choice silently replaced by one they never made. Reporting it unreadable puts
+  // that in front of them instead.
+  //
+  // Only when platforms were STORED. A brief that genuinely lists none is a different case and
+  // stays readable — nothing is being contradicted, and the default is then the ordinary one.
+  if ((found.platforms ?? []).length > 0 && selectedPlatforms.length === 0) {
+    return null;
+  }
+
   return {
     eventDetails: { ...eventDetails, slug: eventSlug, registrationUrl },
     programType: found.program_type as CampaignProgramType,
-    // Narrowed against the union rather than passed through: an unknown platform id reaches a
-    // template that indexes icon and label maps by it, and renders blank rather than erroring.
-    selectedPlatforms: (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p)),
+    selectedPlatforms,
     structuredCopy: asRecord(copy['structured']),
     linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn']),
     redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit']),

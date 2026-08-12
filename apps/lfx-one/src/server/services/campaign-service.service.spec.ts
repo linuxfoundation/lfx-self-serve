@@ -740,6 +740,25 @@ describe('fromBriefResponse', () => {
    * so adding one to an interface without adding it to the coercion list fails here rather than
    * throwing on a user's Restore.
    */
+  it('reports a brief whose every stored platform is unknown as unreadable', () => {
+    // `populateFromBrief` applies the selection only when non-empty
+    // (`if (brief.selectedPlatforms?.length)`), so an empty array leaves its `google-ads` default
+    // standing — a Reddit-only brief would restore as a Google Ads campaign, the user's real
+    // choice silently replaced by one they never made. Unreadable puts that in front of them.
+    expect(fromBriefResponse(storedBrief({ platforms: ['tiktok-ads'] }))).toBeNull();
+  });
+
+  it('keeps a brief readable when it stores no platforms at all', () => {
+    // A different case from the one above: nothing is being contradicted, so the consumer's
+    // default is the ordinary one rather than a silent replacement.
+    expect(fromBriefResponse(storedBrief({ platforms: [] }))).not.toBeNull();
+  });
+
+  it('keeps the platforms it recognises when only SOME are unknown', () => {
+    const brief = fromBriefResponse(storedBrief({ platforms: ['tiktok-ads', 'linkedin-ads'] }));
+    expect(brief?.selectedPlatforms).toEqual(['linkedin-ads']);
+  });
+
   it('drops array elements the consumers would crash on', () => {
     // `Any` columns are unvalidated on the way in, so a stored row can hold `[null]`. The
     // Implementation tab dereferences elements directly — `v.primaryText.trim()`
