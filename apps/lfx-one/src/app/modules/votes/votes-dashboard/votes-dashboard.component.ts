@@ -15,7 +15,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, finalize, map, Observable, of, switchMap, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -100,7 +100,7 @@ export class VotesDashboardComponent {
   });
 
   // Lens-change pagination reset is independent of the data-fetch pipelines so it fires for every lens emission, not just Me-lens loads.
-  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and stop at the page-token guard.
+  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and walk from a stale page index.
   public constructor() {
     toObservable(this.lensService.activeLens)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -271,38 +271,63 @@ export class VotesDashboardComponent {
           }
 
           const rows = this.rowsPerPage();
-          const first = this.currentFirst();
-          const pageIndex = first / rows;
-          const pageToken = pageIndex > 0 ? this.pageTokens[pageIndex - 1] : undefined;
-
-          if (pageIndex > 0 && !pageToken) {
-            this.currentFirst.set(0);
-            this.loading.set(false);
-            return of([]);
-          }
-
+          const pageIndex = this.currentFirst() / rows;
           const searchName = this.searchQuery();
           const queryFilters = this.buildFilters();
 
-          return this.voteService
-            .getVotesByProjectPaginated(project.uid, rows, pageToken, searchName || undefined, queryFilters.length ? queryFilters : undefined)
-            .pipe(
-              tap((response: PaginatedResponse<Vote>) => {
-                if (response.page_token) {
-                  this.pageTokens[pageIndex] = response.page_token;
-                }
-                this.loading.set(false);
-              }),
-              map((response: PaginatedResponse<Vote>) => response.data),
-              catchError(() => {
-                this.loading.set(false);
-                return of([]);
-              })
-            );
+          return this.fetchVotePage(project.uid, rows, pageIndex, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
+            tap(() => this.loading.set(false)),
+            map((response: PaginatedResponse<Vote>) => response.data),
+            catchError(() => {
+              this.loading.set(false);
+              return of([]);
+            })
+          );
         })
       ),
       { initialValue: [] }
     );
+  }
+
+  /**
+   * Fetches one page of votes. Cursor pagination only returns the *next* page's token, so a direct jump to a page whose
+   * token hasn't been collected yet walks forward from the nearest cached token, caching intermediate tokens along the way.
+   * If the cursor exhausts before the target (stale totalRecords, e.g. votes deleted after the count fetch), falls back to page 1.
+   */
+  private fetchVotePage(projectUid: string, rows: number, pageIndex: number, searchName?: string, filters?: string[]): Observable<PaginatedResponse<Vote>> {
+    const fetchSingle = (index: number): Observable<PaginatedResponse<Vote>> =>
+      this.voteService.getVotesByProjectPaginated(projectUid, rows, index > 0 ? this.pageTokens[index - 1] : undefined, searchName, filters).pipe(
+        tap((response: PaginatedResponse<Vote>) => {
+          if (response.page_token) {
+            this.pageTokens[index] = response.page_token;
+          }
+        })
+      );
+
+    const walk = (index: number): Observable<PaginatedResponse<Vote>> =>
+      fetchSingle(index).pipe(
+        switchMap((response: PaginatedResponse<Vote>) => {
+          if (index === pageIndex) {
+            return of(response);
+          }
+          if (!response.page_token) {
+            this.currentFirst.set(0);
+            return index === 0 ? of(response) : fetchSingle(0);
+          }
+          return walk(index + 1);
+        })
+      );
+
+    // Nearest page fetchable directly: page 0 needs no token; page p needs pageTokens[p - 1].
+    let startIndex = 0;
+    for (let i = pageIndex; i > 0; i--) {
+      if (this.pageTokens[i - 1]) {
+        startIndex = i;
+        break;
+      }
+    }
+
+    return walk(startIndex);
   }
 
   private initSelectedListVote(): Signal<Vote | null> {
