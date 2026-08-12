@@ -95,8 +95,22 @@ export class CampaignsComponent {
    *
    * Cleared by `resetToPlanning` with the brief it belonged to. A stale id would let the NEXT
    * brief — a different event — claim ownership of the previous one's row.
+   *
+   * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
+   * over. That switch does not re-create this component and deliberately keeps the brief (see the
+   * constructor), so with one slot: saving under TLF then under CNCF overwrites TLF's id, and
+   * switching back to TLF replays CNCF's id against TLF's row — an update the user does own,
+   * refused. Merely tagging the slot with its slug fixes the wrong id but not the loss: returning
+   * to TLF would then create a second row instead of replacing the one this session made.
+   *
+   * A map keyed by slug matches how the server identifies a brief, `(project_id, event_slug)`: an
+   * id can only be replayed to the project that issued it, and every project keeps its own. That
+   * makes the invariant structural rather than something each future reset path must remember.
+   *
+   * The event half needs no key: every event change goes through `resetToPlanning`, which clears
+   * the map with the brief it belonged to.
    */
-  private knownBriefId: string | null = null;
+  private knownBriefIdBySlug = new Map<string, string>();
 
   private briefPersistenceGeneration = 0;
 
@@ -266,7 +280,10 @@ export class CampaignsComponent {
     // Snapshotted alongside the slug, and for a sharper reason: read inside the queued callback
     // instead, a save that completed while THIS one waited would hand its id to a different
     // brief — ownership of a row this payload has never seen.
-    const knownBriefId = this.knownBriefId;
+    //
+    // Only an id issued under THIS foundation is ours to replay; one from another foundation
+    // names a row in a different project and would be refused there.
+    const knownBriefId = this.knownBriefIdBySlug.get(projectSlug) ?? null;
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -338,7 +355,7 @@ export class CampaignsComponent {
             return;
           }
           if (result.conflict === undefined && result.briefId !== '') {
-            this.knownBriefId = result.briefId;
+            this.knownBriefIdBySlug.set(projectSlug, result.briefId);
           }
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
@@ -373,7 +390,7 @@ export class CampaignsComponent {
     this.briefPersistenceGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(this.idlePersistence);
-    this.knownBriefId = null;
+    this.knownBriefIdBySlug.clear();
     this.selectedTab.set('planning');
   }
 }

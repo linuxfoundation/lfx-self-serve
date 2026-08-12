@@ -363,6 +363,33 @@ describe('CampaignsComponent brief persistence', () => {
       // session, so the page can claim no ownership and the save must CREATE.
       expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null);
     });
+
+    it("never replays one foundation's brief id against another foundation", async () => {
+      // Save under TLF: this session now owns TLF's row and records its id.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', null);
+
+      // Switch to CNCF and save. The brief survives the switch by design, but the OWNERSHIP does
+      // not: `tlf-1` names a row in a different project, so this must create rather than replace.
+      selectFoundation('cncf');
+      await fixture.whenStable();
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'cncf-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'cncf', null);
+
+      // Back to TLF. A single scalar would now hold `cncf-1` and send it here, and the server
+      // would refuse an update against a row this session genuinely owns. The id TLF issued is
+      // the only one that may be replayed to TLF.
+      selectFoundation('tlf');
+      await fixture.whenStable();
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'tlf-1', etag: '"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1');
+    });
   });
 
   /**
