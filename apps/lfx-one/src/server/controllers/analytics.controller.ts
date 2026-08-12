@@ -2782,7 +2782,8 @@ export class AnalyticsController {
    * GET /api/analytics/event-roster
    * Foundation event roster — one row per event with registration/sponsorship
    * actual-vs-goal, comparison rating, and CFP status. Defaults to upcoming events;
-   * pass includePast=true for the full history.
+   * pass includePast=true to include past events as well. With a period supplied that means
+   * past + upcoming within the period, not the full history.
    */
   public async getEventRoster(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_event_roster');

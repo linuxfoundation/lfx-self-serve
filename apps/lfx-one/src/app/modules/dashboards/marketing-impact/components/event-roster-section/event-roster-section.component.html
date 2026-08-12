@@ -36,7 +36,12 @@
           [attr.aria-pressed]="includePast()"
           (click)="toggleIncludePast(true)"
           data-testid="event-roster-all">
-          All events
+          <!--
+            "Including past", not "All events": the page's period picker scopes this list, so with
+            a period selected this shows past + upcoming *within that period* rather than the full
+            history. Labelling it "All events" claimed a range it does not return.
+          -->
+          Including past
         </button>
       </div>
     </div>

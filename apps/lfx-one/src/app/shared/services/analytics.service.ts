@@ -1163,7 +1163,8 @@ export class AnalyticsService {
   }
 
   /**
-   * Foundation event roster (upcoming by default; pass includePast for the full history).
+   * Foundation event roster (upcoming by default; pass includePast to include past events,
+   * scoped to the period when one is supplied).
    * Emits an empty roster on error so the table shows its empty state rather than breaking.
    */
   public getEventRoster(foundationSlug: string, includePast = false, period?: string): Observable<EventRosterResponse> {

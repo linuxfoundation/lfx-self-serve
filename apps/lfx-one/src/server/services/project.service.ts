@@ -5088,7 +5088,8 @@ export class ProjectService {
    * Sourced from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (per event) left
    * joined to sponsorship actuals aggregated from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. A goal
    * of 0 means "no goal required" for that event (the UI renders no progress bar). Defaults to
-   * upcoming events only; pass includePast to return the full history.
+   * upcoming events only; pass includePast to include past events too — bounded by the period
+   * when one is supplied, so this is not necessarily the full history.
    *
    * A period narrows the roster to events *starting* inside it, but only together with
    * includePast — see `applyPeriod` below. The upcoming view is deliberately unbounded: an
@@ -7730,6 +7731,12 @@ export class ProjectService {
           .execute<PointRow>(pointsQuery, [eventId], { expectMissingObject: true })
           .then((result) => result.rows)
           .catch((error: unknown) => {
+            // Only an unmaterialized table degrades to an empty curve. A timeout, a permission
+            // error or a bad column is an outage, and returning [] for those would render as a
+            // measured "no pacing data" — the outer catch's contract is to propagate them.
+            if (!SnowflakeService.isMissingObjectError(error)) {
+              throw error;
+            }
             logger.warning(undefined, 'get_event_pacing', 'Daily pacing curve unavailable, serving headline only', {
               event_id: eventId,
               error: error instanceof Error ? error.message : String(error),
