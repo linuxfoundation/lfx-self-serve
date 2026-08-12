@@ -4,11 +4,11 @@
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
 
@@ -33,7 +33,6 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
   imports: [
     ReactiveFormsModule,
     SelectComponent,
-    ButtonComponent,
     FilterPillsComponent,
     OverviewTabComponent,
     AttributionSectionComponent,
@@ -49,6 +48,7 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
 export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
   private readonly fb = inject(FormBuilder);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
@@ -72,6 +72,7 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
+  protected readonly isExecutiveDirector: Signal<boolean> = this.initIsExecutiveDirector();
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
@@ -102,6 +103,11 @@ export class MarketingImpactComponent {
       const allowed = FOCUS_VISIBLE_TABS[this.selectedFocus()];
       return this.tabs.filter((t) => allowed.has(t.id));
     });
+  }
+
+  // Uses currentPersona() not canViewExecutiveDashboards() — LF Staff keep their contributor persona and fall into the !isExecutiveDirector() Social-Listening-only branch.
+  private initIsExecutiveDirector(): Signal<boolean> {
+    return computed(() => this.personaService.currentPersona() === 'executive-director');
   }
 
   private initContextLabel(): Signal<string> {

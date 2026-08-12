@@ -20,8 +20,9 @@ export const COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW = '30d';
  * Attendance-rate thresholds (attended / invited) for engagement classification, computed in the
  * BFF so they can be tuned without a dbt deploy once real distributions are observed. Applies once
  * a member has at least one real invite (`invited > 0`) — see
- * `committee-engagement-classifier.utils.ts`'s `classifyCommitteeEngagement` for the `Emeritus` and
- * tenure-clipping (`member_joined_at`) cases these thresholds don't cover.
+ * `committee-engagement-classifier.utils.ts`'s `classifyCommitteeEngagement` for the `Emeritus`,
+ * `LF Staff` (LFXV2-3101), and tenure-clipping (`member_joined_at`) cases these thresholds don't
+ * cover.
  *   rate <= 0            → Inactive (invited, but attended nothing)
  *   0 < rate < medium     → Low
  *   medium <= rate < high → Medium
@@ -54,10 +55,11 @@ export const COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS: FilterPillOption[] = COMMITTEE
 }));
 
 /**
- * Tag severity per engagement classification for the members-table chip. `Emeritus` is
- * deliberately neutral (`secondary`) — an honorific seat state, never at-risk styling — and
- * `Inactive` only reads as a danger signal on the chip; the actual At-Risk filter uses
- * `isCommitteeEngagementRowAtRisk` (Low, or Inactive with real invites), not this map.
+ * Tag severity per engagement classification for the members-table chip. `Emeritus` and
+ * `LF Staff` (LFXV2-3101) are both deliberately neutral (`secondary`) — seat states with no real
+ * attendance expectation, never at-risk styling — and `Inactive` only reads as a danger signal on
+ * the chip; the actual At-Risk filter uses `isCommitteeEngagementRowAtRisk` (Low, or Inactive with
+ * real invites), not this map.
  */
 export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeEngagementClassification, TagSeverity> = {
   High: 'success',
@@ -65,4 +67,5 @@ export const COMMITTEE_ENGAGEMENT_CLASSIFICATION_TAG_SEVERITY: Record<CommitteeE
   Low: 'warn',
   Inactive: 'danger',
   Emeritus: 'secondary',
+  'LF Staff': 'secondary',
 };

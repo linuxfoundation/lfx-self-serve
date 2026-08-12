@@ -12,14 +12,6 @@
       }
     </div>
     <div class="flex items-center gap-3">
-      <lfx-button
-        label="Export PDF"
-        icon="fa-light fa-file-pdf"
-        severity="secondary"
-        [outlined]="true"
-        [disabled]="true"
-        ariaLabel="Export report as PDF (coming soon)"
-        data-testid="marketing-impact-export-pdf" />
       <lfx-select
         [form]="headerForm"
         control="period"
@@ -36,6 +28,16 @@
   @if (!hasFoundation()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="marketing-impact-empty-state">
       <p class="text-sm text-gray-500">Select a foundation to view marketing impact.</p>
+    </div>
+  } @else if (!isExecutiveDirector()) {
+    <!-- LF Staff: direct access to Social Listening only, no tabs/focus UI for the ED-restricted sections -->
+    <div class="flex flex-col gap-6" data-testid="marketing-impact-social-listening-only">
+      <lfx-social-listening-tab
+        [foundationSlug]="foundationSlug()"
+        [selectedPeriod]="selectedPeriod()"
+        [foundationName]="foundationName()"
+        focusProgram="all"
+        data-testid="marketing-impact-social-listening-tab" />
     </div>
   } @else {
     <!-- Focus filter bar -->

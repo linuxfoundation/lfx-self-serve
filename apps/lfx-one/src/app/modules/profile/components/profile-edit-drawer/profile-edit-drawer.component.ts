@@ -3,16 +3,26 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COUNTRIES, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_BIO_MAX_LENGTH, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_AVATAR_MIME_TYPES,
+  COUNTRIES,
+  MAX_AVATAR_SIZE_BYTES,
+  normalizeTShirtSize,
+  PENDING_PROFILE_SAVE_KEY,
+  PROFILE_BIO_MAX_LENGTH,
+  TSHIRT_SIZES,
+  US_STATES,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
@@ -46,7 +56,8 @@ export class ProfileEditDrawerComponent {
   // Emits the saved metadata so the host layout can apply an optimistic profile update.
   public readonly saved = output<Partial<UserMetadata>>();
 
-  // Bio length cap, shared with the server validator so the template maxlength stays in sync.
+  // Bio length cap, shared with the server validator. Drives the form's code-point validator and
+  // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
 
   // Profile edit form
@@ -61,7 +72,9 @@ export class ProfileEditDrawerComponent {
     postal_code: ['', [Validators.maxLength(20)]],
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
-    bio: ['', [Validators.maxLength(PROFILE_BIO_MAX_LENGTH)]],
+    // Code-point cap (not Validators.maxLength, which counts UTF-16 units) to match the
+    // auth-service 2000-rune limit; the native maxlength attribute is intentionally dropped.
+    bio: ['', [maxCodePointsValidator(PROFILE_BIO_MAX_LENGTH)]],
     job_title: ['', [Validators.maxLength(100)]],
     // Organization is selected from work-history orgs (a constrained list); the only remaining
     // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
@@ -77,10 +90,37 @@ export class ProfileEditDrawerComponent {
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
 
-  // True while any drawer mutation is in flight (profile save or primary-email PUT). Every dismissal
-  // and save path gates on this so an in-flight change can't be interrupted or left stale by a
-  // close/reopen — see onVisibleChange and the drawer template.
-  public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail());
+  // Live code-point count of the bio, backing the "x / max" counter. Seeded in populateForm
+  // (patchValue uses emitEvent:false) and hard-capped at bioMaxLength by the valueChanges sub.
+  public readonly bioLength = signal(0);
+  // Last within-cap bio value; the valueChanges sub reverts to it when an edit exceeds the cap.
+  private lastValidBio = '';
+  // Bio value seeded from the opened profile; a rejected over-cap edit that clips back to it must
+  // not leave the control dirty (would enable Save on a no-op).
+  private seededBio = '';
+
+  // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
+  // upload). Every dismissal and save path gates on this so an in-flight change can't be
+  // interrupted or left stale by a close/reopen — see onVisibleChange and the drawer template.
+  public readonly busy = computed(() => this.saving() || this.savingPrimaryEmail() || this.avatarUploading());
+
+  // Avatar signals
+  private readonly avatarInput = viewChild<ElementRef<HTMLInputElement>>('avatarInput');
+  public readonly avatarUploading = signal(false);
+  // The avatar URL that failed to load, if any — mirrors ProfilePanelComponent's fallback pattern
+  // so a broken/expired picture URL falls back to initials instead of a broken image icon.
+  private readonly avatarErrorUrl = signal<string | null>(null);
+  public readonly avatarUrl = computed(() => this.combinedProfile()?.profile?.picture || '');
+  public readonly avatarInitials = computed(() => {
+    const profile = this.combinedProfile();
+    if (!profile) return 'U';
+    const cleanUsername = stripAuthPrefixOrNull(profile.user.username);
+    return profile.user.first_name?.charAt(0).toUpperCase() || cleanUsername?.charAt(0).toUpperCase() || 'U';
+  });
+  public readonly showAvatarImage = computed(() => {
+    const url = this.avatarUrl();
+    return !!url && this.avatarErrorUrl() !== url;
+  });
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
@@ -182,6 +222,30 @@ export class ProfileEditDrawerComponent {
     this.profileForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.hasChanges.set(this.profileForm.dirty);
     });
+
+    // Hard-cap the bio by code point (not UTF-16 units) to match the rune limit; when over, clip only
+    // the changed region vs the last valid value (emitEvent:false) so insertions drop excess, not trailing text.
+    this.profileForm
+      .get('bio')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((bio: string) => {
+        const value = bio ?? '';
+        if (codePointLength(value) > this.bioMaxLength) {
+          const bioControl = this.profileForm.get('bio');
+          const capped = capCodePointEdit(this.lastValidBio, value, this.bioMaxLength);
+          bioControl?.setValue(capped, { emitEvent: false });
+          this.lastValidBio = capped;
+          this.bioLength.set(codePointLength(capped));
+          // A fully-rejected over-cap edit leaves the bio at the seeded value; clear the dirty flag
+          // Angular set on the keystroke so Save doesn't enable on a no-op (native maxlength parity).
+          if (capped === this.seededBio) {
+            bioControl?.markAsPristine();
+          }
+          return;
+        }
+        this.lastValidBio = value;
+        this.bioLength.set(codePointLength(value));
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -203,29 +267,7 @@ export class ProfileEditDrawerComponent {
     }
 
     this.saving.set(true);
-    const formValue = this.profileForm.value;
-
-    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
-    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
-    const metadataLoaded = this.combinedProfile()?.profile != null;
-    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
-
-    // organization_domain is resolved server-side from the organization name, so we only send the
-    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formValue.given_name || undefined,
-      family_name: formValue.family_name || undefined,
-      job_title: freeText(formValue.job_title),
-      organization: formValue.organization || undefined,
-      country: formValue.country || undefined,
-      state_province: formValue.state_province || undefined,
-      city: freeText(formValue.city),
-      address: freeText(formValue.address),
-      postal_code: freeText(formValue.postal_code),
-      phone_number: freeText(formValue.phone_number),
-      t_shirt_size: formValue.t_shirt_size || undefined,
-      bio: freeText(formValue.bio),
-    };
+    const userMetadata = this.buildUserMetadataPayload(this.profileForm.value);
 
     const updateData: ProfileUpdateRequest = {
       user_metadata: userMetadata as UserMetadata,
@@ -303,7 +345,122 @@ export class ProfileEditDrawerComponent {
       });
   }
 
+  /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
+  public triggerAvatarUpload(): void {
+    this.avatarInput()?.nativeElement.click();
+  }
+
+  /**
+   * Validate and upload a newly-selected profile picture. On success, updates the locally-cached
+   * profile (so the drawer's own preview reflects the change if reopened) and emits `saved` so the
+   * host layout refreshes the avatar shown elsewhere in the Me lens.
+   */
+  public onAvatarFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
+    input.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (!(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(file.type)) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG, JPEG, or WEBP image.' });
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_SIZE_BYTES) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Image must be 2MB or smaller.' });
+      return;
+    }
+
+    this.avatarUploading.set(true);
+    // No takeUntilDestroyed here — reviewed exception, not an oversight. Added in 6d9ec40e after
+    // it caused in-flight uploads to abort on drawer/route destroy; the upload itself (not just
+    // its data) is the user-visible operation, so unsubscribing early would silently drop it.
+    // uploadProfilePicture() already applies take(1), so no-bare-subscribe is still satisfied
+    // without the leak risk. Do not reinstate takeUntilDestroyed on this subscribe.
+    this.userService
+      .uploadProfilePicture(file)
+      .pipe(finalize(() => this.avatarUploading.set(false)))
+      .subscribe({
+        next: (response) => {
+          if (!response.public_url) {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
+            return;
+          }
+
+          const url = response.public_url;
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Profile picture updated!' });
+          // A null profile means metadata never loaded — merging would fabricate a non-null profile
+          // and flip metadataLoaded true, letting a later save wipe unloaded fields. Skip the local
+          // preview in that case; the host's own optimistic update (from `saved` below) still refreshes
+          // the avatar shown elsewhere in the Me lens.
+          this.combinedProfile.update((profile) => (profile?.profile == null ? profile : { ...profile, profile: { ...profile.profile, picture: url } }));
+          this.saved.emit({ picture: url });
+        },
+        error: (error: HttpErrorResponse) => {
+          // Flow C: Management token required — redirect to authorize. Unlike onSubmit, the selected
+          // File can't be persisted across the full-page redirect (sessionStorage can't hold a File),
+          // so the user re-selects and re-uploads after authorizing rather than an auto-resumed upload.
+          if (error.status === 403 && error.error?.error === 'management_token_required') {
+            if (isPlatformBrowser(this.platformId)) {
+              // Stash an avatarPending marker (plus any unsaved text-field edits, mapped the same way
+              // onSubmit does) so ProfileLayoutComponent.handleProfileAuthReturn can tell the user to
+              // re-select their image once we're back — a toast added here would be wiped by the
+              // synchronous window.location.href below before it ever renders. Stashing the mapped
+              // payload rather than the raw form keeps clear-to-empty edits intact on replay.
+              sessionStorage.setItem(
+                PENDING_PROFILE_SAVE_KEY,
+                JSON.stringify({
+                  savedAt: Date.now(),
+                  avatarPending: true,
+                  ...(this.profileForm.dirty ? { userMetadata: this.buildUserMetadataPayload(this.profileForm.value) } : {}),
+                })
+              );
+              window.location.href = error.error.authorize_url;
+            }
+            return;
+          }
+
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
+        },
+      });
+  }
+
+  /** Handle a failed avatar image load: fall back to initials until the URL changes. */
+  public onAvatarError(): void {
+    this.avatarErrorUrl.set(this.avatarUrl());
+  }
+
   // Private methods
+
+  // Shared by onSubmit and the avatar-upload Flow C stash above, so both apply the same
+  // clear-to-empty rules — stashing the raw form value instead would silently drop intentional
+  // clears on replay, since the legacy mapper doesn't know about metadataLoaded/freeText.
+  private buildUserMetadataPayload(formValue: Partial<UserMetadata>): Partial<UserMetadata> {
+    // Clear-to-empty only applies when the profile metadata loaded — on a failed load (profile ===
+    // null) the controls seed empty, so we omit empties rather than wipe unloaded fields with ''.
+    const metadataLoaded = this.combinedProfile()?.profile != null;
+    const freeText = (value: string | null | undefined): string | undefined => (metadataLoaded ? (value ?? '') : value || undefined);
+
+    // organization_domain is resolved server-side from the organization name, so we only send the
+    // organization. Name/selects keep `|| undefined` (empty = unchanged, not clearable per product).
+    return {
+      given_name: formValue.given_name || undefined,
+      family_name: formValue.family_name || undefined,
+      job_title: freeText(formValue.job_title),
+      organization: formValue.organization || undefined,
+      country: formValue.country || undefined,
+      state_province: formValue.state_province || undefined,
+      city: freeText(formValue.city),
+      address: freeText(formValue.address),
+      postal_code: freeText(formValue.postal_code),
+      phone_number: freeText(formValue.phone_number),
+      t_shirt_size: formValue.t_shirt_size || undefined,
+      bio: freeText(formValue.bio),
+    };
+  }
 
   /** Seed the form from the opened profile and reset its pristine/saving state. */
   private seedForm(profile: CombinedProfile): void {
@@ -316,6 +473,8 @@ export class ProfileEditDrawerComponent {
     this.profileForm.markAsUntouched();
     this.hasChanges.set(false);
     this.saving.set(false);
+    this.avatarUploading.set(false);
+    this.avatarErrorUrl.set(null);
   }
 
   private populateForm(profile: CombinedProfile): void {
@@ -345,6 +504,11 @@ export class ProfileEditDrawerComponent {
     );
 
     this.selectedCountrySignal.set(countryValue);
+    // patchValue above runs with emitEvent:false, so the bio valueChanges sub won't fire — seed the
+    // counter and last-valid baseline from the opened profile so a reopened drawer is consistent.
+    this.seededBio = profile.profile?.bio || '';
+    this.lastValidBio = this.seededBio;
+    this.bioLength.set(codePointLength(this.lastValidBio));
     this.syncOrganizationControl();
   }
 

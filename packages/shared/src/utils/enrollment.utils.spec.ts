@@ -190,4 +190,8 @@ describe('buildEnrollmentHref', () => {
   it('tolerates a ctaPath without a leading question mark', () => {
     expect(buildEnrollmentHref('https://enroll.example.org/', 'product=prod-1&project=tlf')).toBe('https://enroll.example.org/?product=prod-1&project=tlf');
   });
+
+  it('handles empty ctaPath by returning the base URL', () => {
+    expect(buildEnrollmentHref('https://enroll.example.org/', '')).toBe('https://enroll.example.org/');
+  });
 });

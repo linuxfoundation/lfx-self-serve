@@ -186,6 +186,39 @@ if (!otlpEndpoint) {
       }),
       new ExpressInstrumentation(),
       new UndiciInstrumentation({
+        // Skip instrumentation entirely for Slack incoming-webhook requests (LFXV2-3080): the
+        // URL path itself carries a bearer credential (https://hooks.slack.com/services/T…/B…/<secret>),
+        // and this instrumentation records url.full/url.path as span attributes with no
+        // redaction — the SENSITIVE_FIELDS/logger.sanitize() defense elsewhere in this repo has
+        // no reach into the OTel pipeline. ignoreRequestHook returning true suppresses span
+        // creation entirely, which also prevents responseHook below from ever seeing this
+        // request (it looks up a per-request record that's only populated when a span exists).
+        // The 'hooks.slack.com' host below is intentionally duplicated from
+        // SLACK_INCOMING_WEBHOOK_URL_PATTERN in packages/shared/src/constants/committees.constants.ts
+        // rather than importing it: that constant is a full-URL regex anchored on the exact
+        // credential-bearing path, while this check only compares the derived URL's .hostname —
+        // deliberately broader, since suppressing every request to the host is the safe direction
+        // for a redaction guard (a well-formed-webhook-only check would fail open on a malformed
+        // but still credential-bearing URL). This OTel bootstrap also deliberately avoids
+        // importing any app-side package, so no app code loads before instrumentations are
+        // registered. If the allowlisted host ever changes there, update it here too.
+        //
+        // Builds the exact same URL undici's own span code exports as url.full — new
+        // URL(request.path, request.origin) (@opentelemetry/instrumentation-undici's
+        // build/src/undici.js) — and checks its .hostname, rather than comparing request.origin
+        // to the literal string 'https://hooks.slack.com'. request.path can itself be absolute
+        // and override request.origin entirely, so comparing origin alone could disagree with
+        // what's actually exported; deriving from the identical expression means this guard
+        // can't diverge from it. On a malformed input this falls back to normal instrumentation
+        // (undici's own construction would throw on the same input and skip the span anyway, so
+        // that fallback is provably harmless here, not merely assumed safe).
+        ignoreRequestHook: (request) => {
+          try {
+            return new URL(request.path, request.origin).hostname === 'hooks.slack.com';
+          } catch {
+            return false;
+          }
+        },
         headersToSpanAttributes: {
           requestHeaders: ['content-type'],
           responseHeaders: ['content-type'],

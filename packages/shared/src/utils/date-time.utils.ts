@@ -221,6 +221,26 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Formats a Date object to a short month/day format ("Aug 17") in a specific timezone.
+ * `toZonedTime` shifts the instant so the JS Date's *local-machine* getters read as the
+ * target zone's wall-clock values (same trick `formatTo12HourInTimezone` relies on) — so
+ * this reads the shifted date's local month/day rather than reformatting in UTC, which
+ * `formatShortDate` does and would reintroduce the timezone mismatch this function exists to fix.
+ * @param date The date to format (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Date string in short format (e.g., "Aug 17")
+ */
+export function formatShortDateInTimezone(date: Date, timezone: string): string {
+  try {
+    const zonedDate = toZonedTime(date, timezone);
+    return zonedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (error) {
+    console.error('Error formatting date in timezone:', timezone, error);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
@@ -544,4 +564,27 @@ export function formatRelativeTime(date: Date): string {
 /** Short date label for range previews, e.g. "Apr 18, 2026". */
 export function formatShortDate(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * Short relative-time label for a future instant ("in 5 min", "in 2 hr", "in
+ * 3 days") — the forward-looking counterpart to `formatRelativeTime`, which
+ * only reads correctly for past instants (negative diffs there collapse to
+ * "just now"). Meant for scheduling summaries, not live countdowns.
+ */
+export function formatFutureRelativeTime(date: Date): string {
+  const timestamp = date.getTime();
+  if (!Number.isFinite(timestamp)) {
+    return 'unknown';
+  }
+  const diffMs = timestamp - Date.now();
+  if (diffMs <= 0) return 'now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'in less than a minute';
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 60) return `in ${diffMin} min`;
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  if (diffHr < 24) return `in ${diffHr} hr`;
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
 }

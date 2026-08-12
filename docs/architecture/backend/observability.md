@@ -42,7 +42,7 @@ Tracing activates only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — leaving it 
 
 - **HTTP** (`HttpInstrumentation`) — incoming and outgoing HTTP requests, with `/livez`, `/readyz`, and `/.well-known/*` excluded so health checks don't flood spans.
 - **Express** (`ExpressInstrumentation`) — per-middleware spans so you can see which middleware runs for a given request.
-- **Undici** (`UndiciInstrumentation`) — spans for `fetch` / `undici` calls (used by `api-client.service.ts` for microservice calls). Content-type headers are captured.
+- **Undici** (`UndiciInstrumentation`) — spans for `fetch` / `undici` calls (used by `api-client.service.ts` for microservice calls). Content-type headers are captured. Requests to `hooks.slack.com` are excluded via `ignoreRequestHook` — that path carries a bearer credential in the URL itself (the Slack Incoming Webhook secret), which OTel would otherwise export verbatim as `url.full`.
 - **Propagators** — W3C Trace Context + W3C Baggage (`traceparent`, `tracestate`, `baggage` headers) so spans correlate across the NATS boundary and into downstream microservices.
 
 ## Correlation with logs
