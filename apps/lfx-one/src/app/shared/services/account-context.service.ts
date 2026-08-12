@@ -124,6 +124,9 @@ export class AccountContextService {
           ...live,
           uid: account.uid ?? live.uid ?? null,
           parentUid: account.parentUid ?? live.parentUid ?? null,
+          // LFXV2-2750 — `live` is a Snowflake-enriched record and never carries roleSource; always
+          // trust the caller's value (e.g. a foundation-auditor selection) over the stale/absent one.
+          roleSource: account.roleSource ?? null,
         }
       : account;
     this.selectedAccount.set(next);
@@ -231,6 +234,8 @@ export class AccountContextService {
             ...liveCurrent,
             uid: current.uid ?? liveCurrent.uid ?? null,
             parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
+            // LFXV2-2750 — same rationale as setAccount: liveCurrent never carries roleSource.
+            roleSource: current.roleSource ?? null,
           });
         } else if (!current.accountId && !current.uid) {
           // No selection at all (no cookie uid, no accountId yet) — default to the first seed. A
