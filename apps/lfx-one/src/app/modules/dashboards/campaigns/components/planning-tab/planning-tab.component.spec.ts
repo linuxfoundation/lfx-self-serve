@@ -128,21 +128,31 @@ describe('PlanningTabComponent brief read-back', () => {
   });
 
   it('replaces the offer as soon as a different event url is typed', async () => {
-    // The concern behind the eager-clear invariant: the page must never offer event A while the
-    // field names event B. A partial url is the only window where that could happen, and it
-    // closes on the next keystroke because any valid url yields a non-empty slug that clears.
+    // The invariant: the page must never offer event A while the field NAMES event B.
+    //
+    // Asserted INSIDE the debounce window, deliberately. Waiting it out lets the second lookup
+    // answer `none`, and `applySavedBrief` nulls `savedBrief` on its own — so the assertion would
+    // pass whether or not the eager clear ran, which is the false-pass shape this file already
+    // had to fix once for `skip(1)`. Verified by deleting the eager clear: this fails, and the
+    // debounce-waiting version did not.
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
 
-    // Event B has no stored brief. The offer for A must be gone, not merely replaced later.
-    campaignService.loadBrief.mockReturnValue(new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'none', brief: null, briefId: null })));
-    await typeEventUrl('https://events.example.com/oss-na-2026');
+    // Type event B and stop before the debounce fires: no lookup has answered yet, so anything
+    // still on screen is there because the input handler left it.
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      onUrlInput(): void;
+    };
+    component.briefForm.controls.url.setValue('https://events.example.com/oss-na-2026');
+    component.onUrlInput();
+    fixture.detectChanges();
 
     expect(savedBrief()).toBeNull();
-    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('oss-na-2026', 'foundation-a');
+    expect(savedBriefWarning()).toBeNull();
   });
 
   it('keeps the restore offer across Cancel', async () => {
