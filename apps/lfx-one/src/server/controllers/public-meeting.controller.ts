@@ -502,9 +502,11 @@ export class PublicMeetingController {
    * POST /public/api/meetings/register
    * Registers an authenticated user to a public, non-restricted meeting.
    *
-   * Calls POST /itx/meetings/{id}/registrants/self with the user's bearer token. Email and
-   * username are sourced from the caller's JWT by the meeting service — the body email field
-   * is not forwarded. Authentication is required; unauthenticated requests receive 401.
+   * Meeting validation (public + non-restricted check) uses M2M so the GET endpoint's viewer
+   * FGA check doesn't block users who aren't yet registered. The user's bearer token is then
+   * restored before calling POST /itx/meetings/{id}/registrants/self so the meeting service
+   * sources identity from the caller's JWT. Authentication is required; unauthenticated
+   * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
@@ -536,6 +538,8 @@ export class PublicMeetingController {
         );
       }
 
+      const userToken = req.bearerToken;
+
       if (!registrantData.first_name || !registrantData.last_name) {
         return next(
           ServiceValidationError.fromFieldErrors(
@@ -553,6 +557,7 @@ export class PublicMeetingController {
         );
       }
 
+      await this.setupM2MToken(req);
       const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
 
       if (!meeting) {
@@ -566,6 +571,7 @@ export class PublicMeetingController {
       const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
       if (authError) return next(authError);
 
+      req.bearerToken = userToken;
       const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
 
       logger.success(req, 'register_for_public_meeting', startTime, {

@@ -446,6 +446,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
   });
@@ -461,17 +462,23 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
   });
 
-  it('passes user bearer token unchanged to addMeetingRegistrantSelf', async () => {
+  it('fetches meeting with M2M token then restores user token for self-register', async () => {
     const { req, res, next } = buildRegisterReq(true);
-    let tokenAtCallTime: string | undefined;
+    let tokenAtMeetingFetch: string | undefined;
+    let tokenAtSelfRegister: string | undefined;
+    meetingSvc.getMeetingById.mockImplementation((r: any) => {
+      tokenAtMeetingFetch = r.bearerToken;
+      return Promise.resolve(buildMeeting());
+    });
     meetingSvc.addMeetingRegistrantSelf.mockImplementation((r: any) => {
-      tokenAtCallTime = r.bearerToken;
+      tokenAtSelfRegister = r.bearerToken;
       return Promise.resolve({ uid: 'reg-1' });
     });
 
     await controller.registerForPublicMeeting(req, res, next);
 
-    expect(tokenAtCallTime).toBe('user-token');
+    expect(tokenAtMeetingFetch).toBe('m2m-token');
+    expect(tokenAtSelfRegister).toBe('user-token');
   });
 
   it('unauthenticated request returns 401 without calling the service', async () => {
