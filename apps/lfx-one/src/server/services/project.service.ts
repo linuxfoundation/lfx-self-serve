@@ -7703,10 +7703,26 @@ export class ProjectService {
     `;
 
     try {
-      const [headResult, pointsResult] = await Promise.all([
-        this.snowflakeService.execute<HeadRow>(headQuery, [eventId]),
-        this.snowflakeService.execute<PointRow>(pointsQuery, [eventId]),
+      // Decoupled deliberately: EventPacing permits an empty `points` array, so a headline is
+      // still useful when only the daily-curve model has yet to land. Fetching them as one unit
+      // meant an unmaterialized drilldown discarded a perfectly good summary.
+      //
+      // expectMissingObject marks the rollout miss as expected so SnowflakeService does not count
+      // it toward the global circuit breaker — an anticipated absent table is not an outage.
+      const [headResult, pointsSettled] = await Promise.all([
+        this.snowflakeService.execute<HeadRow>(headQuery, [eventId], { expectMissingObject: true }),
+        this.snowflakeService
+          .execute<PointRow>(pointsQuery, [eventId], { expectMissingObject: true })
+          .then((result) => result.rows)
+          .catch((error: unknown) => {
+            logger.warning(undefined, 'get_event_pacing', 'Daily pacing curve unavailable, serving headline only', {
+              event_id: eventId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [] as PointRow[];
+          }),
       ]);
+      const pointsResult = { rows: pointsSettled };
 
       const head = headResult.rows?.[0];
       if (!head) return unavailable;
