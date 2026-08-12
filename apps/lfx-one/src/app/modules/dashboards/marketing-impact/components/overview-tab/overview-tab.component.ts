@@ -3,7 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 
-import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
+import type { MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
