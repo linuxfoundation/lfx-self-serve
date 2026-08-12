@@ -76,6 +76,30 @@ describe('CampaignController.persistBrief', () => {
     saveBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"3"', created: false, approved: true });
   });
 
+  it('rejects a non-string event slug instead of throwing a TypeError', async () => {
+    // `req.body as CampaignBriefOutput` is a compile-time claim about untrusted JSON.
+    // `deriveEventSlug` calls `.trim()` on the slug, so a number reached it and threw — turning
+    // malformed input into a 500 rather than the controlled 400 sitting right beside it.
+    await controller.persistBrief(buildReq({ eventDetails: { slug: 42 } } as never), res, next);
+
+    expect(saveBrief).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = (next as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Error;
+    expect(error.message).toContain('eventDetails.slug');
+  });
+
+  it('rejects a non-array platform list instead of forwarding it upstream', async () => {
+    // `selectedPlatforms` is passed to campaign-service as `platforms`. A non-array does not
+    // throw locally, so without this it becomes an upstream contract violation reported against
+    // a field the user never typed.
+    await controller.persistBrief(buildReq({ eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: 'google-ads' } as never), res, next);
+
+    expect(saveBrief).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = (next as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Error;
+    expect(error.message).toContain('selectedPlatforms');
+  });
+
   it('answers a dark cutover with enabled:false and never calls campaign-service', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 
