@@ -187,8 +187,9 @@ export class EventDetailDrawerComponent {
   // Whether we have a daily curve to plot (needs the drilldown prediction data).
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
 
-  // Registration-pacing line chart: the predicted average with its low/high band, over
-  // days-to-event. No actuals series — see the pacing query for why the warehouse cannot back one.
+  // Registration-pacing line chart over days-to-event: the predicted average with its low/high
+  // band, plus the current-year actuals and — when the event has a prior edition — last year's
+  // curve. The actuals come from the _DRILLDOWN table's per-day cumulative columns.
   protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
 
   protected readonly pacingChartOptions: ChartOptions<'line'> = {

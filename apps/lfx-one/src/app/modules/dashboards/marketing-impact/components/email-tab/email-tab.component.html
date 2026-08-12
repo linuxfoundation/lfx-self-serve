@@ -78,7 +78,7 @@
           </div>
 
           <!-- Rows -->
-          @for (row of topCampaigns(); track row.type + '|' + row.name; let idx = $index) {
+          @for (row of topCampaigns(); track row.type + '|' + row.name + '|' + row.sendDate; let idx = $index) {
             <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
               <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell">{{ row.name }}</span>
               <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>

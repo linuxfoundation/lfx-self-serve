@@ -2717,8 +2717,14 @@ export class ProjectService {
             openRate,
             ctr,
             performance: getPerformanceLabel(openRate, ctr),
-            // Uncapped: the email tab lists every send in the selected period, so a cap here would
-            // silently truncate the table (and understate campaignCount's distinct-name tally).
+            // Uncapped deliberately. Two reasons, and the aggregate totals are not one of them —
+            // totalSends/totalOpens/totalClicks accumulate above this list, so a cap could not
+            // understate them:
+            //   1. campaignCount counts distinct names over exactly this array, so truncating it
+            //      would undercount the campaigns behind the totals shown beside it.
+            //   2. The email tab consumes the full list (it renders every send in the period with
+            //      its date). The five-row slice in the current client is the pre-split view; a
+            //      server-side cap would then be a second, invisible truncation on top of it.
             campaigns: data.campaigns
               .sort((a, b) => b.sends - a.sends)
               .map((c) => ({
@@ -5396,7 +5402,16 @@ export class ProjectService {
     // Enrich with paid + email campaign detail. Neither source table has an EVENT_ID, so both
     // match on the event name (fuzzy substring). Failures degrade to empty arrays — the drawer
     // still renders the attribution tree without the drill-down.
-    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug, row.START_DATE);
+    // Started together: campaign enrichment and pacing are independent reads, and awaiting the
+    // first before the second even begins added a full Snowflake round-trip to drawer latency.
+    // getEventCampaignDetail catches per-side, and getEventPacing returns an unavailable block for
+    // an unmaterialized table. A pacing error of any other kind still fails the whole call, which
+    // is the pre-existing contract — it was awaited in the return object before — not something
+    // Promise.all introduces here.
+    const [{ paidCampaigns, emailCampaigns }, pacing] = await Promise.all([
+      this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug, row.START_DATE),
+      this.getEventPacing(eventId),
+    ]);
 
     return {
       eventId: row.EVENT_ID,
@@ -5426,7 +5441,7 @@ export class ProjectService {
       channels,
       paidCampaigns,
       emailCampaigns,
-      pacing: await this.getEventPacing(eventId),
+      pacing,
     };
   }
 
@@ -7943,8 +7958,13 @@ export class ProjectService {
       PRED_HIGH: number | null;
     }
 
-    // The daily pacing series lives in the single MARKETING_EVENT_REGISTRATION_PREDICTIONS table,
-    // grained by EVENT_ID x EVENT_REGISTRATION_TYPE x DAYS_TO_EVENT. There is no _DRILLDOWN table.
+    // Two tables, deliberately. The headline reads MARKETING_EVENT_REGISTRATION_PREDICTIONS, which
+    // is event-grained and carries the FINAL_* totals; the daily curve reads
+    // MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN, which is the only place the per-day
+    // CURRENT_EVENT_*/CUMULATIVE_* columns exist. Pointing either query at the other's table raises
+    // an invalid identifier, which propagates and fails the whole drawer — a rebuild collapsed them
+    // onto one table once already, so the split is asserted by a test.
+    // Both are grained by EVENT_ID x EVENT_REGISTRATION_TYPE (x DAYS_TO_EVENT on the drilldown).
     // EVENT_REGISTRATION_TYPE (In Person / Virtual) means an event/day can have multiple rows, so we
     // SUM across types per DAYS_TO_EVENT to get one point on the curve (never sum types blindly elsewhere).
     // Headline. FINAL_* columns are event-level constants (identical on every DAYS_TO_EVENT row),
