@@ -77,7 +77,9 @@
       </div>
     }
 
-    <!-- Events sub-tabs — attendance vs sponsorship, scoped to the Events campaign type -->
+    <!-- Events sub-tabs — attendance vs sponsorship, scoped to the Events campaign type.
+         Both views swap content inside the single shared tabpanel below, so aria-controls points
+         at that panel's real id; per-view ids would reference elements that never render. -->
     @if (showEventsSplit()) {
       <div class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4" role="tablist" aria-label="Events views" data-testid="events-split-tabs">
         @for (view of eventsSplitOptions; track view.id) {
@@ -85,7 +87,7 @@
             type="button"
             role="tab"
             [attr.id]="'mi-events-tab-' + view.id"
-            [attr.aria-controls]="'mi-events-panel-' + view.id"
+            [attr.aria-controls]="'mi-panel-' + selectedTab()"
             (click)="onEventsSplitChange(view.id)"
             [attr.aria-selected]="selectedEventsSplit() === view.id"
             [attr.tabindex]="selectedEventsSplit() === view.id ? 0 : -1"
@@ -122,7 +124,6 @@
           [selectedPeriod]="selectedPeriod()"
           [foundationName]="foundationName()"
           [focusProgram]="selectedFocus()"
-          [eventsSplit]="showEventsSplit() ? selectedEventsSplit() : null"
           data-testid="marketing-impact-overview-tab" />
       } @else if (selectedTab() === 'paid') {
         <lfx-performance-marketing-tab
