@@ -328,6 +328,12 @@ export interface FoundationAuditorOrgEntry {
   doc: B2bOrgIndexedDoc;
 }
 
+/** LFXV2-2750 — a memoized per-caller member-org set (`FoundationAuditorOrgsService`'s in-process TTL cache). */
+export interface MemberOrgsMemo {
+  expiresAt: number;
+  orgs: FoundationAuditorOrgEntry[];
+}
+
 /** LFXV2-2750 — result of appending foundation-auditor member orgs to the grants-derived selector rows. */
 export interface AppendFoundationAuditorItemsResult {
   /** Grants-derived rows followed by the appended view-only `foundation-auditor` rows. */

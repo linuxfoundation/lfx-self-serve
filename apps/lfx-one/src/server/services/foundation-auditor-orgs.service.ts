@@ -16,6 +16,7 @@ import {
   AuditedFoundation,
   B2bOrgIndexedDoc,
   FoundationAuditorOrgEntry,
+  MemberOrgsMemo,
   Project,
   ProjectMembershipDoc,
   QueryServiceResponse,
@@ -27,12 +28,6 @@ import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-
-/** Memoized per-caller member-org set. */
-interface MemberOrgsMemo {
-  expiresAt: number;
-  orgs: FoundationAuditorOrgEntry[];
-}
 
 /**
  * Env kill-switch for the LFXV2-2750 foundation-auditor org-selector path. Defaults **disabled**.
@@ -58,16 +53,18 @@ export function isFoundationAuditorOrgSelectorEnabled(): boolean {
  *
  *   1. Enumerate foundations (single query, locally re-checked with `computeIsFoundation`).
  *   2. USER token: batched `project:<uid>#auditor` access-check → the audited subset.
- *   3. M2M: **first page only** per audited foundation (never deep pagination), bounded concurrency,
+ *   3. USER token: **first page only** per audited foundation (never deep pagination), bounded concurrency,
  *      capped at `FOUNDATION_AUDITOR_MAX_FOUNDATIONS` foundations and `FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP` orgs.
+ *      `project:<uid>#auditor` cascades to `project_membership.auditor` in the FGA model, so the roster read
+ *      doesn't need elevation — verified empirically against prod for LFXV2-2752.
  *   4. M2M: batch-fetch the `b2b_org` display docs for the collected uids.
  *
  * The result is memoized per caller (`FOUNDATION_AUDITOR_MEMBER_CACHE_TTL_MS`) so a typeahead doesn't refetch
  * rosters on every keystroke; the caller filters the memoized set by search term in-memory.
  *
- * M2M elevation covers only the roster/display reads — a project auditor does NOT inherit `auditor` on the
- * underlying `b2b_org` (which has no public viewer), so the caller's own token cannot read those docs.
- * Authorization is still decided on the **user** token in step 2; M2M never widens what the caller may see.
+ * M2M elevation is scoped to step 4 only — a project auditor does NOT inherit `auditor` on the underlying
+ * `b2b_org` (which has no public viewer), so the caller's own token cannot read those docs. Authorization is
+ * decided on the **user** token throughout; M2M never widens what the caller may see, only what step 4 reads.
  *
  * Known limit: with only the first roster page per foundation, a very large foundation's membership is
  * truncated, so some member orgs won't surface. Documented trade-off — the alternative hangs the dropdown.
@@ -147,7 +144,16 @@ export class FoundationAuditorOrgsService {
     }
   }
 
-  /** Cold-cache resolution: foundation enumeration → audited subset → M2M roster/display reads. */
+  /**
+   * Cold-cache resolution: foundation enumeration → audited subset → roster read → M2M display-doc read.
+   *
+   * The roster read (`collectMemberOrgUids`) runs on the caller's own **user** token, not M2M: the FGA
+   * model cascades `project:<uid>#auditor` to `project_membership.auditor` (`auditor from project`), so a
+   * caller already verified as a project auditor can read that project's `project_membership` docs
+   * directly — verified empirically against prod for LFXV2-2752. Only the `b2b_org` display-doc fetch
+   * needs M2M elevation: a project auditor does NOT inherit `auditor` on `b2b_org` (which has no public
+   * viewer), so that read genuinely requires the application-level token.
+   */
   private async computeMemberOrgs(req: Request, username: string): Promise<FoundationAuditorOrgEntry[]> {
     const foundations = await this.enumerateFoundations(req);
     if (foundations.length === 0) {
@@ -164,15 +170,18 @@ export class FoundationAuditorOrgsService {
     }
 
     const capped = auditedUids.slice(0, FOUNDATION_AUDITOR_MAX_FOUNDATIONS);
-    const originalToken = req.bearerToken;
-    const m2mToken = await generateM2MToken(req);
-    let orgs: FoundationAuditorOrgEntry[];
-    req.bearerToken = m2mToken;
-    try {
-      const orgUids = await this.collectMemberOrgUids(req, capped);
-      orgs = orgUids.length === 0 ? [] : await this.fetchOrgDocs(req, orgUids);
-    } finally {
-      req.bearerToken = originalToken;
+    const orgUids = await this.collectMemberOrgUids(req, capped);
+
+    let orgs: FoundationAuditorOrgEntry[] = [];
+    if (orgUids.length > 0) {
+      const originalToken = req.bearerToken;
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+      try {
+        orgs = await this.fetchOrgDocs(req, orgUids);
+      } finally {
+        req.bearerToken = originalToken;
+      }
     }
 
     logger.debug(req, 'resolve_member_orgs', 'Resolved audited member-org pool', {
@@ -231,9 +240,10 @@ export class FoundationAuditorOrgsService {
   }
 
   /**
-   * M2M: FIRST PAGE ONLY of each audited foundation's roster, through a bounded-concurrency pool.
+   * USER token: FIRST PAGE ONLY of each audited foundation's roster, through a bounded-concurrency pool.
    * Pivots by `tags:project_uid:<uid>` (LFXV2-2752) — the supported foundation→members lookup on
-   * `project_membership` docs.
+   * `project_membership` docs. Runs on the caller's own token, not M2M — `project:<uid>#auditor` (already
+   * verified in `filterAuditedFoundations`) cascades to `project_membership.auditor` in the FGA model.
    *
    * Accumulates into the shared cap as each page lands (rather than after every foundation has been
    * fetched) so a satisfied cap stops the pool from claiming further foundations — the read cost is
@@ -242,10 +252,8 @@ export class FoundationAuditorOrgsService {
    * completion order, not strict index order — is only approximately, not strictly, index-ordered
    * across the full list once concurrency is in play.
    *
-   * Workers are run to completion via `Promise.allSettled`, not `Promise.all`: the caller (`computeMemberOrgs`)
-   * restores the original bearer token in a `finally` immediately after this resolves/rejects, so every
-   * worker's M2M-scoped requests must have actually finished first — an early `Promise.all` rejection would
-   * let straggler workers fire their next request under the already-restored user token.
+   * Workers are run to completion via `Promise.allSettled`, not `Promise.all`, so a straggler worker's
+   * request can never be attributed to the wrong caller state once this method returns.
    */
   private async collectMemberOrgUids(req: Request, foundations: AuditedFoundation[]): Promise<string[]> {
     const orderedUids: string[] = [];

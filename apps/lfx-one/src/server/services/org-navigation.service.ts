@@ -99,7 +99,11 @@ export class OrgNavigationService {
       logger.debug(req, 'append_foundation_auditor_items', 'Appended foundation-auditor member orgs', {
         added: appended.addedCount,
       });
-      return appended.items;
+      // Grants-derived rows keep their established prefix-ranked/alphabetical order (applySort ran on
+      // baseItems already); only the newly-appended suffix — which lands in roster-fetch completion
+      // order — needs sorting so it follows the same ordering contract.
+      const sortedAppended = this.applySort(appended.items.slice(baseItems.length), name);
+      return [...baseItems, ...sortedAppended];
     } catch (error) {
       logger.warning(req, 'append_foundation_auditor_items', 'Foundation-auditor lookup failed — returning grants-only list', { err: error });
       return baseItems;
