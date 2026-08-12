@@ -50,7 +50,23 @@ import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, take, tap, toArray } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  expand,
+  from,
+  map,
+  mergeMap,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  toArray,
+} from 'rxjs';
 
 interface DirectAddResult {
   email: string;
@@ -676,15 +692,20 @@ export class AddMemberDialogComponent {
       return signal<MeetingSelectOption[]>([]);
     }
 
+    const fetchPage = (pageToken?: string) => this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken);
+
     return toSignal(
-      this.meetingService.getMeetingsByProject(projectUid).pipe(
-        map((meetings) =>
-          [...meetings]
+      fetchPage().pipe(
+        expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
+        take(10),
+        toArray(),
+        map((responses) =>
+          responses
+            .flatMap((response) => response.data)
             .sort((a, b) => this.meetingStartMs(b.start_time) - this.meetingStartMs(a.start_time))
             .map((meeting) => ({ value: meeting.id, label: this.buildMeetingLabel(meeting.title, meeting.start_time), title: meeting.title }))
         ),
-        catchError(() => of([] as MeetingSelectOption[])),
-        take(1)
+        catchError(() => of([] as MeetingSelectOption[]))
       ),
       { initialValue: [] as MeetingSelectOption[] }
     );
