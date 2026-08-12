@@ -45,9 +45,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
     '../../../../../packages/shared/src/utils/project.utils'
   );
+  // The real normalizeToUrl, not a stub: the roster and detail reads both depend on it to reject
+  // scheme-less/unsafe warehouse URLs, so a stub would let that regress with tests still green.
+  const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
+    '../../../../../packages/shared/src/utils/url.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
+    normalizeToUrl: urlUtils.normalizeToUrl,
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: vi.fn(),
     resolvePeriodRange: vi.fn(),
@@ -284,6 +290,158 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       execute.mockRejectedValue(failure);
 
       await expect(service.getSocialReach('tlf', undefined, { start: '2026-01-01', end: '2026-07-01', label: 'test' } as any)).rejects.toBe(failure);
+    });
+  });
+
+  describe('getEventsOverviewSummary', () => {
+    const overviewRow = {
+      PROJECT_ID: 'proj-1',
+      REGISTRATIONS_COUNT: 1200,
+      REGISTRATIONS_CHANGE: 0.52,
+      ATTENDEES_COUNT: 800,
+      ATTENDEES_CHANGE: -0.1,
+      SPEAKERS_COUNT: 60,
+      SPEAKERS_CHANGE: 0,
+      COUNTRIES_COUNT: 30,
+      COUNTRIES_CHANGE: null,
+      COMPANIES_COUNT: 45,
+      COMPANIES_CHANGE: 0.2,
+      EVENT_COUNT: 12,
+    };
+
+    // The two reads resolve independently, so the mock is ordered: overview first, sponsorship second.
+    function mockReads(overview: unknown[], sponsorship: unknown[]): void {
+      execute.mockResolvedValueOnce({ rows: overview }).mockResolvedValueOnce({ rows: sponsorship });
+    }
+
+    it('maps both reads, passing through change fractions and preserving null', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 1500000 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.projectId).toBe('proj-1');
+      expect(result.registrations).toEqual({ value: 1200, changeFraction: 0.52 });
+      expect(result.attendees).toEqual({ value: 800, changeFraction: -0.1 });
+      // Zero is a real measured delta, not "no baseline" — it must survive as 0, not become null.
+      expect(result.speakers).toEqual({ value: 60, changeFraction: 0 });
+      expect(result.countries).toEqual({ value: 30, changeFraction: null });
+      expect(result.organizations).toEqual({ value: 45, changeFraction: 0.2 });
+      expect(result.sponsorship).toEqual({ value: 1500000, changeFraction: null });
+    });
+
+    // Events and Sponsorship have no modeled YoY column; the contract is a value with a null
+    // delta, so the UI renders no change indicator rather than a fabricated 0%.
+    it('reports no YoY delta for events and sponsorship', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 42 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.events).toEqual({ value: 12, changeFraction: null });
+      expect(result.sponsorship.changeFraction).toBeNull();
+    });
+
+    it('falls back to zeroed metrics when the foundation has no overview row', async () => {
+      mockReads([], []);
+
+      const result = await service.getEventsOverviewSummary('unknown-slug');
+
+      expect(result.projectId).toBe('');
+      expect(result.registrations).toEqual({ value: 0, changeFraction: null });
+      expect(result.sponsorship).toEqual({ value: 0, changeFraction: null });
+    });
+
+    // Same contract the getSocialReach guard above protects: a Snowflake failure must not be
+    // laundered into a zero-filled 200, which the dashboard would render as measured zeros.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventsOverviewSummary('tlf')).rejects.toBe(failure);
+    });
+  });
+
+  describe('getEventDetail', () => {
+    const eventRow = {
+      EVENT_ID: 'evt-1',
+      EVENT_NAME: 'KubeCon NA',
+      START_DATE: '2026-11-10',
+      EVENT_COUNTRY: 'United States',
+      EVENT_URL: 'https://events.example.org/kubecon',
+      REG_ACTUAL: 900,
+      REG_GOAL: 1000,
+      SPON_GOAL: 1000000,
+      VS_LY: 1.1,
+      COMP_SCORE: 'high',
+      CFP_STATUS: 'Review Complete',
+    };
+
+    // Ordered mock: the event query resolves first, the tier query second.
+    function mockReads(event: unknown[], tiers: unknown[]): void {
+      execute.mockResolvedValueOnce({ rows: event }).mockResolvedValueOnce({ rows: tiers });
+    }
+
+    it('maps the event and its tier breakdown', async () => {
+      mockReads(
+        [eventRow],
+        [
+          { SPONSORSHIP_TIER: 'Diamond', REVENUE: 300000, SPONSOR_COUNT: 2 },
+          { SPONSORSHIP_TIER: 'Gold', REVENUE: 200000, SPONSOR_COUNT: 4 },
+        ]
+      );
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventName).toBe('KubeCon NA');
+      // Sponsorship actual is summed from the tier rows, not read from the event row.
+      expect(result?.sponsorshipRevenue).toEqual({ actual: 500000, goal: 1000000 });
+      expect(result?.sponsorshipTiers).toHaveLength(2);
+    });
+
+    // Both queries are scoped by foundation: the event id alone carries no ownership, so an ED
+    // could otherwise read another foundation's sponsorship revenue by guessing an id.
+    it('binds the foundation slug ahead of the event id in both reads', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      for (const [sql, binds] of execute.mock.calls) {
+        expect(sql).toContain('slug_resolve');
+        expect(binds).toEqual(['tlf', 'evt-1']);
+      }
+    });
+
+    // An event outside the caller's foundation is filtered out by the slug_resolve join, so it
+    // is indistinguishable from a nonexistent one — no existence oracle for other foundations.
+    it('returns null when the event is not in the caller’s foundation', async () => {
+      mockReads([], []);
+
+      await expect(service.getEventDetail('evt-1', 'other-foundation')).resolves.toBeNull();
+    });
+
+    it('propagates Snowflake failures rather than resolving a partial event', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+
+    // The drawer binds eventUrl straight to [href]; a scheme-less warehouse value would resolve
+    // as a relative LFX One path rather than the external event page.
+    it('normalizes a scheme-less event URL instead of passing it through raw', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'events.example.org/kubecon' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('https://events.example.org/kubecon');
+    });
+
+    it('drops an unsafe event URL rather than exposing it', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'javascript:alert(1)' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('');
     });
   });
 });

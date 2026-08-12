@@ -1001,4 +1001,86 @@ test.describe('API Response Validation', () => {
   });
 });
 
+test.describe('Events Summary Tiles', () => {
+  /**
+   * The YTD events summary lives on the Marketing Impact page, not the ED dashboard, but the
+   * route is ED-guarded: a non-ED session is redirected away and the section never renders.
+   * Switch persona on the dashboard first, then navigate — without this the suite would assert
+   * against a redirected page and pass only because nothing it looks for exists.
+   */
+
+  const MARKETING_IMPACT_URL = '/foundation/marketing-impact?project=tlf';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(DASHBOARD_URL);
+    await switchToExecutiveDirector(page);
+  });
+
+  // The seven metrics the section promises. Asserting the set — not just the count —
+  // catches a tile silently dropped or renamed, which a length check would pass.
+  const TILE_IDS = ['events', 'registrations', 'attendees', 'speakers', 'organizations', 'sponsorship', 'countries'];
+
+  test('renders every YTD events tile with a value', async ({ page }) => {
+    await page.goto(MARKETING_IMPACT_URL);
+
+    // Prove the ED guard let us through. Without this, a persona regression would surface as a
+    // confusing "section not visible" failure rather than naming the actual cause.
+    await expect(page).toHaveURL(/marketing-impact/);
+
+    const section = page.locator('[data-testid="events-summary-section"]');
+    await expect(section).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // The skeleton must clear — a stuck skeleton is the failure mode a screenshot hides.
+    await expect(page.locator('[data-testid="events-summary-skeleton"]')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+
+    const tiles = page.locator('[data-testid^="events-summary-tile-"]');
+    await expect(tiles).toHaveCount(TILE_IDS.length);
+
+    for (const id of TILE_IDS) {
+      const tile = page.locator(`[data-testid="events-summary-tile-${id}"]`);
+      await expect(tile).toBeVisible();
+      // Either a formatted figure or the honest dash — never blank.
+      await expect(tile.locator('.text-2xl')).not.toBeEmpty();
+    }
+  });
+
+  test('exposes the tiles as a list for assistive technology', async ({ page }) => {
+    await page.goto(MARKETING_IMPACT_URL);
+
+    const list = page.locator('[data-testid="events-summary-tiles"]');
+    await expect(list).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(list).toHaveAttribute('role', 'list');
+    await expect(list.locator('[role="listitem"]')).toHaveCount(TILE_IDS.length);
+  });
+
+  test('events-overview-summary returns valid response shape', async ({ page }) => {
+    const responsePromise = page.waitForResponse((resp) => resp.url().includes('/api/analytics/events-overview-summary') && resp.status() === 200, {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+
+    await page.goto(MARKETING_IMPACT_URL);
+    const response = await responsePromise;
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+
+    expect(body).toHaveProperty('projectId');
+    expect(typeof body.projectId).toBe('string');
+
+    // Every metric is a { value, changeFraction } pair. changeFraction is nullable by
+    // design — no prior-year baseline must stay null rather than collapse to 0, which
+    // would render as a flat "— vs LY" and misreport a missing comparison as no change.
+    for (const key of TILE_IDS) {
+      expect(body).toHaveProperty(key);
+      const metric = body[key];
+      expect(metric).toHaveProperty('value');
+      expect(metric).toHaveProperty('changeFraction');
+      expect(typeof metric.value).toBe('number');
+      if (metric.changeFraction !== null) {
+        expect(typeof metric.changeFraction).toBe('number');
+      }
+    }
+  });
+});
+
 // Generated with [Claude Code](https://claude.ai/code)

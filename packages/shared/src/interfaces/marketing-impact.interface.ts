@@ -9,6 +9,7 @@ import type {
   PaidProjectPerformance,
   RevenueImpactResponse,
 } from './analytics-data.interface';
+import type { EventsOverviewMetric } from './dashboard-metric.interface';
 
 /** Period option for the Marketing Impact date range picker. */
 export interface MarketingImpactPeriodOption {
@@ -31,7 +32,7 @@ export interface MarketingImpactTabOption {
 }
 
 /** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
-export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'projectWebsites';
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
 export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';
@@ -42,6 +43,65 @@ export interface OverviewKpiData {
   brandReach: BrandReachResponse | null;
   emailCtr: EmailCtrResponse | null;
   attribution: MarketingAttributionResponse | null;
+}
+
+/**
+ * Foundation-wide events summary for the selected period, driving the Events Summary tile
+ * row at the top of the Overview tab. Each metric carries its value plus a YoY change
+ * fraction (0.52 = +52%; null when there is no prior baseline).
+ */
+export interface EventsOverviewSummary {
+  registrations: EventsOverviewMetric;
+  attendees: EventsOverviewMetric;
+  events: EventsOverviewMetric;
+  speakers: EventsOverviewMetric;
+  organizations: EventsOverviewMetric;
+  countries: EventsOverviewMetric;
+  /** Aggregate sponsorship revenue in dollars for the period. */
+  sponsorship: EventsOverviewMetric;
+}
+
+/** A single actual-vs-goal progress bar in an event roster row. */
+export interface EventRosterBar {
+  /** Formatted actual value (e.g. "206", "$45.2K"). */
+  actual: string;
+  /** Formatted goal value (e.g. "700", "$195K"); shown as the grey target number. */
+  goal: string;
+  /** Fill percentage 0–100; only meaningful when hasGoal is true. */
+  percent: number;
+  /** False when goal is 0/absent — the UI renders no bar (matches PCC's "no goal required"). */
+  hasGoal: boolean;
+  /** Health tone driving the fill color. */
+  tone: 'good' | 'warn' | 'critical' | 'none';
+}
+
+/** Pre-formatted view-model for a single Event Roster table row. */
+export interface EventRosterRowView {
+  eventId: string;
+  eventName: string;
+  /** Display date (e.g. "Aug 11, 2026"). */
+  dateLabel: string;
+  eventUrl: string;
+  country: string;
+  registrations: EventRosterBar;
+  sponsorshipRevenue: EventRosterBar;
+  /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
+  atRisk: boolean;
+  cfpStatus: string;
+}
+
+/** Pre-formatted view-model for a single Events Summary stat tile. */
+export interface EventsSummaryStat {
+  id: string;
+  label: string;
+  icon: string;
+  iconClass: string;
+  /** Formatted value string, or a dash when the underlying metric is null (no data yet). */
+  value: string;
+  /** Formatted YoY delta (e.g. "▲ 12% YoY"), or null when there is no baseline. */
+  delta: string | null;
+  /** Trend direction for coloring the delta. */
+  deltaTrend: 'up' | 'down' | 'neutral';
 }
 
 /** Pre-formatted KPI card data for the Marketing Impact performance summary. */
