@@ -500,6 +500,28 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       }
     });
 
+    // The headline aggregate has no outer GROUP BY, so it returns exactly one row even when the
+    // event has no prediction records — every column NULL. A truthiness check on that row reports
+    // available: true and renders "Current 0 / Predicted 0", which reads as a measured zero rather
+    // than an absent model.
+    it('reports pacing unavailable when the prediction aggregate comes back all-NULL', async () => {
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
+          return Promise.resolve({ rows: [{ DAYS_LEFT: null, CUR_REGS: null, PRIOR: null, PRED_AVG: null, PRED_LOW: null, PRED_HIGH: null }] });
+        }
+        if (text.includes('MARKETING_EVENT_REGISTRATIONS r') || text.includes('SPONSORSHIPS_BY_TIER t')) {
+          return Promise.resolve({ rows: text.includes('SPONSORSHIPS_BY_TIER t') ? [] : [eventRow] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.pacing.available).toBe(false);
+      expect(result?.pacing.current).toBeNull();
+    });
+
     // The two pacing reads target different tables and neither is interchangeable: the base
     // predictions table is event-grained and carries only the FINAL_* totals, while the per-day
     // curve columns exist solely on _DRILLDOWN. Querying one for the other's columns raises an

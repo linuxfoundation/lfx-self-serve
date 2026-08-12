@@ -8043,8 +8043,16 @@ export class ProjectService {
       ]);
       const pointsResult = { rows: pointsSettled };
 
+      // An aggregate with no outer GROUP BY always returns exactly one row, so a row object alone
+      // does not mean the event has prediction data — with no matching EVENT_ID every column comes
+      // back NULL. Truthiness would then report available: true and render a fabricated
+      // "Current 0 / Predicted 0" headline instead of the unavailable placeholder, which reads as
+      // a measured zero rather than an absent model. Require at least one real value.
       const head = headResult.rows?.[0];
-      if (!head) return unavailable;
+      const hasPrediction =
+        head !== undefined &&
+        [head.DAYS_LEFT, head.CUR_REGS, head.PRIOR, head.PRED_AVG, head.PRED_LOW, head.PRED_HIGH].some((value) => value !== null && value !== undefined);
+      if (!hasPrediction) return unavailable;
 
       return {
         available: true,
