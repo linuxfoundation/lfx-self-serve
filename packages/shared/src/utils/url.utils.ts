@@ -68,8 +68,13 @@ export function isValidUrl(urlString: string): boolean {
  * Trailing characters that are almost never part of an intended URL when found at the end
  * of a regex match — sentence punctuation and quotes (e.g. `Visit https://example.com.`
  * should link `https://example.com`, not the trailing period).
+ *
+ * Held as a `Set` (not a regex) and stripped with a bounded character loop: a `+`-quantified
+ * class anchored at the end (`/[...]+$/`) trips CodeQL's "polynomial regular expression used on
+ * uncontrolled data" rule when the input is user-supplied comment text. The loop visits each
+ * trailing char at most once, so the trim is strictly linear.
  */
-const TRAILING_PUNCTUATION_REGEX = /[.,;:!?'"’”]+$/;
+const TRAILING_PUNCTUATION_CHARS: ReadonlySet<string> = new Set(['.', ',', ';', ':', '!', '?', "'", '"', '’', '”']);
 
 /**
  * Trailing bracket closers — only stripped when unmatched inside the URL, so legitimately
@@ -87,7 +92,11 @@ const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
  * @returns The URL with prose trailing punctuation removed
  */
 function trimTrailingPunctuation(url: string): string {
-  let trimmed = url.replace(TRAILING_PUNCTUATION_REGEX, '');
+  let end = url.length;
+  while (end > 0 && TRAILING_PUNCTUATION_CHARS.has(url.charAt(end - 1))) {
+    end--;
+  }
+  let trimmed = url.slice(0, end);
 
   let lastChar = trimmed.charAt(trimmed.length - 1);
   let opener = TRAILING_BRACKETS[lastChar];
