@@ -220,11 +220,11 @@ describe('EventRosterSectionComponent', () => {
 
   it('refetches when the past-events toggle changes', async () => {
     await render([row()], 'tlf');
-    expect(getEventRoster).toHaveBeenCalledWith('tlf', false);
+    expect(getEventRoster).toHaveBeenCalledWith('tlf', false, undefined);
 
     fixture.componentInstance['toggleIncludePast'](true);
     await fixture.whenStable();
 
-    expect(getEventRoster).toHaveBeenCalledWith('tlf', true);
+    expect(getEventRoster).toHaveBeenCalledWith('tlf', true, undefined);
   });
 });
