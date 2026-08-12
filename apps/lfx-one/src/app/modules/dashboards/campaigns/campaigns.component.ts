@@ -209,10 +209,29 @@ export class CampaignsComponent {
     this.selectorForm.controls.deliveryType.setValue('paid-marketing');
   }
 
-  protected onProceedToImplementation(brief: CampaignBriefOutput): void {
+  /**
+   * Hand a brief to the Implementation tab.
+   *
+   * `alreadyPersisted` suppresses the save, and the RESTORE path sets it. A restored brief came
+   * out of campaign-service moments ago, so persisting it again is not a no-op that costs one
+   * request: `saveBrief` finds the existing row and PUTs, bumping `version` and spending the
+   * ETag for a read the user performed. Worse, what it would write is `fromBriefResponse`'s
+   * RECONSTRUCTION rather than the stored bytes — `event_details`, `copy`, `keywords` and
+   * `targeting` are opaque `Any` in the service design, and anything in them the adapter does
+   * not model would be silently replaced by the narrower shape on the way back out. A restore
+   * that quietly rewrites the thing it restored is the one outcome this path must not have.
+   */
+  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
-    this.persistBrief(brief);
+    if (!alreadyPersisted) {
+      this.persistBrief(brief);
+    }
+  }
+
+  /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput): void {
+    this.onProceedToImplementation(brief, true);
   }
 
   /**

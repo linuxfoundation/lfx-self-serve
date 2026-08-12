@@ -53,6 +53,16 @@ export class PlanningTabComponent implements OnInit {
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
 
+  /**
+   * A brief RESTORED from campaign-service, as opposed to one just generated.
+   *
+   * A separate output rather than a flag on the one above, because the difference is not a
+   * detail of the payload: a generated brief has never been stored and must be, while a
+   * restored one came out of storage and must NOT be written back. Emitting both through one
+   * channel would leave the parent guessing which it received.
+   */
+  public readonly restoreSavedBriefRequested = output<CampaignBriefOutput>();
+
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
   protected readonly goals = computed(() => {
@@ -300,9 +310,21 @@ export class PlanningTabComponent implements OnInit {
       this.urlInput$.next(eventName);
     }
 
-    // Keyed on the slug, not the event name: the slug is what the brief was filed under, and
-    // `extractSlug` here is the same derivation the save path used. Cleared eagerly so a
-    // half-typed URL cannot leave an offer to restore a DIFFERENT event's brief on screen.
+    // Keyed on the slug, not the event name: the slug is what the brief was filed under.
+    //
+    // This derivation is NOT identical to the write path's. `deriveEventSlug` reads
+    // `brief.eventDetails.slug`, which the generator produced from the scraped event page,
+    // while this reads the pasted URL's last path segment. They agree whenever the scraper
+    // echoes the segment, which is the ordinary case — but a normalized slug (different case,
+    // stripped punctuation, a redirect to a canonical path) makes the lookup MISS a brief that
+    // exists, and the user is offered nothing rather than a restore. A miss is the safe
+    // direction — it costs a regeneration, not a wrong brief — which is why this is a known
+    // limitation rather than a blocker. Closing it means keying the lookup off the generated
+    // brief instead of the URL, which is only possible after generation and so cannot serve
+    // the pre-generation offer this feature exists to make.
+    //
+    // Cleared eagerly so a half-typed URL cannot leave an offer to restore a DIFFERENT event's
+    // brief on screen.
     const slug = this.extractSlug(url);
     this.currentSlug = slug;
     this.savedBrief.set(null);
@@ -316,7 +338,7 @@ export class PlanningTabComponent implements OnInit {
   protected restoreSavedBrief(): void {
     const brief = this.savedBrief();
     if (brief !== null) {
-      this.proceedToImplementation.emit(brief);
+      this.restoreSavedBriefRequested.emit(brief);
     }
   }
 

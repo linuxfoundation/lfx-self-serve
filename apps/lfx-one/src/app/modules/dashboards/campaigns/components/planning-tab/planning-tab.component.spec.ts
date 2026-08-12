@@ -325,4 +325,33 @@ describe('PlanningTabComponent brief read-back', () => {
 
     expect(savedBrief()).toBeNull();
   });
+
+  /**
+   * Restoring must emit on `restoreSavedBriefRequested`, NOT `proceedToImplementation`.
+   *
+   * The parent persists whatever arrives on `proceedToImplementation`. A restored brief came
+   * out of campaign-service moments earlier, so routing it there makes a read perform a write:
+   * `saveBrief` finds the row and PUTs, bumping `version`, and what it writes is
+   * `fromBriefResponse`'s reconstruction rather than the stored bytes — `event_details`,
+   * `copy`, `keywords` and `targeting` are opaque in the service design, so anything the
+   * adapter does not model is silently replaced. Asserting the CHANNEL is what pins that.
+   */
+  it('emits a restored brief on the restore output, not the generate output', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(savedBrief()).toEqual(exampleBrief);
+
+    const restored: CampaignBriefOutput[] = [];
+    const generated: CampaignBriefOutput[] = [];
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((b) => restored.push(b));
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => generated.push(b));
+
+    (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
+    await fixture.whenStable();
+
+    expect(restored).toEqual([exampleBrief]);
+    expect(generated).toEqual([]);
+  });
 });
