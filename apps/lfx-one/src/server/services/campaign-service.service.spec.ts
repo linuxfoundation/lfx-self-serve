@@ -647,6 +647,26 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(result.created).toBe(true);
   });
 
+  it('does not start another read when the delay itself carries past the budget', async () => {
+    // The gap the single pre-sleep check left: a read finishing at 4.5s passes it, then the 1s
+    // delay wakes the loop at 5.5s -- past the 5s budget -- and it launched a fresh GET carrying
+    // the proxy's own 30s timeout. The budget is now rechecked AFTER the sleep.
+    //
+    // 4.5s per read puts the second check on the far side of the budget while the first is on the
+    // near side, which is the only window that distinguishes the two.
+    let reads = 0;
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockImplementation(() => {
+        reads++;
+        return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 4500));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    expect(reads).toBe(1);
+  }, 20000);
+
   it('stops re-reading once a slow read has spent the budget', async () => {
     // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
     // client's own 30s default. Counting only the sleeps -- as an earlier revision's "~2s"
