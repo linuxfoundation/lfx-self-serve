@@ -22,6 +22,7 @@ import {
 import {
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingOccurrence,
   MeetingRecurrence,
   PastMeeting,
@@ -57,6 +58,8 @@ import {
   resolveRsvpOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -1094,5 +1097,32 @@ describe('buildOccurrenceNavTimeline', () => {
 
     expect(result[0].duration).toBe(30);
     expect(result[1].duration).toBe(45);
+  });
+});
+
+describe('sanitizeMeetingCommittees', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommittees(null)).toEqual([]);
+    expect(sanitizeMeetingCommittees(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommittees([])).toEqual([]);
+  });
+
+  it('drops null entries, blank uids, and keeps valid committees', () => {
+    const valid: MeetingCommittee = { uid: 'group-1', name: 'TSC' };
+    const result = sanitizeMeetingCommittees([null, { uid: null as unknown as string }, { uid: '' }, valid, undefined]);
+
+    expect(result).toEqual([valid]);
+  });
+});
+
+describe('sanitizeMeetingCommitteeUids', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommitteeUids(null)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids([])).toEqual([]);
+  });
+
+  it('drops null, undefined, and blank uids', () => {
+    expect(sanitizeMeetingCommitteeUids([null, undefined, '', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
   });
 });
