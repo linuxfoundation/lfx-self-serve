@@ -3,9 +3,10 @@
 
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
+  AttributionModelOption,
+  EventDrawerFocus,
   EventsSplitOption,
   EventsSplitView,
-  AttributionModelOption,
   MarketingImpactFocusProgram,
   MarketingImpactTab,
   MarketingImpactTabOption,
@@ -56,7 +57,7 @@ export const EVENTS_SPLIT_FOCUS: MarketingImpactFocusProgram = 'lfEvents';
  * blocks for 'b2c', so attendance opens the registration story and sponsorship opens the
  * revenue story.
  */
-export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, 'b2c' | 'b2b'> = {
+export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, EventDrawerFocus> = {
   attendance: 'b2c',
   sponsorship: 'b2b',
 };

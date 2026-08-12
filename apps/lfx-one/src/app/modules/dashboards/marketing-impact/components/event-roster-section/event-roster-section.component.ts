@@ -10,7 +10,7 @@ import { eventRegistrationPercent, formatCurrency, formatNumber, isEventAtRisk }
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
-import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView, EventsSplitView } from '@lfx-one/shared/interfaces';
+import type { EventDrawerFocus, EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView, EventsSplitView } from '@lfx-one/shared/interfaces';
 
 import { EventDetailDrawerComponent } from '../event-detail-drawer/event-detail-drawer.component';
 
@@ -44,7 +44,7 @@ export class EventRosterSectionComponent {
   protected readonly drawerVisible = signal(false);
   protected readonly selectedEventId = signal<string | null>(null);
   // Which story the open drawer tells: 'b2c' (registrations + campaigns) or 'b2b' (sponsorship).
-  protected readonly drawerFocus = signal<'b2c' | 'b2b'>('b2c');
+  protected readonly drawerFocus = signal<EventDrawerFocus>('b2c');
 
   // === Computed Signals ===
   protected readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -87,7 +87,7 @@ export class EventRosterSectionComponent {
    * column cells so registrations open the B2C (campaigns) view and sponsorship
    * opens the B2B view. `event` is stopped so the row-level click doesn't also fire.
    */
-  protected openFocused(eventId: string, focus: 'b2c' | 'b2b', event?: Event): void {
+  protected openFocused(eventId: string, focus: EventDrawerFocus, event?: Event): void {
     event?.stopPropagation();
     this.selectedEventId.set(eventId);
     this.drawerFocus.set(focus);

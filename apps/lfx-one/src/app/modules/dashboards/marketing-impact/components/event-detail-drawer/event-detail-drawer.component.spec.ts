@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EventDetailDrawerComponent } from './event-detail-drawer.component';
 
-import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
+import type { EventDetailResponse, EventDrawerFocus } from '@lfx-one/shared/interfaces';
 
 describe('EventDetailDrawerComponent', () => {
   const detail = (overrides: Partial<EventDetailResponse> = {}): EventDetailResponse => ({
@@ -64,7 +64,7 @@ describe('EventDetailDrawerComponent', () => {
    * half of the story renders — 'b2c' (the default) shows registrations and campaigns, 'b2b' shows
    * sponsorship, so a sponsorship assertion has to open the drawer the way the sponsorship bar does.
    */
-  async function open(eventId: string, slug = 'tlf', focus: 'b2c' | 'b2b' = 'b2c'): Promise<void> {
+  async function open(eventId: string, slug = 'tlf', focus: EventDrawerFocus = 'b2c'): Promise<void> {
     fixture.componentRef.setInput('eventId', eventId);
     fixture.componentRef.setInput('foundationSlug', slug);
     fixture.componentRef.setInput('focus', focus);

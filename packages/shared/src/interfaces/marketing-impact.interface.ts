@@ -44,6 +44,13 @@ export type MarketingImpactTab = 'all' | 'web' | 'social' | 'email' | 'paid' | '
  */
 export type EventsSplitView = 'attendance' | 'sponsorship';
 
+/**
+ * Which half of an event's story the detail drawer shows: 'b2c' is registrations and the campaigns
+ * that drove them, 'b2b' is sponsorship revenue and sponsors by tier. The sibling of
+ * EventsSplitView — the roster maps one onto the other via EVENTS_SPLIT_TO_DRAWER_FOCUS.
+ */
+export type EventDrawerFocus = 'b2c' | 'b2b';
+
 /** Sub-tab option for the Events attendance/sponsorship split. */
 export interface EventsSplitOption {
   id: EventsSplitView;

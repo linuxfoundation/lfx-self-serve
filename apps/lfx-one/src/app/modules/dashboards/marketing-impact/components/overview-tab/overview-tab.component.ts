@@ -3,7 +3,7 @@
 
 import { Component, computed, input } from '@angular/core';
 
-import type { MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
+import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
@@ -41,6 +41,4 @@ export class OverviewTabComponent {
    */
   /** Attendance sections render unless sponsorship is explicitly selected. */
   protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
-  /** Sponsorship sections render unless attendance is explicitly selected. */
-  protected readonly showSponsorship = computed(() => this.eventsSplit() !== 'attendance');
 }

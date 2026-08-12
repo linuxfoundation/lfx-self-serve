@@ -17,7 +17,7 @@ import { Skeleton } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { EventDetailResponse, EventPaidCampaign } from '@lfx-one/shared/interfaces';
+import type { EventDetailResponse, EventDrawerFocus, EventPaidCampaign } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-event-detail-drawer',
@@ -55,7 +55,7 @@ export class EventDetailDrawerComponent {
    * Bound from the roster via EVENTS_SPLIT_TO_DRAWER_FOCUS, so clicking the registrations bar
    * opens the attendance story and the sponsorship bar opens the revenue story.
    */
-  public readonly focus = input<'b2c' | 'b2b'>('b2c');
+  public readonly focus = input<EventDrawerFocus>('b2c');
 
   // === Computed: section visibility from focus ===
   /** Registration-side sections (pacing, paid, email) — hidden in the sponsorship view. */
