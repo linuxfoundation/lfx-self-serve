@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
@@ -396,10 +397,11 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug, projectSlug });
 
     try {
-      // The brief id the CLIENT holds, when this session has established ownership of that row.
-      // Absent on a first save, which is the ordinary case and must CREATE. It is the caller's
-      // proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can replace a
-      // stored brief the user never saw, which a reload or a second tab is enough to reach.
+      // The brief id the CLIENT holds, when this session has established ownership of that row —
+      // either by loading the brief or by having created it on an earlier save. Absent on a first
+      // save of a brief nobody has seen, which is the ordinary case and must CREATE. It is the
+      // caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can
+      // replace a stored brief the user never saw, which a reload or a second tab reaches.
       const knownBriefId = typeof req.query['brief_id'] === 'string' && req.query['brief_id'].trim() !== '' ? req.query['brief_id'] : null;
       // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
       // anything, and the id without the ETag is the ceremonial-header case this fixes.
@@ -415,6 +417,70 @@ export class CampaignController {
         created: result.created,
         approved: result.approved,
       });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read back the brief saved for an event slug — the other half of `persistBrief`.
+   *
+   * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
+   * while the write is dark would find nothing and look broken, and a write enabled while the
+   * read is dark is what shipped in the previous phase — briefs going into Postgres that nothing
+   * ever brings back. One flag makes "the cutover is on" a single, checkable fact.
+   *
+   * The slug arrives as a query parameter because there is nothing else to key on: the page has
+   * only the event URL the user pasted, and the slug derived from it is what `persistBrief`
+   * filed the brief under.
+   */
+  public async loadBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      res.json({ status: 'off', briefId: null, brief: null } satisfies CampaignBriefLoadResult);
+      return;
+    }
+
+    // Rejected rather than passed through: `find-brief` declares MinLength(1) on `event_slug`,
+    // so an empty one is a 400 from campaign-service naming a field the user never typed — the
+    // same reason `persistBrief` checks its own slug before sending.
+    // Trimmed to TEST for emptiness, never to rewrite the key — mirroring `deriveEventSlug`,
+    // which does exactly the same and stores the ORIGINAL slug. Querying with a trimmed key
+    // while the write stored an untrimmed one makes a padded slug unreadable: find-brief misses
+    // and the caller is told `none` for a brief that exists, which the next save then PUTs over.
+    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'] : '';
+    if (eventSlug.trim().length === 0) {
+      next(
+        ServiceValidationError.forField('event_slug', 'event_slug is required', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for exactly the reason `persistBrief` refuses: `/foundation/campaigns`
+    // is reachable by an ED of any foundation, and a constant here would read TLF's brief table on
+    // their behalf — offering to restore another foundation's brief, or finding nothing and letting
+    // the next save silently replace the one that does exist.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
+      // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
+      // a stored brief exists and this build cannot open it, and nothing else would record it.
+      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });
       res.json(result);
     } catch (error) {
       next(error);

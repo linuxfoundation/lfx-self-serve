@@ -34,6 +34,11 @@ describe('CampaignsComponent brief persistence', () => {
     (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
   }
 
+  /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
+  function restore(b: CampaignBriefOutput, briefId: string): void {
+    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string): void }).onRestoreSavedBrief(b, briefId);
+  }
+
   function state(): CampaignBriefPersistenceState {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
@@ -307,6 +312,23 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
+     * A REFUSED save must never render as a saved one.
+     *
+     * `conflict` arrives with `enabled: true` — the flag is on and the request was served — so a
+     * banner keyed on `enabled` alone reports "Brief saved." over work that was never written.
+     * That is the single worst outcome this feature can produce: the user closes the tab believing
+     * their afternoon is durable.
+     */
+    it('reports a refused save as an error, not as saved', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+
+      proceed();
+      await fixture.whenStable();
+
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('already has a saved brief');
+    });
+    /**
      * The SECOND Proceed of a session must update the brief the first one created.
      *
      * The ownership guard refuses a save that cannot name the stored row, so without handing the
@@ -323,7 +345,7 @@ describe('CampaignsComponent brief persistence', () => {
      * and the server — given a name it recognises — would accept an overwrite of a brief that was
      * never approved as B. A key too coarse to tell A from B disarms the guard it feeds.
      */
-    it("does not lend one event's brief id to another event", async () => {
+    it('does not lend a CREATED brief id to another event', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-a', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
@@ -335,6 +357,133 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null, false);
+    });
+
+    /**
+     * The same hazard reached through the OTHER ownership source this branch adds.
+     *
+     * `selectTab` sets the tab directly, so clicking back to Planning recreates the planning form
+     * without going through `resetToPlanning`. Restore event A, click Planning, generate a brief
+     * for event B: an ownership key that names only the foundation would hand B's save the id of
+     * A's row, and the server — being given a name it recognises — would accept an overwrite of a
+     * brief this session never loaded. That is exactly the case LFXV2-3200's guard exists to
+     * refuse, so a key too coarse to tell A from B disarms it.
+     */
+    it('adopts the program of a restored brief instead of leaving the selector wrong', async () => {
+      // The lookup is keyed on `(event_slug, project)` with no program type, so an Events brief
+      // can be offered while the page sits on Education. Leaving the selector wrong is not merely
+      // cosmetic: correcting it runs `resetToPlanning`, which clears the brief AND the ownership
+      // map, so the row just restored becomes unowned and the next save is refused.
+      const internals = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { programType: { setValue(v: string): void } } };
+        selectedProgramType(): string;
+        briefOutput(): CampaignBriefOutput | null;
+      };
+      internals.selectorForm.controls.programType.setValue('education');
+      await fixture.whenStable();
+      expect(internals.selectedProgramType()).toBe('education');
+
+      const eventsBrief = { ...brief, programType: 'events' } as CampaignBriefOutput;
+      persistBrief.mockReturnValue(NEVER);
+      restore(eventsBrief, 'restored-a');
+      await fixture.whenStable();
+
+      // The selector followed the brief...
+      expect(internals.selectedProgramType()).toBe('events');
+      // ...and both the brief and its ownership survived. Note what this does NOT prove: the
+      // adopt runs before the ownership write and before `onProceedToImplementation`, so a reset
+      // triggered by it is undone by both, and this test passes with `adoptingRestoredProgram`
+      // ignored. The flag is defence against that ordering being changed, not something a test
+      // in the current arrangement can pin.
+      expect(internals.briefOutput()).toEqual(eventsBrief);
+
+      proceed(eventsBrief);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(eventsBrief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('still resets when the USER switches program, unlike a restore adopt', async () => {
+      // The flag that stops a restore-adopt resetting must not disarm the ordinary case. A user
+      // choosing a different program is discarding the brief on purpose, and `resetToPlanning`
+      // clearing `briefOutput` is exactly right there.
+      const internals = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { programType: { setValue(v: string): void } } };
+        briefOutput(): CampaignBriefOutput | null;
+      };
+
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+      expect(internals.briefOutput()).not.toBeNull();
+
+      // A real program switch by the user.
+      internals.selectorForm.controls.programType.setValue('education');
+      await fixture.whenStable();
+      expect(internals.briefOutput()).toBeNull();
+
+      // Ownership does NOT go with it, and that is deliberate on the base branch: the row still
+      // exists upstream, so dropping its id would refuse the next Proceed for that event as
+      // unowned. What this test pins is that the RESET ran at all — `briefOutput` above — which
+      // is what distinguishes a user switch from a restore-adopt.
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('drops a save that resolves after the user restored a different brief', async () => {
+      // `onProceedToImplementation(brief, true)` bumps `briefPersistenceGeneration` precisely so a
+      // save still in flight for the brief the user just REPLACED cannot write its `saved` state
+      // and briefId onto the restored one — attributing one brief's id to another. The restore
+      // tests all used NEVER, so that bump was never exercised.
+      const inFlight = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(inFlight);
+      proceed();
+      await fixture.whenStable();
+
+      // The user restores a DIFFERENT brief while that save is still open.
+      restore(otherBrief, 'restored-b');
+      await fixture.whenStable();
+
+      // The earlier save now answers. Its outcome belongs to a brief no longer on screen.
+      inFlight.next({ enabled: true, briefId: 'stale-a', etag: '"1"', created: true, approved: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // It must NOT paint `saved` over the restored brief, nor hand it `stale-a`.
+      expect(state().briefId).not.toBe('stale-a');
+      expect(state().status).not.toBe('saved');
+    });
+
+    it('does not lend a RESTORED brief id to another event', async () => {
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      // Back to Planning by clicking the tab — no reset runs — then proceed with a brief for a
+      // different event.
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      proceed(otherBrief);
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null, null, false);
+    });
+
+    it("still replays an event's own id when that event is proceeded again", async () => {
+      // The other half of the same key: narrowing it must not break the case it exists to serve.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      proceed(brief);
+      await fixture.whenStable();
+
+      // `null` ETag alongside a real id: a restore has no load-time validator to carry
+      // (LFXV2-3204), so ownership is proven while the staleness check falls back to the
+      // freshly read one until this session's own save returns a validator.
+      // `true` — a restore is an explicit decision to work from the stored brief, so its absent
+      // validator is permission rather than an unknown. Marking it unknown would refuse the first
+      // save after every restore, which is this feature's main path.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
     it('sends the created brief id on the next save of the same session', async () => {
@@ -400,7 +549,7 @@ describe('CampaignsComponent brief persistence', () => {
     it('reports a stale-brief conflict distinctly from an unowned one', async () => {
       // The two conflicts are different situations. `unowned-brief-exists` means this session may
       // not replace that brief at all; `stale-brief` means it may — another writer just got there
-      // first — so the message must say the work is intact and reloading shows their version.
+      // first — so the message must say the work is intact and can be saved by proceeding again.
       // Sharing one sentence would tell a user who CAN save that they cannot.
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
 
@@ -410,9 +559,11 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).toBe('error');
       expect(state().message).toContain('Someone else changed this brief');
       expect(state().message).not.toContain('was not opened here');
-      // Must NOT advise a reload. Nothing reads a brief back in this phase, so a reload shows
-      // nothing new AND drops the in-memory brief plus the ownership map — turning the next save
-      // into `unowned-brief-exists` for a row this session owns. Strictly worse than staying put.
+      // Must NOT advise a reload, even though this branch adds the read path that would make one
+      // work. A stale-brief refusal PROMOTES this session to explicit overwrite permission, so the
+      // next Proceed saves the work on screen — telling the user to reload throws that work away
+      // to reach a state they can already get to by clicking Proceed again.
+      expect(state().message).toContain('Proceed again to save your version');
       expect(state().message).not.toContain('Reload');
     });
 
@@ -646,6 +797,10 @@ describe('CampaignsComponent brief persistence', () => {
       // has to let the queue turn over. The slug is still the one selected at Proceed time.
       await fixture.whenStable();
 
+      // The third argument is the known brief id, null here: this brief was generated rather
+      // than restored, so the page can claim no ownership and the save must CREATE. Asserted
+      // rather than relaxed to `expect.anything()` — a generated brief silently carrying an id
+      // would let it replace a stored brief nobody looked at (LFXV2-3200).
       // The third argument is the known brief id, null here: nothing has been saved yet in this
       // session, so the page can claim no ownership and the save must CREATE.
       expect(persistBrief).toHaveBeenCalledWith(brief, 'cncf', null, null, false);

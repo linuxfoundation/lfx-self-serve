@@ -95,6 +95,7 @@
             <lfx-planning-tab
               [programTypeConfig]="activeProgramTypeConfig()"
               (proceedToImplementation)="onProceedToImplementation($event)"
+              (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId)"
               data-testid="campaigns-planning-tab" />
           }
         </div>

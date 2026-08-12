@@ -212,19 +212,20 @@ export interface CampaignBriefPersistResult {
    * brief, it just needs to see the newer version first.
    *
    * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
-   * prove it owns it. Replacing would overwrite content the user was never shown — a reload or a
-   * second tab is enough to reach that, since the page then generates from scratch and the
+   * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
+   * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
+   * is enough to reach that: the page generates from scratch, the slug matches perfectly, and the
    * server's find hits a row nobody read. `briefId` carries the row that blocked the save, so a
    * caller can offer to open it rather than only reporting failure.
    *
-   * This is the collision a caller reaches when it cannot NAME the stored brief — a fresh
-   * session, a second tab, or a reload, none of which can learn the id of a brief they did not
-   * write while persistence is write-only (LFXV2-3098). A caller that created the brief in this
-   * same session does hold its id and takes the ordinary replace path instead. LFXV2-3108 adds
-   * the read that lets a reloaded page name the row too.
+   * LFXV2-3098 introduced this while persistence was write-only, where it refused EVERY
+   * collision — with no read path, nothing could hand a caller an id at all. LFXV2-3108 adds the
+   * read, so a restored brief now carries its own id and replaces its own row; everything else
+   * still refuses.
    *
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
-   * and the caller's next step is a CHOICE rather than a retry.
+   * and the caller's next step is a CHOICE (open the existing one, or file under a different
+   * event) rather than a retry.
    */
   conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
 }
@@ -241,6 +242,33 @@ export interface CampaignBriefPersistenceState {
   status: 'off' | 'saving' | 'saved' | 'error';
   briefId: string | null;
   message: string | null;
+}
+
+/**
+ * What `GET /api/campaigns/brief` reports back — the read half of brief persistence.
+ *
+ * The outcome is a single `status` rather than the `enabled` + payload pair
+ * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
+ * are "no brief". Collapsing them loses the distinction that matters:
+ *
+ * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
+ *   environment and warrants no UI.
+ * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
+ *   first-time case; the user generates one.
+ * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
+ * - `unreadable` — a row EXISTS for this slug but this build cannot reconstruct a
+ *   `CampaignBriefOutput` from it. Reporting that as `none` would be a lie with consequences:
+ *   the user would generate a replacement, and the save path is find-then-UPDATE, so the
+ *   unreadable brief would be silently overwritten rather than repaired or reported. Kept
+ *   distinct so the UI can say "a saved brief exists but could not be opened" and the id is
+ *   available to whoever investigates.
+ *
+ * `briefId` is populated for `loaded` and `unreadable` alike, and null for the other two.
+ */
+export interface CampaignBriefLoadResult {
+  status: 'off' | 'none' | 'loaded' | 'unreadable';
+  briefId: string | null;
+  brief: CampaignBriefOutput | null;
 }
 
 // ---------------------------------------------------------------------------

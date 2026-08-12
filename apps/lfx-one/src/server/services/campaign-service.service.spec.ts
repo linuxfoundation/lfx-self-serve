@@ -30,7 +30,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from './campaign-service.service';
+import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
@@ -285,14 +285,12 @@ describe('CampaignServiceClient.saveBrief', () => {
   // the conflict is reported. Concurrency within one session is removed in the component instead,
   // by running its saves one at a time.
   /**
-   * LFXV2-3200: a caller that cannot NAME the stored brief must not replace it.
+   * The core of LFXV2-3200: a caller that cannot NAME the stored brief must not replace it.
    *
-   * In this phase that is EVERY caller — persistence is write-only, so no read path exists and
-   * nothing can hand the page a brief id. The default argument is what production passes, which
-   * is why this test omits it rather than passing null explicitly: it exercises the real call.
-   *
-   * Two routes reach a save with no id and only one is a slug mismatch; a reload or a second tab
-   * is enough. That is why the guard keys on ownership rather than on the slug.
+   * Two routes reach a save with no known id, and only one involves a slug mismatch — the other
+   * is a reload or a second tab, where the slugs agree perfectly and the page simply never
+   * loaded the brief. So this refuses on ownership rather than on any slug comparison, and
+   * returns the blocking id so the caller can offer to load it instead of only failing.
    */
   it('does not hand back the id of a brief the caller was told it does not own', async () => {
     // The id was the whole attack. A caller could omit `brief_id`, read `existing.brief.id` out
@@ -312,7 +310,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   it('refuses to replace a stored brief the caller cannot prove it owns', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
-    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', null);
 
     expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: '', created: false, approved: false });
     // One upstream call — the find. No PUT was attempted.
@@ -977,5 +975,372 @@ describe('CampaignServiceClient.saveBrief', () => {
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toMatchObject({ statusCode: 412 });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * A stored brief as `find-brief` returns it, with the four `Any` fields overridable.
+ *
+ * Typed loosely on purpose: upstream declares `event_details`, `copy`, `keywords` and
+ * `targeting` as `Any` and validates none of them, so a spec that could only express
+ * well-formed values would be unable to describe the rows `fromBriefResponse` exists for.
+ */
+function storedBrief(overrides: Record<string, unknown> = {}): any {
+  return {
+    id: 'b-1',
+    project_id: 'tlf',
+    program_type: 'events',
+    event_slug: 'kubecon-eu-2026',
+    status: 'draft',
+    version: 1,
+    platforms: ['google-ads'],
+    event_details: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' },
+    copy: { structured: { headline: 'Register now' }, linkedIn: null, reddit: null, meta: null },
+    keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+    targeting: { campaignGoal: 'conversions', totalBudget: 5000, hsUtm: 'kubecon-eu-2026', driveFolderUrl: 'https://drive.google.com/drive/folders/abc' },
+    ...overrides,
+  };
+}
+
+describe('fromBriefResponse', () => {
+  // The one property that matters most: what a save writes, a load must give back. Anything
+  // this drops is work the user did in the Planning tab and would have to redo, without ever
+  // being told it went missing — the save reported success.
+  it('round-trips a brief written by the save path', async () => {
+    proxyRequestWithResponse.mockReset();
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
+    const original = briefWithSlug('kubecon-eu-2026');
+
+    await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
+    const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
+
+    // The stored row IS what was written — the service treats all four fields as opaque JSON.
+    expect(fromBriefResponse(storedBrief(written))).toEqual(original);
+  });
+
+  // `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
+  // without a usable one is unopenable. This is the boundary between `unreadable` and a coerced
+  // partial brief, and it is the only null a brief written by this UI can produce.
+  it.each([
+    ['a missing event_details', undefined],
+    ['a non-object event_details', 'kubecon'],
+    ['an array event_details', []],
+  ])('gives up on %s rather than returning a brief nothing can render', (_label, eventDetails) => {
+    expect(fromBriefResponse(storedBrief({ event_details: eventDetails }))).toBeNull();
+  });
+
+  // A blob carrying no identity of its own is NOT unreadable while the top-level `event_slug`
+  // has one: that column is the required key the row was retrieved by, and `event_details` is
+  // opaque JSON another client may fill differently. These two cases used to be in the table
+  // above, which meant the identity check consulted only the blob and discarded briefs the
+  // Implementation tab could name perfectly well.
+  it.each([
+    ['neither name nor slug', { city: 'Amsterdam' }],
+    ['a blank name and slug', { name: '  ', slug: '' }],
+  ])('reads a brief whose event_details has %s when the column carries the slug', (_label, eventDetails) => {
+    const brief = fromBriefResponse(storedBrief({ event_slug: 'kubecon-eu-2026', event_details: eventDetails }));
+    expect(brief).not.toBeNull();
+    expect(brief?.eventDetails.slug).toBe('kubecon-eu-2026');
+  });
+
+  // Both empty is still unreadable: nothing can name the row at all.
+  it.each([
+    ['neither name nor slug', { city: 'Amsterdam' }],
+    ['a blank name and slug', { name: '  ', slug: '' }],
+  ])('gives up when event_details has %s AND the column is empty too', (_label, eventDetails) => {
+    expect(fromBriefResponse(storedBrief({ event_slug: '', event_details: eventDetails }))).toBeNull();
+  });
+
+  // The service's enum has `membership`; `CampaignProgramType` does not. Rendering one as an
+  // events brief would show the wrong labels, URL help and goal list for a brief this client
+  // did not write. Unreachable from `toBriefInput` today, which is why it must not be assumed.
+  it('gives up on a program_type outside the two this page is built around', () => {
+    expect(fromBriefResponse(storedBrief({ program_type: 'membership' }))).toBeNull();
+  });
+
+  // A missing keyword list costs the user a section, not the brief — so it degrades rather than
+  // failing the whole row. Same for every other field below.
+  it.each([
+    ['a non-array keywords', 'kubecon'],
+    ['a null keywords', null],
+  ])('degrades %s to an empty list rather than failing the row', (_label, keywords) => {
+    expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([]);
+  });
+
+  // A term is the only part of a keyword that carries meaning; match type and intent have
+  // defaults the Keywords tab already uses. Dropping the termless entries keeps the rest.
+  it('drops termless keyword entries and defaults the two enums on the rest', () => {
+    const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
+
+    expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // An unknown platform id reaches a template that indexes icon and label maps by it and
+  // renders blank — a checkbox with no name, which the user cannot act on or remove.
+  it('drops platform ids the page cannot render', () => {
+    expect(fromBriefResponse(storedBrief({ platforms: ['google-ads', 'tiktok-ads'] }))?.selectedPlatforms).toEqual(['google-ads']);
+  });
+
+  it('drops a targeting block whose values do not match their fields', () => {
+    const targeting = { campaignGoal: 'world-domination', totalBudget: 'lots', hsUtm: 42, driveFolderUrl: null };
+
+    expect(fromBriefResponse(storedBrief({ targeting }))).toMatchObject({
+      campaignGoal: null,
+      totalBudget: null,
+      hsUtm: null,
+      // '' not null: `driveFolderUrl` is a non-nullable string on `CampaignBriefOutput`, and the
+      // Implementation tab binds it straight into an input.
+      driveFolderUrl: '',
+    });
+  });
+
+  // `Infinity` and `NaN` are `typeof 'number'` and survive a bare typeof check. A budget of
+  // Infinity reaches a currency pipe and a create request.
+  it.each([
+    ['Infinity', Infinity],
+    ['NaN', Number.NaN],
+  ])('rejects a %s budget rather than passing it to the create request', (_label, totalBudget) => {
+    expect(fromBriefResponse(storedBrief({ targeting: { totalBudget } }))?.totalBudget).toBeNull();
+  });
+
+  // The variant blocks are rendered by iterating `variants`. A block without one is not a
+  // half-populated variant set; it is something else entirely, and the tab would throw on it.
+  it.each([
+    ['a variant block with no variants array', { headline: 'x' }],
+    ['a null variant block', null],
+    ['a string variant block', 'linkedIn copy'],
+  ])('treats %s as absent rather than handing it to the template', (_label, linkedIn) => {
+    expect(fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy).toBeUndefined();
+  });
+
+  it('keeps a variant block that has the array the template iterates', () => {
+    // A COMPLETE LinkedIn variant: the template reads `variant.introText.length`
+    // (implementation-tab.component.html:338), so a variant missing it is not renderable and is
+    // dropped by the case below rather than kept.
+    const linkedIn = { variants: [{ introText: 'Come along', headline: 'Join us' }] };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as { variants: unknown[] } | undefined;
+
+    expect(restored?.variants).toEqual(linkedIn.variants);
+  });
+
+  it('hardens the structuredCopy blocks the Implementation tab actually restores from', () => {
+    // This is the path this app's OWN round-trip takes. Planning's Proceed emits `structuredCopy`
+    // and never sets `metaCopy`/`redditCopy`, and `populateFromBrief` reads
+    // `structuredCopy['meta_ads']` FIRST — so the guards on the camelCase side sat on a branch
+    // this app's briefs never reach. `v.primary_text` (implementation-tab.component.ts:578) then
+    // threw on a null element.
+    const structured = {
+      meta_ads: { variants: [null, { primary_text: 'p', headline: 'h' }, { headline: 'no primary text' }] },
+      reddit_promoted: { variants: [null, { headline: 'r' }] },
+    };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy as Record<string, { variants: unknown[] }>;
+
+    expect(restored['meta_ads'].variants).toEqual([{ primary_text: 'p', headline: 'h' }]);
+    expect(restored['reddit_promoted'].variants).toEqual([{ headline: 'r' }]);
+  });
+
+  it('leaves structuredCopy blocks it does not render untouched', () => {
+    // The blob is opaque and another client may store blocks this build does not know. Dropping
+    // them would lose content the next writer still owns.
+    const structured = { future_platform: { anything: [null, 1] } };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy;
+
+    expect(restored).toEqual(structured);
+  });
+
+  it('coerces a non-array string list rather than letting for...of throw', () => {
+    // `google_search.headlines` reaches a `for...of` in populateFromBrief
+    // (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" — a
+    // different failure from the variant case, and one the variant filter does not touch.
+    const structured = { google_search: { headlines: 42, descriptions: ['keep', 7, null] } };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { structured } }))?.structuredCopy as Record<string, Record<string, unknown>>;
+
+    expect(restored['google_search']['headlines']).toEqual([]);
+    expect(restored['google_search']['descriptions']).toEqual(['keep']);
+  });
+
+  it('drops a LinkedIn variant missing the field the template dereferences', () => {
+    // `headline` alone used to survive, and the template then threw on `introText.length`.
+    // Required fields are now each variant interface's own string set, so this cannot drift.
+    const linkedIn = { variants: [{ headline: 'Join us' }, { introText: 'Come along', headline: 'Join us' }] };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as { variants: unknown[] } | undefined;
+
+    expect(restored?.variants).toEqual([{ introText: 'Come along', headline: 'Join us' }]);
+  });
+
+  /**
+   * The array fields are COERCED, not merely passed through.
+   *
+   * `populateFromBrief` assigns `recommendedGeoTargets` straight into a signal typed
+   * `LinkedInGeoTarget[]`, and `canSubmit` maps over it — so a stored block saved before that
+   * field existed would write `undefined` and throw on Restore. Coercing to `[]` keeps the brief
+   * readable and renders as "none selected", which is the truthful answer.
+   */
+  it('coerces missing array fields on a variant block so a restore cannot throw', () => {
+    const linkedIn = { variants: [{ headline: 'Join us' }] };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as Record<string, unknown> | undefined;
+
+    expect(restored?.['recommendedGeoTargets']).toEqual([]);
+  });
+
+  it('reads a brief whose identity is only in the top-level event_slug', () => {
+    // event_details is opaque JSON another client may fill differently. The top-level column is
+    // the REQUIRED key this row was retrieved by, so a blob with neither name nor slug is still
+    // identifiable — checking the blob alone discarded a brief the Implementation tab can name.
+    const brief = fromBriefResponse(storedBrief({ event_slug: 'event-a', event_details: { city: 'Paris' } }));
+    expect(brief).not.toBeNull();
+    expect(brief?.eventDetails.slug).toBe('event-a');
+  });
+
+  it('reports a brief whose every stored platform is unknown as unreadable', () => {
+    // `populateFromBrief` applies the selection only when non-empty
+    // (`if (brief.selectedPlatforms?.length)`), so an empty array leaves its `google-ads` default
+    // standing — a Reddit-only brief would restore as a Google Ads campaign, the user's real
+    // choice silently replaced by one they never made. Unreadable puts that in front of them.
+    expect(fromBriefResponse(storedBrief({ platforms: ['tiktok-ads'] }))).toBeNull();
+  });
+
+  it('keeps a brief readable when it stores no platforms at all', () => {
+    // A different case from the one above: nothing is being contradicted, so the consumer's
+    // default is the ordinary one rather than a silent replacement.
+    expect(fromBriefResponse(storedBrief({ platforms: [] }))).not.toBeNull();
+  });
+
+  it('keeps the platforms it recognises when only SOME are unknown', () => {
+    const brief = fromBriefResponse(storedBrief({ platforms: ['tiktok-ads', 'linkedin-ads'] }));
+    expect(brief?.selectedPlatforms).toEqual(['linkedin-ads']);
+  });
+
+  it('drops array elements the consumers would crash on', () => {
+    // `Any` columns are unvalidated on the way in, so a stored row can hold `[null]`. The
+    // Implementation tab dereferences elements directly — `v.primaryText.trim()`
+    // (implementation-tab.component.ts:238) and `g.urn` (:243) — so one bad element crashes
+    // Restore rather than degrading it.
+    const meta = fromBriefResponse(storedBrief({ copy: { meta: { variants: [null, { primaryText: 'ok', headline: 'h' }, 'nope'] } } }))
+      ?.metaCopy as unknown as Record<string, unknown>;
+    expect(meta['variants']).toEqual([{ primaryText: 'ok', headline: 'h' }]);
+
+    // An empty object is a plain object, so object-ness alone let it through — and canSubmit then
+    // called v.primaryText.trim() on it. A Meta variant with headline but no primaryText survives
+    // the shared-field filter, so assert canSubmit's own dereference is still safe.
+    const bare = fromBriefResponse(storedBrief({ copy: { meta: { variants: [{}, { headline: 'h' }] } } }))?.metaCopy as unknown as Record<string, unknown>;
+    expect(bare['variants']).toEqual([]);
+
+    const linkedIn = fromBriefResponse(storedBrief({ copy: { linkedIn: { variants: [], recommendedGeoTargets: [null, { urn: 'urn:li:geo:1' }] } } }))
+      ?.linkedInCopy as unknown as Record<string, unknown>;
+    expect(linkedIn['recommendedGeoTargets']).toEqual([{ urn: 'urn:li:geo:1' }]);
+  });
+
+  it('keeps string elements in the recommendation fields, which are not object arrays', () => {
+    // The element type differs BY FIELD, and getting it backwards is its own bug: filtering the
+    // `string[]` fields for objects would silently empty every restored keyword and subreddit —
+    // worse than the crash above, because it looks like success.
+    const reddit = fromBriefResponse(
+      storedBrief({ copy: { reddit: { variants: [], recommendedKeywords: ['kubernetes', null, 'cloud'], recommendedSubreddits: ['r/k8s'] } } })
+    )?.redditCopy as unknown as Record<string, unknown>;
+
+    expect(reddit['recommendedKeywords']).toEqual(['kubernetes', 'cloud']);
+    expect(reddit['recommendedSubreddits']).toEqual(['r/k8s']);
+  });
+
+  /**
+   * Completeness, not just correctness.
+   *
+   * The first version of `VARIANT_COPY_ARRAY_FIELDS` named four fields and missed four more,
+   * each a `string[]` a consumer iterates — a partial list is worse than none, because it reads
+   * as exhaustive. This drives every field the two brief-copy interfaces declare as an array,
+   * so adding one to an interface without adding it to the coercion list fails here rather than
+   * throwing on a user's Restore.
+   */
+  it('coerces every array field the platform copy blocks declare', () => {
+    const arrayFields = [
+      'recommendedGeoTargets',
+      'recommendedJobFunctions',
+      'recommendedSkills',
+      'recommendedGroups',
+      'recommendedSubreddits',
+      'recommendedInterests',
+      'recommendedKeywords',
+      'recommendedGeos',
+    ];
+
+    const linkedIn = fromBriefResponse(storedBrief({ copy: { linkedIn: { variants: [] } } }))?.linkedInCopy as unknown as Record<string, unknown>;
+    const reddit = fromBriefResponse(storedBrief({ copy: { reddit: { variants: [] } } }))?.redditCopy as unknown as Record<string, unknown>;
+
+    for (const field of arrayFields) {
+      expect(Array.isArray(linkedIn?.[field]), `linkedInCopy.${field} must be an array, not ${typeof linkedIn?.[field]}`).toBe(true);
+      expect(Array.isArray(reddit?.[field]), `redditCopy.${field} must be an array, not ${typeof reddit?.[field]}`).toBe(true);
+    }
+  });
+
+  // A non-array value in an array field is coerced too — a stored `null` or a string reaches the
+  // same `.map()` and fails the same way an absent key does.
+  it('coerces a non-array value in an array field', () => {
+    const linkedIn = { variants: [{ headline: 'Join us' }], recommendedGeoTargets: null };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as Record<string, unknown> | undefined;
+
+    expect(restored?.['recommendedGeoTargets']).toEqual([]);
+  });
+});
+
+describe('CampaignServiceClient.loadBrief', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  it('reports the brief campaign-service holds for the slug', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf');
+
+    expect(result.status).toBe('loaded');
+    expect(result.briefId).toBe('b-1');
+    expect(result.brief?.eventDetails.name).toBe('KubeCon EU 2026');
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
+  });
+
+  // campaign-service's own typed 404 — the documented first-time case.
+  it('reports none when campaign-service says the slug has no brief', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null });
+  });
+
+  // `unreadable` must stay distinct from `none`, and this is the test that pins it. The save
+  // path is find-then-UPDATE, so a row reported as "no brief" leads the user to generate a
+  // replacement — whose save then silently overwrites the brief that was sitting there.
+  it('reports unreadable, NOT none, for a row it cannot map back', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ event_details: null }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'unreadable', briefId: 'b-1', brief: null });
+  });
+
+  // The read is scoped exactly like the write. `/foundation/campaigns` is reachable by an ED of
+  // any foundation, and a brief lives in one foundation's table — a fixed `tlf` would 403 a CNCF
+  // ED, or offer an LF staffer who also holds TLF access a TLF brief for a CNCF event.
+  it("reads from the caller's foundation rather than a fixed slug", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'cncf');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs');
+  });
+
+  // The gateway 404 again, and read-side it is the same hazard as write-side: reported as
+  // "none", a routing outage invites the user to replace a brief that still exists.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+  ])('rethrows %s rather than reporting none', async (_label, errorBody) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
   });
 });

@@ -94,14 +94,18 @@ export class CampaignsComponent {
   /**
    * The campaign-service brief id this session has established ownership of, or null.
    *
-   * Set by a SUCCESSFUL save: creating a brief is the strongest proof of ownership there is, and
-   * without recording it the second Proceed of a session is refused as unowned — a user editing
-   * and re-proceeding would be told their own brief belongs to someone else. In this phase that
-   * is the only way it becomes non-null, since persistence is write-only and nothing can load an
-   * existing brief; LFXV2-3108 adds the read and a second source.
+   * TWO sources on this branch, and both are genuine proof: the page LOADED the brief from
+   * campaign-service (the restore path), or it CREATED the brief itself on an earlier save.
+   * Recording the created id is what stops the second Proceed of a session being refused as
+   * unowned — a user editing and re-proceeding would otherwise be told their own brief belongs
+   * to someone else.
    *
-   * Cleared by `resetToPlanning` with the brief it belonged to. A stale id would let the NEXT
-   * brief — a different event — claim ownership of the previous one's row.
+   * Sent with the next save as proof: the server refuses to replace a stored brief for a caller
+   * that cannot name it, because a reload or a second tab is enough to reach a save that would
+   * otherwise overwrite content the user never saw (LFXV2-3200).
+   *
+   * Cleared by `resetToPlanning` with the brief it belonged to — a stale id would let the NEXT
+   * brief, a different event, claim ownership of the previous one's row.
    *
    * Keyed BY foundation slug, because a single scalar is wrong across a foundation switch twice
    * over. That switch does not re-create this component and deliberately keeps the brief (see the
@@ -112,21 +116,27 @@ export class CampaignsComponent {
    *
    * Keyed by BOTH halves of the server's own identity for a brief, `(project_id, event_slug)`, so
    * an id can only ever be replayed against the row it names. That makes the invariant structural
-   * rather than something each future code path has to remember.
+   * rather than something each future code path has to remember, and it applies to both sources
+   * above: a restored id is as event- and foundation-specific as a created one.
    *
-   * An earlier revision keyed only the foundation, on the premise that the event half was covered
-   * because "every event change goes through `resetToPlanning`". That premise is false —
-   * `selectTab` sets the tab directly, so returning to Planning by clicking the tab recreates the
-   * planning form without any reset. Save event A, click Planning, generate a brief for event B:
-   * with a foundation-only key, B's save carries A's id and the server, given a name it
-   * recognises, accepts an overwrite of a brief this session never approved as B.
+   * An earlier revision keyed only the foundation and claimed the event half was covered because
+   * "every event change goes through `resetToPlanning`". That premise is false — `selectTab` sets
+   * the tab directly, so returning to Planning by clicking the tab recreates the planning form
+   * without any reset. Restore event A, click Planning, generate a brief for event B: with a
+   * foundation-only key, B's save would carry A's id and the server would accept an overwrite of
+   * a brief this session never loaded, which is precisely what the guard exists to prevent.
    *
    * The event half is derived exactly as the write path derives the key it sends
    * (`deriveEventSlug` in `campaign-service.service.ts`): `eventDetails.slug` EXACTLY as
    * stored, with trimming used only to test emptiness — that helper returns the untrimmed
-   * original, and that exact string is what goes on the wire as `event_slug`. It is duplicated rather than imported because that module is SERVER-side and this
-   * component runs in the browser; deriving it any other way would let the lookup and the request
-   * disagree about which row is being claimed, so the two must be changed together.
+   * original, and that exact string is what goes on the wire as `event_slug`.
+   *
+   * It is duplicated rather than imported because that module is SERVER-side and this component
+   * runs in the browser; deriving it any other way would let the lookup and the request disagree
+   * about which row is being claimed, so the two must be changed together.
+   *
+   * A plain field rather than a signal: nothing renders it, and it answers "may this save
+   * replace?" at the moment a request is built.
    */
   /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
@@ -138,7 +148,23 @@ export class CampaignsComponent {
    * content at all, and "Brief saved." is the one thing this banner must never say falsely.
    */
   private readonly conflictMessages: Record<NonNullable<CampaignBriefPersistResult['conflict']>, string> = {
-    'unowned-brief-exists': 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
+    // "Reload" alone is not enough and the saved banner already says so: the Planning url control
+    // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
+    // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
+    // them on a blank Planning tab wondering where the brief went.
+    'unowned-brief-exists':
+      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to work from the stored brief.',
+    // Does NOT advise a reload, even though this branch adds the read path that would make one
+    // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
+    // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
+    // the work currently on screen. Telling the user to reload throws that work away to reach a
+    // state they can already get to by clicking Proceed again.
+    //
+    // An earlier revision said "Reload and re-enter the event URL to see their changes" — added
+    // while restoring reload advice this branch had dropped, without noticing it contradicts the
+    // promotion added on the base. `unowned-brief-exists` above is the conflict that genuinely
+    // needs reload advice: there the session may NOT replace, so the stored brief has to be
+    // loaded before anything can proceed.
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     // Names the consequence, like the other two. It did not need to while this conflict granted
@@ -174,6 +200,29 @@ export class CampaignsComponent {
    * validator sends none, and the server's ownership check still decides whether it may replace.
    */
   private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
+
+  /**
+   * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
+   *
+   * The `programType` subscription treats a change as the user choosing a different program and
+   * calls `resetToPlanning`, which discards the brief on screen. That is right for a user
+   * switching programs and wrong for this: the program is not changing away from the brief, it is
+   * catching up TO it.
+   *
+   * (`resetToPlanning` no longer clears `knownBriefIds` — the row still exists upstream, so its
+   * id stays valid. Only the on-screen brief is discarded.)
+   *
+   * An earlier revision relied on statement order alone — the adopt runs before the ownership
+   * write and before `onProceedToImplementation`, so a reset triggered here is undone by both.
+   * That works, and it is why NO TEST FAILS when this flag is ignored: the ordering rescues it.
+   *
+   * The flag is kept anyway, as defence rather than behaviour. Moving the adopt below either of
+   * those statements — a reasonable-looking edit — would silently strand the restored brief, and
+   * the previous comment asserting "the subscription sees no change" was simply false. This makes
+   * the intent explicit at the point that decides it instead of leaving it implicit in line
+   * order.
+   */
+  private adoptingRestoredProgram = false;
 
   private briefPersistenceGeneration = 0;
 
@@ -274,6 +323,11 @@ export class CampaignsComponent {
         return;
       }
       this.selectedProgramType.set(value);
+      // A restore adopting the brief's OWN program is not the user switching programs, so it must
+      // not discard the brief being restored or the ownership recorded for it.
+      if (this.adoptingRestoredProgram) {
+        return;
+      }
       this.resetToPlanning();
     });
 
@@ -325,10 +379,100 @@ export class CampaignsComponent {
     this.selectorForm.controls.deliveryType.setValue('paid-marketing');
   }
 
-  protected onProceedToImplementation(brief: CampaignBriefOutput): void {
+  /**
+   * Hand a brief to the Implementation tab.
+   *
+   * `alreadyPersisted` suppresses the save, and the RESTORE path sets it. A restored brief came
+   * out of campaign-service moments ago, so persisting it again is not a no-op that costs one
+   * request: `saveBrief` finds the existing row and PUTs, bumping `version` and spending the
+   * ETag for a read the user performed. Worse, what it would write is `fromBriefResponse`'s
+   * RECONSTRUCTION rather than the stored bytes — `event_details`, `copy`, `keywords` and
+   * `targeting` are opaque `Any` in the service design, and anything in them the adapter does
+   * not model would be silently replaced by the narrower shape on the way back out. A restore
+   * that quietly rewrites the thing it restored is the one outcome this path must not have.
+   */
+  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+    if (alreadyPersisted) {
+      // Bump the generation even though nothing is being saved. `persistBrief` normally does
+      // this as its first act, and skipping the save must not also skip the INVALIDATION: a
+      // save still in flight for the brief the user just replaced would otherwise match the
+      // unchanged generation on return and write its `saved` state and `briefId` onto the
+      // restored brief — attributing one brief's id to another. The restored brief is already
+      // durable, so the state it lands in is the resting one, not `saving`.
+      this.briefPersistenceGeneration++;
+      // The restored brief's id is RETAINED, not cleared: it is the page's proof that the brief
+      // on screen came out of campaign-service, and the next save sends it so the server will
+      // replace that row rather than refusing as unowned (LFXV2-3200). Status stays `off`
+      // because nothing is in flight — the id is provenance, not progress.
+      const restoredKey = this.ownershipKey(this.activeFoundationSlug(), brief);
+      this.briefPersistence.set({
+        status: 'off',
+        briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
+        message: null,
+      });
+      return;
+    }
     this.persistBrief(brief);
+  }
+
+  /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
+    // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
+    // carries no program type, so an Events brief can be offered while the page sits on
+    // Education, and restoring it would leave the selector describing one program while the brief
+    // on screen belongs to another.
+    //
+    // It has to happen HERE rather than being left to the user, because the correction is a trap:
+    // changing the selector runs `resetToPlanning`, which discards `briefOutput` — so the brief
+    // they just restored is thrown away and they are back on an empty Planning tab. (Ownership
+    // survives: `resetToPlanning` no longer clears `knownBriefIds`, because the upstream row is
+    // still there. It is the BRIEF that is lost, not the right to save it.)
+    //
+    // The subscription DOES fire for this write — an earlier comment here claimed it saw no
+    // change, which was wrong. `adoptingRestoredProgram` is what stops it resetting, rather than
+    // this statement happening to run before the ownership write.
+    //
+    // Driven through the CONTROL, not the signal: the subscription mirrors the control into
+    // `selectedProgramType`, so writing the signal alone would leave the visible selector showing
+    // the old program.
+    if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
+      this.adoptingRestoredProgram = true;
+      try {
+        this.selectorForm.controls.programType.setValue(brief.programType);
+      } finally {
+        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
+        // later program switch into a silent no-reset.
+        this.adoptingRestoredProgram = false;
+      }
+    }
+
+    // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
+    // resting state in one place.
+    //
+    // Filed under the foundation AND the event it was loaded for, like a created id: a restored
+    // id names exactly one row, so replaying it to any other project or event would be refused
+    // there — or, worse, accepted against a brief this session never loaded.
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null) {
+      // No ETag from a restore: the read path deliberately drops the load-time validator
+      // (LFXV2-3204). Classified `'overwrite'` rather than `'unknown'`, and the distinction is
+      // the one the base branch draws — whether anyone DECIDED to save without a validator.
+      //
+      // A restore is a decision. The user was shown the stored brief's content and chose to work
+      // from it, so the page knows which version it is editing even though it was not handed the
+      // token for it. That is unlike an indeterminate write, where nothing was displayed and
+      // nothing was chosen. Marking it `'unknown'` would refuse the first save after every
+      // restore, which is this feature's main path.
+      //
+      // The residual risk is real and is what LFXV2-3204 closes: another writer changing the row
+      // between the load and the save is overwritten rather than producing a 412. That is a
+      // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
+      // response — and the user has at least seen the content they are replacing.
+      this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
+    }
+    this.onProceedToImplementation(brief, true);
   }
 
   /**
@@ -368,9 +512,11 @@ export class CampaignsComponent {
     // generation and discards the outcome anyway.
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
-    // Snapshotted alongside the slug, and for a sharper reason: read inside the queued callback
-    // instead, a save that completed while THIS one waited would hand its id to a different
-    // brief — ownership of a row this payload has never seen.
+    // Snapshotted for the SAME reason, and here the reason is sharper. A known brief id is the
+    // proof that THIS brief came out of storage. Read inside the queued callback instead, a
+    // restore landing between Proceed and execution would attach the restored brief's id to a
+    // GENERATED brief — handing it ownership of a row it has never seen and inverting the guard
+    // into a licence to overwrite, which is precisely what LFXV2-3200 exists to prevent.
     //
     // Only an id issued under THIS foundation is ours to replay; one from another foundation
     // names a row in a different project and would be refused there.
@@ -485,10 +631,10 @@ export class CampaignsComponent {
             return;
           }
           // A REFUSED save is not a save. `conflict` arrives with `enabled: true` — the flag is
-          // on and the request was served — so keying the banner on `enabled` alone renders
+          // on, the request was served — so keying the banner on `enabled` alone would render
           // "Brief saved." over work that was never written, which is the one thing this banner
-          // must never say. It surfaces as `error` because the user's position is exactly that
-          // of a failed save, and the remedy is the same.
+          // must never say. It carries `error` rather than a new state: the user's position is
+          // exactly that of a failed save, and the remedy is the same.
           if (result.conflict !== undefined) {
             // The two conflicts are different situations and must not share a sentence. Both mean
             // "not written", but `unowned-brief-exists` says this session may not replace that

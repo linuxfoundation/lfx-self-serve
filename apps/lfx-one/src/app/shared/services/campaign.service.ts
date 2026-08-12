@@ -8,6 +8,7 @@ import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefRefineRequest,
@@ -76,11 +77,13 @@ export class CampaignService {
     knownEtag: string | null = null,
     allowEtagFallback = false
   ): Observable<CampaignBriefPersistResult> {
-    // `brief_id` is sent only when this session has established ownership of that row — in this
-    // phase, by having created it. It is the caller's proof: the server refuses to replace a
-    // stored brief for a caller that cannot name it, so a first save creates and a second save
-    // in the same session updates the brief it made, while a fresh session that never saw the
-    // row is refused rather than overwriting it (LFXV2-3200).
+    // `brief_id` is sent only when this session has established ownership of that row, which on
+    // this branch has TWO sources: the page loaded the brief from campaign-service, or it created
+    // the brief itself on an earlier save.
+    //
+    // Either is proof, and its absence is MEANINGFUL rather than merely missing: the server
+    // refuses to replace a stored brief for a caller that cannot name it, so a freshly generated
+    // brief creates and never overwrites one nobody here has seen (LFXV2-3200).
     let params = new HttpParams().set('project', projectSlug);
     if (knownBriefId !== null && knownBriefId !== '') {
       params = params.set('brief_id', knownBriefId);
@@ -95,6 +98,24 @@ export class CampaignService {
       }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
+  }
+
+  /**
+   * Load the brief previously saved for this event slug.
+   *
+   * `HttpParams` rather than string interpolation: an event slug is derived from a pasted URL's
+   * last path segment and is not guaranteed to be URL-safe.
+   *
+   * `projectSlug` for the same reason `persistBrief` takes one — briefs are scoped and authorised
+   * per project in campaign-service, and `/foundation/campaigns` is reachable by an ED of any
+   * foundation. Reading without it would either 403 or, for a staffer holding several, offer to
+   * restore a brief filed under a foundation they are not looking at. The server refuses the
+   * request outright when it is missing rather than defaulting.
+   */
+  public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
+    return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
+      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
+    });
   }
 
   public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
