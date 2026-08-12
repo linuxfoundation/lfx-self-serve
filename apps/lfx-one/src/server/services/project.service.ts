@@ -7976,15 +7976,20 @@ export class ProjectService {
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        -- CURRENT_EVENT_*, not FINAL_CURRENT_* — the FINAL_ columns are event-level constants
-        -- repeated on every DAYS_TO_EVENT row (see headQuery above), so summing one per day would
-        -- draw the current-year line flat at the final total instead of a rising curve.
+        -- The per-day curve lives on _DRILLDOWN, not on the base predictions table: the base table
+        -- is event-grained and carries only the FINAL_* totals headQuery reads. These
+        -- CURRENT_EVENT_*/CUMULATIVE_* columns exist solely on the drilldown, so pointing this
+        -- query at the base table asks for identifiers that are not there.
+        --
+        -- CURRENT_EVENT_*, not FINAL_CURRENT_*: the FINAL_ columns are event-level constants
+        -- repeated on every DAYS_TO_EVENT row, so plotting one per day would draw the current-year
+        -- line flat at the final total instead of a rising curve.
         SUM(CURRENT_EVENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
         SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
         SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
         SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
         SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
       WHERE EVENT_ID = ?
       GROUP BY DAYS_TO_EVENT
       ORDER BY DAYS_TO_EVENT DESC

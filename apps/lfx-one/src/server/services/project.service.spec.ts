@@ -500,6 +500,27 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       }
     });
 
+    // The two pacing reads target different tables and neither is interchangeable: the base
+    // predictions table is event-grained and carries only the FINAL_* totals, while the per-day
+    // curve columns exist solely on _DRILLDOWN. Querying one for the other's columns raises an
+    // invalid-identifier error, which getEventPacing propagates — so the whole drawer fails, not
+    // just pacing. A rebuild collapsed these onto one table once already.
+    it('reads the headline from the predictions table and the curve from the drilldown', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const pacingReads = execute.mock.calls.filter(([sql]) => String(sql).includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS'));
+      const head = pacingReads.find(([sql]) => String(sql).includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS'));
+      const curve = pacingReads.find(([sql]) => String(sql).includes('DAYS_TO_EVENT'));
+
+      expect(head).toBeDefined();
+      expect(curve).toBeDefined();
+      // The headline must not come from the drilldown, nor the curve from the base table.
+      expect(String(head![0])).not.toContain('_DRILLDOWN');
+      expect(String(curve![0])).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN');
+    });
+
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
     // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so
