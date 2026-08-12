@@ -145,6 +145,22 @@ describe('CampaignsComponent — email delivery channel', () => {
    * switch. The email panel renders a placeholder today, which is precisely why this would go
    * unnoticed until the real staging form lands.
    */
+  it('clears both delivery types when the program changes', () => {
+    const emailBrief = { eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput;
+    internals().onProceedToImplementation(exampleBrief);
+    internals().onEmailProceedToImplementation(emailBrief);
+    expect(internals().briefOutput()).not.toBeNull();
+    expect(internals().emailBriefOutput()).not.toBeNull();
+
+    internals().selectorForm.controls.programType.setValue('education');
+    fixture.detectChanges();
+
+    expect(internals().briefOutput()).toBeNull();
+    expect(internals().selectedTab()).toBe('planning');
+    expect(internals().emailBriefOutput()).toBeNull();
+    expect(internals().selectedEmailTab()).toBe('planning');
+  });
+
   it('does not claim a brief is ready when none has been generated', () => {
     // The Implement tab is directly clickable — no disabled binding — so this panel is reachable
     // before anything has been generated, and "Your brief is ready" is then simply false, told to
@@ -174,22 +190,6 @@ describe('CampaignsComponent — email delivery channel', () => {
     // compiler normalizes the join either way. It is kept as a statement of the requirement, not
     // as a guard, and a reader should not take it for one.
     expect(withBrief?.textContent).not.toContain('ready.Staging');
-  });
-
-  it('clears both delivery types when the program changes', () => {
-    const emailBrief = { eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput;
-    internals().onProceedToImplementation(exampleBrief);
-    internals().onEmailProceedToImplementation(emailBrief);
-    expect(internals().briefOutput()).not.toBeNull();
-    expect(internals().emailBriefOutput()).not.toBeNull();
-
-    internals().selectorForm.controls.programType.setValue('education');
-    fixture.detectChanges();
-
-    expect(internals().briefOutput()).toBeNull();
-    expect(internals().selectedTab()).toBe('planning');
-    expect(internals().emailBriefOutput()).toBeNull();
-    expect(internals().selectedEmailTab()).toBe('planning');
   });
 
   it('does not let one delivery type receive the other approved brief', () => {
