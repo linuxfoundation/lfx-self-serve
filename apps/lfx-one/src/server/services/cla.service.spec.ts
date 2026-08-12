@@ -303,7 +303,7 @@ describe('ClaService.getMyClas', () => {
     expect(calledUrl).toContain('githubUsername=octocat');
   });
 
-  it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present (survives the strip)', async () => {
+  it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     getEffectiveEmail.mockReturnValue('alice@x.org');
     getEffectiveSub.mockReturnValue('auth0|abc');
@@ -321,10 +321,8 @@ describe('ClaService.getMyClas', () => {
 
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    // Invariant, NOT the padding mechanism: a multi-email caller's github keys must reach the backend.
-    // Stays true after the #114 padding is removed and the gateway stops stripping single-value params.
-    expect(params.getAll('githubId')).toContain('13434323');
-    expect(params.getAll('githubUsername')).toContain('octocat');
+    expect(params.getAll('githubId')).toEqual(['13434323']);
+    expect(params.getAll('githubUsername')).toEqual(['octocat']);
   });
 
   it('does not duplicate github keys on the single-email path (no-regression, FR-002)', async () => {
@@ -338,7 +336,6 @@ describe('ClaService.getMyClas', () => {
 
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    // One email -> nothing is multi-valued -> no padding: byte-for-byte the pre-#114 query.
     expect(params.getAll('email')).toEqual(['alice@x.org']);
     expect(params.getAll('githubId')).toEqual(['13434323']);
     expect(params.getAll('githubUsername')).toEqual(['octocat']);
@@ -365,7 +362,7 @@ describe('ClaService.getMyClas', () => {
 
     const [, calledUrl, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
     const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
-    expect(params.getAll('githubId')).toContain('13434323'); // target's key, present
+    expect(params.getAll('githubId')).toContain('13434323');
     expect(params.getAll('githubUsername')).toContain('octocat');
     expect(opts.bearerToken).toBe('target-token'); // runs under the target's token, not the impersonator's
   });
