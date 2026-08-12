@@ -3,8 +3,10 @@
 
 import type { NextFunction, Request, Response } from 'express';
 
+import { ResourceNotFoundError } from '../errors';
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { parseOrgLensRoiMethod } from '../helpers/org-lens-roi-method.helper';
+import { assertOrgLensRoiProjectSlug } from '../helpers/org-lens-roi-project-slug.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensRoiService } from '../services/org-lens-roi.service';
@@ -101,6 +103,53 @@ export class OrgLensRoiController {
       const projects = await this.service.getProjects(req, orgUid, method);
       logger.success(req, operation, startTime, { org_uid: orgUid, method, rows: projects.rows.length });
       this.send(res, projects);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getProjectDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_org_lens_roi_project_detail';
+    const orgUid = req.params['orgUid'];
+    const projectSlug = req.params['projectSlug'];
+    const startTime = logger.startOperation(req, operation, { org_uid: orgUid, project_slug: projectSlug });
+    try {
+      assertOrgUid(orgUid, operation);
+      assertOrgLensRoiProjectSlug(projectSlug, operation);
+      const method = parseOrgLensRoiMethod(req.query['method'], operation);
+      await assertOrgLensRead(req, orgUid, operation);
+
+      const detail = await this.service.getProjectDetail(req, orgUid, projectSlug, method);
+      // 404, deliberately not an empty 200. A slug this organization has no ROI row for is either
+      // another organization's project or none at all, and answering "no data" would let the
+      // viewer read an absence of measurement into a project they cannot see.
+      if (detail === null) throw new ResourceNotFoundError('ROI project', projectSlug, { operation });
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, method, has_org_lens_project: detail.hasOrgLensProject });
+      this.send(res, detail);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getProjectAnnual(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_org_lens_roi_project_annual';
+    const orgUid = req.params['orgUid'];
+    const projectSlug = req.params['projectSlug'];
+    const startTime = logger.startOperation(req, operation, { org_uid: orgUid, project_slug: projectSlug });
+    try {
+      assertOrgUid(orgUid, operation);
+      assertOrgLensRoiProjectSlug(projectSlug, operation);
+      const method = parseOrgLensRoiMethod(req.query['method'], operation);
+      await assertOrgLensRead(req, orgUid, operation);
+
+      const annual = await this.service.getProjectAnnual(req, orgUid, projectSlug, method);
+      // Same distinction the read preserves: no rows for an existing project is a 200 with an empty
+      // distribution; a project that is not this organization's is a 404.
+      if (annual === null) throw new ResourceNotFoundError('ROI project', projectSlug, { operation });
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, method, rows: annual.rows.length });
+      this.send(res, annual);
     } catch (error) {
       return next(error);
     }
