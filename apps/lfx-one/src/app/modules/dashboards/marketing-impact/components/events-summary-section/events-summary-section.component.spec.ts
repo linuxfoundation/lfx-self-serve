@@ -21,6 +21,9 @@ describe('EventsSummarySectionComponent', () => {
 
   const response = (overrides: Partial<EventsOverviewSummaryResponse> = {}): EventsOverviewSummaryResponse => ({
     projectId: 'p1',
+    // The scope the response actually covers — a trailing preset is served YTD, so callers label
+    // from this rather than from the picker.
+    scope: 'ytd',
     registrations: metric(1200, 0.52),
     attendees: metric(800, -0.25),
     events: metric(12, 0),
@@ -131,6 +134,6 @@ describe('EventsSummarySectionComponent', () => {
   it('scopes the request to the selected foundation', async () => {
     await render(response(), 'tlf');
 
-    expect(getEventsOverviewSummary).toHaveBeenCalledWith('tlf');
+    expect(getEventsOverviewSummary).toHaveBeenCalledWith('tlf', undefined);
   });
 });

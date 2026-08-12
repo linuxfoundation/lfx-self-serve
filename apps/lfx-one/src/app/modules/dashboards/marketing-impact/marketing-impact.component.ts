@@ -6,7 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
+import { COMING_SOON_FOCUS_PROGRAMS, FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -20,7 +20,6 @@ import type {
   MarketingImpactTabOption,
 } from '@lfx-one/shared/interfaces';
 
-import { AttributionSectionComponent } from './components/attribution-section/attribution-section.component';
 import { EmailTabComponent } from './components/email-tab/email-tab.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
 import { PerformanceMarketingTabComponent } from './components/performance-marketing-tab/performance-marketing-tab.component';
@@ -35,7 +34,6 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
     SelectComponent,
     FilterPillsComponent,
     OverviewTabComponent,
-    AttributionSectionComponent,
     PerformanceMarketingTabComponent,
     EmailTabComponent,
     WebActivityTabComponent,
@@ -63,7 +61,7 @@ export class MarketingImpactComponent {
 
   // === WritableSignals ===
   protected readonly selectedFocus = signal<MarketingImpactFocusProgram>('all');
-  protected readonly selectedTab = signal<MarketingImpactTab>('overview');
+  protected readonly selectedTab = signal<MarketingImpactTab>('all');
 
   // === Computed Signals ===
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
@@ -73,6 +71,10 @@ export class MarketingImpactComponent {
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
   protected readonly isExecutiveDirector: Signal<boolean> = this.initIsExecutiveDirector();
+  /** True when the selected Campaign Type has no dashboard content built yet. */
+  protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
+  /** Display label of the selected Campaign Type, used in the coming-soon copy. */
+  protected readonly selectedFocusLabel = computed(() => this.focusOptions.find((o) => o.id === this.selectedFocus())?.label ?? '');
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
@@ -82,7 +84,7 @@ export class MarketingImpactComponent {
 
       const allowed = FOCUS_VISIBLE_TABS[focus];
       if (!allowed.has(this.selectedTab())) {
-        this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'overview');
+        this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'all');
       }
     }
   }

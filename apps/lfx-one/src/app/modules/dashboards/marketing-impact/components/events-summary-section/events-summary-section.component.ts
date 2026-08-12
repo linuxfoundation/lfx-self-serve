@@ -6,9 +6,9 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { finalize, map, of, switchMap } from 'rxjs';
+import { combineLatest, finalize, map, of, switchMap } from 'rxjs';
 
-import type { EventsOverviewSummary, EventsSummaryStat } from '@lfx-one/shared/interfaces';
+import type { EventsOverviewMetricKey, EventsOverviewSummary, EventsSummaryStat } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-summary-section',
@@ -21,7 +21,7 @@ export class EventsSummarySectionComponent {
   // `format` defaults to a plain count; 'currency' formats the value as dollars.
   private static readonly tiles: readonly {
     id: string;
-    key: keyof EventsOverviewSummary;
+    key: EventsOverviewMetricKey;
     label: string;
     icon: string;
     iconClass: string;
@@ -49,38 +49,51 @@ export class EventsSummarySectionComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
+  /**
+   * Reinstated by the period plumbing: a month re-aggregates from the event-grained tables, so
+   * the tiles are no longer fixed to year-to-date. The response reports the scope it actually
+   * served and the heading reads that, so a trailing preset never renders under a month label.
+   */
+  public readonly selectedPeriod = input<string>('');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
 
   // === Computed Signals ===
   protected readonly summary: Signal<EventsOverviewSummary | null> = this.initSummary();
+  /**
+   * Heading scope read from the response, not the picker: a trailing preset is served the YTD
+   * rollup, so titling it "Last 3 months" would name a range the numbers do not cover.
+   */
+  protected readonly scopeLabel = computed(() => (this.summary()?.scope === 'month' ? 'Monthly' : 'YTD'));
   protected readonly stats: Signal<EventsSummaryStat[]> = this.initStats();
   protected readonly skeletons: readonly number[] = EventsSummarySectionComponent.tiles.map((_, i) => i);
 
   // === Private Initializers ===
   private initSummary(): Signal<EventsOverviewSummary | null> {
-    // These tiles are deliberately fixed to year-to-date: the underlying warehouse
-    // views expose only `_YTD` aggregates, so the dashboard period picker is not a
-    // parameter here. Refetching on period change would reload the skeletons without
-    // ever changing a number, which reads as though the tiles were period-scoped.
+    const slug$ = toObservable(this.foundationSlug);
+    const period$ = toObservable(this.selectedPeriod);
+
     return toSignal(
-      toObservable(this.foundationSlug).pipe(
-        switchMap((slug) => {
+      combineLatest([slug$, period$]).pipe(
+        switchMap(([slug, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of(null);
           }
           this.loading.set(true);
-          // All 7 tiles come from a single YTD-scoped endpoint over
-          // PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW + MARKETING_EVENT_SPONSORSHIPS. Each
-          // metric carries its value and a YoY change fraction (null when no prior baseline);
-          // a null response falls the whole block back to dashes.
-          return this.analyticsService.getEventsOverviewSummary(slug).pipe(
+          // The default (YTD/trailing) period reads all 7 tiles from
+          // PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW + MARKETING_EVENT_SPONSORSHIPS. A single
+          // month re-aggregates events/registrations/speakers per event instead and returns null
+          // for the four metrics that only exist as YTD rollups. Each metric carries its value
+          // and a YoY change fraction (null when no prior baseline); a null response falls the
+          // whole block back to dashes.
+          return this.analyticsService.getEventsOverviewSummary(slug, period || undefined).pipe(
             map((data) =>
               data === null
                 ? null
                 : ({
+                    scope: data.scope,
                     registrations: data.registrations,
                     attendees: data.attendees,
                     events: data.events,
@@ -103,8 +116,10 @@ export class EventsSummarySectionComponent {
       const data = this.summary();
       return EventsSummarySectionComponent.tiles.map((tile) => {
         const metric = data ? data[tile.key] : null;
+        // A null value means the metric isn't derivable for the selected period (the YTD-only
+        // rollups under a month filter), so it stays a dash rather than rendering as zero.
         let value = '—';
-        if (metric) {
+        if (metric && metric.value !== null) {
           value = tile.format === 'currency' ? formatCurrency(metric.value) : formatNumber(metric.value);
         }
 

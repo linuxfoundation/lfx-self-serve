@@ -1144,28 +1144,38 @@ export class AnalyticsService {
   }
 
   /**
-   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab.
+   * Foundation-wide Events Summary tiles for the Campaign Impact Overview tab.
    * Emits null on error so the tiles fall back to dashes rather than measured zeros.
    */
-  public getEventsOverviewSummary(foundationSlug: string): Observable<EventsOverviewSummaryResponse | null> {
-    return this.http.get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', { params: { foundationSlug } }).pipe(
-      catchError((error: unknown) => {
-        // Log before falling back so an outage stays diagnosable: the null return is
-        // rendered as dashes, which is otherwise indistinguishable from "no data yet".
-        console.error('[analytics] events-overview-summary failed', { foundationSlug, error });
-        return of(null);
+  public getEventsOverviewSummary(foundationSlug: string, period?: string): Observable<EventsOverviewSummaryResponse | null> {
+    return this.http
+      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', {
+        params: this.buildFoundationParams(foundationSlug, undefined, period),
       })
-    );
+      .pipe(
+        catchError((error: unknown) => {
+          // Log before falling back so an outage stays diagnosable: the null return is
+          // rendered as dashes, which is otherwise indistinguishable from "no data yet".
+          console.error('[analytics] events-overview-summary failed', { foundationSlug, period, error });
+          return of(null);
+        })
+      );
   }
 
   /**
-   * Foundation event roster (upcoming by default; pass includePast for the full history).
+   * Foundation event roster (upcoming by default; pass includePast to include past events,
+   * scoped to the period when one is supplied).
    * Emits an empty roster on error so the table shows its empty state rather than breaking.
    */
-  public getEventRoster(foundationSlug: string, includePast = false): Observable<EventRosterResponse> {
-    const key = `${foundationSlug}|${includePast}`;
+  public getEventRoster(foundationSlug: string, includePast = false, period?: string): Observable<EventRosterResponse> {
+    // Only the arguments that actually change the response belong in the key. The server applies
+    // the period filter solely when includePast is true (see getEventRoster in project.service.ts),
+    // so for the upcoming-events case every period yields the same rows — keying on it there would
+    // split one cacheable response across N entries and make the roster and the attention strip
+    // each issue their own request.
+    const key = `${foundationSlug}|${includePast}|${includePast ? (period ?? '') : ''}`;
     if (!this.eventRosterCache.has(key)) {
-      const params: Record<string, string> = { foundationSlug };
+      const params = this.buildFoundationParams(foundationSlug, undefined, period);
       if (includePast) {
         params['includePast'] = 'true';
       }

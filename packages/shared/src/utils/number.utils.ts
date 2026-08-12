@@ -66,6 +66,23 @@ export function formatCompact(abs: number, sign: string, prefix = ''): string {
   return `${sign}${prefix}${abs.toLocaleString('en-US')}`;
 }
 
+/**
+ * Format a compact figure rounded to at most one decimal place.
+ * The compact branches (K/M/B) already round to one decimal, but the sub-1000 branch
+ * renders whatever precision it is handed — so derived values like CPA arrive as
+ * "586.302…". Use this for computed/derived figures; use the plain formatters for
+ * exact amounts (e.g. cents-denominated currency) where dropping a decimal would
+ * misstate the value.
+ */
+export function formatCompactRounded(num: number, prefix = ''): string {
+  if (!Number.isFinite(num)) return `${prefix}0`;
+  // toFixed, not Math.round: Math.round resolves halves toward +Infinity, so -3.75 would round to
+  // -3.7 while 3.75 rounds to 3.8 — understating negative derived values. toFixed rounds away
+  // from zero on both signs, matching formatPercent.
+  const rounded = Number(num.toFixed(1));
+  return formatCompact(Math.abs(rounded), rounded < 0 ? '-' : '', prefix);
+}
+
 /** Strip trailing zeros (and a dangling decimal point) from a fixed-decimal string. */
 function stripTrailingZero(s: string): string {
   return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
