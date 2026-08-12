@@ -498,7 +498,14 @@ export class CampaignsComponent {
             // correct trade — a repeated refusal is recoverable and visible, a silent overwrite of
             // someone else's work is neither. The next save the user actually sees refused clears
             // it and gets through.
-            if (result.conflict === 'stale-brief' && ownershipKey !== null) {
+            // `unverified-validator` promotes to `'overwrite'` for the same reason `stale-brief`
+            // does: the user has now BEEN WARNED. That is the whole content of the distinction —
+            // an unknown validator is only dangerous while nobody has been told, and the banner
+            // has just told them. Without this the refusal is permanent: every retry re-sends the
+            // same `'unknown'` marker and is refused identically, while the banner says trying
+            // again will work. That is the dead end this file already had to fix once for
+            // `stale-brief`, reappearing because a refusal was added without its escape.
+            if ((result.conflict === 'stale-brief' || result.conflict === 'unverified-validator') && ownershipKey !== null) {
               const owned = this.knownBriefIds.get(ownershipKey);
               if (owned !== undefined) {
                 // EXPLICIT: the user has just been shown the stale-brief warning. The next save

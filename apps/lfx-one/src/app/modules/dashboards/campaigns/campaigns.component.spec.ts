@@ -459,6 +459,28 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
     });
 
+    it('lets a retry through after an unverified-validator refusal', async () => {
+      // The refusal exists because nobody had been warned. The banner has now warned them, so the
+      // retry is a decision — without promoting the marker, every retry re-sends `'unknown'` and
+      // is refused identically while the banner says trying again will work.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: true, approved: false }));
+      proceed();
+      await fixture.whenStable();
+      // The write returned no validator: recorded as unknown, so the next save carries no
+      // fallback permission.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unverified-validator' }));
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, false);
+      expect(state().status).toBe('error');
+
+      // Warned. The retry may now fall back.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, true);
+    });
+
     it('lets a retry through after a stale-brief conflict instead of dead-ending', async () => {
       // First save records id + ETag.
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
