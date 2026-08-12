@@ -348,7 +348,7 @@ export class CampaignServiceClient {
       return this.approveBrief(req, basePath, created, true);
     }
 
-    return this.replaceBrief(req, basePath, envelope, existing, knownEtag, allowEtagFallback);
+    return this.replaceBrief(req, basePath, envelope, existing, knownEtag, allowEtagFallback, eventSlug);
   }
 
   /**
@@ -423,6 +423,30 @@ export class CampaignServiceClient {
     envelope: CampaignServiceBriefEnvelope,
     error: unknown
   ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // version === 1: the row must be the untouched product of THIS POST. A higher version carries
+    // edits this request never made, so adopting it would claim someone else's work.
+    return this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, (version) => version === 1);
+  }
+
+  /**
+   * After an ambiguous write failure, find out whether it actually committed.
+   *
+   * Shared by the create and replace paths, which differ only in what version the row may carry.
+   * A create must find version 1 — anything higher is not its own row. A replace has no such
+   * bound: it does not know what version its PUT produced, and the payload comparison is what
+   * establishes the row is the one it wrote.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the write did not happen
+   * or the row cannot be claimed, in which case the caller rethrows the original error.
+   */
+  private async reconcileLostWrite(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    envelope: CampaignServiceBriefEnvelope,
+    error: unknown,
+    versionIsAcceptable: (version: number) => boolean
+  ): Promise<ApiResponse<CampaignServiceBrief> | null> {
     const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
     if (definitelyRejected) {
       return null;
@@ -469,7 +493,7 @@ export class CampaignServiceClient {
     if (found === null) {
       return null;
     }
-    if (found.data === undefined || found.data.version !== 1 || !storedBriefMatches(found.data, envelope.brief)) {
+    if (found.data === undefined || !versionIsAcceptable(found.data.version) || !storedBriefMatches(found.data, envelope.brief)) {
       return null;
     }
     logger.warning(req, 'campaign_persist_brief_reconciled', 'a create whose response was lost had in fact committed', {
@@ -494,7 +518,8 @@ export class CampaignServiceClient {
     envelope: CampaignServiceBriefEnvelope,
     existing: { brief: CampaignServiceBrief; etag: string | null },
     knownEtag: string | null,
-    allowEtagFallback: boolean
+    allowEtagFallback: boolean,
+    eventSlug: string
   ): Promise<CampaignBriefPersistResult> {
     if (existing.etag === null) {
       throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
@@ -550,7 +575,23 @@ export class CampaignServiceClient {
       if (knownEtag !== null && error instanceof MicroserviceError && error.statusCode === 412) {
         return { enabled: true, briefId: existing.brief.id, etag: null, created: false, approved: false, conflict: 'stale-brief' };
       }
-      throw error;
+
+      // A non-412 failure is not necessarily a failed WRITE. A timeout, a reset, or a gateway 5xx
+      // can all follow a replacement that committed — the same ambiguity the create path
+      // reconciles and the approval path reasons about, and this one was left rethrowing.
+      //
+      // The cost of getting it wrong is worse here than on create, because it is silent: the
+      // client is told the brief "could not be saved" while the new payload is durable, keeps its
+      // now-stale ETag, and the next attempt is deterministically refused as `stale-brief`. The
+      // user sees a failure, retries, and is told someone else changed their brief — when the
+      // someone else was them.
+      // Any version: unlike a create, a replace does not know which version its PUT produced.
+      // The payload comparison is what establishes the row is the one this request wrote.
+      const reconciled = await this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, () => true);
+      if (reconciled === null) {
+        throw error;
+      }
+      updated = reconciled;
     }
     return this.approveBrief(req, basePath, updated, false);
   }
