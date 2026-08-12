@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import { UserVote, Vote } from '../interfaces/poll.interface';
+import type { PollCommentResponse, UserVote, Vote } from '../interfaces/poll.interface';
 
 /**
  * Combined vote status type
@@ -56,4 +56,14 @@ export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
 export function normalizePollStatus(status: string | null | undefined): PollStatus | undefined {
   const normalized = (status ?? '').toLowerCase();
   return (Object.values(PollStatus) as string[]).includes(normalized) ? (normalized as PollStatus) : undefined;
+}
+
+/**
+ * Sort comment-prompt responses newest-first by `vote_creation_time`.
+ * @description Returns a new array — never mutates the API payload. An unparseable timestamp
+ * parses to NaN, which `|| 0` collapses to epoch 0 so a malformed row sinks to the end instead
+ * of scrambling the comparator with NaN. Ties keep the API's original order (stable sort).
+ */
+export function sortCommentResponsesByRecency(responses: PollCommentResponse[]): PollCommentResponse[] {
+  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time) || 0) - (Date.parse(a.vote_creation_time) || 0));
 }

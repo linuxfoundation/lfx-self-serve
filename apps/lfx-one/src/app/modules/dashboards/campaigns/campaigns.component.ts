@@ -56,7 +56,7 @@ export class CampaignsComponent {
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
-  constructor() {
+  public constructor() {
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
     this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {

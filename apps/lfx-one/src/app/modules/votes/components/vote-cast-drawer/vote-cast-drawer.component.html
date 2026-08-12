@@ -149,6 +149,40 @@
           }
         </form>
 
+        @if (commentPromptsData().length > 0) {
+          <div class="flex flex-col gap-4" [formGroup]="commentForm" data-testid="vote-cast-comments">
+            <h3 class="text-sm font-semibold text-slate-900">Additional Comments (Optional)</h3>
+            @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
+              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" [attr.data-testid]="'vote-cast-comment-' + commentData.prompt.prompt_id">
+                <label [for]="'vote-cast-comment-text-' + commentData.prompt.prompt_id" class="text-sm font-medium text-slate-700">
+                  {{ commentData.prompt.prompt }}
+                </label>
+                <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
+                     the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
+                <lfx-textarea
+                  [form]="commentForm"
+                  [control]="commentData.prompt.prompt_id"
+                  [id]="'vote-cast-comment-text-' + commentData.prompt.prompt_id"
+                  placeholder="Share your thoughts"
+                  [rows]="3"
+                  styleClass="w-full"
+                  [dataTest]="'vote-cast-comment-textarea-' + commentData.prompt.prompt_id">
+                </lfx-textarea>
+                <div class="flex justify-between">
+                  @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
+                    <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
+                  } @else {
+                    <span></span>
+                  }
+                  <span class="text-xs text-slate-400" [attr.data-testid]="'vote-cast-comment-counter-' + commentData.prompt.prompt_id">
+                    {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
+                  </span>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
         @if (allowAbstain()) {
           <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
             <div class="flex items-center gap-2" data-testid="vote-cast-abstain-toggle">
