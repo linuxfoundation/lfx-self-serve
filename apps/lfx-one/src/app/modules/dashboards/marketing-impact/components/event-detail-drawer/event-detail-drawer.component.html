@@ -85,7 +85,10 @@
               <span class="text-xs text-gray-400">registration pace</span>
             } @else {
               <span class="text-2xl font-semibold text-gray-400">—</span>
-              <span class="text-xs text-gray-400">no prior year</span>
+              <!-- hasPriorYear and vsLastYear are separate facts: a prior edition can exist while
+                   the comparison ratio is still missing. Saying "no prior year" in that case
+                   contradicts the pacing block below, which shows a Last year figure. -->
+              <span class="text-xs text-gray-400">{{ d.hasPriorYear ? 'no comparison available' : 'no prior year' }}</span>
             }
           </div>
         </lfx-card>
@@ -118,9 +121,9 @@
                 aria-valuemax="100"
                 [attr.aria-label]="'Registrations: ' + num(d.registrations.actual) + ' of ' + num(d.registrations.goal) + ' goal'"
                 [ngClass]="{
-                  'bg-emerald-500': regProgress()! >= 80,
-                  'bg-amber-500': regProgress()! >= 50 && regProgress()! < 80,
-                  'bg-red-400': regProgress()! < 50,
+                  'bg-emerald-500': registrationsTone() === 'good',
+                  'bg-amber-500': registrationsTone() === 'warn',
+                  'bg-red-400': registrationsTone() === 'critical',
                 }"
                 [style.width.%]="regProgress()"></div>
             </div>

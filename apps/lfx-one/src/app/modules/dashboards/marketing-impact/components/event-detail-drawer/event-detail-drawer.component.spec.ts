@@ -179,6 +179,25 @@ describe('EventDetailDrawerComponent', () => {
     expect(document.querySelector('[role="progressbar"]')?.classList.contains('bg-red-400')).toBe(true);
   });
 
+  // hasPriorYear and vsLastYear are separate facts. Claiming "no prior year" when a prior edition
+  // exists contradicts the pacing block below, which shows a Last year figure for the same event.
+  it('says no comparison rather than no prior year when the ratio is missing', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ vsLastYear: null, hasPriorYear: true }))));
+
+    await open('evt-1');
+
+    expect(text()).toContain('no comparison available');
+    expect(text()).not.toContain('no prior year');
+  });
+
+  it('says no prior year when there genuinely was no prior edition', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ vsLastYear: null, hasPriorYear: false }))));
+
+    await open('evt-1');
+
+    expect(text()).toContain('no prior year');
+  });
+
   it('renders the sponsorship tier breakdown', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 

@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, lfxColors, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -109,6 +109,18 @@ export class EventDetailDrawerComponent {
     if (!d) return '';
     return [d.location, d.city, d.country].filter((part) => part && part.length).join(', ');
   });
+  /**
+   * Goal-bar tone from the shared thresholds rather than literals, so this bar and the roster's
+   * bar + at-risk icon move together when either constant is tuned.
+   */
+  protected readonly registrationsTone = computed(() => {
+    const percent = this.regProgress();
+    if (percent === null) return null;
+    if (percent >= ON_TRACK_PERCENT_THRESHOLD) return 'good';
+    if (percent >= BEHIND_GOAL_PERCENT_THRESHOLD) return 'warn';
+    return 'critical';
+  });
+
   /** Human label for the comparison pace rating. */
   protected readonly paceRatingLabel = computed(() => {
     switch (this.detail()?.compScore) {
