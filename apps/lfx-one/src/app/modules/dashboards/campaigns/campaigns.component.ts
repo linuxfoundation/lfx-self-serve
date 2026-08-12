@@ -724,7 +724,23 @@ export class CampaignsComponent {
             });
             return;
           }
-          this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
+          // `saved` is about DURABILITY, and it is honestly earned here — the write landed. But
+          // `approved` is a second, separate call, and `saveBrief` reports `approved: false` for a
+          // rejected approval, an indeterminate one, or a missing write ETag. Such a row is
+          // durable and unusable: campaign creation and audience building both gate on `approved`.
+          //
+          // Dropping the flag made this session say only "Brief saved." for exactly the row the
+          // LOAD path warns about on the next visit — the same defect, one reload apart. Carried
+          // as a `message` on the SAVED state rather than a new status or an `error`: describing a
+          // durable write as failed would be its own lie, and the banner already renders a message
+          // in this state.
+          this.briefPersistence.set({
+            status: 'saved',
+            briefId: result.briefId,
+            message: result.approved
+              ? null
+              : 'This brief was saved but not approved, so campaigns cannot be created from it yet. Ask an administrator to approve the stored brief.',
+          });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is

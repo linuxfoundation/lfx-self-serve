@@ -247,6 +247,15 @@ export interface CampaignBriefPersistResult {
 export interface CampaignBriefPersistenceState {
   status: 'off' | 'saving' | 'saved' | 'error';
   briefId: string | null;
+  /**
+   * The banner text, or `null` when the state needs none.
+   *
+   * Set on `error`, and also on `saved` when the write landed but the APPROVAL did not — a
+   * durable row that campaign creation and audience building both refuse, because they gate on
+   * `approved`. That case stays `saved` rather than becoming `error`: describing a write that
+   * really did land as failed would be its own falsehood, and the honest report is that the
+   * brief is stored but not yet usable.
+   */
   message: string | null;
 }
 

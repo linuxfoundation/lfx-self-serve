@@ -453,6 +453,29 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).not.toBe('saved');
     });
 
+    it('reports a saved brief whose approval did not land as saved-but-unapproved', async () => {
+      // `saved` is honest -- the write landed. But approval is a SECOND call, and a row that
+      // never reached `approved` cannot create campaigns or build audiences. Dropping the flag
+      // made this session say only "Brief saved." for exactly the row the LOAD path warns about
+      // on the next visit: the same defect, one reload apart.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: false }));
+      proceed();
+      await fixture.whenStable();
+
+      // Still `saved` -- calling a durable write a failure would be its own lie.
+      expect(state().status).toBe('saved');
+      expect(state().message).toContain('not approved');
+    });
+
+    it('carries no message when the approval landed', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      expect(state().status).toBe('saved');
+      expect(state().message).toBeNull();
+    });
+
     it('reports an error when the success handler throws, instead of stranding on saving', async () => {
       // The terminal catch keeps the queue usable -- a rejected chain would make every later
       // Proceed silently never send. But absorbing the throw must not also leave the banner on

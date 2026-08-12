@@ -100,7 +100,13 @@ export class ImplementationTabComponent implements OnInit {
         // the reassurance without the instruction — and the instruction is the part they cannot
         // recover on their own, since nothing else on the page says the brief needs a URL to come
         // back.
-        return 'Brief saved. After a reload, re-enter the event URL to restore it.';
+        //
+        // The unapproved message, when there is one, is appended rather than replacing this: the
+        // brief IS saved and the reload instruction still applies, so dropping either half would
+        // leave a screen-reader user with less than the visible banner shows.
+        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+          this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
+        }`;
       default:
         return '';
     }
