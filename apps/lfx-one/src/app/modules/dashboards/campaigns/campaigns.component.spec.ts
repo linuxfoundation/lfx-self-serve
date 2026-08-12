@@ -326,6 +326,29 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
+     * A superseded save must still record the row it created.
+     *
+     * The id is latched BEFORE the generation check, like `enabled` is: the row exists
+     * regardless of which brief is now on screen. Recorded after the check, a second Proceed
+     * while the first was in flight would bump the generation, drop the id, and then be refused
+     * against a brief this very session had just created.
+     */
+    it('records the created id even when the save is superseded', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
+
+      proceed();
+      // Supersede it before the response is applied — the same bump a second Proceed causes.
+      switchProgram();
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // The row from the discarded save is still this session's to replace.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1');
+    });
+
+    /**
      * ...and a program switch drops it. The next brief is a different event, so inheriting the
      * previous one's id would let it claim ownership of a row it has nothing to do with.
      */

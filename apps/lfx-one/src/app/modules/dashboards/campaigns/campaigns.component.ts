@@ -343,6 +343,19 @@ export class CampaignsComponent {
             this.briefPersistenceEnabled.set(true);
           }
 
+          // Latched BEFORE the generation check, for the same reason `enabled` is: the ROW
+          // exists regardless of which brief is now on screen. Recorded after the check instead,
+          // a superseded save would never record the id it just created — so a second Proceed
+          // while the first was in flight would send null and be refused against a row this
+          // session made moments earlier.
+          //
+          // Only on a real write. A refused save (`conflict`) names the row that BLOCKED it, and
+          // adopting that id would hand this session ownership of exactly the brief it was told
+          // it does not own — turning the guard into a way through itself.
+          if (result.enabled && result.conflict === undefined && result.briefId !== '') {
+            this.knownBriefId = result.briefId;
+          }
+
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
@@ -361,9 +374,6 @@ export class CampaignsComponent {
             });
             return;
           }
-          // Recorded BEFORE the banner: the next save in this session must be able to prove it
-          // owns this row, or the guard refuses a user re-proceeding on their own brief.
-          this.knownBriefId = result.briefId;
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
