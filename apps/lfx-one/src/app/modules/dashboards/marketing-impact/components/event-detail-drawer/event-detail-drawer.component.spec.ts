@@ -58,10 +58,15 @@ describe('EventDetailDrawerComponent', () => {
     fixture = TestBed.createComponent(EventDetailDrawerComponent);
   }
 
-  /** Mirrors the parent: two separate signal writes per open, eventId first. */
-  async function open(eventId: string, slug = 'tlf'): Promise<void> {
+  /**
+   * Mirrors the parent: two separate signal writes per open, eventId first. `focus` selects which
+   * half of the story renders — 'b2c' (the default) shows registrations and campaigns, 'b2b' shows
+   * sponsorship, so a sponsorship assertion has to open the drawer the way the sponsorship bar does.
+   */
+  async function open(eventId: string, slug = 'tlf', focus: 'b2c' | 'b2b' = 'b2c'): Promise<void> {
     fixture.componentRef.setInput('eventId', eventId);
     fixture.componentRef.setInput('foundationSlug', slug);
+    fixture.componentRef.setInput('focus', focus);
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -203,16 +208,32 @@ describe('EventDetailDrawerComponent', () => {
   it('renders the sponsorship tier breakdown', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 
-    await open('evt-1');
+    await open('evt-1', 'tlf', 'b2b');
 
     expect(document.querySelector('[data-testid="event-detail-tier-Diamond"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="event-detail-tier-Gold"]')).toBeTruthy();
   });
 
+  // The focus input is the whole point of opening from a specific roster bar: clicking
+  // registrations must not land the user in the sponsorship story, and vice versa. Asserted in
+  // both directions so a later default change cannot quietly collapse the two views into one.
+  it('hides the sponsorship story in the attendance view', async () => {
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(text()).not.toContain('Diamond');
+  });
+
+  it('hides the paid and email breakdowns in the sponsorship view', async () => {
+    await open('evt-1', 'tlf', 'b2b');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="event-detail-paid-summary"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="event-detail-email-summary"]')).toBeNull();
+  });
+
   it('labels an unnamed tier rather than rendering a blank row', async () => {
     await setup(vi.fn().mockReturnValue(of(detail({ sponsorshipTiers: [{ tier: '', revenue: 1000, sponsorCount: 1 }] }))));
 
-    await open('evt-1');
+    await open('evt-1', 'tlf', 'b2b');
 
     expect(text()).toContain('Other');
   });

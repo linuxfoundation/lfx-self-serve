@@ -107,9 +107,12 @@ describe('EventsAttentionSectionComponent', () => {
         'tlf'
       );
 
+      // Ranking is unchanged — furthest behind first — but the strip now collapses to the first
+      // COLLAPSED_COUNT rows behind a "see more" toggle, so only the two worst render initially.
       const ids = items().map((el) => el.getAttribute('data-testid'));
-      expect(ids).toEqual(['events-attention-item-b', 'events-attention-item-c', 'events-attention-item-d']);
-      // A at 40% is the least behind of the four, so it is the one dropped.
+      expect(ids).toEqual(['events-attention-item-b', 'events-attention-item-c']);
+      // A at 40% is the least behind of the four, so it is dropped from the ranking entirely —
+      // not merely collapsed, which is why expanding below must not surface it.
       expect(text()).not.toContain('A is 40%');
     });
   });

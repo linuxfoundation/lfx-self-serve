@@ -35,6 +35,22 @@ export class EventDetailDrawerComponent {
   public readonly eventId = input<string | null>(null);
   /** Foundation the event belongs to; required by the server to scope the read. */
   public readonly foundationSlug = input<string | undefined>();
+  /**
+   * Which half of the event story to show, set by the roster cell the user clicked:
+   * - 'b2c' — registrations and the paid/email campaigns that drove them
+   * - 'b2b' — sponsorship revenue and sponsors by tier
+   *
+   * Bound from the roster via EVENTS_SPLIT_TO_DRAWER_FOCUS, so clicking the registrations bar
+   * opens the attendance story and the sponsorship bar opens the revenue story.
+   */
+  public readonly focus = input<'b2c' | 'b2b'>('b2c');
+
+  // === Computed: section visibility from focus ===
+  /** Registration-side sections (pacing, paid, email) — hidden in the sponsorship view. */
+  protected readonly showRegistrations = computed(() => this.focus() !== 'b2b');
+  /** Sponsorship-side sections (revenue, tiers) — hidden in the attendance view. */
+  protected readonly showSponsorship = computed(() => this.focus() !== 'b2c');
+
   // === Paid performance breakdown (per-campaign rows) ===
 
   /** Paid-ad campaigns for this event. */

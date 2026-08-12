@@ -216,7 +216,7 @@
       </div>
 
       <!-- Sponsorship by tier -->
-      @if (d.sponsorshipTiers.length) {
+      @if (showSponsorship() && d.sponsorshipTiers.length) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-tiers">
           <h3 class="text-sm font-semibold text-gray-900">Sponsorship by tier</h3>
           <div class="flex flex-col gap-0">
@@ -261,7 +261,7 @@
           </p>
         }
       </div>
-      @if (hasPaid()) {
+      @if (showRegistrations() && hasPaid()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-paid-performance">
           <!-- Header doubles as the expand/collapse control; the summary pill stays visible when collapsed. -->
           <button
@@ -368,7 +368,7 @@
         </div>
       }
 
-      @if (hasEmail()) {
+      @if (showRegistrations() && hasEmail()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-email-performance">
           <button
             type="button"
