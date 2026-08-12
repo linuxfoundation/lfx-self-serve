@@ -16,6 +16,7 @@ import { normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, switchMap, take } from 'rxjs';
 
 import { NewsletterFailedRecipientsDrawerComponent } from '../components/newsletter-failed-recipients-drawer/newsletter-failed-recipients-drawer.component';
@@ -30,6 +31,7 @@ import { NewsletterRecipientEngagementComponent } from '../components/newsletter
     EmptyStateComponent,
     TableComponent,
     SkeletonModule,
+    TooltipModule,
     NewsletterFailedRecipientsDrawerComponent,
     NewsletterRecipientEngagementComponent,
   ],

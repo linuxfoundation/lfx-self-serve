@@ -174,12 +174,23 @@
                           target="_blank"
                           rel="noopener noreferrer nofollow external"
                           class="block truncate text-sm text-blue-600 hover:underline"
-                          [title]="link.url"
+                          [pTooltip]="link.url"
+                          tooltipPosition="top"
+                          tooltipEvent="both"
                           [attr.data-testid]="'newsletter-analytics-top-link-' + i">
                           {{ link.url }}
                         </a>
                       } @else {
-                        <span class="block truncate text-sm text-gray-500" [title]="link.url">{{ link.url }}</span>
+                        <span
+                          class="block truncate text-sm text-gray-500"
+                          role="note"
+                          tabindex="0"
+                          [pTooltip]="link.url"
+                          tooltipPosition="top"
+                          tooltipEvent="both"
+                          [attr.aria-label]="link.url">
+                          {{ link.url }}
+                        </span>
                       }
                     </td>
                     <td class="text-sm text-gray-900">{{ link.clicks }}</td>

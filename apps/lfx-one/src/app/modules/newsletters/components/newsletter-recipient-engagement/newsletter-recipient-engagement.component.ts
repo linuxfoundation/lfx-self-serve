@@ -23,6 +23,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
 /**
@@ -35,7 +36,17 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize
  */
 @Component({
   selector: 'lfx-newsletter-recipient-engagement',
-  imports: [DatePipe, ReactiveFormsModule, CardComponent, TableComponent, InputTextComponent, PersonAvatarComponent, TagComponent, BadgeComponent],
+  imports: [
+    DatePipe,
+    ReactiveFormsModule,
+    CardComponent,
+    TableComponent,
+    InputTextComponent,
+    PersonAvatarComponent,
+    TagComponent,
+    BadgeComponent,
+    TooltipModule,
+  ],
   templateUrl: './newsletter-recipient-engagement.component.html',
 })
 export class NewsletterRecipientEngagementComponent {

@@ -130,7 +130,16 @@
             </td>
             <td>
               @if (row.last_opened_at) {
-                <span class="text-sm text-gray-700" [title]="row.last_opened_at | date: 'MMM d, y, h:mm a'">{{ row.lastOpenedRelative }}</span>
+                <span
+                  class="text-sm text-gray-700"
+                  role="note"
+                  tabindex="0"
+                  [pTooltip]="(row.last_opened_at | date: 'MMM d, y, h:mm a') ?? ''"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  [attr.aria-label]="'Last opened ' + ((row.last_opened_at | date: 'MMM d, y, h:mm a') ?? '')">
+                  {{ row.lastOpenedRelative }}
+                </span>
               } @else {
                 <span class="text-sm text-gray-400">—</span>
               }
@@ -141,7 +150,16 @@
               </td>
               <td data-testid="newsletter-recipient-engagement-cell-last-clicked">
                 @if (row.last_clicked_at) {
-                  <span class="text-sm text-gray-700" [title]="row.last_clicked_at | date: 'MMM d, y, h:mm a'">{{ row.lastClickedRelative }}</span>
+                  <span
+                    class="text-sm text-gray-700"
+                    role="note"
+                    tabindex="0"
+                    [pTooltip]="(row.last_clicked_at | date: 'MMM d, y, h:mm a') ?? ''"
+                    tooltipPosition="top"
+                    tooltipEvent="both"
+                    [attr.aria-label]="'Last clicked ' + ((row.last_clicked_at | date: 'MMM d, y, h:mm a') ?? '')">
+                    {{ row.lastClickedRelative }}
+                  </span>
                 } @else {
                   <span class="text-sm text-gray-400">—</span>
                 }
@@ -160,6 +178,8 @@
                            so two opens in the same second collide on value and throw NG0955. -->
                       @for (openedAt of row.opened_at_list; track $index) {
                         <li class="text-sm text-gray-700">{{ openedAt | date: 'MMM d, y, h:mm a' }}</li>
+                      } @empty {
+                        <li class="text-sm text-gray-400">No opens recorded</li>
                       }
                     </ul>
                     @if (row.open_count > row.opened_at_list.length) {
