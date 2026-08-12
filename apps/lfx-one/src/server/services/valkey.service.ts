@@ -4,6 +4,7 @@
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CachePort } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
+import { createHash } from 'crypto';
 import Redis from 'ioredis';
 
 import { addShutdownHook } from '../utils/shutdown';
@@ -349,6 +350,31 @@ export function buildWeeklyBriefActionItemsCacheKey(committeeId: string, briefUi
 export function buildWeeklyBriefRatingCacheKey(committeeUid: string, briefUid: string, revision: number, username: string): string | null {
   if (!isFilterSafeIdentifier(committeeUid) || !isFilterSafeIdentifier(briefUid) || !isFilterSafeUsername(username)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_RATING_NAMESPACE}:${committeeUid}:${briefUid}:${revision}:${username}`;
+}
+
+/**
+ * Per-foundation Social Listening cache key. `discriminator` values are the query's own bind
+ * parameters (date window, scope selects, limits) — hashed rather than concatenated so an arbitrary
+ * user-supplied filter value can neither corrupt the `:`-delimited key nor blow past Valkey's key
+ * length limit, while two different windows still resolve to different entries. Null (fail-closed →
+ * direct fetch) when the foundation slug isn't filter-safe.
+ */
+export function buildSocialListeningCacheKey(foundationSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+  if (!isFilterSafeIdentifier(foundationSlug)) return null;
+  const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
+  return `${keyPrefix()}:${VALKEY_CACHE.SOCIAL_LISTENING_NAMESPACE}:${foundationSlug}:${resource}:${digest}`;
+}
+
+/** Read-through helper for the per-foundation Social Listening namespace; a null key (unsafe slug) fetches directly. */
+export function withSocialListeningCache<T>(
+  foundationSlug: string,
+  resource: string,
+  discriminator: readonly (string | number)[],
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  accept?: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(buildSocialListeningCacheKey(foundationSlug, resource, discriminator), ttlSeconds, fetcher, accept);
 }
 
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */

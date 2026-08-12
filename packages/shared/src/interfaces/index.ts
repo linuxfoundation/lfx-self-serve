@@ -324,3 +324,6 @@ export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './brand-kit.interface';
+
+// Social Listening interfaces (LFXV2-3002)
+export * from './social-listening.interface';

@@ -55,6 +55,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-brief-revision AI-extracted weekly-brief action-items cache (LFXV2-3043). Keyed by brief uid + revision, so a regenerated/re-edited brief naturally misses and re-extracts — no explicit invalidation needed. */
   WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE: 'weekly-brief-action-items:v1',
 
+  /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). */
+  SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -81,6 +84,9 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the per-brief-revision weekly-brief action-items cache — one brief window's worth (7 days), matching the brief's own weekly cadence. */
   WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
+  SOCIAL_LISTENING_TTL_SECONDS: 1800,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
