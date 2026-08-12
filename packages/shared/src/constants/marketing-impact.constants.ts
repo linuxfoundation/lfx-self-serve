@@ -175,7 +175,7 @@ export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet
   all: ALL_CHANNEL_TABS,
   // Not ALL_CHANNEL_TABS: the social and social-listening tabs ignore focusProgram and fetch
   // foundation-wide data, so surfacing them under Events would present unfiltered numbers as
-  // event-specific.
+  // event-specific. Matches the rule stated in the comment above.
   lfEvents: NON_SOCIAL_CHANNEL_TABS,
   // Education, Membership, and Audience have no content built yet — see COMING_SOON_FOCUS_PROGRAMS.
   lfTraining: COMING_SOON_TABS,

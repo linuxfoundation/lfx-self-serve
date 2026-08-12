@@ -64,6 +64,8 @@ export interface OverviewKpiData {
  * fraction (0.52 = +52%; null when there is no prior baseline).
  */
 export interface EventsOverviewSummary {
+  /** The period these figures actually cover — see EventsOverviewSummaryResponse.scope. */
+  scope: 'ytd' | 'month';
   registrations: EventsOverviewMetric;
   attendees: EventsOverviewMetric;
   events: EventsOverviewMetric;
@@ -73,6 +75,9 @@ export interface EventsOverviewSummary {
   /** Aggregate sponsorship revenue in dollars for the period. */
   sponsorship: EventsOverviewMetric;
 }
+
+/** The tileable metric fields of EventsOverviewSummary — everything except the `scope` metadata. */
+export type EventsOverviewMetricKey = Exclude<keyof EventsOverviewSummary, 'scope'>;
 
 /** Severity tone for a needs-attention item. */
 export type AttentionSeverity = 'critical' | 'warning';

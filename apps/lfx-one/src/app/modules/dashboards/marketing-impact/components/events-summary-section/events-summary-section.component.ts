@@ -8,7 +8,7 @@ import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { finalize, map, of, switchMap } from 'rxjs';
 
-import type { EventsOverviewSummary, EventsSummaryStat } from '@lfx-one/shared/interfaces';
+import type { EventsOverviewMetricKey, EventsOverviewSummary, EventsSummaryStat } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-events-summary-section',
@@ -21,7 +21,7 @@ export class EventsSummarySectionComponent {
   // `format` defaults to a plain count; 'currency' formats the value as dollars.
   private static readonly tiles: readonly {
     id: string;
-    key: keyof EventsOverviewSummary;
+    key: EventsOverviewMetricKey;
     label: string;
     icon: string;
     iconClass: string;
@@ -55,6 +55,11 @@ export class EventsSummarySectionComponent {
 
   // === Computed Signals ===
   protected readonly summary: Signal<EventsOverviewSummary | null> = this.initSummary();
+  /**
+   * Heading scope read from the response, not the picker: a trailing preset is served the YTD
+   * rollup, so titling it "Last 3 months" would name a range the numbers do not cover.
+   */
+  protected readonly scopeLabel = computed(() => (this.summary()?.scope === 'month' ? 'Monthly' : 'YTD'));
   protected readonly stats: Signal<EventsSummaryStat[]> = this.initStats();
   protected readonly skeletons: readonly number[] = EventsSummarySectionComponent.tiles.map((_, i) => i);
 
@@ -83,6 +88,7 @@ export class EventsSummarySectionComponent {
               data === null
                 ? null
                 : ({
+                    scope: data.scope,
                     registrations: data.registrations,
                     attendees: data.attendees,
                     events: data.events,

@@ -776,6 +776,13 @@ export interface EventDetailResponse {
 export interface EventsOverviewSummaryResponse {
   /** Snowflake PROJECT_ID echoed for PCC deep-link navigation; '' when the slug resolves to nothing. */
   projectId: string;
+  /**
+   * The period these figures actually cover, which is not always the one requested: the source
+   * rollups carry no date grain, so a trailing preset (last-3/last-6) is served year-to-date.
+   * Callers label from this rather than from the picker, so numbers are never titled with a scope
+   * they don't have.
+   */
+  scope: 'ytd' | 'month';
   registrations: EventsOverviewMetric;
   attendees: EventsOverviewMetric;
   speakers: EventsOverviewMetric;

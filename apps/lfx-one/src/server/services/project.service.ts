@@ -4981,10 +4981,11 @@ export class ProjectService {
 
     // Only a month re-aggregates. YTD and trailing ranges fall through to MARKETING_EVENT_OVERVIEW,
     // whose columns are pre-aggregated year-to-date rollups with no date grain to filter on — a
-    // trailing range cannot narrow them. Re-aggregating trailing from MARKETING_EVENT_REGISTRATIONS
-    // would scope events/registrations/speakers but drop attendees, countries, organizations, and
-    // sponsorship to dashes, and 'last-6' is the default period, so the default view would lose four
-    // of seven tiles. Serving the YTD rollup is the better trade until those metrics have a date grain.
+    // trailing range cannot narrow them, so last-3/last-6 are served the YTD figures.
+    //
+    // That substitution is only honest because the caller labels it: `scope` below reports what was
+    // actually served, and the section heading reads it rather than the picker, so a trailing
+    // selection never renders under a "Last 3 months" title over year-to-date numbers.
     if (period && period.type === 'month') {
       return this.getEventsOverviewSummaryForMonth(foundationSlug, period);
     }
@@ -5065,6 +5066,8 @@ export class ProjectService {
 
     return {
       projectId: row?.PROJECT_ID ?? '',
+      // Trailing presets are served the YTD rollup, so this always reports 'ytd' here.
+      scope: 'ytd' as const,
       registrations: metric(row?.REGISTRATIONS_COUNT, row?.REGISTRATIONS_CHANGE),
       attendees: metric(row?.ATTENDEES_COUNT, row?.ATTENDEES_CHANGE),
       speakers: metric(row?.SPEAKERS_COUNT, row?.SPEAKERS_CHANGE),
@@ -7627,6 +7630,7 @@ export class ProjectService {
 
     return {
       projectId: row?.PROJECT_ID ?? '',
+      scope: 'month' as const,
       events: { value: row?.EVENT_COUNT ?? 0, changeFraction: null },
       registrations: { value: row?.REGISTRATIONS_COUNT ?? 0, changeFraction: null },
       speakers: { value: row?.SPEAKERS_COUNT ?? 0, changeFraction: null },
