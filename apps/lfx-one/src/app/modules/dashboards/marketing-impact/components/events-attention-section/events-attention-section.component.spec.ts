@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EventsAttentionSectionComponent } from './events-attention-section.component';
@@ -160,5 +160,36 @@ describe('EventsAttentionSectionComponent', () => {
     await render([row()], 'tlf');
 
     expect(fixture.nativeElement.style.display).toBe('contents');
+  });
+
+  // toSignal holds the previous roster until the next request emits, so without gating on the
+  // loading flag a foundation switch would leave the outgoing foundation's at-risk events on
+  // screen — and clickable — under the new foundation's name.
+  it('hides the outgoing foundation while the next roster loads', async () => {
+    const first: EventRosterResponse = { projectId: 'p1', events: [row({ eventId: 'old', eventName: 'Old Foundation Event' })] };
+    const pending = new Subject<EventRosterResponse>();
+    const getEventRoster = vi.fn().mockReturnValueOnce(of(first)).mockReturnValueOnce(pending);
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [EventsAttentionSectionComponent],
+      providers: [{ provide: AnalyticsService, useValue: { getEventRoster } }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EventsAttentionSectionComponent);
+    fixture.componentRef.setInput('foundationSlug', 'tlf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(text()).toContain('Old Foundation Event');
+
+    // Switch foundations; the second request has not emitted yet.
+    fixture.componentRef.setInput('foundationSlug', 'cncf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).not.toContain('Old Foundation Event');
+    expect(fixture.nativeElement.style.display).toBe('none');
+
+    pending.complete();
   });
 });

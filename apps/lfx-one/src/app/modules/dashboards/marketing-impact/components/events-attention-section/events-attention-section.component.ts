@@ -18,7 +18,10 @@ import type { AttentionSeverity, EventAttentionItem, EventRosterResponse, EventR
   // The host is a child of the overview tab's flex column, so it takes a gap slot even when the
   // template renders nothing. `display: none` when there is nothing to show drops it out of flex
   // layout entirely; `contents` otherwise keeps the card's own box intact.
-  host: { '[style.display]': "hasItems() ? 'contents' : 'none'" },
+  // Hidden while loading as well as when empty: toSignal holds the previous roster until the new
+  // request emits, so on a foundation switch the prior foundation's at-risk events would stay
+  // visible and clickable under the new foundation's name.
+  host: { '[style.display]': "showStrip() ? 'contents' : 'none'" },
 })
 export class EventsAttentionSectionComponent {
   private readonly analyticsService = inject(AnalyticsService);
@@ -33,6 +36,11 @@ export class EventsAttentionSectionComponent {
   private readonly roster: Signal<EventRosterResponse> = this.initRoster();
   protected readonly items: Signal<EventAttentionItem[]> = this.initItems();
   protected readonly hasItems = computed(() => this.items().length > 0);
+  /**
+   * The strip is a supplementary alert, not primary content, so it shows nothing rather than a
+   * skeleton while loading — but it must not keep showing the outgoing foundation's events either.
+   */
+  protected readonly showStrip = computed(() => !this.loading() && this.hasItems());
 
   // === Private Initializers ===
   private initRoster(): Signal<EventRosterResponse> {
