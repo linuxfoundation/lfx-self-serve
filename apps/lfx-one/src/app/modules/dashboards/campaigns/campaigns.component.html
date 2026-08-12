@@ -43,10 +43,11 @@
   <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
        is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
        destroy an in-progress email brief on every round-trip to Paid Marketing. -->
-  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? null : 'none'" data-testid="campaigns-email">
-    <!-- Tab Navigation. Bound to visibleTabs, which drops Optimize for this channel. -->
+  <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
+    <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
+         change when the OTHER container becomes active. -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
-      @for (tab of visibleTabs(); track tab.id; let i = $index) {
+      @for (tab of emailTabs; track tab.id; let i = $index) {
         <button
           type="button"
           role="tab"
@@ -54,8 +55,8 @@
           [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
           [attr.id]="'email-tab-' + tab.id"
           [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id)"
-          (keydown)="onTabKeydown($event, i)"
+          (click)="selectTab(tab.id, 'email')"
+          (keydown)="onTabKeydown($event, i, 'email')"
           [class]="
             selectedEmailTab() === tab.id
               ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
@@ -105,19 +106,39 @@
       }
       @case ('insights') {
         <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
-          <lfx-monitoring-tab data-testid="campaigns-email-insights-tab" />
+          <!--
+            Deliberately NOT <lfx-monitoring-tab>. That component is paid-ads only: its
+            `PlatformType` union is 'google' | 'linkedin' | 'reddit' | 'meta', it defaults to
+            'google', and it contains no reference to HubSpot or email at all. Rendering it here
+            would put Google Ads spend and clicks under a tab labelled Email — numbers that are
+            real, plausible, and about a different campaign entirely, which is worse than showing
+            nothing.
+
+            The email metrics read exists in campaign-service (LFXV2-3058), so this needs a
+            reader of its own rather than a reuse.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-insights-pending">
+            <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
+            <p class="max-w-md text-sm text-gray-500">
+              Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is not
+              wired to the email channel.
+            </p>
+          </div>
         </div>
       }
     }
   </div>
   <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
-       while the Email placeholder shows. PlanningTabComponent owns the brief form +
+       while the Email container above shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
        silently wipe the user's in-progress brief — hiding it keeps the instance alive.
        Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
        display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
        so [hidden] alone would leave both views rendered. An inline style always wins. -->
-  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? 'none' : null" data-testid="campaigns-paid-marketing">
+  <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
     <!-- Tab Navigation -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
       @for (tab of tabs; track tab.id; let i = $index) {
@@ -128,8 +149,8 @@
           [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
           [attr.id]="'tab-' + tab.id"
           [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id)"
-          (keydown)="onTabKeydown($event, i)"
+          (click)="selectTab(tab.id, 'paid-marketing')"
+          (keydown)="onTabKeydown($event, i, 'paid-marketing')"
           [class]="
             selectedTab() === tab.id
               ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
