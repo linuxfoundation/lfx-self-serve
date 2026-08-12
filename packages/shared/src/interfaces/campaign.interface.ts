@@ -192,6 +192,23 @@ export interface CampaignBriefPersistResult {
    * this is a field rather than an error.
    */
   approved: boolean;
+  /**
+   * Why the save was REFUSED, when it was. Absent means the save happened.
+   *
+   * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
+   * prove it owns it. Replacing would overwrite content the user was never shown — a reload or a
+   * second tab is enough to reach that, since the page then generates from scratch and the
+   * server's find hits a row nobody read. `briefId` carries the row that blocked the save, so a
+   * caller can offer to open it rather than only reporting failure.
+   *
+   * While persistence is write-only (LFXV2-3098) this is every collision, because there is no
+   * read path and so no way for a caller to hold a brief id at all. LFXV2-3108 adds the read and
+   * narrows the refusal to callers whose id does not match.
+   *
+   * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
+   * and the caller's next step is a CHOICE rather than a retry.
+   */
+  conflict?: 'unowned-brief-exists';
 }
 
 /**

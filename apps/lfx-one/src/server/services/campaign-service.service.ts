@@ -227,10 +227,42 @@ export class CampaignServiceClient {
    * where the partial unique index on `(project_id, event_slug)` then collides it with unrelated
    * TLF work for the same event.
    */
-  public async saveBrief(req: Request, brief: CampaignBriefOutput, eventSlug: string, projectSlug: string): Promise<CampaignBriefPersistResult> {
+  public async saveBrief(
+    req: Request,
+    brief: CampaignBriefOutput,
+    eventSlug: string,
+    projectSlug: string,
+    knownBriefId: string | null = null
+  ): Promise<CampaignBriefPersistResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
     const existing = await this.findBrief(req, basePath, eventSlug);
+
+    // A brief already exists for this event and the caller cannot prove it owns it: REFUSE
+    // rather than replace (LFXV2-3200). Replacing on a slug match alone overwrites content the
+    // user was never shown.
+    //
+    // Two routes reach that, and only one involves a slug mismatch. A reload or a second tab is
+    // enough on its own: the page generates from scratch, the slug matches perfectly, and this
+    // find hits a row whose contents nobody read. So the guard keys on OWNERSHIP, not on
+    // anything about the slug — normalising the two slug derivations would close one route and
+    // leave the other open.
+    //
+    // `knownBriefId` defaults to null and IN THIS PHASE is always null: persistence is
+    // write-only, so there is no read path and nothing can hand a caller the id of a stored
+    // brief. The parameter exists now rather than later so the guard lands with the write it
+    // protects; LFXV2-3108 adds the read and starts supplying a real id, at which point a
+    // restored brief replaces its own row and everything else still refuses.
+    if (existing !== null && knownBriefId !== existing.brief.id) {
+      return {
+        enabled: true,
+        briefId: existing.brief.id,
+        etag: null,
+        created: false,
+        approved: false,
+        conflict: 'unowned-brief-exists',
+      };
+    }
 
     if (existing === null) {
       const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
