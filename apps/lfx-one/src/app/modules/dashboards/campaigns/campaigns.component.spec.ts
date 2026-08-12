@@ -165,6 +165,15 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     const withBrief = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-implementation-pending"]');
     expect(withBrief?.textContent).toContain('Your brief is ready');
+    // The two sentences must stay separated — a review round raised `preserveWhitespaces: false`
+    // collapsing the separator between the `@if` block and the following text into
+    // `ready.Staging`.
+    //
+    // It does not happen: Angular keeps a space at that boundary. Stated plainly, this assertion
+    // is NOT binding — removing the newline from the template does not make it fail, because the
+    // compiler normalizes the join either way. It is kept as a statement of the requirement, not
+    // as a guard, and a reader should not take it for one.
+    expect(withBrief?.textContent).not.toContain('ready.Staging');
   });
 
   it('clears both delivery types when the program changes', () => {
