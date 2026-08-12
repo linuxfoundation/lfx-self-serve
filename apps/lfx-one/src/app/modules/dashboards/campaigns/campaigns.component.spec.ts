@@ -478,6 +478,20 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
     });
 
+    it('says what proceeding again will do, not just that it can be retried', async () => {
+      // The warning PROMOTES this session to explicit overwrite permission, so the next Proceed
+      // replaces whatever is stored -- including a version this page has never seen. A message
+      // that says only "try again" makes the user authorise that by clicking a button whose
+      // label implies a retry.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unverified-validator' }));
+
+      proceed();
+      await fixture.whenStable();
+
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('replace whatever is currently saved');
+    });
+
     it('lets a retry through after an unverified-validator refusal', async () => {
       // The refusal exists because nobody had been warned. The banner has now warned them, so the
       // retry is a decision — without promoting the marker, every retry re-sends `'unknown'` and

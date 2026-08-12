@@ -144,8 +144,15 @@ export class CampaignsComponent {
     'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
     // Says "try again" rather than naming another writer, because none is known to exist: the
     // problem is that this page cannot prove which version it last saw, not that someone else
-    // changed it. A retry re-reads and usually succeeds.
-    'unverified-validator': 'This brief could not be saved safely because its last saved version is unconfirmed. Try again to save it.',
+    // changed it.
+    //
+    // But it must also SAY what trying again does. This warning promotes the session to explicit
+    // overwrite permission, so the next Proceed replaces whatever is stored — including a version
+    // this page has never seen. An earlier revision said only "Try again to save it", which hid
+    // that: the user authorised an overwrite by clicking a button whose label implied a retry.
+    // The `stale-brief` message already names the consequence; this one now does too.
+    'unverified-validator':
+      'This brief could not be saved safely because its last saved version is unconfirmed. Proceed again to replace whatever is currently saved.',
   };
 
   /**
