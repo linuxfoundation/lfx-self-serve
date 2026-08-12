@@ -313,6 +313,52 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Read back the brief saved for this event slug.
+   *
+   * The inverse of `saveBrief`, and it reuses the same find so the two agree on what "no brief"
+   * means — including the 404 gating. A gateway 404 read as "none" would be worse here than a
+   * thrown error: the page would silently offer a blank Planning tab for an event that already
+   * has an approved brief, and the first save after that is an UPDATE that replaces it.
+   *
+   * `unreadable` rather than `none` when the row cannot be mapped back, for the same reason. The
+   * three outcomes are the caller's to render; see `CampaignBriefLoadResult`.
+   *
+   * `projectSlug` is the selected foundation, and it has to be the SAME one `saveBrief` filed
+   * under or the two halves of persistence disagree about which brief belongs to this event.
+   * A constant here would be worse than on the write side: reading TLF's table for a CNCF ED
+   * either finds nothing — a blank Planning tab for an event that already has an approved brief,
+   * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
+   * another foundation's work into theirs.
+   */
+  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
+    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const found = await this.findBrief(req, basePath, eventSlug);
+
+    if (found === null) {
+      return { status: 'none', briefId: null, brief: null };
+    }
+
+    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
+    //
+    // The reason for dropping it: this read hands its result to a component that may sit on it
+    // for minutes before the user restores anything, so a carried validator would usually be
+    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
+    //
+    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
+    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
+    // than rejected — last-write-wins between two people editing the same brief, where a
+    // carried validator would have produced a 412 and a chance to reconcile.
+    //
+    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
+    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
+    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
+    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
+    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
+    const brief = fromBriefResponse(found.brief);
+    return brief === null ? { status: 'unreadable', briefId: found.brief.id, brief: null } : { status: 'loaded', briefId: found.brief.id, brief };
+  }
+
+  /**
    * Replace an existing brief and approve the result.
    *
    * `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
@@ -440,54 +486,6 @@ export class CampaignServiceClient {
       // the brief in between.
       return { ...saved, etag: definitelyRejected ? writeEtag : null, approved: false };
     }
-  }
-
-  /**
-   * Read back the brief saved for this event slug.
-   *
-   * The inverse of `saveBrief`, and it reuses the same find so the two agree on what "no brief"
-   * means — including the 404 gating. A gateway 404 read as "none" would be worse here than a
-   * thrown error: the page would silently offer a blank Planning tab for an event that already
-   * has an approved brief, and the first save after that is an UPDATE that replaces it.
-   *
-   * `unreadable` rather than `none` when the row cannot be mapped back, for the same reason. The
-   * three outcomes are the caller's to render; see `CampaignBriefLoadResult`.
-   *
-   * `projectSlug` is the selected foundation, and it has to be the SAME one `saveBrief` filed
-   * under or the two halves of persistence disagree about which brief belongs to this event.
-   * A constant here would be worse than on the write side: reading TLF's table for a CNCF ED
-   * either finds nothing — a blank Planning tab for an event that already has an approved brief,
-   * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
-   * another foundation's work into theirs.
-   */
-  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
-    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
-    const found = await this.findBrief(req, basePath, eventSlug);
-
-    if (found === null) {
-      return { status: 'none', briefId: null, brief: null };
-    }
-
-    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
-    //
-    // The reason for dropping it: this read hands its result to a component that may sit on it
-    // for minutes before the user restores anything, so a carried validator would usually be
-    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
-    //
-    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
-    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
-    // than rejected — last-write-wins between two people editing the same brief, where a
-    // carried validator would have produced a 412 and a chance to reconcile.
-    //
-    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
-    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
-    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
-    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
-    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
-    const brief = fromBriefResponse(found.brief);
-    return brief === null
-      ? { status: 'unreadable', briefId: found.brief.id, brief: null }
-      : { status: 'loaded', briefId: found.brief.id, brief };
   }
 
   /**
