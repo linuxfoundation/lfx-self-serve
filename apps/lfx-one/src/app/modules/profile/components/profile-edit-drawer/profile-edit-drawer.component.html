@@ -80,16 +80,29 @@
           <!-- About Me — free-text bio, first field per the v2 prototype (LFXV2-2933) -->
           <div>
             <label for="drawer-edit-about-me" class="block text-sm text-slate-900 mb-2">About Me</label>
+            <!-- No native [maxlength] (it counts UTF-16 units and would block an emoji-heavy bio below
+                 the real rune limit); the component hard-caps by code point instead. -->
             <lfx-textarea
               [form]="profileForm"
               control="bio"
               id="drawer-edit-about-me"
               [rows]="4"
-              [maxlength]="bioMaxLength"
               placeholder="Tell the community a bit about yourself"
               styleClass="w-full about-me-textarea"
               data-testid="profile-edit-drawer-about-me">
             </lfx-textarea>
+            <div class="mt-1 flex justify-end">
+              <!-- Atomic live region so screen readers hear the running count (and hitting the cap) as one message. -->
+              <span
+                class="text-xs text-slate-500"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                [attr.aria-label]="bioLength() + ' of ' + bioMaxLength + ' characters used'"
+                data-testid="profile-edit-drawer-about-me-counter">
+                {{ bioLength() }} / {{ bioMaxLength }}
+              </span>
+            </div>
           </div>
 
           <!-- First & Last name — two-up on md+ (matches the retired dialog's layout) -->

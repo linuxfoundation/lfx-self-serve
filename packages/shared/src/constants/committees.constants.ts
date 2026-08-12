@@ -24,6 +24,33 @@ export {
 export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
+ * Slack Incoming Webhook URLs always live under this stable, documented prefix. Enforced as a
+ * hard allowlist (not just format hinting) because `chat_webhook_url` drives a server-initiated
+ * outbound POST to a URL the committee writer fully controls — without a domain allowlist, an
+ * arbitrary URL here would let the BFF be used as an SSRF vector.
+ *
+ * The `hooks.slack.com` host is duplicated as a literal in `apps/lfx-one/otel.mjs`'s
+ * `ignoreRequestHook` (LFXV2-3080) — that carve-out exists because this URL carries a bearer
+ * credential in its path, which OTel's undici instrumentation would otherwise export unredacted
+ * on every outbound share. It checks only the derived request URL's hostname — deliberately
+ * broader than this path-anchored full-URL pattern, since suppressing every request to the host
+ * is the safe direction for a redaction guard — and the OTel bootstrap deliberately imports no
+ * app-side package so nothing app-side loads before instrumentations register. If this pattern's
+ * host ever changes or a second host is added, `otel.mjs`'s carve-out must be updated to match,
+ * or the credential leak reopens silently.
+ */
+export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
+
+/**
+ * Non-anchored, `/g`-flagged sibling of {@link SLACK_INCOMING_WEBHOOK_URL_PATTERN} — for
+ * scrubbing a webhook URL that might appear *embedded* in arbitrary third-party text (e.g. a
+ * caught fetch error's message), not for validating a whole string. Deliberately looser than the
+ * validation pattern (no path-segment shape requirement past `/services/`) since a defensive
+ * redaction site should err toward over-matching, not under-matching, a potential credential.
+ */
+export const SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN = /https:\/\/hooks\.slack\.com\/services\/\S*/g;
+
+/**
  * Configurable labels for committees displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
  * while keeping all code and file names as "committees"

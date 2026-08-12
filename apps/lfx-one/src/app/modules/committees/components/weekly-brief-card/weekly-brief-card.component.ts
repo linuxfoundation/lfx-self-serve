@@ -17,10 +17,12 @@ import {
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+  WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
 import {
   Committee,
   ShareWeeklyBriefResult,
+  ValidationError,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
@@ -29,6 +31,7 @@ import {
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -71,6 +74,7 @@ export class WeeklyBriefCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
 
   // Inputs
@@ -92,6 +96,12 @@ export class WeeklyBriefCardComponent {
   // etc.) of gating on `userService.impersonating()` directly, not on module input plumbing.
   public readonly impersonating = this.userService.impersonating;
 
+  // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
+  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
+  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
+  // with a hint pointing at settings UI that's itself still flag-hidden.
+  public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
   protected readonly briefTextMaxLength = WEEKLY_BRIEF_TEXT_MAX_LENGTH;
@@ -111,6 +121,7 @@ export class WeeklyBriefCardComponent {
   public readonly pollTimedOut = signal(false);
   public readonly saving = signal(false);
   public readonly sharing = signal(false);
+  public readonly sharingSlack = signal(false);
   public readonly editMode = signal(false);
   // True while a rate/clear-rating request is in flight — guards against a second tap
   // racing the first before the optimistic state has settled.
@@ -374,6 +385,22 @@ export class WeeklyBriefCardComponent {
     });
   }
 
+  public onShareToSlack(): void {
+    // Same snapshot-not-re-read rationale as onShareToMailingList: the confirmation dialog
+    // names a specific committee, so the request that follows must target that same snapshot.
+    const committeeUid = this.committee()?.uid;
+    const revision = this.brief()?.revision;
+    if (!committeeUid || revision === undefined) return;
+    this.confirmationService.confirm({
+      header: 'Share to Slack',
+      message: 'Send the current brief to this committee’s Slack channel?',
+      icon: 'fa-brands fa-slack',
+      acceptLabel: 'Send',
+      rejectLabel: 'Cancel',
+      accept: () => this.performShareToSlack(committeeUid, revision),
+    });
+  }
+
   public async onCopyAndShare(): Promise<void> {
     const text = this.brief()?.brief_text ?? '';
     // Matches planning-tab.component.ts's copyToClipboard guard: navigator.clipboard is
@@ -505,6 +532,7 @@ export class WeeklyBriefCardComponent {
       this.generating.set(false);
       this.saving.set(false);
       this.sharing.set(false);
+      this.sharingSlack.set(false);
       this.editMode.set(false);
       this.editForm.reset({ briefText: '' });
       this.ratingPending.set(false);
@@ -718,7 +746,7 @@ export class WeeklyBriefCardComponent {
             // ServiceValidationError's top-level `error` field is a generic
             // "Validation failed for X" — the actionable text lives in the
             // per-field `errors[]` array.
-            const fieldErrors = (err?.error as { errors?: { message?: string }[] } | undefined)?.errors;
+            const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
             // The send is async — a dropped connection, timeout, or 5xx here
@@ -727,6 +755,86 @@ export class WeeklyBriefCardComponent {
             // could send the brief twice. (status === 0 covers network
             // failures/aborts, which never surface an HTTP status.)
             detail = 'The send may not have completed — check the project’s Newsletters list before trying again.';
+          } else {
+            detail = 'Failed to share brief. Please try again.';
+          }
+          this.messageService.add({ severity: 'error', summary: 'Share failed', detail });
+        },
+      });
+  }
+
+  private performShareToSlack(committeeUid: string, revision: number): void {
+    this.sharingSlack.set(true);
+    this.weeklyBriefService
+      .shareWeeklyBriefToSlack(committeeUid, revision)
+      .pipe(
+        take(1),
+        // Same guard as performShare: a send started on committee A whose response arrives
+        // after the user has already navigated to committee B must not touch B's card.
+        takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.sharingSlack.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Sent', detail: 'Brief sent to the committee Slack channel.' });
+        },
+        error: (err: HttpErrorResponse) => {
+          const code = (err?.error as { code?: string } | undefined)?.code;
+          const status = err?.status;
+          let detail: string;
+          if (status === 404) {
+            detail = 'No brief available to share.';
+          } else if (status === 403) {
+            // IMPERSONATION_READ_ONLY (weekly-brief.route.ts's blockDuringImpersonation) is also
+            // a 403 — the button is already disabled during impersonation (see impersonating()),
+            // so this branch is mostly a defense-in-depth backstop, but it must not claim the
+            // impersonating caller lacks writer access, which is usually false.
+            detail =
+              code === 'IMPERSONATION_READ_ONLY'
+                ? 'Sharing to Slack is unavailable while impersonating another user.'
+                : 'Only project writers can share the weekly brief to Slack. Contact a project administrator.';
+          } else if (status === 409) {
+            if (code === 'NO_SLACK_WEBHOOK') {
+              detail = 'No Slack webhook configured for this committee.';
+            } else if (code === 'BACKEND_NOT_LIVE') {
+              detail = 'Sharing is not available in this environment yet.';
+            } else if (code === 'FEATURE_DISABLED') {
+              // weekly-brief.service.ts's ServerFeatureFlag.WeeklyBriefSlack kill switch — only
+              // reachable when it's off while the UI-facing wg-weekly-brief-slack flag is on
+              // (both must be on for a real send). Not "reload and try again": reloading can't
+              // fix this, only flipping the server flag can.
+              detail = 'Sharing to Slack is not enabled in this environment yet.';
+            } else if (code === 'REVISION_MISMATCH') {
+              detail = 'This brief was updated since you last viewed it. Reload to review the latest version before sharing.';
+              this.refresh$.next();
+            } else {
+              // Unlike performShare's mailing-list fallback, shareToSlack has no "already sent"
+              // concept — it emits only the four codes above, so this branch is unreachable in
+              // practice today. Kept neutral (not copy-pasted from performShare) in case a future
+              // 409 code is added here without updating this switch.
+              detail = "This brief can't be shared to Slack right now. Reload and try again.";
+            }
+          } else if (status === 400) {
+            const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
+            detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
+          } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
+            // Slack answered synchronously with a rejection — invalid_payload, channel_not_found,
+            // rate_limited, action_prohibited, etc. (see SLACK_ERROR_TOKEN_PATTERN) — not only a
+            // bad webhook URL, so a single hardcoded "check the webhook URL" message would send a
+            // rate-limited or policy-blocked caller down the wrong troubleshooting path and invite
+            // an immediate retry that just gets rejected again. The server's own message already
+            // embeds the specific reason when it's recognizable (weekly-brief.service.ts's
+            // clientSafeReason); fall back to the generic wording only when it isn't. Either way
+            // the POST was never accepted, so nothing was posted — safe to retry once resolved.
+            detail = err.error?.error ?? 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
+          } else if (status === 0 || status === 408 || status >= 500) {
+            // Ambiguous, same rationale as performShare's identical status-range branch: this
+            // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)
+            // alongside a dropped connection or gateway timeout talking to our own BFF — in
+            // either case there's no confirmation Slack didn't already receive the POST before
+            // the failure, unlike the SLACK_SEND_FAILED branch above.
+            detail = 'The send may not have completed — check the Slack channel before trying again.';
           } else {
             detail = 'Failed to share brief. Please try again.';
           }

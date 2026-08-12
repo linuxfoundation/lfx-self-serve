@@ -14,6 +14,7 @@ import {
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeOrganizationReference,
+  CommitteeUpdateData,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -124,7 +125,7 @@ export class CommitteeService {
     return this.http.post<Committee>('/api/committees', committee).pipe(take(1));
   }
 
-  public updateCommittee(id: string, committee: Partial<Committee>): Observable<Committee> {
+  public updateCommittee(id: string, committee: CommitteeUpdateData): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
   }
 

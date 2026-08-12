@@ -7,6 +7,7 @@ import {
   MyNewsletter,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
@@ -14,6 +15,7 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -135,6 +137,20 @@ export class NewsletterService {
 
   public sendNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterSendResult> {
     return this.newsletterClient.sendNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
+  }
+
+  public scheduleNewsletter(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    ifMatchVersion: number,
+    scheduledAt: string | undefined
+  ): Promise<NewsletterScheduleResult> {
+    return this.newsletterClient.scheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion, scheduledAt);
+  }
+
+  public cancelScheduleNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterCancelScheduleResult> {
+    return this.newsletterClient.cancelScheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
   }
 
   public recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {

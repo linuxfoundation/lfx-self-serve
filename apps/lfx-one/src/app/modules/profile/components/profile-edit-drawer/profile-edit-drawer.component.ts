@@ -21,7 +21,8 @@ import {
   US_STATES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
@@ -55,7 +56,8 @@ export class ProfileEditDrawerComponent {
   // Emits the saved metadata so the host layout can apply an optimistic profile update.
   public readonly saved = output<Partial<UserMetadata>>();
 
-  // Bio length cap, shared with the server validator so the template maxlength stays in sync.
+  // Bio length cap, shared with the server validator. Drives the form's code-point validator and
+  // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
 
   // Profile edit form
@@ -70,7 +72,9 @@ export class ProfileEditDrawerComponent {
     postal_code: ['', [Validators.maxLength(20)]],
     phone_number: ['', [Validators.maxLength(20)]],
     t_shirt_size: [''],
-    bio: ['', [Validators.maxLength(PROFILE_BIO_MAX_LENGTH)]],
+    // Code-point cap (not Validators.maxLength, which counts UTF-16 units) to match the
+    // auth-service 2000-rune limit; the native maxlength attribute is intentionally dropped.
+    bio: ['', [maxCodePointsValidator(PROFILE_BIO_MAX_LENGTH)]],
     job_title: ['', [Validators.maxLength(100)]],
     // Organization is selected from work-history orgs (a constrained list); the only remaining
     // guard mirrors the backend limit (user.service.ts rejects organization > 200 chars).
@@ -85,6 +89,15 @@ export class ProfileEditDrawerComponent {
   public readonly saving = signal(false);
   public readonly hasChanges = signal(false);
   private readonly selectedCountrySignal = signal('');
+
+  // Live code-point count of the bio, backing the "x / max" counter. Seeded in populateForm
+  // (patchValue uses emitEvent:false) and hard-capped at bioMaxLength by the valueChanges sub.
+  public readonly bioLength = signal(0);
+  // Last within-cap bio value; the valueChanges sub reverts to it when an edit exceeds the cap.
+  private lastValidBio = '';
+  // Bio value seeded from the opened profile; a rejected over-cap edit that clips back to it must
+  // not leave the control dirty (would enable Save on a no-op).
+  private seededBio = '';
 
   // True while any drawer mutation is in flight (profile save, primary-email PUT, or avatar
   // upload). Every dismissal and save path gates on this so an in-flight change can't be
@@ -209,6 +222,30 @@ export class ProfileEditDrawerComponent {
     this.profileForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.hasChanges.set(this.profileForm.dirty);
     });
+
+    // Hard-cap the bio by code point (not UTF-16 units) to match the rune limit; when over, clip only
+    // the changed region vs the last valid value (emitEvent:false) so insertions drop excess, not trailing text.
+    this.profileForm
+      .get('bio')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((bio: string) => {
+        const value = bio ?? '';
+        if (codePointLength(value) > this.bioMaxLength) {
+          const bioControl = this.profileForm.get('bio');
+          const capped = capCodePointEdit(this.lastValidBio, value, this.bioMaxLength);
+          bioControl?.setValue(capped, { emitEvent: false });
+          this.lastValidBio = capped;
+          this.bioLength.set(codePointLength(capped));
+          // A fully-rejected over-cap edit leaves the bio at the seeded value; clear the dirty flag
+          // Angular set on the keystroke so Save doesn't enable on a no-op (native maxlength parity).
+          if (capped === this.seededBio) {
+            bioControl?.markAsPristine();
+          }
+          return;
+        }
+        this.lastValidBio = value;
+        this.bioLength.set(codePointLength(value));
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -467,6 +504,11 @@ export class ProfileEditDrawerComponent {
     );
 
     this.selectedCountrySignal.set(countryValue);
+    // patchValue above runs with emitEvent:false, so the bio valueChanges sub won't fire — seed the
+    // counter and last-valid baseline from the opened profile so a reopened drawer is consistent.
+    this.seededBio = profile.profile?.bio || '';
+    this.lastValidBio = this.seededBio;
+    this.bioLength.set(codePointLength(this.lastValidBio));
     this.syncOrganizationControl();
   }
 

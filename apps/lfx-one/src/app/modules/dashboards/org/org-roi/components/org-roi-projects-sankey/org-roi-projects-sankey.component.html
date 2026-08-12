@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="org-roi-projects-sankey">
+  <div class="inline-flex self-start rounded-md border border-gray-200 p-0.5" role="group" aria-label="Flow measure">
+    @for (option of measures; track option) {
+      <button
+        type="button"
+        (click)="setMeasure(option)"
+        class="rounded px-3 py-1 text-xs font-medium"
+        [class.bg-blue-50]="option === measure()"
+        [class.text-blue-700]="option === measure()"
+        [class.text-gray-600]="option !== measure()"
+        [class.hover:bg-gray-50]="option !== measure()"
+        [attr.aria-pressed]="option === measure()"
+        [attr.data-testid]="'org-roi-projects-sankey-measure-' + option">
+        {{ measureLabels[option] }}
+      </button>
+    }
+  </div>
+
+  @if (!hasLinks()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-sankey-empty">
+      <i class="fa-light fa-diagram-project text-gray-400" aria-hidden="true"></i>
+      <span>No {{ measureLabelLowercase() }} flow to draw for the selected projects.</span>
+    </div>
+  } @else {
+    @if (hiddenCount() > 0) {
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-sankey-truncation-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span
+          >Showing the first {{ maxProjects }} of the selected projects. {{ hiddenCount() }} more are selected but not drawn — a flow diagram crosses every link
+          against every other and stops being readable past that. Use the table to see every project.</span
+        >
+      </p>
+    }
+
+    <div class="w-full" [style.height]="chartHeight()" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-projects-sankey-chart">
+      <lfx-chart type="sankey" [data]="chartData()" [options]="chartOptions()" height="100%" />
+    </div>
+
+    <!-- The canvas is otherwise the only presentation of these flows. -->
+    <table class="sr-only" data-testid="org-roi-projects-sankey-table">
+      <caption>
+        {{
+          measureLabel()
+        }}
+        flows
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">From</th>
+          <th scope="col">To</th>
+          <th scope="col">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of flowRows(); track row.key) {
+          <tr>
+            <th scope="row">{{ row.from }}</th>
+            <td>{{ row.to }}</td>
+            <td>{{ row.amount }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    @if (showsModelledCost()) {
+      <p class="text-xs text-gray-500" data-testid="org-roi-projects-sankey-modelled-cost-note">{{ investmentExplanation }}</p>
+    }
+  }
+</div>

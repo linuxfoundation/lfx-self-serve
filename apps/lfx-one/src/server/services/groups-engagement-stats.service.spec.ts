@@ -106,12 +106,14 @@ function activeMemberRow(overrides: {
   MEMBER_USER_ID: string;
   MEMBER_JOINED_AT?: string | null;
   MEMBER_VOTING_STATUS?: string;
+  MEMBER_ROLE?: string;
   INVITED_COUNT_30D?: number;
   ATTENDED_COUNT_30D?: number;
 }) {
   return {
     MEMBER_JOINED_AT: '2020-01-01T00:00:00.000Z',
     MEMBER_VOTING_STATUS: 'Voting Rep',
+    MEMBER_ROLE: 'None',
     INVITED_COUNT_30D: 999,
     ATTENDED_COUNT_30D: 0,
     ...overrides,
@@ -410,6 +412,37 @@ describe('GroupsEngagementStatsService', () => {
       const result = await service.getEngagementStats(buildReq());
 
       expect(result.active_members).toBe(0);
+    });
+
+    it('excludes an LF Staff + Observer member from active_members regardless of real attendance (LFXV2-3101)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({
+        rows: [
+          activeMemberRow({
+            COMMITTEE_ID: 'committee-1',
+            MEMBER_USER_ID: 'm1',
+            ATTENDED_COUNT_30D: 10,
+            MEMBER_ROLE: 'LF Staff',
+            MEMBER_VOTING_STATUS: 'Observer',
+          }),
+        ],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(0);
+    });
+
+    it('does NOT exclude an LF Staff + Voting Rep member from active_members — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', async () => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['committee-1']));
+      execute.mockResolvedValueOnce({
+        // MEMBER_VOTING_STATUS defaults to 'Voting Rep' — deliberately left unset here.
+        rows: [activeMemberRow({ COMMITTEE_ID: 'committee-1', MEMBER_USER_ID: 'm1', ATTENDED_COUNT_30D: 10, MEMBER_ROLE: 'LF Staff' })],
+      });
+
+      const result = await service.getEngagementStats(buildReq());
+
+      expect(result.active_members).toBe(1);
     });
 
     it('does not count a veteran member with zero attendance and no tenure grace', async () => {

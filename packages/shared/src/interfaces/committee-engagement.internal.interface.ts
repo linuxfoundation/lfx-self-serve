@@ -26,7 +26,7 @@ export interface CommitteeEngagementWarehouseRow {
   MEMBER_USER_ID: string;
   /** When the member joined the committee roster — used for tenure clipping (see the classifier). */
   MEMBER_JOINED_AT: string | Date | null;
-  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — passthrough, informational. */
+  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — `'LF Staff'` together with `MEMBER_VOTING_STATUS === 'Observer'` short-circuits classification and excludes the row from the rate/active sums (LFXV2-3101; `role` alone is not enough — a real Voting Rep who happens to be LF Staff is not excluded). */
   MEMBER_ROLE: string;
   /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'` — `'Emeritus'` short-circuits classification. */
   MEMBER_VOTING_STATUS: string;

@@ -37,11 +37,33 @@ export class TimePickerComponent implements OnInit, OnDestroy {
   public readonly size = input<TimePickerProps['size']>('small');
   public readonly styleClass = input<string>('w-full');
 
+  // Optional armability window: when set, dropdown options that would combine with
+  // `selectedDate` into an instant outside [minDateTime, maxDateTime] are hidden rather
+  // than left selectable and only rejected after the fact. Free-typed values are still
+  // caught by the form's own window validator — this only narrows what the dropdown offers.
+  public readonly minDateTime = input<Date | null>(null);
+  public readonly maxDateTime = input<Date | null>(null);
+  public readonly selectedDate = input<Date | null>(null);
+
   // ViewChild for popover control
   public timePopover = viewChild<Popover>('timePopover');
 
-  // Time options signal
-  public timeOptions = signal<TimeOption[]>([]);
+  // Time options, filtered against the armability window (see minDateTime/maxDateTime above)
+  public timeOptions = computed<TimeOption[]>(() => {
+    const all = this.generateTimeOptions();
+    const date = this.selectedDate();
+    const min = this.minDateTime();
+    const max = this.maxDateTime();
+    if (!date || (!min && !max)) return all;
+
+    return all.filter((option) => {
+      const candidate = this.combineDateAndTimeLabel(date, option.value);
+      if (!candidate) return true;
+      if (min && candidate < min) return false;
+      if (max && candidate > max) return false;
+      return true;
+    });
+  });
 
   // Unified state management
   private pickerState = signal<TimePickerData>({
@@ -92,10 +114,6 @@ export class TimePickerComponent implements OnInit, OnDestroy {
       return false;
     });
   });
-
-  public constructor() {
-    this.timeOptions.set(this.generateTimeOptions());
-  }
 
   public ngOnInit(): void {
     // Subscribe to form control value changes
@@ -188,6 +206,23 @@ export class TimePickerComponent implements OnInit, OnDestroy {
     }
 
     return options;
+  }
+
+  /**
+   * Combines a calendar-picked date with an "9:30 AM"-style option label into a concrete
+   * Date, for comparison against minDateTime/maxDateTime. Returns null on an unparsable
+   * label rather than throwing — generateTimeOptions() only ever produces well-formed
+   * labels, but this stays defensive since it's also reachable from external inputs.
+   */
+  private combineDateAndTimeLabel(date: Date, label: string): Date | null {
+    const match = label.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return null;
+    let hour = parseInt(match[1], 10) % 12;
+    if (match[3].toUpperCase() === 'PM') hour += 12;
+    const minute = parseInt(match[2], 10);
+    const combined = new Date(date);
+    combined.setHours(hour, minute, 0, 0);
+    return combined;
   }
 
   private formatTime(hour: number, minute: number): string {
