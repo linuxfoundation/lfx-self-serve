@@ -336,6 +336,26 @@ describe('NewsletterRecipientEngagementComponent', () => {
       expect(clickTimeline?.textContent).toContain('+1 earlier clicks');
     });
 
+    // Regression: showClicks() can be true from the parent's aggregate rollup
+    // (analyticsHasClicks) while this specific row has zero clicks of its own —
+    // e.g. an opened-but-not-clicked recipient on a newsletter where other
+    // recipients did click. The click section must still render, with the
+    // `@empty` fallback text rather than an empty list.
+    it('shows the empty-state message in the click timeline for a recipient with no clicks', async () => {
+      newsletterService.getRecipientEngagement.mockReturnValue(of(RESPONSE));
+      await createComponent();
+      fixture.componentRef.setInput('analyticsHasClicks', true);
+      await fixture.whenStable();
+
+      const expandButton = card('newsletter-recipient-engagement-expand-jane@acme.io') as HTMLButtonElement;
+      expandButton.click();
+      await fixture.whenStable();
+
+      const clickTimeline = card('newsletter-recipient-engagement-click-timeline');
+      expect(clickTimeline).not.toBeNull();
+      expect(clickTimeline?.textContent).toContain('No clicks recorded');
+    });
+
     it('falls back to unfiltered rows when a latched Clicked selection is no longer reachable', async () => {
       newsletterService.getRecipientEngagement.mockReturnValue(of(CLICK_RESPONSE));
       await createComponent();
