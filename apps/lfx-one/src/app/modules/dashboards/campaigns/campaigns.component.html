@@ -40,17 +40,76 @@
 
   <hr class="border-gray-200" />
 
-  @if (selectedDeliveryType() === 'email') {
-    <!-- Email delivery is under active development — placeholder until it ships. -->
-    <div
-      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-      data-testid="campaigns-email-placeholder">
-      <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
-      <h2 class="text-base font-semibold text-gray-900">Email campaigns are coming soon</h2>
-      <p class="max-w-md text-sm text-gray-500">The Email delivery channel is under active development.</p>
-      <lfx-button label="Switch to Paid Marketing" [text]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
+  <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
+       is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
+       destroy an in-progress email brief on every round-trip to Paid Marketing. -->
+  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? null : 'none'" data-testid="campaigns-email">
+    <!-- Tab Navigation. Bound to visibleTabs, which drops Optimize for this channel. -->
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
+      @for (tab of visibleTabs(); track tab.id; let i = $index) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="selectedEmailTab() === tab.id"
+          [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
+          [attr.id]="'email-tab-' + tab.id"
+          [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id)"
+          (keydown)="onTabKeydown($event, i)"
+          [class]="
+            selectedEmailTab() === tab.id
+              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+          "
+          [attr.data-testid]="'campaigns-email-' + tab.id + '-tab'">
+          <i [class]="tab.icon" aria-hidden="true"></i>
+          {{ tab.label }}
+        </button>
+      }
     </div>
-  }
+
+    @switch (selectedEmailTab()) {
+      @case ('planning') {
+        <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
+          <!-- Keyed on the program type for the same reason the paid side is: the component
+               holds its brief state locally and does not reset on input change. -->
+          @for (program of [selectedProgramType()]; track program) {
+            <lfx-planning-tab
+              [programTypeConfig]="activeProgramTypeConfig()"
+              (proceedToImplementation)="onEmailProceedToImplementation($event)"
+              data-testid="campaigns-email-planning-tab" />
+          }
+        </div>
+      }
+      @case ('implementation') {
+        <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
+          <!--
+            The staging form is the half of this channel that still needs a service endpoint:
+            campaign create clones a caller-specified source email and `sourceEmailId` has no
+            default, so the form cannot be built until the template picker has something to
+            list (LFXV2-3197 → LFXV2-3198). Said plainly rather than as "coming soon", which
+            would repeat the claim this PR exists to correct — the channel IS implemented in
+            campaign-service; what is missing is one route and the form over it.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-implementation-pending">
+            <i class="fa-light fa-envelope-open-text text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email staging is not wired up yet</h2>
+            <p class="max-w-md text-sm text-gray-500">
+              Your brief is ready. Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint
+              that is still in review.
+            </p>
+          </div>
+        </div>
+      }
+      @case ('insights') {
+        <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
+          <lfx-monitoring-tab data-testid="campaigns-email-insights-tab" />
+        </div>
+      }
+    }
+  </div>
   <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
        while the Email placeholder shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
