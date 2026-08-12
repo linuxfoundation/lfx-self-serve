@@ -382,6 +382,8 @@ export class SocialListeningService {
              COUNT(*) AS TOTAL_MENTIONS
       FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
+        AND SOURCE_PROJECT_ID IS NOT NULL
+        AND SOURCE_PROJECT_NAME IS NOT NULL
       GROUP BY DATE_TRUNC('${grain.unit}', MENTION_TS), SOURCE_PROJECT_ID, SOURCE_PROJECT_NAME
       ORDER BY DATE_TRUNC('${grain.unit}', MENTION_TS)
     `;

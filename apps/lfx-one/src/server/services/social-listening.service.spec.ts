@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/constants', () => ({
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
-  MENTION_TOP_TAGS_LIMIT: 20,
+  MENTION_TOP_TAGS_LIMIT: 10,
   VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
   // Unrelated to Social Listening, but `validation.helper` — the real module, since
   // `escapeSqlLikePattern` is under test through the service — derives these at module scope.
@@ -269,7 +269,7 @@ describe('SocialListeningService — tag aggregation', () => {
     expect(sql).toContain("LATERAL FLATTEN(input => SPLIT(m.TAGS, ','))");
     // Grouping by the `TAG` alias would silently group by a real column of that name.
     expect(sql).toContain('GROUP BY TRIM(f.VALUE::STRING)');
-    expect(binds).toEqual(['cncf', '2026-03-01', '2026-04-01', 20]);
+    expect(binds).toEqual(['cncf', '2026-03-01', '2026-04-01', 10]);
   });
 });
 

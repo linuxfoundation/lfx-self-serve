@@ -45,7 +45,7 @@ const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
 /** ~1000 windows deep. Past this, a paginated request is a scan, not navigation. */
 const MAX_FEED_OFFSET = 100_000;
 
-/** Ceiling for the caller-supplied `limit` on the ranked analytics panels (top tags, top projects). */
+/** Ceiling for the caller-supplied `limit` on the analytics top-projects panel. */
 const MAX_ANALYTICS_LIMIT = 100;
 
 const VALID_SENTIMENTS = MENTION_SENTIMENT_OPTIONS.map((option) => option.value);
@@ -121,7 +121,7 @@ export function parseSocialListeningPagination(req: Request, operation: string):
   };
 }
 
-/** Optional row cap for a ranked analytics panel; `undefined` lets the service apply its own default. */
+/** Optional row cap for the analytics top-projects panel; `undefined` lets the service apply its own default. */
 export function parseSocialListeningLimit(req: Request, operation: string): number | undefined {
   if (getStringQueryParam(req, 'limit') === undefined) {
     return undefined;

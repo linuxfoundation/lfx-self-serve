@@ -195,6 +195,8 @@ export class SocialListeningController {
   /**
    * GET /api/social-listening/mentions-authors
    * Author options, cascading off every other active filter so the list narrows with the feed.
+   * Caveat: authors arrive comma-joined, so an author name containing a comma can't be re-selected
+   * as a filter value (accepted limitation of the 3016 client codec).
    * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters
    * except `authors` / `mentionIds`
    */
