@@ -7,15 +7,16 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
 import { Committee, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
+import { findCursorWalkStartIndex, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, finalize, map, Observable, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -292,53 +293,51 @@ export class VotesDashboardComponent {
   /**
    * Fetches one page of votes. Cursor pagination only returns the *next* page's token, so a direct jump to a page whose
    * token hasn't been collected yet walks forward from the nearest cached token, caching intermediate tokens along the way.
-   * If the cursor exhausts before the target (stale totalRecords, e.g. votes deleted after the count fetch), falls back to page 1.
+   * The walk is bounded (VOTES_PAGE_WALK_LIMIT, matching the meetings-dashboard cursor walk): on overflow the paginator
+   * clamps to the last reached page; on cursor exhaustion (data shrank after tokens were cached) it restarts from page 1
+   * with a fresh token chain. HTTP errors propagate to the caller so a failed request is never mistaken for exhaustion.
    */
   private fetchVotePage(projectUid: string, rows: number, pageIndex: number, searchName?: string, filters?: string[]): Observable<PaginatedResponse<Vote>> {
+    const startIndex = findCursorWalkStartIndex(this.pageTokens, pageIndex);
+
+    // Index of the last successfully fetched page — fetchSingle's tap runs before expand's projector sees each response.
+    let fetchedIndex = startIndex;
+
     const fetchSingle = (index: number): Observable<PaginatedResponse<Vote>> =>
       this.voteService.getVotesByProjectPaginated(projectUid, rows, index > 0 ? this.pageTokens[index - 1] : undefined, searchName, filters).pipe(
         tap((response: PaginatedResponse<Vote>) => {
-          if (response.page_token) {
-            this.pageTokens[index] = response.page_token;
-          } else {
-            // No next page — drop any stale tokens cached for pages beyond this one (e.g. after data shrank).
-            this.pageTokens.length = index;
-          }
+          fetchedIndex = index;
+          // Cache the next-page cursor; when the cursor exhausts, stale tokens beyond this page are dropped.
+          this.pageTokens = recordPageToken(this.pageTokens, index, response.page_token);
         })
       );
 
-    const walk = (index: number): Observable<PaginatedResponse<Vote>> =>
-      fetchSingle(index).pipe(
-        switchMap((response: PaginatedResponse<Vote>) => {
-          // A directly fetched target page that is empty with no next token means the cached cursor was stale (data shrank
-          // after the token was cached) — treat as exhaustion and fall back to page 1 with a fresh token chain.
-          if (index === pageIndex) {
-            if (index > 0 && !response.page_token && !response.data.length) {
-              this.pageTokens = [];
-              this.currentFirst.set(0);
-              return fetchSingle(0);
-            }
-            return of(response);
-          }
-          if (!response.page_token) {
-            this.pageTokens = [];
-            this.currentFirst.set(0);
-            return index === 0 ? of(response) : fetchSingle(0);
-          }
-          return walk(index + 1);
-        })
-      );
+    return fetchSingle(startIndex).pipe(
+      // Walk forward one page per request until the target page is fetched or the cursor exhausts.
+      expand((response: PaginatedResponse<Vote>) => (fetchedIndex === pageIndex || !response.page_token ? EMPTY : fetchSingle(fetchedIndex + 1))),
+      // Hard request ceiling: the start page plus VOTES_PAGE_WALK_LIMIT hops (matches the meetings-dashboard walk bound).
+      take(VOTES_PAGE_WALK_LIMIT + 1),
+      // Only the final page's response reaches the subscriber — intermediate walk pages just cache tokens. Terminal
+      // handling lives after take() because expand's projector never runs for the emission take() cuts off at.
+      last(),
+      switchMap((response: PaginatedResponse<Vote>) => {
+        const outcome = resolveCursorWalkOutcome(response, fetchedIndex, pageIndex);
 
-    // Nearest page fetchable directly: page 0 needs no token; page p needs pageTokens[p - 1].
-    let startIndex = 0;
-    for (let i = pageIndex; i > 0; i--) {
-      if (this.pageTokens[i - 1]) {
-        startIndex = i;
-        break;
-      }
-    }
+        // Data shrank after tokens were cached (empty target page or exhausted cursor) — restart from
+        // page 1 with a fresh token chain instead of showing an empty table.
+        if (outcome.action === 'restart') {
+          this.pageTokens = [];
+          this.currentFirst.set(0);
+          return outcome.refetch ? fetchSingle(0) : of(response);
+        }
 
-    return walk(startIndex);
+        // take() truncated the walk before the target — clamp the paginator to the last reached page.
+        if (outcome.action === 'clamp') {
+          this.currentFirst.set(outcome.clampIndex * rows);
+        }
+        return of(response);
+      })
+    );
   }
 
   private initSelectedListVote(): Signal<Vote | null> {
