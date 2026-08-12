@@ -73,21 +73,33 @@ export class OrgRoiProjectDetailComponent {
   private readonly annual: Signal<OrgLensRoiProjectAnnual | null> = computed(() => this.payload().annual);
 
   /**
-   * Whether the payload in hand describes the organization now selected.
+   * Whether the payload in hand describes **both** the organization now selected and the project
+   * now in the URL.
    *
-   * The same check the portfolio page makes on its summary, and for the same reason: a request in
-   * flight during an organization switch leaves the previous organization's figures on screen under
-   * the new one's header. Comparing the payload's own `orgUid` to the selected account is a
-   * synchronous signal read, so it flips in the same change-detection pass as the switch.
+   * The organization half is the check the portfolio page makes on its summary, for the same
+   * reason: a request in flight during a switch leaves the previous figures on screen under the new
+   * name. The project half matters at least as much here and has no analogue there. This route is
+   * navigated project-to-project — from a table row, from the browser's history — and Angular reuses
+   * the component instance across that, so the payload keeps the previous project until the next
+   * response lands. Checking the organization alone would pass, because it has not changed, and one
+   * project's investment and ROI would render under another's name.
+   *
+   * Both are synchronous signal reads, so they flip in the same change-detection pass as the
+   * navigation, unlike the `toObservable`-driven loading flag which settles one effect flush later.
    */
-  private readonly detailMatchesSelectedOrg: Signal<boolean> = computed(() => {
+  private readonly payloadMatchesRoute: Signal<boolean> = computed(() => {
     const selected = this.accountContext.selectedAccount()?.accountId ?? '';
-    return selected !== '' && this.detail()?.orgUid === selected;
+    const detail = this.detail();
+    if (detail === null || selected === '') return false;
+    return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug();
   });
 
-  protected readonly showsFigures: Signal<boolean> = computed(() => !this.forbidden() && !this.failed() && !this.missing() && this.detailMatchesSelectedOrg());
+  protected readonly showsFigures: Signal<boolean> = computed(() => !this.forbidden() && !this.failed() && !this.missing() && this.payloadMatchesRoute());
 
-  protected readonly projectName: Signal<string> = computed(() => this.detail()?.project.projectName ?? this.projectSlug());
+  /** Falls back to the slug rather than the stale payload's name, for the same window. */
+  protected readonly projectName: Signal<string> = computed(
+    () => (this.payloadMatchesRoute() ? this.detail()?.project.projectName : null) ?? this.projectSlug()
+  );
 
   /**
    * Whether `/org/projects/{slug}` has anything to show.

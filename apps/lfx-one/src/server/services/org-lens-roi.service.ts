@@ -265,10 +265,22 @@ export class OrgLensRoiService {
         LEFT JOIN ${this.projectsBreakdownTable()} b
           ON b.ACCOUNT_ID = p.ACCOUNT_ID AND b.PROJECT_ID = p.PROJECT_ID
         WHERE p.ACCOUNT_ID = ? AND p.PROJECT_SLUG = ? AND p.MARKUP_METHOD = ?
-        ORDER BY b.DISPLAY_ORDER
+        -- PROJECT_ID leads for the same reason it does in the set read: it keeps a project's
+        -- category rows contiguous, and if a slug ever mapped to two project ids it decides which
+        -- one this endpoint answers with, rather than leaving that to the warehouse's row order.
+        ORDER BY p.PROJECT_ID, b.DISPLAY_ORDER
       `;
         const result = await this.snowflakeService.execute<OrgLensRoiProjectDetailWarehouseRow>(sql, [accountId, projectSlug, method]);
-        const project = this.groupProjectRows(result.rows).at(0) ?? null;
+        const projects = this.groupProjectRows(result.rows);
+        if (projects.length > 1) {
+          logger.warning(req, 'get_org_lens_roi_project_detail', 'Expected at most one project for the slug', {
+            account_id: accountId,
+            project_slug: projectSlug,
+            method,
+            projects: projects.length,
+          });
+        }
+        const project = projects.at(0) ?? null;
         if (project === null) return null;
         return {
           orgUid: accountId,

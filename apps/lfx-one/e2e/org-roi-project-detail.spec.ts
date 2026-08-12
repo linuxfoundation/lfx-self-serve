@@ -11,8 +11,10 @@ import {
   DETAIL_LOSS_PROJECT,
   DETAIL_PROJECT,
   gotoOrgRoiPage,
+  fulfillJson,
   gotoOrgRoiProjectDetail,
   MOCK_ACCOUNT_ID,
+  MOCK_PROJECT_INPUTS,
   mockProjectAnnual,
   mockProjectDetail,
   NO_VALUE,
@@ -248,6 +250,29 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
 
     await expect(page).toHaveURL(new RegExp(`${orgRoiProjectDetailUrl(DETAIL_PROJECT.slug)}$`));
     await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
+  });
+
+  test("never shows one project's figures under another's name while switching between them", async ({ page }) => {
+    // The component instance is reused across a project-to-project navigation and the payload keeps
+    // its previous value until the next response lands, so without an identity check on the slug
+    // the previous project's investment and ROI render under the new project's URL.
+    const second = MOCK_PROJECT_INPUTS.find((input) => input.slug !== DETAIL_PROJECT.slug) as (typeof MOCK_PROJECT_INPUTS)[number];
+
+    await stubOrgLensContext(page);
+    await page.route('**/api/orgs/*/lens/roi/projects/*', async (route) => {
+      const slug = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+      // The second project answers slowly, which is the window the check has to survive.
+      if (slug === second.slug) await new Promise((resolve) => setTimeout(resolve, 1_500));
+      return fulfillJson(route, mockProjectDetail(slug));
+    });
+
+    await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
+    await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
+
+    await page.goto(orgRoiProjectDetailUrl(second.slug), { waitUntil: 'domcontentloaded' });
+    // The first project's figures must never appear on the second project's URL, at any point.
+    await expect(page.getByTestId('org-roi-project-detail-page')).not.toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
+    await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(second.name, { timeout: 15_000 });
   });
 
   test('reaches the same project the table row named', async ({ page }) => {
