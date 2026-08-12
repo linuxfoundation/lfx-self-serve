@@ -281,7 +281,24 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
-          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : this.idlePersistence);
+          if (!result.enabled) {
+            this.briefPersistence.set(this.idlePersistence);
+            return;
+          }
+          // A REFUSED save is not a save. `conflict` arrives with `enabled: true` — the flag is
+          // on and the request was served — so keying the banner on `enabled` alone renders
+          // "Brief saved." over work that was never written, which is the one thing this banner
+          // must never say. It surfaces as `error` because the user's position is exactly that
+          // of a failed save, and the remedy is the same.
+          if (result.conflict !== undefined) {
+            this.briefPersistence.set({
+              status: 'error',
+              briefId: result.briefId,
+              message: 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
+            });
+            return;
+          }
+          this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
