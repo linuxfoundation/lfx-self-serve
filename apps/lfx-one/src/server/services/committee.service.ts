@@ -603,8 +603,9 @@ export class CommitteeService {
 
       // Choosing the Slack destination must require the same authorization as sending to it —
       // shareToSlack (weekly-brief.service.ts) gates the send on strict project-writer, not
-      // committee-writer. Upstream's own PUT /committees/:uid only enforces committee-writer
-      // (direct grants exist independently of project writer — see getDirectGrantCommittees), so
+      // committee-writer. Upstream's own PUT /committees/:uid/settings only enforces
+      // committee-writer (direct grants exist independently of project writer — see
+      // getDirectGrantCommittees), so
       // without this, a committee writer who is not a project writer could point the webhook at a
       // Slack workspace they control, and a later legitimate project-writer send would deliver
       // brief content there. Checked here (post-fetch, since currentCommittee.project_uid is
@@ -659,7 +660,14 @@ export class CommitteeService {
       // enough since nothing here writes the base resource, and its result doubles as the
       // response-shaping fetch the final `else` branch below would otherwise need.
       const currentCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
-      await this.assertWebhookChangeAuthorized(req, committeeId, currentCommittee?.project_uid);
+      // Only run the authorization check when there's a committee to authorize against — a null
+      // result (deleted/nonexistent committee) must fall through to the generic
+      // UPSTREAM_INVALID_RESPONSE guard below, matching the final `else` branch's behavior for
+      // the same case, rather than surfacing a misleading NOT_PROJECT_WRITER for a committee that
+      // was never found.
+      if (currentCommittee) {
+        await this.assertWebhookChangeAuthorized(req, committeeId, currentCommittee.project_uid);
+      }
       updatedCommittee = currentCommittee;
     } else {
       // No core fields to update — fetch current committee for the response

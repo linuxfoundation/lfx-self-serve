@@ -891,8 +891,9 @@ export class WeeklyBriefService {
 
     // Re-validated against SLACK_INCOMING_WEBHOOK_URL_PATTERN here, not just trusted from
     // upstream storage — the BFF's own updateCommittee is not the only possible writer of
-    // chat_webhook_url on the committee record (any client with a token can PUT /committees/:uid
-    // directly), so the stored value is untrusted input at the point of use. Without this, an
+    // chat_webhook_url on the committee settings resource (any client with a token can
+    // PUT /committees/:uid/settings directly), so the stored value is untrusted input at the
+    // point of use. Without this, an
     // arbitrary URL written some other way would turn this into a server-initiated POST of brief
     // content to an attacker-chosen destination — exactly what the allowlist exists to prevent.
     // A malformed value is treated the same as "not configured" — from the caller's perspective

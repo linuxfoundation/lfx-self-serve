@@ -608,6 +608,26 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
+    it('throws a typed 502 (not a misleading 403 NOT_PROJECT_WRITER) for a webhook-only change on a committee that no longer exists', async () => {
+      // The webhook-only branch's committee GET resolves null (deleted/nonexistent committee) —
+      // must skip the authorization check (there's no project to authorize against) and fall
+      // through to the generic empty-response guard, matching the final `else` branch's behavior
+      // for the same case, rather than surfacing NOT_PROJECT_WRITER for a committee that was
+      // never found. The settings write is still attempted first (same "settings write must not
+      // be blocked by the response-shaping guard" ordering as the no-core-update 502 test above).
+      proxyRequest.mockResolvedValueOnce(null); // webhook-only branch's committee GET
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // updateCommitteeSettings' own fetch
+      updateWithETag.mockResolvedValueOnce({}); // updateCommitteeSettings' own PUT
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
+        statusCode: 502,
+        code: 'UPSTREAM_INVALID_RESPONSE',
+      });
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect(updateWithETag).toHaveBeenCalledOnce();
+    });
+
     it('accepts a well-formed hooks.slack.com URL', async () => {
       // Webhook-only payload — no core field — so this goes through the settings-only branch:
       // a plain GET for project_uid/response-shaping, then the settings fetchWithETag/updateWithETag
