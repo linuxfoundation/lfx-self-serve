@@ -645,7 +645,35 @@ describe('fromBriefResponse', () => {
   it('keeps a variant block that has the array the template iterates', () => {
     const linkedIn = { variants: [{ headline: 'Join us' }] };
 
-    expect(fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy).toEqual(linkedIn);
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as { variants: unknown[] } | undefined;
+
+    expect(restored?.variants).toEqual(linkedIn.variants);
+  });
+
+  /**
+   * The array fields are COERCED, not merely passed through.
+   *
+   * `populateFromBrief` assigns `recommendedGeoTargets` straight into a signal typed
+   * `LinkedInGeoTarget[]`, and `canSubmit` maps over it — so a stored block saved before that
+   * field existed would write `undefined` and throw on Restore. Coercing to `[]` keeps the brief
+   * readable and renders as "none selected", which is the truthful answer.
+   */
+  it('coerces missing array fields on a variant block so a restore cannot throw', () => {
+    const linkedIn = { variants: [{ headline: 'Join us' }] };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as Record<string, unknown> | undefined;
+
+    expect(restored?.['recommendedGeoTargets']).toEqual([]);
+  });
+
+  // A non-array value in an array field is coerced too — a stored `null` or a string reaches the
+  // same `.map()` and fails the same way an absent key does.
+  it('coerces a non-array value in an array field', () => {
+    const linkedIn = { variants: [{ headline: 'Join us' }], recommendedGeoTargets: null };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as Record<string, unknown> | undefined;
+
+    expect(restored?.['recommendedGeoTargets']).toEqual([]);
   });
 });
 

@@ -390,8 +390,12 @@ export class CampaignController {
     // Rejected rather than passed through: `find-brief` declares MinLength(1) on `event_slug`,
     // so an empty one is a 400 from campaign-service naming a field the user never typed — the
     // same reason `persistBrief` checks its own slug before sending.
-    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'].trim() : '';
-    if (eventSlug.length === 0) {
+    // Trimmed to TEST for emptiness, never to rewrite the key — mirroring `deriveEventSlug`,
+    // which does exactly the same and stores the ORIGINAL slug. Querying with a trimmed key
+    // while the write stored an untrimmed one makes a padded slug unreadable: find-brief misses
+    // and the caller is told `none` for a brief that exists, which the next save then PUTs over.
+    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'] : '';
+    if (eventSlug.trim().length === 0) {
       next(
         ServiceValidationError.forField('event_slug', 'event_slug is required', {
           operation: 'campaign_load_brief',

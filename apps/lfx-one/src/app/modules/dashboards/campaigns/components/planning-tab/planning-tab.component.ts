@@ -317,18 +317,31 @@ export class PlanningTabComponent implements OnInit {
     // while this reads the pasted URL's last path segment. They agree whenever the scraper
     // echoes the segment, which is the ordinary case — but a normalized slug (different case,
     // stripped punctuation, a redirect to a canonical path) makes the lookup MISS a brief that
-    // exists, and the user is offered nothing rather than a restore. A miss is the safe
-    // direction — it costs a regeneration, not a wrong brief — which is why this is a known
-    // limitation rather than a blocker. Closing it means keying the lookup off the generated
-    // brief instead of the URL, which is only possible after generation and so cannot serve
-    // the pre-generation offer this feature exists to make.
+    // exists, and the user is offered nothing rather than a restore.
+    //
+    // A miss is NOT merely a wasted regeneration, and an earlier version of this comment was
+    // wrong to say so. `saveBrief` runs its own `findBrief` keyed on the GENERATED slug, so
+    // after the user regenerates, the save finds the row this lookup missed and PUTs over it —
+    // the saved edits are gone and Restore was never offered. The two paths agreeing matters
+    // for durability, not just for convenience.
+    //
+    // Not closed here because the fix is not local: the read would have to key off the
+    // generated brief, which does not exist until after generation and so cannot serve the
+    // pre-generation offer this feature is for. Tracked as LFXV2-3200.
     //
     // Cleared eagerly so a half-typed URL cannot leave an offer to restore a DIFFERENT event's
     // brief on screen.
+    // Cleared only when the SLUG actually changes. Clearing on every keystroke looks safer but
+    // is not: `distinctUntilChanged` drops an unchanged (slug, foundation) pair, so editing the
+    // URL and arriving back at the same slug — or clearing the field and retyping it — would
+    // wipe the offer and then issue no lookup to restore it. The offer would be gone for a brief
+    // that exists, with nothing left to re-fetch it.
     const slug = this.extractSlug(url);
-    this.currentSlug = slug;
-    this.savedBrief.set(null);
-    this.savedBriefWarning.set(null);
+    if (slug !== this.currentSlug) {
+      this.currentSlug = slug;
+      this.savedBrief.set(null);
+      this.savedBriefWarning.set(null);
+    }
     if (slug.length > 0) {
       this.slugInput$.next(slug);
     }

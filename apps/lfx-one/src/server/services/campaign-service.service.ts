@@ -661,16 +661,46 @@ function asEventDetails(value: unknown): CampaignEventDetails | null {
  *
  * `variants` is the discriminator: all three types have one, every consumer iterates it, and a
  * block without it would reach a template that does `@for (v of copy.variants)`. Their INNER
- * shape is not validated — doing so would restate the generator's schema in a second place, and
- * the fields are rendered as text, so a missing one is a blank line rather than a crash.
+ * shape is mostly not validated — restating the generator's schema here would put it in a second
+ * place — but every ARRAY field is coerced, because those are not merely rendered. An earlier
+ * version of this comment claimed a missing field is "a blank line rather than a crash"; that
+ * holds for text, and does not hold for a field a consumer calls `.map()` or `.length` on.
+ * `populateFromBrief` assigns `recommendedGeoTargets` straight into a signal whose type says
+ * `LinkedInGeoTarget[]`, and `canSubmit` then maps over it — so a stored block without that key
+ * throws on Restore rather than showing a gap.
+ *
+ * Coercing to `[]` rather than rejecting the block: an absent array is a brief saved before that
+ * field existed, which is ordinary, and an empty list renders as "none selected" — the truthful
+ * answer. Rejecting would turn a readable brief into `unreadable` over a field the user may not
+ * even use.
  *
  * `undefined` and not `null`: all three are optional on `CampaignBriefOutput`, and absent is
  * exactly what a brief generated for a different platform set looks like.
  */
 function asVariantCopy<T>(value: unknown): T | undefined {
   const block = asRecord(value);
-  return block !== null && Array.isArray(block['variants']) ? (block as T) : undefined;
+  if (block === null || !Array.isArray(block['variants'])) {
+    return undefined;
+  }
+  const coerced: Record<string, unknown> = { ...block };
+  for (const key of VARIANT_COPY_ARRAY_FIELDS) {
+    if (key in coerced && !Array.isArray(coerced[key])) {
+      coerced[key] = [];
+    } else if (!(key in coerced)) {
+      coerced[key] = [];
+    }
+  }
+  return coerced as T;
 }
+
+/**
+ * The array-valued fields across the three per-platform copy blocks.
+ *
+ * Listed rather than derived: these are the keys a consumer iterates, and the cost of a missing
+ * one is a thrown `.map()` on Restore, not a blank line. Union of all three block types — a key
+ * absent from a given platform's block is simply coerced to `[]` there and never read.
+ */
+const VARIANT_COPY_ARRAY_FIELDS = ['recommendedGeoTargets', 'recommendedSubreddits', 'recommendedInterests', 'recommendedKeywords'] as const;
 
 /**
  * The keyword table, dropping entries that carry no term.
