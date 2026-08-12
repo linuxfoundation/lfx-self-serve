@@ -636,7 +636,13 @@ export interface EventsSummaryResponse {
  * there is no prior-period baseline to compare against.
  */
 export interface EventsOverviewMetric {
-  value: number;
+  /**
+   * The metric's value, or null when it isn't derivable for the requested period. Attendee,
+   * country, organization, and sponsorship counts only exist as pre-aggregated YTD rollups in
+   * Snowflake, so a month-scoped request returns null for them rather than passing off a
+   * year-to-date figure as a monthly one.
+   */
+  value: number | null;
   changeFraction: number | null;
 }
 
@@ -770,6 +776,13 @@ export interface EventDetailResponse {
 export interface EventsOverviewSummaryResponse {
   /** Snowflake PROJECT_ID echoed for PCC deep-link navigation; '' when the slug resolves to nothing. */
   projectId: string;
+  /**
+   * The period these figures actually cover, which is not always the one requested: the source
+   * rollups carry no date grain, so a trailing preset (last-3/last-6) is served year-to-date.
+   * Callers label from this rather than from the picker, so numbers are never titled with a scope
+   * they don't have.
+   */
+  scope: 'ytd' | 'month';
   registrations: EventsOverviewMetric;
   attendees: EventsOverviewMetric;
   speakers: EventsOverviewMetric;

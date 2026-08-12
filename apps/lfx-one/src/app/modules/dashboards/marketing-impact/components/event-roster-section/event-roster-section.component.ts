@@ -25,6 +25,7 @@ export class EventRosterSectionComponent {
 
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
+  public readonly selectedPeriod = input<string>('');
 
   // === Controls ===
   protected readonly search = new FormControl('', { nonNullable: true });
@@ -53,7 +54,7 @@ export class EventRosterSectionComponent {
    */
   protected readonly emptyMessage = computed(() => {
     if (this.searchTerm().trim()) return 'No events match your search.';
-    // includePast toggles Upcoming vs All events — it is not a period filter, so the empty copy
+    // includePast toggles Upcoming vs past-included — it is not a period filter, so the empty copy
     // must not claim a period the user never selected.
     return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
@@ -72,10 +73,11 @@ export class EventRosterSectionComponent {
   private initRoster(): Signal<EventRosterResponse> {
     const slug$ = toObservable(this.foundationSlug);
     const past$ = toObservable(this.includePast);
+    const period$ = toObservable(this.selectedPeriod);
 
     return toSignal(
-      combineLatest([slug$, past$]).pipe(
-        switchMap(([slug, includePast]) => {
+      combineLatest([slug$, past$, period$]).pipe(
+        switchMap(([slug, includePast, period]) => {
           if (!slug) {
             this.loading.set(false);
             return of({ projectId: '', events: [] });
@@ -84,7 +86,7 @@ export class EventRosterSectionComponent {
           this.failed.set(false);
           // Caught here rather than in the service: a failure must render "couldn't load" rather
           // than the "no upcoming events" copy, which would report an outage as real data.
-          return this.analyticsService.getEventRoster(slug, includePast).pipe(
+          return this.analyticsService.getEventRoster(slug, includePast, period || undefined).pipe(
             catchError(() => {
               this.failed.set(true);
               return of({ projectId: '', events: [] });

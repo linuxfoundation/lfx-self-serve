@@ -103,9 +103,17 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
   return [...presets, ...months];
 }
 
-/** Returns the default period value (previous calendar month as YYYY-MM). */
+/**
+ * Returns the default period value, which is 'ytd' — not a calendar month. Month periods
+ * re-aggregate from the event-grained tables and can only supply events/registrations/speakers,
+ * so defaulting to one dashed four of the seven summary tiles on the landing view.
+ */
 export function getDefaultMarketingImpactPeriod(): string {
-  return getDefaultMarketingImpactMonth();
+  // YTD, not the previous month: month periods re-aggregate from the event-grained tables, which
+  // can only supply events/registrations/speakers — attendees, countries, organizations and
+  // sponsorship come back null. Defaulting to a month therefore dashed four of the seven summary
+  // tiles on the landing view. Month stays selectable for the three metrics that support it.
+  return 'ytd';
 }
 
 /** Checks whether a period string is a preset identifier. */

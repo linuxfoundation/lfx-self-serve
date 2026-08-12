@@ -100,7 +100,7 @@ export class EventDetailDrawerComponent {
   /**
    * Everything the template renders as a derived label, computed once per detail change rather
    * than called from the template — these do locale, number and string formatting, which a
-   * template invocation would re-run on every change-detection pass (frontend-checklist.md §4).
+   * template invocation would re-run on every change-detection pass (docs/reviews/frontend-checklist.md §4).
    */
   protected readonly dateLabel = computed(() => this.formatDate(this.detail()?.startDate ?? ''));
   protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null));
@@ -196,7 +196,6 @@ export class EventDetailDrawerComponent {
     });
   }
 
-  /** Full venue + city + country line for the header; '' when nothing is known. */
   // === Private Helpers ===
   private buildPacingChart(): ChartData<'line'> {
     const points = this.detail()?.pacing.points ?? [];

@@ -31,11 +31,24 @@ export interface MarketingImpactTabOption {
   label: string;
 }
 
-/** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
-export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining';
+/** Campaign Type identifiers for the Campaign Impact filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'membership';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
-export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';
+export type MarketingImpactTab = 'all' | 'web' | 'social' | 'email' | 'paid' | 'social-listening';
+
+/**
+ * Sub-view identifiers for the Events campaign type. Events content divides into the attendance
+ * story (registrations, attendees, speakers, geography) and the sponsorship story (revenue and
+ * tiers). These map onto the detail drawer's existing 'b2c'/'b2b' focus.
+ */
+export type EventsSplitView = 'attendance' | 'sponsorship';
+
+/** Sub-tab option for the Events attendance/sponsorship split. */
+export interface EventsSplitOption {
+  id: EventsSplitView;
+  label: string;
+}
 
 /** Aggregated KPI source data fetched for the Marketing Impact overview tab. */
 export interface OverviewKpiData {
@@ -51,6 +64,8 @@ export interface OverviewKpiData {
  * fraction (0.52 = +52%; null when there is no prior baseline).
  */
 export interface EventsOverviewSummary {
+  /** The period these figures actually cover — see EventsOverviewSummaryResponse.scope. */
+  scope: 'ytd' | 'month';
   registrations: EventsOverviewMetric;
   attendees: EventsOverviewMetric;
   events: EventsOverviewMetric;
@@ -60,6 +75,9 @@ export interface EventsOverviewSummary {
   /** Aggregate sponsorship revenue in dollars for the period. */
   sponsorship: EventsOverviewMetric;
 }
+
+/** The tileable metric fields of EventsOverviewSummary — everything except the `scope` metadata. */
+export type EventsOverviewMetricKey = Exclude<keyof EventsOverviewSummary, 'scope'>;
 
 /** Severity tone for a needs-attention item. */
 export type AttentionSeverity = 'critical' | 'warning';
