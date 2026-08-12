@@ -532,15 +532,18 @@ export class CampaignsComponent {
           // `ownershipGeneration`, which only a DISCARD bumps, so a save superseded by a queued
           // sibling still records while one superseded by a reset does not.
           //
-          // Only on a real write: a refused save names the row that BLOCKED it, and adopting that
-          // id would hand this session ownership of exactly the brief it was told it does not own.
-          if (
-            ownershipAtSend === this.ownershipGeneration &&
-            result.enabled &&
-            result.conflict === undefined &&
-            result.briefId !== '' &&
-            ownershipKey !== null
-          ) {
+          // Only on a real write — with ONE exception, and the exception is the point. For
+          // `unowned-brief-exists` and `stale-brief` the returned id names the row that BLOCKED
+          // this save, and adopting it would hand this session ownership of exactly the brief it
+          // was told it does not own.
+          //
+          // `superseded-after-write` is the opposite: that conflict means the write COMMITTED and
+          // only its approval was refused, so the id is the row THIS request created. Excluding
+          // it lost that id, and with no read path in this phase the next Proceed sent no
+          // `brief_id`, found the row, and was permanently refused as unowned — the same
+          // stranding the create reconciliation exists to prevent, reached by a different door.
+          const wroteTheRow = result.conflict === undefined || result.conflict === 'superseded-after-write';
+          if (ownershipAtSend === this.ownershipGeneration && result.enabled && wroteTheRow && result.briefId !== '' && ownershipKey !== null) {
             // The ETag goes with the id: it is this caller's LAST-SEEN version, and sending it
             // on the next save is what makes the If-Match a real precondition rather than a
             // header the save re-derives from its own read.
