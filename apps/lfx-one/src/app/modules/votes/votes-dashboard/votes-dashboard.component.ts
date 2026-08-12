@@ -7,15 +7,16 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
 import { Committee, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
+import { findCursorWalkStartIndex, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -100,7 +101,7 @@ export class VotesDashboardComponent {
   });
 
   // Lens-change pagination reset is independent of the data-fetch pipelines so it fires for every lens emission, not just Me-lens loads.
-  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and stop at the page-token guard.
+  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and walk from a stale page index.
   public constructor() {
     toObservable(this.lensService.activeLens)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -271,37 +272,71 @@ export class VotesDashboardComponent {
           }
 
           const rows = this.rowsPerPage();
-          const first = this.currentFirst();
-          const pageIndex = first / rows;
-          const pageToken = pageIndex > 0 ? this.pageTokens[pageIndex - 1] : undefined;
-
-          if (pageIndex > 0 && !pageToken) {
-            this.currentFirst.set(0);
-            this.loading.set(false);
-            return of([]);
-          }
-
+          const pageIndex = this.currentFirst() / rows;
           const searchName = this.searchQuery();
           const queryFilters = this.buildFilters();
 
-          return this.voteService
-            .getVotesByProjectPaginated(project.uid, rows, pageToken, searchName || undefined, queryFilters.length ? queryFilters : undefined)
-            .pipe(
-              tap((response: PaginatedResponse<Vote>) => {
-                if (response.page_token) {
-                  this.pageTokens[pageIndex] = response.page_token;
-                }
-                this.loading.set(false);
-              }),
-              map((response: PaginatedResponse<Vote>) => response.data),
-              catchError(() => {
-                this.loading.set(false);
-                return of([]);
-              })
-            );
+          return this.fetchVotePage(project.uid, rows, pageIndex, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
+            tap(() => this.loading.set(false)),
+            map((response: PaginatedResponse<Vote>) => response.data),
+            catchError(() => {
+              this.loading.set(false);
+              return of([]);
+            })
+          );
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Fetches one page of votes. Cursor pagination only returns the *next* page's token, so a direct jump to a page whose
+   * token hasn't been collected yet walks forward from the nearest cached token, caching intermediate tokens along the way.
+   * The walk is bounded (VOTES_PAGE_WALK_LIMIT, matching the meetings-dashboard cursor walk): on overflow the paginator
+   * clamps to the last reached page; on cursor exhaustion (data shrank after tokens were cached) it restarts from page 1
+   * with a fresh token chain. HTTP errors propagate to the caller so a failed request is never mistaken for exhaustion.
+   */
+  private fetchVotePage(projectUid: string, rows: number, pageIndex: number, searchName?: string, filters?: string[]): Observable<PaginatedResponse<Vote>> {
+    const startIndex = findCursorWalkStartIndex(this.pageTokens, pageIndex);
+
+    // Index of the last successfully fetched page — fetchSingle's tap runs before expand's projector sees each response.
+    let fetchedIndex = startIndex;
+
+    const fetchSingle = (index: number): Observable<PaginatedResponse<Vote>> =>
+      this.voteService.getVotesByProjectPaginated(projectUid, rows, index > 0 ? this.pageTokens[index - 1] : undefined, searchName, filters).pipe(
+        tap((response: PaginatedResponse<Vote>) => {
+          fetchedIndex = index;
+          // Cache the next-page cursor; when the cursor exhausts, stale tokens beyond this page are dropped.
+          this.pageTokens = recordPageToken(this.pageTokens, index, response.page_token);
+        })
+      );
+
+    return fetchSingle(startIndex).pipe(
+      // Walk forward one page per request until the target page is fetched or the cursor exhausts.
+      expand((response: PaginatedResponse<Vote>) => (fetchedIndex === pageIndex || !response.page_token ? EMPTY : fetchSingle(fetchedIndex + 1))),
+      // Hard request ceiling: the start page plus VOTES_PAGE_WALK_LIMIT hops (matches the meetings-dashboard walk bound).
+      take(VOTES_PAGE_WALK_LIMIT + 1),
+      // Only the final page's response reaches the subscriber — intermediate walk pages just cache tokens. Terminal
+      // handling lives after take() because expand's projector never runs for the emission take() cuts off at.
+      last(),
+      switchMap((response: PaginatedResponse<Vote>) => {
+        const outcome = resolveCursorWalkOutcome(response, fetchedIndex, pageIndex);
+
+        // Data shrank after tokens were cached (empty target page or exhausted cursor) — restart from
+        // page 1 with a fresh token chain instead of showing an empty table.
+        if (outcome.action === 'restart') {
+          this.pageTokens = [];
+          this.currentFirst.set(0);
+          return outcome.refetch ? fetchSingle(0) : of(response);
+        }
+
+        // take() truncated the walk before the target — clamp the paginator to the last reached page.
+        if (outcome.action === 'clamp') {
+          this.currentFirst.set(outcome.clampIndex * rows);
+        }
+        return of(response);
+      })
     );
   }
 
