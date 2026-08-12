@@ -73,6 +73,16 @@ export const BEHIND_GOAL_PERCENT_THRESHOLD = 50;
 /** Goal-bar tone boundary: at or above this percent the bar reads as on-track. */
 export const ON_TRACK_PERCENT_THRESHOLD = 80;
 
+/** How many at-risk events the needs-attention strip surfaces at most. */
+export const MAX_ATTENTION_ITEMS = 3;
+
+/**
+ * Below this percent of the registration goal an at-risk event escalates from warning to
+ * critical. Half of BEHIND_GOAL_PERCENT_THRESHOLD — an event at under a quarter of its goal is
+ * far enough behind that it needs a different response than one merely trailing.
+ */
+export const CRITICAL_ATTENTION_PERCENT_THRESHOLD = 25;
+
 /** Which tabs are visible for each focus area. Social tabs are hidden for non-"all" focuses (no classification filtering). */
 export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet<MarketingImpactTab>> = {
   all: new Set<MarketingImpactTab>(['overview', 'attribution', 'performance-marketing', 'email', 'web-activity', 'social-accounts', 'social-listening']),
