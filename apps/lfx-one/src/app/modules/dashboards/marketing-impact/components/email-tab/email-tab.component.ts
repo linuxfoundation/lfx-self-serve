@@ -219,7 +219,15 @@ export class EmailTabComponent {
   private formatSendDate(iso: string): string {
     const [year, month, day] = iso.split('-').map(Number);
     if (!year || !month || !day) return iso;
-    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+    // Range-check before Date.UTC, matching the roster's formatDate: it silently rolls over
+    // out-of-range parts (month=13 becomes January of the next year), which would render a
+    // confidently wrong date rather than the raw value. Showing the unparsed string makes bad
+    // warehouse data visible instead of plausible.
+    if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    // Catches the in-range-but-invalid case too — 2026-02-31 rolls into March.
+    if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+    return parsed.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
