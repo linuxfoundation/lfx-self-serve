@@ -156,6 +156,19 @@ serviceAccount:
 podAnnotations: {}
 podLabels: {}
 
+# Pod scheduling. All default to empty and render nothing when unset.
+# nodeSelector + tolerations are the pair needed to target a tainted node pool.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# priorityClassName affects preemption order. Leave empty unless the cluster
+# defines priority classes; a nonexistent class blocks scheduling entirely.
+priorityClassName: ""
+
+# Spread replicas across failure domains. Consumed by the deployment template;
+# previously undeclared here.
+topologySpreadConstraints: []
+
 service:
   type: ClusterIP
   port: 80
