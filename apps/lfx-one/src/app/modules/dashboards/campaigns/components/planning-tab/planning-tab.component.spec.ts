@@ -155,6 +155,41 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(savedBriefWarning()).toBeNull();
   });
 
+  it('refuses to restore once the field no longer names the offered event', async () => {
+    // The offer is deliberately KEPT while the url is empty or half-typed: clearing it there
+    // strands it, because `onUrlChange` issues a lookup only when the slug CHANGES and retyping
+    // the same url is correctly a no-op. But keeping it VISIBLE must not mean acting on it — the
+    // panel reads "A brief was already saved for <A>" while the field is being edited toward B,
+    // and restoring then hands Implementation a brief for the event the user is leaving.
+    const emitted: unknown[] = [];
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      onUrlInput(): void;
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: unknown) => void): void };
+    };
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+
+    // While the field still names event A, restore works — the case the offer exists for.
+    component.restoreSavedBrief();
+    expect(emitted).toHaveLength(1);
+
+    // Now the user starts retyping: the field is momentarily empty.
+    component.briefForm.controls.url.setValue('');
+    component.onUrlInput();
+    fixture.detectChanges();
+
+    // The offer is still on screen (not stranded)...
+    expect(savedBrief()).toEqual(exampleBrief);
+    // ...but must no longer be applicable.
+    component.restoreSavedBrief();
+    expect(emitted).toHaveLength(1);
+  });
+
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))

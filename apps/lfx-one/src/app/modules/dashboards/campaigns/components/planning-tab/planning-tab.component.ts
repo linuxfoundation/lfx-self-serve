@@ -377,6 +377,19 @@ export class PlanningTabComponent implements OnInit {
 
   /** Hand the saved brief straight to the Implementation tab, skipping generation. */
   protected restoreSavedBrief(): void {
+    // Refuse when the field no longer names the event this offer was fetched for. The offer is
+    // deliberately KEPT while the url is empty or half-typed — clearing it there strands it, since
+    // `onUrlChange` only issues a lookup when the slug CHANGES and retyping the same url is a
+    // no-op — but keeping it visible must not mean acting on it. Mid-edit toward event B, the
+    // panel still reads "A brief was already saved for <A>", and restoring then hands the
+    // Implementation tab a brief for an event the user is in the middle of leaving.
+    //
+    // Guarding the ACTION rather than the offer keeps both properties: the offer survives an
+    // emptied field and comes back when the url is retyped, and it can only ever be applied while
+    // the field still names its own event.
+    if (this.extractSlug(this.briefForm.controls.url.value) !== this.currentSlug) {
+      return;
+    }
     const brief = this.savedBrief();
     // Both, or neither. A restore without its id would reach the parent as an unowned save and
     // be refused — a worse outcome than not offering the button, so the guard covers the pair.
