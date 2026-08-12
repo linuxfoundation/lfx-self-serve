@@ -1144,7 +1144,7 @@ export class AnalyticsService {
   }
 
   /**
-   * Foundation-wide Events Summary tiles for the Marketing Impact Overview tab.
+   * Foundation-wide Events Summary tiles for the Campaign Impact Overview tab.
    * Emits null on error so the tiles fall back to dashes rather than measured zeros.
    */
   public getEventsOverviewSummary(foundationSlug: string, period?: string): Observable<EventsOverviewSummaryResponse | null> {

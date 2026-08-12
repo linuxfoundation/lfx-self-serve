@@ -6,22 +6,13 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
-import {
-  COMING_SOON_FOCUS_PROGRAMS,
-  EVENTS_SPLIT_FOCUS,
-  EVENTS_SPLIT_OPTIONS,
-  FOCUS_VISIBLE_TABS,
-  MARKETING_IMPACT_FOCUS_OPTIONS,
-  MARKETING_IMPACT_TABS,
-} from '@lfx-one/shared/constants';
+import { COMING_SOON_FOCUS_PROGRAMS, FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
 
 import type {
-  EventsSplitOption,
-  EventsSplitView,
   FilterPillOption,
   MarketingImpactFocusProgram,
   MarketingImpactPeriodOption,
@@ -67,13 +58,10 @@ export class MarketingImpactComponent {
   protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
   protected readonly focusOptions: FilterPillOption[] = MARKETING_IMPACT_FOCUS_OPTIONS;
   protected readonly tabs: MarketingImpactTabOption[] = MARKETING_IMPACT_TABS;
-  protected readonly eventsSplitOptions: EventsSplitOption[] = EVENTS_SPLIT_OPTIONS;
 
   // === WritableSignals ===
   protected readonly selectedFocus = signal<MarketingImpactFocusProgram>('all');
   protected readonly selectedTab = signal<MarketingImpactTab>('all');
-  /** Attendance vs sponsorship sub-view; only meaningful while the Events campaign type is active. */
-  protected readonly selectedEventsSplit = signal<EventsSplitView>('attendance');
 
   // === Computed Signals ===
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
@@ -87,11 +75,6 @@ export class MarketingImpactComponent {
   protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
   /** Display label of the selected Campaign Type, used in the coming-soon copy. */
   protected readonly selectedFocusLabel = computed(() => this.focusOptions.find((o) => o.id === this.selectedFocus())?.label ?? '');
-  /**
-   * The attendance/sponsorship split is scoped to the Events campaign type on the "All" channel.
-   * The per-channel tabs render their own components, which have no attendance/sponsorship dimension.
-   */
-  protected readonly showEventsSplit = computed(() => this.selectedFocus() === EVENTS_SPLIT_FOCUS && this.selectedTab() === 'all');
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
@@ -103,21 +86,11 @@ export class MarketingImpactComponent {
       if (!allowed.has(this.selectedTab())) {
         this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'all');
       }
-
-      // Leaving Events discards the sub-view, so returning to it always opens on Attendance
-      // rather than resuming a sponsorship view the user can no longer see.
-      if (focus !== EVENTS_SPLIT_FOCUS) {
-        this.selectedEventsSplit.set('attendance');
-      }
     }
   }
 
   protected onTabChange(tabId: MarketingImpactTab): void {
     this.selectedTab.set(tabId);
-  }
-
-  protected onEventsSplitChange(view: EventsSplitView): void {
-    this.selectedEventsSplit.set(view);
   }
 
   // === Private Initializers ===
