@@ -103,6 +103,10 @@ export class EventsSummarySectionComponent {
    * when the period is absent or unresolvable.
    */
   private readonly periodLabel = computed(() => {
+    // The sponsorship split forces a YTD query regardless of the picker (sponsorship data only
+    // exists at YTD scope), so its heading must say YTD too — naming the picked month over
+    // year-to-date figures would misreport the scope of every number under it.
+    if (this.eventsSplit() === 'sponsorship') return 'YTD';
     const period = this.selectedPeriod();
     if (!period) return 'YTD';
     return resolvePeriodRange(period)?.label ?? 'YTD';
