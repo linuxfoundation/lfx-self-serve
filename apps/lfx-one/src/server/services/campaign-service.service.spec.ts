@@ -519,6 +519,52 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(headers).toEqual({ 'If-Match': '"7"' });
   });
 
+  it('recovers a REPLACE whose response was lost', async () => {
+    // The same ambiguity as the create path, on the write that was left rethrowing. A timeout can
+    // follow a replacement that committed; reporting "could not be saved" then leaves the client
+    // holding a stale ETag, and its next attempt is deterministically refused as `stale-brief` --
+    // telling the user someone else changed their brief when the someone else was them.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 4 }, { etag: '"4"' })) // the find
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the PUT
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 5, ...envelope.brief }, { etag: '"5"' }));
+      })
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 6 }, { etag: '"6"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    expect(result.briefId).toBe('b-1');
+    expect(result.created).toBe(false);
+    expect(result.conflict).toBeUndefined();
+  });
+
+  it("does not claim a replace that landed on someone else's payload", async () => {
+    // The row moved, but to content this request did not write. Adopting it would report another
+    // writer's brief as this caller's save.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 4 }, { etag: '"4"' }))
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 5, ...envelope.brief, copy: { structured: { headline: 'not ours' } } }, { etag: '"5"' }));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+  });
+
+  it('does not reconcile a replace the server REFUSED', async () => {
+    // A 4xx other than 412 is a refusal: nothing committed, so looking again can only find a row
+    // this request did not write.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 4 }, { etag: '"4"' }))
+      .mockRejectedValueOnce(new MicroserviceError('bad', 400, 'BAD_REQUEST', {}));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('bad');
+    // find + PUT only: no reconciliation read.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+
   it('recovers the id of a create whose response was lost', async () => {
     // The POST commits, its response is lost. Without reconciliation the caller never learns the
     // id, and with no read path in this phase every later save finds that row unnameable and is
