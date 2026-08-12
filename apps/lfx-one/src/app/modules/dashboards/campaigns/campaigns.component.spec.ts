@@ -8,7 +8,7 @@ import type { CampaignBriefOutput, CampaignBriefPersistResult, CampaignBriefPers
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { NEVER, Observable, Subject, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
@@ -283,6 +283,26 @@ describe('CampaignsComponent brief persistence', () => {
 
       expect(state()).toEqual({ status: 'off', briefId: null, message: null });
     });
+
+  /**
+   * A REFUSED save must never render as a saved one.
+   *
+   * `conflict` arrives with `enabled: true` — the flag is on and the request was served — so a
+   * banner keyed on `enabled` alone reports "Brief saved." over work that was never written.
+   * That is the single worst outcome this feature can produce: the user closes the tab believing
+   * their afternoon is durable.
+   */
+  it('reports a refused save as an error, not as saved', async () => {
+    persistBrief.mockReturnValue(
+      of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' })
+    );
+
+    proceed();
+    await fixture.whenStable();
+
+    expect(state().status).toBe('error');
+    expect(state().message).toContain('already has a saved brief');
+  });
 
     it('files the brief under the foundation selected at save time', async () => {
       persistBrief.mockReturnValue(NEVER);

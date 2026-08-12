@@ -112,11 +112,13 @@ export class PlanningTabComponent implements OnInit {
   /**
    * Why no brief is on offer, when that is worth saying.
    *
-   * Two cases, and both matter because generating over them is destructive: `unreadable` means a
-   * brief EXISTS for this event and this build cannot open it, and a failed lookup means we do
-   * not know. In either case the next save is a find-then-UPDATE that replaces whatever is
-   * there, so the user is told before they spend an afternoon regenerating. `none` sets this to
-   * null — there is nothing to warn about.
+   * Two cases: `unreadable` means a brief EXISTS for this event and this build cannot open it,
+   * and a failed lookup means we do not know. Both are worth saying BEFORE the user spends an
+   * afternoon regenerating — but the reason changed with LFXV2-3200 and the copy changed with
+   * it. The next save is no longer a find-then-UPDATE that quietly replaces whatever is there;
+   * it is refused as unowned, because a brief that cannot be opened cannot be restored and so
+   * the page can never hold its id. The warning now says the save will be REFUSED rather than
+   * that it will replace. `none` sets this to null — there is nothing to warn about.
    */
   protected readonly savedBriefWarning = signal<string | null>(null);
 
@@ -729,7 +731,14 @@ export class PlanningTabComponent implements OnInit {
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
     this.savedBriefWarning.set(
-      result.status === 'unreadable' ? 'This event has a saved brief that could not be opened. Generating a new one will replace it.' : null
+      // NOT "will replace it" any more. An unreadable brief cannot be restored, so the page can
+      // never hold its id — and without the id the save is refused as unowned (LFXV2-3200). The
+      // old wording promised an outcome the guard now prevents, which is worse than saying
+      // nothing: a user who wanted to start over would generate, be refused, and have no idea
+      // why.
+      result.status === 'unreadable'
+        ? 'This event has a saved brief that could not be opened, so a new one cannot be saved over it. Ask an administrator to remove the stored brief.'
+        : null
     );
   }
 

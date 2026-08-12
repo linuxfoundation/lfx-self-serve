@@ -139,7 +139,12 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(campaignService.loadBrief).toHaveBeenCalled();
     expect(savedBrief()).toBeNull();
     expect(savedBriefWarning()).toContain('could not be opened');
-    expect(savedBriefWarning()).toContain('Generating a new one will replace it');
+    // The warning must NOT promise a replace. An unreadable brief cannot be restored, so the
+    // page never holds its id and the save is refused as unowned (LFXV2-3200) — telling the user
+    // their new brief will replace the old one describes an outcome that cannot happen, and
+    // leaves them with no explanation when the save is refused.
+    expect(savedBriefWarning()).toContain('cannot be saved over it');
+    expect(savedBriefWarning()).not.toContain('will replace it');
   });
 
   it('warns when lookup fails (catchError transforms to null)', async () => {

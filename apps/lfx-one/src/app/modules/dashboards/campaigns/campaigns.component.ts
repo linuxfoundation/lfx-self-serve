@@ -298,6 +298,13 @@ export class CampaignsComponent {
     // generation and discards the outcome anyway.
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
 
+    // Snapshotted for the SAME reason, and here the reason is sharper. `knownBriefId` is the
+    // proof that THIS brief came out of storage. Read inside the queued callback instead, a
+    // restore landing between Proceed and execution would attach the restored brief's id to a
+    // GENERATED brief — handing it ownership of a row it has never seen and inverting the guard
+    // into a licence to overwrite, which is precisely what LFXV2-3200 exists to prevent.
+    const knownBriefId = this.knownBriefId;
+
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
     // brief…" in the meantime would put a persistence banner in front of every user in every
@@ -309,7 +316,7 @@ export class CampaignsComponent {
     }
 
     this.persistChain = this.persistChain.then(() =>
-      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, this.knownBriefId)).then(
+      firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, knownBriefId)).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to
           // stop a superseded save writing brief-specific state — a `saved` status and a
@@ -330,7 +337,24 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
-          this.briefPersistence.set(result.enabled ? { status: 'saved', briefId: result.briefId, message: null } : this.idlePersistence);
+          if (!result.enabled) {
+            this.briefPersistence.set(this.idlePersistence);
+            return;
+          }
+          // A REFUSED save is not a save. `conflict` arrives with `enabled: true` — the flag is
+          // on, the request was served — so keying the banner on `enabled` alone would render
+          // "Brief saved." over work that was never written, which is the one thing this banner
+          // must never say. It carries `error` rather than a new state: the user's position is
+          // exactly that of a failed save, and the remedy is the same.
+          if (result.conflict !== undefined) {
+            this.briefPersistence.set({
+              status: 'error',
+              briefId: result.briefId,
+              message: 'This event already has a saved brief that was not opened here. Reload the page to work from it — saving now would replace it.',
+            });
+            return;
+          }
+          this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
         // needs to know is that the work in front of them is not saved, and that continuing is
