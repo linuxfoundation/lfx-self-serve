@@ -321,13 +321,36 @@ describe('CampaignsComponent brief persistence', () => {
      * Ownership belongs to a BRIEF, not to a session or a foundation.
      *
      * `selectTab` sets the tab directly, so clicking back to Planning recreates the planning form
+     * without going through `resetToPlanning`. Save event A, click Planning, generate a brief for
+     * event B: an ownership key naming only the foundation would hand B's save the id of A's row,
+     * and the server — given a name it recognises — would accept an overwrite of a brief that was
+     * never approved as B. A key too coarse to tell A from B disarms the guard it feeds.
+     */
+    it('does not lend a CREATED brief id to another event', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-a', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      // Back to Planning by clicking the tab — no reset runs — then proceed with another event.
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      persistBrief.mockReturnValue(NEVER);
+      proceed(otherBrief);
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null);
+    });
+
+    /**
+     * The same hazard reached through the OTHER ownership source this branch adds.
+     *
+     * `selectTab` sets the tab directly, so clicking back to Planning recreates the planning form
      * without going through `resetToPlanning`. Restore event A, click Planning, generate a brief
      * for event B: an ownership key that names only the foundation would hand B's save the id of
      * A's row, and the server — being given a name it recognises — would accept an overwrite of a
      * brief this session never loaded. That is exactly the case LFXV2-3200's guard exists to
      * refuse, so a key too coarse to tell A from B disarms it.
      */
-    it("does not lend one event's brief id to another event", async () => {
+    it('does not lend a RESTORED brief id to another event', async () => {
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');
       await fixture.whenStable();
