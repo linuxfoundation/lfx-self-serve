@@ -515,7 +515,16 @@ export class CampaignsComponent {
             // same `'unknown'` marker and is refused identically, while the banner says trying
             // again will work. That is the dead end this file already had to fix once for
             // `stale-brief`, reappearing because a refusal was added without its escape.
-            if ((result.conflict === 'stale-brief' || result.conflict === 'unverified-validator') && ownershipKey !== null) {
+            // `superseded-after-write` joins the two above, and it did not always need to. Its
+            // message reports a state rather than promising a retry, so it looked like a conflict
+            // with nothing to escape from — but a later change made that path RECORD ownership
+            // with `absence: 'unknown'`, and an unknown validator refuses the next save. So the
+            // user is warned, told their write may have been overtaken, and then silently blocked
+            // once when they act on it. The two changes were each fine and wrong together.
+            if (
+              (result.conflict === 'stale-brief' || result.conflict === 'unverified-validator' || result.conflict === 'superseded-after-write') &&
+              ownershipKey !== null
+            ) {
               const owned = this.knownBriefIds.get(ownershipKey);
               if (owned !== undefined) {
                 // EXPLICIT: the user has just been shown the stale-brief warning. The next save
@@ -555,6 +564,17 @@ export class CampaignsComponent {
         }
       );
     });
+
+    // TERMINAL catch, and the reason it is here rather than only on the request. The two-argument
+    // `.then(onFulfilled, onRejected)` above handles a rejected REQUEST, but a throw inside the
+    // success handler — a mapping bug, an unexpected shape — rejects `persistChain` itself. The
+    // chain is the queue, so a rejected chain means every later Proceed in the session silently
+    // never sends a request at all: no banner, no error, just nothing saved.
+    //
+    // The doc comment above claimed each link had a `.catch()`. It did not; there were zero in
+    // this file. Swallowing here restores the property that comment described — one failed save
+    // cannot poison the queue for the next.
+    this.persistChain = this.persistChain.catch(() => undefined);
   }
 
   /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
@@ -585,7 +605,15 @@ export class CampaignsComponent {
     this.ownershipGeneration++;
     this.briefOutput.set(null);
     this.briefPersistence.set(this.idlePersistence);
-    this.knownBriefIds.clear();
+    // Ownership deliberately SURVIVES. `resetToPlanning` discards the brief on screen, which is
+    // right — but the row it created upstream still exists, and dropping its id means the next
+    // Proceed for that same event is refused as `unowned-brief-exists` with no read path here to
+    // recover. A program switch away and back was enough to strand a brief this session made.
+    //
+    // Nothing else needs the clear: the keys are `(project, event)`, so no other event can
+    // inherit an id, and `ownershipGeneration` (bumped just above) already stops a late response
+    // re-filing after a discard. The clear was defending against a hazard the key shape and the
+    // generation counter already cover.
     this.selectedTab.set('planning');
   }
 }
