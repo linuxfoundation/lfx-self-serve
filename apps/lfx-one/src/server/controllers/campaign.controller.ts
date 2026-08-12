@@ -338,6 +338,48 @@ export class CampaignController {
       return;
     }
 
+    // The cast above is a compile-time claim about untrusted JSON, so the shapes the server path
+    // actually DEREFERENCES have to be checked at runtime. `deriveEventSlug` calls `.trim()` on
+    // `eventDetails.slug`, which throws a TypeError on a number or an object — turning malformed
+    // input into a 500 instead of the controlled 400 sitting right below it — and
+    // `selectedPlatforms` is forwarded to campaign-service as `platforms`, where a non-array
+    // becomes an upstream contract violation rather than a local one.
+    //
+    // Deliberately narrow: this validates the two fields whose types this request path relies on,
+    // not the whole brief. The rest is stored opaquely in `Any` columns that nothing validates on
+    // either side, so checking them here would claim a guarantee the system does not make — and
+    // `fromBriefResponse` already treats every one of them as untrusted when reading back.
+    const eventDetails: unknown = (brief as { eventDetails?: unknown }).eventDetails;
+    if (eventDetails !== undefined && eventDetails !== null && typeof eventDetails !== 'object') {
+      next(
+        ServiceValidationError.forField('eventDetails', 'eventDetails must be an object', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawSlug: unknown = (eventDetails as { slug?: unknown } | null | undefined)?.slug;
+    if (rawSlug !== undefined && rawSlug !== null && typeof rawSlug !== 'string') {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'eventDetails.slug must be a string', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawPlatforms: unknown = (brief as { selectedPlatforms?: unknown }).selectedPlatforms;
+    if (rawPlatforms !== undefined && rawPlatforms !== null && !Array.isArray(rawPlatforms)) {
+      next(
+        ServiceValidationError.forField('selectedPlatforms', 'selectedPlatforms must be an array', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
     // Checked here rather than left to campaign-service because its 400 names `event_slug`, a
     // field the user never typed. The slug is derived from the event page URL, so an empty one
     // means the URL had no usable last path segment — which is what the message should say.
