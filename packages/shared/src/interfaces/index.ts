@@ -310,3 +310,6 @@ export * from './committee-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
+
+// Social Listening interfaces (LFXV2-3002)
+export * from './social-listening.interface';

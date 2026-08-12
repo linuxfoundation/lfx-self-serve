@@ -43,6 +43,9 @@ export const VALKEY_CACHE = {
    */
   MEMBER_V1_MAPPING_NAMESPACE: 'member-v1-mapping:v1',
 
+  /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). */
+  SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -66,6 +69,9 @@ export const VALKEY_CACHE = {
 
   /** Short negative-cache TTL (1 hour) for a member confirmed to have no v1 mapping — long enough that a large roster of genuinely-unmapped members doesn't hammer NATS on every request, short enough that a mapping added later (e.g. after a backfill) shows up within the hour. Only ever written for a *confirmed* "no mapping" NATS response, never for an indeterminate one (a timed-out or budget-cut-off lookup) — see `v1-mapping-batch.helper.ts`'s `confirmedUnresolved` distinction. TODO(LFXV2-2973): remove once the bridge is deleted. */
   MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600,
+
+  /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
+  SOCIAL_LISTENING_TTL_SECONDS: 1800,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
