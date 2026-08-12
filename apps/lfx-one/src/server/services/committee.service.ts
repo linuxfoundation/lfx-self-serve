@@ -605,12 +605,12 @@ export class CommitteeService {
       // shareToSlack (weekly-brief.service.ts) gates the send on strict project-writer, not
       // committee-writer. Upstream's own PUT /committees/:uid/settings only enforces
       // committee-writer (direct grants exist independently of project writer — see
-      // getDirectGrantCommittees), so
-      // without this, a committee writer who is not a project writer could point the webhook at a
-      // Slack workspace they control, and a later legitimate project-writer send would deliver
-      // brief content there. Checked here (post-fetch, since currentCommittee.project_uid is
-      // needed) rather than before, to avoid a second upstream round trip only for this field —
-      // and, like the settings-only branch below, before any write.
+      // getDirectGrantCommittees), so without this, a committee writer who is not a project
+      // writer could point the webhook at a Slack workspace they control, and a later legitimate
+      // project-writer send would deliver brief content there. Checked here (post-fetch, since
+      // currentCommittee.project_uid is needed) rather than before, to avoid a second upstream
+      // round trip only for this field — and, like the settings-only branch below, before any
+      // write.
       if (chatWebhookUrlToSave !== undefined) {
         // Authorize against the effective post-update project, not the committee's current one:
         // if this same PUT also moves the committee (committeeData.project_uid lands in
@@ -660,14 +660,22 @@ export class CommitteeService {
       // enough since nothing here writes the base resource, and its result doubles as the
       // response-shaping fetch the final `else` branch below would otherwise need.
       const currentCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
-      // Only run the authorization check when there's a committee to authorize against — a null
-      // result (deleted/nonexistent committee) must fall through to the generic
-      // UPSTREAM_INVALID_RESPONSE guard below, matching the final `else` branch's behavior for
-      // the same case, rather than surfacing a misleading NOT_PROJECT_WRITER for a committee that
-      // was never found.
-      if (currentCommittee) {
-        await this.assertWebhookChangeAuthorized(req, committeeId, currentCommittee.project_uid);
+      // Thrown here, immediately, rather than deferred to the generic UPSTREAM_INVALID_RESPONSE
+      // guard further down: that guard runs AFTER the hasSettingsUpdate block below has already
+      // called updateCommitteeSettings — a real PUT /committees/:id/settings with its own
+      // fetchWithETag/updateWithETag round trip, unaffected by this GET coming back empty.
+      // Deferring the check here would let that settings write (including the webhook itself)
+      // commit with no project-writer authorization at all for a committee this GET couldn't
+      // find, since assertWebhookChangeAuthorized never even runs in that case. A 404 here is
+      // also the more honest response than a 502 for "the committee doesn't exist" anyway.
+      if (!currentCommittee) {
+        throw new ResourceNotFoundError('Committee', committeeId, {
+          operation: 'update_committee',
+          service: 'committee_service',
+          path: `/committees/${committeeId}`,
+        });
       }
+      await this.assertWebhookChangeAuthorized(req, committeeId, currentCommittee.project_uid);
       updatedCommittee = currentCommittee;
     } else {
       // No core fields to update — fetch current committee for the response

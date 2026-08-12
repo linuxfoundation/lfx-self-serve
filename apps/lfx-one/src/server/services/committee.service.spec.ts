@@ -608,24 +608,21 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
-    it('throws a typed 502 (not a misleading 403 NOT_PROJECT_WRITER) for a webhook-only change on a committee that no longer exists', async () => {
-      // The webhook-only branch's committee GET resolves null (deleted/nonexistent committee) —
-      // must skip the authorization check (there's no project to authorize against) and fall
-      // through to the generic empty-response guard, matching the final `else` branch's behavior
-      // for the same case, rather than surfacing NOT_PROJECT_WRITER for a committee that was
-      // never found. The settings write is still attempted first (same "settings write must not
-      // be blocked by the response-shaping guard" ordering as the no-core-update 502 test above).
+    it('throws a typed 404 (not a misleading 403 NOT_PROJECT_WRITER, and before any write) for a webhook-only change on a committee that no longer exists', async () => {
+      // The webhook-only branch's committee GET resolves null (deleted/nonexistent committee).
+      // Thrown immediately, before the authorization check and before updateCommitteeSettings —
+      // deferring to the generic response-shaping guard further down would let the settings
+      // write (including the webhook itself) commit with no project-writer check at all, since
+      // assertWebhookChangeAuthorized never runs without a project_uid to check against.
       proxyRequest.mockResolvedValueOnce(null); // webhook-only branch's committee GET
-      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // updateCommitteeSettings' own fetch
-      updateWithETag.mockResolvedValueOnce({}); // updateCommitteeSettings' own PUT
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'UPSTREAM_INVALID_RESPONSE',
+        statusCode: 404,
       });
 
       expect(checkSingleAccessStrict).not.toHaveBeenCalled();
-      expect(updateWithETag).toHaveBeenCalledOnce();
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(updateWithETag).not.toHaveBeenCalled();
     });
 
     it('accepts a well-formed hooks.slack.com URL', async () => {
