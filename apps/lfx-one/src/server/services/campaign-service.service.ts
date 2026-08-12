@@ -170,6 +170,23 @@ export function isCampaignServiceJobId(jobId: string): boolean {
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
+  /**
+   * Bounds on the lost-write reconciliation: how many times it reads, how long it waits between
+   * attempts, and the WALL-CLOCK budget the whole loop may spend.
+   *
+   * Instance members rather than module constants: `CLAUDE.md:176` keeps shared values in
+   * `@lfx-one/shared`, and these are neither shared nor meaningful outside this client.
+   *
+   * The wall-clock bound is the one that actually holds. An earlier revision counted only the
+   * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
+   * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
+   * GETs plus the delays is ~92s of a session's save queue blocked before the original failure
+   * even surfaces — and these saves are serialised, so the next Proceed waits behind it.
+   */
+  private readonly reconcileReadAttempts = 3;
+  private readonly reconcileReadDelayMs = 1000;
+  private readonly reconcileReadBudgetMs = 5000;
+
   public constructor(microserviceProxy?: MicroserviceProxyService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
   }
@@ -467,15 +484,20 @@ export class CampaignServiceClient {
     // the budget and stops the loop rather than being followed by two more.
     let found: ApiResponse<CampaignServiceBrief> | null = null;
     const startedAt = Date.now();
-    for (let attempt = 0; attempt < reconcileReadAttempts; attempt++) {
-      // Checked before each attempt, not only between sleeps: a read that hung for the client's
-      // full 30s has already outlived any window a late commit was going to land in, and a second
-      // one would just block the save queue again.
-      if (attempt > 0 && Date.now() - startedAt >= reconcileReadBudgetMs) {
-        break;
-      }
+    for (let attempt = 0; attempt < this.reconcileReadAttempts; attempt++) {
       if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, reconcileReadDelayMs));
+        // Checked BEFORE the sleep and again AFTER it. Before, because a read that hung for the
+        // client's full 30s has already outlived any window a late commit was going to land in.
+        // After, because the sleep itself can carry the loop past the budget: an attempt passing
+        // the first check at 4.5s would otherwise wake at 5.5s and still launch a fresh 30s read,
+        // which is exactly the amplification the budget exists to stop.
+        if (Date.now() - startedAt >= this.reconcileReadBudgetMs) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.reconcileReadDelayMs));
+        if (Date.now() - startedAt >= this.reconcileReadBudgetMs) {
+          break;
+        }
       }
       try {
         found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
@@ -747,23 +769,6 @@ export class CampaignServiceClient {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
-/**
- * Bounds on the lost-create reconciliation: how many times it reads, how long it waits between
- * attempts, and the WALL-CLOCK budget the whole loop may spend.
- *
- * The wall-clock bound is the one that actually holds. An earlier revision counted only the
- * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
- * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
- * GETs plus the delays is ~92s of a session's save queue blocked before the original failure even
- * surfaces — and these saves are serialised, so the next Proceed waits behind it.
- *
- * `reconcileReadBudgetMs` is checked BEFORE each attempt, so a single hung read cannot be
- * followed by another. It cannot cut a read already in flight — nothing at this layer can — but
- * it caps the amplification at one hung request rather than three.
- */
-const reconcileReadAttempts = 3;
-const reconcileReadDelayMs = 1000;
-const reconcileReadBudgetMs = 5000;
 
 /**
  * Whether a stored brief is the one this request sent.
