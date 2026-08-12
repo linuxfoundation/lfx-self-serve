@@ -66,6 +66,17 @@ test.describe('Org Lens ROI project detail — figures', () => {
     await expect(cards).toContainText(`${BCR.toFixed(1)}×`);
   });
 
+  test('resolves a mixed-case deep link rather than holding the skeleton', async ({ page }) => {
+    // The warehouse stores slugs lowercase and the server normalizes before querying, so the
+    // payload comes back lowercase. If the route param were compared raw, the identity guard would
+    // never match and this page would skeleton forever on a URL the server answered correctly.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug.toUpperCase());
+
+    await expect(page.getByTestId('org-roi-project-detail-kpi-cards')).toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
+    await expect(page.getByTestId('org-roi-project-detail-loading')).toHaveCount(0);
+  });
+
   test('renders a null ratio as the no-value indicator, never as zero', async ({ page }) => {
     await stubOrgLensContext(page, { projectDetail: NO_INVESTMENT_DETAIL, projectAnnual: mockProjectAnnual('unmeasured') });
     await gotoOrgRoiProjectDetail(page, 'unmeasured');

@@ -50,9 +50,16 @@ export class OrgRoiProjectDetailComponent {
 
   protected readonly methodLabel: Signal<string> = computed(() => ORG_LENS_ROI_METHOD_LABELS[this.method()]);
 
-  protected readonly projectSlug: Signal<string> = toSignal(this.activatedRoute.paramMap.pipe(map((params) => params.get('projectSlug') ?? '')), {
-    initialValue: '',
-  });
+  /**
+   * Normalized the same way the server normalizes it before querying. The warehouse stores slugs
+   * lowercase, so the payload comes back lowercase; comparing a raw mixed-case route param against
+   * it in `payloadMatchesRoute` would never match, and the page would hold its skeleton forever on
+   * a deep link the server had answered perfectly well.
+   */
+  protected readonly projectSlug: Signal<string> = toSignal(
+    this.activatedRoute.paramMap.pipe(map((params) => (params.get('projectSlug') ?? '').trim().toLowerCase())),
+    { initialValue: '' }
+  );
 
   /**
    * No analytics id means no request is ever issued, so without a branch of its own this page would
