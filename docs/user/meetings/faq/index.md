@@ -5,38 +5,58 @@ audience: [all]
 product_area: Meetings
 tags: [meetings, faq, schedule, join]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-10
 intercom_collection: Meetings
 ---
 
 ## Who can create meetings?
 
-Users with **maintainer**, **board-member**, or **executive-director** personas can create and manage meetings. Contributors can view meeting details but cannot create or edit meetings.
+Users with **maintainer**, **board-member**, or **executive-director** personas can create and manage meetings for their projects. A project can also grant an individual **Meeting Coordinator** access specifically for meetings, which lets them create and manage meetings for that project even if they don't otherwise hold one of those personas. Contributors without that grant can view meeting details but cannot create or edit meetings.
 
 ## Does an attendee need an LFX account to join a meeting?
 
-No. Each meeting has a public join page at `/meetings/:id` that is accessible without authentication. You can share this link with anyone — they do not need an LFX account to view the meeting details.
+It depends on the meeting's access setting. Every meeting has a join page at `/meetings/:id`, but only **Private** meetings work without an account.
+
+If a meeting is marked **Private**, the join link carries the meeting's password as part of the URL, so anyone with that link can join without signing in. If a meeting is marked **Restricted**, there's no anonymous form to get past it — the attendee generally needs to be signed in and match an existing registrant record (by email), or be the organizer or a member of a linked committee. See "Can I protect a meeting with a passcode?" below.
+
+Note that the organizer's name and contact link on the join page are only visible to signed-in visitors, even on an otherwise-public meeting.
 
 ## What is the AI agenda generation feature?
 
-When creating or editing a meeting, you can use AI assistance to generate a draft agenda from a prompt. The AI service uses the LiteLLM proxy to produce agenda suggestions that you can review and edit before saving.
+When creating or editing a meeting, you can fill in a title, meeting type, and a short prompt, then use AI assistance to generate a draft agenda. Review and edit the suggestion before saving — it's a starting point, not a final agenda.
 
 ## Can I schedule recurring meetings?
 
-Recurring meeting options are available in the meeting creation form. Contact your project administrator for details on recurrence settings.
+Yes. The meeting creation form has a full recurrence builder: repeat every N days, weeks, or months; for weekly meetings, choose specific days of the week; for monthly meetings, choose either a fixed day of the month or a pattern like "the second Tuesday." Set the series to end on a specific date or after a set number of occurrences.
 
-## How do I add a meeting to my calendar?
+## How do I add meetings to my calendar?
 
-From the meeting detail page, download the meeting as an ICS (iCalendar) file. Open the file in any calendar application — such as Google Calendar, Outlook, or Apple Calendar — to add the meeting.
+There's currently no button to download a single meeting as its own ICS file. Instead, from the **Meetings** dashboard in your Foundation or Project lens, use the **Subscribe** button to get a live calendar feed (ICS URL) for that project's or foundation's meetings. The feed excludes **Private** meetings; **Restricted**-but-public meetings still appear on it. Add the feed once to Google Calendar, Outlook, or Apple Calendar, and it stays up to date automatically.
 
 ## What happens when I open a meeting link and see "Meeting Not Found"?
 
-The meeting ID in the link may be incorrect, or the meeting may have been removed. Contact your meeting organizer for the correct link.
+This can happen if the link has expired or is no longer valid, the meeting was deleted or cancelled, the meeting is restricted and you don't have access, or there's a typo in the URL. Contact your meeting organizer for a correct link, or use the "Contact Support" option on that page.
 
 ## Can I protect a meeting with a passcode?
 
-If a meeting requires a passcode, you will be prompted to enter it when joining. Contact the meeting organizer if you need the passcode.
+There's no passcode field you enter manually. **Private** meetings do have a password, but it's embedded automatically in the join link when the organizer copies it — you don't type it in separately. Access to a **Restricted** meeting works differently: there's no anonymous form to type an email or username into either. It only shows full join details to people who are signed in and match an existing registrant (by email), plus organizers and linked committee members. If you need access to a restricted meeting, ask the organizer to add you as a registrant, then make sure you're signed in.
 
 ## Why can't I see a meeting I was invited to?
 
-If you are looking for a meeting in the meetings dashboard, make sure you have the correct project context selected in the lens switcher. Meetings are scoped to a project. If you have only the join link, open it directly in your browser — no account or project context is needed.
+Make sure you're in the right lens: your personal **My Meetings** view (Me lens) shows meetings across all your projects, while a project's **Meetings** page (Project lens) only shows that project's meetings. Use the lens switcher to move between them. If you only have the join link, you can open it directly in your browser — no account or project context needed, unless the meeting is restricted.
+
+## Can I register myself for a meeting I wasn't invited to?
+
+Yes, if the meeting is **public and not restricted** — but you need to be **signed in** to see the option. Its join page shows a **Register for Meeting** button with a short form (name, email, and optionally job title and organization). Submitting it adds you as a registrant. This button isn't available for **Restricted** meetings — for those, ask the organizer to add you as a registrant.
+
+## Can I RSVP to a meeting I'm invited to?
+
+Yes, if you're **signed in**. The join page shows **Yes**, **No**, and **Maybe** buttons for invited attendees. For a recurring meeting, you'll also choose whether your response applies to **all occurrences**, **this occurrence only**, or **this and following occurrences**.
+
+## Where can I find a meeting's recording, transcript, or AI summary?
+
+On the meeting's join page, after the meeting has ended, if the organizer enabled those features. You need to be signed in to see this section, and you also need access to the meeting itself: for a **public, non-restricted** meeting, any signed-in visitor has access; otherwise, you need to be the organizer, a registrant, an actual past attendee, or a member of a committee linked to the meeting. Unauthenticated visitors never see recordings, transcripts, or summaries for a non-public or restricted meeting.
+
+## Where can I find meeting materials?
+
+On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). You need to be **signed in** to see materials, for any meeting.

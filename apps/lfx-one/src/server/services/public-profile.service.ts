@@ -1,10 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PublicProfile } from '@lfx-one/shared/interfaces';
+import {
+  PublicProfile,
+  PublicProfileBadge,
+  PublicProfileBasic,
+  PublicProfileCertification,
+  PublicProfileTechnicalContribution,
+  PublicProfileTraining,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { PUBLIC_PROFILE_FETCH_TIMEOUT_MS, PUBLIC_PROFILE_SERVICE_NAME, PUBLIC_PROFILE_USERNAME_PATTERN, PUBLIC_PROFILES_BUCKET_URL_ENV } from '../constants';
+import {
+  PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST,
+  PUBLIC_PROFILE_EPOCH_PLACEHOLDER,
+  PUBLIC_PROFILE_FETCH_TIMEOUT_MS,
+  PUBLIC_PROFILE_SERVICE_NAME,
+  PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST,
+  PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST,
+  PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED,
+  PUBLIC_PROFILE_USERNAME_PATTERN,
+  PUBLIC_PROFILES_BUCKET_URL_ENV,
+} from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 
@@ -28,6 +45,167 @@ export function resolvePublicFlag(parsed: Record<string, unknown>): boolean {
   const keys = ['IsPublic', 'isPublic'] as const;
   const present = keys.filter((key) => Object.prototype.hasOwnProperty.call(parsed, key));
   return present.length > 0 && present.every((key) => parsed[key] === true);
+}
+
+/** Narrows an unknown to a string, or undefined when absent/non-string. */
+function pickString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Narrows an unknown to a finite number, defaulting contribution counts to 0. */
+function pickCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/** Narrows an unknown to a plain object for further field projection, or undefined. */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Narrows an unknown to an array of plain-object records, dropping non-object entries. */
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== undefined) : [];
+}
+
+function projectBasic(value: unknown): PublicProfileBasic | undefined {
+  const basic = asRecord(value);
+  if (!basic) {
+    return undefined;
+  }
+  // The public page renders at most one identity username (the hero's GitHub link picks the first
+  // non-empty one), so project only that single username — never the full connected-identity list —
+  // to keep this endpoint's render-only PII boundary intact.
+  const firstUsername = asRecordArray(basic['Identities'])
+    .map((identity) => pickString(identity['Username']))
+    .find((username) => !!username && !!username.trim());
+  return {
+    Name: pickString(basic['Name']),
+    LogoURL: pickString(basic['LogoURL']),
+    TwitterID: pickString(basic['TwitterID']),
+    LinkedInID: pickString(basic['LinkedInID']),
+    GithubID: pickString(basic['GithubID']),
+    Title: pickString(basic['Title']),
+    Bio: pickString(basic['Bio']),
+    AccountName: pickString(basic['AccountName']),
+    AccountLogoURL: pickString(basic['AccountLogoURL']),
+    Identities: firstUsername ? [{ Username: firstUsername }] : undefined,
+  };
+}
+
+function projectTechnicalContribution(value: unknown): PublicProfileTechnicalContribution | undefined {
+  const contribution = asRecord(value);
+  if (!contribution) {
+    return undefined;
+  }
+  const projects = asRecordArray(contribution['projects']).map((project) => ({
+    LogoURL: pickString(project['LogoURL']),
+    Name: pickString(project['Name']),
+    Slug: pickString(project['Slug']),
+    commits: pickCount(project['commits']),
+    deleted: pickCount(project['deleted']),
+    added: pickCount(project['added']),
+    prs: pickCount(project['prs']),
+    issues: pickCount(project['issues']),
+  }));
+  return { projects };
+}
+
+/**
+ * Blanks the epoch-zero placeholder date, passing other values through. Uses `startsWith('1970')`
+ * (tighter than myprofile's `includes`) so only a leading epoch year counts as the placeholder.
+ */
+function scrubEpochDate(value: unknown): string | undefined {
+  const date = pickString(value);
+  if (date === undefined) {
+    return undefined;
+  }
+  return date.startsWith(PUBLIC_PROFILE_EPOCH_PLACEHOLDER) ? '' : date;
+}
+
+// Public trainings, myprofile parity: keep allow-listed statuses + types, blank epoch dates, sort by
+// name. Raw `Status` drives the filter only and is never projected to the client.
+function projectTrainingActivities(value: unknown, req?: Request): PublicProfileTraining[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  let droppedForUnknownType = 0;
+  const kept = asRecordArray(value).filter((activity) => {
+    const status = pickString(activity['Status']);
+    const type = pickString(activity['Type']);
+    const statusAllowed = status !== undefined && PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST.has(status);
+    const typeAllowed = type !== undefined && PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST.has(type);
+    // Drift signal: an allow-listed Status with a Type that's neither allow-listed nor a known
+    // excluded type (exam/subscription/bundle) means the myprofile vocabulary likely drifted — count it.
+    if (statusAllowed && type !== undefined && !typeAllowed && !PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED.has(type)) {
+      droppedForUnknownType++;
+    }
+    return statusAllowed && typeAllowed;
+  });
+  if (droppedForUnknownType > 0) {
+    logger.warning(req, 'project_public_profile', 'Dropped training rows with an unrecognized Type', {
+      dropped_for_unknown_type: droppedForUnknownType,
+    });
+  }
+  return kept
+    .map((activity) => ({
+      Name: pickString(activity['Name']),
+      Type: pickString(activity['Type']),
+      StartDate: scrubEpochDate(activity['StartDate']),
+      EndDate: scrubEpochDate(activity['EndDate']),
+    }))
+    .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
+}
+
+// Public certifications: completed only, sorted by name. Stricter than myprofile parity — also drops
+// an absent StartDate and matches the epoch date with `startsWith`. Raw `Status` is never projected.
+function projectCertificationActivities(value: unknown): PublicProfileCertification[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return asRecordArray(value)
+    .filter((activity) => {
+      const status = pickString(activity['Status']);
+      const startDate = pickString(activity['StartDate']);
+      return (
+        status !== undefined &&
+        PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST.has(status) &&
+        startDate !== undefined &&
+        !startDate.startsWith(PUBLIC_PROFILE_EPOCH_PLACEHOLDER)
+      );
+    })
+    .map((activity) => ({
+      Name: pickString(activity['Name']),
+      Type: pickString(activity['Type']),
+      StartDate: pickString(activity['StartDate']),
+      EndDate: pickString(activity['EndDate']),
+    }))
+    .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
+}
+
+function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return asRecordArray(value).map((badge) => ({
+    Image: pickString(badge['Image']),
+    Url: pickString(badge['Url']),
+  }));
+}
+
+/**
+ * Projects the raw S3 artifact down to the render-only allowlist — fail closed, so any field not
+ * listed here never reaches the client. This is the sole PII boundary for the anonymous endpoint.
+ */
+export function projectPublicProfile(record: Record<string, unknown>, req?: Request): PublicProfile {
+  return {
+    isPublic: resolvePublicFlag(record),
+    basic: projectBasic(record['basic']),
+    About: pickString(record['About']),
+    technical_contribution: projectTechnicalContribution(record['technical_contribution']),
+    certification_activities: projectCertificationActivities(record['certification_activities']),
+    training_activities: projectTrainingActivities(record['training_activities'], req),
+    badges: projectBadges(record['badges']),
+  };
 }
 
 /**
@@ -173,6 +351,6 @@ export class PublicProfileService {
     }
 
     const record = parsed as Record<string, unknown>;
-    return { ...record, isPublic: resolvePublicFlag(record) } as PublicProfile;
+    return projectPublicProfile(record, req);
   }
 }

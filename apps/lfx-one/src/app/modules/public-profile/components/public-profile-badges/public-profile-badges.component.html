@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="badges-section">
+  <h2 class="m-0 text-lg font-bold text-gray-900">Badges</h2>
+  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Recognitions and credentials earned across the community.</p>
+
+  <div class="grid grid-cols-3 gap-4 sm:grid-cols-4" data-testid="badges-grid">
+    @for (badge of badges(); track badge) {
+      @if (badge.Image) {
+        @if (badge.Url | validExternalUrl; as href) {
+          <a
+            [href]="href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex aspect-square items-center justify-center rounded-xl border border-gray-200 bg-white transition-colors hover:bg-gray-50"
+            data-testid="badge-link">
+            <img [src]="badge.Image" alt="Badge" class="h-[58px] w-[58px] object-contain" loading="lazy" />
+          </a>
+        } @else {
+          <div class="flex aspect-square items-center justify-center rounded-xl border border-gray-200 bg-white" data-testid="badge-item">
+            <img [src]="badge.Image" alt="Badge" class="h-[58px] w-[58px] object-contain" loading="lazy" />
+          </div>
+        }
+      }
+    }
+  </div>
+</section>

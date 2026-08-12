@@ -3,7 +3,7 @@
 
 import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
 import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
-import { LockEntry, LockStats } from '@lfx-one/shared/interfaces';
+import { LockEntry, LockStats, SnowflakeQueryOptions } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 
 import { logger } from '../services/logger.service';
@@ -69,12 +69,21 @@ export class LockManager {
    *
    * @param sqlText - SQL query text
    * @param binds - Query bind parameters (supports Date objects for normalization)
+   * @param options - Execution options that affect query behavior or error policy
    * @returns SHA256 hash of normalized query
    */
-  public hashQuery(sqlText: string, binds?: (Bind | Date)[]): string {
+  public hashQuery(sqlText: string, binds?: (Bind | Date)[], options?: SnowflakeQueryOptions): string {
     const normalized = {
       sql: sqlText.trim().toLowerCase().replace(/\s+/g, ' '),
       binds: this.normalizeBinds(binds),
+      options: options
+        ? {
+            timeout: options.timeout ?? null,
+            fetchAsString: options.fetchAsString ? [...options.fetchAsString].sort() : [],
+            expectMissingObject: options.expectMissingObject ?? false,
+            expectInvalidIdentifier: options.expectInvalidIdentifier ?? null,
+          }
+        : null,
     };
 
     return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACTIVITY_FEED_MAX_PAGE_SIZE, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { ACTIVITY_FEED_MAX_PAGE_SIZE, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE, NOTES_ATTACHMENT_CATEGORY, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 // import type — erased entirely at compile time, so unlike the enums/utils imports below, this
 // one needs no vi.mock in the spec (same reasoning as activity-feed.utils.ts's own interfaces import).
@@ -12,8 +12,10 @@ import type {
   CommitteeActivityDocumentFile,
   CommitteeActivityFolder,
   CommitteeActivityLink,
+  CommitteeActivityNoteAttachment,
   CommitteeActivityQuery,
   DocumentUploadedActivityEvent,
+  NotesAddedActivityEvent,
   PaginatedResponse,
   PastMeeting,
   QueryServiceResponse,
@@ -63,6 +65,8 @@ function eventKey(event: ActivityEvent): string {
       return `survey:${event.payload.survey_uid}`;
     case 'document_uploaded':
       return `document:${event.payload.document_type}:${event.payload.document_uid}`;
+    case 'notes_added':
+      return `note:${event.payload.meeting_scope}:${event.payload.document_uid}`;
     default:
       // Deferred types are never constructed in v1 (see activity-event.interface.ts) — occurred_at
       // is the least-bad fallback key if one ever were.
@@ -167,10 +171,11 @@ function isAfterCursor(event: { occurred_at: string; key: string }, cursor: Acti
 
 /**
  * Aggregates a committee's activity across existing sources (past meetings, votes, surveys,
- * documents) into one time-ordered, cursor-paginated feed — LFXV2-1707 v1. No new upstream
- * service: each source is an existing committee-scoped read, fetched in parallel and merged
- * server-side. See `packages/shared/src/interfaces/activity-event.interface.ts` for which event
- * types this emits vs. defers pending a real event log.
+ * documents, notes-category meeting attachments) into one time-ordered, cursor-paginated feed —
+ * LFXV2-1707 v1 / LFXV2-3077. No new upstream service: each source is an existing
+ * committee-scoped read, fetched in parallel and merged server-side. See
+ * `packages/shared/src/interfaces/activity-event.interface.ts` for which event types this emits
+ * vs. defers pending a real event log.
  */
 export class CommitteeActivityService {
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -226,18 +231,21 @@ export class CommitteeActivityService {
     // a runtime tripwire for exactly this: a warning log if a real, differing scheduled_start_time
     // ever shows up on a returned row, rather than relying on this comment alone to catch it.
     //
-    // Votes, surveys, and files are all in a different, genuinely-approximate bucket: query-service's
-    // `sort=updated_desc` resolves to the INDEX's own root-level `updated_at` (`cmd/service/
-    // converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer contract
-    // documents as index-write/audit metadata, not a copy of any `data.*` domain field — distinct
-    // from the `date_field` values votes and files filter on: votes' `data.last_modified_time`,
+    // Votes, surveys, files, and notes are all in a different, genuinely-approximate bucket:
+    // query-service's `sort=updated_desc` resolves to the INDEX's own root-level `updated_at`
+    // (`cmd/service/converters.go`: `SortBy = "updated_at"`, no `data.` prefix), which the indexer
+    // contract documents as index-write/audit metadata, not a copy of any `data.*` domain field —
+    // distinct from the `date_field` values votes and files filter on: votes' `data.last_modified_time`,
     // files' `data.updated_at` (each auto-prefixed with `data.` by query-service, unlike `sort`).
     // Files happens to share a field NAME with the sort target (`updated_at` == `updated_at`)
     // despite resolving to a different actual field once `data.` prefixing is applied; votes'
-    // date_field name doesn't even coincide with `updated_at`. Surveys is the exception here: it
-    // has no upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
-    // updated_desc` is the only upstream ordering this leg gets. Same class of approximation as the
-    // per-leg date_field (filter-dimension) caveats discussed next, just in the sort dimension
+    // date_field name doesn't even coincide with `updated_at`. Surveys are the exception here: no
+    // upstream date_field at all (see fetchSurveyEvents's own comment for why) — `sort:
+    // updated_desc` is the only upstream ordering that leg gets. Notes sits in between: no
+    // `date_field` at all on page 1 (like surveys, since `before` is only set from a cursor), and
+    // from page 2 on only a `date_to` upper bound, never `date_from` (see fetchNotesAddedEvents's
+    // own comment for why the asymmetry). Same class of approximation as the per-leg date_field
+    // (filter-dimension) caveats discussed next, just in the sort dimension
     // instead.
     //
     // Filter dimension: votes/files each filter on a single upstream `date_field` that only
@@ -247,13 +255,29 @@ export class CommitteeActivityService {
     // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
     // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
     // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys is
-    // the one exception where "sending none at all" IS the right call, not the failure mode this
-    // paragraph describes: unlike votes/files, a survey's cutoff-driven occurred_at isn't bounded
-    // below by any field the row gets written to, so date_field narrowing there would systematically
-    // (not rarely) exclude exactly the rows `since` is meant to include — see fetchSurveyEvents.
+    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys
+    // send no `date_field` at all for a `date_from` reason: unlike votes/files, a survey's
+    // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
+    // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
+    // is meant to include — see fetchSurveyEvents. That reasoning only covers `date_from`, though;
+    // sending no `date_field` at all also means no `date_to`, which surveys does not opt back into
+    // the way notes does below — a real, pre-existing pagination-reachability gap (any committee
+    // with more than `fetchSize` surveys has every survey past the newest ones permanently
+    // unreachable, the same failure class notes had before this leg sent `date_to`), predates
+    // LFXV2-3077, and is out of scope for this ticket to fix. Notes has the same lower-bound risk
+    // (an attachment whose v1 source record had no parseable `updated_at` gets indexed with
+    // `modified_at` set to the Go zero-date sentinel, `0001-01-01T00:00:00Z` — lfx-v2-meeting-service's
+    // `parseTime` swallows that error rather than omitting the field, so `modified_at` is never
+    // actually absent, just sometimes wrong) but not the upper-bound one: a `date_to` on
+    // `modified_at` can only be over-inclusive for a sentinel row (year 1 is always `<=` any real
+    // cutoff) — see fetchNotesAddedEvents for the full asymmetry. Over-inclusion is a correctness
+    // no-op (the in-memory pass still trims it before anything is emitted), but not a reachability
+    // no-op: a sentinel row still consumes one of the leg's `fetchSize` upstream slots on every
+    // page (sort:updated_desc resolves to the index's own recently-written `updated_at`, so a
+    // sentinel row sorts near the top despite its `data.modified_at` passing every date_to), which
+    // is the same "bounded to a single upstream page" limitation documented next, not a new one.
     //
-    // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files
+    // Known v1 limitation (accepted, not solved — see LFXV2-1707): meetings/votes/surveys/files/notes
     // are each bounded to a single upstream page of `fetchSize` rows.
     // If more than `fetchSize` rows on one of those legs share the exact same occurred_at second,
     // rows beyond the upstream page are simply never fetched, on any page — unlike folders/links
@@ -267,8 +291,10 @@ export class CommitteeActivityService {
     // paginable at the source.
 
     const fetchSize = Math.max(limit + 1, ACTIVITY_FEED_MIN_SOURCE_FETCH_SIZE);
-    // Sent to every leg as an inclusive upstream `date_to` (query-service's date_to is documented
-    // inclusive), ceiled to the next whole second — see ceilToWholeSecond's doc comment for why:
+    // Sent as an inclusive upstream `date_to` to every leg that does upstream date filtering at all
+    // (meetings/past-meetings/votes/files/notes — surveys opts out entirely, folders/links have no
+    // upstream date param to send it to; see each leg's own comment), ceiled to the next whole
+    // second — see ceilToWholeSecond's doc comment for why:
     // upstream truncates sub-second precision, so the raw cursor.before could otherwise shrink the
     // boundary below the true cursor position. The in-memory isAfterCursor pass (which uses the
     // exact, un-ceiled cursor.before) is what actually enforces the boundary; the ceiled value here
@@ -279,7 +305,7 @@ export class CommitteeActivityService {
       // (committee-activity-query.helper.ts: a bad explicit cursor is a 400, not a silently-ignored
       // value). This method is public and reachable directly by a future non-HTTP caller that
       // skips that validation; degrading here would (a) diverge from the HTTP path's policy for the
-      // same bad input and (b) still do the full 7-call upstream fan-out below for a result that's
+      // same bad input and (b) still do the full 9-call upstream fan-out below for a result that's
       // provably empty anyway (isAfterCursor can't place any real event "after" an unparseable
       // cursor position), which is pure waste. Failing fast avoids both.
       throw ServiceValidationError.forField('cursor.before', 'cursor.before must be a valid ISO 8601 timestamp', {
@@ -318,12 +344,12 @@ export class CommitteeActivityService {
 
     // INFO, not DEBUG — matches DocumentService.getMyDocuments's "N-stage aggregation" logging
     // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
-    // single-source enrichment services that stay at DEBUG throughout. A merge across 4
+    // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
-    const [committee, pastMeetingResult, voteResult, surveyResult, documentResult] = await Promise.all([
+    const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
@@ -341,12 +367,22 @@ export class CommitteeActivityService {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
         return { events: [], saturated: false };
       }),
+      this.fetchNotesAddedEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
+        logger.warning(req, 'get_committee_activity', 'Failed to fetch notes activity, continuing without it', { committee_uid: committeeUid, err });
+        return { events: [], saturated: false };
+      }),
     ]);
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
     // doc comment) — by this line `committee` is always a resolved Committee.
     const votingEnabled = committee.enable_voting;
-    const sources: ActivityEvent[][] = [pastMeetingResult.events, votingEnabled ? voteResult.events : [], surveyResult.events, documentResult.events];
+    const sources: ActivityEvent[][] = [
+      pastMeetingResult.events,
+      votingEnabled ? voteResult.events : [],
+      surveyResult.events,
+      documentResult.events,
+      notesResult.events,
+    ];
 
     // Single pass: attach each event's sort key once, apply since/cursor, sort desc by
     // (occurred_at, key). No per-source pre-cap — a global sort+slice already picks the true top
@@ -369,7 +405,7 @@ export class CommitteeActivityService {
     windowed.sort((a, b) => compareEventsDesc({ occurred_at: a.event.occurred_at, key: a.key }, { occurred_at: b.event.occurred_at, key: b.key }));
 
     // `windowed.length > limit` alone under-detects "more data exists": each of
-    // meetings/votes/surveys/files is bounded to a single upstream page of `fetchSize` rows (see
+    // meetings/votes/surveys/files/notes is bounded to a single upstream page of `fetchSize` rows (see
     // the caveat above), so once a page's fetch actually hits that bound, there could be more rows
     // upstream than made it into `windowed` even though the merged pool itself isn't over `limit` —
     // e.g. a single dominant source returning exactly `fetchSize` rows, several of which get
@@ -384,7 +420,8 @@ export class CommitteeActivityService {
     // bound at all (fetched in full every call) and are already filtered+bounded correctly against
     // the exact cursor inside fetchDocumentEvents, so a fetched length at `fetchSize` there reflects
     // this leg's own internal cap, not an upstream truncation signal.
-    const anyLegSaturated = pastMeetingResult.saturated || (votingEnabled && voteResult.saturated) || surveyResult.saturated || documentResult.saturated;
+    const anyLegSaturated =
+      pastMeetingResult.saturated || (votingEnabled && voteResult.saturated) || surveyResult.saturated || documentResult.saturated || notesResult.saturated;
 
     const page = windowed.slice(0, limit);
     const data = page.map(({ event }) => event);
@@ -421,6 +458,7 @@ export class CommitteeActivityService {
       vote_count: voteResult.events.length,
       survey_count: surveyResult.events.length,
       document_count: documentResult.events.length,
+      notes_count: notesResult.events.length,
       voting_enabled: votingEnabled,
       returned: data.length,
       has_more: hasMore,
@@ -439,9 +477,9 @@ export class CommitteeActivityService {
   /**
    * Unlike every other leg, a failure here is NOT caught-and-degraded by the caller — it's allowed
    * to reject `getCommitteeActivity`'s `Promise.all` and propagate to the controller's `next(error)`.
-   * `GET /committees/:uid` is the one leg in this 7-call fan-out (committee + 4 `/query/resources`
-   * legs — meetings, votes, surveys, files — + committee-service's folders/links legs) whose
-   * committee-service FGA rejection is allowed to fail the whole request. The 4 `/query/resources`
+   * `GET /committees/:uid` is the one leg in this 9-call fan-out (committee + 6 `/query/resources`
+   * legs — meetings, votes, surveys, files, notes×2 — + committee-service's folders/links legs) whose
+   * committee-service FGA rejection is allowed to fail the whole request. The 6 `/query/resources`
    * legs filter per-resource and never 403 the whole request (see the controller's docblock); the
    * folders/links legs are also committee-service-FGA-backed but are deliberately caught-and-degraded
    * in fetchDocumentEvents rather than propagated, since a single missing/inaccessible committee's
@@ -780,8 +818,8 @@ export class CommitteeActivityService {
     // anyway, never past it. The exact/final since+cursor enforcement still happens once,
     // centrally, in getCommitteeActivity — this pre-filter only needs to be a superset of that.
     // This fully closes the tie-truncation failure for folders/links specifically, because nothing
-    // upstream ever caps what this leg can re-fetch. The sibling meetings/votes/surveys/files legs
-    // are each capped to one upstream page of fetchSize and can still hit the same failure if more
+    // upstream ever caps what this leg can re-fetch. The sibling meetings/votes/surveys/files/notes
+    // legs are each capped to one upstream page of fetchSize and can still hit the same failure if more
     // than fetchSize of their own rows share one exact timestamp — see the caveat on `fetchSize`'s
     // own comment above, in getCommitteeActivity.
     const folderEvents = boundedSortDesc(
@@ -828,6 +866,186 @@ export class CommitteeActivityService {
       occurred_at: occurredAt,
       committee_uid: committeeUid,
       payload: { document_uid: documentUid, name, document_type: documentType, url },
+    };
+  }
+
+  // ─── Notes → notes_added ────────────────────────────────────────────────────
+
+  /**
+   * A new aggregation leg, NOT a filter on fetchDocumentEvents above — folders/links/
+   * committee_document files carry no `category` field, so a Notes-category row can only come
+   * from v1_meeting_attachment/v1_past_meeting_attachment, two upstream resource types
+   * fetchDocumentEvents never touches (LFXV2-3077, corrects LFXV2-2982's original framing).
+   *
+   * `filters_all: ['category:' + NOTES_ATTACHMENT_CATEGORY]` IS sent upstream, with the
+   * unconditional client-side `category === NOTES_ATTACHMENT_CATEGORY` filter below kept as a
+   * backstop, not a substitute — both found in review and confirmed against
+   * lfx-v2-meeting-service's/lfx-v2-indexer-service's/lfx-v2-query-service's contract docs.
+   * `filters_all`, not `filters` — the query-service contract marks `filters` legacy ("Prefer
+   * `filters_all` going forward"); semantically identical for a single-value AND filter, and this
+   * is the first new query written against this contract since that guidance shipped.
+   *  - `filters_all` compiles to an OpenSearch `term` clause (exact match) on `data.category`. It's
+   *    the only way to narrow the OpenSearch query itself on `category` — the attachment types'
+   *    Tags tables (lfx-v2-meeting-service's indexer-contract.md) don't include it, so `tags`
+   *    can't filter on it; `cel_filter` can express `data.category == 'Notes'` too, but the
+   *    query-service contract documents it as applied in-process AFTER OpenSearch paginates, "not
+   *    a substitute for narrowing the OpenSearch query itself" — it would inherit the exact same
+   *    dilution problem this filter exists to avoid, just moved one step later. `data` is
+   *    documented (lfx-v2-indexer-service's indexer-contract.md) as a schema-free `flat_object`,
+   *    and that same doc explicitly declines to guarantee per-field analyzer behavior inside
+   *    `data` — a caution, not a green light — so sending `filters_all` here is a deliberate bet on
+   *    a `term` clause being exact for a field the indexer can't promise that for. It's a bet worth
+   *    making anyway: this repo
+   *    already ships an identical `term` filter on another `data.*` subfield of this same resource
+   *    type (`document.service.ts`'s `filters_or: ['meeting_id:<id>']` on `v1_meeting_attachment`),
+   *    and the failure mode if the bet is wrong is *observable*, not silent, at both ends of the
+   *    spectrum — though neither is a single-committee tripwire: a fully-failed filter shows up as
+   *    `notes_count: 0` in `getCommitteeActivity`'s completion log, but that line alone can't tell
+   *    a broken filter apart from a committee that genuinely has no notes; only a pattern of
+   *    `notes_count: 0` across every committee (not just this one) points at the filter itself.
+   *    A partially-failed filter (matches, but doesn't narrow) is the one with a real per-call
+   *    signal: `buildNotesEventsForScope`'s own `dropped_count` warning below. Neither signal exists
+   *    for the alternative: dropping the filter and fetching `fetchSize` attachments of every
+   *    category before filtering client-side trades both visible risks for one guaranteed, silent
+   *    dilution instead — a committee whose meetings carry non-Notes attachments too would only
+   *    ever surface notes from its most recent handful of meetings, with `saturated` firing far
+   *    more than the actual Notes volume warrants, and nothing would ever log it. If the bet ever
+   *    proves wrong, the durable fix is an upstream request to add `category` to the attachment tag
+   *    sets, not reverting to the client-side-only approach.
+   *  - `date_to` only, never `date_from`, unlike the files leg above (which sends both). The
+   *    zero-date-sentinel risk (`modified_at` is never actually absent — `ModifiedAt time.Time`
+   *    has no `omitempty` — but an attachment whose v1 source record had no parseable `updated_at`
+   *    gets indexed with `modified_at` set to Go's zero-date sentinel, `0001-01-01T00:00:00Z`,
+   *    since `parseTime`'s error is swallowed rather than the field being omitted) only bites in
+   *    one direction: a `date_from` lower bound would exclude a sentinel row even though
+   *    `firstValidTimestamp` below correctly falls back to `created_at` for its real `occurred_at`
+   *    — silent under-inclusion, the same class of problem `fetchSurveyEvents` documents at length
+   *    for its own, different reason. A `date_to` upper bound has no equivalent failure: the Go
+   *    zero-date sentinel (year 1) is always `<=` any real cutoff, so a sentinel row always passes
+   *    `date_to` (over-inclusive, never excluded), and over-inclusion is exactly what the in-memory
+   *    since/cursor pass below already exists to trim — the same "wider upstream window is always
+   *    safe, narrower one isn't" principle `ceilToWholeSecond`'s own doc comment states. Sending
+   *    `date_to` (not just `sort`) is what lets pagination actually walk backwards through more
+   *    than one upstream page of notes per scope — without it, every page after the first
+   *    re-fetches the same newest `fetchSize` rows and the in-memory cursor pass discards the ones
+   *    already emitted, so anything past the first page is permanently unreachable.
+   */
+  private async fetchNotesAddedEvents(
+    req: Request,
+    committeeUid: string,
+    _since: string | undefined,
+    before: string | undefined,
+    fetchSize: number
+  ): Promise<{ events: NotesAddedActivityEvent[]; saturated: boolean }> {
+    // Type and scope are paired once here, and `scope` is carried all the way through
+    // fetchNoteAttachmentPage's own return value rather than re-stated positionally at each
+    // downstream call site — a transposed pair at the source list, or a re-stated literal below,
+    // would both compile silently otherwise. `scope` isn't just a log-correlation field once it
+    // reaches buildNotesEventsForScope: buildNotesEvent writes it into the user-visible
+    // `payload.meeting_scope`, which activity-feed.utils.ts uses to namespace the feed item's
+    // @for tracking key — a swapped scope there is payload-corrupting, not just a wrong log line.
+    // `as const` is what narrows `scope` to the literal union fetchNoteAttachmentPage's `scope`
+    // param requires (without it, the literal widens to `scope: string`). Not an arity guard —
+    // `results` below is consumed by `flatMap`/`some`, both N-safe by construction, so a third
+    // source added here would be fully handled, not silently dropped; the narrowed `type` param
+    // (not this array) is what would catch a typo'd resource-type string at compile time.
+    const ATTACHMENT_SOURCES = [
+      { type: 'v1_meeting_attachment', scope: 'upcoming' },
+      { type: 'v1_past_meeting_attachment', scope: 'past' },
+    ] as const;
+    const results = await Promise.all(
+      ATTACHMENT_SOURCES.map((source) => this.fetchNoteAttachmentPage(req, committeeUid, source.type, source.scope, fetchSize, before))
+    );
+
+    const events = results.flatMap((result) => this.buildNotesEventsForScope(req, committeeUid, result.attachments, result.scope));
+
+    // Both sub-legs are bounded to one upstream page_size-limited page (unlike
+    // fetchDocumentEvents, where only the files sub-leg is bounded and folders/links are
+    // excluded from saturation) — so either one's own page_token signals more data upstream.
+    return { events, saturated: results.some((result) => !!result.pageToken) };
+  }
+
+  /** One sub-leg's bounded query-service fetch, shared by both attachment types fetchNotesAddedEvents fans out to. */
+  private async fetchNoteAttachmentPage(
+    req: Request,
+    committeeUid: string,
+    type: 'v1_meeting_attachment' | 'v1_past_meeting_attachment',
+    scope: 'upcoming' | 'past',
+    fetchSize: number,
+    before: string | undefined
+  ): Promise<{ scope: 'upcoming' | 'past'; attachments: CommitteeActivityNoteAttachment[]; pageToken: string | undefined }> {
+    return this.microserviceProxy
+      .proxyRequest<QueryServiceResponse<CommitteeActivityNoteAttachment> | null>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type,
+        parent: `committee:${committeeUid}`,
+        filters_all: [`category:${NOTES_ATTACHMENT_CATEGORY}`],
+        page_size: fetchSize,
+        sort: 'updated_desc',
+        // date_to only, never date_from — see fetchNotesAddedEvents's own doc comment for why the
+        // asymmetry is deliberate (the zero-date sentinel risk only bites a lower bound).
+        ...(before && { date_field: 'modified_at', date_to: before }),
+      })
+      .then((response) => ({ scope, attachments: (response?.resources ?? []).map((resource) => resource.data), pageToken: response?.page_token }))
+      .catch((err) => {
+        // meeting_scope, matching buildNotesEventsForScope's own warning field — both logs
+        // describe the same sub-leg and need to correlate on one field/value, not two vocabularies.
+        logger.warning(req, 'get_committee_activity', 'Failed to fetch notes attachments, continuing without them', {
+          committee_uid: committeeUid,
+          meeting_scope: scope,
+          err,
+        });
+        return { scope, attachments: [] as CommitteeActivityNoteAttachment[], pageToken: undefined as string | undefined };
+      });
+  }
+
+  /**
+   * Applies the client-side `category` backstop and warns if it ever drops a row — the tripwire
+   * for the doc comment's "the upstream `filters_all` term clause might not narrow" bet above.
+   * Without this, a non-narrowing upstream filter is invisible: the backstop silently absorbs
+   * every non-Notes row and the leg looks healthy while quietly under-serving every request
+   * (fetchSize filled with every category, only the newest handful surviving) — the exact
+   * "someone eventually notices" failure mode `notes_count: 0` catches for a *fully* failed
+   * filter, but with no equivalent signal for a *partially* failed one. Same pattern as
+   * fetchPastMeetingEvents's own scheduled_start_time tripwire.
+   */
+  private buildNotesEventsForScope(
+    req: Request,
+    committeeUid: string,
+    attachments: CommitteeActivityNoteAttachment[],
+    meetingScope: 'upcoming' | 'past'
+  ): NotesAddedActivityEvent[] {
+    const notes = attachments.filter((attachment) => attachment.category === NOTES_ATTACHMENT_CATEGORY);
+    const droppedCount = attachments.length - notes.length;
+    if (droppedCount > 0) {
+      logger.warning(req, 'get_committee_activity', 'Notes category filter did not fully narrow upstream — filters_all term clause may not be matching', {
+        committee_uid: committeeUid,
+        meeting_scope: meetingScope,
+        dropped_count: droppedCount,
+      });
+    }
+    return notes.map((attachment) => this.buildNotesEvent(committeeUid, attachment, meetingScope));
+  }
+
+  private buildNotesEvent(committeeUid: string, attachment: CommitteeActivityNoteAttachment, meetingScope: 'upcoming' | 'past'): NotesAddedActivityEvent {
+    return {
+      type: 'notes_added',
+      // modified_at, not updated_at — v1_meeting_attachment/v1_past_meeting_attachment's indexed
+      // data schema carries modified_at (lfx-v2-meeting-service's indexer-contract docs); the
+      // ITX-aligned MeetingAttachment/PastMeetingAttachment shape's updated_at field doesn't apply
+      // to this query-service-sourced projection (see CommitteeActivityNoteAttachment's doc comment).
+      // modified_at-first (not created_at-first) means editing/renaming an existing note bumps its
+      // sort position to the top of the feed, same as the files/folders/links legs above — this is
+      // why activity-feed.utils.ts's notes_added case renders "Note: X", not "Note added: X": the
+      // label can't claim a specific action this timestamp doesn't guarantee actually happened.
+      occurred_at: firstValidTimestamp(attachment.modified_at, attachment.created_at),
+      committee_uid: committeeUid,
+      payload: {
+        document_uid: attachment.uid,
+        name: attachment.name,
+        document_type: attachment.type,
+        url: attachment.type === 'link' ? attachment.link : undefined,
+        meeting_scope: meetingScope,
+      },
     };
   }
 }

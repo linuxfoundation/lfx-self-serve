@@ -1,14 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Specific-file imports (not the '../constants' barrel): that barrel re-exports
-// dashboard-metrics.constants.ts, which imports '../utils' (the utils barrel, this file's own
-// barrel) — a real runtime import cycle that transitively pulls in Angular-only runtime code
-// (e.g. meeting.utils.ts's `@angular/common/http` import), which Vitest can't resolve outside an
-// Angular context. Importing the two constant files directly avoids the cycle. The '../interfaces'
-// import below is `import type` for the same reason: it's erased entirely, so it can't reintroduce
-// this cycle even if a future interface file adds a runtime import that reaches '../constants' or
-// '../utils'.
+// Specific-file imports (not the '../constants' barrel): this file is re-exported by the utils
+// barrel, so importing the constants barrel here would add a utils->constants edge — avoided
+// defensively (no cycle exists today; see constants/index.spec.ts for the invariant this protects).
+// The '../interfaces' import below is `import type`, so it can't introduce a runtime edge.
 import { COMMITTEE_DOCUMENT_TYPE_ICONS, COMMITTEE_DOCUMENT_TYPE_LABELS } from '../constants/committee-documents.constants';
 import { POLL_STATUS_LABELS } from '../constants/poll.constants';
 import { SURVEY_STATUS_LABELS } from '../constants/survey.constants';
@@ -88,8 +84,37 @@ function mapActivityEventToFeedItem(event: ActivityEvent): ActivityFeedItem | nu
       };
     }
 
-    // Deferred types (document_deleted, member_joined, member_left, notes_added) — never emitted
-    // by the server in v1; guarded defensively rather than assumed unreachable.
+    case 'notes_added': {
+      const { document_uid, name, document_type, url, meeting_scope } = event.payload;
+      return {
+        type: 'note',
+        // meeting_scope in the key, not just document_uid — v1_meeting_attachment and
+        // v1_past_meeting_attachment are two distinct upstream uid namespaces, same reasoning as
+        // document_uploaded's document_type-namespaced key.
+        key: `note-${meeting_scope}-${document_uid}`,
+        // "Note: X", not "Note added: X" — occurred_at prefers modified_at (see buildNotesEvent's
+        // own comment), so an edited/renamed note re-surfaces at the top of the feed on every
+        // edit, not just its original creation. A verb-free label avoids claiming "added" for
+        // what might be an edit, matching document_uploaded's own verb-free label for the same
+        // modified-first sort reason (its "Document: X" doesn't claim "uploaded" either).
+        label: `Note: ${name}`,
+        timestamp: event.occurred_at,
+        icon: 'fa-light fa-note-sticky',
+        // meeting_scope, not a precise deep link to the source meeting — MeetingAttachment/
+        // PastMeetingAttachment carry no `password` field, so routing through 'past-meeting'
+        // (which can attach one) risks silently omitting it for a password-protected meeting.
+        // Routes to the Meetings tab pre-filtered to the right time window instead, the same
+        // "no precise deep link, route to the containing tab" compromise document_uploaded
+        // already makes for file/folder rows. 'meetings:upcoming'/'meetings:past' is an
+        // already-live composite tab-context format (committee-view.component.ts's
+        // handleTabNavigation). document_type === 'link' guard mirrors document_uploaded's own
+        // condition — a file-type note never opens a raw url directly, even if one is ever set.
+        action: document_type === 'link' && url && isValidUrl(url) ? { kind: 'external-url', url } : { kind: 'tab', tab: `meetings:${meeting_scope}` },
+      };
+    }
+
+    // Deferred types (document_deleted, member_joined, member_left) — never emitted by the
+    // server in v1; guarded defensively rather than assumed unreachable.
     default:
       return null;
   }

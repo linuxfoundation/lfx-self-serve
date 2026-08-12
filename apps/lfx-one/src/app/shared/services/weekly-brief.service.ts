@@ -6,12 +6,17 @@ import { inject, Injectable } from '@angular/core';
 import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
+  GetWeeklyBriefActionItemsResponse,
+  RateWeeklyBriefRequest,
+  RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
+  ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefCurrentResponse,
+  WeeklyBriefRating,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { catchError, Observable, of, take } from 'rxjs';
 
 /**
  * Angular client for the WG Weekly Brief BFF (`/api/committees/:id/weekly-briefs/*`).
@@ -35,6 +40,24 @@ export class WeeklyBriefService {
    */
   public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
     return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`);
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs/action-items
+   *
+   * The BFF already degrades extraction failures to an empty list (LFXV2-3043) — this
+   * `catchError` is defense in depth against a transport-level failure (network error, 5xx)
+   * reaching the widget, which per the ticket must never surface as an error on the page.
+   * Still logged (not silently swallowed) so a broken deploy is distinguishable from a
+   * genuinely quiet week in the browser console.
+   */
+  public getActionItems(committeeId: string): Observable<GetWeeklyBriefActionItemsResponse> {
+    return this.http.get<GetWeeklyBriefActionItemsResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/action-items`).pipe(
+      catchError((err) => {
+        console.error('Failed to load weekly-brief action items', err);
+        return of({ items: [] });
+      })
+    );
   }
 
   /**
@@ -65,5 +88,49 @@ export class WeeklyBriefService {
    */
   public shareWeeklyBrief(committeeId: string, revision: number): Observable<ShareWeeklyBriefResult> {
     return this.http.post<ShareWeeklyBriefResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share`, { revision }).pipe(take(1));
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/share-slack
+   *
+   * No `catchError` — the caller handles 404 (no brief) / 409 (no Slack webhook configured /
+   * stale revision / backend not live) / 502 (Slack rejected the message or was unreachable)
+   * states by classifying the error itself, same as `shareWeeklyBrief`.
+   */
+  public shareWeeklyBriefToSlack(committeeId: string, revision: number): Observable<ShareWeeklyBriefToSlackResult> {
+    return this.http
+      .post<ShareWeeklyBriefToSlackResult>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share-slack`, { revision })
+      .pipe(take(1));
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Upserts the caller's rating on the brief's current revision (also handles switching
+   * up↔down — same request, new value). `revision` is the revision the caller actually saw when
+   * they tapped — the BFF rejects with a 409 when it no longer matches the server-resolved current
+   * revision (a co-chair's edit/regenerate landed in between), so the caller must handle that
+   * status and refresh rather than retry blindly. No `catchError` — the caller classifies the
+   * error itself.
+   */
+  public rateWeeklyBrief(committeeId: string, briefUid: string, rating: WeeklyBriefRating, revision: number): Observable<RateWeeklyBriefResponse> {
+    const body: RateWeeklyBriefRequest = { rating, revision };
+    return this.http
+      .post<RateWeeklyBriefResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, body)
+      .pipe(take(1));
+  }
+
+  /**
+   * DELETE /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Clears the caller's rating on the brief's current revision. `revision` is required and
+   * enforced the same way `rateWeeklyBrief` enforces it (409 on drift) — without it, a stale tab's
+   * clear could silently delete an unrelated (currently-current) revision's rating instead of the
+   * one the user saw as rated. No `catchError` — the caller classifies the error itself.
+   */
+  public clearWeeklyBriefRating(committeeId: string, briefUid: string, revision: number): Observable<void> {
+    return this.http
+      .delete<void>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, { body: { revision } })
+      .pipe(take(1));
   }
 }

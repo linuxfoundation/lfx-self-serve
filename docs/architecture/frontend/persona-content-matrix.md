@@ -72,34 +72,35 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 Available to `board-member`, `executive-director`, and root writers.
 
-| Sidebar item / section     | Route                          | Visible to                                                             |
-| -------------------------- | ------------------------------ | ---------------------------------------------------------------------- |
-| Dashboard                  | `/foundation/overview`         | All foundation users                                                   |
-| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true                  |
-| Meetings                   | `/foundation/meetings`         | All foundation users                                                   |
-| Events                     | `/foundation/events`           | All foundation users                                                   |
-| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                   |
-| Committees                 | `/foundation/groups`           | All foundation users                                                   |
-| Documents                  | `/foundation/documents`        | All foundation users                                                   |
-| **Governance** section     |                                |                                                                        |
-| → Votes                    | `/foundation/votes`            | All foundation users                                                   |
-| → Surveys                  | `/foundation/surveys`          | All foundation users                                                   |
-| → Permissions              | `/foundation/settings`         | All foundation users                                                   |
-| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`                         |
-| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                  |
-| **Metrics** section        |                                | `executive-director` only                                              |
-| → Health Metrics           | `/foundation/health-metrics`   | `executive-director`                                                   |
-| → Social Listening         | _(PCC external link)_          | `executive-director` — **only when** `selectedFoundationSfid()` is set |
-| **Marketing** section      |                                | `executive-director` only                                              |
-| → Marketing Impact         | `/foundation/marketing-impact` | `executive-director`                                                   |
-| → Campaigns                | `/foundation/campaigns`        | `executive-director`                                                   |
+| Sidebar item / section     | Route                          | Visible to                                                                                    |
+| -------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| Dashboard                  | `/foundation/overview`         | All foundation users                                                                          |
+| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true                                         |
+| Meetings                   | `/foundation/meetings`         | All foundation users                                                                          |
+| Events                     | `/foundation/events`           | All foundation users                                                                          |
+| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                                          |
+| Committees                 | `/foundation/groups`           | All foundation users                                                                          |
+| Documents                  | `/foundation/documents`        | All foundation users                                                                          |
+| **Governance** section     |                                |                                                                                               |
+| → Votes                    | `/foundation/votes`            | All foundation users                                                                          |
+| → Surveys                  | `/foundation/surveys`          | All foundation users                                                                          |
+| → Permissions              | `/foundation/settings`         | All foundation users                                                                          |
+| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`                                                |
+| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                                         |
+| **Metrics** section        |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
+| → Health Metrics           | `/foundation/health-metrics`   | `canViewExecutiveDashboards()`                                                                |
+| → Social Listening         | _(PCC external link)_          | `canViewExecutiveDashboards()` — **only when** `selectedFoundationSfid()` is set              |
+| **Marketing** section      |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
+| → Marketing Impact         | `/foundation/marketing-impact` | `canViewExecutiveDashboards()` — LF Staff see Social Listening only (no tabs/focus/Campaigns) |
+| → Campaigns                | `/foundation/campaigns`        | `executive-director` only                                                                     |
 
 ### Foundation lens by persona summary
 
-| Persona              | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing |
-| -------------------- | --------------- | --------------------------------- | ------------ | -------------- |
-| `board-member`       | Yes             | Only if `canWrite()`              | No           | No             |
-| `executive-director` | Yes             | Yes (always)                      | Yes          | Yes            |
+| Persona              | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing                           |
+| -------------------- | --------------- | --------------------------------- | ------------ | ---------------------------------------- |
+| `board-member`       | Yes             | Only if `canWrite()`              | No           | No                                       |
+| `executive-director` | Yes             | Yes (always)                      | Yes          | Yes (all tabs + Campaigns)               |
+| LF Staff             | No              | Only if `canWrite()`              | Yes          | Marketing Impact only (Social Listening) |
 
 ---
 
@@ -159,7 +160,8 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 
 | Guard                    | Protected routes                                                                        | Access rule                                                                                                                                                                                                         |
 | ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `executiveDirectorGuard` | `/foundation/health-metrics`, `/foundation/marketing-impact`, `/foundation/campaigns`   | `currentPersona() === 'executive-director'`                                                                                                                                                                         |
+| `dashboardAccessGuard`   | `/foundation/health-metrics`, `/foundation/marketing-impact`                            | `canViewExecutiveDashboards()` — ED (sync cookie fast path) or LF Staff (async OpenFGA check via `refreshEnrichedPersonas()`)                                                                                       |
+| `executiveDirectorGuard` | `/foundation/campaigns`                                                                 | `currentPersona() === 'executive-director'`                                                                                                                                                                         |
 | `newsletterAccessGuard`  | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`       | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                                                                                          |
 | `writerGuard`            | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or project `writer`; meetings routes also allow `meetingCoordinator` or `committee.writer` when `?committee_uid=` is set — see [Meetings write paths](#meetings-write-paths) below |
 | `orgLensEnabledGuard`    | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                             |

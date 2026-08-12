@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, input, output } from '@angular/core';
+import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,6 +15,7 @@ import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
 
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
@@ -40,6 +41,8 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
 export class CommitteeTableComponent {
   // Injected services
   private readonly personaService = inject(PersonaService);
+  private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
   public committees = input.required<Committee[]>();
@@ -77,5 +80,18 @@ export class CommitteeTableComponent {
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
     this.resetRequested.emit();
+  }
+
+  protected async copyPublicGroupLink(uid: string): Promise<void> {
+    if (!isPlatformBrowser(this.platformId) || !navigator.clipboard?.writeText) {
+      this.messageService.add({ severity: 'error', summary: 'Copy not supported', detail: 'Clipboard access is unavailable in this browser.' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/groups/${uid}`);
+      this.messageService.add({ severity: 'success', summary: 'Link copied', detail: 'Public group link copied to clipboard.' });
+    } catch {
+      this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: 'Could not access clipboard.' });
+    }
   }
 }

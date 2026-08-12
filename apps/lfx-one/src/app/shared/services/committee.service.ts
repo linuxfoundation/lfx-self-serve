@@ -13,6 +13,8 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeOrganizationReference,
+  CommitteeUpdateData,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -123,7 +125,7 @@ export class CommitteeService {
     return this.http.post<Committee>('/api/committees', committee).pipe(take(1));
   }
 
-  public updateCommittee(id: string, committee: Partial<Committee>): Observable<Committee> {
+  public updateCommittee(id: string, committee: CommitteeUpdateData): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
   }
 
@@ -199,8 +201,9 @@ export class CommitteeService {
   // ── Join / Leave Methods ──────────────────────────────────────────────────
 
   /** Self-join an open group */
-  public joinCommittee(committeeId: string): Observable<CommitteeMember> {
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, {}).pipe(take(1));
+  public joinCommittee(committeeId: string, organization?: CommitteeOrganizationReference): Observable<CommitteeMember> {
+    const body = organization ? { organization } : {};
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(take(1));
   }
 
   /** Leave a group */
@@ -209,8 +212,8 @@ export class CommitteeService {
   }
 
   /** Submit a join application for a group with join_mode 'application' */
-  public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
-    const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
+  public submitApplication(committeeId: string, message?: string, organization?: CommitteeOrganizationReference): Observable<CommitteeJoinApplication> {
+    const body: CreateCommitteeJoinApplicationRequest = { message: message || '', ...(organization ? { organization } : {}) };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
   }
 

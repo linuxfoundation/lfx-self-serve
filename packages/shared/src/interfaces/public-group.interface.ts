@@ -3,7 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 
-import { JoinMode } from './committee.interface';
+import { BehavioralClassDisplayConfig, CommitteeExternalSource, JoinMode } from './committee.interface';
 
 export interface PublicGroupMember {
   name: string;
@@ -40,6 +40,42 @@ export interface PublicGroupContext {
   project_logo_url?: string;
 }
 
+/** OCG or other external source linked to this group. */
+export type PublicGroupExternalSource = CommitteeExternalSource;
+
+/** Public-safe group summary returned by the directory endpoints. */
+export interface PublicGroupSummary {
+  uid: string;
+  /** URL-safe slug for the group (may be absent if upstream does not return one). */
+  slug?: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  /** Raw category string from the committee service (e.g. "Working Group"). */
+  category: string;
+  /** Pre-computed behavioral class derived from `category`. */
+  behavioral_class: string;
+  context: PublicGroupContext;
+  join_mode?: JoinMode;
+  total_members?: number;
+  website?: string | null;
+  mailing_list?: string | null;
+  has_public_calendar?: boolean;
+  external_sources?: PublicGroupExternalSource[];
+}
+
+/** Response envelope returned by `GET /public/api/foundations/:uid/groups` and `GET /public/api/projects/:uid/groups`. */
+export interface PublicGroupDirectoryResponse {
+  groups: PublicGroupSummary[];
+  total: number;
+}
+
+/** Frontend view model — extends PublicGroupSummary with pre-computed display metadata. */
+export interface PublicGroupDirectoryVm extends PublicGroupSummary {
+  classConfig: BehavioralClassDisplayConfig;
+  joinLabel: string | undefined;
+}
+
 export interface PublicGroupDetail {
   uid: string;
   name: string;
@@ -56,4 +92,5 @@ export interface PublicGroupDetail {
   member_visibility?: CommitteeMemberVisibility;
   is_member?: boolean;
   my_role?: string;
+  external_sources?: PublicGroupExternalSource[];
 }

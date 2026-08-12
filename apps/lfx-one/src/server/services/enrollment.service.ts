@@ -14,7 +14,7 @@ import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 const ENROLLMENT_SERVICE = 'enrollment_service';
-const VALID_STATUSES = new Set<EnrollmentMembership['Status']>(['Active', 'Purchased', 'Expired']);
+const VALID_STATUSES = new Set<EnrollmentMembership['status']>(['Active', 'Purchased', 'Expired']);
 
 export class EnrollmentService {
   public async getIndividualEnrollments(req: Request): Promise<IndividualEnrollment[]> {
@@ -53,20 +53,20 @@ export class EnrollmentService {
     const membershipMap = new Map<string, EnrollmentMembership>();
     for (const m of rawMemberships) {
       const productId = m.Product?.ID;
-      if (!productId || !VALID_STATUSES.has(m.Status as EnrollmentMembership['Status'])) continue;
+      if (!productId || !VALID_STATUSES.has(m.Status as EnrollmentMembership['status'])) continue;
       const existing = membershipMap.get(productId);
-      const existingTs = existing ? Date.parse(existing.PurchaseDate) : NaN;
+      const existingTs = existing ? Date.parse(existing.purchaseDate) : NaN;
       const candidateTs = Date.parse(m.PurchaseDate ?? '');
       const shouldReplace = !existing || (isNaN(existingTs) && !isNaN(candidateTs)) || (!isNaN(existingTs) && !isNaN(candidateTs) && existingTs < candidateTs);
       if (shouldReplace) {
         membershipMap.set(productId, {
-          Status: m.Status as EnrollmentMembership['Status'],
-          AutoRenew: m.AutoRenew ?? false,
-          PurchaseDate: m.PurchaseDate ?? '',
-          EndDate: m.EndDate ?? '',
-          Price: m.Price ?? 0,
-          ID: m.ID ?? '',
-          ExtPaymentType: m.ExtPaymentID ? m.ExtPaymentID.split(':')[0] : '',
+          status: m.Status as EnrollmentMembership['status'],
+          autoRenew: m.AutoRenew ?? false,
+          purchaseDate: m.PurchaseDate ?? '',
+          endDate: m.EndDate ?? '',
+          price: m.Price ?? 0,
+          id: m.ID ?? '',
+          extPaymentType: m.ExtPaymentID ? m.ExtPaymentID.split(':')[0] : '',
         });
       }
     }
@@ -119,7 +119,7 @@ export class EnrollmentService {
     }
 
     const rawMemberships: RawMembership[] = data?.Data ?? data?.data ?? [];
-    return rawMemberships.some((m) => m.Product?.ID === LINUX_COM_ADDON_PRODUCT_ID && VALID_STATUSES.has(m.Status as EnrollmentMembership['Status']));
+    return rawMemberships.some((m) => m.Product?.ID === LINUX_COM_ADDON_PRODUCT_ID && VALID_STATUSES.has(m.Status as EnrollmentMembership['status']));
   }
 
   public async updateAutoRenew(req: Request, membershipId: string, autoRenew: boolean): Promise<void> {

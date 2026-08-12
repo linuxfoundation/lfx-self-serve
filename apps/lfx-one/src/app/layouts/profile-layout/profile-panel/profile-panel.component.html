@@ -29,15 +29,22 @@
           {{ initials() }}
         }
       </div>
-      <button
-        type="button"
+      <!--
+        Decorative duplicate of the "Edit profile" pill below. A plain span (not a button) so it is
+        never focusable, keeping it out of both the a11y tree (aria-hidden) and tab/focus order:
+        screen-reader and keyboard users get a single actionable control (the labeled pill) for one
+        destination. Stays mouse-clickable; while impersonating, pointer-events-none blocks the click
+        (onEdit() is a no-op then anyway) and opacity-40 mirrors the disabled look.
+      -->
+      <span
         (click)="onEdit()"
-        [disabled]="impersonating()"
-        [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Edit profile'"
-        class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-hidden="true"
+        [class.pointer-events-none]="impersonating()"
+        [class.opacity-40]="impersonating()"
+        class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
         data-testid="profile-panel-edit-badge">
         <i class="fa-light fa-pencil text-xs"></i>
-      </button>
+      </span>
     </div>
 
     <!-- Name + handle -->
@@ -56,6 +63,18 @@
       data-testid="profile-edit-button">
       <i class="fa-light fa-pencil text-xs"></i>
       Edit profile
+    </button>
+
+    <!-- Public profile visibility (LFXV2-2629) -->
+    <button
+      type="button"
+      (click)="onVisibility()"
+      [disabled]="impersonating()"
+      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+      class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="profile-visibility-button">
+      <i class="fa-light fa-eye text-xs"></i>
+      Public profile settings
     </button>
 
     <div class="my-5 h-px bg-slate-200"></div>

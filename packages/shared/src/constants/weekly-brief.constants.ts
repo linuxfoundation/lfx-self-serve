@@ -6,7 +6,8 @@ import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
  * with saved brief_text worth sending. Excludes `empty`, `generating`, and
- * `error`.
+ * `error`. Also reused (LFXV2-3042) as the states a brief may be rated in —
+ * both actions require reviewable saved content, so the same set applies.
  */
 export const WEEKLY_BRIEF_SHAREABLE_STATES: readonly WeeklyBriefState[] = ['generated', 'edited', 'approved'] as const;
 
@@ -18,8 +19,13 @@ export const WEEKLY_BRIEF_SHAREABLE_STATES: readonly WeeklyBriefState[] = ['gene
  * site and is intentionally not part of this constant.
  *
  * Policy: 2 fresh generates and 3 regenerations per fixed Sunday–Saturday
- * calendar week (matches `WeeklyBrief.window_start`/`.window_end`, reset at
- * the next Sunday per `nextSundayIso()`) — not a rolling 7-day window.
+ * calendar week (matches `WeeklyBrief.window_start`/`.window_end`) — not a
+ * rolling 7-day window. Upstream keys the throttle entry on the same
+ * `window_start` as the brief itself, so counters actually reset at the
+ * Friday→Saturday 00:00 UTC window rollover. `window_resets_at`
+ * (`nextSundayIso()` in mock mode) is the advisory display timestamp
+ * upstream surfaces in 429 bodies — next Sunday 00:00 UTC — not the real
+ * counter-reset boundary.
  */
 export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
   generates_used: 0,
@@ -32,6 +38,51 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
 
 /**
+ * Timeout for the "Share to Slack" incoming-webhook POST. A plain webhook call should complete
+ * in well under a second; this is generous headroom, not a tuned budget — deliberately far
+ * short of `NEWSLETTER_SEND_TIMEOUT_MS` (120s), which accounts for an entirely different,
+ * heavier upstream call.
+ */
+export const SLACK_WEBHOOK_POST_TIMEOUT_MS = 10_000;
+
+/**
+ * Slack's documented hard limit on an incoming-webhook message's `text` field. Checked
+ * server-side before the POST (mirrors shareBrief's NEWSLETTER_BODY_MAX_LENGTH guard) so an
+ * oversized brief surfaces as an actionable 400 instead of an opaque 502 from Slack. Escaping
+ * (`&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`) can expand brief_text up to 5x, so this is checked
+ * against the final composed text, not brief_text's own (smaller) WEEKLY_BRIEF_TEXT_MAX_LENGTH.
+ */
+export const SLACK_MESSAGE_TEXT_MAX_LENGTH = 40_000;
+
+/**
+ * Cap on how much of Slack's plain-text error response (invalid_payload, channel_not_found,
+ * etc.) is read and surfaced when a webhook POST is rejected — bounds both the log line and the
+ * client-facing error message against an unexpectedly large response body.
+ */
+export const SLACK_ERROR_BODY_MAX_LENGTH = 500;
+
+/**
+ * Matches Slack's own documented incoming-webhook error strings — short lowercase/underscore
+ * tokens (`invalid_payload`, `channel_not_found`, `action_prohibited`, `rate_limited`, …). Used
+ * to gate whether a rejected share's response body is safe to echo into the client-facing error
+ * message: the actual body could be arbitrary third-party content (an HTML error page, an
+ * intermediary proxy's response), and only a recognizable Slack token should ever reach a
+ * browser toast. The untrimmed body — still bounded by SLACK_ERROR_BODY_MAX_LENGTH above, and
+ * only when the body was actually readable — reaches operators via the log-only
+ * `errorBody.reason` regardless of whether it matches this pattern.
+ */
+export const SLACK_ERROR_TOKEN_PATTERN = /^[a-z_]{1,64}$/;
+
+/** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
+export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
+
+/** Max character length of an extracted action item's `text` (LFXV2-3043). Also passed as the JSON schema's `maxLength` hint to the model, but enforced defensively server-side too — the schema bound is a request to the model, not a guarantee about its response. */
+export const WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH = 300;
+
+/** Max character length of an extracted action item's `suggested_owner_role` (LFXV2-3043). Same defense-in-depth rationale as `WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH`. */
+export const WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH = 100;
+
+/**
  * Generation is async upstream (202/generating; the LLM call runs out-of-band) — the
  * card polls GET /current on this interval, up to this many attempts, until the brief
  * reaches a terminal state. 4s x 20 attempts = ~80s cap.
@@ -41,3 +92,11 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
 
 /** States a poll of GET /current should stop on — everything else (`empty`, `generating`) keeps it running. */
 export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new Set(['generated', 'edited', 'approved', 'error']);
+
+/**
+ * `WeeklyBrief.error_reason` values the UI treats specially. Currently only `NO_SOURCES`
+ * (the committee had no activity in the lookback window, not a genuine generation
+ * failure) — any other value or absence renders the generic failure state. See
+ * `WeeklyBriefErrorReason` in `weekly-brief.interface.ts` for the derived type.
+ */
+export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;

@@ -241,6 +241,12 @@
   [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-revenue-impact-drawer>
 
+<!-- Education Drawer -->
+<lfx-education-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.Education"
+  [data]="educationData()"
+  (visibleChange)="handleDrawerClose()"></lfx-education-drawer>
+
 <!-- Existing Marketing Drawers (accessible from Brand Reach / Engaged Community drawers in future) -->
 <lfx-website-visits-drawer
   [visible]="activeDrawer() === DashboardDrawerType.MarketingWebsiteVisits"
@@ -252,7 +258,3 @@
   [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
   [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-paid-social-reach-drawer>
-
-<lfx-social-media-drawer
-  [visible]="activeDrawer() === DashboardDrawerType.MarketingSocialMedia"
-  (visibleChange)="handleDrawerClose()"></lfx-social-media-drawer>

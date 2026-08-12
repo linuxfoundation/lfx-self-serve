@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingVisibility } from '../enums';
-import type { CardSelectorOption, MeetingTypeConfig } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -304,6 +304,44 @@ export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTU
 export const DEFAULT_EARLY_JOIN_TIME = 10;
 
 /**
+ * Minimum reminder email lead time in hours
+ * @description Earliest the automatic reminder email can be sent before the meeting starts
+ */
+export const MIN_EMAIL_REMINDER_HOURS = 2;
+
+/**
+ * Maximum reminder email lead time in hours
+ * @description Latest the automatic reminder email can be sent before the meeting starts
+ */
+export const MAX_EMAIL_REMINDER_HOURS = 24;
+
+/**
+ * Default reminder email lead time in hours
+ * @description Standard reminder window for meetings when the reminder is first enabled
+ */
+export const DEFAULT_EMAIL_REMINDER_HOURS = 24;
+
+/**
+ * Default reminder email lead time minutes component
+ * @description Minutes component of the reminder window; forced to 0 when hours is 24
+ */
+export const DEFAULT_EMAIL_REMINDER_MINUTES = 0;
+
+/**
+ * Maximum reminder email lead time in total minutes
+ * @description Upstream ITX limit for auto_email_reminder_time (24 hours)
+ */
+export const MAX_EMAIL_REMINDER_TIME = 1440;
+
+/**
+ * Tooltip text for the send reminder email feature
+ * @description Explains the automatic reminder email behavior and its 2-24 hour window
+ */
+export const EMAIL_REMINDER_TOOLTIP =
+  'Automatically send a reminder email to all participants before the meeting starts. ' +
+  'You can set the reminder time between 2 and 24 hours before the meeting. When set to 24 hours, minutes are automatically set to 0.';
+
+/**
  * Zoom API codes for weekdays (Monday through Friday)
  * @description String format used by Zoom API: '2,3,4,5,6' where 1=Sunday, 2=Monday, etc.
  */
@@ -506,6 +544,19 @@ export const RECURRING_MEETING_FEATURE = {
 };
 
 /**
+ * Send reminder email feature configuration
+ * @description Feature toggle config for the automatic participant reminder email
+ */
+export const EMAIL_REMINDER_FEATURE = {
+  key: 'auto_email_reminder_enabled',
+  icon: 'fa-light fa-bell',
+  title: 'Send reminder email to participants',
+  description: 'Automatically send a reminder email to all participants before the meeting starts',
+  recommended: false,
+  color: lfxColors.amber[500],
+};
+
+/**
  * Restricted meeting feature configuration
  * @description Feature toggle config for restricted meeting access
  */
@@ -604,3 +655,11 @@ export const PAST_MEETING_SORT = {
   UPDATED_DESC: 'updated_desc',
   UPDATED_ASC: 'updated_asc',
 } as const;
+
+/**
+ * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
+ * notes_added leg treats as a note. A single source of truth for both the upstream `filters_all`
+ * term-clause value and the client-side re-filter comparison — see fetchNotesAddedEvents's own
+ * comment for why both need to agree on the exact same string (LFXV2-3077).
+ */
+export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';

@@ -423,6 +423,19 @@ export interface Committee {
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
   chat_channel?: string | null;
+  /**
+   * Whether the committee has a *valid* Slack incoming webhook configured — `false` if the stored
+   * value doesn't match `SLACK_INCOMING_WEBHOOK_URL_PATTERN`, not just presence, since this repo's
+   * write path isn't the only possible writer of the field. The raw `chat_webhook_url` is a bearer
+   * credential and is deliberately never returned by any read — see
+   * {@link CommitteeUpdateData.chat_webhook_url}. This boolean is the only signal reads get.
+   *
+   * Populated only by `GET /committees/:uid` (`getCommitteeById`), unlike `has_mailing_list`,
+   * which list endpoints enrich too. Absence on a list result (`getCommittees`,
+   * `getCommitteesByIds`, etc.) means "not looked up here", not "not configured" — check the
+   * single-committee endpoint before relying on it being `false`.
+   */
+  has_slack_webhook?: boolean;
 
   // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
   // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
@@ -456,6 +469,20 @@ export interface Committee {
   my_role?: CommitteeMemberRole | 'Member';
   /** Caller's member UID in this committee. Absent for non-members. */
   my_member_uid?: string;
+  /** Source-labeled external entities linked to this committee (e.g. OCG groups/events). Linked activity metadata only — never overrides category, governance, or other LFX-owned attributes. */
+  external_sources?: CommitteeExternalSource[];
+}
+
+/** A single source-labeled external entity linked to a committee (e.g. an OCG group or event). */
+export interface CommitteeExternalSource {
+  provider: 'ocg';
+  entity_type: 'community' | 'group' | 'event';
+  label: string;
+  url: string;
+  external_id?: string;
+  external_category?: string;
+  external_region?: string;
+  external_event_category?: string;
 }
 
 /**
@@ -556,6 +583,11 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   mailing_list?: string | null;
   /** Update or clear chat channel */
   chat_channel?: string | null;
+  /**
+   * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
+   * Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
+   */
+  chat_webhook_url?: string | null;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */
@@ -595,6 +627,9 @@ export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
  * it filters on the per-member engagement classification, not on roster fields.
  */
 export type CommitteeMemberFilterChip = 'all' | 'voting' | 'observers' | 'chairs' | 'atRisk';
+
+/** Tab selector for the committee Members card: 'all' shows members + pending invites; 'pending' shows invites only. */
+export type CommitteeMemberTab = 'all' | 'pending';
 
 /** A single chip entry in the committee Members quick-filter row. */
 export interface CommitteeMemberFilterChipConfig {
