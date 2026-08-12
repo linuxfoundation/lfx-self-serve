@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
+
+import { EventDetailDrawerComponent } from '../event-detail-drawer/event-detail-drawer.component';
 
 import { EventRosterSectionComponent } from './event-roster-section.component';
 
@@ -38,7 +43,7 @@ describe('EventRosterSectionComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [EventRosterSectionComponent],
-      providers: [{ provide: AnalyticsService, useValue: { getEventRoster } }],
+      providers: [{ provide: AnalyticsService, useValue: { getEventRoster, getEventDetail: () => of(null) } }, provideNoopAnimations(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventRosterSectionComponent);
@@ -206,7 +211,7 @@ describe('EventRosterSectionComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [EventRosterSectionComponent],
-      providers: [{ provide: AnalyticsService, useValue: { getEventRoster } }],
+      providers: [{ provide: AnalyticsService, useValue: { getEventRoster, getEventDetail: () => of(null) } }, provideNoopAnimations(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventRosterSectionComponent);
@@ -216,6 +221,23 @@ describe('EventRosterSectionComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="event-roster-error"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="event-roster-empty"]')).toBeNull();
+  });
+
+  // The drawer bails to an empty state without a slug (`if (!open || !id || !slug)`), so a missing
+  // binding here means every roster click opens a blank panel and never issues the detail request
+  // — silent, and invisible to a test that only checks the drawer opened.
+  it('passes the foundation and the focus through to the detail drawer', async () => {
+    await render([row({ eventId: 'evt-9' })], 'tlf');
+
+    fixture.componentInstance['openFocused']('evt-9', 'b2b');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const drawer = fixture.debugElement.query(By.directive(EventDetailDrawerComponent));
+    expect(drawer).toBeTruthy();
+    expect(drawer.componentInstance.foundationSlug()).toBe('tlf');
+    expect(drawer.componentInstance.eventId()).toBe('evt-9');
+    expect(drawer.componentInstance.focus()).toBe('b2b');
   });
 
   it('refetches when the past-events toggle changes', async () => {
