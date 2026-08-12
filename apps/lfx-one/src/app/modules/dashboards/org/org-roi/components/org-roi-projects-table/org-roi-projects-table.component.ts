@@ -79,13 +79,11 @@ export class OrgRoiProjectsTableComponent {
   });
 
   /**
-   * Row click navigates to the project's ROI detail.
-   *
    * Clicks inside the first cell's anchor are left alone — the router already handles those, and
    * intercepting them would navigate twice. A modifier-click anywhere in the row is left alone for
-   * the same reason the anchor is: it means "open elsewhere", and routing the current tab would
-   * take away a choice the viewer just made. A row with no slug does nothing, since the slug is the
-   * route parameter and routing without one would land on a URL that cannot resolve.
+   * the same reason: it means "open elsewhere", and routing the current tab would take away a
+   * choice the viewer just made. A row with no slug does nothing, since the slug is the route
+   * parameter and routing without one would land on a URL that cannot resolve.
    */
   public openProject(row: OrgLensRoiProjectTableRow, event: MouseEvent): void {
     if (!row.projectSlug) return;

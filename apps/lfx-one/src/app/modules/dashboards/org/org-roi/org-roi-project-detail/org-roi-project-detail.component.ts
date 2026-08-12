@@ -76,13 +76,12 @@ export class OrgRoiProjectDetailComponent {
    * Whether the payload in hand describes **both** the organization now selected and the project
    * now in the URL.
    *
-   * The organization half is the check the portfolio page makes on its summary, for the same
-   * reason: a request in flight during a switch leaves the previous figures on screen under the new
-   * name. The project half matters at least as much here and has no analogue there. This route is
-   * navigated project-to-project — from a table row, from the browser's history — and Angular reuses
-   * the component instance across that, so the payload keeps the previous project until the next
-   * response lands. Checking the organization alone would pass, because it has not changed, and one
-   * project's investment and ROI would render under another's name.
+   * The organization half is the check the portfolio page makes on its summary: a request in flight
+   * during a switch leaves the previous figures on screen under the new name. The project half has
+   * no analogue there. This route is navigated project-to-project and Angular reuses the component
+   * instance across that, so the payload keeps the previous project until the next response lands.
+   * Checking the organization alone would pass, because it has not changed, and one project's
+   * investment and ROI would render under another's name.
    *
    * Both are synchronous signal reads, so they flip in the same change-detection pass as the
    * navigation, unlike the `toObservable`-driven loading flag which settles one effect flush later.
@@ -105,8 +104,8 @@ export class OrgRoiProjectDetailComponent {
    * Whether `/org/projects/{slug}` has anything to show.
    *
    * Measured 2026-08-05, 32.4% of ROI organization-project pairs have no Org Lens catalog row, so
-   * the link cannot be rendered unconditionally — the spec's original "always resolves" assumption
-   * is false and an unconditional link would send a third of viewers to a dead page.
+   * the link cannot be rendered unconditionally — it does not always resolve, and an unconditional
+   * link would send a third of viewers to a dead page.
    */
   protected readonly hasOrgLensProject: Signal<boolean> = computed(() => this.detail()?.hasOrgLensProject === true);
 

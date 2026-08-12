@@ -105,7 +105,6 @@ export const ORG_LENS_ROI_KPI_EXPLANATION = {
     'A modelled cost, not actual or reported compensation. We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',
   totalReturn:
     'The modelled economic value your organization received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
-  /** Added for the project detail band, which shows five figures where the portfolio band shows four. */
   profit:
     'Total return less investment — what the modelled return is worth after the modelled cost of earning it. Negative for a project that returned less than it cost, which is a real and reasonably common outcome rather than a data problem.',
   roi: 'Net return divided by investment, shown as a percentage. 100% means you got back your investment again on top of it. Blank when there is no investment to divide by.',

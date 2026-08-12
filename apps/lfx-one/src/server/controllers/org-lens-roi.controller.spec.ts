@@ -110,7 +110,7 @@ describe('OrgLensRoiController — authorization gate', () => {
     { name: 'getProjectAnnual', operation: 'get_org_lens_roi_project_annual', service: getProjectAnnual },
   ] as const;
 
-  /** The two handlers that take a `:projectSlug`, and so carry a fourth validation and a 404 path. */
+  /** Subset of the handlers above: those taking a `:projectSlug`, which adds a validation and a 404 path. */
   const projectHandlers = [
     { name: 'getProjectDetail', operation: 'get_org_lens_roi_project_detail', service: getProjectDetail },
     { name: 'getProjectAnnual', operation: 'get_org_lens_roi_project_annual', service: getProjectAnnual },
