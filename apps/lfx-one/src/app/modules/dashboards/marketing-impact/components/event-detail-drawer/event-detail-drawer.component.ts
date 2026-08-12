@@ -9,7 +9,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, lfxColors, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
-import { formatCompactRounded, formatCurrency, formatNumber, formatPercent } from '@lfx-one/shared/utils';
+import { formatCompactRounded, formatNumber, formatPercent } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
@@ -35,20 +35,6 @@ export class EventDetailDrawerComponent {
   public readonly eventId = input<string | null>(null);
   /** Foundation the event belongs to; required by the server to scope the read. */
   public readonly foundationSlug = input<string | undefined>();
-  /**
-   * Which story the drawer tells:
-   * - 'b2c' — registrations + the campaigns that drove them
-   * - 'b2b' — sponsorship revenue + sponsors by tier
-   * - 'all' — everything (the default; both sections show)
-   *
-   * Bound from the Events attendance/sponsorship sub-tabs via EVENTS_SPLIT_TO_DRAWER_FOCUS.
-   */
-  public readonly focus = input<'b2c' | 'b2b' | 'all'>('all');
-
-  // === Computed: section visibility from focus ===
-  protected readonly showRegistrations = computed(() => this.focus() !== 'b2b');
-  protected readonly showSponsorship = computed(() => this.focus() !== 'b2c');
-
   // === Paid performance breakdown (per-campaign rows) ===
 
   /** Paid-ad campaigns for this event. */
@@ -275,18 +261,6 @@ export class EventDetailDrawerComponent {
   /** Toggle the email channel performance breakdown open/closed. */
   protected toggleEmail(): void {
     this.emailExpanded.update((expanded) => !expanded);
-  }
-
-  /** Sub-heading under the event name that names the story this drawer tells. */
-  protected focusLabel(): string | null {
-    switch (this.focus()) {
-      case 'b2c':
-        return 'Registrations & marketing campaigns';
-      case 'b2b':
-        return 'Sponsorship & partnerships';
-      default:
-        return null;
-    }
   }
 
   // === Protected Helpers (template) ===

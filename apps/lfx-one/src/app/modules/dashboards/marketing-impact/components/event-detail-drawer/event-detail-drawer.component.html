@@ -13,9 +13,6 @@
     <div class="flex w-full items-start justify-between gap-4" data-testid="event-detail-drawer-header">
       <div class="flex min-w-0 flex-1 flex-col gap-1">
         <h2 class="text-lg font-semibold text-gray-900" data-testid="event-detail-drawer-title">{{ detail()?.eventName || 'Event detail' }}</h2>
-        @if (focusLabel(); as fl) {
-          <span class="text-xs font-semibold uppercase tracking-wide text-blue-600" data-testid="event-detail-drawer-focus">{{ fl }}</span>
-        }
         @if (detail(); as d) {
           <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-gray-500">
             <span>{{ dateLabel() }}</span>
@@ -97,18 +94,17 @@
         </lfx-card>
       </div>
 
-      <!-- Registration pacing (B2C) -->
-      @if (showRegistrations()) {
-        <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex flex-col gap-1">
-              <h3 class="text-sm font-semibold text-gray-900">Registration pacing</h3>
-              @if (behindGoalLabel(); as behind) {
-                <p class="text-sm text-gray-600">{{ behind }}</p>
-              }
-            </div>
-            <lfx-tag [value]="paceRatingLabel()" [severity]="paceSeverity()" [rounded]="true" />
+      <!-- Registration pacing -->
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Registration pacing</h3>
+            @if (behindGoalLabel(); as behind) {
+              <p class="text-sm text-gray-600">{{ behind }}</p>
+            }
           </div>
+          <lfx-tag [value]="paceRatingLabel()" [severity]="paceSeverity()" [rounded]="true" />
+        </div>
 
         @if (d.registrations.goal > 0 && regProgress() !== null) {
           <div class="flex flex-col gap-1.5">
@@ -163,6 +159,13 @@
                 <span class="text-xl font-semibold text-gray-900">{{ num(d.pacing.daysLeft) }}</span>
                 <span class="text-xs text-gray-400">Days left</span>
               </div>
+            }
+          </div>
+
+          <!-- Daily cumulative registration curve -->
+          @if (hasPacingChart()) {
+            <div class="h-[240px]" data-testid="event-detail-pacing-chart">
+              <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
             </div>
           }
         } @else {
@@ -182,30 +185,27 @@
         }
       </div>
 
-            <!-- Daily cumulative registration curve -->
-            @if (hasPacingChart()) {
-              <div class="h-[240px]" data-testid="event-detail-pacing-chart">
-                <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
-              </div>
+      <!-- Revenue detail -->
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
+        <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
+        <div class="flex flex-col gap-4 sm:flex-row">
+          <div class="flex flex-1 flex-col gap-1">
+            <span class="text-sm text-gray-500">Registration revenue</span>
+            @if (d.registrationRevenue.actual !== null) {
+              <span class="text-xl font-semibold text-gray-900">{{ money(d.registrationRevenue.actual) }}</span>
+            } @else {
+              <span class="text-xl font-semibold text-gray-300">—</span>
             }
-          } @else {
-            <p class="text-sm text-gray-500">
-              Day-by-day pacing prediction is coming to this view. For now, see the live registration curve and prediction in PCC.
-            </p>
-          }
-        </div>
-      }
-
-      <!-- Sponsorship revenue detail (B2B only — registration revenue is not tracked per event) -->
-      @if (showSponsorship()) {
-        <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
-          <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
-          <div class="flex flex-col gap-1">
+            @if (d.registrationRevenue.goal > 0) {
+              <span class="text-xs text-gray-400">Goal {{ money(d.registrationRevenue.goal) }}</span>
+            }
+          </div>
+          <div class="flex flex-1 flex-col gap-1">
             <span class="text-sm text-gray-500">Sponsorship revenue</span>
             <span class="text-xl font-semibold text-gray-900">{{ money(d.sponsorshipRevenue.actual) }}</span>
             <div class="flex items-center gap-2">
               @if (d.sponsorshipRevenue.goal > 0) {
-                <span class="text-xs font-medium text-gray-600">Goal {{ money(d.sponsorshipRevenue.goal) }}</span>
+                <span class="text-xs text-gray-400">Goal {{ money(d.sponsorshipRevenue.goal) }}</span>
               }
               @if (sponProgress() !== null) {
                 <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
@@ -213,10 +213,10 @@
             </div>
           </div>
         </div>
-      }
+      </div>
 
       <!-- Sponsorship by tier -->
-      @if (showSponsorship() && d.sponsorshipTiers.length) {
+      @if (d.sponsorshipTiers.length) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-tiers">
           <h3 class="text-sm font-semibold text-gray-900">Sponsorship by tier</h3>
           <div class="flex flex-col gap-0">
@@ -235,8 +235,33 @@
         </div>
       }
 
-      <!-- Paid campaign performance — per-campaign spend / conversions / CPA -->
-      @if (showRegistrations() && hasPaid()) {
+      <!-- Where registrations come from -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-channels">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Where registrations come from</h3>
+          <p class="text-sm text-gray-600">Web traffic attributed to each marketing channel.</p>
+        </div>
+        @if (d.channels.length) {
+          <div class="flex flex-col gap-3">
+            @for (channel of d.channels; track channel.channel) {
+              <div class="flex items-center gap-3" [attr.data-testid]="'event-detail-channel-' + channel.channel">
+                <span class="w-36 truncate text-sm font-medium text-gray-700">{{ channel.channel }}</span>
+                <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                  <div class="h-full rounded-full bg-blue-500" [style.width.%]="channel.sharePercent"></div>
+                </div>
+                <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ num(channel.sessions) }}</span>
+                <span class="w-12 text-right text-xs text-gray-400">{{ channel.sharePercent }}%</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="text-sm text-gray-500">
+            No tracked registration traffic yet.
+            <span class="font-medium text-gray-700">Email and paid are the fastest levers to drive early registrations.</span>
+          </p>
+        }
+      </div>
+      @if (hasPaid()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-paid-performance">
           <!-- Header doubles as the expand/collapse control; the summary pill stays visible when collapsed. -->
           <button
@@ -337,8 +362,7 @@
         </div>
       }
 
-      <!-- Email campaign performance — per-email sends / open rate / CTR -->
-      @if (showRegistrations() && hasEmail()) {
+      @if (hasEmail()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-email-performance">
           <button
             type="button"

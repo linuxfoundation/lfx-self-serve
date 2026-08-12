@@ -35,6 +35,8 @@ describe('EventDetailDrawerComponent', () => {
       { tier: 'Gold', revenue: 200000, sponsorCount: 4 },
     ],
     channels: [],
+    paidCampaigns: [],
+    emailCampaigns: [],
     pacing: { available: false, daysLeft: null, current: null, priorYear: null, predictedAvg: null, predictedLow: null, predictedHigh: null, points: [] },
     ...overrides,
   });
