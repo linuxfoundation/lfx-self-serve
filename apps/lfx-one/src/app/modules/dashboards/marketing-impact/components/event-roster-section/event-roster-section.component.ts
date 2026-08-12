@@ -8,7 +8,7 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
 import { eventRegistrationPercent, formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView } from '@lfx-one/shared/interfaces';
 
@@ -32,6 +32,11 @@ export class EventRosterSectionComponent {
   // === WritableSignals ===
   protected readonly loading = signal(false);
   protected readonly includePast = signal(false);
+  /**
+   * Distinguishes "we couldn't load this" from "there are no events" — both leave the table
+   * empty, but only one of them should tell the user something went wrong.
+   */
+  protected readonly failed = signal(false);
   protected readonly skeletons: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly drawerVisible = signal(false);
   protected readonly selectedEventId = signal<string | null>(null);
@@ -76,7 +81,16 @@ export class EventRosterSectionComponent {
             return of({ projectId: '', events: [] });
           }
           this.loading.set(true);
-          return this.analyticsService.getEventRoster(slug, includePast).pipe(finalize(() => this.loading.set(false)));
+          this.failed.set(false);
+          // Caught here rather than in the service: a failure must render "couldn't load" rather
+          // than the "no upcoming events" copy, which would report an outage as real data.
+          return this.analyticsService.getEventRoster(slug, includePast).pipe(
+            catchError(() => {
+              this.failed.set(true);
+              return of({ projectId: '', events: [] });
+            }),
+            finalize(() => this.loading.set(false))
+          );
         })
       ),
       { initialValue: { projectId: '', events: [] } }

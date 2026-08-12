@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EventRosterSectionComponent } from './event-roster-section.component';
@@ -196,6 +196,26 @@ describe('EventRosterSectionComponent', () => {
 
     expect(upcoming.getAttribute('aria-pressed')).toBe('false');
     expect(all.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // An outage and an empty roster both leave the table with no rows; only one of them should
+  // tell the user something went wrong.
+  it('distinguishes a load failure from an empty roster', async () => {
+    getEventRoster = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [EventRosterSectionComponent],
+      providers: [{ provide: AnalyticsService, useValue: { getEventRoster } }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EventRosterSectionComponent);
+    fixture.componentRef.setInput('foundationSlug', 'tlf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="event-roster-error"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="event-roster-empty"]')).toBeNull();
   });
 
   it('refetches when the past-events toggle changes', async () => {

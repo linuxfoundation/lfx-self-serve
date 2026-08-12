@@ -143,6 +143,11 @@
         </div>
       }
     </div>
+  } @else if (failed()) {
+    <div class="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-red-200 bg-red-50 p-8" data-testid="event-roster-error">
+      <p class="text-sm font-medium text-red-700">We couldn't load your events.</p>
+      <p class="text-xs text-red-600">Refresh to try again.</p>
+    </div>
   } @else {
     <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="event-roster-empty">
       <p class="text-sm text-gray-500">{{ emptyMessage() }}</p>
