@@ -45,8 +45,11 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
   selector: 'lfx-profile-layout',
   imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
-  // is left; each drawer child shares this injector instance via the providers below.
-  providers: [MessageService, ProfileEditDrawerService, ProfileVisibilityDrawerService],
+  // is left; each drawer child shares this injector instance via the providers below. MessageService
+  // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from
+  // the root MessageService, so a layout-local instance would shadow it and every toast raised by the
+  // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes.
+  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

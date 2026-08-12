@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, Signal, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { TableComponent } from '@components/table/table.component';
 import {
   ORG_LENS_ROI_KPI_EXPLANATION,
@@ -24,10 +25,12 @@ import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 /** Every project in the portfolio, sortable and paged. */
 @Component({
   selector: 'lfx-org-roi-projects-table',
-  imports: [TableComponent],
+  imports: [TableComponent, RouterLink],
   templateUrl: './org-roi-projects-table.component.html',
 })
 export class OrgRoiProjectsTableComponent {
+  private readonly router = inject(Router);
+
   /** The complete, uncapped project set — this view pages it rather than summarising it. */
   public readonly projects = input.required<OrgLensRoiProjectRow[]>();
 
@@ -74,6 +77,21 @@ export class OrgRoiProjectsTableComponent {
     const active: OrgLensRoiProjectAriaSort = this.sortDir() === 'asc' ? 'ascending' : 'descending';
     return this.mapOverFields((candidate) => (candidate === field ? active : 'none'));
   });
+
+  /**
+   * Clicks inside the first cell's anchor are left alone — the router already handles those, and
+   * intercepting them would navigate twice. A modifier-click anywhere in the row is left alone for
+   * the same reason: it means "open elsewhere", and routing the current tab would take away a
+   * choice the viewer just made. A row with no slug does nothing, since the slug is the route
+   * parameter and routing without one would land on a URL that cannot resolve.
+   */
+  public openProject(row: OrgLensRoiProjectTableRow, event: MouseEvent): void {
+    if (!row.projectSlug) return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('a')) return;
+    void this.router.navigate(['/org/roi/projects', row.projectSlug]);
+  }
 
   public toggleSort(field: OrgLensRoiProjectSortField): void {
     if (this.sortField() === field) this.sortDir.set(this.sortDir() === 'desc' ? 'asc' : 'desc');

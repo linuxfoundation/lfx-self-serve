@@ -1,53 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5" data-testid="overview-tab-summary-header">
-  <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-    <div class="flex flex-col gap-0.5">
-      <h3 class="text-base font-semibold text-gray-900">{{ summaryTitle() }}</h3>
-      <p class="text-xs text-gray-500">{{ summarySubtitle() }}</p>
-    </div>
-    <div class="flex items-center gap-4">
-      <lfx-button
-        label="View executive summary"
-        icon="fa-light fa-arrow-up-right-from-square"
-        severity="secondary"
-        [outlined]="true"
-        [disabled]="true"
-        ariaLabel="View executive summary (coming soon)"
-        data-testid="overview-tab-exec-summary-btn" />
-    </div>
-  </div>
+<!-- The events sections each render their own card; without a wrapper they sit flush against
+     one another. -->
+<div class="flex flex-col gap-6" data-testid="overview-tab">
+  <lfx-events-attention-section [foundationSlug]="foundationSlug()" data-testid="overview-tab-events-attention" />
 
-  <div class="grid grid-cols-1 gap-4 pt-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="overview-tab-kpi-grid">
-    @if (loading()) {
-      @for (i of [1, 2, 3, 4]; track i) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="overview-tab-kpi-skeleton">
-          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-3 w-36 animate-pulse rounded bg-gray-200"></div>
-        </div>
-      }
-    } @else {
-      @for (kpi of performanceSummaryKpis(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" section="overview" />
-      } @empty {
-        <div class="col-span-full text-center py-8 text-sm text-gray-500" data-testid="overview-tab-kpi-empty">
-          No performance data available for this period.
-        </div>
-      }
-    }
-  </div>
+  <lfx-events-summary-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="overview-tab-events-summary" />
+
+  <lfx-event-roster-section [foundationSlug]="foundationSlug()" data-testid="overview-tab-event-roster" />
 </div>
-
-@if (!isProjectWebsites()) {
-  <lfx-attribution-section
-    [foundationSlug]="foundationSlug()"
-    [selectedPeriod]="selectedPeriod()"
-    [foundationName]="foundationName()"
-    [focusProgram]="focusProgram()"
-    [attributionOverride]="overviewKpiData().attribution"
-    [loadingOverride]="loading()"
-    data-testid="overview-tab-attribution-section" />
-}

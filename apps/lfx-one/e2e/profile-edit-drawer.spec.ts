@@ -172,6 +172,32 @@ test.describe('Profile edit drawer', () => {
     await expect.poll(() => authorizeRequested, { timeout: ELEMENT_TIMEOUT }).toBe(true);
   });
 
+  test('S4b: an over-2MB avatar is rejected client-side and never uploaded', async ({ page }) => {
+    // Regression for LFXV2-2628: MAX_AVATAR_SIZE_BYTES was lowered from 20MB to 2MB. Assert the
+    // rejection boundary sits at the new limit and that no request reaches the upload route.
+    let uploadRequested = false;
+    await page.route('**/api/profile/picture-upload', async (route) => {
+      uploadRequested = true;
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await page.getByTestId('profile-edit-button').click();
+
+    const drawer = page.getByTestId('profile-edit-drawer-body');
+    await expect(drawer).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // A valid PNG header followed by padding, sized just over the 2MB (2 * 1024 * 1024 bytes) cap.
+    const oversizedPng = Buffer.concat([
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      Buffer.alloc(2 * 1024 * 1024 + 1),
+    ]);
+    await page.getByTestId('profile-edit-drawer-avatar-input').setInputFiles({ name: 'oversized-avatar.png', mimeType: 'image/png', buffer: oversizedPng });
+
+    await expect(page.locator('.p-toast'), 'error toast should appear').toContainText('Image must be 2MB or smaller.', { timeout: ELEMENT_TIMEOUT });
+    expect(uploadRequested, 'the oversized file must never reach the upload route').toBe(false);
+  });
+
   test('S5: About Me saves, the drawer closes, and the panel reflects the bio', async ({ page }) => {
     // Stub the write so the real profile is never mutated — assert on drawer-close + optimistic update,
     // and lock in that the bio rides inside the user_metadata envelope.

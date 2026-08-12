@@ -74,7 +74,9 @@ export class VoteService {
       }
     }
 
-    return this.getVotes(params);
+    // Deliberately bypasses getVotes' catchError fallback: the votes dashboard's cursor walk must distinguish a
+    // failed request from cursor exhaustion (empty result with no token), so HTTP errors propagate to the caller.
+    return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params });
   }
 
   public getVotesCountByProject(projectUid: string, searchName?: string, filters?: string[]): Observable<number> {
