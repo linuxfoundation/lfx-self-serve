@@ -277,20 +277,47 @@ describe('EventDetailDrawerComponent', () => {
     expect(document.querySelector('[data-testid="event-detail-tier-Gold"]')).toBeTruthy();
   });
 
+  const paidRow = (name: string, spend: number, conversions: number) => ({
+    name,
+    platform: 'Google Ads',
+    spend,
+    conversions,
+    clicks: 100,
+    impressions: 1000,
+    cpa: conversions > 0 ? spend / conversions : null,
+  });
+  const emailRow = (name: string, sends: number) => ({ name, sends, opens: sends / 2, clicks: 10, openRate: 50, ctr: 2 });
+
   // The focus input is the whole point of opening from a specific roster bar: clicking
   // registrations must not land the user in the sponsorship story, and vice versa. Asserted in
   // both directions so a later default change cannot quietly collapse the two views into one.
   it('hides the sponsorship story in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
     await open('evt-1', 'tlf', 'b2c');
 
-    expect(text()).not.toContain('Diamond');
+    // The tier table carries the sponsor names, so its absence is what proves the story is hidden.
+    expect(document.querySelector('[data-testid="event-detail-tier-Diamond"]')).toBeNull();
   });
 
+  // document, not fixture.nativeElement: the drawer renders into an overlay outside the fixture
+  // host, so a fixture-scoped query returns null regardless and the assertion passes vacuously.
   it('hides the paid and email breakdowns in the sponsorship view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paidRow('A', 100, 1)], emailCampaigns: [emailRow('E', 500)] }))));
+
     await open('evt-1', 'tlf', 'b2b');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="event-detail-paid-summary"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="event-detail-email-summary"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-paid-summary"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-email-summary"]')).toBeNull();
+  });
+
+  it('shows the paid and email breakdowns in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paidRow('A', 100, 1)], emailCampaigns: [emailRow('E', 500)] }))));
+
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-paid-summary"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-email-summary"]')).toBeTruthy();
   });
 
   // Every section has to follow the focus, not just the breakdowns: pacing and registration
@@ -306,6 +333,10 @@ describe('EventDetailDrawerComponent', () => {
     expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeNull();
     expect(document.querySelector('[data-testid="event-detail-channels"]')).toBeNull();
+    // The headline cards follow the focus too — a sponsorship view showing a Registrations card
+    // puts the two stories back side by side, which is what the split exists to separate.
+    expect(text()).not.toContain('Registrations');
+    expect(text()).toContain('Sponsorship revenue');
   });
 
   it('hides the sponsorship-only sections in the attendance view', async () => {
@@ -316,6 +347,8 @@ describe('EventDetailDrawerComponent', () => {
     expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="event-detail-revenue"]')).toBeNull();
     expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeNull();
+    expect(text()).toContain('Registrations');
+    expect(text()).not.toContain('Sponsorship revenue');
   });
 
   it('labels an unnamed tier rather than rendering a blank row', async () => {
