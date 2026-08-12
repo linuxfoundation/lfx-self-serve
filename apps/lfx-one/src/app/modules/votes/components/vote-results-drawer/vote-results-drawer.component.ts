@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, sortCommentResponsesByRecency, splitIntoParagraphs } from '@lfx-one/shared/utils';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -44,6 +45,7 @@ import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, sha
     ButtonComponent,
     TooltipModule,
     ExpandableTextComponent,
+    LinkifyPipe,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',

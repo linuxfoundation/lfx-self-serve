@@ -3,7 +3,36 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isProfileHubPath } from './url.utils';
+import { extractUrls, isProfileHubPath } from './url.utils';
+
+describe('extractUrls', () => {
+  it('extracts http and https URLs from prose', () => {
+    expect(extractUrls('see http://example.com and https://linuxfoundation.org today')).toEqual(['http://example.com', 'https://linuxfoundation.org']);
+  });
+
+  it('trims sentence punctuation following the URL', () => {
+    expect(extractUrls('Visit https://example.com. Thanks!')).toEqual(['https://example.com']);
+    expect(extractUrls('Visit https://example.com/path?a=1, then go')).toEqual(['https://example.com/path?a=1']);
+  });
+
+  it('trims closing brackets that wrap the URL in prose', () => {
+    expect(extractUrls('(see https://linuxfoundation.org)')).toEqual(['https://linuxfoundation.org']);
+    expect(extractUrls('[https://example.com],')).toEqual(['https://example.com']);
+  });
+
+  it('keeps balanced brackets that are part of the URL path', () => {
+    expect(extractUrls('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual(['https://en.wikipedia.org/wiki/Foo_(bar)']);
+  });
+
+  it('returns an empty array for empty or URL-free text', () => {
+    expect(extractUrls('')).toEqual([]);
+    expect(extractUrls('no links here')).toEqual([]);
+  });
+
+  it('rejects non-http(s) and unsafe URLs', () => {
+    expect(extractUrls('ftp://example.com javascript:alert(1)')).toEqual([]);
+  });
+});
 
 describe('isProfileHubPath', () => {
   it('matches the exact /profile route', () => {
