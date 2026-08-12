@@ -10,7 +10,7 @@ import { EventsAttentionSectionComponent } from '../events-attention-section/eve
 import { EventsSummarySectionComponent } from '../events-summary-section/events-summary-section.component';
 
 /**
- * Marketing Impact overview tab — the LF Events story: at-risk events, the events summary,
+ * Campaign Impact overview tab — the LF Events story: at-risk events, the events summary,
  * and the event roster (with the per-event deep-dive drawer).
  */
 @Component({

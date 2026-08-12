@@ -5163,14 +5163,14 @@ export class ProjectService {
 
     const pastFilter = includePast ? '' : 'AND r.EVENT_IS_PAST = FALSE';
 
-    // The period only scopes history. Every month the picker offers is already over, so applying
-    // a month range to the upcoming-events view (EVENT_IS_PAST = FALSE) could only ever return
-    // nothing — upcoming events are forward-looking by definition and aren't "in" a past month.
-    // Narrowing therefore applies solely when the caller asked for past events.
+    // The period scopes history only, and it must ADD past events rather than replace the roster.
+    // Every month the picker offers has already ended, so a bare range predicate would also drop
+    // every upcoming row — turning "Including past" into "past only", which is the opposite of
+    // what the toggle says. Keeping the upcoming rows via an OR makes it additive.
     // Half-open range so an event starting on the first of the next month belongs to that month.
     // Binds come after the slug because slug_resolve holds the first placeholder.
     const applyPeriod = Boolean(period) && includePast;
-    const periodFilter = applyPeriod ? 'AND r.EVENT_START_DATE >= TO_DATE(?) AND r.EVENT_START_DATE < TO_DATE(?)' : '';
+    const periodFilter = applyPeriod ? 'AND (r.EVENT_IS_PAST = FALSE OR (r.EVENT_START_DATE >= TO_DATE(?) AND r.EVENT_START_DATE < TO_DATE(?)))' : '';
     const periodParams = applyPeriod && period ? [period.startDate, period.endDate] : [];
 
     const query = `

@@ -264,6 +264,15 @@ export const OPEN_VOTE_CONFIRMATION = {
 /** Minimum trimmed length for a vote question prompt — used by the form validator. */
 export const VOTE_QUESTION_MIN_LENGTH = 10;
 
+/** Maximum number of comment prompts allowed per vote (upstream contract limit). */
+export const VOTE_COMMENT_PROMPT_MAX_COUNT = 50;
+
+/** Maximum character length for a comment prompt's text (upstream contract limit). */
+export const VOTE_COMMENT_PROMPT_MAX_LENGTH = 500;
+
+/** Maximum character length for a voter's comment response text (upstream contract limit). */
+export const VOTE_COMMENT_RESPONSE_MAX_LENGTH = 5000;
+
 /** Default close window applied to draft votes when the user has not picked an end date. */
 export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;
 

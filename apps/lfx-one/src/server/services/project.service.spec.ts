@@ -572,6 +572,35 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(result?.eventUrl).toBe('');
     });
   });
+
+  // The roster's period handling is easy to get backwards: every month the picker offers has
+  // already ended, so a bare range predicate silently drops every upcoming row and turns
+  // "Including past" into "past only".
+  describe('getEventRoster period scoping', () => {
+    const month = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any;
+
+    it('leaves the upcoming roster unbounded when includePast is false', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', false, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE');
+      expect(sql).not.toContain('EVENT_START_DATE >=');
+      expect(binds).toEqual(['tlf']);
+    });
+
+    // Regression guard: past events from the range are ADDED to the upcoming ones.
+    it('adds past events from the period instead of replacing the upcoming roster', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', true, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE OR');
+      expect(binds).toEqual(['tlf', '2026-03-01', '2026-04-01']);
+    });
+  });
 });
 
 describe('ProjectService — paid ads compatibility', () => {

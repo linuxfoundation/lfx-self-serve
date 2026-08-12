@@ -6,7 +6,11 @@
 <div class="flex flex-col gap-6" data-testid="overview-tab">
   <lfx-events-attention-section [foundationSlug]="foundationSlug()" data-testid="overview-tab-events-attention" />
 
-  <lfx-events-summary-section [foundationSlug]="foundationSlug()" [foundationName]="foundationName()" data-testid="overview-tab-events-summary" />
+  <lfx-events-summary-section
+    [foundationSlug]="foundationSlug()"
+    [foundationName]="foundationName()"
+    [selectedPeriod]="selectedPeriod()"
+    data-testid="overview-tab-events-summary" />
 
   <lfx-event-roster-section [foundationSlug]="foundationSlug()" [selectedPeriod]="selectedPeriod()" data-testid="overview-tab-event-roster" />
 </div>

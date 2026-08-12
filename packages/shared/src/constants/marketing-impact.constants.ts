@@ -4,8 +4,6 @@
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   AttributionModelOption,
-  EventsSplitOption,
-  EventsSplitView,
   MarketingImpactFocusProgram,
   MarketingImpactTab,
   MarketingImpactTabOption,
@@ -37,29 +35,6 @@ export const MARKETING_IMPACT_TABS: MarketingImpactTabOption[] = [
   { id: 'paid', label: 'Paid' },
   { id: 'social-listening', label: 'Social Listening' },
 ];
-
-/**
- * Sub-tabs shown under the Events campaign type, in display order. Attendance covers the
- * registration/attendee story; Sponsorship covers revenue and tiers. Only the Events campaign
- * type has this second level — no other campaign type splits this way.
- */
-export const EVENTS_SPLIT_OPTIONS: EventsSplitOption[] = [
-  { id: 'attendance', label: 'Event Attendance' },
-  { id: 'sponsorship', label: 'Event Sponsorship' },
-];
-
-/** Campaign Type that exposes the attendance/sponsorship sub-tabs. */
-export const EVENTS_SPLIT_FOCUS: MarketingImpactFocusProgram = 'lfEvents';
-
-/**
- * Maps each Events sub-view onto the detail drawer's focus. The drawer hides its sponsorship
- * blocks for 'b2c', so attendance opens the registration story and sponsorship opens the
- * revenue story — see `showSponsorship` in EventDetailDrawerComponent.
- */
-export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, 'b2c' | 'b2b'> = {
-  attendance: 'b2c',
-  sponsorship: 'b2b',
-};
 
 /** Attribution model options for the model selector dropdown. */
 export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [

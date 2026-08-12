@@ -27,7 +27,7 @@
 
   @if (!hasFoundation()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="marketing-impact-empty-state">
-      <p class="text-sm text-gray-500">Select a foundation to view marketing impact.</p>
+      <p class="text-sm text-gray-500">Select a foundation to view campaign impact.</p>
     </div>
   } @else if (!isExecutiveDirector()) {
     <!-- LF Staff: direct access to Social Listening only, no tabs/focus UI for the ED-restricted sections -->
@@ -54,7 +54,7 @@
     @if (!isComingSoon()) {
       <div class="flex items-center gap-4">
         <span class="shrink-0 text-sm font-semibold text-gray-700">Channel Type:</span>
-        <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Marketing impact sections" data-testid="marketing-impact-tabs">
+        <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Campaign impact sections" data-testid="marketing-impact-tabs">
           @for (tab of visibleTabs(); track tab.id) {
             <button
               type="button"
@@ -74,32 +74,6 @@
             </button>
           }
         </div>
-      </div>
-    }
-
-    <!-- Events sub-tabs — attendance vs sponsorship, scoped to the Events campaign type.
-         Both views swap content inside the single shared tabpanel below, so aria-controls points
-         at that panel's real id; per-view ids would reference elements that never render. -->
-    @if (showEventsSplit()) {
-      <div class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4" role="tablist" aria-label="Events views" data-testid="events-split-tabs">
-        @for (view of eventsSplitOptions; track view.id) {
-          <button
-            type="button"
-            role="tab"
-            [attr.id]="'mi-events-tab-' + view.id"
-            [attr.aria-controls]="'mi-panel-' + selectedTab()"
-            (click)="onEventsSplitChange(view.id)"
-            [attr.aria-selected]="selectedEventsSplit() === view.id"
-            [attr.tabindex]="selectedEventsSplit() === view.id ? 0 : -1"
-            [class]="
-              selectedEventsSplit() === view.id
-                ? 'px-3 py-1 rounded-full text-sm font-medium transition-colors bg-blue-500 text-white'
-                : 'px-3 py-1 rounded-full text-sm font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
-            "
-            [attr.data-testid]="'events-split-tab-' + view.id">
-            {{ view.label }}
-          </button>
-        }
       </div>
     }
 
