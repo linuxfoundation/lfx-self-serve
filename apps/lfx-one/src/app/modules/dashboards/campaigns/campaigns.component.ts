@@ -299,18 +299,25 @@ export class CampaignsComponent {
             this.briefPersistenceEnabled.set(true);
           }
 
-          // Latched BEFORE the generation check, for the same reason `enabled` is: the ROW
-          // exists regardless of which brief is now on screen. Recorded after the check instead,
-          // a superseded save would never record the id it just created — so a second Proceed
-          // while the first was in flight would send null and be refused against a row this
-          // session made moments earlier.
+          // Recorded only while this save's brief is STILL the one on screen — the generation
+          // check, same as the banner below it.
           //
-          // Only on a real write. A refused save (`conflict`) names the row that BLOCKED it, and
-          // adopting that id would hand this session ownership of exactly the brief it was told
-          // it does not own — turning the guard into a way through itself.
-          if (result.enabled && result.conflict === undefined && result.briefId !== '') {
-            this.knownBriefId = result.briefId;
-          }
+          // An earlier version latched this before the check "for the same reason `enabled` is",
+          // which was wrong: `enabled` is a fact about the DEPLOYMENT and equally true for every
+          // brief, while a brief id is the most brief-specific thing there is. Latching it early
+          // let a response land after `resetToPlanning` had cleared the id and re-assign it — so
+          // the NEXT brief, a different event, inherited ownership of the previous one's row.
+          // That is the exact hazard the generation check exists to prevent.
+          //
+          // The superseded case that motivated the early latch is handled by keying on the BRIEF
+          // rather than on timing: a save whose brief is gone has no id worth keeping, because
+          // any future save is for a different brief and must prove its own ownership. The row
+          // it created is not lost — the next save for that event finds it and is refused,
+          // which is the correct answer for a caller that can no longer name it.
+          //
+          // Only on a real write: a refused save names the row that BLOCKED it, and adopting
+          // that id would hand this session ownership of exactly the brief it was told it does
+          // not own.
 
           if (generation !== this.briefPersistenceGeneration) return;
           if (!result.enabled) {
@@ -329,6 +336,9 @@ export class CampaignsComponent {
               message: 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
             });
             return;
+          }
+          if (result.conflict === undefined && result.briefId !== '') {
+            this.knownBriefId = result.briefId;
           }
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
