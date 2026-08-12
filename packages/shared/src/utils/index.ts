@@ -19,6 +19,8 @@ export * from './string.utils';
 export * from './url.utils';
 export * from './poll.utils';
 export * from './survey.utils';
+export * from './social-listening.utils';
+export * from './social-listening-filter.utils';
 export * from './vote.utils';
 export * from './committee.utils';
 export * from './activity-feed.utils';

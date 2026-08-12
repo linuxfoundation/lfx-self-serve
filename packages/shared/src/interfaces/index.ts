@@ -103,6 +103,9 @@ export * from './poll.interface';
 // Survey interfaces
 export * from './survey.interface';
 
+// Social Listening interfaces
+export * from './social-listening.interface';
+
 // Filter interfaces
 export * from './filter.interface';
 
