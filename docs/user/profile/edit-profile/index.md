@@ -30,7 +30,7 @@ Your personal details are edited in the **Edit Profile** drawer, not directly on
 Select the pencil button on your avatar to upload a new image.
 
 - **Accepted formats:** PNG, JPEG, or WEBP.
-- **Maximum size:** 20 MB.
+- **Maximum size:** 2 MB.
 
 ### Personal information
 

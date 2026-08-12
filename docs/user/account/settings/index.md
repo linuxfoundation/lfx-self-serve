@@ -5,7 +5,7 @@ audience: [all]
 product_area: Account
 tags: [account, settings, email, password, developer, api-token, security]
 last_updated: 2026-08-11
-intercom_collection: Settings
+intercom_collection: Account
 ---
 
 The Settings tab manages your account security and access credentials — email addresses, password and two-factor authentication, and your developer API token. It lives under the Profile & Account hub at `/profile/settings`.

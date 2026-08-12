@@ -15,7 +15,7 @@ Open [**Profile & Account**](/profile) and select **Edit profile** in the profil
 
 ## How do I update my profile photo?
 
-Open the **Edit profile** drawer and select the pencil button on your avatar to upload a new image. Accepted formats are **PNG, JPEG, or WEBP**, up to **20 MB**.
+Open the **Edit profile** drawer and select the pencil button on your avatar to upload a new image. Accepted formats are **PNG, JPEG, or WEBP**, up to **2 MB**.
 
 ## Is there a limit on my About Me / bio?
 

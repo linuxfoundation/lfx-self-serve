@@ -5,7 +5,7 @@ audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
 last_updated: 2026-08-11
-intercom_collection: Transactions
+intercom_collection: Account
 ---
 
 The Transactions tab shows your Linux Foundation purchase history — payments for training courses, certifications, event registrations, and other LFX purchases. Recent purchases may take up to 48 hours to appear. It lives under the Profile & Account hub at `/profile/transactions`.

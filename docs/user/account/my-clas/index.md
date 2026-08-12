@@ -6,7 +6,7 @@ product_area: Account
 tags: [account, cla, easycla, icla, ecla, identities]
 last_generated: 2026-08-04
 last_updated: 2026-08-11
-intercom_collection: Profile
+intercom_collection: Account
 ---
 
 These steps apply to any signed-in user on LFX Self Serve.
