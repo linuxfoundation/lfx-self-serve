@@ -556,6 +556,31 @@ describe('CampaignServiceClient.saveBrief', () => {
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
   });
 
+  it("does not adopt another writer's row that differs only in payload", async () => {
+    // The case the weaker comparison could not catch: same event and program, so it adopted the
+    // row and handed this caller ownership of someone else's brief. `Brief` Reference()s
+    // `BriefData` in design/brief.go, so url and platforms come back on the find and CAN be
+    // compared -- the response type was under-declaring them, not the service withholding them.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockResolvedValueOnce(
+        apiResponse(
+          {
+            id: 'other',
+            version: 1,
+            program_type: 'events',
+            event_slug: 'e',
+            url: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+            platforms: ['reddit-ads'],
+          },
+          { etag: '"1"' }
+        )
+      );
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
   it('does not adopt a row for a different event or program', async () => {
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)

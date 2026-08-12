@@ -94,6 +94,25 @@ describe('CampaignsComponent brief persistence', () => {
     expect(state().status).toBe('off');
   });
 
+  it("does not show a failed save's banner over the next attempt", async () => {
+    // A first save that FAILS leaves an error banner and does not flip `briefPersistenceEnabled`,
+    // so the retry re-enters the flag-unknown branch. That branch used to set nothing, leaving the
+    // previous brief's failure on screen over the new save until its own request finished.
+    persistBrief.mockReturnValue(throwError(() => new Error('network down')));
+    proceed();
+    await fixture.whenStable();
+    expect(state().status).toBe('error');
+
+    persistBrief.mockReturnValue(NEVER);
+    proceed();
+    await fixture.whenStable();
+
+    // Idle, not `saving`: with the flag still unknown a spinner would appear for every user in an
+    // environment where nothing is being saved at all — the reason this branch is quiet.
+    expect(state().status).toBe('off');
+    expect(state().message).toBeNull();
+  });
+
   it('shows the in-flight banner on a later save, once a response has confirmed the cutover is on', async () => {
     persistBrief.mockReturnValue(
       new Observable<CampaignBriefPersistResult>((s) => s.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }))

@@ -64,6 +64,14 @@ interface CampaignServiceBrief {
   event_slug: string;
   status: string;
   version: number;
+  // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
+  // these come back on the find whether or not this phase renders them. Declared for the create
+  // reconciliation, which has to tell THIS request's row from another writer's — not because the
+  // write path reads them. The four `Any` blobs are deliberately still omitted: the service
+  // round-trips them without interpreting, so key order and JSON normalisation are not guaranteed
+  // to survive and comparing them would reject a row that really is ours.
+  url?: string;
+  platforms?: string[];
 }
 
 /**
@@ -577,21 +585,24 @@ export class CampaignServiceClient {
 /**
  * Whether a stored brief could be the one this request sent.
  *
- * Compares the identifying columns this branch's response type declares — `program_type` and
- * `event_slug`. It is deliberately NOT widened: `CampaignServiceBrief` here lists only the fields
- * the write path reads, because the read path is LFXV2-3108's, and adding `url`/`platforms` to
- * the type purely to strengthen a comparison would claim this branch consumes them.
+ * Compares the first-class columns campaign-service returns on a find. An earlier round compared
+ * only `program_type` and `event_slug` on the reasoning that the response type declared nothing
+ * else — but the type was under-declaring: `Brief` Reference()s `BriefData`, so `url` and
+ * `platforms` come back regardless. Declaring them for this comparison is not a claim that the
+ * write path renders them.
  *
- * The check is therefore weaker than it looks, and the `version === 1` condition beside it is
- * doing most of the work: a row at version 1 for this event, matching program and slug, was
- * created by exactly one POST in this window. Another writer creating a DIFFERENT brief for the
- * SAME event slug in the gap between our POST and our re-read would still be adopted. That
- * window is small and the alternative — stranding the user behind an unnameable row — is worse
- * and certain rather than rare. LFXV2-3108 widens the type for the read path, at which point
- * this can compare the payload properly.
+ * The four `Any` blobs stay excluded. The service round-trips them without interpreting, so key
+ * order and JSON normalisation are not guaranteed to survive, and a mismatch there would reject a
+ * row that really is ours — the failure that strands the user, which this reconciliation exists
+ * to prevent. Two briefs for the same event agreeing on program, slug, url AND platform selection
+ * while differing only inside the opaque copy is the residual window; `version === 1` narrows it
+ * further, and rethrowing on any doubt is what happens when either check fails.
  */
 function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
-  return stored.program_type === sent.program_type && stored.event_slug === sent.event_slug;
+  const storedPlatforms = stored.platforms ?? [];
+  const sentPlatforms = sent.platforms ?? [];
+  const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
+  return stored.program_type === sent.program_type && stored.event_slug === sent.event_slug && (stored.url ?? '') === (sent.url ?? '') && samePlatforms;
 }
 
 function readEtag(response: ApiResponse<unknown>): string | null {
