@@ -95,7 +95,12 @@ export class ImplementationTabComponent implements OnInit {
       case 'saving':
         return 'Saving this brief.';
       case 'saved':
-        return 'Brief saved.';
+        // Must carry the SAME information as the visible banner, which tells the user to re-enter
+        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
+        // the reassurance without the instruction — and the instruction is the part they cannot
+        // recover on their own, since nothing else on the page says the brief needs a URL to come
+        // back.
+        return 'Brief saved. After a reload, re-enter the event URL to restore it.';
       default:
         return '';
     }

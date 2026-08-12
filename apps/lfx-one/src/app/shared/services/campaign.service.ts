@@ -79,7 +79,11 @@ export class CampaignService {
   ): Observable<CampaignBriefPersistResult> {
     // `brief_id` is sent only when this session has established ownership of that row, which on
     // this branch has TWO sources: the page loaded the brief from campaign-service, or it created
-    // the brief itself on an earlier save. Either is proof; its absence is
+    // the brief itself on an earlier save.
+    //
+    // Either is proof, and its absence is MEANINGFUL rather than merely missing: the server
+    // refuses to replace a stored brief for a caller that cannot name it, so a freshly generated
+    // brief creates and never overwrites one nobody here has seen (LFXV2-3200).
     let params = new HttpParams().set('project', projectSlug);
     if (knownBriefId !== null && knownBriefId !== '') {
       params = params.set('brief_id', knownBriefId);

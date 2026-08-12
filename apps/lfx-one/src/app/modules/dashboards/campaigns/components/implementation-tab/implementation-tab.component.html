@@ -33,7 +33,13 @@
         "It will still be here if you reload" would be the same false assurance the 'error' arm
         below exists to prevent, pointed the other way.
       -->
-      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>Brief saved. After a reload, re-enter the event URL to restore it.
+      <!--
+        Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
+        separate strings and drifted: the banner gained the re-entry instruction while the live
+        region still announced only "Brief saved.", so screen-reader users got the reassurance
+        without the part they cannot recover on their own. One source cannot drift.
+      -->
+      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>{{ briefPersistenceAnnouncement() }}
     </div>
   }
   @case ('error') {
