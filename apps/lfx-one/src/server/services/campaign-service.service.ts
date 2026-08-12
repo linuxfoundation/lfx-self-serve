@@ -696,11 +696,30 @@ function asVariantCopy<T>(value: unknown): T | undefined {
 /**
  * The array-valued fields across the three per-platform copy blocks.
  *
- * Listed rather than derived: these are the keys a consumer iterates, and the cost of a missing
- * one is a thrown `.map()` on Restore, not a blank line. Union of all three block types — a key
- * absent from a given platform's block is simply coerced to `[]` there and never read.
+ * Listed rather than derived, because the type system cannot enumerate keys of an interface at
+ * runtime — but the list must be COMPLETE, and the first version of it was not: it named four
+ * fields and missed `recommendedGeos`, `recommendedGroups`, `recommendedJobFunctions` and
+ * `recommendedSkills`, each of which is a `string[]` a consumer iterates. A partial list here
+ * is worse than none, because it reads as exhaustive.
+ *
+ * Kept honest by `TestVariantCopyArrayFieldsCoversEveryArrayField`-style coverage in the spec,
+ * which asserts every one of these coerces — add a field to either brief-copy interface and the
+ * grep that finds `recommended*: string[]` should find it here too. Grouped by owning platform
+ * so a new field lands beside its siblings; a key absent from a given platform's block is simply
+ * coerced to `[]` there and never read.
  */
-const VARIANT_COPY_ARRAY_FIELDS = ['recommendedGeoTargets', 'recommendedSubreddits', 'recommendedInterests', 'recommendedKeywords'] as const;
+const VARIANT_COPY_ARRAY_FIELDS = [
+  // LinkedIn (`LinkedInBriefCopy`)
+  'recommendedGeoTargets',
+  'recommendedJobFunctions',
+  'recommendedSkills',
+  'recommendedGroups',
+  // Reddit (`RedditBriefCopy`)
+  'recommendedSubreddits',
+  'recommendedInterests',
+  'recommendedKeywords',
+  'recommendedGeos',
+] as const;
 
 /**
  * The keyword table, dropping entries that carry no term.

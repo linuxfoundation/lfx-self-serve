@@ -666,6 +666,36 @@ describe('fromBriefResponse', () => {
     expect(restored?.['recommendedGeoTargets']).toEqual([]);
   });
 
+  /**
+   * Completeness, not just correctness.
+   *
+   * The first version of `VARIANT_COPY_ARRAY_FIELDS` named four fields and missed four more,
+   * each a `string[]` a consumer iterates — a partial list is worse than none, because it reads
+   * as exhaustive. This drives every field the two brief-copy interfaces declare as an array,
+   * so adding one to an interface without adding it to the coercion list fails here rather than
+   * throwing on a user's Restore.
+   */
+  it('coerces every array field the platform copy blocks declare', () => {
+    const arrayFields = [
+      'recommendedGeoTargets',
+      'recommendedJobFunctions',
+      'recommendedSkills',
+      'recommendedGroups',
+      'recommendedSubreddits',
+      'recommendedInterests',
+      'recommendedKeywords',
+      'recommendedGeos',
+    ];
+
+    const linkedIn = fromBriefResponse(storedBrief({ copy: { linkedIn: { variants: [] } } }))?.linkedInCopy as unknown as Record<string, unknown>;
+    const reddit = fromBriefResponse(storedBrief({ copy: { reddit: { variants: [] } } }))?.redditCopy as unknown as Record<string, unknown>;
+
+    for (const field of arrayFields) {
+      expect(Array.isArray(linkedIn?.[field]), `linkedInCopy.${field} must be an array, not ${typeof linkedIn?.[field]}`).toBe(true);
+      expect(Array.isArray(reddit?.[field]), `redditCopy.${field} must be an array, not ${typeof reddit?.[field]}`).toBe(true);
+    }
+  });
+
   // A non-array value in an array field is coerced too — a stored `null` or a string reaches the
   // same `.map()` and fails the same way an absent key does.
   it('coerces a non-array value in an array field', () => {
