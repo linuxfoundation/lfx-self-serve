@@ -15,6 +15,9 @@ import type {
   CampaignPlatformResult,
   CampaignProgramType,
   LinkedInBriefCopy,
+  LinkedInCreativeVariant,
+  MetaAdVariant,
+  RedditAdVariant,
   MetaBriefCopy,
   RedditBriefCopy,
 } from '@lfx-one/shared/interfaces';
@@ -275,6 +278,19 @@ export class CampaignServiceClient {
     // caller that never saw the stored brief, and it overwrites content the user was never
     // shown. Two routes lead there and only one involves a slug mismatch:
     //
+    // `knownBriefId` defaults to null, and there are two ways a caller comes to hold one.
+    //
+    // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
+    // successful save returns, so the second Proceed of a session sends it and takes the ordinary
+    // replace path. An earlier version of this comment said the parameter "is always null in this
+    // phase" — that was true when it was written and my own later change to record the created id
+    // falsified it, which is exactly the kind of claim a comment should not make about the
+    // future.
+    //
+    // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
+    // learn the id of a brief it did not write, so those callers arrive with null and are refused.
+    // LFXV2-3108 adds the read that closes that half.
+    //
     //   1. The lookup's slug (last path segment of the pasted URL) and the save's slug
     //      (`brief.eventDetails.slug`, from the scrape) diverge, so the Restore offer never
     //      appears, the user regenerates, and THIS find hits the row the offer missed.
@@ -299,14 +315,31 @@ export class CampaignServiceClient {
     }
 
     if (existing === null) {
-      const created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
-        req,
-        'LFX_V2_CAMPAIGN_SERVICE',
-        basePath,
-        'POST',
-        undefined,
-        envelope
-      );
+      let created;
+      try {
+        created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+          req,
+          'LFX_V2_CAMPAIGN_SERVICE',
+          basePath,
+          'POST',
+          undefined,
+          envelope
+        );
+      } catch (error) {
+        // An INDETERMINATE create is the one failure this phase cannot walk away from. If the
+        // POST committed but its response was lost — a timeout, a reset, a gateway 5xx — the
+        // caller never learns the id, and with no read path every later save finds that row with
+        // no id to name it and is refused as `unowned-brief-exists`. The user's work is stranded
+        // behind a row they created seconds earlier.
+        //
+        // campaign-service declares no idempotency key on the brief endpoints, so the only
+        // reconciliation available is to look again.
+        const reconciled = await this.reconcileLostCreate(req, basePath, eventSlug, envelope, error);
+        if (reconciled === null) {
+          throw error;
+        }
+        created = reconciled;
+      }
       return this.approveBrief(req, basePath, created, true);
     }
 
@@ -357,6 +390,61 @@ export class CampaignServiceClient {
     // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
     const brief = fromBriefResponse(found.brief);
     return brief === null ? { status: 'unreadable', briefId: found.brief.id, brief: null } : { status: 'loaded', briefId: found.brief.id, brief };
+  }
+
+  /**
+   * After an ambiguous create failure, find out whether the POST actually committed.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the create did not happen
+   * or the row cannot be claimed — in which case the caller rethrows the original error, which is
+   * the honest outcome for a save whose fate is unknown.
+   *
+   * Two conditions have to hold before adopting a row, and both matter:
+   *
+   * - `version === 1`. A higher version means the row has been written more than once, so it is
+   *   not the untouched product of this POST, and adopting it would hand this session ownership
+   *   of edits it never made.
+   * - the stored payload matches what this request sent. Without it, a row another writer created
+   *   in the same window would be adopted, and the next save would replace THEIR brief under this
+   *   caller's id — the precise overwrite the ownership guard exists to prevent.
+   *
+   * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
+   * the accurate answer. Only genuinely indeterminate failures reach the lookup.
+   */
+  private async reconcileLostCreate(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    envelope: CampaignServiceBriefEnvelope,
+    error: unknown
+  ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+    if (definitelyRejected) {
+      return null;
+    }
+
+    // The RAW response, not `findBrief`'s narrowed shape: `approveBrief` reads both the body and
+    // the ETag header off it, so handing it a bare brief threw
+    // `Cannot read properties of undefined (reading 'id')` on the one path that exists to make
+    // recovery reliable.
+    let found: ApiResponse<CampaignServiceBrief>;
+    try {
+      found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+        event_slug: eventSlug,
+      });
+    } catch {
+      // The reconciliation read failed too. Nothing is known, so report the original failure
+      // rather than a second one describing the recovery attempt.
+      return null;
+    }
+    if (found.data === undefined || found.data.version !== 1 || !storedBriefMatches(found.data, envelope.brief)) {
+      return null;
+    }
+    logger.warning(req, 'campaign_persist_brief_reconciled', 'a create whose response was lost had in fact committed', {
+      briefId: found.data.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return found;
   }
 
   /**
@@ -571,6 +659,26 @@ export class CampaignServiceClient {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
+/**
+ * Whether a stored brief could be the one this request sent.
+ *
+ * On the base branch this could compare only `program_type` and `event_slug`, because
+ * `CampaignServiceBrief` there declares just the columns the write path reads. This branch adds
+ * the read path and with it `url` and `platforms`, so the comparison is strengthened here —
+ * which is the half the base branch's comment said would land with LFXV2-3108.
+ *
+ * The opaque `Any` blobs stay excluded: the service round-trips them without interpreting, so key
+ * order and JSON normalisation are not guaranteed to survive, and a mismatch there would reject a
+ * row that really is ours. These first-class columns are enough to tell this payload from another
+ * writer's brief for the same event, which is the only question being asked.
+ */
+function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
+  const storedPlatforms = stored.platforms ?? [];
+  const sentPlatforms = sent.platforms ?? [];
+  const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
+  return stored.program_type === sent.program_type && stored.event_slug === sent.event_slug && (stored.url ?? '') === (sent.url ?? '') && samePlatforms;
+}
+
 function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
@@ -711,10 +819,15 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     programType: found.program_type as CampaignProgramType,
     selectedPlatforms,
     structuredCopy: asRecord(copy['structured']),
-    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn'], ['headline']),
-    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], ['headline']),
-    // Meta needs `primaryText` too: it is the field `canSubmit` dereferences.
-    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], ['headline', 'primaryText']),
+    // Each platform requires exactly the string fields ITS variant interface declares, because
+    // those are the ones consumers dereference without checking:
+    //   LinkedIn — `variant.introText.length` (implementation-tab.component.html:338)
+    //   Meta     — `v.primaryText.trim()` and `v.headline.trim()` (…component.ts:238)
+    // Requiring only the shared `headline` was not enough, and a per-platform list that is not
+    // the interface's own field set is a claim that goes stale the moment a field is added.
+    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn'], LINKEDIN_VARIANT_FIELDS),
+    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], REDDIT_VARIANT_FIELDS),
+    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], META_VARIANT_FIELDS),
     keywords: asKeywords(found.keywords),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
@@ -816,6 +929,17 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
  * absent field already produces and what the consumers already handle
  * (`variants().length === 0` disables submit).
  */
+/**
+ * The required string fields of each platform's variant interface.
+ *
+ * Typed as `(keyof X)[]` so adding a required string to the interface without adding it here is a
+ * COMPILE error rather than a crash on someone's Restore — the failure mode the first version of
+ * this filter had, where object-ness alone let `{}` through and `v.primaryText.trim()` threw.
+ */
+const LINKEDIN_VARIANT_FIELDS: readonly (keyof LinkedInCreativeVariant)[] = ['introText', 'headline'];
+const REDDIT_VARIANT_FIELDS: readonly (keyof RedditAdVariant)[] = ['headline'];
+const META_VARIANT_FIELDS: readonly (keyof MetaAdVariant)[] = ['primaryText', 'headline'];
+
 function objectElements(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((el): el is Record<string, unknown> => asRecord(el) !== null) : [];
 }

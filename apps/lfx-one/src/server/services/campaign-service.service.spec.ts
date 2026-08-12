@@ -511,6 +511,92 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(headers).toEqual({ 'If-Match': '"7"' });
   });
 
+  it('recovers the id of a create whose response was lost', async () => {
+    // The POST commits, its response is lost. Without reconciliation the caller never learns the
+    // id, and with no read path in this phase every later save finds that row unnameable and is
+    // refused as unowned -- the user stranded behind a row they created seconds earlier.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // the initial find: nothing there yet
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockResolvedValueOnce(
+        apiResponse(
+          {
+            id: 'b-1',
+            version: 1,
+            program_type: 'events',
+            event_slug: 'e',
+            url: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+            platforms: ['google-ads'],
+          },
+          { etag: '"1"' }
+        )
+      )
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    expect(result.briefId).toBe('b-1');
+    expect(result.created).toBe(true);
+  });
+
+  it('does not adopt a row that has been written more than once', async () => {
+    // `version === 1` is what stops this session claiming a row it did not create. A higher
+    // version means the row carries edits this POST never made, so adopting it would hand the
+    // caller ownership of someone else's work and let the next save replace it.
+    //
+    // This is the load-bearing guard on THIS branch: `CampaignServiceBrief` here declares only
+    // the columns the write path reads, so the payload comparison can check program and slug but
+    // not url or platforms. LFXV2-3108 widens the type and strengthens that half.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockResolvedValueOnce(apiResponse({ id: 'other', version: 4, program_type: 'events', event_slug: 'e' }, { etag: '"4"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
+  it('does not adopt a row whose payload differs, now that the type carries it', async () => {
+    // The half the base branch could not check: there `CampaignServiceBrief` declares only the
+    // columns the write path reads, so a same-event row differing in platforms was adopted. This
+    // branch adds the read path and with it `url`/`platforms`, so the comparison catches it.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockResolvedValueOnce(
+        apiResponse(
+          {
+            id: 'other',
+            version: 1,
+            program_type: 'events',
+            event_slug: 'e',
+            url: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+            platforms: ['reddit-ads'],
+          },
+          { etag: '"1"' }
+        )
+      );
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
+  it('does not adopt a row for a different event or program', async () => {
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
+      .mockResolvedValueOnce(apiResponse({ id: 'other', version: 1, program_type: 'education', event_slug: 'e' }, { etag: '"1"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+  });
+
+  it('does not reconcile a create the server REFUSED', async () => {
+    // A 4xx is a refusal: nothing committed, so looking again can only find someone else's row.
+    // The original error is the accurate answer, and the find must not even be attempted.
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('bad', 400, 'BAD_REQUEST', {}));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('bad');
+    // find + POST only: no reconciliation read.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+
   it("sends the CALLER's last-seen validator, not the one this save just read", async () => {
     // The point of the whole change. Using the find's ETag makes the If-Match ceremonial: that
     // find runs inside this very save, so its validator always matches and the 412 can never
@@ -733,11 +819,24 @@ describe('fromBriefResponse', () => {
   });
 
   it('keeps a variant block that has the array the template iterates', () => {
-    const linkedIn = { variants: [{ headline: 'Join us' }] };
+    // A COMPLETE LinkedIn variant: the template reads `variant.introText.length`
+    // (implementation-tab.component.html:338), so a variant missing it is not renderable and is
+    // dropped by the case below rather than kept.
+    const linkedIn = { variants: [{ introText: 'Come along', headline: 'Join us' }] };
 
     const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as { variants: unknown[] } | undefined;
 
     expect(restored?.variants).toEqual(linkedIn.variants);
+  });
+
+  it('drops a LinkedIn variant missing the field the template dereferences', () => {
+    // `headline` alone used to survive, and the template then threw on `introText.length`.
+    // Required fields are now each variant interface's own string set, so this cannot drift.
+    const linkedIn = { variants: [{ headline: 'Join us' }, { introText: 'Come along', headline: 'Join us' }] };
+
+    const restored = fromBriefResponse(storedBrief({ copy: { linkedIn } }))?.linkedInCopy as { variants: unknown[] } | undefined;
+
+    expect(restored?.variants).toEqual([{ introText: 'Come along', headline: 'Join us' }]);
   });
 
   /**
