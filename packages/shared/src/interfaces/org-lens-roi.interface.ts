@@ -93,6 +93,47 @@ export interface OrgLensRoiProjects {
   rows: OrgLensRoiProjectRow[];
 }
 
+/**
+ * One project's ROI detail. The project itself is the same shape `/projects` serves, singular.
+ *
+ * `orgUid` travels with it so the detail page can check the payload in hand actually describes the
+ * organization now selected, the way the portfolio page checks its summary — a request in flight
+ * during an organization switch would otherwise render one company's figures under another's name.
+ */
+export interface OrgLensRoiProjectDetail {
+  orgUid: string;
+  method: OrgLensRoiMethod;
+  project: OrgLensRoiProjectRow;
+  /**
+   * Whether this project also has an Org Lens catalog row for this organization, and therefore
+   * whether `/org/projects/{projectSlug}` resolves. False for a measured 32.4% of ROI
+   * organization-project pairs, so the onward link is conditional rather than assumed.
+   */
+  hasOrgLensProject: boolean;
+}
+
+export interface OrgLensRoiProjectAnnual {
+  method: OrgLensRoiMethod;
+  projectSlug: string;
+  rows: OrgLensRoiAnnualRow[];
+  apportioned: boolean;
+  /**
+   * Always true. Per-project ROI and BCR are identical in every year — the apportionment share
+   * scales numerator and denominator alike and cancels — so the flag tells the client to disclose
+   * the constancy and never to draw them as a trend.
+   */
+  efficiencyConstant: boolean;
+}
+
+/** One year of a project's investment distribution, pre-formatted for both the chart and its table. */
+export interface OrgLensRoiProjectYearRow {
+  year: number;
+  expenditure: number;
+  investmentLabel: string;
+  returnLabel: string;
+  isPartial: boolean;
+}
+
 /** One rendered arc of the category donut. A view model — never serialized, never a wire contract. */
 export interface OrgLensRoiCategorySlice {
   key: string;

@@ -8,6 +8,8 @@ import type {
   OrgLensRoiCoverage,
   OrgLensRoiInvestmentBreakdown,
   OrgLensRoiMethod,
+  OrgLensRoiProjectAnnual,
+  OrgLensRoiProjectDetail,
   OrgLensRoiProjects,
   OrgLensRoiSummary,
 } from '@lfx-one/shared/interfaces';
@@ -58,6 +60,19 @@ export class OrgLensRoiService {
    */
   public getProjects(orgUid: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjects> {
     return this.http.get<OrgLensRoiProjects>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects`, {
+      params: new HttpParams().set('method', method),
+    });
+  }
+
+  /** 404s when the slug names no project of this organization — never an empty 200. */
+  public getProjectDetail(orgUid: string, projectSlug: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjectDetail> {
+    return this.http.get<OrgLensRoiProjectDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects/${encodeURIComponent(projectSlug)}`, {
+      params: new HttpParams().set('method', method),
+    });
+  }
+
+  public getProjectAnnual(orgUid: string, projectSlug: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjectAnnual> {
+    return this.http.get<OrgLensRoiProjectAnnual>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects/${encodeURIComponent(projectSlug)}/annual`, {
       params: new HttpParams().set('method', method),
     });
   }
