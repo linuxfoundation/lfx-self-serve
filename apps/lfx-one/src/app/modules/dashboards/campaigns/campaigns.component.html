@@ -80,8 +80,44 @@
     @switch (selectedEmailTab()) {
       @case ('planning') {
         <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
+          <!--
+            KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
+
+            Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
+            platform to proceed (`canGenerate` requires `selectedPlatforms().size > 0`, and the set
+            defaults to `google-ads`), and generates RSA copy, Demand Gen copy, ad keywords and a
+            LinkedIn targeting strategy. None of that is email — no template, subject, sender or
+            preview text — and `onEmailProceedToImplementation` stores a brief the Implement panel
+            reads only for EXISTENCE. The payload is never consumed.
+
+            It ships this way deliberately: this PR replaces a "coming soon" placeholder, and the
+            email brief shape is a feature, not a review fix. It needs a delivery-type mode on the
+            planner (or a separate component), a different `canGenerate` gate, and a generation
+            request that carries email fields instead of `platforms` — plus a decision about
+            whether the two delivery types should share a component at all. LFXV2-3201 owns that
+            decision; LFXV2-3197 (merged) supplies the template picker the Implement half needs.
+
+            Until then the Plan tab is honest about the event URL and scrape, which the two types
+            genuinely do share, and misleading about everything below it.
+          -->
           <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
+          <!--
+            TWO planning-tab instances are in the DOM at once, because both delivery containers are
+            visibility-toggled rather than swapped with `@if` (destroying either would wipe an
+            in-progress brief). The planner emits FIXED internal test ids — `planning-url-input`,
+            `planning-generate-btn`, `planning-platform-<id>` — so each of those now resolves to
+            two elements, one of them hidden.
+
+            Any selector on a bare `planning-*` id MUST therefore be scoped under its host:
+
+              [data-testid="campaigns-email-planning-tab"] [data-testid="planning-url-input"]
+              [data-testid="campaigns-planning-tab"]       [data-testid="planning-url-input"]
+
+            Namespacing the planner's own ids per instance would be the stronger fix, but it
+            changes a component both delivery types share and belongs with LFXV2-3201, which
+            revisits whether they should share it at all.
+          -->
           @for (program of [selectedProgramType()]; track program) {
             <lfx-planning-tab
               [programTypeConfig]="activeProgramTypeConfig()"

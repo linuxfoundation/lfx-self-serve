@@ -137,6 +137,36 @@ describe('CampaignsComponent — email delivery channel', () => {
   });
 
   /**
+   * The PAID side of the same handler, which the email case above does not cover.
+   *
+   * `onTabKeydown` picks its bounding list from `owner`, so the two sides share one code path and
+   * differ only in list length — paid has four tabs including `optimization`, email has three.
+   * A change to the shared bounds could break paid navigation while the email test stays green,
+   * which is precisely the regression the `owner` parameter exists to prevent. Proving it on one
+   * side only left that guarantee half-tested.
+   */
+  it('lands End on the last PAID tab, not the last email one', () => {
+    internals().selectTab('planning', 'paid-marketing');
+
+    internals().onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 3, 'paid-marketing');
+
+    // `optimization` is paid-only. Bounded on the email list this would be `insights`, so the
+    // assertion distinguishes the two lists rather than merely exercising End.
+    expect(internals().selectedTab()).toBe('optimization');
+  });
+
+  it('wraps ArrowLeft backwards within the email tab set', () => {
+    selectEmail();
+    internals().selectTab('planning', 'email'); // first email tab, index 0
+
+    internals().onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0, 'email');
+
+    // Backwards off index 0 wraps to the LAST email tab. Modulo the four-tab paid list it would
+    // land on `optimization`, which this side does not render.
+    expect(internals().selectedEmailTab()).toBe('insights');
+  });
+
+  /**
    * A program switch discards BOTH sides' briefs.
    *
    * The brief is program-specific — the URL scrape and generated copy differ between Events and
@@ -186,10 +216,12 @@ describe('CampaignsComponent — email delivery channel', () => {
     // `ready.Staging`.
     //
     // It does not happen: Angular keeps a space at that boundary. Stated plainly, this assertion
-    // is NOT binding — removing the newline from the template does not make it fail, because the
-    // compiler normalizes the join either way. It is kept as a statement of the requirement, not
-    // as a guard, and a reader should not take it for one.
-    expect(withBrief?.textContent).not.toContain('ready.Staging');
+    // was NOT binding as originally written (`not.toContain('ready.Staging')`) — the compiler
+    // normalizes the join either way, so it could not fail. In a suite whose whole purpose is
+    // pinning behaviours one line away from silently regressing, an unfailable assertion is worse
+    // than none: the next person copies it believing the separation is protected. Asserting the
+    // separator POSITIVELY does bind.
+    expect(withBrief?.textContent).toMatch(/ready\.\s+Staging an email/);
   });
 
   it('does not let one delivery type receive the other approved brief', () => {
