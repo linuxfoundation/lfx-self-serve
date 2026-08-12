@@ -98,18 +98,20 @@ export class EventsSummarySectionComponent {
 
   // === Computed Signals ===
   /**
-   * Period label for the heading — always the resolved range's own label, so a trailing-range
-   * selection can't render under a heading claiming a different scope. Falls back to 'YTD' only
-   * when the period is absent or unresolvable.
+   * Period label for the heading, taken from the scope the RESPONSE reports — not from the picker.
+   *
+   * The two disagree by design: only a month re-aggregates. YTD and the trailing presets are all
+   * served the year-to-date rollups, because those columns have no date grain to narrow (see
+   * getEventsOverviewSummary). Labelling from the picker would therefore print "Last 3 months"
+   * over year-to-date figures — the exact misreport the server comment promises callers avoid.
+   *
+   * Sponsorship is YTD-only regardless of the picker, and the server reports that scope too, so
+   * it needs no special case here.
    */
   private readonly periodLabel = computed(() => {
-    // The sponsorship split forces a YTD query regardless of the picker (sponsorship data only
-    // exists at YTD scope), so its heading must say YTD too — naming the picked month over
-    // year-to-date figures would misreport the scope of every number under it.
-    if (this.eventsSplit() === 'sponsorship') return 'YTD';
+    if (this.summary()?.scope !== 'month') return 'YTD';
     const period = this.selectedPeriod();
-    if (!period) return 'YTD';
-    return resolvePeriodRange(period)?.label ?? 'YTD';
+    return (period && resolvePeriodRange(period)?.label) || 'YTD';
   });
 
   /** Card title — names the active half so the split views don't share one generic heading. */
@@ -141,7 +143,6 @@ export class EventsSummarySectionComponent {
    * Heading scope read from the response, not the picker: a trailing preset is served the YTD
    * rollup, so titling it "Last 3 months" would name a range the numbers do not cover.
    */
-  protected readonly scopeLabel = computed(() => (this.summary()?.scope === 'month' ? 'Monthly' : 'YTD'));
   protected readonly stats: Signal<EventsSummaryStat[]> = this.initStats();
   // Sized to the visible tiles so the placeholder count matches what resolves — otherwise the
   // split views flash seven skeletons and settle to four.

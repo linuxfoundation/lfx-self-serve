@@ -293,6 +293,31 @@ describe('EventDetailDrawerComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="event-detail-email-summary"]')).toBeNull();
   });
 
+  // Every section has to follow the focus, not just the breakdowns: pacing and registration
+  // sources are attendance, revenue and tiers are sponsorship. Leaving any of them ungated means
+  // a sponsorship-bar click still lands the reader in the attendance story.
+  // document, not fixture.nativeElement: the drawer renders into an overlay outside the fixture's
+  // host, so a fixture-scoped query returns null for everything and the assertion passes vacuously.
+  it('hides the attendance-only sections in the sponsorship view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1', 'tlf', 'b2b');
+
+    expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-channels"]')).toBeNull();
+  });
+
+  it('hides the sponsorship-only sections in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-revenue"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeNull();
+  });
+
   it('labels an unnamed tier rather than rendering a blank row', async () => {
     await setup(vi.fn().mockReturnValue(of(detail({ sponsorshipTiers: [{ tier: '', revenue: 1000, sponsorCount: 1 }] }))));
 
