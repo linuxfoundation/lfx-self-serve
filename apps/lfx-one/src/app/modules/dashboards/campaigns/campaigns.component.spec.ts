@@ -26,9 +26,17 @@ describe('CampaignsComponent brief persistence', () => {
   let persistBrief: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<CampaignsComponent>;
 
+  /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
+  const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
   /** `onProceedToImplementation` is protected; the spec drives it as the Planning tab's output would. */
-  function proceed(): void {
-    (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(brief);
+  function proceed(b: CampaignBriefOutput = brief): void {
+    (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
+  }
+
+  /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
+  function restore(b: CampaignBriefOutput, briefId: string): void {
+    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string): void }).onRestoreSavedBrief(b, briefId);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -284,25 +292,23 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state()).toEqual({ status: 'off', briefId: null, message: null });
     });
 
-  /**
-   * A REFUSED save must never render as a saved one.
-   *
-   * `conflict` arrives with `enabled: true` — the flag is on and the request was served — so a
-   * banner keyed on `enabled` alone reports "Brief saved." over work that was never written.
-   * That is the single worst outcome this feature can produce: the user closes the tab believing
-   * their afternoon is durable.
-   */
-  it('reports a refused save as an error, not as saved', async () => {
-    persistBrief.mockReturnValue(
-      of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' })
-    );
+    /**
+     * A REFUSED save must never render as a saved one.
+     *
+     * `conflict` arrives with `enabled: true` — the flag is on and the request was served — so a
+     * banner keyed on `enabled` alone reports "Brief saved." over work that was never written.
+     * That is the single worst outcome this feature can produce: the user closes the tab believing
+     * their afternoon is durable.
+     */
+    it('reports a refused save as an error, not as saved', async () => {
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
 
-    proceed();
-    await fixture.whenStable();
+      proceed();
+      await fixture.whenStable();
 
-    expect(state().status).toBe('error');
-    expect(state().message).toContain('already has a saved brief');
-  });
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('already has a saved brief');
+    });
     /**
      * The SECOND Proceed of a session must update the brief the first one created.
      *
@@ -311,6 +317,43 @@ describe('CampaignsComponent brief persistence', () => {
      * their own brief belongs to someone else. Creating a brief is the strongest proof of
      * ownership there is; this pins that the page keeps it.
      */
+    /**
+     * Ownership belongs to a BRIEF, not to a session or a foundation.
+     *
+     * `selectTab` sets the tab directly, so clicking back to Planning recreates the planning form
+     * without going through `resetToPlanning`. Restore event A, click Planning, generate a brief
+     * for event B: an ownership key that names only the foundation would hand B's save the id of
+     * A's row, and the server — being given a name it recognises — would accept an overwrite of a
+     * brief this session never loaded. That is exactly the case LFXV2-3200's guard exists to
+     * refuse, so a key too coarse to tell A from B disarms it.
+     */
+    it("does not lend one event's brief id to another event", async () => {
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      // Back to Planning by clicking the tab — no reset runs — then proceed with a brief for a
+      // different event.
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      proceed(otherBrief);
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(otherBrief, expect.anything(), null);
+    });
+
+    it("still replays an event's own id when that event is proceeded again", async () => {
+      // The other half of the same key: narrowing it must not break the case it exists to serve.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      (fixture.componentInstance as unknown as { selectTab(t: string): void }).selectTab('planning');
+      proceed(brief);
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a');
+    });
+
     it('sends the created brief id on the next save of the same session', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
 

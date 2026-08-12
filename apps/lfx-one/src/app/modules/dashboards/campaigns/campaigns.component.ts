@@ -107,18 +107,28 @@ export class CampaignsComponent {
    * refused. Merely tagging the slot with its slug fixes the wrong id but not the loss: returning
    * to TLF would then create a second row instead of replacing the one this session made.
    *
-   * A map keyed by slug matches how the server identifies a brief, `(project_id, event_slug)`: an
-   * id can only be replayed to the project that issued it, and every project keeps its own. That
-   * makes the invariant structural rather than something each future reset path must remember.
-   * It applies to BOTH sources above: a restored id is as foundation-specific as a created one.
+   * Keyed by BOTH halves of the server's own identity for a brief, `(project_id, event_slug)`, so
+   * an id can only ever be replayed against the row it names. That makes the invariant structural
+   * rather than something each future code path has to remember, and it applies to both sources
+   * above: a restored id is as event- and foundation-specific as a created one.
    *
-   * The event half needs no key: every event change goes through `resetToPlanning`, which clears
-   * the map with the brief it belonged to.
+   * An earlier revision keyed only the foundation and claimed the event half was covered because
+   * "every event change goes through `resetToPlanning`". That premise is false — `selectTab` sets
+   * the tab directly, so returning to Planning by clicking the tab recreates the planning form
+   * without any reset. Restore event A, click Planning, generate a brief for event B: with a
+   * foundation-only key, B's save would carry A's id and the server would accept an overwrite of
+   * a brief this session never loaded, which is precisely what the guard exists to prevent.
+   *
+   * The event half is derived exactly as the write path derives the key it sends
+   * (`deriveEventSlug` in `campaign-service.service.ts`): the trimmed `eventDetails.slug`, or none.
+   * It is duplicated rather than imported because that module is SERVER-side and this component
+   * runs in the browser; deriving it any other way would let the lookup and the request disagree
+   * about which row is being claimed, so the two must be changed together.
    *
    * A plain field rather than a signal: nothing renders it, and it answers "may this save
    * replace?" at the moment a request is built.
    */
-  private knownBriefIdBySlug = new Map<string, string>();
+  private knownBriefIds = new Map<string, string>();
 
   private briefPersistenceGeneration = 0;
 
@@ -272,7 +282,12 @@ export class CampaignsComponent {
       // on screen came out of campaign-service, and the next save sends it so the server will
       // replace that row rather than refusing as unowned (LFXV2-3200). Status stays `off`
       // because nothing is in flight — the id is provenance, not progress.
-      this.briefPersistence.set({ status: 'off', briefId: this.knownBriefIdBySlug.get(this.activeFoundationSlug()) ?? null, message: null });
+      const restoredKey = this.ownershipKey(this.activeFoundationSlug(), brief);
+      this.briefPersistence.set({
+        status: 'off',
+        briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey) ?? null),
+        message: null,
+      });
       return;
     }
     this.persistBrief(brief);
@@ -283,9 +298,13 @@ export class CampaignsComponent {
     // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the
     // resting state in one place.
     //
-    // Filed under the foundation it was loaded from, like a created id: a restored id names a row
-    // in exactly one project, so replaying it to another would be refused there.
-    this.knownBriefIdBySlug.set(this.activeFoundationSlug(), briefId);
+    // Filed under the foundation AND the event it was loaded for, like a created id: a restored
+    // id names exactly one row, so replaying it to any other project or event would be refused
+    // there — or, worse, accepted against a brief this session never loaded.
+    const key = this.ownershipKey(this.activeFoundationSlug(), brief);
+    if (key !== null) {
+      this.knownBriefIds.set(key, briefId);
+    }
     this.onProceedToImplementation(brief, true);
   }
 
@@ -331,7 +350,8 @@ export class CampaignsComponent {
     //
     // Only an id issued under THIS foundation is ours to replay; one from another foundation
     // names a row in a different project and would be refused there.
-    const knownBriefId = this.knownBriefIdBySlug.get(projectSlug) ?? null;
+    const ownershipKey = this.ownershipKey(projectSlug, brief);
+    const knownBriefId = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -398,12 +418,15 @@ export class CampaignsComponent {
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message: 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
+              message:
+                'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
             });
             return;
           }
           if (result.conflict === undefined && result.briefId !== '') {
-            this.knownBriefIdBySlug.set(projectSlug, result.briefId);
+            if (ownershipKey !== null) {
+              this.knownBriefIds.set(ownershipKey, result.briefId);
+            }
           }
           this.briefPersistence.set({ status: 'saved', briefId: result.briefId, message: null });
         },
@@ -432,6 +455,19 @@ export class CampaignsComponent {
     );
   }
 
+  /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
+  private ownershipKey(projectSlug: string, brief: CampaignBriefOutput): string | null {
+    const eventSlug = (brief.eventDetails?.slug ?? '').trim();
+    // No derivable event slug means no row can be named, so there is no ownership to record or
+    // claim. Returning null keeps that case out of the map rather than filing it under a key
+    // that would collide with every other unslugged brief.
+    //
+    // A newline separator, not a hyphen: both slugs are drawn from `[a-z0-9-]`, so a separator
+    // from that set could be produced by the slugs themselves and let `("a-b", "c")` collide
+    // with `("a", "b-c")`.
+    return eventSlug === '' ? null : `${projectSlug}\n${eventSlug}`;
+  }
+
   private resetToPlanning(): void {
     // Before clearing, so an in-flight save for the brief being discarded cannot write its
     // outcome back over the reset state.
@@ -440,7 +476,7 @@ export class CampaignsComponent {
     this.briefPersistence.set(this.idlePersistence);
     // Cleared with the brief it belonged to. A stale id here would let the NEXT brief — a
     // different event entirely — claim ownership of the previous one's row and replace it.
-    this.knownBriefIdBySlug.clear();
+    this.knownBriefIds.clear();
     this.selectedTab.set('planning');
   }
 }
