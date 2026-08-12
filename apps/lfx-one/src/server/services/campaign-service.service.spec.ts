@@ -393,6 +393,11 @@ describe('CampaignServiceClient.saveBrief', () => {
       etag: null,
       created: true,
       approved: false,
+      // Also a CONFLICT, not merely an unapproved save. The 412 says the row's version moved
+      // between the write and the approval, so another writer replaced the brief after this save
+      // committed — the write is durable but the row may no longer hold it. Without this the
+      // component renders "Brief saved.", confirming durability for content that is gone.
+      conflict: 'superseded-after-write',
     });
   });
 

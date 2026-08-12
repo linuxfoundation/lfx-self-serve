@@ -7,7 +7,14 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignDeliveryType, CampaignProgramType, CampaignTab } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefOutput,
+  CampaignBriefPersistenceState,
+  CampaignBriefPersistResult,
+  CampaignDeliveryType,
+  CampaignProgramType,
+  CampaignTab,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip } from 'rxjs';
@@ -132,6 +139,26 @@ export class CampaignsComponent {
    * replace?" at the moment a request is built.
 
    */
+  /**
+   * What each conflict means to the user. A map rather than nested ternaries, which the lint
+   * rules forbid — and which would read badly here anyway, since the three cases are unrelated
+   * situations rather than degrees of one.
+   *
+   * `superseded-after-write` is the odd one: its write DID land, so its message must not say
+   * "not saved". Confirming it as saved would be worse still — the row may no longer hold this
+   * content at all, and "Brief saved." is the one thing this banner must never say falsely.
+   */
+  private readonly conflictMessages: Record<NonNullable<CampaignBriefPersistResult['conflict']>, string> = {
+    'unowned-brief-exists':
+      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
+    // Says "reload", which the base branch deliberately does not: THIS branch adds the read path,
+    // so a reload re-looks-up the stored brief and offers it for restore. The advice is
+    // actionable here — the user sees the other writer's version instead of losing their own
+    // ownership state, which is what made the same sentence harmful before LFXV2-3108 existed.
+    'stale-brief': 'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.',
+    'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
+  };
+
   private knownBriefIds = new Map<string, { id: string; etag: string | null }>();
 
   private briefPersistenceGeneration = 0;
@@ -511,15 +538,7 @@ export class CampaignsComponent {
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message:
-                result.conflict === 'stale-brief'
-                  ? // Says "reload" again, which the base branch deliberately did not: this
-                    // branch ADDS the read path, so a reload re-looks-up the stored brief and
-                    // offers it for restore. There the advice is actionable — the user sees the
-                    // other writer's version rather than losing their own ownership state, which
-                    // is what made the same sentence harmful before LFXV2-3108 existed.
-                    'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.'
-                  : 'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
+              message: this.conflictMessages[result.conflict],
             });
             return;
           }

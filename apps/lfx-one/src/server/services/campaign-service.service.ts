@@ -517,7 +517,23 @@ export class CampaignServiceClient {
       // the absence of a confirmation. It only ever costs a re-approval, which Phase 3 has to be
       // able to do regardless: it re-checks approval at a version, since anyone may have edited
       // the brief in between.
-      return { ...saved, etag: definitelyRejected ? writeEtag : null, approved: false };
+      // A 412 is reported as a CONFLICT, not merely as an unapproved save. Same premise as the
+      // validator reasoning above, followed through to what it means for the user: the brief
+      // moved between the write and the approval, so another writer replaced it after this save
+      // committed. The write is durable, but the row may no longer HOLD it — and the component
+      // renders any non-conflict result as "Brief saved.", which would confirm durability for
+      // content that is no longer there. That is the one thing this banner must never say.
+      //
+      // Distinct from `stale-brief`, which is a refusal BEFORE anything was written. Here the
+      // write did land, so the honest message is that it may have been overwritten since rather
+      // than that it was not saved.
+      const supersededAfterWrite = error instanceof MicroserviceError && error.statusCode === 412;
+      return {
+        ...saved,
+        etag: definitelyRejected ? writeEtag : null,
+        approved: false,
+        ...(supersededAfterWrite ? { conflict: 'superseded-after-write' as const } : {}),
+      };
     }
   }
 

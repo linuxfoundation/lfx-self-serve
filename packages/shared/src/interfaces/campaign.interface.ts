@@ -195,6 +195,11 @@ export interface CampaignBriefPersistResult {
   /**
    * Why the save was REFUSED, when it was. Absent means the save happened.
    *
+   * `superseded-after-write`: the PUT committed, but the approval that follows it was refused
+   * with a 412 — the row's version moved in between, so another writer replaced the brief after
+   * this save wrote it. The write is durable but may no longer be what the row HOLDS, so it must
+   * not be confirmed as saved.
+   *
    * `stale-brief`: the caller named the row and owns it, but another writer changed it since the
    * caller last saw it, so the replace was refused with a 412 rather than overwriting their work.
    * Distinct from `unowned-brief-exists` because the remedy differs: this caller may replace the
@@ -216,7 +221,7 @@ export interface CampaignBriefPersistResult {
    * and the caller's next step is a CHOICE (open the existing one, or file under a different
    * event) rather than a retry.
    */
-  conflict?: 'unowned-brief-exists' | 'stale-brief';
+  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write';
 }
 
 /**
