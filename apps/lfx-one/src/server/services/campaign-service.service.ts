@@ -553,7 +553,15 @@ export class CampaignServiceClient {
       // someone else was them.
       // Any version: unlike a create, a replace does not know which version its PUT produced.
       // The payload comparison is what establishes the row is the one this request wrote.
-      const reconciled = await this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, () => true);
+      // NEWER than the version the find observed, not merely "any version". A save whose content
+      // is unchanged — re-proceeding without editing — looks identical before and after the PUT,
+      // so a payload match alone accepts the PRE-PUT row as proof the write landed. The code then
+      // approves that old version while the real PUT may still commit afterwards and reset it to
+      // `draft`, having already reported `approved: true`.
+      //
+      // A committed replace always bumps the version, so `> existing.brief.version` is what
+      // actually distinguishes "the write landed" from "the row never changed".
+      const reconciled = await this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, (version) => version > existing.brief.version);
       if (reconciled === null) {
         throw error;
       }
@@ -645,8 +653,23 @@ export class CampaignServiceClient {
       // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
       // came from the gateway is indistinguishable at this boundary and means the same thing:
       // the request may or may not have been processed.
+      // A TYPED 404 means campaign-service itself says the row is gone — deleted or archived
+      // between the write and the approval — not that a gateway lost the request. Left in
+      // `definitelyRejected` it returned the write ETag with no conflict, so the component
+      // rendered "Brief saved." for a brief that no longer exists.
+      //
+      // It joins 412 as `superseded-after-write` rather than getting its own value: to the user
+      // the situation is the same one that message already describes — the write landed, and what
+      // is stored now may not be theirs. The distinction between "someone replaced it" and
+      // "someone removed it" changes nothing they can act on.
+      const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
       const definitelyRejected =
-        error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 412 && error.statusCode !== 408;
+        error instanceof MicroserviceError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode !== 412 &&
+        error.statusCode !== 408 &&
+        !removedAfterWrite;
       logger.warning(
         req,
         'campaign_persist_brief_approve',
@@ -667,7 +690,7 @@ export class CampaignServiceClient {
       // Distinct from `stale-brief`, which is a refusal BEFORE anything was written. Here the
       // write did land, so the honest message is that it may have been overwritten since rather
       // than that it was not saved.
-      const supersededAfterWrite = error instanceof MicroserviceError && error.statusCode === 412;
+      const supersededAfterWrite = (error instanceof MicroserviceError && error.statusCode === 412) || removedAfterWrite;
       return {
         ...saved,
         etag: definitelyRejected ? writeEtag : null,
