@@ -4,15 +4,16 @@
 /**
  * Shared fixtures/mocks for the committee engagement UI specs (LFXV2-1705).
  *
- * The engagement fixture exercises every classification tier the BFF can serve (High / Medium /
- * Low / Inactive-with-invites / Inactive-never-invited / Emeritus) over a roster whose uids match
- * the mocked `/members` response, so the Members-table join and the At-Risk filter behave exactly
- * as they would against the real endpoint. Specs mock the BFF over `page.route` and stay
- * independent of the server's ENGAGEMENT_BACKEND mode.
+ * The engagement fixture exercises all six classification tiers the BFF can serve (High / Medium /
+ * Low / Inactive / Emeritus / LF Staff, LFXV2-3101) over seven fixture scenarios (Inactive appears
+ * twice: with and without invites) on a roster whose uids match the mocked `/members` response, so
+ * the Members-table join and the At-Risk filter behave exactly as they would against the real
+ * endpoint. Specs mock the BFF over `page.route` and stay independent of the server's
+ * ENGAGEMENT_BACKEND mode.
  */
 
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
-import type { CommitteeEngagementResponse, CommitteeEngagementWindow } from '@lfx-one/shared/interfaces';
+import type { CommitteeEngagementResponse, CommitteeEngagementWindow, CommitteeMemberEngagement } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 export const PAGE_LOAD_TIMEOUT = 30_000;
@@ -61,7 +62,7 @@ export function buildEngagementCommittee(): Record<string, unknown> {
     is_foundation: false,
     parent_uid: null,
     parent_project_uid: 'e2e-project-uid',
-    total_members: 6,
+    total_members: 8,
     created_at: '2025-01-15T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
     member_visibility: 'basic_profile',
@@ -87,6 +88,15 @@ const ROSTER: RosterSeed[] = [
   { uid: 'm-inactive-invited', first: 'Ira', last: 'Skipsall', role: 'None', votingStatus: 'Voting Rep' },
   { uid: 'm-inactive-never', first: 'Nova', last: 'Neverasked', role: 'None', votingStatus: 'Observer' },
   { uid: 'm-emeritus', first: 'Evan', last: 'Emeritus', role: 'None', votingStatus: 'Emeritus' },
+  // Mirrors the live bug the ticket was filed from (LFXV2-3101): an LF Staff seat added as an
+  // Observer with no real attendance expectation, which must render its own neutral tier, never
+  // Low/Inactive/at-risk styling.
+  { uid: 'm-lf-staff', first: 'Sam', last: 'Staffer', role: 'LF Staff', votingStatus: 'Observer' },
+  // LFXV2-3101 follow-up (Jordan Evans review): an LF Staff member who is a real Voting Rep — an
+  // ED or staff member serving as a genuine board/committee voting representative — must classify
+  // and count normally, NOT as the neutral LF Staff tier. Only the Observer-status staff seat above
+  // is excluded.
+  { uid: 'm-lf-staff-rep', first: 'Priya', last: 'Repstaff', role: 'LF Staff', votingStatus: 'Voting Rep' },
 ];
 
 export function buildRoster(): Record<string, unknown>[] {
@@ -105,7 +115,13 @@ export function buildRoster(): Record<string, unknown>[] {
 /**
  * One engagement response per window; the 90d numbers differ from 30d so a window switch is
  * observable in the UI, not just on the network. `at_risk_count: 2` = m-low (Low) +
- * m-inactive-invited (Inactive with invites); m-inactive-never and m-emeritus are excluded by rule.
+ * m-inactive-invited (Inactive with invites); m-inactive-never, m-emeritus, and m-lf-staff are
+ * excluded by rule — m-lf-staff-rep is NOT excluded (real Voting Rep, LFXV2-3101 follow-up) and
+ * counts like any other real member. `eligible_count: 6` = the 8-member roster minus m-emeritus and
+ * m-lf-staff (the active_count ratio's denominator, LFXV2-3101 review fix — NOT total_count, which
+ * stays the full roster size). `active_count`/`eligible_count`/`at_risk_count`/`attendance_rate` are
+ * fixture literals, not derived from `members[]` below — they don't need to recompute when a
+ * member's numbers change, only to stay a plausible, internally-consistent snapshot.
  */
 export function buildEngagementResponse(window: CommitteeEngagementWindow, overrides: Partial<CommitteeEngagementResponse> = {}): CommitteeEngagementResponse {
   const is90d = window === '90d';
@@ -144,13 +160,40 @@ export function buildEngagementResponse(window: CommitteeEngagementWindow, overr
         committee_meetings: 12,
       },
       { uid: 'm-emeritus', attended: 1, invited: 10, rate: 0.1, classification: 'Emeritus', role: 'None', voting_status: 'Emeritus', committee_meetings: 12 },
+      {
+        uid: 'm-lf-staff',
+        attended: 0,
+        invited: 8,
+        rate: 0,
+        classification: 'LF Staff',
+        role: 'LF Staff',
+        voting_status: 'Observer',
+        committee_meetings: 12,
+      },
+      {
+        uid: 'm-lf-staff-rep',
+        attended: 8,
+        invited: 10,
+        rate: 0.8,
+        classification: 'High',
+        role: 'LF Staff',
+        voting_status: 'Voting Rep',
+        committee_meetings: 12,
+      },
     ],
-    summary: { attendance_rate: 0.78, active_count: 3, total_count: 6, at_risk_count: 2 },
+    summary: { attendance_rate: 0.78, active_count: 4, eligible_count: 6, total_count: 8, at_risk_count: 2 },
     computed_at: null,
     data_available: true,
     data_source: 'live',
     ...overrides,
   };
+}
+
+/** Degraded-path classification: role/voting_status stay populated (roster passthroughs) even when every count zeroes out, so the Emeritus/LF Staff+Observer seat-type short-circuits still apply — see `CommitteeEngagementResponse.data_available`'s doc. LF Staff alone is NOT enough (LFXV2-3101 follow-up) — m-lf-staff-rep (Voting Rep) must still degrade to Inactive like any other real member. */
+function degradedClassification(member: { voting_status: string; role: string }): CommitteeMemberEngagement['classification'] {
+  if (member.voting_status === 'Emeritus') return 'Emeritus';
+  if (member.role === 'LF Staff' && member.voting_status === 'Observer') return 'LF Staff';
+  return 'Inactive';
 }
 
 export function buildDegradedEngagementResponse(window: CommitteeEngagementWindow): CommitteeEngagementResponse {
@@ -163,9 +206,11 @@ export function buildDegradedEngagementResponse(window: CommitteeEngagementWindo
       invited: 0,
       rate: 0,
       committee_meetings: 0,
-      classification: m.voting_status === 'Emeritus' ? 'Emeritus' : 'Inactive',
+      classification: degradedClassification(m),
     })),
-    summary: { attendance_rate: 0, active_count: 0, total_count: 6, at_risk_count: 0 },
+    // eligible_count stays 6 (not zeroed) — roster-known independent of engagement data, same as
+    // total_count. See CommitteeEngagementSummary.eligible_count's doc.
+    summary: { attendance_rate: 0, active_count: 0, eligible_count: 6, total_count: 8, at_risk_count: 0 },
     data_available: false,
   };
 }

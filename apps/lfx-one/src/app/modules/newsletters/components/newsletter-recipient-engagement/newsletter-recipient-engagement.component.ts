@@ -23,6 +23,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
 /**
@@ -35,7 +36,17 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize
  */
 @Component({
   selector: 'lfx-newsletter-recipient-engagement',
-  imports: [DatePipe, ReactiveFormsModule, CardComponent, TableComponent, InputTextComponent, PersonAvatarComponent, TagComponent, BadgeComponent],
+  imports: [
+    DatePipe,
+    ReactiveFormsModule,
+    CardComponent,
+    TableComponent,
+    InputTextComponent,
+    PersonAvatarComponent,
+    TagComponent,
+    BadgeComponent,
+    TooltipModule,
+  ],
   templateUrl: './newsletter-recipient-engagement.component.html',
 })
 export class NewsletterRecipientEngagementComponent {
@@ -46,6 +57,9 @@ export class NewsletterRecipientEngagementComponent {
   public readonly projectUid = input.required<string>();
   public readonly newsletterUid = input.required<string>();
   public readonly status = input.required<NewsletterStatus>();
+  // Set by the parent from its own NewsletterAnalytics.hasClickData. See `showClicks`
+  // for why this is OR-ed with, not replaced by, this component's own rows.
+  public readonly analyticsHasClicks = input<boolean>(false);
 
   // Filter form
   public readonly filterForm: FormGroup;
@@ -67,6 +81,22 @@ export class NewsletterRecipientEngagementComponent {
   public readonly chipConfig: Signal<NewsletterRecipientEngagementChipConfig[]> = this.initChipConfig();
   public readonly filteredRows: Signal<NewsletterRecipientRow[]> = this.initFilteredRows();
   public readonly showCompletenessNote = computed(() => this.response()?.complete === false);
+  /**
+   * Click columns/chip/timeline show when EITHER the parent's aggregate analytics
+   * or this component's own rows say clicks exist. The two endpoints are fetched
+   * independently and can legitimately disagree: this one is gated on the stricter
+   * `auditor` relation (vs. the aggregate's `viewer` gate), the aggregate rollup can
+   * lag the per-recipient records in either direction, and this response can be
+   * `complete: false`. OR-ing means a real click is never hidden, and `false` only
+   * when both sources agree there's nothing to show.
+   */
+  public readonly showClicks = computed(() => this.analyticsHasClicks() || this.rows().some((row) => row.clicked || row.click_count > 0));
+  // 6 base columns (chevron, Recipient, Delivery, Engagement, Opens, Last opened)
+  // plus Clicks + Last clicked. Bound rather than hard-coded so the timeline and
+  // empty-message rows can never drift from the header when clicks are hidden.
+  public readonly columnCount = computed(() => (this.showClicks() ? 8 : 6));
+  // The timeline row renders its own empty chevron cell, so it spans one fewer.
+  public readonly timelineColspan = computed(() => this.columnCount() - 1);
 
   public constructor() {
     this.filterForm = this.initializeFilterForm();
@@ -148,9 +178,24 @@ export class NewsletterRecipientEngagementComponent {
           displayName: recipient.name || recipient.email,
           segment: this.classifySegment(recipient),
           lastOpenedRelative: recipient.last_opened_at ? formatRelativeTime(new Date(recipient.last_opened_at)) : null,
+          // Normalized here (never undefined) so the template never needs optional
+          // chaining on these — the raw upstream fields are optional for
+          // pre-deploy truthfulness, but a built row always has concrete values.
+          clicked: recipient.clicked ?? false,
+          click_count: recipient.click_count ?? 0,
+          clicked_at_list: recipient.clicked_at_list ?? [],
+          lastClickedRelative: recipient.last_clicked_at ? formatRelativeTime(new Date(recipient.last_clicked_at)) : null,
         }))
         .sort((a, b) => {
-          if (a.opened !== b.opened) return a.opened ? -1 : 1;
+          // A click can be recorded without an open (e.g. an image-blocked client),
+          // so keying on `opened` alone would bury the most-engaged recipient below
+          // silent openers. This is a strict superset of the previous comparator:
+          // with no click data every `clicked` is false and `click_count` is 0, so
+          // `aEngaged === a.opened` and the click tiebreak is always a tie.
+          const aEngaged = a.opened || a.clicked;
+          const bEngaged = b.opened || b.clicked;
+          if (aEngaged !== bEngaged) return aEngaged ? -1 : 1;
+          if (b.click_count !== a.click_count) return b.click_count - a.click_count;
           return b.open_count - a.open_count;
         });
     });
@@ -162,12 +207,18 @@ export class NewsletterRecipientEngagementComponent {
       const openedCount = rows.filter((row) => row.segment === 'opened').length;
       const notOpenedCount = rows.filter((row) => row.segment === 'not-opened').length;
       const failedCount = rows.filter((row) => row.segment === 'failed').length;
-      return [
+      const chips: NewsletterRecipientEngagementChipConfig[] = [
         { key: 'all', label: 'All', count: rows.length },
         { key: 'opened', label: 'Opened', count: openedCount },
-        { key: 'not-opened', label: 'Not opened', count: notOpenedCount },
-        { key: 'failed', label: 'Failed', count: failedCount },
       ];
+      // Overlaps 'opened' by design (see NewsletterRecipientEngagementChipKey) —
+      // inserted next to it so the two engagement chips read as a pair, ahead of
+      // the negative buckets.
+      if (this.showClicks()) {
+        chips.push({ key: 'clicked', label: 'Clicked', count: rows.filter((row) => row.clicked).length });
+      }
+      chips.push({ key: 'not-opened', label: 'Not opened', count: notOpenedCount }, { key: 'failed', label: 'Failed', count: failedCount });
+      return chips;
     });
   }
 
@@ -176,7 +227,12 @@ export class NewsletterRecipientEngagementComponent {
       let filtered = this.rows();
 
       const chip = this.activeChip();
-      if (chip !== 'all') {
+      // Guarded on showClicks() so a latched 'clicked' selection (from before click
+      // data disappeared, e.g. a refetch) falls back to unfiltered instead of
+      // filtering against an unreachable chip.
+      if (chip === 'clicked' && this.showClicks()) {
+        filtered = filtered.filter((row) => row.clicked);
+      } else if (chip !== 'all' && chip !== 'clicked') {
         filtered = filtered.filter((row) => row.segment === chip);
       }
 

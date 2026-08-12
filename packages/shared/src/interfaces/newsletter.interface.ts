@@ -1,18 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export type NewsletterStatusTabId = 'draft' | 'sent' | 'optout';
+export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
 
 /**
- * Newsletter lifecycle states.
+ * Newsletter lifecycle states: `draft → sending → sent`, or
+ * `draft → sending → scheduled → sent` when a schedule is armed.
  *
  * `sending` is the transient state between the newsletter-service accepting a
- * send (202) and the background fan-out settling — to `sent` on completion, or
- * back to `draft` when zero recipients could be delivered to. The upstream
- * `status=sent` list filter also matches `sending` rows, so in-flight sends
- * appear on the Sent tab.
+ * send or schedule request (202) and the background fan-out settling — to
+ * `sent` (immediate send) or `scheduled` (armed schedule) on completion, or
+ * back to `draft` when zero recipients could be delivered/scheduled to. The
+ * upstream `status=sent` list filter also matches `sending` rows, so an
+ * in-flight *send* appears on the Sent tab — but an in-flight *schedule arm*
+ * (a `sending` row that carries `scheduled_at`) is a distinct case the UI must
+ * exclude from Sent and surface on the Scheduled tab instead, since
+ * `status=scheduled` alone does not match it. `scheduled` rows are excluded
+ * from both the `draft` and `sent` filters, so they need their own tab to stay
+ * reachable. A background sweep (every 5 minutes) flips a `scheduled` row to
+ * `sent` once its `scheduled_at` has passed — display-state reconciliation
+ * only; SendGrid delivers on its own timing regardless of the sweep.
  */
-export type NewsletterStatus = 'draft' | 'sending' | 'sent';
+export type NewsletterStatus = 'draft' | 'sending' | 'scheduled' | 'sent';
 
 /**
  * Top-level view shown by the newsletter manage screen.
@@ -99,6 +108,33 @@ export interface NewsletterSendResult {
   failures?: NewsletterSendFailure[];
 }
 
+/** Optional body of POST …/newsletters/{uid}/schedule — overrides the draft's saved `scheduled_at`. */
+export interface NewsletterSchedulePayload {
+  scheduled_at: string;
+}
+
+/**
+ * Response of POST …/newsletters/{uid}/schedule. Mirrors NewsletterSendResult
+ * plus the `scheduled_at` actually armed (the request's override, or the
+ * draft's own saved value). Same async-acceptance shape as send: branch on
+ * `newsletter.status` ('sending' while the arm fan-out runs, settling to
+ * 'scheduled').
+ */
+export interface NewsletterScheduleResult {
+  newsletter: Newsletter;
+  group_id: string;
+  scheduled_at: string;
+  total_recipients: number;
+  sent: number;
+  failed: number;
+  failures?: NewsletterSendFailure[];
+}
+
+/** Response of POST …/newsletters/{uid}/cancel-schedule — the reverted (draft) newsletter. */
+export interface NewsletterCancelScheduleResult {
+  newsletter: Newsletter;
+}
+
 export interface Newsletter {
   id: string;
   project_uid: string;
@@ -108,6 +144,15 @@ export interface Newsletter {
   committee_uids: string[];
   status: NewsletterStatus;
   sent_at?: string;
+  /**
+   * Two meanings depending on `status`: while `draft`, the author's saved
+   * intent — saving it does not by itself contact the send provider. Once
+   * `status='scheduled'`, the committed release time armed at the provider.
+   * Null when no schedule has ever been set. Survives cancel-schedule (which
+   * reverts to `draft` but retains this value) so re-arming doesn't require
+   * re-entering the time.
+   */
+  scheduled_at?: string;
   group_id?: string;
   total_recipients: number;
   created_by: string;
@@ -121,6 +166,12 @@ export interface CreateNewsletterRequest {
   body_html: string;
   ed_reply_email: string;
   committee_uids: string[];
+  /**
+   * Optional saved schedule intent. Validated leniently (future-only) at save
+   * time — arming a schedule via POST …/schedule validates the full lead/
+   * horizon window separately.
+   */
+  scheduled_at?: string | null;
 }
 
 export interface UpdateNewsletterRequest {
@@ -128,6 +179,12 @@ export interface UpdateNewsletterRequest {
   body_html: string;
   ed_reply_email: string;
   committee_uids: string[];
+  /**
+   * Full-replace like every other field here: omitting it (or passing `null`)
+   * clears a previously-saved schedule. Callers that don't want to touch the
+   * schedule must always send the current value back.
+   */
+  scheduled_at?: string | null;
 }
 
 export interface NewsletterListItem extends Newsletter {
@@ -182,10 +239,42 @@ export interface NewsletterListParams {
   page_token?: string;
 }
 
+/**
+ * Reason a newsletter's schedule form can't be armed. `'past'` | `'tooSoon'` |
+ * `'tooFar'` come from `newsletterScheduleWindowValidator` — `'past'` is the
+ * only case that should clear the picker (the value can no longer save);
+ * `'tooSoon'`/`'tooFar'` still save fine and only need to disable the Schedule
+ * action. `'invalidFormat'` comes from the `scheduleTime` control's own
+ * `timeFormatValidator` — the time picker accepts free text, and an
+ * out-of-range value like "13:99 PM" would otherwise survive into
+ * `combineDateTime`, which normalizes rather than rejects overflow, silently
+ * arming a different instant than the author typed.
+ */
+export type NewsletterScheduleWindowError = 'past' | 'tooSoon' | 'tooFar' | 'invalidFormat';
+
 export interface NewsletterDailyOpens {
   date: string;
   opens: number;
   unique_opens: number;
+}
+
+export interface NewsletterDailyClicks {
+  date: string;
+  clicks: number;
+  unique_clicks: number;
+}
+
+/**
+ * One row of the aggregate `top_links` breakdown (lfx-v2-newsletter-service PR
+ * #76). Capped upstream at the 20 highest-`clicks` URLs and already sorted by
+ * `clicks` descending — clients should not re-sort. Compliance-footer links
+ * (Unsubscribe, My Newsletters) are excluded upstream, so this reflects
+ * author content only.
+ */
+export interface NewsletterLinkClicks {
+  url: string;
+  clicks: number;
+  unique_clicks: number;
 }
 
 export interface NewsletterAnalytics {
@@ -205,6 +294,22 @@ export interface NewsletterAnalytics {
   open_rate: number;
   daily_opens: NewsletterDailyOpens[];
   last_event_at?: string;
+  // Click metrics (lfx-v2-newsletter-service PR #76). Non-pointer upstream — always
+  // present once deployed, arrays never null — but optional here so the interface
+  // stays truthful against a pre-deploy newsletter-service. CRITICAL: these are
+  // SendGrid-only. A newsletter sent via email-service (SES) always reports zeros /
+  // empty arrays here, and `send_provider` is not exposed on any public DTO, so a
+  // client cannot distinguish "clicks unmeasurable" from "zero clicks". Every click
+  // UI element must therefore be gated on a single derived "has click data" rule
+  // rather than rendering a misleading 0%.
+  total_clicks?: number;
+  unique_clicks?: number;
+  /** 0-1 fraction of delivered emails (same denominator as `open_rate`); multiply by 100 for display. */
+  click_rate?: number;
+  /** 0-1 fraction of unique opens, clamped to 1.0 upstream; `0` when there are no opens. */
+  click_to_open_rate?: number;
+  daily_clicks?: NewsletterDailyClicks[];
+  top_links?: NewsletterLinkClicks[];
 }
 
 /**
@@ -229,6 +334,14 @@ export interface NewsletterRecipientEngagement {
   // Every recorded open timestamp, ascending. Always present (empty array when
   // the recipient never opened); capped at the 500 most recent opens.
   opened_at_list: string[];
+  // Click fields (lfx-v2-newsletter-service PR #76). Same shape and 500-entry cap
+  // as the open fields above. SendGrid-only: on an email-service (SES) newsletter
+  // these are always `false` / `0` / omitted / `[]`. Optional for the same
+  // pre-deploy-truthfulness reason as NewsletterAnalytics' click fields.
+  clicked?: boolean;
+  click_count?: number;
+  last_clicked_at?: string;
+  clicked_at_list?: string[];
 }
 
 /**
@@ -265,10 +378,25 @@ export interface NewsletterRecipientRow extends NewsletterRecipientEngagement {
   // Precomputed so the template never calls a component method for formatting
   // (re-runs every CD cycle) — null when there's no last_opened_at to format.
   lastOpenedRelative: string | null;
+  // Click fields narrowed to required and normalized (`?? false` / `?? 0` / `?? []`)
+  // at row-build time, so the template never needs optional chaining on them.
+  clicked: boolean;
+  click_count: number;
+  clicked_at_list: string[];
+  /** Mirrors `lastOpenedRelative` for `last_clicked_at`; null when absent. */
+  lastClickedRelative: string | null;
 }
 
-/** Filter chip key for the recipient engagement table — `'all'` plus every `NewsletterRecipientEngagementSegment`. */
-export type NewsletterRecipientEngagementChipKey = 'all' | NewsletterRecipientEngagementSegment;
+/**
+ * Filter chip key for the recipient engagement table — `'all'` plus every
+ * `NewsletterRecipientEngagementSegment`, plus `'clicked'`. `'clicked'` is
+ * deliberately NOT a `NewsletterRecipientEngagementSegment`: clicking is
+ * orthogonal to the mutually-exclusive opened/not-opened/failed bucket (a
+ * clicker is usually also an opener, and an image-blocked clicker can still be
+ * 'not-opened'), so the Clicked chip's count overlaps 'Opened' and the chip
+ * counts do not sum to the 'all' count.
+ */
+export type NewsletterRecipientEngagementChipKey = 'all' | NewsletterRecipientEngagementSegment | 'clicked';
 
 /** One filter chip above the recipient engagement table, with its live count. */
 export interface NewsletterRecipientEngagementChipConfig {
@@ -286,6 +414,12 @@ export interface NewsletterRow extends NewsletterListItem {
   openRateAria: string;
   recipientsLabel: string;
   groupsLabel: string;
+  /** Formatted `scheduled_at` in the viewer's local timezone, e.g. "Aug 17, 9:00 AM PDT". Empty when unset. */
+  scheduledLabel: string;
+  /** Longer form for a tooltip/aria-label, e.g. including "(in 2 days)". */
+  scheduledTooltip: string;
+  /** True for a `sending` row that carries `scheduled_at` — an arm in progress, not a send in progress. Rendered disabled ("Scheduling…"), no row actions. */
+  isArming: boolean;
 }
 
 export interface NewsletterChartDataset {
@@ -302,6 +436,17 @@ export interface NewsletterChartData {
   datasets: NewsletterChartDataset[];
 }
 
+/**
+ * UI row for the "Top clicked links" table. `href` is the result of running
+ * the untrusted upstream `url` through `normalizeToUrl`, precomputed so the
+ * template neither calls a method nor re-validates on every CD cycle; `null`
+ * when the URL fails validation, in which case the raw string renders as
+ * unlinked text instead of an anchor.
+ */
+export interface NewsletterLinkRow extends NewsletterLinkClicks {
+  href: string | null;
+}
+
 export interface NewsletterOptOut {
   id: string;
   email: string;
@@ -315,4 +460,14 @@ export interface NewsletterOptOutListResponse {
 // Discriminates the two list shapes the newsletter list page's context/tab
 // switchMap can resolve to, so a single subscribe callback can route each
 // response without a second stream.
-export type NewsletterListLoadResult = { kind: 'newsletters'; response: NewsletterListResponse } | { kind: 'optout'; response: NewsletterOptOutListResponse };
+export type NewsletterListLoadResult =
+  | {
+      kind: 'newsletters';
+      response: NewsletterListResponse;
+      // Non-paginated `status=sending` rows carrying `scheduled_at` — arms in
+      // progress, fetched alongside the paginated `status=scheduled` request
+      // on the Scheduled tab only (see the list-filter trap in the newsletter
+      // service contract). Undefined on every other tab.
+      arming?: NewsletterListItem[];
+    }
+  | { kind: 'optout'; response: NewsletterOptOutListResponse };

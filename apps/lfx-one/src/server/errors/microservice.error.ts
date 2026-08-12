@@ -52,6 +52,14 @@ export class MicroserviceError extends BaseApiError {
       if (this.errorBody['errors']) {
         response['errors'] = this.errorBody['errors'];
       }
+      // Upstream's discriminating error code (e.g. 'scheduled', 'cancel_window_closed',
+      // 'send_in_progress', 'already_sent') — distinct from `code`, which is derived purely
+      // from the HTTP status (getCodeForStatus) and collapses all 409s to 'CONFLICT'. Forwarded
+      // additively so callers that need to branch deterministically on the upstream reason can,
+      // without breaking any existing consumer of `code`/`error`.
+      if (typeof this.errorBody['error'] === 'string' && this.errorBody['error'].trim()) {
+        response['upstreamCode'] = this.errorBody['error'];
+      }
     }
 
     return response;
