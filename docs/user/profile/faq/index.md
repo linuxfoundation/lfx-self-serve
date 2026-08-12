@@ -19,7 +19,7 @@ Open the **Edit profile** drawer and select the pencil button on your avatar to 
 
 ## Is there a limit on my About Me / bio?
 
-Yes — **About Me** can hold up to **2,000 characters**. A live counter under the field shows how many you have used, and typing or pasting beyond the limit is ignored. An emoji or other complex character counts as one character.
+Yes — **About Me** can hold up to **2,000 characters**. A live counter under the field shows how many you have used, and typing or pasting beyond the limit is ignored. A simple emoji counts as one character, though a few elaborate emoji (such as flags or combined "family" glyphs) count as more than one.
 
 ## How do I make my profile public and control what it shows?
 

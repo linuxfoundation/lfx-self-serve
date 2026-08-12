@@ -62,13 +62,13 @@ Select which of your verified email addresses is primary. Your primary email is 
 
 ### T-shirt size
 
-Optionally select a t-shirt size (Fitted-Cut or Straight-Cut, Small through 3XL) so event organizers can plan swag.
+Optionally select a t-shirt size (Fitted-Cut Small–2XL, or Straight-Cut Small–3XL) so event organizers can plan swag.
 
 ## The About Me character limit
 
 The **About Me** field holds up to **2,000 characters**. A live counter below the field shows how many you have used (for example, `250 / 2000`). When you reach the limit, additional typing or pasting is ignored so you never exceed it.
 
-The count is by character, so an emoji or other complex character counts as one — not two — even though it takes more space to store. This matches the limit the Linux Foundation applies when your profile is saved.
+Most characters — including a simple emoji — count as one, even though an emoji takes more space to store. A few elaborate emoji (such as flags or combined "family" glyphs) are built from several joined characters and count as more than one. This matches the limit the Linux Foundation applies when your profile is saved.
 
 ## Set your organization
 

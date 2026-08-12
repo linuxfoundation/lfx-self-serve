@@ -67,8 +67,8 @@ export class DocsArticleComponent {
   /** Article resolved by `docsArticleResolver` — guaranteed non-null on a successful navigation. */
   protected readonly article = this.initArticle();
 
-  /** Sibling articles in the same topic, denormalized for cheap renders. */
-  protected readonly siblings = computed(() => {
+  /** Sibling articles in the same topic, denormalized for cheap renders. Consumed only by `topicArticles`. */
+  private readonly siblings = computed(() => {
     const a = this.article();
     if (!a) return [];
     return a.siblings.map((slug) => this.docsManifest.getArticle(slug)).filter((s): s is DocsArticle => Boolean(s));
