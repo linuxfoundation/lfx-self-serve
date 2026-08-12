@@ -656,7 +656,12 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
  * can only ever send `events` or `education` — which is exactly why it must not be assumed.
  */
 export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOutput | null {
-  const eventDetails = asEventDetails(found.event_details);
+  // The top-level `event_slug` participates in the identity check, not only in constructing the
+  // result below. It is the REQUIRED, authoritative key — the one this row was retrieved by — so
+  // a blob carrying neither name nor slug is still identifiable when the column has one. Checking
+  // the blob alone reported `{ event_slug: 'event-a', event_details: { city: 'Paris' } }` as
+  // unreadable, discarding a brief the Implementation tab could name perfectly well.
+  const eventDetails = asEventDetails(found.event_details, asText(found.event_slug));
   if (eventDetails === null) {
     return null;
   }
@@ -706,9 +711,10 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     programType: found.program_type as CampaignProgramType,
     selectedPlatforms,
     structuredCopy: asRecord(copy['structured']),
-    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn']),
-    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit']),
-    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta']),
+    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn'], ['headline']),
+    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], ['headline']),
+    // Meta needs `primaryText` too: it is the field `canSubmit` dereferences.
+    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], ['headline', 'primaryText']),
     keywords: asKeywords(found.keywords),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
@@ -742,7 +748,7 @@ function asTextList(value: unknown): string[] {
  * identity: the Implementation tab's campaign names are built from them, and the reload would
  * present an unnamed event the user cannot recognise as theirs.
  */
-function asEventDetails(value: unknown): CampaignEventDetails | null {
+function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDetails | null {
   const details = asRecord(value);
   if (details === null) {
     return null;
@@ -750,7 +756,9 @@ function asEventDetails(value: unknown): CampaignEventDetails | null {
 
   const name = asText(details['name']);
   const slug = asText(details['slug']);
-  if (name.trim().length === 0 && slug.trim().length === 0) {
+  // The top-level slug counts as identity: it is the required column this row was found by, so a
+  // blob with neither name nor slug is unidentifiable only when that column is empty too.
+  if (name.trim().length === 0 && slug.trim().length === 0 && topLevelSlug.trim().length === 0) {
     return null;
   }
 
@@ -812,11 +820,26 @@ function objectElements(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((el): el is Record<string, unknown> => asRecord(el) !== null) : [];
 }
 
+/**
+ * Object elements that actually carry the string fields the consumers dereference.
+ *
+ * Object-ness alone is not enough, which the first version of this filter got wrong: a stored
+ * `{}` is a plain object, survives `objectElements`, and is then cast to `MetaAdVariant` — where
+ * `canSubmit` calls `v.primaryText.trim()` (implementation-tab.component.ts:238) and throws. The
+ * same holds for a geo target with no `urn` (`:243`).
+ *
+ * Requiring the fields the consumer READS is the check that matches the hazard. An element
+ * missing them cannot be rendered or submitted, so dropping it loses nothing recoverable.
+ */
+function objectElementsWith(value: unknown, required: readonly string[]): Record<string, unknown>[] {
+  return objectElements(value).filter((el) => required.every((k) => typeof el[k] === 'string'));
+}
+
 function stringElements(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((el): el is string => typeof el === 'string') : [];
 }
 
-function asVariantCopy<T>(value: unknown): T | undefined {
+function asVariantCopy<T>(value: unknown, variantRequiredFields: readonly string[]): T | undefined {
   const block = asRecord(value);
   if (block === null || !Array.isArray(block['variants'])) {
     return undefined;
@@ -824,9 +847,14 @@ function asVariantCopy<T>(value: unknown): T | undefined {
   const coerced: Record<string, unknown> = { ...block };
   // `variants` is NOT in VARIANT_COPY_ARRAY_FIELDS — that list is the RECOMMENDATION fields — so
   // it is filtered explicitly here. It is also the field the crash reports named.
-  coerced['variants'] = objectElements(coerced['variants']);
+  // Which fields are required depends on the PLATFORM, because the dereferences do. `canSubmit`
+  // reads `v.primaryText.trim()` on Meta variants (implementation-tab.component.ts:238), so a
+  // Meta variant carrying only `headline` still throws — requiring the shared field alone was not
+  // enough, and reasoning that such a variant "has nothing to submit anyway" missed that the
+  // dereference happens BEFORE any such judgement.
+  coerced['variants'] = objectElementsWith(coerced['variants'], variantRequiredFields);
   for (const key of VARIANT_COPY_ARRAY_FIELDS) {
-    coerced[key] = key === 'recommendedGeoTargets' ? objectElements(coerced[key]) : stringElements(coerced[key]);
+    coerced[key] = key === 'recommendedGeoTargets' ? objectElementsWith(coerced[key], ['urn']) : stringElements(coerced[key]);
   }
   return coerced as T;
 }

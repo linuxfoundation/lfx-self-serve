@@ -644,10 +644,30 @@ describe('fromBriefResponse', () => {
     ['a missing event_details', undefined],
     ['a non-object event_details', 'kubecon'],
     ['an array event_details', []],
-    ['an event_details with neither name nor slug', { city: 'Amsterdam' }],
-    ['an event_details whose name and slug are blank', { name: '  ', slug: '' }],
   ])('gives up on %s rather than returning a brief nothing can render', (_label, eventDetails) => {
     expect(fromBriefResponse(storedBrief({ event_details: eventDetails }))).toBeNull();
+  });
+
+  // A blob carrying no identity of its own is NOT unreadable while the top-level `event_slug`
+  // has one: that column is the required key the row was retrieved by, and `event_details` is
+  // opaque JSON another client may fill differently. These two cases used to be in the table
+  // above, which meant the identity check consulted only the blob and discarded briefs the
+  // Implementation tab could name perfectly well.
+  it.each([
+    ['neither name nor slug', { city: 'Amsterdam' }],
+    ['a blank name and slug', { name: '  ', slug: '' }],
+  ])('reads a brief whose event_details has %s when the column carries the slug', (_label, eventDetails) => {
+    const brief = fromBriefResponse(storedBrief({ event_slug: 'kubecon-eu-2026', event_details: eventDetails }));
+    expect(brief).not.toBeNull();
+    expect(brief?.eventDetails.slug).toBe('kubecon-eu-2026');
+  });
+
+  // Both empty is still unreadable: nothing can name the row at all.
+  it.each([
+    ['neither name nor slug', { city: 'Amsterdam' }],
+    ['a blank name and slug', { name: '  ', slug: '' }],
+  ])('gives up when event_details has %s AND the column is empty too', (_label, eventDetails) => {
+    expect(fromBriefResponse(storedBrief({ event_slug: '', event_details: eventDetails }))).toBeNull();
   });
 
   // The service's enum has `membership`; `CampaignProgramType` does not. Rendering one as an
@@ -745,6 +765,15 @@ describe('fromBriefResponse', () => {
    * so adding one to an interface without adding it to the coercion list fails here rather than
    * throwing on a user's Restore.
    */
+  it('reads a brief whose identity is only in the top-level event_slug', () => {
+    // event_details is opaque JSON another client may fill differently. The top-level column is
+    // the REQUIRED key this row was retrieved by, so a blob with neither name nor slug is still
+    // identifiable — checking the blob alone discarded a brief the Implementation tab can name.
+    const brief = fromBriefResponse(storedBrief({ event_slug: 'event-a', event_details: { city: 'Paris' } }));
+    expect(brief).not.toBeNull();
+    expect(brief?.eventDetails.slug).toBe('event-a');
+  });
+
   it('reports a brief whose every stored platform is unknown as unreadable', () => {
     // `populateFromBrief` applies the selection only when non-empty
     // (`if (brief.selectedPlatforms?.length)`), so an empty array leaves its `google-ads` default
@@ -772,6 +801,12 @@ describe('fromBriefResponse', () => {
     const meta = fromBriefResponse(storedBrief({ copy: { meta: { variants: [null, { primaryText: 'ok', headline: 'h' }, 'nope'] } } }))
       ?.metaCopy as unknown as Record<string, unknown>;
     expect(meta['variants']).toEqual([{ primaryText: 'ok', headline: 'h' }]);
+
+    // An empty object is a plain object, so object-ness alone let it through — and canSubmit then
+    // called v.primaryText.trim() on it. A Meta variant with headline but no primaryText survives
+    // the shared-field filter, so assert canSubmit's own dereference is still safe.
+    const bare = fromBriefResponse(storedBrief({ copy: { meta: { variants: [{}, { headline: 'h' }] } } }))?.metaCopy as unknown as Record<string, unknown>;
+    expect(bare['variants']).toEqual([]);
 
     const linkedIn = fromBriefResponse(storedBrief({ copy: { linkedIn: { variants: [], recommendedGeoTargets: [null, { urn: 'urn:li:geo:1' }] } } }))
       ?.linkedInCopy as unknown as Record<string, unknown>;

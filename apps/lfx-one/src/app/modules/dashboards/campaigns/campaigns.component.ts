@@ -149,13 +149,18 @@ export class CampaignsComponent {
    * content at all, and "Brief saved." is the one thing this banner must never say falsely.
    */
   private readonly conflictMessages: Record<NonNullable<CampaignBriefPersistResult['conflict']>, string> = {
+    // "Reload" alone is not enough and the saved banner already says so: the Planning url control
+    // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
+    // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
+    // them on a blank Planning tab wondering where the brief went.
     'unowned-brief-exists':
-      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload the page to work from the stored brief.',
+      'This event already has a saved brief that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to work from the stored brief.',
     // Says "reload", which the base branch deliberately does not: THIS branch adds the read path,
     // so a reload re-looks-up the stored brief and offers it for restore. The advice is
     // actionable here — the user sees the other writer's version instead of losing their own
     // ownership state, which is what made the same sentence harmful before LFXV2-3108 existed.
-    'stale-brief': 'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload to see their changes.',
+    'stale-brief':
+      'Someone else changed this brief while you were working, so this version was not saved over theirs. Reload and re-enter the event URL to see their changes.',
     'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
   };
 

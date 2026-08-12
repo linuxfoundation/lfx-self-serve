@@ -457,7 +457,7 @@ describe('CampaignsComponent brief persistence', () => {
       // a reload re-looks-up the stored brief and offers it for restore — the user sees the other
       // writer's version instead of losing their own ownership state, which is what made the same
       // sentence harmful while nothing could read a brief back.
-      expect(state().message).toContain('Reload to see their changes');
+      expect(state().message).toContain('Reload and re-enter the event URL to see their changes');
     });
 
     it('does not confirm a write that was superseded before it could be approved', async () => {
