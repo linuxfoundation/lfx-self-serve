@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
   CampaignBriefLoadResult,
@@ -564,6 +564,14 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     return null;
   }
 
+  // The top-level `url` wins over the one inside the opaque `event_details` blob, mirroring the
+  // write: `toBriefInput` sends `url: brief.eventDetails?.registrationUrl`, so the first-class
+  // field is the one campaign-service is guaranteed to hold. `event_details` is opaque JSON the
+  // service stores without interpreting, so a brief written by any other client may carry the
+  // destination ONLY in `url` — reading just the blob would drop the registration URL from an
+  // otherwise valid brief, and the Implementation tab would restore a campaign pointing nowhere.
+  const registrationUrl = asText(found.url) || eventDetails.registrationUrl;
+
   if (found.program_type !== 'events' && found.program_type !== 'education') {
     return null;
   }
@@ -572,27 +580,22 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
   const targeting = asRecord(found.targeting) ?? {};
 
   return {
-    eventDetails,
+    eventDetails: { ...eventDetails, registrationUrl },
     programType: found.program_type as CampaignProgramType,
     // Narrowed against the union rather than passed through: an unknown platform id reaches a
     // template that indexes icon and label maps by it, and renders blank rather than erroring.
-    selectedPlatforms: (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORM_IDS.includes(p as CampaignPlatform)),
+    selectedPlatforms: (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p)),
     structuredCopy: asRecord(copy['structured']),
     linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn']),
     redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit']),
     metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta']),
     keywords: asKeywords(found.keywords),
-    campaignGoal: CAMPAIGN_GOAL_IDS.includes(targeting['campaignGoal'] as CampaignGoal) ? (targeting['campaignGoal'] as CampaignGoal) : null,
+    campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
     driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
   };
 }
-
-/** The platform ids the page can render. Kept next to the only thing that filters against it. */
-const CAMPAIGN_PLATFORM_IDS: readonly CampaignPlatform[] = ['google-ads', 'microsoft-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads', 'twitter-ads'];
-
-const CAMPAIGN_GOAL_IDS: readonly CampaignGoal[] = ['conversions', 'brand-awareness', 'traffic', 'lead-generation', 'engagement'];
 
 /** A plain JSON object, or `null` for anything else — arrays and `null` included. */
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -540,8 +540,15 @@ export class ImplementationTabComponent implements OnInit {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
       this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
       this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
-      if (brief.linkedInCopy.strategy) {
-        this.linkedInBudgetUsd.set(brief.linkedInCopy.strategy.budgetRecommendation.lifetimeBudgetUsd);
+      // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
+      // reaching here came straight from the generator, which always emits both; a RESTORED
+      // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
+      // discriminator and leaves the inner shape alone. A `strategy` without a
+      // `budgetRecommendation` therefore reaches this line and throws on the nested read —
+      // every other field in this block is assigned whole, so this is the only such reach.
+      const lifetimeBudget = brief.linkedInCopy.strategy?.budgetRecommendation?.lifetimeBudgetUsd;
+      if (typeof lifetimeBudget === 'number' && Number.isFinite(lifetimeBudget)) {
+        this.linkedInBudgetUsd.set(lifetimeBudget);
         this.linkedInLifetimeBudget.set(true);
       }
     }

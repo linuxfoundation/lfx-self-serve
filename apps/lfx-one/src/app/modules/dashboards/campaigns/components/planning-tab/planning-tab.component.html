@@ -27,6 +27,14 @@
             blank start for a brief saved weeks ago would be a surprise. Restoring goes straight
             to the Implementation tab, which is where an already-approved brief belongs.
           -->
+          <!--
+            One stable live region for both branches below, always in the DOM. An aria-live
+            element inserted with its text already present is not reliably announced — the region
+            has to exist first and then have its CONTENTS change. Putting role="status" on the
+            @if branches themselves would announce nothing, because @if creates them populated.
+          -->
+          <div role="status" aria-live="polite" class="sr-only" data-testid="planning-saved-brief-live">{{ savedBriefAnnouncement() }}</div>
+
           @if (savedBrief(); as saved) {
             <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-saved-brief">
               <i class="fa-light fa-rotate-left mt-0.5 text-blue-600" aria-hidden="true"></i>

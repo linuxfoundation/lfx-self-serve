@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -110,7 +110,33 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly savedBriefWarning = signal<string | null>(null);
 
+  /**
+   * Text for the always-present live region in the template.
+   *
+   * Both branches it covers appear ASYNCHRONOUSLY — a lookup answers some time after the user
+   * stopped typing — so without this a screen-reader user is never told that a Restore action
+   * became available, or that generating will now replace something. The offer wins when both
+   * are set: it is the one that carries an action.
+   */
+  protected readonly savedBriefAnnouncement = computed(() => {
+    const saved = this.savedBrief();
+    if (saved !== null) {
+      const name = saved.eventDetails.name || saved.eventDetails.slug;
+      return `A saved brief was found for ${name}. A restore action is available.`;
+    }
+    return this.savedBriefWarning() ?? '';
+  });
+
   private readonly slugInput$ = new Subject<string>();
+
+  /**
+   * The slug the page is currently showing, as opposed to the one a given lookup was issued for.
+   *
+   * Read by the lookup subscription to drop a response whose key is no longer current. Kept as a
+   * plain field rather than a signal because nothing renders it — it exists only to answer "is
+   * this answer still about the thing on screen?" at the moment a response arrives.
+   */
+  private currentSlug = '';
 
   // === Editable Review Signals ===
   protected readonly editSearchHeadlines = signal<string[]>([]);
@@ -174,14 +200,31 @@ export class PlanningTabComponent implements OnInit {
     // to one foundation's table, so the same event slug is a different lookup under a different
     // foundation, and `combineLatest` re-runs it when either half moves. `distinctUntilChanged`
     // compares the PAIR, so a re-emission that changes neither is still dropped.
+    // The response carries the key it was REQUESTED for, and `applySavedBrief` drops it when
+    // that key is no longer current. Reordering these operators cannot fix this on its own:
+    // `switchMap` can only unsubscribe once a value reaches it, and the debounce necessarily
+    // withholds that value for 500ms, so an in-flight lookup always survives a key change made
+    // inside the window. `onUrlInput` and the foundation subscription below both clear the offer
+    // eagerly; without this guard the late response simply sets it again, for an event or a
+    // foundation the user has already left.
     combineLatest([this.slugInput$, this.activeFoundationSlug$])
       .pipe(
         debounceTime(500),
         distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
-        switchMap(([slug, project]) => this.campaignService.loadBrief(slug, project).pipe(catchError(() => of(null)))),
+        switchMap(([slug, project]) =>
+          this.campaignService.loadBrief(slug, project).pipe(
+            map((result) => ({ slug, project, result })),
+            catchError(() => of({ slug, project, result: null }))
+          )
+        ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((result) => this.applySavedBrief(result));
+      .subscribe(({ slug, project, result }) => {
+        if (slug !== this.currentSlug || project !== this.projectContextService.activeContext()?.slug) {
+          return;
+        }
+        this.applySavedBrief(result);
+      });
 
     // Clear the offer the MOMENT the foundation changes, not when the re-lookup answers. Between
     // those two points the brief on screen is one that was found in the previous foundation's
@@ -250,6 +293,7 @@ export class PlanningTabComponent implements OnInit {
     // `extractSlug` here is the same derivation the save path used. Cleared eagerly so a
     // half-typed URL cannot leave an offer to restore a DIFFERENT event's brief on screen.
     const slug = this.extractSlug(url);
+    this.currentSlug = slug;
     this.savedBrief.set(null);
     this.savedBriefWarning.set(null);
     if (slug.length > 0) {

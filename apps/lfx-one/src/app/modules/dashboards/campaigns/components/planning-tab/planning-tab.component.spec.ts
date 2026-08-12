@@ -284,4 +284,45 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
     expect(campaignService.loadBrief.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
+
+  /**
+   * Regression: `distinctUntilChanged` must sit BEFORE `debounceTime`.
+   *
+   * With the debounce first, a key change does not reach `switchMap` for another 500ms, so the
+   * PREVIOUS lookup stays subscribed across the window and its late response repopulates the
+   * offer for a slug the user has already left. Comparing first means the change reaches
+   * `switchMap` immediately and it unsubscribes the in-flight request.
+   *
+   * The first lookup is a Subject that answers only AFTER the slug changed, which is what makes
+   * the two orderings distinguishable: under the buggy order its value still lands.
+   */
+  it('drops an in-flight lookup when the slug changes before it answers', async () => {
+    const slowFirstLookup = new Subject<CampaignBriefLoadResult>();
+    campaignService.loadBrief.mockReturnValue(slowFirstLookup);
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+
+    // Move to a different event before the first lookup answers. Its result is now stale.
+    //
+    // Typed WITHOUT waiting out the debounce, which is the whole point: under the buggy order
+    // (debounce before distinct) the new key sits in the debounce window for 500ms while the
+    // first lookup stays subscribed, so its late value still lands. Using the normal
+    // `typeEventUrl` helper here would wait the window out first and both orderings would pass.
+    const secondLookup = new Subject<CampaignBriefLoadResult>();
+    campaignService.loadBrief.mockReturnValue(secondLookup);
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      onUrlInput(): void;
+    };
+    component.briefForm.controls.url.setValue('https://events.example.com/kubecon-na-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+
+    // The abandoned lookup answers late. Nothing must come of it.
+    slowFirstLookup.next({ status: 'loaded', brief: exampleBrief, briefId: 'stale-brief' });
+    await fixture.whenStable();
+
+    expect(savedBrief()).toBeNull();
+  });
 });
