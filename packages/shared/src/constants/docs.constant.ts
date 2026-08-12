@@ -50,7 +50,6 @@ export const DOCS_TAXONOMY_ORDER: readonly string[] = [
   'trainings',
   'badges',
   'profile',
-  'settings',
-  'transactions',
+  'account',
   'crowdfunding',
 ] as const;
