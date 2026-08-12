@@ -740,6 +740,32 @@ describe('fromBriefResponse', () => {
    * so adding one to an interface without adding it to the coercion list fails here rather than
    * throwing on a user's Restore.
    */
+  it('drops array elements the consumers would crash on', () => {
+    // `Any` columns are unvalidated on the way in, so a stored row can hold `[null]`. The
+    // Implementation tab dereferences elements directly — `v.primaryText.trim()`
+    // (implementation-tab.component.ts:238) and `g.urn` (:243) — so one bad element crashes
+    // Restore rather than degrading it.
+    const meta = fromBriefResponse(storedBrief({ copy: { meta: { variants: [null, { primaryText: 'ok', headline: 'h' }, 'nope'] } } }))
+      ?.metaCopy as unknown as Record<string, unknown>;
+    expect(meta['variants']).toEqual([{ primaryText: 'ok', headline: 'h' }]);
+
+    const linkedIn = fromBriefResponse(storedBrief({ copy: { linkedIn: { variants: [], recommendedGeoTargets: [null, { urn: 'urn:li:geo:1' }] } } }))
+      ?.linkedInCopy as unknown as Record<string, unknown>;
+    expect(linkedIn['recommendedGeoTargets']).toEqual([{ urn: 'urn:li:geo:1' }]);
+  });
+
+  it('keeps string elements in the recommendation fields, which are not object arrays', () => {
+    // The element type differs BY FIELD, and getting it backwards is its own bug: filtering the
+    // `string[]` fields for objects would silently empty every restored keyword and subreddit —
+    // worse than the crash above, because it looks like success.
+    const reddit = fromBriefResponse(
+      storedBrief({ copy: { reddit: { variants: [], recommendedKeywords: ['kubernetes', null, 'cloud'], recommendedSubreddits: ['r/k8s'] } } })
+    )?.redditCopy as unknown as Record<string, unknown>;
+
+    expect(reddit['recommendedKeywords']).toEqual(['kubernetes', 'cloud']);
+    expect(reddit['recommendedSubreddits']).toEqual(['r/k8s']);
+  });
+
   it('coerces every array field the platform copy blocks declare', () => {
     const arrayFields = [
       'recommendedGeoTargets',

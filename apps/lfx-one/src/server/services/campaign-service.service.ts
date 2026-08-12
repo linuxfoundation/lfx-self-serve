@@ -758,18 +758,44 @@ function asEventDetails(value: unknown): CampaignEventDetails | null {
  * `undefined` and not `null`: all three are optional on `CampaignBriefOutput`, and absent is
  * exactly what a brief generated for a different platform set looks like.
  */
+/**
+ * Keep only the ELEMENTS whose type the consumers actually dereference.
+ *
+ * Checking that a field is an array is not enough to make it safe to cast. These blocks come out
+ * of campaign-service's opaque `Any` columns, which nothing validates on the way in, so an older
+ * or hand-edited row can hold `[null]` as easily as objects — and the Implementation tab
+ * dereferences elements directly (`v.primaryText.trim()` at implementation-tab.component.ts:238,
+ * `g.urn` at :243), so one bad element crashes Restore rather than degrading it.
+ *
+ * The element type differs BY FIELD and getting that backwards is its own bug: `variants` and
+ * `recommendedGeoTargets` hold objects, while the other seven recommendation fields are
+ * `string[]`. Filtering the string fields for objects would silently empty every restored
+ * keyword, skill and subreddit — a worse outcome than the crash, because it looks like success.
+ *
+ * Bad elements are DROPPED rather than failing the whole block: one unusable element carries no
+ * recoverable content while the rest of the brief still does, and an empty array is what an
+ * absent field already produces and what the consumers already handle
+ * (`variants().length === 0` disables submit).
+ */
+function objectElements(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((el): el is Record<string, unknown> => asRecord(el) !== null) : [];
+}
+
+function stringElements(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((el): el is string => typeof el === 'string') : [];
+}
+
 function asVariantCopy<T>(value: unknown): T | undefined {
   const block = asRecord(value);
   if (block === null || !Array.isArray(block['variants'])) {
     return undefined;
   }
   const coerced: Record<string, unknown> = { ...block };
+  // `variants` is NOT in VARIANT_COPY_ARRAY_FIELDS — that list is the RECOMMENDATION fields — so
+  // it is filtered explicitly here. It is also the field the crash reports named.
+  coerced['variants'] = objectElements(coerced['variants']);
   for (const key of VARIANT_COPY_ARRAY_FIELDS) {
-    if (key in coerced && !Array.isArray(coerced[key])) {
-      coerced[key] = [];
-    } else if (!(key in coerced)) {
-      coerced[key] = [];
-    }
+    coerced[key] = key === 'recommendedGeoTargets' ? objectElements(coerced[key]) : stringElements(coerced[key]);
   }
   return coerced as T;
 }
