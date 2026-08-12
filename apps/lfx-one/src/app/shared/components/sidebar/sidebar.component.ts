@@ -102,6 +102,7 @@ export class SidebarComponent {
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
+  protected readonly avatarUrl = this.userService.effectiveAvatarUrl;
   protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
