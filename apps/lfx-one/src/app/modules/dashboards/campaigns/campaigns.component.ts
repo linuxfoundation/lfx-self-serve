@@ -197,6 +197,26 @@ export class CampaignsComponent {
    */
   private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
 
+  /**
+   * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
+   *
+   * The `programType` subscription treats a change as the user choosing a different program and
+   * calls `resetToPlanning`, which discards the brief and the ownership map. That is right for a
+   * user switching programs and wrong for this: the program is not changing away from the brief,
+   * it is catching up TO it.
+   *
+   * An earlier revision relied on statement order alone — the adopt runs before the ownership
+   * write and before `onProceedToImplementation`, so a reset triggered here is undone by both.
+   * That works, and it is why NO TEST FAILS when this flag is ignored: the ordering rescues it.
+   *
+   * The flag is kept anyway, as defence rather than behaviour. Moving the adopt below either of
+   * those statements — a reasonable-looking edit — would silently strand the restored brief, and
+   * the previous comment asserting "the subscription sees no change" was simply false. This makes
+   * the intent explicit at the point that decides it instead of leaving it implicit in line
+   * order.
+   */
+  private adoptingRestoredProgram = false;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -296,6 +316,11 @@ export class CampaignsComponent {
         return;
       }
       this.selectedProgramType.set(value);
+      // A restore adopting the brief's OWN program is not the user switching programs, so it must
+      // not discard the brief being restored or the ownership recorded for it.
+      if (this.adoptingRestoredProgram) {
+        return;
+      }
       this.resetToPlanning();
     });
 
@@ -395,14 +420,24 @@ export class CampaignsComponent {
     // It has to happen HERE rather than being left to the user, because the correction is a trap:
     // changing the selector runs `resetToPlanning`, which clears `briefOutput` AND
     // `knownBriefIds` — so the row they just restored becomes unowned and their next save is
-    // refused. Setting it before the handoff means the valueChanges subscription sees no change
-    // by the time the brief lands, and nothing is reset.
+    // refused.
+    //
+    // The subscription DOES fire for this write — an earlier comment here claimed it saw no
+    // change, which was wrong. `adoptingRestoredProgram` is what stops it resetting, rather than
+    // this statement happening to run before the ownership write.
     //
     // Driven through the CONTROL, not the signal: the subscription mirrors the control into
     // `selectedProgramType`, so writing the signal alone would leave the visible selector showing
     // the old program.
     if (brief.programType !== undefined && brief.programType !== this.selectedProgramType()) {
-      this.selectorForm.controls.programType.setValue(brief.programType);
+      this.adoptingRestoredProgram = true;
+      try {
+        this.selectorForm.controls.programType.setValue(brief.programType);
+      } finally {
+        // `finally`, so a throw inside the subscription cannot leave the flag set and turn every
+        // later program switch into a silent no-reset.
+        this.adoptingRestoredProgram = false;
+      }
     }
 
     // Recorded BEFORE the handoff, so the suppressed-save branch below can put it on the

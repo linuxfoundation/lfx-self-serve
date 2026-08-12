@@ -377,6 +377,7 @@ describe('CampaignsComponent brief persistence', () => {
       const internals = fixture.componentInstance as unknown as {
         selectorForm: { controls: { programType: { setValue(v: string): void } } };
         selectedProgramType(): string;
+        briefOutput(): CampaignBriefOutput | null;
       };
       internals.selectorForm.controls.programType.setValue('education');
       await fixture.whenStable();
@@ -389,10 +390,41 @@ describe('CampaignsComponent brief persistence', () => {
 
       // The selector followed the brief...
       expect(internals.selectedProgramType()).toBe('events');
-      // ...and ownership survived, because no reset ran.
+      // ...and both the brief and its ownership survived. Note what this does NOT prove: the
+      // adopt runs before the ownership write and before `onProceedToImplementation`, so a reset
+      // triggered by it is undone by both, and this test passes with `adoptingRestoredProgram`
+      // ignored. The flag is defence against that ordering being changed, not something a test
+      // in the current arrangement can pin.
+      expect(internals.briefOutput()).toEqual(eventsBrief);
+
       proceed(eventsBrief);
       await fixture.whenStable();
       expect(persistBrief).toHaveBeenLastCalledWith(eventsBrief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('still resets when the USER switches program, unlike a restore adopt', async () => {
+      // The flag that stops a restore-adopt resetting must not disarm the ordinary case. A user
+      // choosing a different program is discarding the brief on purpose, and `resetToPlanning`
+      // clearing `briefOutput` and the ownership map is exactly right there.
+      const internals = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { programType: { setValue(v: string): void } } };
+        briefOutput(): CampaignBriefOutput | null;
+      };
+
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+      expect(internals.briefOutput()).not.toBeNull();
+
+      // A real program switch by the user.
+      internals.selectorForm.controls.programType.setValue('education');
+      await fixture.whenStable();
+      expect(internals.briefOutput()).toBeNull();
+
+      // Ownership went with it, so the next save must create rather than claim the old row.
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
     });
 
     it('does not lend a RESTORED brief id to another event', async () => {
