@@ -406,7 +406,10 @@ export class CampaignController {
       // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
       // anything, and the id without the ETag is the ceremonial-header case this fixes.
       const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
-      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag);
+      // Only meaningful without an etag: it says the absence is deliberate (the user was shown a
+      // stale-brief warning and proceeded) rather than "the write returned no validator".
+      const allowEtagFallback = req.query['etag_fallback'] === '1';
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag, allowEtagFallback);
       logger.success(req, 'campaign_persist_brief', startTime, {
         eventSlug,
         projectSlug,

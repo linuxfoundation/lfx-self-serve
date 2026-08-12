@@ -268,7 +268,8 @@ export class CampaignServiceClient {
     eventSlug: string,
     projectSlug: string,
     knownBriefId: string | null = null,
-    knownEtag: string | null = null
+    knownEtag: string | null = null,
+    allowEtagFallback = false
   ): Promise<CampaignBriefPersistResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
@@ -345,7 +346,7 @@ export class CampaignServiceClient {
       return this.approveBrief(req, basePath, created, true);
     }
 
-    return this.replaceBrief(req, basePath, envelope, existing, knownEtag);
+    return this.replaceBrief(req, basePath, envelope, existing, knownEtag, allowEtagFallback);
   }
 
   /**
@@ -463,7 +464,8 @@ export class CampaignServiceClient {
     basePath: string,
     envelope: CampaignServiceBriefEnvelope,
     existing: { brief: CampaignServiceBrief; etag: string | null },
-    knownEtag: string | null
+    knownEtag: string | null,
+    allowEtagFallback: boolean
   ): Promise<CampaignBriefPersistResult> {
     if (existing.etag === null) {
       throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
@@ -476,10 +478,22 @@ export class CampaignServiceClient {
     // this tab last saw it, the PUT would re-fetch THEIR validator and silently overwrite their
     // content.
     //
-    // The fallback still matters: a caller that has never seen an ETag (the first save of a
-    // session that adopts an existing row) has no validator to send, and refusing that save
-    // outright would be worse than a race it cannot yet detect. It is the ownership check above
-    // that decides whether such a caller may replace at all.
+    // The fallback is now conditional, and the earlier reasoning for making it unconditional was
+    // wrong: it said refusing a validator-less save "would be worse than a race it cannot yet
+    // detect", which is true for one of the two reasons a validator can be missing and false for
+    // the other.
+    //
+    // `allowEtagFallback` — the caller was shown a stale-brief warning and proceeded. It has no
+    // validator BY CHOICE, and taking the freshly read one is exactly what proceeding means.
+    //
+    // Without it, the absence is UNKNOWN: the write returned no ETag, or its approval outcome was
+    // indeterminate. Nobody was warned and nothing was decided, so substituting a validator this
+    // request read itself would bypass the precondition silently and could overwrite an
+    // intervening writer with no conflict ever shown. Refuse instead — the caller can retry, and
+    // a retry that is refused again is visible, which a silent overwrite is not.
+    if (knownEtag === null && !allowEtagFallback) {
+      return { enabled: true, briefId: existing.brief.id, etag: null, created: false, approved: false, conflict: 'unverified-validator' };
+    }
     const validator = knownEtag ?? existing.etag;
 
     let updated;

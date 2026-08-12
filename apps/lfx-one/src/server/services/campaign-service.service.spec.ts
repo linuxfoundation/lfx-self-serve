@@ -259,7 +259,10 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1')).resolves.toEqual({
+    // `allowEtagFallback` — these exercise the FALLBACK validator, which is now reached only by
+    // explicit permission (the user saw a stale-brief warning and proceeded). Without the flag an
+    // absent validator means "unknown" and the save is refused.
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       // The APPROVAL's validator, not the create's: approve bumps `version`, so the create's
@@ -313,7 +316,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   it('reports a create conflict rather than overwriting the brief that won the race', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT'));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).rejects.toThrow('conflict');
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toThrow('conflict');
     // The find and the POST, and nothing after: no re-find, no PUT.
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
@@ -347,7 +350,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
 
-    await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1');
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true);
 
     const [, service, path, method, query, body, headers] = proxyRequestWithResponse.mock.calls[2] as unknown[];
     expect([service, path, method, query, body]).toEqual(['LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/approve', 'POST', undefined, undefined]);
@@ -365,7 +368,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockRejectedValueOnce(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       // The write's own validator, still current — and a refusal is what makes that safe to say.
@@ -387,7 +390,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       etag: null,
@@ -413,7 +416,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       // reaches this catch as the raw transport error.
       .mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       etag: null,
@@ -430,7 +433,10 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockRejectedValueOnce(new MicroserviceError('bad gateway', 502, 'BAD_GATEWAY'));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toMatchObject({ etag: null, approved: false });
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toMatchObject({
+      etag: null,
+      approved: false,
+    });
   });
 
   // Same refusal to guess as the If-Match guard below: without a validator there is no safe
@@ -438,7 +444,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   it('leaves a brief in draft when the write answered without an ETag, instead of guessing one', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       etag: null,
@@ -458,7 +464,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
 
-    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1');
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', null, true);
 
     const body = proxyRequestWithResponse.mock.calls[1]?.[5];
     expect(Object.keys(body)).toEqual(['brief']);
@@ -473,7 +479,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
 
-    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1');
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', null, true);
 
     expect(proxyRequestWithResponse.mock.calls[1]?.[5].brief.targeting).toEqual({
       campaignGoal: 'conversions',
@@ -498,7 +504,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 8 }, { etag: '"8"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 9 }, { etag: '"9"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('kubecon-eu-2026'), 'kubecon-eu-2026', 'tlf', 'b-1', null, true)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       etag: '"9"',
@@ -598,6 +604,42 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
+  it('refuses a replace when the caller cannot say which version it last saw', async () => {
+    // Two reasons produce a missing validator and they need opposite treatment. This is the
+    // UNKNOWN one: the caller's previous write returned no ETag, or its approval outcome was
+    // indeterminate, so nobody was warned and nothing was decided. Substituting the validator
+    // this request reads itself would bypass the precondition and could overwrite an intervening
+    // writer with no conflict ever shown.
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 9 }, { etag: '"9"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      created: false,
+      approved: false,
+      conflict: 'unverified-validator',
+    });
+    // The find only: no PUT was attempted.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows the fallback once the user has been warned and proceeded', async () => {
+    // The EXPLICIT reason: a stale-brief conflict was shown, the user proceeded, and the client
+    // dropped the rejected validator. Having none is the decision, so the freshly read one is
+    // exactly what proceeding means.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 9 }, { etag: '"9"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 10 }, { etag: '"10"' }))
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 11 }, { etag: '"11"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true);
+    expect(result.conflict).toBeUndefined();
+
+    const [, , , , , , headers] = proxyRequestWithResponse.mock.calls[1] as unknown[];
+    expect(headers).toEqual({ 'If-Match': '"9"' });
+  });
+
   it("sends the CALLER's last-seen validator, not the one this save just read", async () => {
     // The point of the whole change. Using the find's ETag makes the If-Match ceremonial: that
     // find runs inside this very save, so its validator always matches and the 412 can never
@@ -643,7 +685,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"8"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"9"' }));
 
-    await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1');
+    await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true);
 
     expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"7"' });
   });
@@ -657,7 +699,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   ])('rethrows %s rather than treating it as a first-time generation', async (_label, errorBody) => {
     proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 404 });
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toMatchObject({ statusCode: 404 });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
@@ -668,7 +710,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   it('refuses to replace a brief whose response carried no ETag header instead of synthesising one', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).rejects.toThrow(/no ETag/);
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toThrow(/no ETag/);
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
@@ -679,7 +721,7 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"7"' }))
       .mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED'));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 412 });
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toMatchObject({ statusCode: 412 });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 });
