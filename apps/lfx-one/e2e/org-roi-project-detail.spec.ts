@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 // Imported from the module, not the `utils` barrel: the barrel re-exports form.utils, which pulls
 // in @angular/common and fails to load outside the Angular app with a JIT compiler error.
+import { ORG_LENS_ROI_METHOD_STORAGE_KEY } from '@lfx-one/shared/constants/org-lens-roi.constants';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils/number.utils';
 
 import {
@@ -88,6 +89,20 @@ test.describe('Org Lens ROI project detail — figures', () => {
     const loss = DETAIL_LOSS_PROJECT.return - DETAIL_LOSS_PROJECT.expenditure;
     await expect(page.getByTestId('org-roi-project-detail-kpi-cards')).toContainText(formatCurrency(loss));
     await expect(page.getByTestId('org-roi-project-detail-loss-note')).toBeVisible();
+  });
+
+  test('withholds figures whose estimation method is not the one in effect', async ({ page }) => {
+    // The stored preference is restored after the first render, so a viewer on `direct` issues a
+    // `logit` request first. If that payload were rendered, the heading would read "Direct markup"
+    // over logit return and ratios — and because investment is method-invariant, only some of the
+    // figures would be wrong, which is harder to notice than all of them.
+    await stubOrgLensContext(page, { projectDetail: { ...(mockProjectDetail(DETAIL_PROJECT.slug) as object), method: 'logit' } });
+    await page.addInitScript((key) => window.localStorage.setItem(key as string, 'direct'), ORG_LENS_ROI_METHOD_STORAGE_KEY);
+    await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
+
+    await expect(page.getByTestId('org-roi-project-detail-subtitle')).toContainText('Direct markup');
+    await expect(page.getByTestId('org-roi-project-detail-kpi-cards')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-project-detail-page')).not.toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
   });
 
   test('carries an explanation for every one of the five figures', async ({ page }) => {

@@ -73,24 +73,30 @@ export class OrgRoiProjectDetailComponent {
   private readonly annual: Signal<OrgLensRoiProjectAnnual | null> = computed(() => this.payload().annual);
 
   /**
-   * Whether the payload in hand describes **both** the organization now selected and the project
-   * now in the URL.
+   * Whether the payload in hand describes the organization now selected, the project now in the
+   * URL, **and** the estimation method now in effect. All three, because all three can change
+   * under a payload that has already landed.
    *
    * The organization half is the check the portfolio page makes on its summary: a request in flight
    * during a switch leaves the previous figures on screen under the new name. The project half has
-   * no analogue there. This route is navigated project-to-project and Angular reuses the component
-   * instance across that, so the payload keeps the previous project until the next response lands.
-   * Checking the organization alone would pass, because it has not changed, and one project's
-   * investment and ROI would render under another's name.
+   * no analogue there — this route is navigated project-to-project and Angular reuses the component
+   * instance across that, so checking the organization alone would pass, because it has not
+   * changed, and one project's figures would render under another's name.
    *
-   * Both are synchronous signal reads, so they flip in the same change-detection pass as the
-   * navigation, unlike the `toObservable`-driven loading flag which settles one effect flush later.
+   * The method half covers the first load specifically. The stored preference is restored in
+   * `afterNextRender`, so a viewer who chose `direct` issues a `logit` request first; if that lands
+   * before the restore, the heading already reads "Direct markup" over logit return and ratios.
+   * Investment is method-invariant, so only some of the figures would be wrong — which is worse
+   * than all of them, being harder to notice.
+   *
+   * All three are synchronous signal reads, so they flip in the same change-detection pass as the
+   * change, unlike the `toObservable`-driven loading flag which settles one effect flush later.
    */
   private readonly payloadMatchesRoute: Signal<boolean> = computed(() => {
     const selected = this.accountContext.selectedAccount()?.accountId ?? '';
     const detail = this.detail();
     if (detail === null || selected === '') return false;
-    return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug();
+    return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug() && detail.method === this.method();
   });
 
   protected readonly showsFigures: Signal<boolean> = computed(() => !this.forbidden() && !this.failed() && !this.missing() && this.payloadMatchesRoute());

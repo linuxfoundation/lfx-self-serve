@@ -61,10 +61,10 @@
       <span>This project's ROI couldn't be loaded. Please try again.</span>
     </div>
   } @else if (loading() || !showsFigures()) {
-    <!-- The org-identity check belongs in the loading condition, not only on the figures below: the
+    <!-- The identity check belongs in the loading condition, not only on the figures below: the
          payload keeps its previous value until the next response lands, so without it this branch
-         loses to the populated one for that window, putting one organization's amounts under
-         another's name. -->
+         loses to the populated one for that window — showing the previous organization, project or
+         estimation method's amounts under the current one's heading. -->
     <section class="flex flex-col gap-4" data-testid="org-roi-project-detail-loading">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         @for (i of [1, 2, 3, 4, 5]; track i) {

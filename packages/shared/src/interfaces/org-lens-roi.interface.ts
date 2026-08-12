@@ -96,9 +96,11 @@ export interface OrgLensRoiProjects {
 /**
  * One project's ROI detail. The project itself is the same shape `/projects` serves, singular.
  *
- * `orgUid` travels with it so the detail page can check the payload in hand actually describes the
- * organization now selected, the way the portfolio page checks its summary — a request in flight
- * during an organization switch would otherwise render one company's figures under another's name.
+ * `orgUid` and `method` travel with it, alongside the project's own slug, so the detail page can
+ * check the payload in hand describes the organization, project and estimation method currently in
+ * effect — the way the portfolio page checks its summary against the selected organization. Any of
+ * the three can change while a request is in flight, and the payload holds its previous value until
+ * the next response lands.
  */
 export interface OrgLensRoiProjectDetail {
   orgUid: string;
