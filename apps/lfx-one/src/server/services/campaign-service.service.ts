@@ -326,9 +326,17 @@ export class CampaignServiceClient {
     // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
     // from `loadBrief`, so it exists only when the brief on screen came out of storage.
     if (existing !== null && knownBriefId !== existing.brief.id) {
+      // The id is deliberately WITHHELD on this refusal. Returning it told a caller the id of a
+      // brief it was just told it does not own — and `etag_fallback` then let it replay that id
+      // as proof of ownership, overwriting content it had never opened. Omit the id and the
+      // replay has nothing to replay.
+      //
+      // Nothing needs it: the UI renders only the message for this conflict, never the id, and a
+      // caller that legitimately owns the brief already holds its id from the save that created
+      // or loaded it.
       return {
         enabled: true,
-        briefId: existing.brief.id,
+        briefId: '',
         etag: null,
         created: false,
         approved: false,
@@ -500,10 +508,23 @@ export class CampaignServiceClient {
         }
       }
       try {
-        found = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+        const read = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
           event_slug: eventSlug,
         });
-        break;
+        found = read ?? null;
+        // A successful read is not the same as a settled write, and this is where create and
+        // replace differ. A create has no row until it commits, so any 200 answers the question.
+        // A REPLACE always has a row: the first read can return 200 carrying the PRE-PUT payload
+        // while the timed-out write is still in flight, and breaking there rethrows the timeout
+        // moments before the PUT lands — leaving the client holding a stale ETag for a row that
+        // did change.
+        //
+        // So stop only once the row LOOKS LIKE this request's write. If it never does, the loop
+        // runs out of attempts or budget and the original error is reported, which is the same
+        // honest answer as before.
+        if (read?.data !== undefined && versionIsAcceptable(read.data.version) && storedBriefMatches(read.data, envelope.brief)) {
+          break;
+        }
       } catch (readError) {
         // A 404 is "not there YET" on this path, not "not there": the write may still be in
         // flight upstream. Any other read failure says nothing at all. Both are worth another
@@ -831,9 +852,16 @@ function deepEqual(a: unknown, b: unknown): boolean {
   }
   const ao = a as Record<string, unknown>;
   const bo = b as Record<string, unknown>;
-  const ak = Object.keys(ao);
-  const bk = Object.keys(bo);
-  return ak.length === bk.length && ak.every((k) => k in bo && deepEqual(ao[k], bo[k]));
+  // The UNION of keys, not a length match. `toBriefInput` builds fields like `url` and
+  // `event_details` as `undefined` when the brief omits them; `JSON.stringify` drops those keys
+  // on the way out, so the stored row comes back with FEWER keys than the in-memory payload. A
+  // length check therefore rejects this request's own write and strands the row the
+  // reconciliation exists to recover.
+  //
+  // Comparing the union defers to the null/undefined rule above, which already treats an absent
+  // key and an explicit undefined as the same absence.
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  return [...keys].every((k) => deepEqual(ao[k], bo[k]));
 }
 
 function readEtag(response: ApiResponse<unknown>): string | null {

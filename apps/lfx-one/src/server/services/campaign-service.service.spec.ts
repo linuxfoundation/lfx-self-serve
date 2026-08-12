@@ -292,13 +292,28 @@ describe('CampaignServiceClient.saveBrief', () => {
    * loaded the brief. So this refuses on ownership rather than on any slug comparison, and
    * returns the blocking id so the caller can offer to load it instead of only failing.
    */
+  it('does not hand back the id of a brief the caller was told it does not own', async () => {
+    // The id was the whole attack. A caller could omit `brief_id`, read `existing.brief.id` out
+    // of this refusal, then replay it with `etag_fallback=1` -- the ownership check accepts the
+    // echoed id as proof and the fallback supplies a freshly read validator, overwriting content
+    // the caller never opened. Withholding the id leaves the replay nothing to replay.
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'someone-elses', version: 3 }, { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+
+    expect(result.conflict).toBe('unowned-brief-exists');
+    expect(result.briefId).toBe('');
+    // Belt and braces: the id must not appear anywhere in the payload.
+    expect(JSON.stringify(result)).not.toContain('someone-elses');
+  });
+
   it('refuses to replace a stored brief the caller cannot prove it owns', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
 
     const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', null);
 
-    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: 'b-1', created: false, approved: false });
-    // Exactly one upstream call — the find. No PUT was attempted.
+    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: '', created: false, approved: false });
+    // One upstream call — the find. No PUT was attempted.
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
@@ -309,7 +324,7 @@ describe('CampaignServiceClient.saveBrief', () => {
 
     const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-999');
 
-    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: 'b-1' });
+    expect(result).toMatchObject({ conflict: 'unowned-brief-exists', briefId: '' });
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
@@ -536,6 +551,56 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(result.created).toBe(false);
     expect(result.conflict).toBeUndefined();
   });
+
+  it('recognises its own write when the payload omitted optional fields', async () => {
+    // `toBriefInput` builds `url` and `event_details` as `undefined` when the brief omits them.
+    // `JSON.stringify` drops those keys on the wire, so the stored row comes back with FEWER keys
+    // than the in-memory payload — and a key-COUNT comparison then rejects this request's own
+    // write, stranding the very row the reconciliation exists to recover.
+    // `copy.structured` is the field that actually vanishes: `toBriefInput` sets it straight from
+    // `brief.structuredCopy`, so an absent one leaves an undefined-valued key that JSON drops.
+    // (`url` does not work as a probe — `storedBriefMatches` compares it at the top level with
+    // `?? ''` and never reaches `deepEqual`.)
+    const noStructured = { ...briefWithSlug('e'), structuredCopy: undefined } as unknown as CampaignBriefOutput;
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        // Round-tripped through JSON exactly as the service would store and return it, so the
+        // undefined-valued keys really are absent.
+        const stored = JSON.parse(JSON.stringify(envelope.brief)) as Record<string, unknown>;
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 1, ...stored }, { etag: '"1"' }));
+      })
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, noStructured, 'e', 'tlf');
+    expect(result.briefId).toBe('b-1');
+    expect(result.created).toBe(true);
+  });
+
+  it('keeps reading when the first recovery read still shows the pre-PUT payload', async () => {
+    // Where create and replace differ. A create has no row until it commits, so any 200 answers
+    // the question. A REPLACE always has a row: the first read can return 200 carrying the OLD
+    // payload while the timed-out PUT is still in flight. Breaking there rethrows the timeout
+    // moments before the write lands, leaving the client holding a stale ETag for a row that
+    // did change.
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 4 }, { etag: '"4"' })) // the find
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the PUT
+      // First recovery read: the row is still the PRE-PUT version.
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 4, program_type: 'events', event_slug: 'e' }, { etag: '"4"' }))
+      // Second: the write has landed.
+      .mockImplementationOnce(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 5, ...envelope.brief }, { etag: '"5"' }));
+      })
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 6 }, { etag: '"6"' }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    expect(result.briefId).toBe('b-1');
+    expect(result.conflict).toBeUndefined();
+  }, 20000);
 
   it("does not claim a replace that landed on someone else's payload", async () => {
     // The row moved, but to content this request did not write. Adopting it would report another

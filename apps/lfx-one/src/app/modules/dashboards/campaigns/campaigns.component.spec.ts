@@ -405,7 +405,7 @@ describe('CampaignsComponent brief persistence', () => {
     it('still resets when the USER switches program, unlike a restore adopt', async () => {
       // The flag that stops a restore-adopt resetting must not disarm the ordinary case. A user
       // choosing a different program is discarding the brief on purpose, and `resetToPlanning`
-      // clearing `briefOutput` and the ownership map is exactly right there.
+      // clearing `briefOutput` is exactly right there.
       const internals = fixture.componentInstance as unknown as {
         selectorForm: { controls: { programType: { setValue(v: string): void } } };
         briefOutput(): CampaignBriefOutput | null;
@@ -421,10 +421,13 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
       expect(internals.briefOutput()).toBeNull();
 
-      // Ownership went with it, so the next save must create rather than claim the old row.
+      // Ownership does NOT go with it, and that is deliberate on the base branch: the row still
+      // exists upstream, so dropping its id would refuse the next Proceed for that event as
+      // unowned. What this test pins is that the RESET ran at all — `briefOutput` above — which
+      // is what distinguishes a user switch from a restore-adopt.
       proceed();
       await fixture.whenStable();
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
     it('does not lend a RESTORED brief id to another event', async () => {
@@ -555,9 +558,10 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      // The id is kept. The validator is null and UNKNOWN — the approval outcome was not
-      // confirmed — so the next save carries no fallback permission and the server decides.
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, false);
+      // The id is kept, and the retry carries fallback permission. The user has now been SHOWN
+      // that the write may have been overtaken, which is what converts the unknown validator into
+      // a decision — without it they are blocked once on the very save the warning invites.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, true);
     });
 
     it('does not confirm a write that was superseded before it could be approved', async () => {
@@ -574,6 +578,10 @@ describe('CampaignsComponent brief persistence', () => {
       // Nor does it say "not saved": the write DID land. The honest message is that it may have
       // been overtaken since.
       expect(state().message).toContain('saved, but someone else changed it');
+      // Must also say what proceeding does: this conflict now promotes the session to overwrite,
+      // so a message that only reports the collision leaves the user authorising a replacement
+      // they were never told about.
+      expect(state().message).toContain('Proceed again to replace theirs');
     });
 
     it('does not hand a queued save a clean slate when the 412 was never shown', async () => {
@@ -739,7 +747,7 @@ describe('CampaignsComponent brief persistence', () => {
      * ...and a program switch drops it. The next brief is a different event, so inheriting the
      * previous one's id would let it claim ownership of a row it has nothing to do with.
      */
-    it('forgets the brief id when the program changes', async () => {
+    it('keeps the brief id when the program changes', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true }));
       proceed();
       await fixture.whenStable();
@@ -748,7 +756,12 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
+      // The id SURVIVES a program switch. resetToPlanning discards the brief on screen, but the
+      // row it created upstream still exists — dropping the id would refuse the next Proceed for
+      // that event as unowned, with no read path in this phase to recover. The keys are
+      // (project, event) so nothing else can inherit it, and ownershipGeneration already stops a
+      // late response re-filing after the discard.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', '"1"', false);
     });
 
     it('files the brief under the foundation selected at save time', async () => {
@@ -806,6 +819,32 @@ describe('CampaignsComponent brief persistence', () => {
    * sometimes overwrite a newer brief that had already reported success. Ordering them here is
    * what makes the second save a plain replace of the first.
    */
+  it('keeps saving after a throw inside a save handler', async () => {
+    // The chain IS the queue, so a rejected `persistChain` means every later Proceed in the
+    // session silently never sends a request -- no banner, no error, nothing saved. The
+    // two-argument `.then(onFulfilled, onRejected)` covers a rejected REQUEST but not a throw in
+    // the success handler, and the doc comment claimed a `.catch()` per link that did not exist.
+    //
+    // A malformed result reaches the success handler and throws there (`briefId` absent makes the
+    // ownership write blow up on a null result field), which is the shape a mapping bug takes.
+    persistBrief.mockReturnValue(of(null as unknown as CampaignBriefPersistResult));
+    proceed();
+    await fixture.whenStable();
+
+    // The queue must still be alive.
+    persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-2', etag: '"1"', created: true, approved: true }));
+    proceed();
+    await fixture.whenStable();
+
+    // TWO calls is the property: the second request was actually sent. Without the terminal
+    // catch the chain stays rejected and this is 1, with no error surfaced anywhere.
+    expect(persistBrief).toHaveBeenCalledTimes(2);
+    // Not asserting a 'saved' banner: the throwing first save never flipped
+    // `briefPersistenceEnabled`, so the retry takes the flag-unknown path and stays quiet. That
+    // is the existing first-save-of-a-session behaviour, not something this fix changes.
+    expect(state().status).toBe('off');
+  });
+
   it("runs a session's saves one at a time", async () => {
     const first = new Subject<CampaignBriefPersistResult>();
     persistBrief.mockReturnValue(first);
