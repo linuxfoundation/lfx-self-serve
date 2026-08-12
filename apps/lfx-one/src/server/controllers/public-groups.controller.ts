@@ -54,7 +54,7 @@ export class PublicGroupsController {
       if (!UUID_REGEX.test(id)) {
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee',
-          tags: `sso_group_name:${id}`,
+          tags: `sso_group_name:${id.toLowerCase()}`,
           page_size: 1,
         });
         if (resources.length === 0) {
@@ -65,6 +65,7 @@ export class PublicGroupsController {
           });
         }
         committeeUid = resources[0].data.uid;
+        logger.debug(req, 'get_public_group_by_id', 'Resolved group slug to UID', { slug: id, group_uid: committeeUid });
       }
 
       const committee = await this.committeeService.getCommitteeById(req, committeeUid);
