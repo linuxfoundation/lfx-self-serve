@@ -25,11 +25,11 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
-import { ConfirmationService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, finalize, map, of, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
@@ -56,6 +56,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Injected services
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -150,34 +151,41 @@ export class CommitteeMembersManagerComponent implements OnInit {
     if (this.loadingInvites()) {
       return;
     }
-    this.loadingInvites.set(true);
 
     const committeeId = this.committeeId();
-    // Existing server-side invites only matter in edit mode (a fresh group has none). Fetch them so
-    // the dialog can dedupe against already-invited people; ignore failures and fall back to none.
-    const existing$ = committeeId
-      ? this.committeeService.getCommitteeInvites(committeeId).pipe(
-          take(1),
-          // Only pending invites should block re-inviting — accepted invitees are already members,
-          // and declined/revoked ones must be re-invitable. Matches committee-view.component.ts.
-          map((invites) => invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')),
-          catchError((error) => {
-            console.error('Failed to load existing invites for dedupe:', error);
-            return of([] as CommitteeInvite[]);
-          })
-        )
-      : of([] as CommitteeInvite[]);
+    if (!committeeId) {
+      // Fresh group (create mode) has no server-side invites yet — nothing to dedupe against.
+      this.openCollectInviteDialog([]);
+      return;
+    }
 
-    existing$
+    this.loadingInvites.set(true);
+
+    this.committeeService
+      .getCommitteeInvites(committeeId)
       .pipe(
+        take(1),
         finalize(() => this.loadingInvites.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((serverInvites) => {
-        // getCommitteeInvites returns every status; only pending ones should block re-inviting.
-        // Accepted invitees are already members; declined/revoked ones must be re-invitable.
-        const pending = serverInvites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
-        this.openCollectInviteDialog(pending);
+      .subscribe({
+        next: (invites) => {
+          // Only pending invites should block re-inviting — accepted invitees are already members,
+          // and declined/revoked ones must be re-invitable. Matches committee-view.component.ts.
+          const pending = invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
+          this.openCollectInviteDialog(pending);
+        },
+        // Falling back to "no existing invites" on failure would silently defeat the dedupe
+        // guarantee (a staged invite could duplicate an already-pending one) — abort instead.
+        error: (error) => {
+          console.error('Failed to load existing invites for dedupe:', error);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Open Invite Dialog',
+            detail: 'Could not load existing invites. Please try again.',
+            life: 6000,
+          });
+        },
       });
   }
 

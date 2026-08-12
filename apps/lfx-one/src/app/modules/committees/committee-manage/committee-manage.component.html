@@ -138,7 +138,15 @@
             </lfx-button>
           } @else if (isLastStep() && !isEditMode()) {
             <!-- Step 4 Create Mode: Done Button -->
-            <lfx-button label="Done" icon="fa-light fa-check" iconPos="right" size="small" (onClick)="onDone()" data-testid="committee-manage-done-btn">
+            <lfx-button
+              label="Done"
+              icon="fa-light fa-check"
+              iconPos="right"
+              size="small"
+              [loading]="submitting()"
+              [disabled]="submitting()"
+              (onClick)="onDone()"
+              data-testid="committee-manage-done-btn">
             </lfx-button>
           } @else {
             <!-- Step 4 Edit Mode: Update Committee Button -->

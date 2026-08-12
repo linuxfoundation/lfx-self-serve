@@ -577,18 +577,18 @@ export class CommitteeManageComponent {
     const totalSuccess = results.reduce((sum, result) => sum + result.success, 0);
     const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
     const totalOperations = totalSuccess + totalFailed;
-    // Invite-only flushes shouldn't read as "member(s) updated" — swap in invite-specific wording.
-    const allInvites = results.length > 0 && results.every((result) => result.type === 'invite');
-    const noun = allInvites ? 'invitation(s)' : 'member(s)';
-    const verb = allInvites ? 'sent' : 'updated';
+    const inviteOps = results.filter((result) => result.type === 'invite').length;
+    const memberOps = results.length - inviteOps;
+    // A batch that mixes member mutations with invites shouldn't be mislabeled as one or the
+    // other — use neutral wording rather than reporting invites as "member(s) updated".
+    const isMixed = memberOps > 0 && inviteOps > 0;
+    const { noun, verb, failVerb } = this.describeOperationWording(memberOps, inviteOps);
 
     if (totalSuccess === totalOperations) {
       // All successful
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Success',
-        detail: allInvites ? `${totalSuccess} ${noun} ${verb} successfully` : `${this.committeeLabel} and ${totalSuccess} ${noun} ${verb} successfully`,
-      });
+      const detail =
+        memberOps > 0 && !isMixed ? `${this.committeeLabel} and ${totalSuccess} ${noun} ${verb} successfully` : `${totalSuccess} ${noun} ${verb} successfully`;
+      this.messageService.add({ severity: 'success', summary: 'Success', detail });
     } else if (totalSuccess > 0 && totalFailed > 0) {
       // Partial success
       this.messageService.add({
@@ -601,8 +601,19 @@ export class CommitteeManageComponent {
       this.messageService.add({
         severity: 'error',
         summary: 'Operation Failed',
-        detail: `Failed to ${allInvites ? 'send' : 'update'} ${totalFailed} ${noun}`,
+        detail: `Failed to ${failVerb} ${totalFailed} ${noun}`,
       });
     }
+  }
+
+  /** Wording varies by batch composition: pure member changes, pure invites, or a mix of both. */
+  private describeOperationWording(memberOps: number, inviteOps: number): { noun: string; verb: string; failVerb: string } {
+    if (memberOps > 0 && inviteOps > 0) {
+      return { noun: 'update(s)', verb: 'processed', failVerb: 'process' };
+    }
+    if (inviteOps > 0) {
+      return { noun: 'invitation(s)', verb: 'sent', failVerb: 'send' };
+    }
+    return { noun: 'member(s)', verb: 'updated', failVerb: 'update' };
   }
 }
