@@ -375,6 +375,26 @@ describe('CampaignsComponent brief persistence', () => {
      * Recording before the check is safe because the KEY is `(project, event)`: a late response
      * files its id under the event it actually saved, and cannot reach another event's brief.
      */
+    it('treats a padded slug as a different brief from the unpadded one', async () => {
+      // `deriveEventSlug` trims only to TEST emptiness — it returns the untrimmed original, and
+      // that exact string goes on the wire as `event_slug`, which campaign-service compares
+      // exactly. So `' kubecon-eu-2026 '` and `'kubecon-eu-2026'` are two separate stored briefs.
+      // Keying ownership on a trimmed slug collapsed them into one entry, and after the second
+      // replaced the first, saving the other sent the wrong brief_id and was refused as unowned.
+      const padded = { eventDetails: { slug: ' kubecon-eu-2026 ' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-unpadded', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      persistBrief.mockReturnValue(NEVER);
+      proceed(padded);
+      await fixture.whenStable();
+
+      // Must NOT inherit the unpadded brief's id: it names a different row.
+      expect(persistBrief).toHaveBeenLastCalledWith(padded, expect.anything(), null);
+    });
+
     it('keeps an id recorded by a save that lands after a foundation switch', async () => {
       // The switch clears the BANNER but deliberately keeps `knownBriefIds` — the map is keyed by
       // foundation, so each one's ids stay valid for it. An in-flight save that finishes after

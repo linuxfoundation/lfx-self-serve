@@ -115,8 +115,9 @@ export class CampaignsComponent {
    * recognises, accepts an overwrite of a brief this session never approved as B.
    *
    * The event half is derived exactly as the write path derives the key it sends
-   * (`deriveEventSlug` in `campaign-service.service.ts`): the trimmed `eventDetails.slug`, or
-   * none. It is duplicated rather than imported because that module is SERVER-side and this
+   * (`deriveEventSlug` in `campaign-service.service.ts`): `eventDetails.slug` EXACTLY as
+   * stored, with trimming used only to test emptiness — that helper returns the untrimmed
+   * original, and that exact string is what goes on the wire as `event_slug`. It is duplicated rather than imported because that module is SERVER-side and this
    * component runs in the browser; deriving it any other way would let the lookup and the request
    * disagree about which row is being claimed, so the two must be changed together.
    */
@@ -447,7 +448,15 @@ export class CampaignsComponent {
 
   /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
   private ownershipKey(projectSlug: string, brief: CampaignBriefOutput): string | null {
-    const eventSlug = (brief.eventDetails?.slug ?? '').trim();
+    const eventSlug = brief.eventDetails?.slug ?? '';
+    // Trim to TEST emptiness, never to build the key — `deriveEventSlug` returns the untrimmed
+    // original and that exact string is what goes on the wire as `event_slug`, which
+    // campaign-service compares exactly. Keying on the trimmed form would collapse `" a "` and
+    // `"a"` — two separate stored briefs — into one entry, and after the second replaced the
+    // first, saving the other would send the wrong brief_id and be refused as unowned.
+    if (eventSlug.trim().length === 0) {
+      return null;
+    }
     // No derivable event slug means no row can be named, so there is no ownership to record or
     // claim. Returning null keeps that case out of the map rather than filing it under a key
     // that would collide with every other unslugged brief.
@@ -455,7 +464,7 @@ export class CampaignsComponent {
     // A newline separator, not a hyphen: both slugs are drawn from `[a-z0-9-]`, so a separator
     // from that set could be produced by the slugs themselves and let `("a-b", "c")` collide
     // with `("a", "b-c")`.
-    return eventSlug === '' ? null : `${projectSlug}\n${eventSlug}`;
+    return `${projectSlug}\n${eventSlug}`;
   }
 
   private resetToPlanning(): void {
