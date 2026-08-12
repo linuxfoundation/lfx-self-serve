@@ -132,11 +132,17 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly savedBriefAnnouncement = computed(() => {
     const saved = this.savedBrief();
+    const warning = this.savedBriefWarning();
     if (saved !== null) {
       const name = saved.eventDetails.name || saved.eventDetails.slug;
-      return `A saved brief was found for ${name}. A restore action is available.`;
+      const offer = `A saved brief was found for ${name}. A restore action is available.`;
+      // Both, when both are set. The offer used to win outright, which was right while a warning
+      // meant there was nothing to restore. It is not any more: a loaded-but-unapproved brief now
+      // sets BOTH, and announcing only the offer drops the half that says the brief cannot be
+      // used downstream — the visible banner says it, so a screen reader must too.
+      return warning === null ? offer : `${offer} ${warning}`;
     }
-    return this.savedBriefWarning() ?? '';
+    return warning ?? '';
   });
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */

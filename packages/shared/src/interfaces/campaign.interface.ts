@@ -215,8 +215,14 @@ export interface CampaignBriefPersistResult {
    * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
    * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
    * is enough to reach that: the page generates from scratch, the slug matches perfectly, and the
-   * server's find hits a row nobody read. `briefId` carries the row that blocked the save, so a
-   * caller can offer to open it rather than only reporting failure.
+   * server's find hits a row nobody read.
+   *
+   * `briefId` is deliberately EMPTY on this refusal, and that is a security property rather than
+   * an omission. Returning the blocking row's id would hand an unowned caller the one value the
+   * ownership check asks for: read the id off the refusal, replay it with `etag_fallback`, and
+   * the overwrite this conflict exists to prevent succeeds. The id is withheld at the source --
+   * the ownership check runs before the fallback -- so no caller can offer to "open the blocking
+   * brief" from this response, by design.
    *
    * LFXV2-3098 introduced this while persistence was write-only, where it refused EVERY
    * collision — with no read path, nothing could hand a caller an id at all. LFXV2-3108 adds the

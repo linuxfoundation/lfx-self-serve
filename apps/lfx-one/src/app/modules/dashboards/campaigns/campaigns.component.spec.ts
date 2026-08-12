@@ -453,6 +453,32 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).not.toBe('saved');
     });
 
+    it('reports an error when the success handler throws, instead of stranding on saving', async () => {
+      // The terminal catch keeps the queue usable -- a rejected chain would make every later
+      // Proceed silently never send. But absorbing the throw must not also leave the banner on
+      // "Saving this brief..." for the rest of the session while the brief is not durable.
+      // One successful save first, so `briefPersistenceEnabled` is known and the NEXT save shows
+      // the in-flight banner. The first save of a session deliberately shows none -- the flag
+      // lives on the server, so a spinner then would appear in every environment where the
+      // cutover is still dark.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-0', etag: '"1"', created: true, approved: true }));
+      proceed();
+      await fixture.whenStable();
+
+      const thrower = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(thrower);
+      proceed();
+      await fixture.whenStable();
+      expect(state().status).toBe('saving');
+
+      // An unexpected shape: reading `result.conflict` off null throws inside the success handler,
+      // which skips BOTH `.then` arms and rejects the chain.
+      thrower.next(null as unknown as CampaignBriefPersistResult);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(state().status).toBe('error');
+    });
+
     it('does not let a restore of one event invalidate a queued save of another', async () => {
       // `ownershipEpochs` is keyed by `(project, event)`, not a single session counter. A save of
       // event B that is queued behind its own predecessor must still pick up the id that
@@ -925,10 +951,13 @@ describe('CampaignsComponent brief persistence', () => {
     // TWO calls is the property: the second request was actually sent. Without the terminal
     // catch the chain stays rejected and this is 1, with no error surfaced anywhere.
     expect(persistBrief).toHaveBeenCalledTimes(2);
-    // Not asserting a 'saved' banner: the throwing first save never flipped
-    // `briefPersistenceEnabled`, so the retry takes the flag-unknown path and stays quiet. That
-    // is the existing first-save-of-a-session behaviour, not something this fix changes.
-    expect(state().status).toBe('off');
+    // `saved`, and the route there is worth naming. The throwing first save now reports `error`
+    // rather than being swallowed silently, which flips `briefPersistenceEnabled` -- so the retry
+    // takes the flag-KNOWN path and reports its own outcome. This assertion read `off` while the
+    // throw was absorbed without a banner: the first save stayed quiet, the flag never flipped,
+    // and the second save inherited that silence. Surfacing the throw is what changed it, and
+    // `saved` is the honest end state -- the second request really did succeed.
+    expect(state().status).toBe('saved');
   });
 
   it("runs a session's saves one at a time", async () => {

@@ -186,6 +186,22 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(savedBriefWarning()).toContain('never approved');
   });
 
+  it('announces the unapproved warning alongside the restore offer', async () => {
+    // The offer used to win outright, which was right while a warning meant there was nothing to
+    // restore. A loaded-but-unapproved brief now sets BOTH -- announcing only the offer drops the
+    // half that says the brief cannot be used downstream, so a screen-reader user hears
+    // "restore is available" and nothing about why it will not proceed.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: false }))
+    );
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    const announcement = (fixture.componentInstance as unknown as { savedBriefAnnouncement(): string }).savedBriefAnnouncement();
+    expect(announcement).toContain('A restore action is available.');
+    expect(announcement).toContain('never approved');
+  });
+
   it('does not warn when the stored brief is approved', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))

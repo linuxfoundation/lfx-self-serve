@@ -759,7 +759,22 @@ export class CampaignsComponent {
     // The doc comment above claimed each link had a `.catch()`. It did not; there were zero in
     // this file. Swallowing here restores the property that comment described — one failed save
     // cannot poison the queue for the next.
-    this.persistChain = this.persistChain.catch(() => undefined);
+    this.persistChain = this.persistChain.catch(() => {
+      // Absorbing the rejection keeps the queue alive; it must not also leave the USER on a
+      // spinner. A throw in the success handler skips both `.then` arms, so nothing else ever
+      // clears `saving` — the banner reads "Saving this brief…" for the rest of the session while
+      // the brief is not durable, which is the one state this banner must never show falsely.
+      //
+      // Generation-gated like the two arms above: a throw belonging to a superseded brief must
+      // not stamp an error over whatever owns the signal now.
+      if (generation === this.briefPersistenceGeneration) {
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: null,
+          message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+        });
+      }
+    });
   }
 
   /** The `(foundation, event)` pair the server keys a brief on, as one map key. */
