@@ -192,6 +192,24 @@ export interface DocsTaxonomyNode {
 }
 
 /**
+ * Render-ready "More in this topic" rail link. The active-state Tailwind class
+ * and `aria-current` value are precomputed in the component's view model so the
+ * template stays free of per-item method calls (frontend-checklist §63-81).
+ */
+export interface DocsSiblingLink {
+  /** Article slug — also the `@for` track key. */
+  slug: string;
+  /** Article URL for the `[routerLink]`. */
+  url: string;
+  /** Article title — the link text. */
+  title: string;
+  /** Full Tailwind class string, precomputed for the active/inactive state. */
+  linkClass: string;
+  /** `'page'` for the article currently in view, otherwise `null`. */
+  ariaCurrent: 'page' | null;
+}
+
+/**
  * Top-level build artifact emitted by `apps/lfx-one/scripts/build-docs.mjs`.
  * Imported synchronously by `DocsManifestService` so SSR can resolve any
  * `/docs/**` path without async I/O.

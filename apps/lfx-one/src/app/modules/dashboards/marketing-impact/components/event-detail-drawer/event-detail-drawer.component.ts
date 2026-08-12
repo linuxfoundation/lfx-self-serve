@@ -4,19 +4,24 @@
 import { NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
+import { ChartComponent } from '@components/chart/chart.component';
+import { TagComponent } from '@components/tag/tag.component';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, lfxColors, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap } from 'rxjs';
 
+import type { ChartData, ChartOptions } from 'chart.js';
 import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-event-detail-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, DrawerModule, Skeleton],
+  imports: [NgClass, DrawerModule, Skeleton, ButtonComponent, CardComponent, TagComponent, ChartComponent],
   templateUrl: './event-detail-drawer.component.html',
 })
 export class EventDetailDrawerComponent {
@@ -59,42 +64,111 @@ export class EventDetailDrawerComponent {
     return Math.min(100, Math.round((d.sponsorshipRevenue.actual / d.sponsorshipRevenue.goal) * 100));
   });
 
-  /**
-   * Everything the template renders as text, formatted once per detail change. The template used
-   * to call formatting helpers directly, which re-ran locale/currency formatting on every
-   * change-detection pass; per the frontend checklist templates read computed values instead.
-   */
-  protected readonly view = computed(() => {
-    const d = this.detail();
-    if (!d) return null;
-    return {
-      dateLabel: this.formatDate(d.startDate),
-      vsLastYearLabel: this.formatVsLastYear(d.vsLastYear),
-      registrationsActual: formatNumber(d.registrations.actual),
-      registrationsGoal: formatNumber(d.registrations.goal),
-      sponsorshipActual: formatCurrency(d.sponsorshipRevenue.actual),
-      sponsorshipGoal: formatCurrency(d.sponsorshipRevenue.goal),
-      registrationsTone: this.barTone(this.regProgress()),
-      sponsorshipTone: this.barTone(this.sponProgress()),
-      tiers: d.sponsorshipTiers.map((tier) => ({
-        tier: tier.tier,
-        label: tier.tier || 'Other',
-        sponsorCount: tier.sponsorCount,
-        revenue: formatCurrency(tier.revenue),
-      })),
-    };
-  });
+  // Whether we have a daily curve to plot (needs the drilldown prediction data).
+  protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
 
-  // === Private Helpers ===
+  // Registration-pacing line chart: current-year + last-year + predicted, over days-to-event.
+  protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
+
+  protected readonly pacingChartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: true, position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, color: lfxColors.gray[500], font: { size: 11 } } },
+      tooltip: { enabled: true },
+    },
+    scales: {
+      x: {
+        // No `reverse` here. This is a category axis, so points render in array order, and the
+        // query already returns DAYS_TO_EVENT descending — the event (0) lands on the right.
+        // Reversing as well would flip it back and run the timeline backwards.
+        title: { display: true, text: 'Days to event', color: lfxColors.gray[400], font: { size: 10 } },
+        grid: { display: false },
+        ticks: { color: lfxColors.gray[500], font: { size: 10 }, maxTicksLimit: 8 },
+      },
+      y: {
+        beginAtZero: true,
+        grid: { color: lfxColors.gray[200] },
+        border: { display: false },
+        ticks: { color: lfxColors.gray[500], font: { size: 10 } },
+      },
+    },
+    elements: { point: { radius: 0, hitRadius: 8 }, line: { tension: 0.3, borderWidth: 2 } },
+  };
+
   /**
-   * Goal-bar tone from the shared thresholds rather than literals, so the drawer's colours and the
-   * roster's bar + at-risk icon move together when either threshold is tuned.
+   * Everything the template renders as a derived label, computed once per detail change rather
+   * than called from the template — these do locale, number and string formatting, which a
+   * template invocation would re-run on every change-detection pass (frontend-checklist.md §4).
    */
-  private barTone(percent: number | null): 'good' | 'warn' | 'critical' | null {
+  protected readonly dateLabel = computed(() => this.formatDate(this.detail()?.startDate ?? ''));
+  protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null));
+  protected readonly locationLabel = computed(() => {
+    const d = this.detail();
+    if (!d) return '';
+    return [d.location, d.city, d.country].filter((part) => part && part.length).join(', ');
+  });
+  /**
+   * Goal-bar tone from the shared thresholds rather than literals, so this bar and the roster's
+   * bar + at-risk icon move together when either constant is tuned.
+   */
+  protected readonly registrationsTone = computed(() => {
+    const percent = this.regProgress();
     if (percent === null) return null;
     if (percent >= ON_TRACK_PERCENT_THRESHOLD) return 'good';
     if (percent >= BEHIND_GOAL_PERCENT_THRESHOLD) return 'warn';
     return 'critical';
+  });
+
+  /** Human label for the comparison pace rating. */
+  protected readonly paceRatingLabel = computed(() => {
+    switch (this.detail()?.compScore) {
+      case 'high':
+        return 'Pacing ahead';
+      case 'medium':
+        return 'On pace';
+      case 'low':
+        return 'Pacing behind';
+      default:
+        return 'No pace signal';
+    }
+  });
+  /** "N registrations behind goal" when there is a real, unmet goal; otherwise null. */
+  protected readonly behindGoalLabel = computed(() => {
+    const d = this.detail();
+    if (!d || d.registrations.goal <= 0) return null;
+    const gap = d.registrations.goal - d.registrations.actual;
+    if (gap <= 0) return 'Registration goal met';
+    return `${formatNumber(gap)} registrations behind goal`;
+  });
+
+  // === Protected Methods ===
+  protected onClose(): void {
+    this.visible.set(false);
+  }
+
+  // === Protected Helpers (template) ===
+  protected num(value: number): string {
+    return formatNumber(value);
+  }
+
+  /** lfx-tag severity for the registration-pace rating. */
+  protected paceSeverity(): 'success' | 'warn' | 'danger' | 'secondary' {
+    switch (this.detail()?.compScore) {
+      case 'high':
+        return 'success';
+      case 'medium':
+        return 'warn';
+      case 'low':
+        return 'danger';
+      default:
+        return 'secondary';
+    }
+  }
+
+  protected money(value: number): string {
+    return formatCurrency(value);
   }
 
   /** Registration pace vs last year as a signed percent string, or null when no baseline. */
@@ -120,6 +194,45 @@ export class EventDetailDrawerComponent {
       year: 'numeric',
       timeZone: 'UTC',
     });
+  }
+
+  /** Full venue + city + country line for the header; '' when nothing is known. */
+  // === Private Helpers ===
+  private buildPacingChart(): ChartData<'line'> {
+    const points = this.detail()?.pacing.points ?? [];
+    const labels = points.map((point) => point.daysToEvent);
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Current year',
+          data: points.map((point) => point.current),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: 'transparent',
+          spanGaps: false,
+        },
+        // Only when a prior-year edition exists — the headline already gates on hasPriorYear, and
+        // an all-null series would otherwise render as a legend entry with no line behind it.
+        ...(this.detail()?.hasPriorYear
+          ? [
+              {
+                label: 'Last year',
+                data: points.map((point) => point.priorYear),
+                borderColor: lfxColors.gray[400],
+                backgroundColor: 'transparent',
+                borderDash: [4, 4],
+              },
+            ]
+          : []),
+        {
+          label: 'Predicted',
+          data: points.map((point) => point.predictedAvg),
+          borderColor: lfxColors.violet[500],
+          backgroundColor: 'transparent',
+          borderDash: [6, 4],
+        },
+      ],
+    };
   }
 
   // === Private Initializers ===

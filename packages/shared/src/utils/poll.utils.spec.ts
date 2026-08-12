@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { PollStatus } from '../enums';
-import { normalizePollStatus } from './poll.utils';
+import type { PollCommentResponse } from '../interfaces/poll.interface';
+import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
 
 describe('normalizePollStatus', () => {
   it('returns an already-lowercase status unchanged', () => {
@@ -26,5 +27,36 @@ describe('normalizePollStatus', () => {
   it('returns undefined for a value that is not a real PollStatus member', () => {
     expect(normalizePollStatus('archived')).toBeUndefined();
     expect(normalizePollStatus('')).toBeUndefined();
+  });
+});
+
+describe('sortCommentResponsesByRecency', () => {
+  /** Minimal PollCommentResponse fixture — the sort only reads `vote_creation_time`. */
+  function response(voteId: string, voteCreationTime: string): PollCommentResponse {
+    return { vote_id: voteId, comment_text: `comment ${voteId}`, vote_creation_time: voteCreationTime, abstained: false };
+  }
+
+  it('sorts responses newest-first by vote_creation_time', () => {
+    const input = [response('oldest', '2025-01-01T10:00:00Z'), response('newest', '2025-03-01T10:00:00Z'), response('middle', '2025-02-01T10:00:00Z')];
+
+    expect(sortCommentResponsesByRecency(input).map((r) => r.vote_id)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [response('older', '2025-01-01T10:00:00Z'), response('newer', '2025-02-01T10:00:00Z')];
+
+    sortCommentResponsesByRecency(input);
+
+    expect(input.map((r) => r.vote_id)).toEqual(['older', 'newer']);
+  });
+
+  it('sinks unparseable timestamps to the bottom instead of scrambling the comparator', () => {
+    const input = [response('broken', 'not-a-date'), response('real', '2025-02-01T10:00:00Z')];
+
+    expect(sortCommentResponsesByRecency(input).map((r) => r.vote_id)).toEqual(['real', 'broken']);
+  });
+
+  it('returns an empty array unchanged', () => {
+    expect(sortCommentResponsesByRecency([])).toEqual([]);
   });
 });

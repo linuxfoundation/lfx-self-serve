@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
+import { CommentResponseInput, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
+import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -302,8 +304,53 @@ export class VoteController {
         throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
       }
 
+      if (payload.comment_responses !== undefined) {
+        if (!Array.isArray(payload.comment_responses)) {
+          throw ServiceValidationError.forField('comment_responses', 'comment_responses must be an array', validationContext);
+        }
+
+        for (const [index, response] of payload.comment_responses.entries()) {
+          if (!response || typeof response !== 'object') {
+            throw ServiceValidationError.forField(`comment_responses[${index}]`, 'Each comment response must be a non-null object', validationContext);
+          }
+
+          if (!response.prompt_id || typeof response.prompt_id !== 'string') {
+            throw ServiceValidationError.forField(
+              `comment_responses[${index}].prompt_id`,
+              'prompt_id is required for each comment response',
+              validationContext
+            );
+          }
+
+          if (typeof response.comment_text !== 'string' || response.comment_text.trim().length === 0) {
+            throw ServiceValidationError.forField(
+              `comment_responses[${index}].comment_text`,
+              'comment_text is required for each comment response',
+              validationContext
+            );
+          }
+
+          // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
+          if (codePointLength(response.comment_text) > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
+            throw ServiceValidationError.forField(
+              `comment_responses[${index}].comment_text`,
+              `comment_text must be ${VOTE_COMMENT_RESPONSE_MAX_LENGTH} characters or fewer`,
+              validationContext
+            );
+          }
+        }
+      }
+
+      // Rebuild comment_responses from the validated fields only, so unexpected extra
+      // properties on the client payload never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined = payload.comment_responses?.map((response) => ({
+        prompt_id: response.prompt_id,
+        comment_text: response.comment_text,
+      }));
+
       // Build the upstream payload immutably: when abstaining we drop user_vote_content entirely;
-      // when not abstaining we validate each answer and forward the original content.
+      // when not abstaining we validate each answer and forward the original content. comment_responses
+      // is independent of abstain — a voter can abstain and still leave comments — so it's forwarded on both branches.
       let upstreamPayload: CreateVoteResponseRequest;
 
       if (payload.abstain) {
@@ -311,6 +358,7 @@ export class VoteController {
           vote_uid: payload.vote_uid,
           vote_response_uid: payload.vote_response_uid,
           abstain: true,
+          comment_responses: validatedCommentResponses,
         };
       } else {
         if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
@@ -338,7 +386,13 @@ export class VoteController {
           }
         }
 
-        upstreamPayload = payload;
+        upstreamPayload = {
+          vote_uid: payload.vote_uid,
+          vote_response_uid: payload.vote_response_uid,
+          abstain: false,
+          user_vote_content: payload.user_vote_content,
+          comment_responses: validatedCommentResponses,
+        };
       }
 
       await this.voteService.createVoteResponse(req, upstreamPayload);

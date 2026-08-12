@@ -90,6 +90,22 @@ export function stableKeyParity(key: string): 0 | 1 {
 }
 
 /**
+ * Splits plain text (e.g. a textarea-submitted comment) into paragraphs on blank lines.
+ * Two or more consecutive line breaks (lines containing only spaces/tabs count as blank)
+ * separate paragraphs; single line breaks are preserved inside the paragraph for the
+ * template to render (e.g. via `whitespace-pre-line`). Paragraphs are trimmed and empty
+ * results dropped, so empty/whitespace-only input returns `[]`.
+ * @param text - The raw plain-text input
+ * @returns One entry per paragraph, in source order
+ */
+export function splitIntoParagraphs(text: string): string[] {
+  return text
+    .split(/(?:\r?\n[ \t]*){2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+}
+
+/**
  * Count the Unicode code points in a string (like Go's `len([]rune(s))`), so an emoji or
  * non-BMP char counts once where `String.length` would count its two UTF-16 units.
  * @param value - The string to measure

@@ -39,15 +39,12 @@ features:
     details: View and share digital badges you have earned through LFX.
     link: /badges/
   - title: Profile
-    details: Update your name, photo, affiliations, and identity connections.
+    details: Update your name, photo, About Me, and public profile.
     link: /profile/
-  - title: Account Settings
-    details: Manage your email, password, and notification preferences.
-    link: /settings/
+  - title: Account
+    details: Manage affiliations, identities, CLAs, transactions, and settings.
+    link: /account/
   - title: Training & Certifications
     details: Track your Linux Foundation training enrollments and certifications.
     link: /trainings/
-  - title: My Transactions
-    details: View your payment history and receipts for LFX purchases.
-    link: /transactions/
 ---

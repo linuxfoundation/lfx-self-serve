@@ -31,4 +31,4 @@ Go to [app.lfx.dev/crowdfunding/donations](https://app.lfx.dev/crowdfunding/dona
 ## Related
 
 - [My Initiatives](../my-initiatives/) — manage the initiatives you have created
-- [Transactions](../../transactions/) — view purchase history across all LFX products
+- [Transactions](../../account/transactions/) — view purchase history across all LFX products

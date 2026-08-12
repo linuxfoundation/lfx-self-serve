@@ -56,4 +56,4 @@ Viewing your company's training activity in Org Lens requires **admin access** t
 ## Related sections
 
 - [Badges](../badges/) — credentials earned from completed training programs
-- [Transactions](../transactions/) — training purchases appear in your transaction history
+- [Transactions](../account/transactions/) — training purchases appear in your transaction history

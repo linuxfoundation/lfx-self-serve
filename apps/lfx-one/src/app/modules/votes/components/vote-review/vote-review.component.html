@@ -96,6 +96,36 @@
           }
         </div>
       </div>
+
+      <!-- Comment Questions Card (optional section — hidden when the vote has none) -->
+      @if (commentPrompts().length > 0) {
+        <div class="border border-gray-200 rounded-lg p-4 relative" data-testid="vote-review-comment-prompts-card">
+          <lfx-button
+            [text]="true"
+            label="Edit"
+            (onClick)="onEditStep(2)"
+            styleClass="absolute top-4 right-4 !text-lfx-primary !p-0 !h-auto"
+            data-testid="vote-review-edit-comment-prompts-btn">
+          </lfx-button>
+          <h3 class="text-base font-medium text-gray-900 mb-4">Comment Questions</h3>
+          <div class="flex flex-col gap-4 text-sm">
+            @for (cp of commentPrompts(); track cp.index) {
+              <div class="flex flex-col gap-2" [attr.data-testid]="'vote-review-comment-prompt-' + cp.index">
+                @if (commentPrompts().length > 1) {
+                  <span class="text-xs font-medium text-gray-400 uppercase">Comment Question {{ cp.index }}</span>
+                }
+                <div class="flex flex-col gap-1">
+                  <span class="text-gray-500">Question:</span>
+                  <span class="text-gray-900 break-words">{{ cp.prompt }}</span>
+                </div>
+                @if (commentPrompts().length > 1 && !$last) {
+                  <hr class="border-gray-200 mt-2" />
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
     </div>
   </div>
 </div>
