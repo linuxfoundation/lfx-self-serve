@@ -3,7 +3,27 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { htmlClipboardToText, stripHtml } from './html-utils';
+import { escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+
+describe('escapeHtml', () => {
+  it('escapes all five HTML-significant characters', () => {
+    expect(escapeHtml('I use <div> & "quotes" and \'apostrophes\'')).toBe('I use &lt;div&gt; &amp; &quot;quotes&quot; and &#39;apostrophes&#39;');
+  });
+
+  it('escapes in a single pass so existing entities are double-encoded, not corrupted', () => {
+    expect(escapeHtml('&amp;')).toBe('&amp;amp;');
+  });
+
+  it('returns empty string for null / undefined / empty', () => {
+    expect(escapeHtml(null)).toBe('');
+    expect(escapeHtml(undefined)).toBe('');
+    expect(escapeHtml('')).toBe('');
+  });
+
+  it('leaves plain text untouched', () => {
+    expect(escapeHtml('see https://example.com?a=1~b')).toBe('see https://example.com?a=1~b');
+  });
+});
 
 describe('stripHtml', () => {
   it('removes tags and decodes entities', () => {

@@ -1,28 +1,28 @@
 ---
 title: Profile
-description: Manage your LFX user profile, account settings, and personal information.
+description: Manage your personal identity in LFX Self Serve — name, photo, About Me, primary email, and location — and your public profile.
 audience: [all]
 product_area: Profile
-tags: [profile, account, email, password, affiliations, developer, cla, easycla]
+tags: [profile, edit, about-me, photo, public-profile, visibility]
 last_generated: 2026-05-22
-last_updated: 2026-08-04
+last_updated: 2026-08-11
 intercom_collection: Profile
 ---
 
-The Profile section is where you manage your personal account information on LFX Self Serve. Your profile controls how you appear to other community members and how you receive communications from the Linux Foundation.
+The Profile section is where you manage your personal identity on LFX Self Serve — your name, photo, About Me, primary email, and location. These details are stored with your Linux Foundation account (Auth0, via the LFX auth service) and control how you appear to other community members. You edit them in the **Edit Profile** drawer, and you choose how much of your profile is visible to the public.
+
+For account management beyond your identity — work history and affiliations, connected identities, individual enrollment, CLAs, transactions, and settings — see the [Account](../account/) section.
 
 ## Your personal profile
 
-The information below covers **your individual** LFX account — the profile tied to the email address you use to log in.
+The information below covers **your individual** LFX identity — the profile tied to the email address you use to log in.
 
 ### What you can do
 
-- View and update your work history and project affiliations
-- Manage the identities used to attribute your contributions
-- View your Individual CLAs (ICLAs) and Employee CLA (ECLA) coverage
-- Enroll in the Linux Foundation Individual Supporter plan
-- View your Linux Foundation purchase history
-- Manage your email addresses, password, and developer API token
+- Update your name, photo, About Me, job title, and organization
+- Set your primary email address and location details
+- Choose your t-shirt size for event swag
+- Publish a public profile and choose which sections it shows
 
 ### Who this applies to
 
@@ -30,18 +30,14 @@ All authenticated users have a profile. Every user can view and edit their own p
 
 ### Navigation
 
-Go to **app.lfx.dev** and select **Profile** from the left navigation sidebar, or navigate directly to `/profile`. The profile section uses a tabbed layout with the following tabs:
+Go to **app.lfx.dev** and select [**Profile & Account**](/profile) from the left navigation sidebar. Your personal details are edited in the **Edit Profile** drawer — see [Edit your profile](./edit-profile/).
 
-| Tab                         | Route                            | Description                                                    |
-| --------------------------- | -------------------------------- | -------------------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     |
-| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work    |
-| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan       |
-| My CLAs                     | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) |
-| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                         |
-| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token             |
+### Your public profile
 
-`/profile` opens the **Work history & Affiliations** tab by default.
+Separate from your private details, you can publish a **public profile** — a page at `app.lfx.dev/u/<username>` that showcases your contributions and credentials to anyone. It is private by default. Use **Public profile settings** in the profile panel to make it public and choose which sections appear.
+
+- [Your public profile](./public-profile/) — what visitors can see
+- [Public profile settings](./public-profile-settings/) — make it public and control its sections
 
 ## Your company's activity
 
@@ -65,7 +61,9 @@ Viewing your organization's profile in Org Lens requires **admin access** to you
 
 ## Related sections
 
-- [My CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage
-- [Settings](../settings/) — application-level preferences
+- [Edit your profile](./edit-profile/) — update your name, photo, About Me, and contact details
+- [Your public profile](./public-profile/) — the page others can see at `app.lfx.dev/u/<username>`
+- [Public profile settings](./public-profile-settings/) — control whether your profile is public and what it shows
+- [Account](../account/) — work history, identities, individual enrollment, CLAs, transactions, and settings
 - [Badges](../badges/) — view your earned credentials
 - [Trainings](../trainings/) — view your enrolled training programs

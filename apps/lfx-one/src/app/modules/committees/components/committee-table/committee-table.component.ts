@@ -82,13 +82,14 @@ export class CommitteeTableComponent {
     this.resetRequested.emit();
   }
 
-  protected async copyPublicGroupLink(uid: string): Promise<void> {
+  protected async copyPublicGroupLink(committee: Committee): Promise<void> {
     if (!isPlatformBrowser(this.platformId) || !navigator.clipboard?.writeText) {
       this.messageService.add({ severity: 'error', summary: 'Copy not supported', detail: 'Clipboard access is unavailable in this browser.' });
       return;
     }
+    const groupPath = committee.sso_group_name || committee.uid;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/groups/${uid}`);
+      await navigator.clipboard.writeText(`${window.location.origin}/groups/${groupPath}`);
       this.messageService.add({ severity: 'success', summary: 'Link copied', detail: 'Public group link copied to clipboard.' });
     } catch {
       this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: 'Could not access clipboard.' });

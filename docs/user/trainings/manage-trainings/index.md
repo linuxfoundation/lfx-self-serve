@@ -40,4 +40,4 @@ If you have no training enrollments, the page shows a message indicating no trai
 ## Related
 
 - [Badges](../../badges/) — training completions can earn you LFX badges
-- [Transactions](../../transactions/) — training purchases appear in your billing history
+- [Transactions](../../account/transactions/) — training purchases appear in your billing history

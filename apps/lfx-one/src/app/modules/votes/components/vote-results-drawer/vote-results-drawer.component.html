@@ -9,6 +9,52 @@
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
   data-testid="vote-results-drawer">
   @if (vote(); as voteData) {
+    <!-- Shared comment-results list — rendered in voter + creator + admin + ED views via ngTemplateOutlet. Responses paginate per prompt. -->
+    <ng-template #commentResultsList>
+      @for (commentResult of paginatedCommentResults(); track commentResult.prompt.prompt_id) {
+        <div class="flex flex-col gap-2">
+          <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
+          @for (response of commentResult.responses; track response.vote_id) {
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
+              <lfx-expandable-text [maxHeight]="150" class="comment-text">
+                <div class="flex flex-col gap-3 whitespace-normal text-sm text-slate-700">
+                  @for (paragraph of response.paragraphs; track $index) {
+                    <p class="whitespace-pre-line" [innerHTML]="paragraph | linkify"></p>
+                  }
+                </div>
+              </lfx-expandable-text>
+              <div class="flex items-center gap-2 text-xs text-slate-500">
+                <span>{{ response.user_name || 'Anonymous' }}</span>
+                <span>•</span>
+                <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
+                @if (response.abstained) {
+                  <span class="text-slate-400">(Abstained)</span>
+                }
+              </div>
+            </div>
+          }
+          @if (commentResult.totalResponses > commentResult.rows) {
+            <p-paginator
+              [first]="commentResult.first"
+              [rows]="commentResult.rows"
+              [totalRecords]="commentResult.totalResponses"
+              [rowsPerPageOptions]="commentRowsPerPageOptions"
+              [showCurrentPageReport]="true"
+              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+              (onPageChange)="onCommentPageChange(commentResult.prompt.prompt_id, $event)"
+              [attr.data-testid]="'vote-results-comments-paginator-' + commentResult.prompt.prompt_id">
+            </p-paginator>
+          }
+          <!-- The BFF caps each prompt's list at VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT; disclose truncation honestly. -->
+          @if (commentResult.total_responses && commentResult.total_responses > commentResult.totalResponses) {
+            <p class="text-xs text-slate-500" [attr.data-testid]="'vote-results-comments-truncated-' + commentResult.prompt.prompt_id">
+              Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
+            </p>
+          }
+        </div>
+      }
+    </ng-template>
+
     <ng-template #header>
       <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
         <div class="flex items-center justify-between gap-2">
@@ -143,7 +189,7 @@
         } @else if (voterState() === 'submitted') {
           <!-- State B — confirmation block. NO live tallies, NO edit/resubmit controls. -->
           @if (voteData.description) {
-            <div class="flex flex-col gap-2" data-testid="vote-results-voter-description">
+            <div class="flex flex-col gap-2 pb-4 border-b border-slate-200" data-testid="vote-results-voter-description">
               <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
               <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
             </div>
@@ -165,17 +211,24 @@
           @if (myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
             <p class="text-sm text-slate-700" data-testid="vote-results-voter-you-voted">You voted on this motion.</p>
           }
+          @if (voteData.description) {
+            <div class="flex flex-col gap-2 pb-4 border-b border-slate-200" data-testid="vote-results-voter-description">
+              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
           @if (isGenericPoll()) {
             <div class="flex flex-col gap-6" data-testid="vote-results-voter-final">
               <h2 class="text-lg font-semibold text-slate-900">Final Results</h2>
+              <h3 class="text-lg font-semibold text-slate-900">Vote</h3>
               @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
                 <div class="flex flex-col gap-4">
-                  <h3 class="text-base font-semibold text-slate-900">
+                  <h4 class="text-sm font-medium text-slate-700">
                     @if (questionsWithResults().length > 1) {
                       Q{{ idx + 1 }}.
                     }
                     {{ question.question }}
-                  </h3>
+                  </h4>
                   <div class="flex flex-col gap-3">
                     @for (option of question.options; track option.choiceId) {
                       <div
@@ -289,22 +342,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-voter-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
-          }
-          @if (voteData.description) {
-            <div class="flex flex-col gap-2 pt-4 border-t border-slate-200" data-testid="vote-results-voter-description">
-              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
-              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
         } @else {
@@ -346,6 +384,13 @@
         </div>
       } @else if (!isGenericPoll()) {
         <div class="flex flex-col gap-6" data-testid="vote-results-ranked">
+          @if (voteData.description) {
+            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" data-testid="vote-results-details">
+              <h4 class="text-sm font-semibold text-slate-900">Vote Details</h4>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
+
           <div class="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-start gap-3" data-testid="vote-results-ranked-method">
             <i class="fa-light fa-list-ol text-2xl text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
             <div class="flex flex-col gap-1">
@@ -430,23 +475,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
-          }
-
-          @if (voteData.description) {
-            <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" data-testid="vote-results-details">
-              <h4 class="text-sm font-semibold text-slate-900">Vote Details</h4>
-              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
         </div>
@@ -526,20 +555,20 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              @for (commentResult of commentResults(); track $index) {
-                <div class="flex flex-col gap-2">
-                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                  @for (comment of commentResult.comments; track $index) {
-                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p class="text-sm text-slate-700">{{ comment }}</p>
-                    </div>
-                  }
-                </div>
-              }
+              <ng-container [ngTemplateOutlet]="commentResultsList" />
             </div>
           }
         </div>
       } @else {
+        @if (voteData.description) {
+          <div class="flex flex-col gap-4 pb-4 border-b border-slate-200" data-testid="vote-results-details">
+            <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
+
+            <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
+            <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+          </div>
+        }
+
         <div class="flex flex-col gap-6">
           <h2 class="text-xl font-semibold text-slate-900">Final Results</h2>
 
@@ -564,15 +593,16 @@
             </div>
           </div>
 
-          <div class="flex flex-col gap-6 mt-2" data-testid="vote-results-questions">
+          <div class="flex flex-col gap-4 mt-2" data-testid="vote-results-questions">
+            <h3 class="text-lg font-semibold text-slate-900">Vote</h3>
             @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
               <div class="flex flex-col gap-4">
-                <h3 class="text-base font-semibold text-slate-900">
+                <h4 class="text-sm font-medium text-slate-700">
                   @if (questionsWithResults().length > 1) {
                     Q{{ idx + 1 }}.
                   }
                   {{ question.question }}
-                </h3>
+                </h4>
 
                 <div class="flex flex-col gap-3">
                   @for (option of question.options; track option.choiceId) {
@@ -644,25 +674,7 @@
         @if (commentResults().length > 0) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
             <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-            @for (commentResult of commentResults(); track $index) {
-              <div class="flex flex-col gap-2">
-                <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
-                @for (comment of commentResult.comments; track $index) {
-                  <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                    <p class="text-sm text-slate-700">{{ comment }}</p>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-        }
-
-        @if (voteData.description) {
-          <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-details">
-            <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
-
-            <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
-            <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            <ng-container [ngTemplateOutlet]="commentResultsList" />
           </div>
         }
       }

@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -16,17 +17,25 @@ describe('EventDetailDrawerComponent', () => {
     eventId: 'evt-1',
     eventName: 'KubeCon NA',
     startDate: '2026-11-10',
+    isPast: false,
+    location: 'Salt Palace Convention Center',
+    city: 'Salt Lake City',
     country: 'United States',
+    status: 'Active',
     eventUrl: 'https://events.example.org/kubecon',
     registrations: { actual: 900, goal: 1000 },
+    registrationRevenue: { actual: null, goal: 0 },
     sponsorshipRevenue: { actual: 500000, goal: 1000000 },
     vsLastYear: 1.1,
+    hasPriorYear: true,
     compScore: 'high',
     cfpStatus: 'Review Complete',
     sponsorshipTiers: [
       { tier: 'Diamond', revenue: 300000, sponsorCount: 2 },
       { tier: 'Gold', revenue: 200000, sponsorCount: 4 },
     ],
+    channels: [],
+    pacing: { available: false, daysLeft: null, current: null, priorYear: null, predictedAvg: null, predictedLow: null, predictedHigh: null, points: [] },
     ...overrides,
   });
 
@@ -41,7 +50,7 @@ describe('EventDetailDrawerComponent', () => {
       imports: [EventDetailDrawerComponent],
       // p-drawer uses synthetic animations; without a noop animations provider every render
       // through the drawer throws NG05105 before any assertion runs.
-      providers: [{ provide: AnalyticsService, useValue: { getEventDetail } }, provideNoopAnimations()],
+      providers: [{ provide: AnalyticsService, useValue: { getEventDetail } }, provideNoopAnimations(), provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventDetailDrawerComponent);
@@ -138,34 +147,55 @@ describe('EventDetailDrawerComponent', () => {
 
   // The roster's bars already expose progressbar semantics; the drawer shows the same metrics
   // and must not be the one place AT can't read completion.
-  it('exposes both goal bars to assistive technology', async () => {
+  it('exposes the registration goal bar to assistive technology', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 
     await open('evt-1');
 
+    // Only registrations renders as a bar in this layout; sponsorship is a figure, not a meter.
     const bars = document.querySelectorAll('[role="progressbar"]');
-    expect(bars).toHaveLength(2);
-    // 900/1000 registrations, 500000/1000000 sponsorship.
+    expect(bars).toHaveLength(1);
     expect(bars[0].getAttribute('aria-valuenow')).toBe('90');
-    expect(bars[1].getAttribute('aria-valuenow')).toBe('50');
-    for (const bar of Array.from(bars)) {
-      expect(bar.getAttribute('aria-valuemin')).toBe('0');
-      expect(bar.getAttribute('aria-valuemax')).toBe('100');
-      expect(bar.getAttribute('aria-label')).toBeTruthy();
-    }
+    expect(bars[0].getAttribute('aria-valuemin')).toBe('0');
+    expect(bars[0].getAttribute('aria-valuemax')).toBe('100');
+    expect(bars[0].getAttribute('aria-label')).toBeTruthy();
   });
 
   // The bar colours read the same shared thresholds as the roster's bar and at-risk icon, so
   // tuning either constant moves both views together instead of letting them disagree.
-  it('colours the goal bars from the shared thresholds', async () => {
-    // 800/1000 = 80%, exactly the on-track boundary; 400/1000 = 40%, below the behind-goal one.
-    await setup(vi.fn().mockReturnValue(of(detail({ registrations: { actual: 800, goal: 1000 }, sponsorshipRevenue: { actual: 400000, goal: 1000000 } }))));
+  it('colours the goal bar green at exactly the on-track threshold', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ registrations: { actual: 800, goal: 1000 } }))));
 
     await open('evt-1');
 
-    const bars = document.querySelectorAll('[role="progressbar"]');
-    expect(bars[0].classList.contains('bg-emerald-500')).toBe(true);
-    expect(bars[1].classList.contains('bg-red-400')).toBe(true);
+    expect(document.querySelector('[role="progressbar"]')?.classList.contains('bg-emerald-500')).toBe(true);
+  });
+
+  it('colours the goal bar red below the behind-goal threshold', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ registrations: { actual: 400, goal: 1000 } }))));
+
+    await open('evt-1');
+
+    expect(document.querySelector('[role="progressbar"]')?.classList.contains('bg-red-400')).toBe(true);
+  });
+
+  // hasPriorYear and vsLastYear are separate facts. Claiming "no prior year" when a prior edition
+  // exists contradicts the pacing block below, which shows a Last year figure for the same event.
+  it('says no comparison rather than no prior year when the ratio is missing', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ vsLastYear: null, hasPriorYear: true }))));
+
+    await open('evt-1');
+
+    expect(text()).toContain('no comparison available');
+    expect(text()).not.toContain('no prior year');
+  });
+
+  it('says no prior year when there genuinely was no prior edition', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ vsLastYear: null, hasPriorYear: false }))));
+
+    await open('evt-1');
+
+    expect(text()).toContain('no prior year');
   });
 
   it('renders the sponsorship tier breakdown', async () => {
