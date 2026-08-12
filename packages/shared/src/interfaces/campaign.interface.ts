@@ -197,13 +197,18 @@ export interface CampaignBriefPersistResult {
    *
    * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
    * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
-   * row. Replacing would overwrite content the user was never shown, and the two routes into
-   * that state (a slug-derivation mismatch, or simply a reload or second tab) are documented on
-   * `saveBrief`. `briefId` carries the row that blocked it, so a caller can offer to load and
-   * merge rather than only reporting failure.
+   * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
+   * is enough to reach that: the page generates from scratch, the slug matches perfectly, and the
+   * server's find hits a row nobody read. `briefId` carries the row that blocked the save, so a
+   * caller can offer to open it rather than only reporting failure.
+   *
+   * LFXV2-3098 introduced this while persistence was write-only, where it refused EVERY
+   * collision — with no read path, nothing could hand a caller an id at all. LFXV2-3108 adds the
+   * read, so a restored brief now carries its own id and replaces its own row; everything else
+   * still refuses.
    *
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
-   * and the caller's next step is a CHOICE (load the existing one, or file under a different
+   * and the caller's next step is a CHOICE (open the existing one, or file under a different
    * event) rather than a retry.
    */
   conflict?: 'unowned-brief-exists';
