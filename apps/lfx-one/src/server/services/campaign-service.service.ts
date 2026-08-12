@@ -572,6 +572,14 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
   // otherwise valid brief, and the Implementation tab would restore a campaign pointing nowhere.
   const registrationUrl = asText(found.url) || eventDetails.registrationUrl;
 
+  // Same precedence for the slug, and here the first-class field is not merely guaranteed —
+  // it is the REQUIRED key this brief was found by (`Brief` declares event_slug required;
+  // find-brief matches on it). The copy inside the opaque `event_details` blob is whatever
+  // the writing client happened to nest there, so a brief written by anything other than
+  // this adapter may carry the authoritative slug ONLY at the top level. Preferring the blob
+  // would rebuild a brief whose slug disagrees with the key it was just retrieved with.
+  const eventSlug = asText(found.event_slug) || eventDetails.slug;
+
   if (found.program_type !== 'events' && found.program_type !== 'education') {
     return null;
   }
@@ -580,7 +588,7 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
   const targeting = asRecord(found.targeting) ?? {};
 
   return {
-    eventDetails: { ...eventDetails, registrationUrl },
+    eventDetails: { ...eventDetails, slug: eventSlug, registrationUrl },
     programType: found.program_type as CampaignProgramType,
     // Narrowed against the union rather than passed through: an unknown platform id reaches a
     // template that indexes icon and label maps by it, and renders blank rather than erroring.
