@@ -2763,11 +2763,13 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getEventsOverviewSummary(foundationSlug);
+      const period = getValidatedPeriod(req, 'get_events_overview_summary');
+      const response = await this.projectService.getEventsOverviewSummary(foundationSlug, period);
 
       logger.success(req, 'get_events_overview_summary', startTime, {
         foundation_slug: foundationSlug,
         project_id: response.projectId,
+        period: period?.label,
       });
 
       res.json(response);
@@ -2780,7 +2782,8 @@ export class AnalyticsController {
    * GET /api/analytics/event-roster
    * Foundation event roster — one row per event with registration/sponsorship
    * actual-vs-goal, comparison rating, and CFP status. Defaults to upcoming events;
-   * pass includePast=true for the full history.
+   * pass includePast=true to include past events as well. With a period supplied that means
+   * past + upcoming within the period, not the full history.
    */
   public async getEventRoster(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_event_roster');
@@ -2802,11 +2805,13 @@ export class AnalyticsController {
 
       const includePast = getStringQueryParam(req, 'includePast') === 'true';
 
-      const response = await this.projectService.getEventRoster(foundationSlug, includePast);
+      const period = getValidatedPeriod(req, 'get_event_roster');
+      const response = await this.projectService.getEventRoster(foundationSlug, includePast, period);
 
       logger.success(req, 'get_event_roster', startTime, {
         foundation_slug: foundationSlug,
         include_past: includePast,
+        period: period?.label,
         event_count: response.events.length,
       });
 

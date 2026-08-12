@@ -9,7 +9,7 @@ import { PersonaService } from '../services/persona.service';
 
 /**
  * Route guard for executive-tier dashboard pages open to both Executive Directors
- * and LF Staff (`team:lf-staff#member`) — e.g. Foundation Health, Marketing Impact.
+ * and LF Staff (`team:lf-staff#member`) — e.g. Foundation Health, Campaign Impact.
  *
  * Unlike `currentPersona`, LF-staff membership isn't cookie-seeded (it's a request-scoped
  * OpenFGA check, not part of the persisted persona state), so the ED fast path stays

@@ -358,6 +358,59 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
       await expect(service.getEventsOverviewSummary('tlf')).rejects.toBe(failure);
     });
+
+    // A month period takes a different code path entirely: it re-aggregates from the event-grained
+    // MARKETING_EVENT_REGISTRATIONS rather than reading the YTD rollups, so none of the coverage
+    // above touches it.
+    describe('month period', () => {
+      const month = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any;
+
+      it('re-aggregates the three event-grained metrics and reports the month scope', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 3, REGISTRATIONS_COUNT: 410, SPEAKERS_COUNT: 12 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.scope).toBe('month');
+        expect(result.events).toEqual({ value: 3, changeFraction: null });
+        expect(result.registrations).toEqual({ value: 410, changeFraction: null });
+        expect(result.speakers).toEqual({ value: 12, changeFraction: null });
+      });
+
+      // These four exist only as pre-aggregated YTD rollups with no monthly grain anywhere in the
+      // Platinum layer. They must come back null — a 0 would read as "measured none this month".
+      it('returns null, not zero, for the metrics with no monthly grain', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 3, REGISTRATIONS_COUNT: 410, SPEAKERS_COUNT: 12 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.attendees).toEqual({ value: null, changeFraction: null });
+        expect(result.countries).toEqual({ value: null, changeFraction: null });
+        expect(result.organizations).toEqual({ value: null, changeFraction: null });
+        expect(result.sponsorship).toEqual({ value: null, changeFraction: null });
+      });
+
+      it('binds the slug and the month boundaries, in that order', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 0, REGISTRATIONS_COUNT: 0, SPEAKERS_COUNT: 0 }] });
+
+        await service.getEventsOverviewSummary('tlf', month);
+
+        expect(execute).toHaveBeenCalledWith(expect.any(String), ['tlf', '2026-03-01', '2026-04-01']);
+      });
+
+      // Regression guard: the aggregate used to read MAX(r.PROJECT_ID) off the joined event rows,
+      // so a month with no events produced MAX() over an empty set — NULL — and emitted
+      // projectId: ''. That is the same sentinel the client reads as "the request failed", so a
+      // genuinely quiet month rendered as an outage. The id now comes from slug_resolve via a
+      // LEFT JOIN and must survive with zero events.
+      it('keeps the resolved project id when the month has no events', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 0, REGISTRATIONS_COUNT: 0, SPEAKERS_COUNT: 0 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.projectId).toBe('proj-1');
+        expect(result.events).toEqual({ value: 0, changeFraction: null });
+      });
+    });
   });
 
   describe('getEventDetail', () => {

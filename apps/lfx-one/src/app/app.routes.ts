@@ -46,7 +46,7 @@ export const routes: Routes = [
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Marketing Impact page (ED + LF Staff; LF Staff see only the Social Listening tab)
+      // Foundation Lens — Campaign Impact page (ED + LF Staff; LF Staff see only the Social Listening tab)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },

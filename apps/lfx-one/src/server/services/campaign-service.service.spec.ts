@@ -399,6 +399,24 @@ describe('CampaignServiceClient.saveBrief', () => {
   // Returning it anyway would hand the caller a validator known to be stale, which is worse than
   // handing it none — the next write would 412 on a precondition this layer already knew had
   // failed, instead of re-reading.
+  it('does not report "saved" when the brief was removed before approval', async () => {
+    // A TYPED 404 -- campaign-service's own, carrying `code: '404'` -- means the row is gone,
+    // deleted or archived between the write and the approval. Classified as an ordinary rejected
+    // approval it returned the write ETag with NO conflict, so the component rendered
+    // "Brief saved." for a brief that no longer exists.
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND)
+      .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
+      .mockRejectedValueOnce(new MicroserviceError('gone', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'brief not found' } }));
+
+    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+
+    expect(result.conflict).toBe('superseded-after-write');
+    expect(result.approved).toBe(false);
+    // No validator: the row it described is gone.
+    expect(result.etag).toBeNull();
+  });
+
   it('withholds the write ETag when the approval is refused as stale', async () => {
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
@@ -578,6 +596,24 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(result.briefId).toBe('b-1');
     expect(result.created).toBe(true);
   });
+
+  it('does not accept the unchanged pre-PUT row as proof the replace landed', async () => {
+    // A save with UNCHANGED content looks identical before and after the PUT, so a payload match
+    // alone accepts the pre-PUT row. The code would then approve that old version while the real
+    // PUT may still commit afterwards and reset it to `draft` -- having already reported
+    // `approved: true`. A committed replace always bumps the version, so the recovered row must
+    // be NEWER than the one the find observed.
+    proxyRequestWithResponse
+      .mockImplementationOnce(() => Promise.resolve(apiResponse({ id: 'b-1', version: 4 }, { etag: '"4"' }))) // the find
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the PUT
+      // Every recovery read returns the SAME version the find saw, with a matching payload.
+      .mockImplementation(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'b-1', version: 4, ...envelope.brief }, { etag: '"4"' }));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+  }, 20000);
 
   it('keeps reading when the first recovery read still shows the pre-PUT payload', async () => {
     // Where create and replace differ. A create has no row until it commits, so any 200 answers
