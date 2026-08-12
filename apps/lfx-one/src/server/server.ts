@@ -52,6 +52,7 @@ import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import sitemapRouter from './routes/sitemap.route';
+import socialListeningRouter from './routes/social-listening.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import enrollmentRouter from './routes/enrollment.route';
@@ -325,6 +326,8 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
+// ED-only Foundation Lens surface — the router applies requireExecutiveDirector to every endpoint.
+app.use('/api/social-listening', socialListeningRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
 app.use('/api/nav', navigationRouter);
