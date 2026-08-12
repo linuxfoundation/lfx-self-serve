@@ -416,6 +416,25 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().message).not.toContain('Reload');
     });
 
+    it('keeps ownership of a row it wrote but could not approve', async () => {
+      // `superseded-after-write` is the one conflict where the write COMMITTED — only the approval
+      // was refused — so the returned id is the row THIS request created, not the row that
+      // blocked it. Dropping it left the next Proceed with no brief_id: it finds that row and is
+      // permanently refused as unowned, with no read path in this phase to recover.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: null, created: true, approved: false, conflict: 'superseded-after-write' }));
+      proceed();
+      await fixture.whenStable();
+      expect(state().status).toBe('error');
+
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      // The id is kept. The validator is null and UNKNOWN — the approval outcome was not
+      // confirmed — so the next save carries no fallback permission and the server decides.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'b-1', null, false);
+    });
+
     it('does not confirm a write that was superseded before it could be approved', async () => {
       // The write landed, but the approval's If-Match was refused: another writer replaced the
       // brief in between, so the row may no longer hold this content. The component renders any
