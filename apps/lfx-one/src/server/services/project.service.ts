@@ -5090,9 +5090,11 @@ export class ProjectService {
    * of 0 means "no goal required" for that event (the UI renders no progress bar). Defaults to
    * upcoming events only; pass includePast to return the full history.
    *
-   * When a period is supplied the roster is scoped to events *starting* inside it, so the
-   * dashboard's month selector narrows this list the same way it narrows the paid and email
-   * sections. Without one it falls back to the dashboard's default month range.
+   * A period narrows the roster to events *starting* inside it, but only together with
+   * includePast — see `applyPeriod` below. The upcoming view is deliberately unbounded: an
+   * upcoming event outside the selected month is still upcoming, and hiding it would make the
+   * roster disagree with the attention strip beside it. With no period the query is unbounded
+   * as well; there is no implicit default range.
    */
   public async getEventRoster(foundationSlug: string, includePast = false, period?: ResolvedPeriodRange): Promise<EventRosterResponse> {
     logger.debug(undefined, 'get_event_roster', 'Fetching event roster from Snowflake', {
@@ -5298,6 +5300,13 @@ export class ProjectService {
     `;
 
     // Marketing-channel attribution for this event (rolled up across the monthly rows).
+    //
+    // Scoped by FOUNDATION_SLUG as well as the event id, matching every other read of this table.
+    // The id check above proves the event belongs to this foundation, but it does not constrain
+    // what this aggregate sweeps up: RESOLVED_EVENT_ID alone would fold in any same-id rows filed
+    // under another foundation. Umbrella (tlf) intentionally stays unfiltered — see
+    // buildFoundationFilter.
+    const attributionScope = buildFoundationFilter(foundationSlug);
     const channelQuery = `
       SELECT
         CHANNEL,
@@ -5306,6 +5315,7 @@ export class ProjectService {
         SUM(IFNULL(LINEAR_REVENUE, 0)) AS REVENUE
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATION_ATTRIBUTION
       WHERE RESOLVED_EVENT_ID = ?
+        ${attributionScope.filterAnd}
       GROUP BY CHANNEL
       ORDER BY SESSIONS DESC
     `;
@@ -5313,7 +5323,7 @@ export class ProjectService {
     const [eventResult, tierResult, channelResult] = await Promise.all([
       this.snowflakeService.execute<EventRow>(eventQuery, [foundationSlug, eventId]),
       this.snowflakeService.execute<TierRow>(tierQuery, [foundationSlug, eventId]),
-      this.snowflakeService.execute<ChannelRow>(channelQuery, [eventId]),
+      this.snowflakeService.execute<ChannelRow>(channelQuery, [eventId, ...attributionScope.params]),
     ]);
 
     const row = eventResult.rows?.[0];
@@ -7613,13 +7623,18 @@ export class ProjectService {
         WHERE project_slug = ?
       )
       SELECT
-        MAX(r.PROJECT_ID) AS PROJECT_ID,
+        -- PROJECT_ID comes from slug_resolve, not from the joined rows: a month with no events
+        -- yields zero rows on the right side, and MAX() over an empty set is NULL. That would
+        -- emit projectId: '' — the same sentinel the client reads as "the request failed" — so a
+        -- genuinely quiet month would render as an outage. LEFT JOIN keeps the resolved id.
+        MAX(sr.project_id) AS PROJECT_ID,
         COUNT(DISTINCT r.EVENT_ID) AS EVENT_COUNT,
         IFNULL(SUM(r.COUNT_REGISTRATIONS_ALL_TIME), 0) AS REGISTRATIONS_COUNT,
         IFNULL(SUM(r.ACCEPTED_SPEAKER_PROPOSALS_ALL_TIME), 0) AS SPEAKERS_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
-      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
-      WHERE r.EVENT_START_DATE >= TO_DATE(?)
+      FROM slug_resolve sr
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+        ON r.PROJECT_ID = sr.project_id
+        AND r.EVENT_START_DATE >= TO_DATE(?)
         AND r.EVENT_START_DATE < TO_DATE(?)
     `;
 

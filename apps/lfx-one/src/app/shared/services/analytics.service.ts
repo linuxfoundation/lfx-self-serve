@@ -1167,9 +1167,12 @@ export class AnalyticsService {
    * Emits an empty roster on error so the table shows its empty state rather than breaking.
    */
   public getEventRoster(foundationSlug: string, includePast = false, period?: string): Observable<EventRosterResponse> {
-    // Every argument that changes the response belongs in the key — the period included, or a
-    // period switch would replay the previous period's roster.
-    const key = `${foundationSlug}|${includePast}|${period ?? ''}`;
+    // Only the arguments that actually change the response belong in the key. The server applies
+    // the period filter solely when includePast is true (see getEventRoster in project.service.ts),
+    // so for the upcoming-events case every period yields the same rows — keying on it there would
+    // split one cacheable response across N entries and make the roster and the attention strip
+    // each issue their own request.
+    const key = `${foundationSlug}|${includePast}|${includePast ? (period ?? '') : ''}`;
     if (!this.eventRosterCache.has(key)) {
       const params = this.buildFoundationParams(foundationSlug, undefined, period);
       if (includePast) {
