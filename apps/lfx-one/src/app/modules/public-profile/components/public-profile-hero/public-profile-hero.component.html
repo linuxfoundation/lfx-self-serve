@@ -14,7 +14,8 @@
         shape="circle"
         [style]="{ width: '148px', height: '148px', fontSize: '3rem' }"
         styleClass="bg-gray-100 text-gray-600"
-        data-testid="hero-avatar"></lfx-avatar>
+        data-testid="hero-avatar"
+        (onImageError)="handleAvatarError()"></lfx-avatar>
     </div>
 
     <!-- Name / affiliation, with social links + share on the same row -->

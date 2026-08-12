@@ -23,6 +23,7 @@ import {
   PUBLIC_PROFILES_BUCKET_URL_ENV,
 } from '../constants';
 import { MicroserviceError } from '../errors';
+import { deriveAvatarUrl } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
 
 /**
@@ -67,7 +68,7 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== undefined) : [];
 }
 
-function projectBasic(value: unknown): PublicProfileBasic | undefined {
+function projectBasic(value: unknown, username?: string): PublicProfileBasic | undefined {
   const basic = asRecord(value);
   if (!basic) {
     return undefined;
@@ -77,10 +78,11 @@ function projectBasic(value: unknown): PublicProfileBasic | undefined {
   // to keep this endpoint's render-only PII boundary intact.
   const firstUsername = asRecordArray(basic['Identities'])
     .map((identity) => pickString(identity['Username']))
-    .find((username) => !!username && !!username.trim());
+    .find((identityUsername) => !!identityUsername && !!identityUsername.trim());
   return {
     Name: pickString(basic['Name']),
     LogoURL: pickString(basic['LogoURL']),
+    avatarUrl: (username && deriveAvatarUrl(username)) || undefined,
     TwitterID: pickString(basic['TwitterID']),
     LinkedInID: pickString(basic['LinkedInID']),
     GithubID: pickString(basic['GithubID']),
@@ -196,10 +198,10 @@ function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
  * Projects the raw S3 artifact down to the render-only allowlist — fail closed, so any field not
  * listed here never reaches the client. This is the sole PII boundary for the anonymous endpoint.
  */
-export function projectPublicProfile(record: Record<string, unknown>, req?: Request): PublicProfile {
+export function projectPublicProfile(record: Record<string, unknown>, req?: Request, username?: string): PublicProfile {
   return {
     isPublic: resolvePublicFlag(record),
-    basic: projectBasic(record['basic']),
+    basic: projectBasic(record['basic'], username),
     About: pickString(record['About']),
     technical_contribution: projectTechnicalContribution(record['technical_contribution']),
     certification_activities: projectCertificationActivities(record['certification_activities']),
@@ -351,6 +353,6 @@ export class PublicProfileService {
     }
 
     const record = parsed as Record<string, unknown>;
-    return projectPublicProfile(record, req);
+    return projectPublicProfile(record, req, username);
   }
 }

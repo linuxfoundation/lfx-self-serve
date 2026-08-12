@@ -4,21 +4,8 @@
 import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
+import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
-
-/**
- * Escapes the two characters that break the raw-key / percent-encoded-URL round trip: a literal
- * `/` would split the key into extra S3 path segments that don't survive as `%2F` (CDNs/S3
- * gateways decode an encoded slash inconsistently — some refuse it, some collapse it), and a
- * literal `%` would collide with our own escape sequence. Escaping `%` first means a username that
- * already contains a literal `%2F`-shaped substring can't be mistaken for an escaped `/`, keeping
- * the mapping collision-free. Every other character (letters, digits, `.`, `@`, `+`, unicode) is
- * left as-is, staying human-readable and matching packages/shared/src/utils/avatar.utils.ts's
- * buildMyprofileAvatarUrl convention of an unencoded key, encoded only at URL-construction time.
- */
-function toAvatarKeySegment(sanitizedUsername: string): string {
-  return sanitizedUsername.replace(/%/g, '%25').replace(/\//g, '%2F');
-}
 
 /**
  * Generic S3-compatible object-store service for managing bucket readiness and uploads.
@@ -97,12 +84,9 @@ export class ObjectStoreService {
         })
       );
 
-      // Percent-encode the same key segment used for storage — a single decode hop in transit
-      // reconstructs `keySegment` exactly (including any literal `%2F`/`%25` text from
-      // toAvatarKeySegment), so the URL always resolves back to the stored key.
-      const cdnPrefix = this.getCdnPrefix();
+      const cdnPrefix = getAvatarCdnPrefix();
       const versionHint = Math.floor(Date.now() / 1000);
-      const url = cdnPrefix ? `${cdnPrefix}/avatars/${encodeURIComponent(keySegment)}?v=${versionHint}` : null;
+      const url = cdnPrefix ? `${buildAvatarUrl(cdnPrefix, keySegment)}?v=${versionHint}` : null;
 
       logger.success(req, 'object_store_upload_profile_picture', startTime, { key, has_cdn_url: !!url });
 
@@ -142,25 +126,6 @@ export class ObjectStoreService {
       throw new Error('AWS_REGION environment variable is required');
     }
     return region;
-  }
-
-  /**
-   * Returns the normalized CDN prefix (trailing slashes stripped), or null when CDN_URL_PREFIX is
-   * unset — that's degraded mode (callers fall back to no public_url), not a fatal error. When
-   * set, it must be an absolute http(s) URL: infra sometimes hands back a bare hostname (e.g.
-   * `avatars-public.dev.downloads.lfx.community`), and interpolating that verbatim would silently
-   * produce a relative URL that then gets persisted (e.g. into Auth0 user_metadata) as if it were
-   * absolute.
-   */
-  private getCdnPrefix(): string | null {
-    const cdnPrefix = process.env['CDN_URL_PREFIX'];
-    if (!cdnPrefix) {
-      return null;
-    }
-    if (!/^https?:\/\//i.test(cdnPrefix)) {
-      throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
-    }
-    return cdnPrefix.replace(/\/+$/, '');
   }
 
   private async doEnsureBucket(): Promise<void> {
