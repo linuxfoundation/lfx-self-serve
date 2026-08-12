@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
-import { CommitteeReference } from './committee.interface';
+import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type { CommitteeReference } from './committee.interface';
 
 /**
  * Filter state for the votes dashboard table
@@ -705,3 +705,13 @@ export interface RankedQuestionView {
   choiceDistributions: RankedChoiceDistribution[];
   hasRoundSummary: boolean;
 }
+
+/**
+ * Terminal decision for a cursor-pagination page-jump walk
+ * @description Discriminated union returned by resolveCursorWalkOutcome:
+ * - `show`: the target page was reached — render the response as-is
+ * - `restart`: the cursor exhausted or the target came back empty — reset the token chain and drop to page 1
+ *   (`refetch` is false when the walk never left page 1, so its response is already the page-1 payload)
+ * - `clamp`: the walk hit its request ceiling before the target — clamp the paginator to `clampIndex`, the last fetched page
+ */
+export type CursorWalkOutcome = { action: 'show' } | { action: 'restart'; refetch: boolean } | { action: 'clamp'; clampIndex: number };
