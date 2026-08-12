@@ -224,9 +224,18 @@ export class CampaignsComponent {
   protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
-    if (!alreadyPersisted) {
-      this.persistBrief(brief);
+    if (alreadyPersisted) {
+      // Bump the generation even though nothing is being saved. `persistBrief` normally does
+      // this as its first act, and skipping the save must not also skip the INVALIDATION: a
+      // save still in flight for the brief the user just replaced would otherwise match the
+      // unchanged generation on return and write its `saved` state and `briefId` onto the
+      // restored brief — attributing one brief's id to another. The restored brief is already
+      // durable, so the state it lands in is the resting one, not `saving`.
+      this.briefPersistenceGeneration++;
+      this.briefPersistence.set(this.idlePersistence);
+      return;
     }
+    this.persistBrief(brief);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
