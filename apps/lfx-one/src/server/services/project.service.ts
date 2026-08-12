@@ -5099,9 +5099,15 @@ export class ProjectService {
         WHERE project_slug = ?
       ),
       sponsorship AS (
-        SELECT EVENT_ID, SUM(IFNULL(SPONSORSHIP_REV_ALL_TIME, 0)) AS SPON_ACTUAL
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER
-        GROUP BY EVENT_ID
+        -- Scoped before the aggregate, not after: grouping every foundation's tier rows by
+        -- EVENT_ID and joining the total onto an authorized roster would let an event id reused
+        -- across projects fold another foundation's revenue into this one's figure. No id spans
+        -- projects in the warehouse today, so this is correctness insurance rather than a live
+        -- leak — but the query should not depend on that staying true.
+        SELECT t.EVENT_ID, SUM(IFNULL(t.SPONSORSHIP_REV_ALL_TIME, 0)) AS SPON_ACTUAL
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER t
+        INNER JOIN slug_resolve sr ON t.PROJECT_ID = sr.project_id
+        GROUP BY t.EVENT_ID
       )
       SELECT
         r.EVENT_ID,
