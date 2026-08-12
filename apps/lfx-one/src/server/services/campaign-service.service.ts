@@ -399,7 +399,7 @@ export class CampaignServiceClient {
     const found = await this.findBrief(req, basePath, eventSlug);
 
     if (found === null) {
-      return { status: 'none', briefId: null, brief: null };
+      return { status: 'none', briefId: null, brief: null, approved: false };
     }
 
     // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
@@ -419,7 +419,15 @@ export class CampaignServiceClient {
     // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
     // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
     const brief = fromBriefResponse(found.brief);
-    return brief === null ? { status: 'unreadable', briefId: found.brief.id, brief: null } : { status: 'loaded', briefId: found.brief.id, brief };
+    // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
+    // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
+    // restoring it suppresses the save that would otherwise retry. Any other or unreadable value
+    // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
+    // is the one answer that silently strands the brief.
+    const approved = found.brief.status === 'approved';
+    return brief === null
+      ? { status: 'unreadable', briefId: found.brief.id, brief: null, approved }
+      : { status: 'loaded', briefId: found.brief.id, brief, approved };
   }
 
   /**

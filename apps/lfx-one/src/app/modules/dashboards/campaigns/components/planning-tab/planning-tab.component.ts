@@ -772,16 +772,38 @@ export class PlanningTabComponent implements OnInit {
     // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
-    this.savedBriefWarning.set(
-      // NOT "will replace it" any more. An unreadable brief cannot be restored, so the page can
-      // never hold its id — and without the id the save is refused as unowned (LFXV2-3200). The
-      // old wording promised an outcome the guard now prevents, which is worse than saying
-      // nothing: a user who wanted to start over would generate, be refused, and have no idea
-      // why.
-      result.status === 'unreadable'
-        ? 'This event has a saved brief that could not be opened, so a new one cannot be saved over it. Ask an administrator to remove the stored brief.'
-        : null
-    );
+
+    this.savedBriefWarning.set(this.warningFor(result));
+  }
+
+  /**
+   * The banner text for a completed lookup, or `null` when there is nothing to say.
+   *
+   * Split out of `applySavedBrief` because the two cases do not nest: they are independent
+   * properties of the stored row, not a refinement of one another.
+   */
+  private warningFor(result: CampaignBriefLoadResult): string | null {
+    // NOT "will replace it" any more. An unreadable brief cannot be restored, so the page can
+    // never hold its id — and without the id the save is refused as unowned (LFXV2-3200). The old
+    // wording promised an outcome the guard now prevents, which is worse than saying nothing: a
+    // user who wanted to start over would generate, be refused, and have no idea why.
+    if (result.status === 'unreadable') {
+      return 'This event has a saved brief that could not be opened, so a new one cannot be saved over it. Ask an administrator to remove the stored brief.';
+    }
+
+    // A stored brief that never reached `approved` is a save whose approve step failed. It is
+    // durable, so restoring it is safe and correct, but campaign creation and audience building
+    // both gate on `approved` — a silent restore would hand the user a brief that cannot proceed
+    // and give no reason. Restoring cannot fix it here: approval is a separate upstream call with
+    // no route on this service yet, and re-SAVING would rewrite the stored bytes with
+    // `fromBriefResponse`'s lossy reconstruction, which is the one outcome the restore path
+    // exists to avoid. So this says what is wrong rather than pretending it is fine. The
+    // approve-only endpoint is tracked as LFXV2-3205.
+    if (result.status === 'loaded' && !result.approved) {
+      return 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restore it to review, then ask an administrator to approve the stored brief.';
+    }
+
+    return null;
   }
 
   private extractEventName(url: string): string {

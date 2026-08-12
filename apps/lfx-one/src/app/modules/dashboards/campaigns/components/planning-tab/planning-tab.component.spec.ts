@@ -117,13 +117,82 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('offers a saved brief for restore when the lookup returns status=loaded', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
     expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
     expect(savedBrief()).toEqual(exampleBrief);
+    expect(savedBriefWarning()).toBeNull();
+  });
+
+  it('still offers restore when the stored brief slug differs from the url segment', async () => {
+    // The lookup runs BEFORE generation, so its only key is the url's last segment; persistence
+    // keys on `eventDetails.slug`, which the scraper returns and may normalise or resolve through
+    // a redirect. Copilot flagged the divergence as a missed-row bug.
+    //
+    // It is not one, and this pins why. The parent builds its ownership key from the RESTORED
+    // brief's own `eventDetails.slug` (`ownershipKey` in campaigns.component.ts), not from the url
+    // -- and the restored brief came back FROM the row, so it is filed under exactly that name.
+    // The two keys already agree where it matters.
+    //
+    // A regression guard, not a fix. It exists because the obvious repair -- adopting the stored
+    // slug as `currentSlug` -- BREAKS this: `restoreSavedBrief` compares `currentSlug` against
+    // `extractSlug(url)` to refuse a restore for an event the user navigated away from, so
+    // overwriting it makes an unchanged url fail its own guard and silently disables the button.
+    // This test fails if anyone tries that again.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) =>
+        s.next({
+          status: 'loaded',
+          brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: 'kubecon-europe-2026' } },
+          briefId: 'brief-123',
+          approved: true,
+        })
+      )
+    );
+
+    // The url segment is `kubecon-eu-2026`; the STORED brief is named `kubecon-europe-2026`.
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+
+    const emitted: { brief: CampaignBriefOutput }[] = [];
+    const component = fixture.componentInstance as unknown as {
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: { brief: CampaignBriefOutput }) => void): void };
+    };
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+    component.restoreSavedBrief();
+
+    // Restore fires, and carries the STORED slug -- which is what the parent keys ownership on.
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].brief.eventDetails?.slug).toBe('kubecon-europe-2026');
+  });
+
+  it('warns when the stored brief was never approved', async () => {
+    // campaign-service creates every brief as `draft`; approval is a SECOND call. A save whose
+    // approve step failed leaves a durable but unusable row -- campaign creation and audience
+    // building both gate on `approved`. Restoring suppresses the next save, so nothing retries,
+    // and without this warning the user gets a brief that silently cannot proceed.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: false }))
+    );
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    // Still offered -- it is real, restorable content, and reviewing it is the point.
+    expect(savedBrief()).toEqual(exampleBrief);
+    expect(savedBriefWarning()).toContain('never approved');
+  });
+
+  it('does not warn when the stored brief is approved', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+    );
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
     expect(savedBriefWarning()).toBeNull();
   });
 
@@ -136,7 +205,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // had to fix once for `skip(1)`. Verified by deleting the eager clear: this fails, and the
     // debounce-waiting version did not.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -163,7 +232,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // and restoring then hands Implementation a brief for the event the user is leaving.
     const emitted: unknown[] = [];
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     const component = fixture.componentInstance as unknown as {
@@ -192,7 +261,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -215,7 +284,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('warns about an unreadable brief when lookup returns status=unreadable', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'unreadable', brief: null, briefId: 'brief-456' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'unreadable', brief: null, briefId: 'brief-456', approved: false }))
     );
 
     await typeEventUrl('https://events.example.com/old-event');
@@ -253,7 +322,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('cancels a lookup that is still open when the slug changes', async () => {
     const oldLookup = new Subject<CampaignBriefLoadResult>();
-    const newLookup = new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new' }));
+    const newLookup = new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new', approved: true }));
 
     // First URL: its lookup starts and stays open — `oldLookup` never emits yet.
     campaignService.loadBrief.mockReturnValueOnce(oldLookup);
@@ -272,6 +341,7 @@ describe('PlanningTabComponent brief read-back', () => {
       status: 'loaded',
       brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, name: 'Old Event' } },
       briefId: 'brief-old',
+      approved: true,
     });
     await fixture.whenStable();
 
@@ -285,7 +355,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('clears the brief offer immediately when foundation changes, independent of re-lookup timing', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
 
     // Seed a brief under foundation A.
@@ -314,7 +384,12 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
 
     // When it completes, the brief is offered again (under the new foundation).
-    slowNewFoundationLookup.next({ status: 'loaded', brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] }, briefId: 'brief-under-b' });
+    slowNewFoundationLookup.next({
+      status: 'loaded',
+      brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] },
+      briefId: 'brief-under-b',
+      approved: true,
+    });
     await fixture.whenStable();
 
     expect(savedBrief()).not.toBeNull();
@@ -328,7 +403,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('does not clear on initial subscription to the foundation observable (skip(1) guards against replay)', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
 
     // Type a URL; the lookup completes and sets the brief.
@@ -352,7 +427,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('re-runs lookup when foundation changes even if the slug is the same', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
 
     // Lookup under foundation A.
@@ -363,7 +438,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // Switch foundation without changing the slug. This should trigger another lookup.
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) =>
-        s.next({ status: 'loaded', brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] }, briefId: 'brief-under-b' })
+        s.next({ status: 'loaded', brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] }, briefId: 'brief-under-b', approved: true })
       )
     );
     await switchFoundation(foundationB);
@@ -392,7 +467,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // wiped `savedBrief`, the comparer then drops the reverted pair as unchanged, and no lookup
     // runs -- the offer stranded for a brief that exists.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -443,7 +518,7 @@ describe('PlanningTabComponent brief read-back', () => {
     component.onUrlInput();
 
     // The abandoned lookup answers late. Nothing must come of it.
-    slowFirstLookup.next({ status: 'loaded', brief: exampleBrief, briefId: 'stale-brief' });
+    slowFirstLookup.next({ status: 'loaded', brief: exampleBrief, briefId: 'stale-brief', approved: true });
     await fixture.whenStable();
 
     expect(savedBrief()).toBeNull();
@@ -459,7 +534,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('keeps the restore offer when the url is cleared and the same one retyped', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -482,7 +557,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('emits a restored brief on the restore output, not the generate output', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -509,7 +584,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('carries the brief id with the restored brief', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-xyz' }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-xyz', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 

@@ -269,6 +269,20 @@ export interface CampaignBriefLoadResult {
   status: 'off' | 'none' | 'loaded' | 'unreadable';
   briefId: string | null;
   brief: CampaignBriefOutput | null;
+  /**
+   * Whether the STORED row is already approved.
+   *
+   * campaign-service creates every brief as `draft` and approval is a second call, so a save
+   * whose approve step failed leaves an approved-looking brief sitting in `draft`. Restoring it
+   * suppresses the next save (the content is already stored), and without this flag the row
+   * would never reach `approved` — while `build-audience` and campaign creation both gate on
+   * `status = 'approved'`. Surfaced so the restore path can re-approve instead of assuming a
+   * stored brief is a finished one.
+   *
+   * `false` whenever the status could not be read, so the fallback is to re-approve rather than
+   * to assume approval.
+   */
+  approved: boolean;
 }
 
 // ---------------------------------------------------------------------------

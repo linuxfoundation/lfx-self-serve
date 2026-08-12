@@ -453,19 +453,49 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).not.toBe('saved');
     });
 
-    it('does not let a queued save inherit an id that arrived from a restore', async () => {
-      // Ownership is resolved when the queue REACHES a save, not when Proceed enqueues it. A
-      // restore writes an id under the same `(project, event)` key, so a generated payload still
-      // waiting in the queue could be sent with a row it never loaded. `ownershipEpoch` refuses
-      // an id that arrived from a restore after the save was enqueued.
+    it('does not let a restore of one event invalidate a queued save of another', async () => {
+      // `ownershipEpochs` is keyed by `(project, event)`, not a single session counter. A save of
+      // event B that is queued behind its own predecessor must still pick up the id that
+      // predecessor created, even if event A is restored while B waits.
       //
-      // Stated plainly: this test does NOT fail when the epoch check is removed, and I could not
-      // construct one that does. `restore()` synchronously calls `onProceedToImplementation`,
-      // which replaces the on-screen brief before the queued save resolves its key, so the
-      // component-level harness cannot hold the two apart. The promise ordering that makes the
-      // window real is verifiable in isolation — a queued `.then()` runs after an earlier
-      // synchronous write — but not through this seam. The guard is kept as defence; the
-      // assertion below documents the intent rather than enforcing it.
+      // With one session-wide counter, restoring A bumps it, B's queued save sees the mismatch,
+      // discards the id its OWN predecessor filed, and sends null -- which the server answers with
+      // `unowned-brief-exists`. That is exactly the failure the late lookup exists to prevent, so
+      // a session-wide epoch would reintroduce it for every event but the restored one.
+      const blocker = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(blocker);
+      proceed(otherBrief);
+      await fixture.whenStable();
+
+      // A second save of the SAME event (B), queued behind the first.
+      persistBrief.mockReturnValue(NEVER);
+      proceed(otherBrief);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenCalledTimes(1);
+
+      // Meanwhile the user restores a stored brief for a DIFFERENT event (A).
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      // B's first save lands and files ownership for B.
+      blocker.next({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // B's queued save must send B's own id, not null.
+      expect(persistBrief).toHaveBeenCalledTimes(2);
+      expect(persistBrief.mock.calls[1][2]).toBe('b-1');
+    });
+
+    it('does not let a queued save inherit an id that arrived from a restore', async () => {
+      // Ownership is resolved when the queue REACHES a save, not when Proceed enqueues it. That
+      // lateness is deliberate -- it lets a queued save pick up the id its predecessor created --
+      // but a RESTORE writes an id under the same `(project, event)` key from a source the queued
+      // payload never saw. `ownershipEpochs` refuses an id that arrived that way.
+      //
+      // This case asserts the SAME-event half. It does not fail when the guard is removed, because
+      // `restore()` synchronously calls `onProceedToImplementation`, which replaces the on-screen
+      // brief before the queued save resolves its key -- the component cannot hold the two apart.
+      // The cross-event half above IS binding and pins the keying that makes this guard safe.
       const blocker = new Subject<CampaignBriefPersistResult>();
       persistBrief.mockReturnValue(blocker);
       proceed();

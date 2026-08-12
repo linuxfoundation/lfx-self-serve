@@ -1306,11 +1306,41 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
   });
 
+  // campaign-service creates every brief as `draft` and approval is a SECOND call, so a save whose
+  // approve step failed leaves a durable row that campaign creation and audience building both
+  // refuse (they gate on `approved`). The restore path suppresses the next save, so nothing
+  // retries -- the load has to say which it got or the UI strands the user silently.
+  it('reports a stored draft as not approved', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'e', 'tlf');
+
+    expect(result.status).toBe('loaded');
+    expect(result.approved).toBe(false);
+  });
+
+  it('reports a stored approved brief as approved', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'e', 'tlf');
+
+    expect(result.status).toBe('loaded');
+    expect(result.approved).toBe(true);
+  });
+
+  // Only the exact token counts. An unrecognised status is NOT approval -- claiming approval we
+  // cannot verify is the one answer that silently strands the brief downstream.
+  it('treats an unrecognised stored status as not approved', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'APPROVED' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ approved: false });
+  });
+
   // campaign-service's own typed 404 — the documented first-time case.
   it('reports none when campaign-service says the slug has no brief', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
 
-    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null, approved: false });
   });
 
   // `unreadable` must stay distinct from `none`, and this is the test that pins it. The save
@@ -1319,7 +1349,12 @@ describe('CampaignServiceClient.loadBrief', () => {
   it('reports unreadable, NOT none, for a row it cannot map back', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ event_details: null }), { etag: '"3"' }));
 
-    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'unreadable', briefId: 'b-1', brief: null });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({
+      status: 'unreadable',
+      briefId: 'b-1',
+      brief: null,
+      approved: false,
+    });
   });
 
   // The read is scoped exactly like the write. `/foundation/campaigns` is reachable by an ED of
