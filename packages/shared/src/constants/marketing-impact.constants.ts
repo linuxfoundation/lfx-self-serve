@@ -101,8 +101,11 @@ export const CRITICAL_ATTENTION_PERCENT_THRESHOLD = 25;
  * These are two different columns with two different taxonomies — this is a deliberate mapping,
  * not a join. Only 'lfEvents' reaches the email tab today (the rest are COMING_SOON_FOCUS_PROGRAMS
  * and expose only the "All" channel), so 'EVENT' is the only mapping that currently has an effect.
- * Matching is case-insensitive at the call site, and an unmatched mapping falls back to unfiltered
- * rather than rendering an empty table.
+ * Matching is case-insensitive at the call site. A focus whose mapping matches no rows renders an
+ * EMPTY breakdown — it does NOT fall back to the unfiltered rows. Under an Events focus that
+ * fallback showed newsletters and surveys as event analytics, which is a wrong answer rather than
+ * a partial one; getEmailCtr logs the EMAIL_TYPE vocabulary that failed to match so the mapping
+ * here can be corrected.
  */
 export const FOCUS_TO_EMAIL_TYPES: Record<MarketingImpactFocusProgram, readonly string[] | undefined> = {
   all: undefined,

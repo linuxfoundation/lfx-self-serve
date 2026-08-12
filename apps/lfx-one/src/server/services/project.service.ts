@@ -7580,11 +7580,15 @@ export class ProjectService {
       .map((p) => ({
         name: p.CAMPAIGN_NAME ?? 'Untitled campaign',
         platform: platformLabel(p.CHANNEL),
-        spend: Math.round(p.SPEND ?? 0),
-        conversions: Math.round(p.CONV ?? 0),
+        // Cents preserved, matching the paid-social mappings above. Rounding to whole dollars here
+        // lost real precision before the client derived totals, shares and blended CPA from these
+        // rows — and a $0.40 campaign passed the positive-spend filter only to render as $0. The
+        // metric pipes handle presentation rounding, so the wire values stay as measured.
+        spend: Math.round((p.SPEND ?? 0) * 100) / 100,
+        conversions: p.CONV ?? 0,
         clicks: p.CLICKS ?? 0,
         impressions: p.IMPR ?? 0,
-        cpa: (p.CONV ?? 0) > 0 ? Math.round((p.SPEND ?? 0) / (p.CONV ?? 1)) : null,
+        cpa: (p.CONV ?? 0) > 0 ? Math.round(((p.SPEND ?? 0) / (p.CONV ?? 1)) * 100) / 100 : null,
       }));
 
     const emailCampaigns: EventEmailCampaign[] = emailResult.rows.map((e) => ({

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { PublicProfileBasic, PublicProfileSocialLink } from '@lfx-one/shared/interfaces';
@@ -22,13 +22,34 @@ export class PublicProfileHeroComponent {
   protected readonly name = computed(() => this.basic()?.Name?.trim() || 'LFX Contributor');
   protected readonly title = computed(() => this.basic()?.Title?.trim() || '');
   protected readonly bio = computed(() => this.basic()?.Bio?.trim() || '');
-  protected readonly avatarImage = computed(() => this.basic()?.LogoURL || '');
+
+  // Prefers the uploaded avatar (guessed from username, existence unverified) over the SFDC-derived
+  // LogoURL artifact — falls back to LogoURL if the uploaded one 404s (e.g. no avatar ever
+  // uploaded), tracked by comparing against the exact URL that errored (LFXV2-2628).
+  private readonly erroredAvatarUrl = signal<string | null>(null);
+  protected readonly avatarImage = computed(() => {
+    const basic = this.basic();
+    const uploaded = basic?.avatarUrl?.trim();
+    if (uploaded && this.erroredAvatarUrl() !== uploaded) {
+      return uploaded;
+    }
+    return basic?.LogoURL?.trim() || '';
+  });
+
   protected readonly accountLogo = computed(() => this.basic()?.AccountLogoURL?.trim() || '');
 
   // "Individual" is an upstream placeholder for "no employer" — hide it (matches myprofile).
   protected readonly company = computed(() => resolveAffiliationCompany(this.basic()));
 
   protected readonly socials: Signal<PublicProfileSocialLink[]> = this.initSocials();
+
+  /** Record the uploaded-avatar URL as errored so `avatarImage` falls back to LogoURL. */
+  protected handleAvatarError(): void {
+    const uploaded = this.basic()?.avatarUrl?.trim();
+    if (uploaded) {
+      this.erroredAvatarUrl.set(uploaded);
+    }
+  }
 
   // Share the current profile URL — native share sheet when available, clipboard otherwise.
   // Guarded for SSR since it touches navigator/window (see .claude/rules/ssr-safety.md).

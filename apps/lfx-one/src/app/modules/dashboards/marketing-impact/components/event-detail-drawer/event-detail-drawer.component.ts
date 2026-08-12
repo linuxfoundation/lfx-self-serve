@@ -9,7 +9,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, EMAIL_CAMPAIGN_LIMIT, lfxColors, ON_TRACK_PERCENT_THRESHOLD, PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
-import { formatNumber } from '@lfx-one/shared/utils';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
 import { MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -375,7 +375,10 @@ export class EventDetailDrawerComponent {
           label: 'Predicted high',
           data: points.map((point) => point.predictedHigh),
           borderColor: 'transparent',
-          backgroundColor: 'rgba(139, 92, 246, 0.08)',
+          // hexToRgba(lfxColors.violet[500]) per .claude/rules/styling.md — the hardcoded rgba was
+          // not only brittle, it was the wrong violet: lfxColors.violet[500] is #8E51FF, while the
+          // literal encoded #8B5CF6, so the band was off-brand against the lines it shades.
+          backgroundColor: hexToRgba(lfxColors.violet[500], 0.08),
           pointRadius: 0,
           fill: '+1',
         },
