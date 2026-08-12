@@ -45,7 +45,15 @@
        destroy an in-progress email brief on every round-trip to Paid Marketing. -->
   <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
     <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
-         change when the OTHER container becomes active. -->
+         change when the OTHER container becomes active.
+
+         `aria-controls` is set only on the SELECTED tab, deliberately. The panels live inside an
+         @switch, so exactly one is in the DOM at a time; setting it on every tab would point
+         assistive technology at element ids that do not exist. ARIA 1.2 makes aria-controls
+         optional on a tab for this reason, and a dangling reference is worse than an absent
+         attribute — a screen reader following it lands nowhere. marketing-impact.component.html
+         sets it unconditionally over a single @switch-rendered panel and therefore does have
+         dangling ids on its inactive tabs; that is a bug there rather than a pattern to copy. -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
       @for (tab of emailTabs; track tab.id; let i = $index) {
         <button
