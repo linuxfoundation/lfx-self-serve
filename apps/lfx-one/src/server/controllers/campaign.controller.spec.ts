@@ -9,9 +9,11 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
+const { saveBrief, loadBrief, createCampaigns, legacyCreate, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
+  createCampaigns: vi.fn(),
+  legacyCreate: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -26,6 +28,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
+      public createCampaigns = createCampaigns;
     },
   };
 });
@@ -33,7 +36,11 @@ vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/server-feature-flag.helper')>();
   return { ...actual, isServerFeatureEnabled };
 });
-vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: class {} }));
+vi.mock('../services/campaign-proxy.service', () => ({
+  CampaignProxyService: class {
+    public createCampaign = legacyCreate;
+  },
+}));
 vi.mock('../services/campaign-metrics.service', () => ({
   CampaignMetricsService: class {},
   LinkedInMetricsService: class {},
@@ -351,5 +358,83 @@ describe('CampaignController.loadBrief', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The layer boundary that matters for the creation cutover: whether the legacy path — which has
+ * REAL side effects on the ad platforms — runs, and under exactly which conditions. Everything
+ * about what campaign-service is sent is the service spec's business.
+ */
+describe('CampaignController.createCampaign cutover', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const body = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 }, hsToken: 'hs-1' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('falls through to the legacy path when the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_123_abc' });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_123_abc' });
+  });
+
+  it('does NOT run the legacy path once campaign-service accepts the job', async () => {
+    // The property worth pinning: both paths create real campaigns on real ad platforms, so a
+    // fall-through after an accepted 202 would double-create and spend twice.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000001', error: null });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '9f1c2d3e-0000-4000-8000-000000000001' });
+  });
+
+  it('does NOT fall back when campaign-service refuses the create', async () => {
+    // Enabled-but-refused is the dangerous case. Falling through would create the campaigns
+    // anyway while the user is told creation failed — a worse outcome than any error message,
+    // because the spend is real and nobody is looking for it.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: null, error: 'Campaign creation could not be started. Please try again.' });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
+  });
+
+  it('passes the project slug and brief id from the query, not the body', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(body, { project: 'cncf', brief_id: 'b-9' }), res, next);
+
+    // Slug, NOT a UUID: campaign-service stamps it into the campaign name and keys the dispatch
+    // connection lookup on it, so a UUID here fails twice over.
+    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-9', 'cncf', ['linkedin-ads'], {
+      hsToken: 'hs-1',
+      linkedInConfig: { budgetUsd: 100 },
+    });
+  });
+
+  it('omits absent per-platform configs rather than sending them as null', async () => {
+    // The dispatcher reads an absent config as "not selected" and a null one as a malformed
+    // selection, so the difference is not cosmetic.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'] }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-1', 'tlf', ['reddit-ads'], {});
   });
 });

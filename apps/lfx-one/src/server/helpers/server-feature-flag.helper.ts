@@ -58,18 +58,40 @@ export enum ServerFeatureFlag {
    * calling anything.
    *
    * Unlike `CampaignServiceJobs` this flag has no id-shape backstop, because there is nothing
-   * to disambiguate: persistence is purely additive. Nothing reads a brief id yet — campaign
-   * creation is still the legacy path — so a flag-on and a flag-off pod serving the same user
-   * across a rolling update disagree only about whether that user's brief was saved, never
-   * about which of two systems owns it.
+   * to disambiguate on the WRITE: persistence is additive.
    *
-   * That property is a consequence of nothing READING briefs, so it expires the moment something
-   * does. A later phase that loads a brief from campaign-service must put the read behind THIS
-   * flag, not behind one of its own: a pod that reads while the write flag is off would find no
-   * brief for a user whose session wrote through the legacy path, and report an empty brief for
-   * one that exists in front of them. Read and write have to flip together.
+   * The paragraph that used to sit here said "nothing reads a brief id yet — campaign creation is
+   * still the legacy path". Both halves have since stopped being true, and the safety argument
+   * that rested on them went with it. The read-back (`loadBrief`, the Planning restore offer)
+   * lives behind THIS flag, deliberately: a pod that read while the write flag was off would
+   * report an empty brief for one sitting in front of the user. Read and write flip together.
+   *
+   * `CampaignServiceCreate` then consumes the brief ID this flag produces, which is why it is
+   * checked second and is a no-op without this one.
    */
   CampaignServiceBriefs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS',
+
+  /**
+   * Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
+   * services in `campaign-proxy.service.ts`. OFF keeps the legacy path byte-for-byte.
+   *
+   * Depends on `CampaignServiceBriefs` and is checked AFTER it, because the create route is
+   * `/projects/{slug}/briefs/{brief_id}/campaigns` — there is no create-without-a-brief path.
+   * Turning this on while briefs are off yields no brief id and every create falls back to the
+   * legacy path, which is safe but silently pointless; the create path says so in its log line
+   * rather than failing.
+   *
+   * It inherits the id-shape backstop the jobs flag introduced, which is what makes an
+   * overlapping rollout safe: campaign-service mints UUID job ids and the legacy path mints
+   * `job_...`, so a poll is answered by whichever system actually owns that job regardless of
+   * which pod serves it. A flag-on pod creating and a flag-off pod polling still works.
+   *
+   * What it does NOT survive is a create that lands flag-on while the ad-platform connection for
+   * that project is unconfigured: campaign-service reads credentials from its own connection
+   * tables, never from this application's GADS_ / LINKEDIN_ environment variables. Provision the connection
+   * per project slug before turning this on, or every dispatch fails on a missing connection.
+   */
+  CampaignServiceCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE',
 
   /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and

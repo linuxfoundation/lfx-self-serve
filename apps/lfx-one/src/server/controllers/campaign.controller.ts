@@ -9,6 +9,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignCreateRequest,
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
@@ -238,8 +239,39 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_create', {});
 
     try {
+      // Try the cutover FIRST, and fall through to the legacy path on anything short of an
+      // accepted job. The order matters: the legacy path has side effects on the ad platforms, so
+      // it must not run when campaign-service has already accepted the same work.
+      //
+      // `?project=` and `?brief_id=` mirror the persist route's convention rather than moving
+      // them into the body, so a caller that already knows how to save a brief knows how to
+      // create from it.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+      const body = req.body as CampaignCreateRequest;
+      const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+
+      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, this.createConfigEnvelope(body));
+
+      if (viaService.enabled && viaService.jobId !== null) {
+        logger.success(req, 'campaign_create', startTime, { jobId: viaService.jobId, via: 'campaign-service' });
+        // The SAME response shape as the legacy path, so the client polls one way. The job id is
+        // a UUID here and `job_...` there, which is exactly what lets the poll route send each
+        // one back to the system that owns it.
+        res.json({ jobId: viaService.jobId });
+        return;
+      }
+      if (viaService.enabled && viaService.error !== null) {
+        // Enabled but refused: do NOT fall through. The legacy path would create campaigns on the
+        // platforms while the user is being told creation failed, which is the one outcome worth
+        // more than a confusing error message.
+        logger.warning(req, 'campaign_create', 'campaign-service refused the create; not falling back', { briefId, projectSlug });
+        res.json({ jobId: '', error: viaService.error });
+        return;
+      }
+
       const result = await this.proxyService.createCampaign(req, req.body);
-      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId });
+      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId, via: 'legacy' });
       res.json(result);
     } catch (error) {
       next(error);
@@ -280,7 +312,20 @@ export class CampaignController {
       // running — turning a transient outage into a spurious terminal state the client
       // stops polling on. Letting the error through keeps the failure visible and the
       // flag is the way back.
-      const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
+      // The slug the create was made under. campaign-service stores it on the brief and `GetJob`
+      // joins on it with an EXACT comparison, so polling under a different project answers
+      // `not_found` for a job that exists — and `not_found` is terminal for the poller.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      if (viaCampaignService && projectSlug === '') {
+        // Refuse rather than guess. The old module constant guessed 'tlf' for everyone, which was
+        // survivable only while no UUID job could exist; creation through campaign-service is what
+        // makes them real. Guessing here would answer "campaign lost" for another foundation's job.
+        next(new Error('A campaign-service job poll requires the project it was created under.'));
+        return;
+      }
+      const status = viaCampaignService
+        ? await this.campaignServiceClient.getJobStatus(req, jobId, projectSlug)
+        : await this.proxyService.getJobStatus(req, jobId);
       logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
     } catch (error) {
@@ -829,5 +874,23 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /**
+   * The per-platform config envelope campaign-service expects, built from the legacy request.
+   *
+   * The service's `config` is an object keyed by `linkedInConfig` / `redditConfig` / `metaConfig`
+   * with `hsToken` as a top-level sibling — the same names this request already carries, so this
+   * is a projection rather than a translation. Keys with no config are omitted rather than sent
+   * as null: the dispatcher treats an absent config as "not selected", and a null one as a
+   * malformed selection.
+   */
+  private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
+    const envelope: Record<string, unknown> = {};
+    if (body?.hsToken) envelope['hsToken'] = body.hsToken;
+    if (body?.linkedInConfig) envelope['linkedInConfig'] = body.linkedInConfig;
+    if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
+    if (body?.metaConfig) envelope['metaConfig'] = body.metaConfig;
+    return envelope;
   }
 }

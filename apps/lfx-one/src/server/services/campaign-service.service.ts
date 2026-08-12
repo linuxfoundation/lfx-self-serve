@@ -5,6 +5,7 @@ import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/s
 import type {
   ApiResponse,
   CampaignBriefLoadResult,
+  CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignEventDetails,
@@ -24,6 +25,7 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -35,6 +37,18 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  * shared package would invite a component to import it, and then a contract change upstream
  * would reach the browser instead of stopping at the adapter below.
  */
+/**
+ * The 202 body from `POST /projects/{slug}/briefs/{brief_id}/campaigns`.
+ *
+ * Declared locally rather than in `@lfx-one/shared` for the same reason as its siblings below:
+ * this is campaign-service's WIRE shape, which no browser code touches. Promoting it would
+ * publish an upstream contract into the client bundle.
+ */
+interface CampaignServiceJobCreateResponse {
+  job_id?: string;
+  status?: string;
+}
+
 interface CampaignServiceJobPollResponse {
   job_id: string;
   status: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';
@@ -112,31 +126,6 @@ interface CampaignServiceBrief {
 interface CampaignServiceBriefEnvelope {
   brief: CampaignServiceBriefInput;
 }
-
-/**
- * The canonical slug for The Linux Foundation's own project row.
- *
- * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
- * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
- * project or slug segment", LF-scoped by construction. That is wrong: the route carries
- * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
- * foundation reaches the page with their own foundation selected. Anything that WRITES must
- * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
- *
- * The job poll keeps the constant because it is currently unreachable with a real id:
- * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
- * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
- * both the create and the poll in the same change, at which point this constant goes away.
- *
- * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
- * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
- * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
- * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
- * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
- * written under `tlf` is invisible to a poll made under the project's uid. Resolving the slug
- * to a uid here would look more canonical and find nothing.
- */
-const LF_PROJECT_SLUG = 'tlf';
 
 /**
  * True when `jobId` is a job campaign-service could possibly know about.
@@ -222,12 +211,29 @@ export class CampaignServiceClient {
    * deliberate: if campaign-service ever changes that body shape, a real expired job surfaces as
    * an error rather than as a false "lost" — loud instead of quietly wrong.
    */
-  public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
+  /**
+   * Poll a campaign-service job, scoped to the project that owns it.
+   *
+   * `projectSlug` is a REQUIRED parameter rather than a module constant, and that change is the
+   * other half of the creation cutover rather than a tidy-up. The constant was `'tlf'`, and its
+   * comment said exactly why it was survivable: `isCampaignServiceJobId` only routes UUIDs here,
+   * and no UUID job could exist until creation went through campaign-service. Creating through
+   * campaign-service is precisely what makes UUID jobs real, so a CNCF user's poll would have
+   * been issued under TLF's scope — and `GetJob` joins `b.project_id = $2` with an EXACT
+   * comparison, so it would answer `not_found` for a job that exists and is running.
+   *
+   * `not_found` is TERMINAL for the poller, so that would be reported to the user as a lost
+   * campaign. Hence both halves in one change (LFXV2-3195).
+   *
+   * Still a SLUG on the wire, never a uid: `campaign_briefs.project_id` stores the slug the
+   * create was made with, and the poll's join is an exact string comparison.
+   */
+  public async getJobStatus(req: Request, jobId: string, projectSlug: string): Promise<CampaignJobStatus> {
     try {
       const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/jobs/${encodeURIComponent(jobId)}`,
+        `/projects/${encodeURIComponent(projectSlug)}/jobs/${encodeURIComponent(jobId)}`,
         'GET'
       );
       return adaptJobPollResponse(response);
@@ -428,6 +434,69 @@ export class CampaignServiceClient {
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, approved };
+  }
+
+  /**
+   * Ask campaign-service to create campaigns for a brief it already stores.
+   *
+   * Returns the job id and NOTHING else, because that is all a 202 carries. The legacy path
+   * inline-waits up to 45s and can hand back a finished `result`; this one cannot, and pretending
+   * otherwise would mean waiting on a dispatcher the request has no relationship with.
+   *
+   * `briefId` is REQUIRED and comes from the save that preceded this call. The route is
+   * `/projects/{slug}/briefs/{brief_id}/campaigns` — there is no create-without-a-brief path, by
+   * design: the brief is what the dispatcher reads the copy and targeting from, so a campaign
+   * with no stored brief would have nothing to dispatch.
+   *
+   * `projectSlug` must be the SLUG, never a UUID. The design says why in two places at once: the
+   * project id is stamped into the campaign name upstream, and it is the exact-match key for the
+   * dispatch connection lookup. A UUID produces a campaign named after a UUID AND fails to find
+   * the project's ad-platform credentials, so the failure is both cosmetic and total.
+   */
+  public async createCampaigns(
+    req: Request,
+    briefId: string,
+    projectSlug: string,
+    platforms: string[],
+    config: Record<string, unknown>
+  ): Promise<CampaignServiceCreateResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate)) {
+      return { enabled: false, jobId: null, error: null };
+    }
+    // Both are the caller's to get right, but a missing one must not reach the wire as an empty
+    // path segment: `/projects//briefs//campaigns` is a DIFFERENT route that would 404 from the
+    // gateway, and a gateway 404 is not the service saying "no such brief".
+    if (briefId === '' || projectSlug === '') {
+      return { enabled: true, jobId: null, error: 'This campaign could not be created because its brief has not been saved yet.' };
+    }
+    if (platforms.length === 0) {
+      return { enabled: true, jobId: null, error: 'Select at least one platform before creating campaigns.' };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'POST', {
+        input: { platforms, config },
+      });
+      const jobId = response.data?.job_id ?? '';
+      if (jobId === '') {
+        // A 202 with no job id is unusable: the caller has no way to poll, and reporting success
+        // would leave a dispatch running that nothing can observe. Say so rather than returning
+        // an empty id the poller would treat as a legacy in-process job.
+        return { enabled: true, jobId: null, error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.' };
+      }
+      return { enabled: true, jobId, error: null };
+    } catch (error: unknown) {
+      logger.warning(req, 'campaign_service_create', 'campaign-service refused the campaign-create request', {
+        briefId,
+        projectSlug,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Deliberately generic. The upstream message can name a connection, an account id or a
+      // platform error body, none of which the user can act on and some of which should not be
+      // rendered at all.
+      return { enabled: true, jobId: null, error: 'Campaign creation could not be started. Please try again.' };
+    }
   }
 
   /**

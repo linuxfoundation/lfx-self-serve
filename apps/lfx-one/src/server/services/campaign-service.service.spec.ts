@@ -180,18 +180,31 @@ describe('CampaignServiceClient.getJobStatus', () => {
   // (`Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`, which a UUID fails) and stores exactly that string;
   // `GetJob` then scopes with an EXACT `b.project_id = $2`. Polling under the project's uid
   // would look more canonical and never find the job.
-  it('scopes the request to the tlf slug, not to a resolved uid', async () => {
+  // Was "scopes the request to the tlf slug". The slug is now the CALLER'S, because creation
+  // through campaign-service makes UUID jobs real and a hardcoded 'tlf' would poll another
+  // foundation's scope — `GetJob` joins `b.project_id` with an exact comparison, so it would
+  // answer `not_found` for a running job, and `not_found` is terminal for the poller (LFXV2-3195).
+  it("scopes the request to the CALLER's project slug, not a hardcoded one", async () => {
     proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({ status: 'running' });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'cncf')).resolves.toEqual({ status: 'running' });
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/jobs/j1', 'GET');
+  });
+
+  // Still a SLUG on the wire, never a resolved uid: campaign_briefs.project_id stores the exact
+  // string the create was made with.
+  it('sends the slug verbatim rather than resolving it', async () => {
+    proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
+
+    await new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf');
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/j1', 'GET');
   });
 
-  it('encodes the job id into the path', async () => {
+  it('encodes both the job id and the slug into the path', async () => {
     proxyRequest.mockResolvedValue({ job_id: 'a/b', status: 'running' });
 
-    await new CampaignServiceClient().getJobStatus(req, 'a/b');
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/a%2Fb', 'GET');
+    await new CampaignServiceClient().getJobStatus(req, 'a/b', 'a/b');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%2Fb/jobs/a%2Fb', 'GET');
   });
 
   // The flag-off path returns a `not_found` STATUS for an unknown job, and the poller has an

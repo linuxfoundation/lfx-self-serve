@@ -604,6 +604,29 @@ export interface CampaignCreateRequest {
   metaConfig?: MetaCampaignCreateRequest;
 }
 
+/**
+ * What `POST /api/campaigns/create` reports when the campaign-service cutover is ON.
+ *
+ * Deliberately NOT the legacy `{ jobId, result?, error? }` shape. The legacy path inline-waits up
+ * to 45s and can return a finished `result`; campaign-service answers 202 with a job id and
+ * nothing else, because dispatch is genuinely asynchronous there — the platforms are called by a
+ * dispatcher the request does not wait for.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is the steady state everywhere the
+ * cutover is dark, and the caller must fall through to the legacy path rather than showing an
+ * error.
+ */
+export interface CampaignServiceCreateResult {
+  enabled: boolean;
+  /** The campaign-service job id (a UUID). Poll it through the existing job-status route. */
+  jobId: string | null;
+  /**
+   * Why the cutover could not be used for this request, when `enabled` is true but `jobId` is
+   * null. Never a raw upstream error — the caller renders this.
+   */
+  error: string | null;
+}
+
 export interface CampaignCreateResult {
   platform: CampaignPlatform;
   type: CampaignType;
