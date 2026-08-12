@@ -450,6 +450,10 @@ describe('CampaignsComponent brief persistence', () => {
       // Nor does it say "not saved": the write DID land. The honest message is that it may have
       // been overtaken since.
       expect(state().message).toContain('saved, but someone else changed it');
+      // Must also say what proceeding does: this conflict now promotes the session to overwrite,
+      // so a message that only reports the collision leaves the user authorising a replacement
+      // they were never told about.
+      expect(state().message).toContain('Proceed again to replace theirs');
     });
 
     it('does not hand a queued save a clean slate when the 412 was never shown', async () => {

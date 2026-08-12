@@ -141,7 +141,12 @@ export class CampaignsComponent {
     'unowned-brief-exists': 'This event already has a saved brief that was not opened here, so this one was not saved over it.',
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
-    'superseded-after-write': 'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version.',
+    // Names the consequence, like the other two. It did not need to while this conflict granted
+    // no permission — but it now promotes the session to overwrite, and a message that reports
+    // only "someone else changed it" leaves the user authorising a replacement they were never
+    // told about. That is the disclosure gap the other two messages were rewritten to close.
+    'superseded-after-write':
+      'Your brief was saved, but someone else changed it moments later, so what is stored may not be your version. Proceed again to replace theirs with yours.',
     // Says "try again" rather than naming another writer, because none is known to exist: the
     // problem is that this page cannot prove which version it last saw, not that someone else
     // changed it.
