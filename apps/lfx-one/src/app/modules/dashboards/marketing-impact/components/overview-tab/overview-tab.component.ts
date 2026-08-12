@@ -3,7 +3,7 @@
 
 import { Component, input } from '@angular/core';
 
-import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
+import type { MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
@@ -25,6 +25,4 @@ export class OverviewTabComponent {
   // Passed through to the summary tiles and the roster, both of which filter by it.
   public readonly selectedPeriod = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
-  // null when the split control is hidden, which means "show both attendance and sponsorship".
-  public readonly eventsSplit = input<EventsSplitView | null>(null);
 }

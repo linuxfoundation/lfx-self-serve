@@ -17,8 +17,8 @@ const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
-  // The real mapping: the email focus filter reads this, so stubbing it empty would make every
-  // focused view look correctly-empty regardless of the filtering logic under test.
+  // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
+  // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
   CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
   // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
   // asserted SQL diverge from what production actually sends.

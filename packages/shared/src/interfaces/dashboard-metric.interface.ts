@@ -727,8 +727,6 @@ export interface EventEmailCampaign {
   ctr: number;
 }
 
-/** Top-level channel-type bucket for the collapsible attribution tree. */
-
 /**
  * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
  * Mirrors PCC's EventPredictionDrilldown grain.
