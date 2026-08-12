@@ -224,6 +224,16 @@ export class CampaignsComponent {
    */
   private adoptingRestoredProgram = false;
 
+  /**
+   * Bumped whenever a RESTORE writes ownership, so a save already queued cannot inherit it.
+   *
+   * Distinct from `ownershipGeneration`, which marks a DISCARD. This marks an ARRIVAL from a
+   * source the queued save never saw: the user loaded a stored brief for the same event while a
+   * generated one was waiting to send. Sharing a counter would conflate "the thing you owned is
+   * gone" with "someone else's id landed under your key".
+   */
+  private ownershipEpoch = 0;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -470,6 +480,7 @@ export class CampaignsComponent {
       // between the load and the save is overwritten rather than producing a 412. That is a
       // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
       // response — and the user has at least seen the content they are replacing.
+      this.ownershipEpoch++;
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
     this.onProceedToImplementation(brief, true);
@@ -529,6 +540,14 @@ export class CampaignsComponent {
     // and be refused as unowned — telling a user their own brief belongs to someone else. It is
     // resolved when this queue item actually begins, below.
     const ownershipKey = this.ownershipKey(projectSlug, brief);
+    // Snapshot the ownership EPOCH too. The lookup below is deliberately late so a queued save can
+    // pick up an id its predecessor created — but a RESTORE also writes to `knownBriefIds` for the
+    // same event, and that is a different source entirely. Without this, a generated brief sitting
+    // in the queue would inherit the id of a row it never loaded and silently replace its content.
+    //
+    // The comment below justifies the late read by the key being `(project, event)`. That covers a
+    // different EVENT; it does not cover the same event being restored while this save waits.
+    const ownershipEpochAtSend = this.ownershipEpoch;
 
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
@@ -554,7 +573,10 @@ export class CampaignsComponent {
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
       // filed it, whatever else happened while this one waited.
-      const known = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+      // Refuse an id that arrived from a RESTORE after this save was enqueued. A predecessor
+      // save's id is fine — that is the case the late read exists for — but a restore means the
+      // user loaded a different brief for this event, and this payload never saw it.
+      const known = ownershipKey === null || this.ownershipEpoch !== ownershipEpochAtSend ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
       // `allowFallback` says the caller has no validator BY CHOICE — the stale-brief warning was
       // shown and the user proceeded. Without it, an absent validator means "unknown", and the
       // server refuses rather than substituting one it read itself.

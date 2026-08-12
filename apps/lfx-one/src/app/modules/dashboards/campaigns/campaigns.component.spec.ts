@@ -453,6 +453,39 @@ describe('CampaignsComponent brief persistence', () => {
       expect(state().status).not.toBe('saved');
     });
 
+    it('does not let a queued save inherit an id that arrived from a restore', async () => {
+      // Ownership is resolved when the queue REACHES a save, not when Proceed enqueues it. A
+      // restore writes an id under the same `(project, event)` key, so a generated payload still
+      // waiting in the queue could be sent with a row it never loaded. `ownershipEpoch` refuses
+      // an id that arrived from a restore after the save was enqueued.
+      //
+      // Stated plainly: this test does NOT fail when the epoch check is removed, and I could not
+      // construct one that does. `restore()` synchronously calls `onProceedToImplementation`,
+      // which replaces the on-screen brief before the queued save resolves its key, so the
+      // component-level harness cannot hold the two apart. The promise ordering that makes the
+      // window real is verifiable in isolation — a queued `.then()` runs after an earlier
+      // synchronous write — but not through this seam. The guard is kept as defence; the
+      // assertion below documents the intent rather than enforcing it.
+      const blocker = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValue(blocker);
+      proceed();
+      await fixture.whenStable();
+
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenCalledTimes(1);
+
+      restore(brief, 'restored-a');
+      await fixture.whenStable();
+
+      blocker.next({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: true });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(persistBrief).toHaveBeenCalledTimes(2);
+      expect(persistBrief.mock.calls[1][2]).not.toBe('restored-a');
+    });
+
     it('does not lend a RESTORED brief id to another event', async () => {
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a');
