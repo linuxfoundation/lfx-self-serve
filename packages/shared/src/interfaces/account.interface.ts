@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { OrgRolePersona } from './org-selector.interface';
+
 /** Organization / account record used by persona detection, the org selector, and any org-scoped header. */
 export interface Account {
   /** Salesforce account_id — primary join key */
@@ -19,4 +21,6 @@ export interface Account {
   uid?: string | null;
   /** Parent org account id (SFID); NULL for top-level orgs. Populated from canonical record fetch. */
   parentUid?: string | null;
+  /** LFXV2-2750 — set when this account was selected from a foundation-auditor row (resolved per-search, not part of the cached grants sets), so the persona badge survives after the popover closes. Never persisted — recomputed from a fresh grants/search resolution on reload. */
+  roleSource?: OrgRolePersona | null;
 }

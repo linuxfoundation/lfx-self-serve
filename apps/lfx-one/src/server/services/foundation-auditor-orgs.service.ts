@@ -78,7 +78,13 @@ export class FoundationAuditorOrgsService {
   private static readonly activeMembershipStatuses = new Set(['active', 'purchased']);
 
   // Per-process memo keyed by caller username. Short TTL; a miss just costs one bounded refetch.
+  // Swept on an interval below since expiresAt only blocks reuse — it doesn't reclaim the entry.
   private static readonly memberOrgsMemo = new Map<string, MemberOrgsMemo>();
+
+  // Per-process coalescing of concurrent cold-cache resolutions for the same username, mirroring
+  // OrgRoleGrantsService.accessInFlight — a typeahead burst shares one upstream fan-out instead of
+  // each request repeating foundation enumeration, access-checks, and roster reads.
+  private static readonly memberOrgsInFlight = new Map<string, Promise<FoundationAuditorOrgEntry[]>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly accessCheck: AccessCheckService;
@@ -86,6 +92,16 @@ export class FoundationAuditorOrgsService {
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.accessCheck = new AccessCheckService();
+
+    // Reclaims expired memo entries; expiresAt alone only prevents reuse, it never frees the Map slot.
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of FoundationAuditorOrgsService.memberOrgsMemo) {
+        if (now >= entry.expiresAt) {
+          FoundationAuditorOrgsService.memberOrgsMemo.delete(key);
+        }
+      }
+    }, 60_000).unref();
   }
 
   /**
@@ -110,13 +126,29 @@ export class FoundationAuditorOrgsService {
     return matched.slice(0, FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP);
   }
 
-  /** Resolve (and memoize) the caller's full audited member-org pool. */
+  /** Resolve (and memoize) the caller's full audited member-org pool. Coalesces concurrent cold-cache callers. */
   private async resolveMemberOrgs(req: Request, username: string): Promise<FoundationAuditorOrgEntry[]> {
     const memo = FoundationAuditorOrgsService.memberOrgsMemo.get(username);
     if (memo && memo.expiresAt > Date.now()) {
       return memo.orgs;
     }
 
+    const inFlight = FoundationAuditorOrgsService.memberOrgsInFlight.get(username);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const promise = this.computeMemberOrgs(req, username);
+    FoundationAuditorOrgsService.memberOrgsInFlight.set(username, promise);
+    try {
+      return await promise;
+    } finally {
+      FoundationAuditorOrgsService.memberOrgsInFlight.delete(username);
+    }
+  }
+
+  /** Cold-cache resolution: foundation enumeration → audited subset → M2M roster/display reads. */
+  private async computeMemberOrgs(req: Request, username: string): Promise<FoundationAuditorOrgEntry[]> {
     const foundations = await this.enumerateFoundations(req);
     if (foundations.length === 0) {
       logger.debug(req, 'resolve_member_orgs', 'No foundations enumerated', {});
@@ -202,12 +234,27 @@ export class FoundationAuditorOrgsService {
    * M2M: FIRST PAGE ONLY of each audited foundation's roster, through a bounded-concurrency pool.
    * Pivots by `tags:project_uid:<uid>` (LFXV2-2752) — the supported foundation→members lookup on
    * `project_membership` docs.
+   *
+   * Accumulates into the shared cap as each page lands (rather than after every foundation has been
+   * fetched) so a satisfied cap stops the pool from claiming further foundations — the read cost is
+   * bounded, not just the result. Order is preserved within each concurrent batch of
+   * `FOUNDATION_AUDITOR_ROSTER_FETCH_CONCURRENCY` in-flight foundations, but — since pages land in
+   * completion order, not strict index order — is only approximately, not strictly, index-ordered
+   * across the full list once concurrency is in play.
+   *
+   * Workers are run to completion via `Promise.allSettled`, not `Promise.all`: the caller (`computeMemberOrgs`)
+   * restores the original bearer token in a `finally` immediately after this resolves/rejects, so every
+   * worker's M2M-scoped requests must have actually finished first — an early `Promise.all` rejection would
+   * let straggler workers fire their next request under the already-restored user token.
    */
   private async collectMemberOrgUids(req: Request, foundations: AuditedFoundation[]): Promise<string[]> {
-    const rostersByIndex: ProjectMembershipDoc[][] = new Array(foundations.length);
+    const orderedUids: string[] = [];
+    const seen = new Set<string>();
+    let truncated = false;
     let cursor = 0;
+
     const worker = async (): Promise<void> => {
-      while (cursor < foundations.length) {
+      while (!truncated && cursor < foundations.length) {
         const index = cursor++;
         const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(
           req,
@@ -220,29 +267,28 @@ export class FoundationAuditorOrgsService {
             page_size: FOUNDATION_AUDITOR_ROSTER_PAGE_SIZE,
           }
         );
-        rostersByIndex[index] = (response?.resources ?? []).map((r) => r.data).filter(Boolean);
-      }
-    };
-    const poolSize = Math.min(FOUNDATION_AUDITOR_ROSTER_FETCH_CONCURRENCY, foundations.length);
-    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+        if (truncated) return; // cap satisfied while this request was in flight — discard the page.
 
-    const orderedUids: string[] = [];
-    const seen = new Set<string>();
-    let truncated = false;
-
-    for (const roster of rostersByIndex) {
-      for (const membership of roster ?? []) {
-        const uid = membership?.b2b_org_uid;
-        if (!uid || !isFilterSafeIdentifier(uid) || seen.has(uid)) continue;
-        if (!FoundationAuditorOrgsService.activeMembershipStatuses.has((membership.status ?? '').toLowerCase())) continue;
-        seen.add(uid);
-        orderedUids.push(uid);
-        if (orderedUids.length >= FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP) {
-          truncated = true;
-          break;
+        const roster = (response?.resources ?? []).map((r) => r.data).filter(Boolean);
+        for (const membership of roster) {
+          const uid = membership?.b2b_org_uid;
+          if (!uid || !isFilterSafeIdentifier(uid) || seen.has(uid)) continue;
+          if (!FoundationAuditorOrgsService.activeMembershipStatuses.has((membership.status ?? '').toLowerCase())) continue;
+          seen.add(uid);
+          orderedUids.push(uid);
+          if (orderedUids.length >= FOUNDATION_AUDITOR_MEMBER_ORGS_HARD_CAP) {
+            truncated = true;
+            break;
+          }
         }
       }
-      if (truncated) break;
+    };
+
+    const poolSize = Math.min(FOUNDATION_AUDITOR_ROSTER_FETCH_CONCURRENCY, foundations.length);
+    const settled = await Promise.allSettled(Array.from({ length: poolSize }, () => worker()));
+    const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
     }
 
     if (truncated) {

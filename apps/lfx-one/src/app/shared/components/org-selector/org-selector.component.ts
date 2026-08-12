@@ -55,12 +55,17 @@ export class OrgSelectorComponent {
   protected readonly selectedRolePersona: Signal<OrgRolePersona | null> = computed(() => {
     const uid = this.selectedAccountUid();
     if (!uid) return null;
-    return this.resolvePersona(
-      uid,
-      this.orgRoleGrantsService.writerSet(),
-      this.orgRoleGrantsService.auditorSet(),
-      this.orgRoleGrantsService.inheritedWriterSet(),
-      this.orgRoleGrantsService.inheritedAuditorSet()
+    // LFXV2-2750 — a foundation-auditor selection carries its role source on the account itself
+    // (it's resolved per-search, absent from the cached grants sets `resolvePersona` consults below).
+    return (
+      this.selectedAccount().roleSource ??
+      this.resolvePersona(
+        uid,
+        this.orgRoleGrantsService.writerSet(),
+        this.orgRoleGrantsService.auditorSet(),
+        this.orgRoleGrantsService.inheritedWriterSet(),
+        this.orgRoleGrantsService.inheritedAuditorSet()
+      )
     );
   });
   protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona()));
@@ -133,6 +138,9 @@ export class OrgSelectorComponent {
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      // LFXV2-2750 — carry the row's role source onto the persisted selection so the trigger badge
+      // keeps the view-only persona after the popover closes and the search term is cleared.
+      roleSource: item.roleSource ?? null,
     };
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
