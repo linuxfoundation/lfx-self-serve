@@ -7465,7 +7465,7 @@ export class ProjectService {
         SUM(IFNULL(CLICKS, 0)) AS CLICKS,
         SUM(IFNULL(IMPRESSIONS, 0)) AS IMPR
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
-      WHERE LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\'
+      WHERE (LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\' OR LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\')
       GROUP BY CAMPAIGN_NAME, CHANNEL
       ORDER BY SPEND DESC
       LIMIT 25
@@ -7501,13 +7501,15 @@ export class ProjectService {
       return channel ?? 'Unknown';
     };
 
-    // Settled, not Promise.all: paid and email are independent breakdowns, so an email failure
-    // must not also blank out paid campaigns that queried fine (and vice versa).
+    // Each side degrades to empty on its own before this point — paid via
+    // executeWithLegacyConversionFallback, email via the .catch below — so neither can reject and
+    // take the other's successful rows down with it. Promise.all is safe here only because of
+    // that; adding a third source without its own degrade path would reintroduce all-or-nothing.
     const [paidResult, emailResult] = await Promise.all([
       this.executeWithLegacyConversionFallback<PaidRow>({
         primaryQuery: paidQuery('LAST_TOUCH_CONVERSIONS'),
         legacyQuery: paidQuery('CONV'),
-        params: [match],
+        params: [match, matchNoYear],
         operation: 'get_event_campaign_detail',
         foundationSlug: eventName,
         retryMessage: 'Paid campaign enrichment retrying with legacy CONV column',

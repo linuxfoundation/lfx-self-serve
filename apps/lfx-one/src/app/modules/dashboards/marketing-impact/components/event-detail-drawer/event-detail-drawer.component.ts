@@ -174,7 +174,8 @@ export class EventDetailDrawerComponent {
   // Whether we have a daily curve to plot (needs the drilldown prediction data).
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
 
-  // Registration-pacing line chart: current-year + last-year + predicted, over days-to-event.
+  // Registration-pacing line chart: the predicted average with its low/high band, over
+  // days-to-event. No actuals series — see the pacing query for why the warehouse cannot back one.
   protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
 
   protected readonly pacingChartOptions: ChartOptions<'line'> = {
@@ -307,16 +308,13 @@ export class EventDetailDrawerComponent {
     }
   }
 
-  /** Money to one decimal — CPA and other derived figures arrive at full float precision. */
+  /**
+   * Money to one decimal, compacted to K/M above a thousand. CPA and other derived figures arrive
+   * at full float precision, and dense card stats would wrap without the compact form. One helper
+   * for every money value in this drawer, so the summary tiles and the tables can't disagree.
+   */
   protected money(value: number): string {
     return formatCompactRounded(value, '$');
-  }
-
-  /** Compact money for dense card stats — keeps $1.2K/$11.9M from wrapping the tile. */
-  protected moneyCompact(value: number): string {
-    if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-    if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-    return this.money(value);
   }
 
   /** Percentage to one decimal, or an em dash when it can't be computed. */
