@@ -9,7 +9,8 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, EMAIL_CAMPAIGN_LIMIT, lfxColors, ON_TRACK_PERCENT_THRESHOLD, PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
-import { formatCompactRounded, formatNumber, formatPercent } from '@lfx-one/shared/utils';
+import { formatNumber } from '@lfx-one/shared/utils';
+import { MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
@@ -21,7 +22,18 @@ import type { EventDetailResponse, EventPaidCampaign } from '@lfx-one/shared/int
 @Component({
   selector: 'lfx-event-detail-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, DrawerModule, Skeleton, ButtonComponent, CardComponent, TagComponent, ChartComponent],
+  imports: [
+    NgClass,
+    DrawerModule,
+    Skeleton,
+    ButtonComponent,
+    CardComponent,
+    TagComponent,
+    ChartComponent,
+    MetricMoneyPipe,
+    MetricNumberPipe,
+    MetricPercentPipe,
+  ],
   templateUrl: './event-detail-drawer.component.html',
 })
 export class EventDetailDrawerComponent {
@@ -90,6 +102,10 @@ export class EventDetailDrawerComponent {
         ...c,
         // Same campaign can run on two platforms, so neither field alone is a stable @for key.
         key: `${c.name}::${c.platform}`,
+        // Resolved here rather than in the template: a method call in the binding re-runs on every
+        // change-detection pass (docs/reviews/frontend-checklist.md §4), and this list re-renders
+        // whenever the drawer does.
+        icon: this.platformIcon(c.platform),
         ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : null,
         sharePercent: totalSpend > 0 ? Math.round((c.spend / totalSpend) * 100) : 0,
         // Efficiency read against this event's own blended CPA — not an absolute benchmark.
@@ -187,8 +203,9 @@ export class EventDetailDrawerComponent {
   // Whether we have a daily curve to plot (needs the drilldown prediction data).
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
 
-  // Registration-pacing line chart: the predicted average with its low/high band, over
-  // days-to-event. No actuals series — see the pacing query for why the warehouse cannot back one.
+  // Registration-pacing line chart over days-to-event: the predicted average with its low/high
+  // band, plus the current-year actuals and — when the event has a prior edition — last year's
+  // curve. The actuals come from the _DRILLDOWN table's per-day cumulative columns.
   protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
 
   protected readonly pacingChartOptions: ChartOptions<'line'> = {
@@ -291,10 +308,6 @@ export class EventDetailDrawerComponent {
   }
 
   // === Protected Helpers (template) ===
-  protected num(value: number): string {
-    return formatNumber(value);
-  }
-
   /** lfx-tag severity for the registration-pace rating. */
   protected paceSeverity(): 'success' | 'warn' | 'danger' | 'secondary' {
     switch (this.detail()?.compScore) {
@@ -310,24 +323,10 @@ export class EventDetailDrawerComponent {
   }
 
   /**
-   * Money to one decimal, compacted to K/M above a thousand. CPA and other derived figures arrive
-   * at full float precision, and dense card stats would wrap without the compact form. One helper
-   * for every money value in this drawer, so the summary tiles and the tables can't disagree.
-   */
-  protected money(value: number): string {
-    return formatCompactRounded(value, '$');
-  }
-
-  /** Percentage to one decimal, or an em dash when it can't be computed. */
-  protected pct(value: number | null): string {
-    return value === null ? '—' : `${formatPercent(value)}%`;
-  }
-
-  /**
    * Brand icon per ad platform. Falls back to a generic bullhorn so an unmapped
    * platform still renders a sensible row rather than an empty gutter.
    */
-  protected platformIcon(platform: string): string {
+  private platformIcon(platform: string): string {
     const p = platform.toLowerCase();
     if (p.includes('google')) return 'fa-brands fa-google';
     if (p.includes('linkedin')) return 'fa-brands fa-linkedin';

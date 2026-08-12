@@ -728,18 +728,6 @@ export interface EventEmailCampaign {
 }
 
 /** Top-level channel-type bucket for the collapsible attribution tree. */
-export type EventChannelType = 'Paid' | 'Social' | 'Email' | 'Web';
-
-/** One channel-type group with its rolled-up totals and the individual channels beneath it. */
-export interface EventChannelGroup {
-  type: EventChannelType;
-  sessions: number;
-  revenue: number;
-  /** Share of the event's total sessions, 0–100. */
-  sharePercent: number;
-  /** Individual channels within this type (the drill-down level). */
-  channels: EventChannelAttribution[];
-}
 
 /**
  * One point on the registration-pacing curve, keyed by days-to-event (x-axis).

@@ -217,7 +217,12 @@ export interface EmailTypeRow {
 export interface TopCampaignRow {
   name: string;
   type: string;
-  /** Formatted send date (e.g. "Jul 14, 2026"), or an em dash when the source row has no date. */
+  /**
+   * Formatted send date (e.g. "Jul 14, 2026"), or an em dash when the source row has no date.
+   * Already display-ready — the raw nullable YYYY-MM-DD lives on EmailCampaignPerformance; this
+   * is the view-model, so the template renders it directly and the @for track key uses it to tell
+   * repeated sends of one campaign apart.
+   */
   sendDate: string;
   sends: string;
   opens: string;

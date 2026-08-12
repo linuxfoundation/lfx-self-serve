@@ -2635,17 +2635,20 @@ export class ProjectService {
       // EMAIL_CAMPAIGN_PERFORMANCE has no LF_SUB_DOMAIN_CLASSIFICATION column, so the query above
       // could only be foundation-scoped. Narrow the rows here by their EMAIL_TYPE instead, so a
       // focused view (e.g. Events) doesn't show newsletter/survey/conversion emails alongside it.
-      // Falls back to the unfiltered rows when the mapping matches nothing, so an unexpected
-      // EMAIL_TYPE vocabulary degrades to over-showing rather than to an empty table.
+      //
+      // No fallback to the unfiltered rows when the mapping matches nothing: under an Events focus
+      // that renders newsletters and surveys as event analytics, which is a wrong answer rather
+      // than a partial one. An empty table is honest, and the warning below still names the
+      // EMAIL_TYPE vocabulary that failed to match so the mapping can be corrected.
       const focusEmailTypes = classification ? CLASSIFICATION_TO_EMAIL_TYPES[classification] : undefined;
       const allowedEmailTypes = focusEmailTypes ? new Set(focusEmailTypes.map((type) => type.toUpperCase())) : undefined;
       const scopedPerfRows = allowedEmailTypes
         ? campaignPerfResult.rows.filter((row) => allowedEmailTypes.has((row.EMAIL_TYPE ?? '').trim().toUpperCase()))
         : campaignPerfResult.rows;
-      const effectivePerfRows = allowedEmailTypes && scopedPerfRows.length === 0 ? campaignPerfResult.rows : scopedPerfRows;
+      const effectivePerfRows = scopedPerfRows;
 
       if (allowedEmailTypes && scopedPerfRows.length === 0 && campaignPerfResult.rows.length > 0) {
-        logger.warning(undefined, 'get_email_ctr', 'No rows matched the focus EMAIL_TYPE mapping, showing all email types', {
+        logger.warning(undefined, 'get_email_ctr', 'No rows matched the focus EMAIL_TYPE mapping, returning an empty breakdown', {
           foundation_slug: foundationSlug,
           classification,
           expected_email_types: [...allowedEmailTypes],
@@ -2714,8 +2717,14 @@ export class ProjectService {
             openRate,
             ctr,
             performance: getPerformanceLabel(openRate, ctr),
-            // Uncapped: the email tab lists every send in the selected period, so a cap here would
-            // silently truncate the table (and understate campaignCount's distinct-name tally).
+            // Uncapped deliberately. Two reasons, and the aggregate totals are not one of them —
+            // totalSends/totalOpens/totalClicks accumulate above this list, so a cap could not
+            // understate them:
+            //   1. campaignCount counts distinct names over exactly this array, so truncating it
+            //      would undercount the campaigns behind the totals shown beside it.
+            //   2. The email tab consumes the full list (it renders every send in the period with
+            //      its date). The five-row slice in the current client is the pre-split view; a
+            //      server-side cap would then be a second, invisible truncation on top of it.
             campaigns: data.campaigns
               .sort((a, b) => b.sends - a.sends)
               .map((c) => ({
@@ -5393,7 +5402,16 @@ export class ProjectService {
     // Enrich with paid + email campaign detail. Neither source table has an EVENT_ID, so both
     // match on the event name (fuzzy substring). Failures degrade to empty arrays — the drawer
     // still renders the attribution tree without the drill-down.
-    const { paidCampaigns, emailCampaigns } = await this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug);
+    // Started together: campaign enrichment and pacing are independent reads, and awaiting the
+    // first before the second even begins added a full Snowflake round-trip to drawer latency.
+    // getEventCampaignDetail catches per-side, and getEventPacing returns an unavailable block for
+    // an unmaterialized table. A pacing error of any other kind still fails the whole call, which
+    // is the pre-existing contract — it was awaited in the return object before — not something
+    // Promise.all introduces here.
+    const [{ paidCampaigns, emailCampaigns }, pacing] = await Promise.all([
+      this.getEventCampaignDetail(row.EVENT_NAME, foundationSlug, row.START_DATE),
+      this.getEventPacing(eventId),
+    ]);
 
     return {
       eventId: row.EVENT_ID,
@@ -5423,7 +5441,7 @@ export class ProjectService {
       channels,
       paidCampaigns,
       emailCampaigns,
-      pacing: await this.getEventPacing(eventId),
+      pacing,
     };
   }
 
@@ -6368,11 +6386,6 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
-               CASE
-                 WHEN SUM(TOTAL_CLICKS_YTD) > 0
-                   THEN SUM(TOTAL_CLICKS_YTD * LAST_TOUCH_CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD)
-                 ELSE 0
-               END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -6385,11 +6398,6 @@ export class ProjectService {
                CASE WHEN SUM(TOTAL_SPEND_YTD) > 0 THEN SUM(LINEAR_REVENUE_YTD) / SUM(TOTAL_SPEND_YTD) ELSE 0 END AS LINEAR_ROAS_YTD,
                CASE WHEN SUM(TOTAL_CLICKS_YTD) > 0 THEN SUM(TOTAL_SPEND_YTD) / SUM(TOTAL_CLICKS_YTD) ELSE 0 END AS AVG_CPC_YTD,
                CASE WHEN SUM(TOTAL_IMPRESSIONS_YTD) > 0 THEN SUM(TOTAL_CLICKS_YTD) / SUM(TOTAL_IMPRESSIONS_YTD) * 100 ELSE 0 END AS CTR_YTD,
-               CASE
-                 WHEN SUM(TOTAL_CLICKS_YTD) > 0
-                   THEN SUM(TOTAL_CLICKS_YTD * LAST_TOUCH_CONVERSION_RATE_YTD) / SUM(TOTAL_CLICKS_YTD)
-                 ELSE 0
-               END AS CONVERSION_RATE_YTD,
                SUM(FIRST_TOUCH_REVENUE_YTD) AS FIRST_TOUCH_REVENUE_YTD, SUM(LAST_TOUCH_REVENUE_YTD) AS LAST_TOUCH_REVENUE_YTD,
                SUM(LINEAR_REVENUE_YTD) AS LINEAR_REVENUE_YTD, SUM(TIME_DECAY_REVENUE_YTD) AS TIME_DECAY_REVENUE_YTD,
                AVG(SPEND_YOY_CHANGE_PCT) AS SPEND_YOY_CHANGE_PCT, AVG(IMPRESSIONS_YOY_CHANGE_PCT) AS IMPRESSIONS_YOY_CHANGE_PCT
@@ -7264,10 +7272,12 @@ export class ProjectService {
         SUM(p.CLICKS) AS CLICKS,
         SUM(p.SPEND) AS SPEND,
         SUM(p.IMPRESSIONS) AS IMPRESSIONS,
-        SUM(p.VIEW_THROUGH_CONVERSIONS) AS CONVERSIONS,
+        -- Traffic only. Conversions are NOT read from this table: KeywordPerformanceRow models it
+        -- as traffic-only and the mapper derives authoritative conversions from
+        -- PAID_ADS_KEYWORD_ATTRIBUTION. Selecting VIEW_THROUGH_CONVERSIONS here added a warehouse
+        -- column dependency for a value nothing consumed.
         CASE WHEN SUM(p.IMPRESSIONS) > 0 THEN SUM(p.CLICKS) / SUM(p.IMPRESSIONS) * 100 ELSE 0 END AS CTR,
-        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC,
-        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.VIEW_THROUGH_CONVERSIONS) / SUM(p.CLICKS) * 100 ELSE 0 END AS CONVERSION_RATE
+        CASE WHEN SUM(p.CLICKS) > 0 THEN SUM(p.SPEND) / SUM(p.CLICKS) ELSE 0 END AS CPC
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE p
       INNER JOIN top_keywords k
         ON p.KEYWORD_TEXT = k.KEYWORD_TEXT AND p.KEYWORD_MATCH_TYPE = k.KEYWORD_MATCH_TYPE
@@ -7412,7 +7422,8 @@ export class ProjectService {
    */
   private async getEventCampaignDetail(
     eventName: string,
-    foundationSlug: string
+    foundationSlug: string,
+    eventStartDate: string | null
   ): Promise<{ paidCampaigns: EventPaidCampaign[]; emailCampaigns: EventEmailCampaign[] }> {
     interface PaidRow {
       CAMPAIGN_NAME: string | null;
@@ -7457,6 +7468,28 @@ export class ProjectService {
     // FOUNDATION_SLUG and are filtered on it everywhere else, so do the same here.
     const campaignScope = buildFoundationFilter(foundationSlug);
 
+    // Name matching alone cannot separate editions: the year-stripped pattern exists to catch
+    // campaigns that omit the year, but it equally matches the 2025 edition of a 2026 event, so
+    // last year's spend would be attributed to this year's event.
+    //
+    // The window is nine months back, not twelve: most of these events run annually, and a full
+    // twelve-month lookback reaches the previous edition's own campaign month — the exact overlap
+    // this filter exists to prevent. Nine months still covers a normal run-up.
+    //
+    // Bounds are truncated to month starts because CAMPAIGN_MONTH is month-grained (the other
+    // reads of this table bound it with month-aligned period ranges). Day-level arithmetic off a
+    // mid-month event date would clip the first lookback month and include the trailing month only
+    // when the day-of-month happened to line up.
+    //
+    // Omitted (unbounded) when the event carries no start date, which is rare and where a wide
+    // match is still better than an empty breakdown.
+    const editionFilter = eventStartDate
+      ? "AND {col} >= DATE_TRUNC('MONTH', DATEADD('MONTH', -9, TO_DATE(?))) AND {col} < DATE_TRUNC('MONTH', DATEADD('MONTH', 2, TO_DATE(?)))"
+      : '';
+    const paidEdition = editionFilter.replaceAll('{col}', 'CAMPAIGN_MONTH');
+    const emailEdition = editionFilter.replaceAll('{col}', 'PUBLISHED_DATE');
+    const editionParams = eventStartDate ? [eventStartDate, eventStartDate] : [];
+
     const match = `%${lower}%`;
     const matchNoYear = `%${lowerNoYear}%`;
 
@@ -7477,6 +7510,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
       WHERE (LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\' OR LOWER(CAMPAIGN_NAME) LIKE ? ESCAPE '\\\\')
         ${campaignScope.filterAnd}
+        ${paidEdition}
       GROUP BY CAMPAIGN_NAME, CHANNEL
       ORDER BY SPEND DESC
       -- Capped: the drawer is a top-spenders view, not a ledger. The client labels its summary
@@ -7500,6 +7534,7 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
       WHERE LOWER(MARKETING_EMAIL_NAME) LIKE ? ESCAPE '\\\\'
         ${campaignScope.filterAnd}
+        ${emailEdition}
       GROUP BY MARKETING_EMAIL_NAME
       ORDER BY SENDS DESC
       -- Same contract as the paid cap above: a top-sends view, labelled as such client-side.
@@ -7525,13 +7560,13 @@ export class ProjectService {
       this.executeWithLegacyConversionFallback<PaidRow>({
         primaryQuery: paidQuery('LAST_TOUCH_CONVERSIONS'),
         legacyQuery: paidQuery('CONV'),
-        params: [match, matchNoYear, ...campaignScope.params],
+        params: [match, matchNoYear, ...campaignScope.params, ...editionParams],
         operation: 'get_event_campaign_detail',
         foundationSlug,
         retryMessage: 'Paid campaign enrichment retrying with legacy CONV column',
         degradeMessage: 'Paid campaign enrichment failed, degrading to empty',
       }),
-      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear, ...campaignScope.params]).catch((error) => {
+      this.snowflakeService.execute<EmailRow>(emailQuery, [matchNoYear, ...campaignScope.params, ...editionParams]).catch((error) => {
         logger.warning(undefined, 'get_event_campaign_detail', 'Email campaign enrichment failed, degrading to empty', {
           event_name: eventName,
           err: error,
@@ -7915,8 +7950,13 @@ export class ProjectService {
       PRED_HIGH: number | null;
     }
 
-    // The daily pacing series lives in the single MARKETING_EVENT_REGISTRATION_PREDICTIONS table,
-    // grained by EVENT_ID x EVENT_REGISTRATION_TYPE x DAYS_TO_EVENT. There is no _DRILLDOWN table.
+    // Two tables, deliberately. The headline reads MARKETING_EVENT_REGISTRATION_PREDICTIONS, which
+    // is event-grained and carries the FINAL_* totals; the daily curve reads
+    // MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN, which is the only place the per-day
+    // CURRENT_EVENT_*/CUMULATIVE_* columns exist. Pointing either query at the other's table raises
+    // an invalid identifier, which propagates and fails the whole drawer — a rebuild collapsed them
+    // onto one table once already, so the split is asserted by a test.
+    // Both are grained by EVENT_ID x EVENT_REGISTRATION_TYPE (x DAYS_TO_EVENT on the drilldown).
     // EVENT_REGISTRATION_TYPE (In Person / Virtual) means an event/day can have multiple rows, so we
     // SUM across types per DAYS_TO_EVENT to get one point on the curve (never sum types blindly elsewhere).
     // Headline. FINAL_* columns are event-level constants (identical on every DAYS_TO_EVENT row),
@@ -7948,15 +7988,20 @@ export class ProjectService {
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        -- CURRENT_EVENT_*, not FINAL_CURRENT_* — the FINAL_ columns are event-level constants
-        -- repeated on every DAYS_TO_EVENT row (see headQuery above), so summing one per day would
-        -- draw the current-year line flat at the final total instead of a rising curve.
+        -- The per-day curve lives on _DRILLDOWN, not on the base predictions table: the base table
+        -- is event-grained and carries only the FINAL_* totals headQuery reads. These
+        -- CURRENT_EVENT_*/CUMULATIVE_* columns exist solely on the drilldown, so pointing this
+        -- query at the base table asks for identifiers that are not there.
+        --
+        -- CURRENT_EVENT_*, not FINAL_CURRENT_*: the FINAL_ columns are event-level constants
+        -- repeated on every DAYS_TO_EVENT row, so plotting one per day would draw the current-year
+        -- line flat at the final total instead of a rising curve.
         SUM(CURRENT_EVENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
         SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
         SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
         SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
         SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
       WHERE EVENT_ID = ?
       GROUP BY DAYS_TO_EVENT
       ORDER BY DAYS_TO_EVENT DESC
@@ -7990,8 +8035,16 @@ export class ProjectService {
       ]);
       const pointsResult = { rows: pointsSettled };
 
+      // An aggregate with no outer GROUP BY always returns exactly one row, so a row object alone
+      // does not mean the event has prediction data — with no matching EVENT_ID every column comes
+      // back NULL. Truthiness would then report available: true and render a fabricated
+      // "Current 0 / Predicted 0" headline instead of the unavailable placeholder, which reads as
+      // a measured zero rather than an absent model. Require at least one real value.
       const head = headResult.rows?.[0];
-      if (!head) return unavailable;
+      const hasPrediction =
+        head !== undefined &&
+        [head.DAYS_LEFT, head.CUR_REGS, head.PRIOR, head.PRED_AVG, head.PRED_LOW, head.PRED_HIGH].some((value) => value !== null && value !== undefined);
+      if (!hasPrediction) return unavailable;
 
       return {
         available: true,

@@ -173,6 +173,7 @@
             <!-- Table Header -->
             <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
               <span class="flex-[2] min-w-[120px]">Type / Campaign</span>
+              <span class="flex-1 text-right">Send Date</span>
               <span class="flex-1 text-right">Sends</span>
               <span class="flex-1 text-right">Opens</span>
               <span class="flex-1 text-right">Open Rate</span>
@@ -196,6 +197,8 @@
                 <span class="flex-[2] min-w-[120px]">
                   <lfx-tag [value]="type.emailType | titlecase" severity="warn" [rounded]="true" />
                 </span>
+                <!-- The type row aggregates every send date, so the column is intentionally blank here. -->
+                <span class="flex-1"></span>
                 <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalSends) }}</span>
                 <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalOpens) }}</span>
                 <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.openRate | number: '1.1-1' }}%</span>
@@ -208,9 +211,13 @@
 
               <!-- Expanded Campaign Rows -->
               @if (expandedTypes().has(type.emailType)) {
-                @for (campaign of type.campaigns; track campaign.campaignName + '|' + campaign.sends) {
+                <!-- sendDate in the key and on the row: the breakdown groups by PUBLISHED_DATE, so one
+                     campaign sent twice yields two rows. Without the date they carry duplicate track
+                     keys when the send counts also match, and read as the same row on screen. -->
+                @for (campaign of type.campaigns; track campaign.campaignName + '|' + campaign.sendDate + '|' + campaign.sends) {
                   <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-campaign-row">
                     <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-500">{{ campaign.sendDate || '—' }}</span>
                     <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.sends) }}</span>
                     <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.opens) }}</span>
                     <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.openRate | number: '1.1-1' }}%</span>
