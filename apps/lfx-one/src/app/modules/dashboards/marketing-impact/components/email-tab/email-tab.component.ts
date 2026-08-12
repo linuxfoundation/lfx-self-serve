@@ -188,6 +188,7 @@ export class EmailTabComponent {
           (c): TopCampaignRow => ({
             name: c.campaignName,
             type: c.emailType,
+            sendDate: c.sendDate ?? null,
             sends: formatNumber(c.sends),
             opens: formatNumber(c.opens),
             openRate: `${c.openRate.toFixed(1)}%`,
