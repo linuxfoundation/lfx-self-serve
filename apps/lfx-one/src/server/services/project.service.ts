@@ -28,6 +28,7 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   EventCompScore,
+  EventDetailResponse,
   EventGrowthResponse,
   EventGrowthTopEvent,
   EventRosterResponse,
@@ -5148,6 +5149,127 @@ export class ProjectService {
     }));
 
     return { projectId: '', events };
+  }
+
+  /**
+   * Get per-event detail for the roster drawer — event meta, registration/sponsorship
+   * actual-vs-goal, comparison rating, and a sponsorship-by-tier breakdown.
+   *
+   * Meta comes from MARKETING_EVENT_REGISTRATIONS (one row per event) and the tier breakdown
+   * from MARKETING_EVENT_SPONSORSHIPS_BY_TIER. No daily-pacing time-series exists in these
+   * tables (that is PCC's prediction service); the drawer deep-links to eventUrl for pacing.
+   */
+  public async getEventDetail(eventId: string, foundationSlug: string): Promise<EventDetailResponse | null> {
+    logger.debug(undefined, 'get_event_detail', 'Fetching event detail from Snowflake', {
+      event_id: eventId,
+      foundation_slug: foundationSlug,
+    });
+
+    interface EventRow {
+      EVENT_ID: string;
+      EVENT_NAME: string;
+      START_DATE: string;
+      EVENT_COUNTRY: string | null;
+      EVENT_URL: string | null;
+      REG_ACTUAL: number | null;
+      REG_GOAL: number | null;
+      SPON_GOAL: number | null;
+      VS_LY: number | null;
+      COMP_SCORE: string | null;
+      CFP_STATUS: string | null;
+    }
+
+    interface TierRow {
+      SPONSORSHIP_TIER: string | null;
+      REVENUE: number;
+      SPONSOR_COUNT: number;
+    }
+
+    // Scoped by foundation as well as event id: the id alone carries no ownership, so without the
+    // slug_resolve join any ED could read another foundation's event by guessing its id. A caller
+    // asking for an event outside their foundation gets the same null as a nonexistent one.
+    const eventQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        r.EVENT_ID,
+        r.EVENT_NAME,
+        TO_CHAR(r.EVENT_START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        r.EVENT_COUNTRY,
+        r.EVENT_URL,
+        r.COUNT_REGISTRATIONS_ALL_TIME AS REG_ACTUAL,
+        r.EVENT_REGISTRATIONS_GOAL AS REG_GOAL,
+        r.EVENT_SPONSORSHIP_REVENUE_GOAL AS SPON_GOAL,
+        r.PERCENT_COMPARISON_TO_PREV_YEAR AS VS_LY,
+        r.COMP_SCORE,
+        r.CFP_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS r
+      INNER JOIN slug_resolve sr ON r.PROJECT_ID = sr.project_id
+      WHERE r.EVENT_ID = ?
+      LIMIT 1
+    `;
+
+    // SPONSORSHIP_TIER is free text, so NULL and '' both occur and would group separately while
+    // mapping to the same client-side tier name — two rows with an identical track key, one of
+    // which Angular drops. Collapse both to 'Other' before the GROUP BY so they sum into one row.
+    // Scoped by foundation for the same reason as the event query — the tier breakdown is the
+    // sponsorship revenue detail, so leaving it unscoped would leak the numbers the join above
+    // protects.
+    const tierQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        COALESCE(NULLIF(TRIM(t.SPONSORSHIP_TIER), ''), 'Other') AS SPONSORSHIP_TIER,
+        SUM(IFNULL(t.SPONSORSHIP_REV_ALL_TIME, 0)) AS REVENUE,
+        SUM(IFNULL(t.SPONSORSHIP_COUNT_ALL_TIME, 0)) AS SPONSOR_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER t
+      INNER JOIN slug_resolve sr ON t.PROJECT_ID = sr.project_id
+      WHERE t.EVENT_ID = ?
+      GROUP BY COALESCE(NULLIF(TRIM(t.SPONSORSHIP_TIER), ''), 'Other')
+      ORDER BY REVENUE DESC
+    `;
+
+    const [eventResult, tierResult] = await Promise.all([
+      this.snowflakeService.execute<EventRow>(eventQuery, [foundationSlug, eventId]),
+      this.snowflakeService.execute<TierRow>(tierQuery, [foundationSlug, eventId]),
+    ]);
+
+    const row = eventResult.rows?.[0];
+    if (!row) {
+      logger.warning(undefined, 'get_event_detail', 'No event row for id', { event_id: eventId });
+      return null;
+    }
+
+    const normalizeScore = (score: string | null): EventCompScore => {
+      const s = (score ?? '').toLowerCase();
+      return s === 'high' || s === 'medium' || s === 'low' ? s : 'unknown';
+    };
+
+    const sponsorshipActual = tierResult.rows.reduce((sum, t) => sum + (t.REVENUE ?? 0), 0);
+
+    return {
+      eventId: row.EVENT_ID,
+      eventName: row.EVENT_NAME,
+      startDate: row.START_DATE,
+      country: row.EVENT_COUNTRY ?? '',
+      eventUrl: row.EVENT_URL ?? '',
+      registrations: { actual: row.REG_ACTUAL ?? 0, goal: row.REG_GOAL ?? 0 },
+      sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
+      vsLastYear: row.VS_LY,
+      compScore: normalizeScore(row.COMP_SCORE),
+      cfpStatus: row.CFP_STATUS ?? '',
+      sponsorshipTiers: tierResult.rows.map((t) => ({
+        tier: t.SPONSORSHIP_TIER ?? '',
+        revenue: t.REVENUE ?? 0,
+        sponsorCount: t.SPONSOR_COUNT ?? 0,
+      })),
+    };
   }
 
   /**

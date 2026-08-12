@@ -2817,6 +2817,58 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/event-detail
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   */
+  public async getEventDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_event_detail');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      // Required alongside eventId: a bare event id would let any ED read another foundation's
+      // sponsorship revenue and goals, since the id alone carries no ownership information.
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      const eventId = getStringQueryParam(req, 'eventId');
+
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_event_detail',
+        });
+      }
+
+      const response = await this.projectService.getEventDetail(eventId, foundationSlug);
+
+      logger.success(req, 'get_event_detail', startTime, {
+        event_id: eventId,
+        foundation_slug: foundationSlug,
+        found: response !== null,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/brand-reach
    * Get brand reach metrics (total digital reach across social + owned sites)
    */

@@ -353,6 +353,73 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       await expect(service.getEventsOverviewSummary('tlf')).rejects.toBe(failure);
     });
   });
+
+  describe('getEventDetail', () => {
+    const eventRow = {
+      EVENT_ID: 'evt-1',
+      EVENT_NAME: 'KubeCon NA',
+      START_DATE: '2026-11-10',
+      EVENT_COUNTRY: 'United States',
+      EVENT_URL: 'https://events.example.org/kubecon',
+      REG_ACTUAL: 900,
+      REG_GOAL: 1000,
+      SPON_GOAL: 1000000,
+      VS_LY: 1.1,
+      COMP_SCORE: 'high',
+      CFP_STATUS: 'Review Complete',
+    };
+
+    // Ordered mock: the event query resolves first, the tier query second.
+    function mockReads(event: unknown[], tiers: unknown[]): void {
+      execute.mockResolvedValueOnce({ rows: event }).mockResolvedValueOnce({ rows: tiers });
+    }
+
+    it('maps the event and its tier breakdown', async () => {
+      mockReads(
+        [eventRow],
+        [
+          { SPONSORSHIP_TIER: 'Diamond', REVENUE: 300000, SPONSOR_COUNT: 2 },
+          { SPONSORSHIP_TIER: 'Gold', REVENUE: 200000, SPONSOR_COUNT: 4 },
+        ]
+      );
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventName).toBe('KubeCon NA');
+      // Sponsorship actual is summed from the tier rows, not read from the event row.
+      expect(result?.sponsorshipRevenue).toEqual({ actual: 500000, goal: 1000000 });
+      expect(result?.sponsorshipTiers).toHaveLength(2);
+    });
+
+    // Both queries are scoped by foundation: the event id alone carries no ownership, so an ED
+    // could otherwise read another foundation's sponsorship revenue by guessing an id.
+    it('binds the foundation slug ahead of the event id in both reads', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      for (const [sql, binds] of execute.mock.calls) {
+        expect(sql).toContain('slug_resolve');
+        expect(binds).toEqual(['tlf', 'evt-1']);
+      }
+    });
+
+    // An event outside the caller's foundation is filtered out by the slug_resolve join, so it
+    // is indistinguishable from a nonexistent one — no existence oracle for other foundations.
+    it('returns null when the event is not in the caller’s foundation', async () => {
+      mockReads([], []);
+
+      await expect(service.getEventDetail('evt-1', 'other-foundation')).resolves.toBeNull();
+    });
+
+    it('propagates Snowflake failures rather than resolving a partial event', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+  });
 });
 
 describe('ProjectService — paid ads compatibility', () => {
