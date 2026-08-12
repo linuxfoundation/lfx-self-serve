@@ -258,6 +258,25 @@ export interface NewsletterDailyOpens {
   unique_opens: number;
 }
 
+export interface NewsletterDailyClicks {
+  date: string;
+  clicks: number;
+  unique_clicks: number;
+}
+
+/**
+ * One row of the aggregate `top_links` breakdown (lfx-v2-newsletter-service PR
+ * #76). Capped upstream at the 20 highest-`clicks` URLs and already sorted by
+ * `clicks` descending — clients should not re-sort. Compliance-footer links
+ * (Unsubscribe, My Newsletters) are excluded upstream, so this reflects
+ * author content only.
+ */
+export interface NewsletterLinkClicks {
+  url: string;
+  clicks: number;
+  unique_clicks: number;
+}
+
 export interface NewsletterAnalytics {
   newsletter_id: string;
   subject: string;
@@ -275,6 +294,22 @@ export interface NewsletterAnalytics {
   open_rate: number;
   daily_opens: NewsletterDailyOpens[];
   last_event_at?: string;
+  // Click metrics (lfx-v2-newsletter-service PR #76). Non-pointer upstream — always
+  // present once deployed, arrays never null — but optional here so the interface
+  // stays truthful against a pre-deploy newsletter-service. CRITICAL: these are
+  // SendGrid-only. A newsletter sent via email-service (SES) always reports zeros /
+  // empty arrays here, and `send_provider` is not exposed on any public DTO, so a
+  // client cannot distinguish "clicks unmeasurable" from "zero clicks". Every click
+  // UI element must therefore be gated on a single derived "has click data" rule
+  // rather than rendering a misleading 0%.
+  total_clicks?: number;
+  unique_clicks?: number;
+  /** 0-1 fraction of delivered emails (same denominator as `open_rate`); multiply by 100 for display. */
+  click_rate?: number;
+  /** 0-1 fraction of unique opens, clamped to 1.0 upstream; `0` when there are no opens. */
+  click_to_open_rate?: number;
+  daily_clicks?: NewsletterDailyClicks[];
+  top_links?: NewsletterLinkClicks[];
 }
 
 /**
@@ -299,6 +334,14 @@ export interface NewsletterRecipientEngagement {
   // Every recorded open timestamp, ascending. Always present (empty array when
   // the recipient never opened); capped at the 500 most recent opens.
   opened_at_list: string[];
+  // Click fields (lfx-v2-newsletter-service PR #76). Same shape and 500-entry cap
+  // as the open fields above. SendGrid-only: on an email-service (SES) newsletter
+  // these are always `false` / `0` / omitted / `[]`. Optional for the same
+  // pre-deploy-truthfulness reason as NewsletterAnalytics' click fields.
+  clicked?: boolean;
+  click_count?: number;
+  last_clicked_at?: string;
+  clicked_at_list?: string[];
 }
 
 /**
@@ -335,10 +378,25 @@ export interface NewsletterRecipientRow extends NewsletterRecipientEngagement {
   // Precomputed so the template never calls a component method for formatting
   // (re-runs every CD cycle) — null when there's no last_opened_at to format.
   lastOpenedRelative: string | null;
+  // Click fields narrowed to required and normalized (`?? false` / `?? 0` / `?? []`)
+  // at row-build time, so the template never needs optional chaining on them.
+  clicked: boolean;
+  click_count: number;
+  clicked_at_list: string[];
+  /** Mirrors `lastOpenedRelative` for `last_clicked_at`; null when absent. */
+  lastClickedRelative: string | null;
 }
 
-/** Filter chip key for the recipient engagement table — `'all'` plus every `NewsletterRecipientEngagementSegment`. */
-export type NewsletterRecipientEngagementChipKey = 'all' | NewsletterRecipientEngagementSegment;
+/**
+ * Filter chip key for the recipient engagement table — `'all'` plus every
+ * `NewsletterRecipientEngagementSegment`, plus `'clicked'`. `'clicked'` is
+ * deliberately NOT a `NewsletterRecipientEngagementSegment`: clicking is
+ * orthogonal to the mutually-exclusive opened/not-opened/failed bucket (a
+ * clicker is usually also an opener, and an image-blocked clicker can still be
+ * 'not-opened'), so the Clicked chip's count overlaps 'Opened' and the chip
+ * counts do not sum to the 'all' count.
+ */
+export type NewsletterRecipientEngagementChipKey = 'all' | NewsletterRecipientEngagementSegment | 'clicked';
 
 /** One filter chip above the recipient engagement table, with its live count. */
 export interface NewsletterRecipientEngagementChipConfig {
@@ -376,6 +434,17 @@ export interface NewsletterChartDataset {
 export interface NewsletterChartData {
   labels: string[];
   datasets: NewsletterChartDataset[];
+}
+
+/**
+ * UI row for the "Top clicked links" table. `href` is the result of running
+ * the untrusted upstream `url` through `normalizeToUrl`, precomputed so the
+ * template neither calls a method nor re-validates on every CD cycle; `null`
+ * when the URL fails validation, in which case the raw string renders as
+ * unlinked text instead of an anchor.
+ */
+export interface NewsletterLinkRow extends NewsletterLinkClicks {
+  href: string | null;
 }
 
 export interface NewsletterOptOut {
