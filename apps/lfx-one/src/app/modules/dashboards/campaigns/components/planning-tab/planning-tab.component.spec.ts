@@ -385,6 +385,40 @@ describe('PlanningTabComponent brief read-back', () => {
    * The first lookup is a Subject that answers only AFTER the slug changed, which is what makes
    * the two orderings distinguishable: under the buggy order its value still lands.
    */
+  it('re-fetches the offer when the url changes and reverts inside the debounce window', async () => {
+    // `distinctUntilChanged` must sit BEFORE `debounceTime`, and this is the case that proves it:
+    // with the debounce first, a key that changes and reverts inside the 500ms window never
+    // reaches the comparer as an intermediate value. The eager clear in `onUrlInput` has already
+    // wiped `savedBrief`, the comparer then drops the reverted pair as unchanged, and no lookup
+    // runs -- the offer stranded for a brief that exists.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a' }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(savedBrief()).toEqual(exampleBrief);
+
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      onUrlInput(): void;
+    };
+
+    // Change and revert WITHOUT waiting out the debounce.
+    component.briefForm.controls.url.setValue('https://events.example.com/oss-na-2026');
+    component.onUrlInput();
+    component.briefForm.controls.url.setValue('https://events.example.com/kubecon-eu-2026');
+    component.onUrlInput();
+    fixture.detectChanges();
+
+    // The eager clear fired, so the offer is gone right now...
+    expect(savedBrief()).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    // ...and must come back, because the original slug has to be looked up again.
+    expect(savedBrief()).toEqual(exampleBrief);
+  });
+
   it('drops an in-flight lookup when the slug changes before it answers', async () => {
     const slowFirstLookup = new Subject<CampaignBriefLoadResult>();
     campaignService.loadBrief.mockReturnValue(slowFirstLookup);

@@ -227,16 +227,24 @@ export class PlanningTabComponent implements OnInit {
     // foundation, and `combineLatest` re-runs it when either half moves. `distinctUntilChanged`
     // compares the PAIR, so a re-emission that changes neither is still dropped.
     // The response carries the key it was REQUESTED for, and `applySavedBrief` drops it when
-    // that key is no longer current. Reordering these operators cannot fix this on its own:
+    // that key is no longer current. Reordering these operators cannot fix THAT on its own:
     // `switchMap` can only unsubscribe once a value reaches it, and the debounce necessarily
     // withholds that value for 500ms, so an in-flight lookup always survives a key change made
-    // inside the window. `onUrlInput` and the foundation subscription below both clear the offer
+    // inside the window — which is why the response is keyed rather than relying on cancellation.
+    //
+    // The ORDER still matters, for a different failure, and an earlier revision had it backwards
+    // because this paragraph reads as a general argument against reordering. `distinctUntilChanged`
+    // sits FIRST so that every intermediate key reaches the comparer. With the debounce first, a
+    // key that changes and reverts inside the window never arrives as an intermediate value: the
+    // eager clear in `onUrlInput` has already wiped the offer, the comparer then drops the
+    // reverted pair as unchanged, and no lookup runs — the offer stranded for a brief that
+    // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
     combineLatest([this.slugInput$, this.activeFoundationSlug$])
       .pipe(
-        debounceTime(500),
         distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
+        debounceTime(500),
         switchMap(([slug, project]) =>
           this.campaignService.loadBrief(slug, project).pipe(
             map((result) => ({ slug, project, result })),
