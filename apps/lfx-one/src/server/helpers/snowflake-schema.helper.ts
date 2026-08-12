@@ -42,3 +42,17 @@ export function resolveLfxOnePlatinumSchema(): string {
 export function committeeEngagementTable(): string {
   return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
 }
+
+/**
+ * The Octolens-sourced mentions feed behind Social Listening (LFXV2-3002), materialized hourly by
+ * the `platinum_social_listening_feed` dbt model (`lf-dbt`). It lives in PCC's dbt schema —
+ * `ANALYTICS.PLATINUM` — not this repo's `PLATINUM_LFX_ONE` schema, so it gets its own fully
+ * qualified `database.schema.table` override (`LFX_ONE_SOCIAL_LISTENING_FEED_TABLE`) rather than
+ * reusing `resolveLfxOnePlatinumSchema()`. The override is guarded to exactly three `WORD` segments
+ * for the same reason as `snowflakeQualifier()`: anything else is rejected in favor of the default.
+ */
+export function socialListeningFeedTable(): string {
+  const override = process.env['LFX_ONE_SOCIAL_LISTENING_FEED_TABLE']?.trim();
+  const qualified = override && /^[A-Z0-9_]+\.[A-Z0-9_]+\.[A-Z0-9_]+$/i.test(override) ? override.toUpperCase() : null;
+  return qualified ?? 'ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED';
+}

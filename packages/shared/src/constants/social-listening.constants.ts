@@ -88,6 +88,9 @@ export const MENTION_FILTER_MAX_VALUES = 200;
 /** Reserved for the deferred bookmarked-mentions filter (follow-up ticket). */
 export const MENTION_IDS_MAX_VALUES = 500;
 
+/** Row cap for the `mentions-tags` endpoint — serves both the tag filter dropdown and the analytics top-tags panel. */
+export const MENTION_TOP_TAGS_LIMIT = 10;
+
 /** Interval for refreshing relative timestamps ("2h ago") on rendered mention cards. */
 export const MENTION_TIME_TICK_INTERVAL_MS = 60_000;
 

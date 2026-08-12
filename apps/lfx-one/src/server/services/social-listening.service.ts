@@ -1,43 +1,34 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SOCIAL_LISTENING_MAX_FILTER_VALUES, SOCIAL_LISTENING_MAX_MENTION_IDS, SOCIAL_LISTENING_TOP_TAGS_LIMIT, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { MENTION_FILTER_MAX_VALUES, MENTION_IDS_MAX_VALUES, MENTION_TOP_TAGS_LIMIT, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
-  SocialListeningAnalyticsOverTimePoint,
   SocialListeningAnalyticsOverview,
   SocialListeningAnalyticsParams,
-  SocialListeningAnalyticsPlatformDistribution,
-  SocialListeningAnalyticsSentimentDistribution,
-  SocialListeningAnalyticsTopProject,
   SocialListeningAuthorsParams,
   SocialListeningCountParams,
   SocialListeningFeedParams,
   SocialListeningFeedResponse,
   SocialListeningFilterParams,
-  SocialListeningKeywordsParams,
-  SocialListeningLanguagesParams,
   SocialListeningMention,
   SocialListeningMentionAuthor,
   SocialListeningOptionsParams,
+  SocialListeningOverTimePoint,
   SocialListeningPlatform,
-  SocialListeningScopeParams,
+  SocialListeningPlatformDistribution,
+  SocialListeningScopedOptionsParams,
+  SocialListeningSentimentDistribution,
   SocialListeningSubProject,
-  SocialListeningTag,
-  SocialListeningTagsParams,
+  SocialListeningTagCount,
+  SocialListeningTopProject,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withSocialListeningCache } from './valkey.service';
-
-/**
- * Octolens-sourced mentions, materialized hourly by the `platinum_social_listening_feed` dbt model
- * (`lf-dbt`). Scoped on `PROJECT_SLUG` — the foundation slug this app already carries everywhere —
- * rather than the model's `PROJECT_ID`, which is a Salesforce id the frontend never holds.
- */
-const FEED_TABLE = 'ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED';
 
 /**
  * Columns dropped from the feed projection: the upstream source id, the global `BOOKMARKED` flag
@@ -67,11 +58,8 @@ const FEED_EXCLUDED_COLUMNS = [
   'IS_PREV_12M',
 ].join(', ');
 
-/** Author options are capped so a foundation with a long tail can't build an unbounded response. */
-const AUTHOR_OPTIONS_LIMIT = 200;
-
-/** Distinct sub-projects contributing to a mention volume are the analytics "top projects" table's row cap. */
-const TOP_PROJECTS_LIMIT = 10;
+/** Distinct sub-projects contributing to a mention volume are the analytics "top projects" panel's default row cap. */
+const TOP_PROJECTS_LIMIT = 5;
 
 /**
  * Day-grain buckets stay readable up to roughly two months; anything longer rolls up to months.
@@ -135,7 +123,7 @@ export class SocialListeningService {
 
     const sql = `
       SELECT * EXCLUDE (${FEED_EXCLUDED_COLUMNS}) RENAME _KEY AS MENTION_ID
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}
       ORDER BY MENTION_TS DESC
       LIMIT ? OFFSET ?
@@ -160,7 +148,7 @@ export class SocialListeningService {
 
     const sql = `
       SELECT COUNT(*) AS TOTAL
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}
     `;
 
@@ -178,7 +166,7 @@ export class SocialListeningService {
   public async getMentionsProjects(req: Request, params: SocialListeningOptionsParams): Promise<SocialListeningSubProject[]> {
     const sql = `
       SELECT DISTINCT SOURCE_PROJECT_ID, SOURCE_PROJECT_NAME
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE PROJECT_SLUG = ?
         AND SOURCE_PROJECT_ID IS NOT NULL
         AND SOURCE_PROJECT_NAME IS NOT NULL
@@ -195,7 +183,7 @@ export class SocialListeningService {
   public async getMentionsPlatforms(req: Request, params: SocialListeningOptionsParams): Promise<SocialListeningPlatform[]> {
     const sql = `
       SELECT DISTINCT SOURCE_PLATFORM, SOCIAL_NETWORK
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE PROJECT_SLUG = ?
         AND SOURCE_PLATFORM IS NOT NULL
         AND SOURCE_PLATFORM != ''
@@ -208,12 +196,12 @@ export class SocialListeningService {
     });
   }
 
-  public async getMentionsLanguages(req: Request, params: SocialListeningLanguagesParams): Promise<string[]> {
+  public async getMentionsLanguages(req: Request, params: SocialListeningScopedOptionsParams): Promise<string[]> {
     const scope = this.buildScope(params);
 
     const sql = `
       SELECT DISTINCT LOWER(LANGUAGE) AS LANGUAGE
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
         AND LANGUAGE IS NOT NULL
         AND LANGUAGE != ''
@@ -226,12 +214,12 @@ export class SocialListeningService {
     });
   }
 
-  public async getMentionsKeywords(req: Request, params: SocialListeningKeywordsParams): Promise<string[]> {
+  public async getMentionsKeywords(req: Request, params: SocialListeningScopedOptionsParams): Promise<string[]> {
     const scope = this.buildScope(params);
 
     const sql = `
       SELECT DISTINCT LOWER(KEYWORD) AS KEYWORD
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
         AND KEYWORD IS NOT NULL
         AND KEYWORD != ''
@@ -249,13 +237,12 @@ export class SocialListeningService {
    * exploded with `LATERAL FLATTEN` before grouping. Serves both the tag filter and the analytics
    * top-tags panel — the filter sorts alphabetically client-side.
    */
-  public async getMentionsTags(req: Request, params: SocialListeningTagsParams): Promise<SocialListeningTag[]> {
+  public async getMentionsTags(req: Request, params: SocialListeningScopedOptionsParams): Promise<SocialListeningTagCount[]> {
     const scope = this.buildScope(params, 'm');
-    const limit = params.limit ?? SOCIAL_LISTENING_TOP_TAGS_LIMIT;
 
     const sql = `
       SELECT TRIM(f.VALUE::STRING) AS TAG, COUNT(*) AS TOTAL_COUNT
-      FROM ${FEED_TABLE} AS m,
+      FROM ${socialListeningFeedTable()} AS m,
         LATERAL FLATTEN(input => SPLIT(m.TAGS, ',')) AS f
       WHERE ${scope.clause}
         AND m.TAGS IS NOT NULL
@@ -266,10 +253,10 @@ export class SocialListeningService {
       LIMIT ?
     `;
 
-    const binds: QueryBind[] = [...scope.binds, limit];
+    const binds: QueryBind[] = [...scope.binds, MENTION_TOP_TAGS_LIMIT];
 
     return this.cached(req, params.foundationSlug, 'tags', binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningTag>(sql, binds);
+      const result = await this.snowflakeService.execute<SocialListeningTagCount>(sql, binds);
       return result.rows ?? [];
     });
   }
@@ -292,7 +279,7 @@ export class SocialListeningService {
                SOURCE_PLATFORM AS PLATFORM,
                SUM(COUNT(*)) OVER (PARTITION BY AUTHOR) AS MENTION_COUNT,
                ROW_NUMBER() OVER (PARTITION BY AUTHOR ORDER BY COUNT(*) DESC) AS PLATFORM_RANK
-        FROM ${FEED_TABLE}
+        FROM ${socialListeningFeedTable()}
         WHERE ${scope.clause}
           AND AUTHOR IS NOT NULL
           AND AUTHOR != ''${filters.clause}
@@ -305,7 +292,7 @@ export class SocialListeningService {
 
     logger.debug(req, 'social_listening_mentions_authors', 'Querying author options', { foundation_slug: params.foundationSlug });
 
-    const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds, AUTHOR_OPTIONS_LIMIT]);
+    const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds, MENTION_FILTER_MAX_VALUES]);
 
     return result.rows ?? [];
   }
@@ -325,7 +312,7 @@ export class SocialListeningService {
     const sql = `
       WITH base AS (
         SELECT SENTIMENT, SOURCE_PROJECT_ID, MENTION_TS
-        FROM ${FEED_TABLE}
+        FROM ${socialListeningFeedTable()}
         WHERE ${base.clause}
       ),
       current_window AS (
@@ -350,9 +337,9 @@ export class SocialListeningService {
              CASE WHEN p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
                   ELSE ROUND((c.TOTAL - p.TOTAL) / p.TOTAL::FLOAT * 100, 1) END AS TOTAL_MENTIONS_CHANGE_PCT,
              CASE WHEN c.TOTAL = 0 OR p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
-                  ELSE ROUND(c.POSITIVE / c.TOTAL::FLOAT * 100 - p.POSITIVE / p.TOTAL::FLOAT * 100, 1) END AS POSITIVE_SENTIMENT_CHANGE_PP,
+                  ELSE ROUND(c.POSITIVE / c.TOTAL::FLOAT * 100 - p.POSITIVE / p.TOTAL::FLOAT * 100, 1) END AS POSITIVE_SENTIMENT_CHANGE_PCT,
              CASE WHEN c.TOTAL = 0 OR p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
-                  ELSE ROUND(c.NEGATIVE / c.TOTAL::FLOAT * 100 - p.NEGATIVE / p.TOTAL::FLOAT * 100, 1) END AS NEGATIVE_SENTIMENT_CHANGE_PP
+                  ELSE ROUND(c.NEGATIVE / c.TOTAL::FLOAT * 100 - p.NEGATIVE / p.TOTAL::FLOAT * 100, 1) END AS NEGATIVE_SENTIMENT_CHANGE_PCT
       FROM current_window c
       CROSS JOIN previous_window p
     `;
@@ -373,8 +360,8 @@ export class SocialListeningService {
           CHILD_PROJECTS_COUNT: 0,
           POSITIVE_SENTIMENT_PERCENT: 0,
           NEGATIVE_SENTIMENT_PERCENT: 0,
-          POSITIVE_SENTIMENT_CHANGE_PP: null,
-          NEGATIVE_SENTIMENT_CHANGE_PP: null,
+          POSITIVE_SENTIMENT_CHANGE_PCT: null,
+          NEGATIVE_SENTIMENT_CHANGE_PCT: null,
         };
       }
 
@@ -382,36 +369,38 @@ export class SocialListeningService {
     });
   }
 
-  /** Mention volume bucketed by day (windows up to ~2 months) or month (anything longer). */
-  public async getAnalyticsOverTime(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningAnalyticsOverTimePoint[]> {
+  /** Mention volume bucketed by day (windows up to ~2 months) or month (anything longer), split per sub-project. */
+  public async getAnalyticsOverTime(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningOverTimePoint[]> {
     const scope = this.buildScope(params);
     const grain = this.resolveGrain(params.startDate, params.endDate);
 
     const sql = `
       SELECT TO_CHAR(DATE_TRUNC('${grain.unit}', MENTION_TS), 'YYYY-MM-DD') AS PERIOD_START,
              TO_CHAR(DATE_TRUNC('${grain.unit}', MENTION_TS), '${grain.labelFormat}') AS PERIOD_LABEL,
+             SOURCE_PROJECT_ID,
+             SOURCE_PROJECT_NAME,
              COUNT(*) AS TOTAL_MENTIONS
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
-      GROUP BY DATE_TRUNC('${grain.unit}', MENTION_TS)
+      GROUP BY DATE_TRUNC('${grain.unit}', MENTION_TS), SOURCE_PROJECT_ID, SOURCE_PROJECT_NAME
       ORDER BY DATE_TRUNC('${grain.unit}', MENTION_TS)
     `;
 
     return this.cached(req, params.foundationSlug, `analytics-over-time-${grain.unit}`, scope.binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningAnalyticsOverTimePoint>(sql, scope.binds);
+      const result = await this.snowflakeService.execute<SocialListeningOverTimePoint>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
-  public async getAnalyticsPlatformDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningAnalyticsPlatformDistribution[]> {
+  public async getAnalyticsPlatformDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningPlatformDistribution[]> {
     const scope = this.buildScope(params);
 
     const sql = `
       SELECT SOURCE_PLATFORM,
-             MAX(SOCIAL_NETWORK) AS PLATFORM_DISPLAY_NAME,
+             MAX(SOCIAL_NETWORK) AS SOCIAL_NETWORK,
              COUNT(*) AS MENTIONS_COUNT,
              ROUND(COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)::FLOAT * 100, 1) AS PERCENT_OF_TOTAL
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
         AND SOURCE_PLATFORM IS NOT NULL
         AND SOURCE_PLATFORM != ''
@@ -420,41 +409,38 @@ export class SocialListeningService {
     `;
 
     return this.cached(req, params.foundationSlug, 'analytics-platform-distribution', scope.binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningAnalyticsPlatformDistribution>(sql, scope.binds);
+      const result = await this.snowflakeService.execute<SocialListeningPlatformDistribution>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
   /** A null or blank upstream sentiment is bucketed as neutral, matching how the feed renders it. */
-  public async getAnalyticsSentimentDistribution(
-    req: Request,
-    params: SocialListeningAnalyticsParams
-  ): Promise<SocialListeningAnalyticsSentimentDistribution[]> {
+  public async getAnalyticsSentimentDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningSentimentDistribution[]> {
     const scope = this.buildScope(params);
 
     const sql = `
       SELECT COALESCE(NULLIF(LOWER(SENTIMENT), ''), 'neutral') AS SENTIMENT,
              COUNT(*) AS MENTION_COUNT,
              ROUND(COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)::FLOAT * 100, 1) AS PERCENT_OF_TOTAL
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
       GROUP BY COALESCE(NULLIF(LOWER(SENTIMENT), ''), 'neutral')
       ORDER BY MENTION_COUNT DESC
     `;
 
     return this.cached(req, params.foundationSlug, 'analytics-sentiment-distribution', scope.binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningAnalyticsSentimentDistribution>(sql, scope.binds);
+      const result = await this.snowflakeService.execute<SocialListeningSentimentDistribution>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
-  public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningAnalyticsTopProject[]> {
+  public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningTopProject[]> {
     const scope = this.buildScope(params);
     const limit = params.limit ?? TOP_PROJECTS_LIMIT;
 
     const sql = `
       SELECT SOURCE_PROJECT_NAME, COUNT(*) AS TOTAL_MENTIONS
-      FROM ${FEED_TABLE}
+      FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}
         AND SOURCE_PROJECT_NAME IS NOT NULL
         AND SOURCE_PROJECT_NAME != ''
@@ -466,7 +452,7 @@ export class SocialListeningService {
     const binds: QueryBind[] = [...scope.binds, limit];
 
     return this.cached(req, params.foundationSlug, 'analytics-top-projects', binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningAnalyticsTopProject>(sql, binds);
+      const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, binds);
       return result.rows ?? [];
     });
   }
@@ -477,7 +463,7 @@ export class SocialListeningService {
    *
    * `alias` prefixes the column references for the one query that joins (`getMentionsTags`).
    */
-  private buildScope(params: SocialListeningScopeParams & { sourceProjectId?: string; platform?: string }, alias?: string): SqlFragment {
+  private buildScope(params: SocialListeningScopedOptionsParams, alias?: string): SqlFragment {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
     const clauses = [`${col('PROJECT_SLUG')} = ?`, `${col('MENTION_TS')} >= TO_DATE(?)`, `${col('MENTION_TS')} < TO_DATE(?)`];
     const binds: QueryBind[] = [params.foundationSlug, params.startDate, params.endDate];
@@ -529,7 +515,7 @@ export class SocialListeningService {
       clauses.push("(TITLE IS NULL OR TITLE = '')");
     }
 
-    const keywords = this.capValues(filters.keywords, SOCIAL_LISTENING_MAX_FILTER_VALUES);
+    const keywords = this.capValues(filters.keywords, MENTION_FILTER_MAX_VALUES);
     if (keywords.length > 0) {
       clauses.push(`LOWER(KEYWORD) IN (${this.placeholders(keywords.length)})`);
       binds.push(...keywords.map((keyword) => keyword.toLowerCase()));
@@ -537,13 +523,13 @@ export class SocialListeningService {
 
     // TAGS is a comma-joined string upstream, so each selected tag is a substring match ANDed
     // together — a mention must carry all of them.
-    const tags = this.capValues(filters.tags, SOCIAL_LISTENING_MAX_FILTER_VALUES);
+    const tags = this.capValues(filters.tags, MENTION_FILTER_MAX_VALUES);
     for (const tag of tags) {
       clauses.push(`LOWER(TAGS) LIKE ? ESCAPE '${LIKE_ESCAPE_CHAR}'`);
       binds.push(`%${escapeSqlLikePattern(tag.toLowerCase())}%`);
     }
 
-    const authors = this.capValues(filters.authors, SOCIAL_LISTENING_MAX_FILTER_VALUES);
+    const authors = this.capValues(filters.authors, MENTION_FILTER_MAX_VALUES);
     if (authors.length > 0) {
       clauses.push(`AUTHOR IN (${this.placeholders(authors.length)})`);
       binds.push(...authors);
@@ -556,7 +542,7 @@ export class SocialListeningService {
     }
 
     if (filters.mentionIds) {
-      const mentionIds = this.capValues(filters.mentionIds, SOCIAL_LISTENING_MAX_MENTION_IDS);
+      const mentionIds = this.capValues(filters.mentionIds, MENTION_IDS_MAX_VALUES);
       if (mentionIds.length > 0) {
         clauses.push(`_KEY IN (${this.placeholders(mentionIds.length)})`);
         binds.push(...mentionIds);

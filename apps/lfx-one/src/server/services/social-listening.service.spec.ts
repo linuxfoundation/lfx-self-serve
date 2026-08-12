@@ -8,9 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // app's vitest config, so every runtime (non-type-only) import needs a stub. Values mirror
 // `social-listening.constants.ts` / `valkey-cache.constants.ts`.
 vi.mock('@lfx-one/shared/constants', () => ({
-  SOCIAL_LISTENING_MAX_FILTER_VALUES: 200,
-  SOCIAL_LISTENING_MAX_MENTION_IDS: 500,
-  SOCIAL_LISTENING_TOP_TAGS_LIMIT: 20,
+  MENTION_FILTER_MAX_VALUES: 200,
+  MENTION_IDS_MAX_VALUES: 500,
+  MENTION_TOP_TAGS_LIMIT: 20,
   VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
   // Unrelated to Social Listening, but `validation.helper` — the real module, since
   // `escapeSqlLikePattern` is under test through the service — derives these at module scope.
@@ -271,12 +271,6 @@ describe('SocialListeningService — tag aggregation', () => {
     expect(sql).toContain('GROUP BY TRIM(f.VALUE::STRING)');
     expect(binds).toEqual(['cncf', '2026-03-01', '2026-04-01', 20]);
   });
-
-  it('honors a caller-supplied row cap', async () => {
-    await new SocialListeningService().getMentionsTags(req, { ...SCOPE, limit: 5 });
-
-    expect(lastQuery().binds.at(-1)).toBe(5);
-  });
 });
 
 describe('SocialListeningService — author options', () => {
@@ -318,8 +312,8 @@ describe('SocialListeningService — analytics windows', () => {
       CHILD_PROJECTS_COUNT: 0,
       POSITIVE_SENTIMENT_PERCENT: 0,
       NEGATIVE_SENTIMENT_PERCENT: 0,
-      POSITIVE_SENTIMENT_CHANGE_PP: null,
-      NEGATIVE_SENTIMENT_CHANGE_PP: null,
+      POSITIVE_SENTIMENT_CHANGE_PCT: null,
+      NEGATIVE_SENTIMENT_CHANGE_PCT: null,
     });
   });
 
@@ -341,7 +335,7 @@ describe('SocialListeningService — analytics windows', () => {
   it('defaults the top-projects row cap and binds it last', async () => {
     await new SocialListeningService().getAnalyticsTopProjects(req, SCOPE);
 
-    expect(lastQuery().binds).toEqual(['cncf', '2026-03-01', '2026-04-01', 10]);
+    expect(lastQuery().binds).toEqual(['cncf', '2026-03-01', '2026-04-01', 5]);
   });
 });
 

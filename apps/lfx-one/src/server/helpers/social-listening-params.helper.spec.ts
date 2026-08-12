@@ -26,9 +26,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
     { label: 'Yes', value: 'yes' },
     { label: 'No', value: 'no' },
   ],
-  SOCIAL_LISTENING_MAX_FILTER_VALUES: 200,
-  SOCIAL_LISTENING_MAX_MENTION_IDS: 500,
-  SOCIAL_LISTENING_SERVER_PAGE_SIZE: 100,
+  MENTION_FILTER_MAX_VALUES: 200,
+  MENTION_IDS_MAX_VALUES: 500,
+  MENTION_SERVER_WINDOW_SIZE: 100,
   MONTH_FORMAT_REGEX: /^\d{4}-(0[1-9]|1[0-2])$/,
   AKRITES_STEWARD_ROLE_OPTIONS: [],
   AKRITES_ESCALATION_PATHS: [],
@@ -116,7 +116,7 @@ describe('parseSocialListeningScope', () => {
   });
 
   it('carries the two scope selects through', () => {
-    const scope = parseSocialListeningScope(request({ foundationSlug: 'cncf', period: 'ytd', source_project_id: 'proj-1', platform: 'Reddit' }), OPERATION);
+    const scope = parseSocialListeningScope(request({ foundationSlug: 'cncf', period: 'ytd', sourceProjectId: 'proj-1', platform: 'Reddit' }), OPERATION);
 
     expect(scope.sourceProjectId).toBe('proj-1');
     // Case is preserved here; the service lowercases the platform when it binds it.
@@ -124,7 +124,7 @@ describe('parseSocialListeningScope', () => {
   });
 
   it.each(['all', '', '   '])('normalizes a "%s" scope select to no filter', (value) => {
-    const scope = parseSocialListeningScope(request({ foundationSlug: 'cncf', period: 'ytd', source_project_id: value, platform: value }), OPERATION);
+    const scope = parseSocialListeningScope(request({ foundationSlug: 'cncf', period: 'ytd', sourceProjectId: value, platform: value }), OPERATION);
 
     expect(scope.sourceProjectId).toBeUndefined();
     expect(scope.platform).toBeUndefined();
@@ -153,7 +153,7 @@ describe('parseSocialListeningFilters', () => {
   it.each([
     { field: 'sentiment', value: 'positive' },
     { field: 'relevance', value: 'high' },
-    { field: 'has_title', value: 'yes' },
+    { field: 'hasTitle', value: 'yes' },
   ])('accepts a whitelisted $field value', ({ field, value }) => {
     const filters = parseSocialListeningFilters(request({ [field]: value }), OPERATION) as Record<string, unknown>;
 
@@ -163,21 +163,27 @@ describe('parseSocialListeningFilters', () => {
   it.each([
     { field: 'sentiment', value: 'furious' },
     { field: 'relevance', value: 'medium' },
-    { field: 'has_title', value: 'maybe' },
+    { field: 'hasTitle', value: 'maybe' },
   ])('rejects an off-whitelist $field value', ({ field, value }) => {
     expect(() => parseSocialListeningFilters(request({ [field]: value }), OPERATION)).toThrow(new RegExp(field));
   });
 
-  it.each(['sentiment', 'relevance', 'has_title'])('treats %s=all as no predicate', (field) => {
+  it.each(['sentiment', 'relevance', 'hasTitle'])('treats %s=all as no predicate', (field) => {
     const filters = parseSocialListeningFilters(request({ [field]: 'all' }), OPERATION) as Record<string, unknown>;
 
     expect(Object.values(filters).every((value) => value === undefined)).toBe(true);
   });
 
-  it('reads repeated query keys as a list and trims each value', () => {
-    const filters = parseSocialListeningFilters(request({ tags: ['  release ', 'security', ' '] }), OPERATION);
+  it('reads a comma-joined value as a list and trims each entry', () => {
+    const filters = parseSocialListeningFilters(request({ tags: '  release ,security, ' }), OPERATION);
 
     expect(filters.tags).toEqual(['release', 'security']);
+  });
+
+  it('tolerates repeated keys by splitting each element too', () => {
+    const filters = parseSocialListeningFilters(request({ tags: ['release,security', 'cncf'] }), OPERATION);
+
+    expect(filters.tags).toEqual(['release', 'security', 'cncf']);
   });
 
   it('reads a single occurrence as a one-element list', () => {
@@ -185,23 +191,23 @@ describe('parseSocialListeningFilters', () => {
   });
 
   it('preserves a present-but-empty id list — the service reads it as "nothing selected"', () => {
-    expect(parseSocialListeningFilters(request({ mention_ids: [] }), OPERATION).mentionIds).toEqual([]);
+    expect(parseSocialListeningFilters(request({ mentionIds: '' }), OPERATION).mentionIds).toEqual([]);
   });
 
   it.each([
     { field: 'keywords', cap: 200 },
     { field: 'tags', cap: 200 },
     { field: 'authors', cap: 200 },
-    { field: 'mention_ids', cap: 500 },
+    { field: 'mentionIds', cap: 500 },
   ])('rejects rather than truncates an over-cap $field list', ({ field, cap }) => {
     const atCap = Array.from({ length: cap }, (_, index) => `v${index}`);
 
-    expect(() => parseSocialListeningFilters(request({ [field]: atCap }), OPERATION)).not.toThrow();
-    expect(() => parseSocialListeningFilters(request({ [field]: [...atCap, 'one-too-many'] }), OPERATION)).toThrow(new RegExp(field));
+    expect(() => parseSocialListeningFilters(request({ [field]: atCap.join(',') }), OPERATION)).not.toThrow();
+    expect(() => parseSocialListeningFilters(request({ [field]: [...atCap, 'one-too-many'].join(',') }), OPERATION)).toThrow(new RegExp(field));
   });
 
   it('rejects an over-long value inside a list', () => {
-    expect(() => parseSocialListeningFilters(request({ tags: ['ok', 't'.repeat(201)] }), OPERATION)).toThrow(/tags/);
+    expect(() => parseSocialListeningFilters(request({ tags: `ok,${'t'.repeat(201)}` }), OPERATION)).toThrow(/tags/);
   });
 
   it('gives the search term more room than a single-token filter', () => {
@@ -212,7 +218,7 @@ describe('parseSocialListeningFilters', () => {
 
 describe('parseSocialListeningAuthorFilters', () => {
   it('omits authors and mention ids by construction — a multiselect must not filter its own options', () => {
-    const filters = parseSocialListeningAuthorFilters(request({ authors: ['@lf'], mention_ids: ['a'], sentiment: 'negative' }), OPERATION);
+    const filters = parseSocialListeningAuthorFilters(request({ authors: '@lf', mentionIds: 'a', sentiment: 'negative' }), OPERATION);
 
     expect(filters).not.toHaveProperty('authors');
     expect(filters).not.toHaveProperty('mentionIds');

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MENTION_FILTER_MAX_VALUES,
   MENTION_HAS_TITLE_OPTIONS,
+  MENTION_IDS_MAX_VALUES,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_OPTIONS,
-  SOCIAL_LISTENING_MAX_FILTER_VALUES,
-  SOCIAL_LISTENING_MAX_MENTION_IDS,
-  SOCIAL_LISTENING_SERVER_PAGE_SIZE,
+  MENTION_SERVER_WINDOW_SIZE,
 } from '@lfx-one/shared/constants';
 import { getDefaultMarketingImpactPeriod, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -15,7 +15,7 @@ import { Request } from 'express';
 import { ServiceValidationError } from '../errors';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
-import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningScopeParams } from '@lfx-one/shared/interfaces';
+import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
 
 /**
  * Query-parameter parsing for the Social Listening endpoints. Every value is validated, normalized,
@@ -23,8 +23,9 @@ import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningS
  * service's own caps are defense in depth, not the first line.
  *
  * These helpers do NOT log; the centralized `apiErrorHandler` logs every `ServiceValidationError`
- * at WARN. The wire keys are the snake_case `MentionFilters` keys the client builds with
- * `buildMentionFilters()`, not the camelCase router params the page uses in the browser URL.
+ * at WARN. The wire keys are the camelCase `MentionFilters` field names the client builds with
+ * `buildMentionFilters()`, with array values comma-joined (the 3016 service codec's `join(',')`) —
+ * not the snake_case router params the page uses in the browser URL.
  */
 
 /** Foundation slugs are lowercase alphanumeric + hyphens, matching every other foundation-scoped endpoint. */
@@ -39,7 +40,7 @@ const FILTER_VALUE_MAX_LENGTH = 200;
 const SEARCH_MAX_LENGTH = 500;
 
 /** A page can never exceed the server window the client is built around. */
-const MAX_FEED_LIMIT = SOCIAL_LISTENING_SERVER_PAGE_SIZE;
+const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
 
 /** ~1000 windows deep. Past this, a paginated request is a scan, not navigation. */
 const MAX_FEED_OFFSET = 100_000;
@@ -75,14 +76,14 @@ export function parseFoundationSlug(req: Request, operation: string): string {
  * Foundation + half-open `[startDate, endDate)` window + the two selects that scope the whole page.
  * A missing `period` resolves to the same default the client starts on, so a bare request is valid.
  */
-export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopeParams {
+export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
   const period = getValidatedPeriod(req, operation) ?? defaultPeriodRange(operation);
 
   return {
     foundationSlug: parseFoundationSlug(req, operation),
     startDate: period.startDate,
     endDate: period.endDate,
-    sourceProjectId: parseTextParam(req, 'source_project_id', FILTER_VALUE_MAX_LENGTH, operation),
+    sourceProjectId: parseTextParam(req, 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
     platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation),
   };
 }
@@ -91,8 +92,8 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
 export function parseSocialListeningFilters(req: Request, operation: string): SocialListeningFilterParams {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),
-    authors: parseArrayParam(req, 'authors', SOCIAL_LISTENING_MAX_FILTER_VALUES, operation),
-    mentionIds: parseArrayParam(req, 'mention_ids', SOCIAL_LISTENING_MAX_MENTION_IDS, operation),
+    authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
+    mentionIds: parseArrayParam(req, 'mentionIds', MENTION_IDS_MAX_VALUES, operation),
   };
 }
 
@@ -104,11 +105,11 @@ export function parseSocialListeningAuthorFilters(req: Request, operation: strin
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
     relevance: parseEnumParam(req, 'relevance', VALID_RELEVANCES, operation),
-    hasTitle: parseEnumParam(req, 'has_title', VALID_HAS_TITLE, operation),
+    hasTitle: parseEnumParam(req, 'hasTitle', VALID_HAS_TITLE, operation),
     language: parseTextParam(req, 'language', FILTER_VALUE_MAX_LENGTH, operation),
     search: parseTextParam(req, 'search', SEARCH_MAX_LENGTH, operation),
-    keywords: parseArrayParam(req, 'keywords', SOCIAL_LISTENING_MAX_FILTER_VALUES, operation),
-    tags: parseArrayParam(req, 'tags', SOCIAL_LISTENING_MAX_FILTER_VALUES, operation),
+    keywords: parseArrayParam(req, 'keywords', MENTION_FILTER_MAX_VALUES, operation),
+    tags: parseArrayParam(req, 'tags', MENTION_FILTER_MAX_VALUES, operation),
   };
 }
 
@@ -180,9 +181,10 @@ function parseTextParam(req: Request, name: string, maxLength: number, operation
 }
 
 /**
- * Repeated query keys (`tags=a&tags=b`) as a bounded string array. An over-long list is rejected
+ * Comma-joined array params (`tags=a,b,c` — the client codec's `join(',')`) as a bounded string
+ * array. Repeated keys are tolerated by splitting each element too. An over-long list is rejected
  * rather than truncated — silently dropping filter values would return results the caller didn't ask
- * for. A present-but-empty list is preserved as `[]`, which `mention_ids` reads as "nothing selected".
+ * for. A present-but-empty value is preserved as `[]`, which `mentionIds` reads as "nothing selected".
  */
 function parseArrayParam(req: Request, name: string, cap: number, operation: string): string[] | undefined {
   const raw = req.query[name];
@@ -193,6 +195,7 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
 
   const values = (Array.isArray(raw) ? raw : [raw])
     .filter((value): value is string => typeof value === 'string')
+    .flatMap((value) => value.split(','))
     .map((value) => value.trim())
     .filter(Boolean);
 
