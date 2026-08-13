@@ -93,14 +93,22 @@ describe('CampaignProxyService email delivery type', () => {
     return aiCalls.some((p) => p.includes('Google Ads keyword strategist'));
   }
 
-  it('does not generate ad copy for an email brief', async () => {
-    await drain(
+  it('does not generate ad copy for an email brief, and still completes', async () => {
+    const events = await drain(
       service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{
         type: string;
         data: unknown;
       }>
     );
+
     expect(generatedAdCopy()).toBe(false);
+
+    // The absence assertion alone is satisfied by an email brief that FAILS — remove 'email' from
+    // the supported delivery types and the stream errors out early, generating no ad copy and
+    // passing. So assert the stream reached `done` and emitted no `error`: the email path must be
+    // usable, not merely quiet.
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
   });
 
   it('does not generate keywords for an email brief', async () => {
