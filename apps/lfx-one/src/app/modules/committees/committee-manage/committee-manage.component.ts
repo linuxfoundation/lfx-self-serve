@@ -14,7 +14,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { BehaviorSubject, catchError, concat, EMPTY, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { BehaviorSubject, catchError, concat, EMPTY, filter, finalize, from, map, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
@@ -252,7 +252,7 @@ export class CommitteeManageComponent {
   }
 
   public onSubmitAll(): void {
-    // Edit mode only - save committee and members together using forkJoin
+    // Edit mode only - save the committee, then flush member/invite changes once it lands
     if (!this.isEditMode()) {
       return;
     }
@@ -290,12 +290,14 @@ export class CommitteeManageComponent {
     // Prepare committee update
     const updateCommittee$ = this.committeeService.updateCommittee(this.committeeId()!, committeeData);
 
-    // Execute both operations in parallel
-    forkJoin({
-      committee: updateCommittee$,
-      members: this.flushMemberUpdates(),
-    })
-      .pipe(finalize(() => this.submitting.set(false)))
+    // Invite creation snapshots committee_name/organization_required server-side at POST time, so
+    // the committee update must land before invites flush — otherwise a race can bake stale
+    // committee metadata into an invite. Sequence rather than run them in parallel.
+    updateCommittee$
+      .pipe(
+        switchMap((committee) => this.flushMemberUpdates().pipe(map((members) => ({ committee, members })))),
+        finalize(() => this.submitting.set(false))
+      )
       .subscribe({
         next: (result: { committee: Committee; members: { type: string; success: number; failed: number }[] }) => {
           const memberResults = result.members;
