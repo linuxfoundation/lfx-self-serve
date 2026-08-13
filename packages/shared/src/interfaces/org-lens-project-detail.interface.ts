@@ -81,11 +81,13 @@ export interface OrgLensProjectInfluenceCard {
   /** Source shown above the card for ecosystem metrics (project name or foundation name); null for technical. */
   scopeLabel: string | null;
   /**
-   * Dense monthly bins (up to 36), oldest → newest. Empty array → "No data". Client slices to active
-   * range. A `null` bin is a genuine gap (avg-merge-time months with no merged PRs) — not a zero.
+   * Plotted points, oldest → newest. Empty array → "No data". A `null` bin is a genuine gap
+   * (avg-merge-time periods with no merged PRs) — not a zero. Representation depends on the range:
+   * for 1y/2y these are dense monthly bins (up to 36) the client slices to the active range; for
+   * `all` they are the project's adaptive lifetime buckets, aligned 1:1 with the block's `periods`.
    */
   sparkline: (number | null)[];
-  /** Project-wide average monthly series (grey reference line). Same length as sparkline. */
+  /** Project-wide average series over the same points as `sparkline` (grey reference line). Same length. */
   projectSparkline: number[];
   /** Descriptive sentence split so the middle stat can render bold. */
   caption: { prefix: string; emphasis: string; suffix: string };
@@ -165,7 +167,11 @@ export interface OrgLensProjectLeaderboardRow {
   isViewingOrg: boolean;
 }
 
-/** Dense monthly combined-influence series for one org, oldest → newest. Feeds the stacked Influence Trend chart. */
+/**
+ * Combined-influence series for one org, oldest → newest, feeding the stacked Influence Trend chart.
+ * Dense monthly bins for 1y/2y; the project's adaptive lifetime buckets for `all`, aligned 1:1 with
+ * the block's `periods`.
+ */
 export interface OrgLensProjectTrendSeries {
   accountId: string;
   orgName: string;
