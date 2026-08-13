@@ -460,7 +460,16 @@ export class CampaignServiceClient {
     platforms: string[],
     config: Record<string, unknown>
   ): Promise<CampaignServiceCreateResult> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate)) {
+    // BRIEFS is a PREREQUISITE, not an independent switch, and treating it as one is the
+    // difference between a dark cutover and a broken page. Creation posts to
+    // `/briefs/{id}/campaigns`, so it needs a brief campaign-service has actually stored — and
+    // only the BRIEFS flag stores one. With CREATE on and BRIEFS off there is never a brief id,
+    // so every request would take the refusal below; that answers `enabled: true`, which the
+    // controller is required NOT to fall through on, and creation stops working altogether
+    // rather than quietly staying on the legacy path. Reporting the prerequisite as
+    // `enabled: false` keeps a half-set flag pair equivalent to "cutover off".
+    const enabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs);
+    if (!enabled) {
       return { enabled: false, jobId: null, error: null };
     }
     // Both are the caller's to get right, but a missing one must not reach the wire as an empty
@@ -475,9 +484,18 @@ export class CampaignServiceClient {
 
     const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;
     try {
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'POST', {
-        input: { platforms, config },
-      });
+      // `undefined` for the fifth argument, NOT the envelope: `proxyRequestWithResponse` takes
+      // `query` fifth and `data` sixth. Passing the envelope fifth serialises it into the query
+      // string and sends NO body, which campaign-service rejects — every create would fail
+      // before a job existed. `saveBrief` above has the same shape; keep the two aligned.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        { input: { platforms, config } }
+      );
       const jobId = response.data?.job_id ?? '';
       if (jobId === '') {
         // A 202 with no job id is unusable: the caller has no way to poll, and reporting success

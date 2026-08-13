@@ -239,9 +239,12 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_create', {});
 
     try {
-      // Try the cutover FIRST, and fall through to the legacy path on anything short of an
-      // accepted job. The order matters: the legacy path has side effects on the ad platforms, so
-      // it must not run when campaign-service has already accepted the same work.
+      // Try the cutover FIRST, and fall through to the legacy path ONLY when the cutover is dark
+      // (`enabled: false`). "Anything short of an accepted job" would be the wrong rule and the
+      // dangerous one: an enabled-but-REFUSED create is terminal, because the legacy path has
+      // side effects on the ad platforms and would create the campaigns for real while the user
+      // is being told creation failed. Both branches below are explicit about which case they
+      // are, and the distinction is safety-critical for paid campaigns.
       //
       // `?project=` and `?brief_id=` mirror the persist route's convention rather than moving
       // them into the body, so a caller that already knows how to save a brief knows how to

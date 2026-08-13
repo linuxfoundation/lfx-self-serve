@@ -6,10 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
 // `@lfx-one/shared/interfaces` are type-only, so esbuild elides them.
-const { proxyRequest, proxyRequestWithResponse, logger } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, logger, isServerFeatureEnabled } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
+  isServerFeatureEnabled: vi.fn(() => false),
+}));
+
+vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isServerFeatureEnabled,
 }));
 
 vi.mock('./microservice-proxy.service', () => ({
@@ -1390,5 +1396,94 @@ describe('CampaignServiceClient.loadBrief', () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+/**
+ * The create path's CONTRACT with campaign-service, which nothing else in this repo checks.
+ *
+ * Both defects these tests pin shipped in a branch whose build, lint and full server suite were
+ * green: an envelope passed in the wrong argument position sends no request body at all, and a
+ * flag pair that is half-set answers `enabled: true` on a path the controller may not fall
+ * through. Neither is visible to a type checker — `proxyRequestWithResponse` takes `any` for both
+ * `query` and `data` — so an assertion on the call shape is the only thing that can catch them.
+ */
+describe('CampaignServiceClient.createCampaigns', () => {
+  const bothFlagsOn = () => isServerFeatureEnabled.mockReturnValue(true);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(false);
+  });
+
+  it('is dark when the create flag is off', async () => {
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('is dark when CREATE is on but its BRIEFS prerequisite is off', async () => {
+    // Not merely "one flag of two": creation posts to /briefs/{id}/campaigns, and only BRIEFS
+    // stores a brief to post against. Reporting `enabled: true` here would refuse every request
+    // on a branch the controller must NOT fall through, so creation would stop working rather
+    // than staying quietly on the legacy path.
+    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] === 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE');
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('sends the envelope as the request BODY, not as query parameters', async () => {
+    // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
+    // fifth serialises it into the query string and sends no body, which campaign-service
+    // rejects — every create would fail before a job existed.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
+
+    const config = { googleAdsConfig: { budget: 600 } };
+    await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], config);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns');
+    expect(call[3]).toBe('POST');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ input: { platforms: ['google-ads'], config } });
+  });
+
+  it('reports the job id from a 202', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], {});
+
+    expect(res).toEqual({ enabled: true, jobId: 'a3f1c2d4-0000-4000-8000-000000000001', error: null });
+  });
+
+  it('refuses rather than posting when the brief id or project slug is missing', async () => {
+    // An empty segment makes `/projects//briefs//campaigns`, a different route that 404s at the
+    // gateway — which is not campaign-service saying "no such brief".
+    bothFlagsOn();
+
+    const noBrief = await new CampaignServiceClient().createCampaigns(req, '', 'tlf', ['google-ads'], {});
+    const noSlug = await new CampaignServiceClient().createCampaigns(req, 'b-1', '', ['google-ads'], {});
+
+    expect(noBrief.enabled).toBe(true);
+    expect(noBrief.jobId).toBeNull();
+    expect(noBrief.error).toBeTruthy();
+    expect(noSlug.jobId).toBeNull();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('treats a 202 carrying no job id as unusable rather than a success', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toBeTruthy();
   });
 });
