@@ -112,6 +112,32 @@ describe('CampaignProxyService email delivery type', () => {
     return aiCalls.some((p) => p.includes('Google Ads keyword strategist'));
   }
 
+  /**
+   * `/brief/generate` has a SECOND refinement mode — `refineFeedback` + `previousCopy` — which is
+   * another door onto the same refusal. Left open it skipped the scrape (because `isRefinement`)
+   * and every generator (because `isEmail`) and then emitted `done`: a successful no-op, worse
+   * than an error because the caller is told the work happened.
+   */
+  it('refuses an email REFINEMENT sent through the generate stream', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        {
+          url: 'https://events.example.com/kubecon-eu-2026',
+          deliveryType: 'email',
+          refineFeedback: 'shorter subject',
+          previousCopy: { subject: 'Join us' },
+        },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    // NOT a quiet `done`: the whole point is that the caller is not told the refinement happened.
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    expect(generatedAdCopy()).toBe(false);
+  });
+
   it('does not generate ad copy for an email brief, and still completes', async () => {
     const events = await drain(
       service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{

@@ -631,6 +631,20 @@ export class CampaignProxyService {
     // no copy is generated at all. A status line that names work the stream will not do is the
     // same class of falsehood as a silent skip.
     const isEmail = body.deliveryType === 'email';
+
+    // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
+    // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
+    // and extraction (because `isRefinement`) AND every generator (because `isEmail`), then
+    // emitted `done`: a successful no-op, which is worse than the error it should be, because the
+    // caller is told the work happened.
+    //
+    // Same message as `streamRefinedBrief`, deliberately — one refusal reached two ways should not
+    // read as two different problems.
+    if (isEmail && isRefinement) {
+      yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
