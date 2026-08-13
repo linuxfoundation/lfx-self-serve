@@ -702,6 +702,48 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
   });
 
+  it('hides the Budget & Assets card in email mode', async () => {
+    await build('email');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-budget-section"]')).toBeNull();
+  });
+
+  it('keeps the Budget & Assets card in paid mode', async () => {
+    await build('paid-marketing');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-budget-section"]')).not.toBeNull();
+  });
+
+  /**
+   * The card being hidden is not on its own enough. The control still exists, so a value can
+   * reach it without the card rendering — restoring a paid brief repopulates the form. The server
+   * appends "Total Campaign Budget: $N" to the copy prompt, so a stray value would put a paid-ad
+   * number into an email brief rather than merely go unread.
+   */
+  it('drops a populated budget from the email generation request', async () => {
+    await build('email');
+    fillRequiredFields();
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['totalBudget'].setValue('5000');
+    fixture.detectChanges();
+
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief.mock.calls[0][0].totalBudget).toBeUndefined();
+  });
+
+  it('sends a populated budget in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['totalBudget'].setValue('5000');
+    fixture.detectChanges();
+
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief.mock.calls[0][0].totalBudget).toBe(5000);
+  });
+
   it('allows generation in email mode with no ad platform selected', async () => {
     await build('email');
     fillRequiredFields();

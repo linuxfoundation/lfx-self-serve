@@ -16,9 +16,9 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignEventDetails,
+  CampaignDeliveryType,
   CampaignGoal,
   CampaignKeyword,
-  CampaignDeliveryType,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -484,16 +484,23 @@ export class PlanningTabComponent implements OnInit {
     const budgetStr = typeof budgetRaw === 'string' ? budgetRaw.trim() : String(budgetRaw ?? '');
     const request = {
       url: this.briefForm.controls.url.value.trim(),
-      // OMITTED for email, not sent empty. `platforms` drives which per-platform ad copy the
-      // generator produces — RSA headlines, Demand Gen copy, a LinkedIn targeting strategy — none
-      // of which an email brief has any use for. Sending the paid default would bill an AI call
-      // for copy nothing reads, and sending `[]` would claim the user deselected every channel
-      // rather than that channels do not apply here.
+      // Sent explicitly. Omitting `platforms` is NOT enough on its own to mean "no ad channels":
+      // the generator reads an absent list as the paid DEFAULT (`['google-ads']`), so absence
+      // already means "use the default" for every paid caller and cannot also mean email. This
+      // field is what makes the server skip ad-copy and keyword generation entirely.
+      deliveryType: this.deliveryType(),
+      // Still omitted for email — `[]` would claim the user deselected every channel rather than
+      // that ad channels do not apply here. With `deliveryType` above, the server no longer has
+      // to infer anything from its absence.
       ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
-      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      // Belt and braces with hiding the Budget card: the control still EXISTS in email mode, and
+      // a value could reach it without the card being visible — a restored paid brief repopulates
+      // the form. The server appends "Total Campaign Budget: $N" to the copy prompt, so a stray
+      // value would put a paid-ad number into an email brief rather than merely go unread.
+      totalBudget: !this.isEmail() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
       programType: this.programTypeConfig().id,
     };
 
@@ -690,9 +697,11 @@ export class PlanningTabComponent implements OnInit {
       currentKeywords: this.keywords(),
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
-      // Omitted for email for the same reason as the generate request above: refine re-runs the
-      // per-platform copy generators, so a lingering `platforms` here would put the ad copy back
-      // that the generate path just left out.
+      // Same pair as the generate request: the delivery type is the signal the server acts on,
+      // and `platforms` is omitted rather than emptied. The server refuses an email refine
+      // outright — there is no email copy to refine until the `email-copy` endpoint lands
+      // (LFXV2-3198) — so this carries the type to get that refusal rather than a broken call.
+      deliveryType: this.deliveryType(),
       ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] }),
       programType: this.programTypeConfig().id,
     };

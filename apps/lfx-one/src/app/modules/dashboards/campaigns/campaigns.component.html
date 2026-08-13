@@ -86,14 +86,18 @@
             the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
             stream, and brief save/restore. What differs is one card and one validity rule.
 
-            In email mode the planner drops the Ad Channels card, drops the ad-platform
-            requirement from `canGenerate`, and omits `platforms` from the generation request.
+            In email mode the planner drops the Ad Channels and Budget cards, drops the
+            ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
+            server skips ad-copy and keyword generation rather than falling back to its paid
+            default — omitting `platforms` alone does not achieve that, because the generator
+            reads an absent list as `['google-ads']`.
 
-            STILL OPEN: the brief this emits is the paid brief shape, and
-            `onEmailProceedToImplementation` stores it for EXISTENCE only — the Implement panel
-            does not read the payload. Email-specific generated fields (subject, preview text,
-            sender) come with the `email-copy` endpoint under LFXV2-3198, together with the
-            template picker that panel needs.
+            STILL OPEN: an email brief generates NO copy at all today — the scrape, event details
+            and HubSpot UTM are what it comes back with, and Refine is refused with a message
+            saying so. Subject, preview text and sender arrive with the `email-copy` endpoint
+            under LFXV2-3198, together with the template picker the Implement panel needs. Until
+            then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
+            does not read the payload.
           -->
           <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
@@ -114,8 +118,10 @@
             would have to come from an input threaded through every `data-testid` in the planner
             — a wider change than the host-scoped selectors above, which already work.
 
-            Note `planning-platform-<id>` now resolves to ONE element, not two: the email
-            instance no longer renders the Ad Channels card. The url/generate ids still double.
+            The ids that double are the ones BOTH instances render. Ids inside a paid-only card
+            (the Ad Channels and Budget sections) render in the paid instance only — but scope
+            those selectors under the host anyway rather than relying on that, since which cards
+            each mode renders is exactly the thing this ticket changes.
           -->
           @for (program of [selectedProgramType()]; track program) {
             <lfx-planning-tab

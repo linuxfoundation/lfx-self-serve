@@ -688,66 +688,83 @@ export class CampaignProxyService {
       }
     }
 
+    // An email brief has no ad channels, so the paid default must not apply. `platforms` absence
+    // cannot carry that meaning on its own — it already means "use the default" for every paid
+    // caller — so the delivery type is read explicitly.
+    const isEmail = body.deliveryType === 'email';
     const selectedPlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
-    const platformList = selectedPlatforms.join(', ');
-    yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
-    const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
-    const userPrompt = buildCopyPrompt(body, eventDetails);
-    let fullCopy = '';
+    // SKIPPED for email, not run with an empty platform list. `buildCopySystemPrompt` composes
+    // its output from per-platform sections and ends with "Keys: <joined>" — with no platforms
+    // that asks the model for a JSON object with NO keys, which is a broken call rather than a
+    // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
+    // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
+    // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
+    if (!isEmail) {
+      const platformList = selectedPlatforms.join(', ');
+      yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
-    try {
-      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
-        yield { type: 'copy_token', data: token };
-        fullCopy += token;
-      }
-      yield { type: 'copy_done', data: null };
+      const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
+      const userPrompt = buildCopyPrompt(body, eventDetails);
+      let fullCopy = '';
 
       try {
-        const text = stripJsonFences(fullCopy);
-        const structured = JSON.parse(text) as Record<string, unknown>;
+        for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
+          yield { type: 'copy_token', data: token };
+          fullCopy += token;
+        }
+        yield { type: 'copy_done', data: null };
 
-        truncateAdCopy(structured);
+        try {
+          const text = stripJsonFences(fullCopy);
+          const structured = JSON.parse(text) as Record<string, unknown>;
 
-        if (selectedPlatforms.includes('linkedin-ads')) {
-          const liData = (structured['linkedin_sponsored'] || (structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored']) as
-            | Record<string, unknown>
-            | undefined;
-          if (liData) {
-            const rawGeos = liData['recommended_geos'];
-            const MAX_GEO_LENGTH = 100;
-            const MAX_GEO_COUNT = 20;
-            const sanitizedGeos = (Array.isArray(rawGeos) ? rawGeos : [])
-              .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
-              .slice(0, MAX_GEO_COUNT)
-              .map((g) =>
-                g
-                  .trim()
-                  .slice(0, MAX_GEO_LENGTH)
-                  .replace(/[^a-zA-Z0-9 ,.-]/g, '')
-              );
-            if (sanitizedGeos.length > 0) {
-              try {
-                const resolved = await resolveGeoTargets(sanitizedGeos);
-                liData['resolved_geo_targets'] = resolved;
-              } catch (geoError) {
-                logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
+          truncateAdCopy(structured);
+
+          if (selectedPlatforms.includes('linkedin-ads')) {
+            const liData = (structured['linkedin_sponsored'] || (structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored']) as
+              | Record<string, unknown>
+              | undefined;
+            if (liData) {
+              const rawGeos = liData['recommended_geos'];
+              const MAX_GEO_LENGTH = 100;
+              const MAX_GEO_COUNT = 20;
+              const sanitizedGeos = (Array.isArray(rawGeos) ? rawGeos : [])
+                .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+                .slice(0, MAX_GEO_COUNT)
+                .map((g) =>
+                  g
+                    .trim()
+                    .slice(0, MAX_GEO_LENGTH)
+                    .replace(/[^a-zA-Z0-9 ,.-]/g, '')
+                );
+              if (sanitizedGeos.length > 0) {
+                try {
+                  const resolved = await resolveGeoTargets(sanitizedGeos);
+                  liData['resolved_geo_targets'] = resolved;
+                } catch (geoError) {
+                  logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
+                }
               }
             }
           }
-        }
 
-        yield { type: 'copy_structured', data: structured };
-      } catch {
-        yield { type: 'copy_structured', data: { raw: fullCopy } };
+          yield { type: 'copy_structured', data: structured };
+        } catch {
+          yield { type: 'copy_structured', data: { raw: fullCopy } };
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        return;
       }
-    } catch (error) {
-      if (signal.aborted) return;
-      yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
     }
 
-    if (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0) {
+    // Keywords are a Google Ads concept. The `!body.platforms` arm opts an UNSPECIFIED list in on
+    // purpose — a paid caller that names no platform still gets the google-ads default above, so
+    // it still wants keywords. Email is the one case where absence does not mean the default, and
+    // it is excluded first rather than by adding another arm to that condition.
+    if (!isEmail && (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -810,6 +827,15 @@ export class CampaignProxyService {
 
     if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
+    // Refine re-runs the ad-copy generator, so it inherits the generate path's constraint: with
+    // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
+    // for it to refine on an email brief either — the copy it would rewrite was never generated —
+    // so the request is refused rather than answered with a broken call.
+    if (body.deliveryType === 'email') {
+      yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
 
@@ -1516,6 +1542,8 @@ function extractEventNameFromUrl(url: string): string {
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  // No email branch: buildCopyPrompt is only reached from the two ad-copy paths, and both refuse
+  // email before calling it (generate skips the block, refine returns an error).
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
@@ -1647,6 +1675,8 @@ function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails
     ? `\n${isEducation ? 'COURSE' : 'EVENT'}: ${body.eventDetails.name}\n${isEducation ? 'Duration' : 'Dates'}: ${body.eventDetails.dates}\n${isEducation ? '' : `City: ${body.eventDetails.city}\n`}`
     : '';
+  // No email branch: buildCopyPrompt is only reached from the two ad-copy paths, and both refuse
+  // email before calling it (generate skips the block, refine returns an error).
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');
