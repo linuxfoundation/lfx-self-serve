@@ -176,7 +176,9 @@
               @if (daysLeft(); as remaining) {
                 <div class="ml-auto flex flex-col text-right">
                   <span class="text-xl font-semibold text-gray-900">{{ remaining | metricCount }}</span>
-                  <span class="text-xs text-gray-400">Days left</span>
+                  <!-- Singular on the last day. Only reachable since the sign fix — the old guard
+                       hid this block for every upcoming event, so "1 Days left" never appeared. -->
+                  <span class="text-xs text-gray-400">{{ remaining === 1 ? 'Day left' : 'Days left' }}</span>
                 </div>
               }
             </div>

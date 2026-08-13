@@ -422,6 +422,34 @@ describe('EventDetailDrawerComponent', () => {
     expect(text).not.toContain('-54');
   });
 
+  // "1 Days left" only became reachable once the sign fix let this block render for upcoming
+  // events at all — the old guard hid every one of them, so the boundary never showed.
+  it('says "Day left" in the singular on the final day', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -1,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Day left');
+    expect(text).not.toContain('Days left');
+  });
+
   // A past event has no days left to count, so the block goes rather than showing a negative.
   it('drops the days-left block once the event has passed', async () => {
     await setup(
