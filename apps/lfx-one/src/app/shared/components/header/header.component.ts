@@ -146,7 +146,7 @@ export class HeaderComponent {
   }
 
   protected navigateToMyMeetings(): void {
-    this.lensService.switchLens('me');
+    this.lensService.setLens('me');
     void this.router.navigate(['/meetings']);
   }
 
