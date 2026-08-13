@@ -7950,13 +7950,16 @@ export class ProjectService {
       PRED_HIGH: number | null;
     }
 
-    // Two tables, deliberately. The headline reads MARKETING_EVENT_REGISTRATION_PREDICTIONS, which
-    // is event-grained and carries the FINAL_* totals; the daily curve reads
-    // MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN, which is the only place the per-day
-    // CURRENT_EVENT_*/CUMULATIVE_* columns exist. Pointing either query at the other's table raises
-    // an invalid identifier, which propagates and fails the whole drawer — a rebuild collapsed them
-    // onto one table once already, so the split is asserted by a test.
-    // Both are grained by EVENT_ID x EVENT_REGISTRATION_TYPE (x DAYS_TO_EVENT on the drilldown).
+    // One table, two queries. Both read MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is
+    // day-grained (EVENT_ID x EVENT_REGISTRATION_TYPE x DAYS_TO_EVENT): the headline takes its
+    // event-level FINAL_* constants, the curve takes the per-day CUMULATIVE_* columns.
+    //
+    // This previously pointed the curve at a MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+    // table that does not exist in this schema — the name was inferred from PCC's
+    // `eventRegistrationPredictionDrilldown` component, which is a UI concept, not a second table.
+    // PCC reads the same single predictions table this does. Every curve request therefore failed
+    // with a compile error, was swallowed by the degrade path below, and the chart silently never
+    // rendered.
     // EVENT_REGISTRATION_TYPE (In Person / Virtual) means an event/day can have multiple rows, so we
     // SUM across types per DAYS_TO_EVENT to get one point on the curve (never sum types blindly elsewhere).
     // Headline. FINAL_* columns are event-level constants (identical on every DAYS_TO_EVENT row),
@@ -7988,20 +7991,26 @@ export class ProjectService {
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        -- The per-day curve lives on _DRILLDOWN, not on the base predictions table: the base table
-        -- is event-grained and carries only the FINAL_* totals headQuery reads. These
-        -- CURRENT_EVENT_*/CUMULATIVE_* columns exist solely on the drilldown, so pointing this
-        -- query at the base table asks for identifiers that are not there.
+        -- The "current year" series is the predicted curve truncated at today, matching PCC:
+        -- days at or before today carry it, later days are null so the solid line stops where
+        -- the dashed prediction takes over. There is no measured per-day actual-registrations
+        -- column on this table — CURRENT_EVENT_CUMULATIVE_REGISTRATIONS does not exist, and PCC
+        -- never reads one either. Labelling this "Current year" overstates it, but diverging here
+        -- would draw a different chart from the one EDs already read in PCC.
         --
-        -- CURRENT_EVENT_*, not FINAL_CURRENT_*: the FINAL_ columns are event-level constants
-        -- repeated on every DAYS_TO_EVENT row, so plotting one per day would draw the current-year
-        -- line flat at the final total instead of a rising curve.
-        SUM(CURRENT_EVENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
+        -- FINAL_CURRENT_* is deliberately not used: it is an event-level constant repeated on
+        -- every row, so plotting it per day would draw a flat line at the final total.
+        --
+        -- The cutoff is DAYS_LEFT_FROM_YESTERDAY, not 0. DAYS_TO_EVENT counts up to 0 on the event
+        -- day, so "today" is DAYS_LEFT_FROM_YESTERDAY (negative while the event is upcoming, e.g.
+        -- -54 with the curve spanning -86..0) — not the end of the series. Splitting at 0 would
+        -- mark the entire curve, future days included, as current-year.
+        SUM(CASE WHEN DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY THEN CUMULATIVE_AVG_PREDICTED_REGISTRATIONS END) AS CUR_REGS,
         SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
         SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
         SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
         SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
       WHERE EVENT_ID = ?
       GROUP BY DAYS_TO_EVENT
       ORDER BY DAYS_TO_EVENT DESC

@@ -537,12 +537,14 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(result?.pacing.current).toBeNull();
     });
 
-    // The two pacing reads target different tables and neither is interchangeable: the base
-    // predictions table is event-grained and carries only the FINAL_* totals, while the per-day
-    // curve columns exist solely on _DRILLDOWN. Querying one for the other's columns raises an
-    // invalid-identifier error, which getEventPacing propagates — so the whole drawer fails, not
-    // just pacing. A rebuild collapsed these onto one table once already.
-    it('reads the headline from the predictions table and the curve from the drilldown', async () => {
+    // Both pacing reads hit the same day-grained predictions table. This previously asserted the
+    // opposite — that the curve came from a MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN —
+    // a table that exists in no schema; the name was inferred from PCC's
+    // `eventRegistrationPredictionDrilldown` component, which is a UI concept, not a table. The
+    // curve query therefore failed with a compile error on every request, the degrade path
+    // swallowed it, and the chart never rendered while the test stayed green. Asserting the
+    // absence of that name is the point: it is what keeps the invented table from returning.
+    it('reads both the headline and the curve from the predictions table', async () => {
       mockReads([eventRow], []);
 
       await service.getEventDetail('evt-1', 'tlf');
@@ -553,9 +555,25 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
       expect(head).toBeDefined();
       expect(curve).toBeDefined();
-      // The headline must not come from the drilldown, nor the curve from the base table.
       expect(String(head![0])).not.toContain('_DRILLDOWN');
-      expect(String(curve![0])).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN');
+      expect(String(curve![0])).not.toContain('_DRILLDOWN');
+    });
+
+    // The current-year series is the predicted curve cut at today, so the cutoff column decides
+    // where the solid line stops. DAYS_TO_EVENT counts up to 0 on the event day, which makes
+    // DAYS_LEFT_FROM_YESTERDAY — not 0 — the position of "today": splitting at 0 would mark the
+    // entire curve, future days included, as current-year and draw one unbroken solid line.
+    it('cuts the current-year series at today, not at the event date', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const curve = execute.mock.calls
+        .map(([sql]) => String(sql))
+        .find((sql) => sql.includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS') && sql.includes('DAYS_TO_EVENT'));
+
+      expect(curve).toBeDefined();
+      expect(curve!).toContain('DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY');
     });
 
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
