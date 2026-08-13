@@ -1060,6 +1060,97 @@ export interface RedditMonitorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// HubSpot Email Templates
+// ---------------------------------------------------------------------------
+
+/**
+ * One HubSpot marketing email, as the template picker lists it.
+ *
+ * `id` is the only field campaign-service guarantees, and it is the one that matters: it is what
+ * `hubspotConfig.sourceEmailId` takes, and that field is REQUIRED with no default — staging an
+ * email clones a template, so without a choice here the email channel cannot dispatch at all.
+ *
+ * `state` is worth rendering. A template can be a DRAFT, and cloning one is legitimate but worth
+ * seeing first. Note it can never say ARCHIVED: HubSpot models archival as a separate flag rather
+ * than a lifecycle state, and this search does not request archived rows, so they are absent from
+ * the result entirely rather than present with a different `state`.
+ *
+ * `updatedAt` earns its place because two templates routinely share a name — the date is what
+ * tells them apart. The service already returns the list most-recently-updated first.
+ */
+export interface HubSpotMarketingEmail {
+  /**
+   * Never empty in practice — the service declares it Required — but a row that somehow arrives
+   * without one is not selectable, because this is the value `sourceEmailId` takes. Callers
+   * should drop such a row rather than render it as a choice that cannot be made.
+   */
+  id: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updatedAt?: string;
+}
+
+/**
+ * What the template search returns.
+ *
+ * `enabled: false` is a first-class outcome rather than a failure, matching the other
+ * campaign-service reads: it means **no HubSpot connection resolved for this project id**, which
+ * is the steady state until someone connects one. The picker renders a "connect HubSpot" empty
+ * state for it, not an error.
+ *
+ * It does NOT isolate "not connected yet". campaign-service reaches that typed 404 whenever the
+ * connection row is absent, and a project id that does not exist has no row either — so a
+ * mistyped slug produces the same answer as an unconfigured project. The empty state should name
+ * the project it queried, so a typo is visible rather than reported as a missing integration.
+ * A bad or undecryptable credential is a DIFFERENT status (400/500/503) and is not swallowed
+ * here.
+ *
+ * **An empty query returns a BOUNDED first screen, not the whole portal.** campaign-service caps
+ * an unfiltered listing at 500 because an empty needle matches every row, and it takes the first
+ * N in SERVER order before sorting them — so the screen is "recent emails to pick from", NOT a
+ * guarantee of the newest in the portal. `possiblyTruncated` says when that cap may have bitten,
+ * because the wire result carries no pagination field and a capped 500 is byte-identical to a
+ * complete 500.
+ *
+ * A FILTERED search is exempt from that 500-row cap — truncating one would report an email that
+ * exists as absent — but it is NOT unbounded, which an earlier version of this comment claimed.
+ * campaign-service walks at most `maxListPages = 200` and returns an error on exhausting them
+ * rather than a partial list, so a filtered search is COMPLETE-OR-ERROR: it either matched across
+ * every page or it failed. That is why `possiblyTruncated` is always false for one.
+ *
+ * The cost is latency: `q` never reaches HubSpot — its list endpoint cannot be queried by name or
+ * subject — so campaign-service walks the pages and matches name-or-subject case-insensitively
+ * in-process. On a large portal a typed query is a slow call, which is why the picker must
+ * debounce rather than search per keystroke, and why callers should not assume unlimited
+ * traversal time.
+ */
+export interface HubSpotEmailSearchResult {
+  enabled: boolean;
+  emails: HubSpotMarketingEmail[];
+  /**
+   * Whether this list may have been cut off by the unfiltered cap.
+   *
+   * True only for an EMPTY query that came back exactly at the cap — the one case where a
+   * complete portal listing and a truncated first screen are indistinguishable on the wire.
+   *
+   * A filtered search is COMPLETE-OR-ERROR rather than truncatable: campaign-service's walk is
+   * capped at 200 pages and returns an error on exhausting it, never a partial list. So this is
+   * always false for a filtered search — not because the walk is unbounded, but because a partial
+   * one fails instead of answering.
+   *
+   * The picker should say "showing the first 500 — type to search the rest" rather than
+   * presenting the list as everything. NOT "the 500 most recent": the service takes the first 500
+   * rows in server order and sorts them AFTER truncating, so the set is not the portal's newest
+   * 500 and telling the user otherwise would be a second falsehood on top of the first.
+   */
+  possiblyTruncated: boolean;
+
+  /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
+  error: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // HubSpot UTM
 // ---------------------------------------------------------------------------
 

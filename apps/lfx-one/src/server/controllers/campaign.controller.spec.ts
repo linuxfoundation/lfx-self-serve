@@ -9,16 +9,18 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
-  saveBrief: vi.fn(),
-  loadBrief: vi.fn(),
-  createCampaigns: vi.fn(),
-  legacyCreate: vi.fn(),
-  svcGetJobStatus: vi.fn(),
-  legacyGetJobStatus: vi.fn(),
-  isServerFeatureEnabled: vi.fn(),
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, searchHubSpotEmails, isServerFeatureEnabled, logger } =
+  vi.hoisted(() => ({
+    saveBrief: vi.fn(),
+    loadBrief: vi.fn(),
+    createCampaigns: vi.fn(),
+    legacyCreate: vi.fn(),
+    svcGetJobStatus: vi.fn(),
+    legacyGetJobStatus: vi.fn(),
+    searchHubSpotEmails: vi.fn(),
+    isServerFeatureEnabled: vi.fn(),
+    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  }));
 
 // `deriveEventSlug` is deliberately NOT stubbed. It is the function that decides whether a brief
 // is persistable at all, so a fake would let the slug-refusal test below pass against a controller
@@ -32,6 +34,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public loadBrief = loadBrief;
       public createCampaigns = createCampaigns;
       public getJobStatus = svcGetJobStatus;
+      public searchHubSpotEmails = searchHubSpotEmails;
     },
   };
 });
@@ -722,5 +725,74 @@ describe('CampaignController.getJobStatus routing', () => {
 
     expect(legacyGetJobStatus).toHaveBeenCalledTimes(1);
     expect(svcGetJobStatus).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The controller boundary for the template search: whether the service is called at all, and
+ * whether a 400 is raised instead. The service spec covers what campaign-service is sent; only
+ * the refusal and the trim are decidable here (raised by @dealako).
+ */
+describe('CampaignController.searchHubSpotEmails', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function emailReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/hubspot/emails' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    searchHubSpotEmails.mockResolvedValue({ enabled: true, emails: [], error: null, possiblyTruncated: false });
+  });
+
+  // The page is reachable by an ED of any foundation and templates are per-project, so an absent
+  // slug is refused rather than guessed — the same rule `loadBrief` follows.
+  it.each([
+    ['no project param', {}],
+    ['a blank project param', { project: '   ' }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'] }],
+  ])('refuses %s with a 400 and never calls the service', async (_label, query) => {
+    await controller.searchHubSpotEmails(emailReq(query), res, next);
+
+    expect(searchHubSpotEmails).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('trims the query and forwards the result unchanged', async () => {
+    const result = { enabled: true, emails: [{ id: '1', name: 'Welcome' }], error: null, possiblyTruncated: false };
+    searchHubSpotEmails.mockResolvedValue(result);
+
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: '  kubecon  ' }), res, next);
+
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon');
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing q as the unfiltered listing rather than refusing', async () => {
+    // An empty query is the "show me everything" case the cap and `possiblyTruncated` exist for,
+    // not a validation failure.
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf' }), res, next);
+
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a service failure to the error middleware instead of answering 200', async () => {
+    const failure = new Error('upstream exploded');
+    searchHubSpotEmails.mockRejectedValue(failure);
+
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });
