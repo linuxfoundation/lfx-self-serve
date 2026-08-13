@@ -117,6 +117,31 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('does not treat a percent-encoded /meetings/%63reate as public (decode before classify)', async () => {
+    const req = buildReq({ path: '/meetings/%63reate' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // Express leaves `req.path` percent-encoded, so classification decodes it once (`%63reate` → `create`)
+    // to match Angular's decoded routing. The `create` lookahead then fires and the anonymous SSR GET
+    // redirects to login instead of fail-opening to optional auth.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed to required auth for a malformed percent-escape path', async () => {
+    const req = buildReq({ path: '/meetings/%ZZ' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // A malformed escape throws in `decodeURIComponent`, so classification fails closed to the default
+    // `required` row — an anonymous SSR GET redirects to login rather than being misclassified as public.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('does not treat a nested /groups/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
     const req = buildReq({ path: '/groups/abc123/edit' });
     const res = buildRes();

@@ -117,22 +117,36 @@ const DEFAULT_CONFIG: AuthConfig = {
  * Classifies a route based on the request path and route configuration
  */
 function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
-  for (const routeConfig of config.routes) {
-    if (typeof routeConfig.pattern === 'string') {
-      if (path.startsWith(routeConfig.pattern)) {
-        return routeConfig;
-      }
-    } else if (routeConfig.pattern.test(path)) {
-      return routeConfig;
-    }
-  }
-
-  // Default fallback
-  return {
+  // Default fallback — also the fail-closed classification for malformed input below.
+  const fallback: RouteAuthConfig = {
     pattern: '/',
     type: config.defaultType,
     auth: config.defaultAuth,
   };
+
+  // Decode percent-encoding once before matching so the SSR auth boundary matches Angular's decoded
+  // route matching (`/meetings/%63reate` → `/meetings/create`, so the `create` lookahead still fires).
+  // Express/Node leave `req.path` percent-encoded, so classifying the raw path would let an encoded
+  // segment fail-open to optional auth while Angular decodes it to the protected route. A single decode
+  // mirrors Angular's single decode; a malformed escape (`%ZZ`) throws and fails closed to `required`.
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    return fallback;
+  }
+
+  for (const routeConfig of config.routes) {
+    if (typeof routeConfig.pattern === 'string') {
+      if (decodedPath.startsWith(routeConfig.pattern)) {
+        return routeConfig;
+      }
+    } else if (routeConfig.pattern.test(decodedPath)) {
+      return routeConfig;
+    }
+  }
+
+  return fallback;
 }
 
 /**
