@@ -315,3 +315,5 @@ export * from './profile-visibility.interface';
 // Org Lens ROI Metrics (LFXV2-2980) interfaces
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
+// Brand Kit generation contract interfaces
+export * from './brand-kit.interface';

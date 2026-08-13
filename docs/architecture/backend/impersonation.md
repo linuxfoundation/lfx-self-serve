@@ -171,6 +171,15 @@ For the full `username` vs `sub` distinction and the `sub` → `username` migrat
 
 These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. `isImpersonating(req)` (active-session predicate) rounds out the set. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 
+**Real (non-effective) identity — the deliberate exception (LFXV2-3093):** two helpers do the opposite of the `getEffective*` family — they resolve the real impersonator's own identity, ignoring impersonation state entirely:
+
+| Helper                        | Returns                                                                                | Notes                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getRealEmail(req)`           | The real user's OIDC email (lowercased), never the impersonation target's              | Use only where the actual actor — not the target — must be attributed for an externally-visible, hard-to-retract action                                                                                                                                                                                                   |
+| `resolveRealAccessToken(req)` | `Promise<string \| null>` — the real user's own bearer token, even while impersonating | Reads `req.oidc.accessToken` directly (never touched by the impersonation-token swap), refreshing it if expired since `extractBearerToken`'s own refresh step is skipped whenever impersonation is active; returns `null` (fail closed) if it can't be resolved — callers must never fall back to the impersonation token |
+
+The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send — see Limitation 2 below.
+
 **Profile & account settings — read-only during impersonation (LFXV2-2572):** The profile controller's **read** endpoints resolve identity through the effective helpers, so Profile pages and Account Settings show the _target_ user's data:
 
 - `GET /api/profile`, `GET /api/profile/emails`, `GET /api/profile/linux-email` use `getEffectiveSub` / `getEffectiveEmail` / `getEffectiveUsername`.
@@ -275,7 +284,7 @@ impersonation_stopped: Impersonation session ended
 
 1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed. The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token).
 
-2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name).
+2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name), as is the weekly-brief mailing-list share (LFXV2-3093): `WeeklyBriefService.shareBrief()` authorizes and sends under the real impersonator's identity/token (`resolveRealAccessToken`/`getRealEmail`), not the target's, because it creates a real, persisted, hard-to-retract external send — see that method's doc comment for the full rationale.
 
 3. **Local dev (Authelia) not supported** — CTE is an Auth0-specific feature. Impersonation won't work with the Authelia dev auth provider.
 
