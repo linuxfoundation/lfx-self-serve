@@ -20,11 +20,17 @@
  * duration. Whether that overlap is harmless is a PER-FLAG question, not a property of this
  * helper — each flag's own doc below states its answer:
  *
- * - `CampaignServiceJobs` — harmless, because routing also depends on the job id's shape
- *   (`isCampaignServiceJobId`): a `job_` id goes to the in-process map on every pod regardless
- *   of the flag, and a UUID cannot exist until creation is cut over.
- * - `CampaignServiceBriefs` — harmless while persistence is write-only; the flag's doc says
- *   exactly when that expires.
+ * - `CampaignServiceJobs` — NO LONGER harmless to flip in any order, and this PR is what changed
+ *   that. Routing depends on the job id's shape (`isCampaignServiceJobId`) as well as the flag, so
+ *   a `job_` id goes to the in-process map on every pod regardless — but the premise that "a UUID
+ *   cannot exist until creation is cut over" expired the moment `CampaignServiceCreate` shipped.
+ *   A pod with JOBS off skips the shape check entirely and sends a UUID poll to its in-process
+ *   map, answering terminal `not_found` for a campaign that is running and SPENDING. JOBS must be
+ *   fully rolled out before CREATE and must stay on until outstanding UUID jobs drain; see its
+ *   own doc below for the enable and rollback orders.
+ * - `CampaignServiceBriefs` — the "harmless while persistence is write-only" argument has also
+ *   expired: the read path (`loadBrief`, the Planning restore offer) is live behind this same
+ *   flag, deliberately, so read and write flip together. Its doc says why.
  * - `WeeklyBriefSlack` — gates access to a feature rather than routing between two
  *   implementations, so overlap means some pods refuse a request others serve.
  *

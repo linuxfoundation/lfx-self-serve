@@ -621,11 +621,17 @@ export class CampaignsComponent {
   /**
    * Save the approved brief in the background.
    *
-   * Deliberately NOT awaited before the tab switch above. Nothing in the Implementation tab
-   * needs a brief id yet — campaign creation still runs through the vendor-direct path — so
-   * gating the handoff on a network call would trade a working flow for a spinner, and a
-   * campaign-service outage would strand the user on the Planning tab with an approved brief
-   * and nowhere to take it.
+   * Deliberately NOT awaited before the tab switch above: gating the handoff on a network call
+   * would trade a working flow for a spinner, and a campaign-service outage would strand the user
+   * on the Planning tab with an approved brief and nowhere to take it.
+   *
+   * The old justification — "nothing in the Implementation tab needs a brief id yet, campaign
+   * creation still runs through the vendor-direct path" — is FALSE as of the creation cutover.
+   * With the flags on, the create posts to `/briefs/{brief_id}/campaigns` and is terminally
+   * refused without that id. The handoff is still not awaited, for the reason above, but the
+   * consequence changed: the tab can now be reached before the id exists, so
+   * `briefSaveInFlight` disables Create until this save settles. Do not remove that gate on the
+   * strength of the sentence this paragraph replaced.
    *
    * `firstValueFrom` rather than `takeUntilDestroyed`: the request must finish and record its
    * outcome even if the user navigates away mid-flight, and one `HttpClient` POST completes on
