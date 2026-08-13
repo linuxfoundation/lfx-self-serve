@@ -1,15 +1,61 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-6" data-testid="social-listening-page">
+<div class="mx-auto flex w-full max-w-[68rem] flex-col gap-4 p-6" data-testid="social-listening-page">
   <div class="flex flex-col gap-1">
     <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
     <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Mentions and sentiment across your foundation's projects.</p>
   </div>
 
-  <lfx-empty-state
-    icon="fa-light fa-ear-listen"
-    title="Social Listening is coming to LFX One"
-    subtitle="The mentions feed, filters, and analytics are being migrated from PCC. Until then, use the Social Listening link in the sidebar to open the PCC experience."
-    data-testid="social-listening-empty-state" />
+  @if (!hasFoundation()) {
+    <lfx-empty-state
+      icon="fa-light fa-ear-listen"
+      title="Select a foundation"
+      subtitle="Choose a foundation from the sidebar context picker to see its social listening feed."
+      data-testid="social-listening-no-foundation" />
+  } @else {
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="social-listening-card">
+      <lfx-feed-header
+        [(activeTab)]="activeTab"
+        [(selectedPeriod)]="selectedPeriod"
+        [(selectedProject)]="selectedProject"
+        [(selectedPlatform)]="selectedPlatform"
+        [(searchInput)]="searchInput"
+        [projectOptions]="subProjectOptions()"
+        [platformOptions]="platformOptions()"
+        [optionsLoading]="optionsLoading()" />
+
+      <div class="flex flex-col gap-4 px-5 py-5">
+        @if (activeTab() === 'feed') {
+          @if (error(); as errorMessage) {
+            <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
+          }
+
+          <lfx-mentions-list
+            [mentions]="mentions()"
+            [loading]="loading()"
+            [totalMentions]="totalRecords()"
+            [first]="first()"
+            [rows]="pageSize()"
+            [rowsPerPageOptions]="rowsPerPageOptions"
+            [dataComputedAt]="dataComputedAt()"
+            [timeTick]="timeTick()"
+            (pageChange)="onPageChange($event)" />
+
+          <!-- Octolens data attribution (legal requirement — ported verbatim from PCC) -->
+          <p class="text-center text-xs text-gray-400" data-testid="social-listening-attribution">
+            The social listening data displayed here is provided by Octolens and consists exclusively of publicly available content sourced from third-party
+            platforms across the web. The Linux Foundation does not independently collect, enrich, or modify this data.
+          </p>
+        } @else {
+          <!-- Analytics tab content lands in LFXV2-3018 -->
+          <lfx-empty-state
+            icon="fa-light fa-chart-line-up"
+            title="Analytics are coming soon"
+            subtitle="Mention volumes, platform and sentiment breakdowns, and export are being migrated from PCC in an upcoming release."
+            data-testid="social-listening-analytics-placeholder" />
+        }
+      </div>
+    </lfx-card>
+  }
 </div>

@@ -11,7 +11,7 @@ import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
-import { MeetingRecurrence, TimezoneOption } from '../interfaces';
+import type { MeetingRecurrence, TimezoneOption } from '../interfaces';
 
 // ============================================================================
 // Date Formatting and Parsing Utilities
@@ -544,4 +544,35 @@ export function formatRelativeTime(date: Date): string {
 /** Short date label for range previews, e.g. "Apr 18, 2026". */
 export function formatShortDate(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * Long-form relative-time label for content timestamps ("Just now", "5 minutes ago",
+ * "2 hours ago", "3 weeks ago"). Coarser callers (autosave indicators) use
+ * `formatRelativeTime` instead. Returns '' for missing/invalid input. Callers that
+ * want the label to refresh over time re-evaluate on a tick (e.g. MENTION_TIME_TICK_INTERVAL_MS).
+ */
+export function timeAgo(timestamp: string): string {
+  if (!timestamp) return '';
+
+  const then = new Date(timestamp);
+  if (isNaN(then.getTime())) return '';
+
+  const diffMs = Math.max(0, Date.now() - then.getTime());
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  const pluralize = (value: number, unit: string): string => `${value} ${unit}${value === 1 ? '' : 's'} ago`;
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return pluralize(diffMinutes, 'minute');
+  if (diffHours < 24) return pluralize(diffHours, 'hour');
+  if (diffDays < 7) return pluralize(diffDays, 'day');
+  if (diffDays < 30) return pluralize(diffWeeks, 'week');
+  if (diffMonths < 12) return pluralize(diffMonths, 'month');
+  return pluralize(diffYears, 'year');
 }
