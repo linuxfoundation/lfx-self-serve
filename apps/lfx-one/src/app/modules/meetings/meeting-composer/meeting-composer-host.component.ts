@@ -28,7 +28,9 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
  * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
  * opening the composer never unmounts the page underneath. Sections are reachable from both the rail
- * and the footer navigation; the live preview is create-mode only.
+ * and the footer navigation; the live preview is create-mode only. Below `lg` the drawer goes full
+ * width, the rail column and the preview drop out, and the rail's compact chip row takes over section
+ * navigation — the preview has no narrow-viewport equivalent.
  */
 @Component({
   selector: 'lfx-meeting-composer-host',
@@ -69,6 +71,14 @@ export class MeetingComposerHostComponent {
   protected readonly canSubmit: Signal<boolean> = computed(() => {
     this.formService.revision();
     return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
+  });
+  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
+  /** Whether a required section the organizer has already been through is currently invalid. */
+  protected readonly hasAttention: Signal<boolean> = computed(() => {
+    this.formService.revision();
+    const visited = this.composer.visitedSections();
+
+    return this.sections.some((section) => section.required && visited.has(section.id) && !this.formService.isSectionValid(section.id));
   });
 
   public constructor() {

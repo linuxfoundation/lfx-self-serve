@@ -1,10 +1,38 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Composer section rail (LFXV2-3240) -->
-<nav class="flex flex-col" aria-label="Composer sections" data-testid="meeting-composer-rail">
+<!-- Composer section rail (LFXV2-3240), with the collapsed chip row for narrow viewports (LFXV2-3243) -->
+<nav
+  [ngClass]="compact() ? 'flex items-center gap-1 overflow-x-auto pb-1' : 'flex flex-col'"
+  aria-label="Composer sections"
+  [attr.data-testid]="testIdPrefix()">
   @for (row of rows(); track row.section.id) {
-    @if (composer.isEditMode()) {
+    @if (compact()) {
+      <button
+        type="button"
+        class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+        [ngClass]="{
+          'border-blue-600 bg-blue-600 text-white': row.active,
+          'border-blue-200 bg-white text-blue-700': !row.active && row.complete,
+          'border-gray-200 bg-white text-gray-600': !row.active && !row.complete,
+          'cursor-not-allowed opacity-50': row.locked,
+        }"
+        [disabled]="row.locked"
+        [attr.aria-current]="row.active ? 'step' : null"
+        [attr.data-testid]="testIdPrefix() + '-' + row.section.id"
+        (click)="onSelect(row)">
+        @if (row.complete) {
+          <i class="fa-light fa-check" aria-hidden="true"></i>
+        } @else {
+          <i [ngClass]="row.section.icon" aria-hidden="true"></i>
+        }
+        <span class="whitespace-nowrap">{{ row.section.label }}</span>
+        @if (row.needsAttention) {
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="testIdPrefix() + '-attention-' + row.section.id"></span>
+          <span class="sr-only">Required fields still missing</span>
+        }
+      </button>
+    } @else if (composer.isEditMode()) {
       <button
         type="button"
         class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors"
