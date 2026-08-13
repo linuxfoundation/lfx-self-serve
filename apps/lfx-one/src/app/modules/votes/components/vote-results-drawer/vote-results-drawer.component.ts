@@ -29,7 +29,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, shareReplay, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
@@ -418,25 +418,29 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. The !visible branch returns EMPTY (not of(null)) so the last loaded response survives the close animation — vote/voteResults stay populated during close, so clearing my-response would flip voterState to access_denied while the drawer is still sliding out. */
+  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. The !visible branch returns EMPTY (not of(null)) so the last loaded response survives the close animation — vote/voteResults stay populated during close, so clearing my-response would flip voterState to access_denied while the drawer is still sliding out. Retention is keyed to the vote the response was loaded for: hosts update selectedVoteId before closing, so a row retained across a voteId change would paint the prior vote's "submitted" state onto the new vote. */
   private initMyResponse(): Signal<MyVoteResponse | null> {
+    // Vote the retained response belongs to — close-with-same-vote keeps it; a voteId change clears it.
+    let responseVoteId: string | null = null;
     return toSignal(
       combineLatest([this.voteId$, toObservable(this.audience), toObservable(this.visible)]).pipe(
         switchMap(([id, audience, visible]) => {
           if (!id || audience !== 'voter') {
             this.myResponseLoading.set(false);
             this.myResponseError.set(false);
+            responseVoteId = null;
             return of(null);
           }
           if (!visible) {
-            // Closing — reset flags but keep the last response; emitting null here would collapse voterState to access_denied mid-close-animation.
+            // Closing — reset flags but keep the last response when it belongs to the still-current vote; emitting null here would collapse voterState to access_denied mid-close-animation, while retaining another vote's row would show a false "submitted" state on the new vote.
             this.myResponseLoading.set(false);
             this.myResponseError.set(false);
-            return EMPTY;
+            return responseVoteId === id ? EMPTY : of(null);
           }
           this.myResponseLoading.set(true);
           this.myResponseError.set(false);
           return this.voteService.getMyVoteResponse(id).pipe(
+            tap(() => (responseVoteId = id)),
             // The service maps 404 to null; anything reaching this catch is a real failure — surface an error state instead of access-denied.
             catchError(() => {
               this.myResponseError.set(true);
