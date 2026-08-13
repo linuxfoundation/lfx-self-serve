@@ -88,6 +88,40 @@ interface SparkRow {
   PROJECT_VALUE: number | null;
 }
 
+/** One (account, bucket) combined-influence row from the lifetime-bucketed trend read model (`all`). */
+interface TrendLifetimeRow {
+  ACCOUNT_ID: string | null;
+  ORG_NAME: string | null;
+  ORG_LOGO_URL: string | null;
+  BUCKET_INDEX: number | null;
+  COMBINED_INFLUENCE_SCORE: number | null;
+}
+
+/** One (metric, bucket) sparkline row from the lifetime-bucketed sparkline read model (`all`). */
+interface SparkLifetimeRow {
+  METRIC_KEY: string | null;
+  BUCKET_INDEX: number | null;
+  ORG_VALUE: number | null;
+  PROJECT_VALUE: number | null;
+}
+
+/** One bucket on a project's shared adaptive lifetime axis (from the bucket spine), oldest → newest. */
+interface BucketAxisRow {
+  BUCKET_INDEX: number | null;
+  BUCKET_GRANULARITY: string | null;
+  BUCKET_START: Date | string | null;
+  BUCKET_END: Date | string | null;
+}
+
+/** A card-sparkline source bundle: the per-card value index, its axis keys, and (all-time only) axis labels. */
+interface SparklineData {
+  index: SparklineIndex;
+  /** Axis keys the dense series map over — trailing year-months (1y/2y) or bucket-index strings (`all`). */
+  axis: string[];
+  /** Variable adaptive-bucket axis labels, one per point; present only for `all` (absent for 1y/2y). */
+  periods?: string[];
+}
+
 interface PlatformsRow {
   CONTRIBUTOR_PLATFORMS: string | null;
   COMMIT_PLATFORMS: string | null;
@@ -302,6 +336,9 @@ export class OrgLensProjectDetailService {
     },
   };
 
+  // Short month names for adaptive-bucket axis labels (e.g. monthly bucket → "Jan 2016").
+  private static readonly shortMonths: readonly string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
   // Re-capitalize lowercase warehouse platform tokens for display.
   private static readonly platformLabels: Record<string, string> = {
     github: 'GitHub',
@@ -402,7 +439,10 @@ export class OrgLensProjectDetailService {
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
     const key = buildOrgCacheKey(orgUid, `project-detail-influence:${this.paramSignature([slug, range])}`);
     if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(key, OrgLensProjectDetailService.isInfluenceBlock);
+      const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
+        key,
+        (value) => OrgLensProjectDetailService.isInfluenceBlock(value) && (range !== 'all' || OrgLensProjectDetailService.hasAdaptivePeriods(value))
+      );
       if (cached !== null) return cached;
     }
 
@@ -411,26 +451,30 @@ export class OrgLensProjectDetailService {
     const isNonLf = heroRow.IS_LF_PROJECT !== true;
     const foundationLabel = heroRow.FOUNDATION_NAME ?? 'Outside LF';
 
-    const [cardRows, sparkRows, viewing] = await Promise.all([
+    // 1y/2y read the trailing monthly sparkline model and slice client-side over a fixed month axis;
+    // `all` reads the adaptive lifetime-bucketed model and carries its own variable `periods[]` axis
+    // (LFXV2-2867 D9) — the same shared bucket axis the trend chart uses (D7).
+    const [cardRows, viewing, sparkData] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
-      this.fetchSparklines(orgUid, slug),
       // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
       // that single row rather than the whole board — the board itself is now paged separately.
       this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
+      range === 'all' ? this.fetchLifetimeSparklineData(orgUid, slug) : this.fetchMonthlySparklineData(orgUid, slug),
     ]);
 
     const cards = cardRows[0] ?? null;
-    const sparklineIndex = this.buildSparklineIndex(sparkRows);
-    const monthAxis = this.monthAxis();
 
     const block: OrgLensInfluenceBlock = {
-      technical: this.buildTechnicalCards(cards, sparklineIndex, monthAxis),
-      ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparklineIndex, monthAxis),
+      technical: this.buildTechnicalCards(cards, sparkData.index, sparkData.axis),
+      ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparkData.index, sparkData.axis),
       isNonLfProject: isNonLf,
       levels: {
         technical: viewing ? (this.mapBand(viewing.LEVEL_TECHNICAL) ?? 'silent') : null,
         ecosystem: isNonLf || !viewing ? null : (this.mapBand(viewing.LEVEL_ECOSYSTEM) ?? 'silent'),
       },
+      // Only the all-time axis is variable/bucketed; 1y/2y omit `periods` and derive labels client-side.
+      // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
+      ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
     if (key !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
@@ -438,20 +482,42 @@ export class OrgLensProjectDetailService {
     return block;
   }
 
-  public async getTrendBlock(orgUid: string, projectSlug: string): Promise<OrgLensTrendBlock | null> {
+  public async getTrendBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensTrendBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
-    const key = buildOrgCacheKey(orgUid, `project-detail-trend:${this.paramSignature([slug])}`);
+    // The trend is now range-scoped (`all` reads the bucketed lifetime source), so the cache key
+    // carries the range — otherwise a 1y/2y series would be served for an all-time request.
+    const key = buildOrgCacheKey(orgUid, `project-detail-trend:${this.paramSignature([slug, range])}`);
     if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensTrendBlock>(key, OrgLensProjectDetailService.isTrendBlock);
+      const cached = await valkeyService.getJson<OrgLensTrendBlock>(
+        key,
+        (value) => OrgLensProjectDetailService.isTrendBlock(value) && (range !== 'all' || OrgLensProjectDetailService.hasAdaptivePeriods(value))
+      );
       if (cached !== null) return cached;
     }
 
     // Gate on the (org, slug) catalog row like every other block, so project-wide trend is not
     // served for a project the org has no activity on (and the 404 stays consistent across blocks).
-    const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug)]);
-    if (!heroRow) return null;
+    // `all`: read the adaptive lifetime-bucketed trend + its shared bucket axis (periods[], D7/D9).
+    // 1y/2y: read the trailing recent-monthly trend; the client slices to 12/24 and derives labels.
+    let block: OrgLensTrendBlock;
+    if (range === 'all') {
+      const [heroRow, trendRows, axis] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrendLifetime(slug), this.fetchLifetimeAxis(slug)]);
+      if (!heroRow) return null;
+      block = {
+        trend: this.buildTrendSeries(
+          this.buildTrendLifetimeByAccount(
+            trendRows,
+            axis.map((bucket) => bucket.index)
+          )
+        ),
+        periods: axis.map((bucket) => bucket.label),
+      };
+    } else {
+      const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug)]);
+      if (!heroRow) return null;
+      block = { trend: this.buildTrendSeries(this.buildTrendByAccount(trendRows)) };
+    }
 
-    const block: OrgLensTrendBlock = { trend: this.buildTrendSeries(this.buildTrendByAccount(trendRows)) };
     if (key !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -718,6 +784,38 @@ export class OrgLensProjectDetailService {
     return result.rows;
   }
 
+  /** 1y/2y card sparklines: trailing monthly values on the fixed month axis (client slices to range). */
+  private async fetchMonthlySparklineData(orgUid: string, slug: string): Promise<SparklineData> {
+    const rows = await this.fetchSparklines(orgUid, slug);
+    return { index: this.buildSparklineIndex(rows), axis: this.monthAxis() };
+  }
+
+  /**
+   * All-time card sparklines: per-(metric, bucket) values re-binned to the project's shared lifetime
+   * axis. The axis (and therefore `periods[]`) comes from the bucket spine so every card lines up
+   * with the trend and with each other even when a metric has no data in some buckets.
+   */
+  private async fetchLifetimeSparklineData(orgUid: string, slug: string): Promise<SparklineData> {
+    const [rows, axis] = await Promise.all([this.fetchSparklinesLifetime(orgUid, slug), this.fetchLifetimeAxis(slug)]);
+    return {
+      index: this.buildSparklineLifetimeIndex(rows),
+      axis: axis.map((bucket) => String(bucket.index)),
+      periods: axis.map((bucket) => bucket.label),
+    };
+  }
+
+  private async fetchSparklinesLifetime(orgUid: string, slug: string): Promise<SparkLifetimeRow[]> {
+    const result = await this.snowflakeService.execute<SparkLifetimeRow>(
+      `
+        SELECT METRIC_KEY, BUCKET_INDEX, ORG_VALUE, PROJECT_VALUE
+        FROM ${this.sparklinesLifetimeTable()}
+        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
+      `,
+      [orgUid, slug]
+    );
+    return result.rows;
+  }
+
   private async fetchPlatforms(slug: string, timeRangeType: string): Promise<PlatformsRow[]> {
     const result = await this.snowflakeService.execute<PlatformsRow>(
       `
@@ -744,6 +842,41 @@ export class OrgLensProjectDetailService {
     return result.rows;
   }
 
+  /** All-time trend: per-(account, bucket) combined scores over the project's shared lifetime bucket axis. */
+  private async fetchTrendLifetime(slug: string): Promise<TrendLifetimeRow[]> {
+    const result = await this.snowflakeService.execute<TrendLifetimeRow>(
+      `
+        SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, BUCKET_INDEX, COMBINED_INFLUENCE_SCORE
+        FROM ${this.trendLifetimeTable()}
+        WHERE PROJECT_SLUG = ?
+        ORDER BY ACCOUNT_ID, BUCKET_INDEX ASC
+      `,
+      [slug]
+    );
+    return result.rows;
+  }
+
+  /**
+   * The project's shared adaptive lifetime axis (oldest → newest), read from the bucket spine so it
+   * is complete even for metrics/orgs the bucketed models have sparse rows for. Both the trend and
+   * the sparklines render against this one axis under "All time" (D7); each bucket also carries a
+   * formatted label for the wire `periods[]`.
+   */
+  private async fetchLifetimeAxis(slug: string): Promise<{ index: number; label: string }[]> {
+    const result = await this.snowflakeService.execute<BucketAxisRow>(
+      `
+        SELECT DISTINCT BUCKET_INDEX, BUCKET_GRANULARITY, BUCKET_START, BUCKET_END
+        FROM ${this.bucketSpineTable()}
+        WHERE PROJECT_SLUG = ?
+        ORDER BY BUCKET_INDEX ASC
+      `,
+      [slug]
+    );
+    return result.rows
+      .filter((row) => row.BUCKET_INDEX !== null && row.BUCKET_INDEX !== undefined)
+      .map((row) => ({ index: this.num(row.BUCKET_INDEX), label: this.bucketLabel(row.BUCKET_GRANULARITY, row.BUCKET_START, row.BUCKET_END) }));
+  }
+
   /** Index the tall sparkline rows into per-card (year-month → value) maps for org + project. */
   private buildSparklineIndex(rows: SparkRow[]): SparklineIndex {
     const index: SparklineIndex = new Map();
@@ -760,6 +893,66 @@ export class OrgLensProjectDetailService {
       entry.project.set(ym, this.num(row.PROJECT_VALUE));
     }
     return index;
+  }
+
+  /**
+   * Index the lifetime-bucketed sparkline rows into per-card (bucket-index → value) maps. Keyed by the
+   * stringified bucket index so it shares the same dense-series machinery as the monthly index (whose
+   * keys are year-months) — the axis for `all` is the list of bucket-index strings.
+   */
+  private buildSparklineLifetimeIndex(rows: SparkLifetimeRow[]): SparklineIndex {
+    const index: SparklineIndex = new Map();
+    for (const row of rows) {
+      const key = row.METRIC_KEY;
+      if (!key || row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
+      const bucketKey = String(this.num(row.BUCKET_INDEX));
+      let entry = index.get(key);
+      if (!entry) {
+        entry = { org: new Map(), project: new Map() };
+        index.set(key, entry);
+      }
+      entry.org.set(bucketKey, row.ORG_VALUE == null ? null : this.num(row.ORG_VALUE));
+      entry.project.set(bucketKey, this.num(row.PROJECT_VALUE));
+    }
+    return index;
+  }
+
+  /**
+   * Adaptive-bucket axis label for the wire `periods[]` (D9): monthly `MMM YYYY`, quarterly `Q# YYYY`,
+   * yearly `YYYY`, multi-year `YYYY–YYYY`, and `YYYY–?` for a multi-year bucket whose end date is
+   * missing or unparseable. Derived from the bucket's start (and end for multi-year).
+   */
+  private bucketLabel(granularity: string | null, start: Date | string | null, end: Date | string | null): string {
+    const startDate = this.parseUtcDate(start);
+    if (startDate === null) return '';
+    const year = startDate.getUTCFullYear();
+    switch (granularity) {
+      case 'monthly':
+        return `${OrgLensProjectDetailService.shortMonths[startDate.getUTCMonth()]} ${year}`;
+      case 'quarterly':
+        return `Q${Math.floor(startDate.getUTCMonth() / 3) + 1} ${year}`;
+      case 'yearly':
+        return `${year}`;
+      case 'multi_year': {
+        const endDate = this.parseUtcDate(end);
+        // A missing end date must not collapse to a bare `YYYY`: that is indistinguishable from a
+        // yearly bucket and understates the span. Mark the end as unknown so the gap is visible.
+        if (endDate === null) return `${year}\u2013?`;
+        const endYear = endDate.getUTCFullYear();
+        return endYear > year ? `${year}\u2013${endYear}` : `${year}`;
+      }
+      default:
+        return `${year}`;
+    }
+  }
+
+  /** Coerce a Snowflake DATE cell to a UTC-anchored Date (first-of-day), or null if unparseable. */
+  private parseUtcDate(value: Date | string | null): Date | null {
+    if (value === null || value === undefined) return null;
+    if (value instanceof Date) return value;
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return null;
+    return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   }
 
   /** Trailing 36 year-month keys (YYYY-MM), oldest → newest, ending at the current month. */
@@ -1135,6 +1328,39 @@ export class OrgLensProjectDetailService {
         byAccount.set(accountId, series);
       }
       series.combined.push(this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+    }
+    return byAccount;
+  }
+
+  /**
+   * Group the lifetime-bucketed trend rows into per-org series over the project's shared bucket axis.
+   * Values are placed BY bucket index and the axis is zero-filled, rather than pushed in row order,
+   * so every series is exactly `axis.length` long and stays positionally aligned with the emitted
+   * `periods[]` labels even if the read model ever returns a sparse row set (a backfill gap would
+   * otherwise shift a series against the axis and silently mislabel every one of its points). This
+   * mirrors how the card sparklines densify over their axis in `denseSeries`.
+   */
+  private buildTrendLifetimeByAccount(rows: TrendLifetimeRow[], axis: number[]): Map<string, TrendSeries> {
+    const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byBucket: Map<number, number> }>();
+    for (const row of rows) {
+      const accountId = row.ACCOUNT_ID;
+      if (!accountId || row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
+      let entry = scoresByAccount.get(accountId);
+      if (!entry) {
+        entry = { orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', byBucket: new Map() };
+        scoresByAccount.set(accountId, entry);
+      }
+      entry.byBucket.set(this.num(row.BUCKET_INDEX), this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+    }
+
+    const byAccount = new Map<string, TrendSeries>();
+    for (const [accountId, entry] of scoresByAccount) {
+      byAccount.set(accountId, {
+        accountId,
+        orgName: entry.orgName,
+        orgLogoUrl: entry.orgLogoUrl,
+        combined: axis.map((bucketIndex) => entry.byBucket.get(bucketIndex) ?? 0),
+      });
     }
     return byAccount;
   }
@@ -1519,6 +1745,18 @@ export class OrgLensProjectDetailService {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_SPARKLINES`;
   }
 
+  private trendLifetimeTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_TREND_LIFETIME`;
+  }
+
+  private sparklinesLifetimeTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_SPARKLINES_LIFETIME`;
+  }
+
+  private bucketSpineTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_INFLUENCE_LIFETIME_BUCKET_SPINE`;
+  }
+
   private platformsTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_PLATFORMS`;
   }
@@ -1604,6 +1842,24 @@ export class OrgLensProjectDetailService {
   private static isTrendBlock(value: unknown): value is OrgLensTrendBlock {
     if (value === null || typeof value !== 'object') return false;
     return Array.isArray((value as OrgLensTrendBlock).trend);
+  }
+
+  /**
+   * Whether a cached `all` block carries the adaptive-bucket axis, i.e. was written by this version.
+   * Pre-deploy entries have no `periods` at all, so the presence of the array is what rejects them.
+   * An EMPTY array is accepted on purpose: a project with no rows in the bucket spine legitimately
+   * caches `periods: []`, and requiring a non-empty axis would reject that entry on every read and
+   * re-query Snowflake for the life of the TTL.
+   *
+   * Deliberately not gated any tighter. An entry written before the series builder placed values by
+   * bucket index still passes, so a misaligned series could be served until the 1h TTL rotates. A
+   * cache-key bump would close that window at deploy time, but it would force a cold read for every
+   * project, and the largest ones exceed the query timeout on a cold read (LFXV2-3231) — a certain
+   * outage traded against a misalignment that requires a sparse row set no project currently has.
+   */
+  private static hasAdaptivePeriods(value: unknown): boolean {
+    const periods = (value as { periods?: unknown }).periods;
+    return Array.isArray(periods) && periods.every((label) => typeof label === 'string');
   }
 
   private static isLeaderboardPage(value: unknown): value is OrgLensLeaderboardPage {
