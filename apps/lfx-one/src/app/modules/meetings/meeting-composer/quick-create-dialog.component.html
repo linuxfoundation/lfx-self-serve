@@ -14,7 +14,7 @@
     <div class="flex min-w-0 flex-col gap-6">
       <lfx-composer-details-access [form]="formService.form()" [showHeading]="false" />
 
-      @if (prefilledDetails()) {
+      @if (prefilledTitle()) {
         <p class="text-xs text-gray-500" data-testid="quick-create-prefill-hint">Pre-filled for this meeting type — edit freely.</p>
       }
 
@@ -46,6 +46,12 @@
 
     <div class="flex min-w-0 flex-col gap-6">
       <lfx-composer-date-schedule [form]="formService.form()" [showHeading]="false" [showEarlyJoin]="false" />
+
+      <!-- Its own hint rather than sharing the title's: duration lives in this column, and only a template
+           whose estimate lands on the chip scale seeds it at all -->
+      @if (prefilledDuration()) {
+        <p class="text-xs text-gray-500" data-testid="quick-create-duration-hint">Duration pre-filled for this meeting type — edit freely.</p>
+      }
     </div>
   </div>
 

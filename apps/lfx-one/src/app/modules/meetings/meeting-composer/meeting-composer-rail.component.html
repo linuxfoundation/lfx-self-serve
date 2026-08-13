@@ -76,7 +76,7 @@
               'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
               'border-blue-600 bg-white text-blue-600': !row.active && row.complete && !row.locked,
               'border-gray-200 bg-white text-gray-400': !row.active && !row.complete && !row.locked,
-              'border-gray-200 bg-gray-100 text-gray-500': row.locked,
+              'border-gray-200 bg-gray-100 text-gray-600': row.locked,
             }">
             @if (row.complete) {
               <i class="fa-light fa-check" aria-hidden="true"></i>
@@ -96,8 +96,9 @@
           </span>
           @if (row.locked) {
             <!-- The only text saying why the row won't respond, and the row stays keyboard-reachable, so it
-                 carries no opacity and sits at `gray-500` (≈4.8:1 on white) rather than the decorative `gray-400` -->
-            <span class="text-xs text-gray-500">Complete earlier sections first</span>
+                 carries no opacity and sits at `gray-600` on the row's `gray-50` surface (7.2:1) rather than
+                 the decorative `gray-400` it used to use -->
+            <span class="text-xs text-gray-600">Complete earlier sections first</span>
           }
         </span>
       </button>

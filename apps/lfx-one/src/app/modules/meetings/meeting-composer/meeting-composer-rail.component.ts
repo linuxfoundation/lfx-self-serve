@@ -75,24 +75,29 @@ export class MeetingComposerRailComponent {
       const sections = this.sections;
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
-      const isEditMode = this.composer.isEditMode();
+      // Read from the form service, the same source `sectionNeedsAttention` uses — two sources for one
+      // fact would flip the visited gate if they ever disagreed mid-tick.
+      const isEditMode = this.formService.isEditMode();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
       const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
       return sections.map((section, index) => {
         const active = section.id === activeSection;
         const blockedByEarlier = sections.slice(0, index).some((earlier) => earlier.required && !validById.get(earlier.id));
+        // The organizer can be standing on a section an out-of-section validator has just invalidated
+        // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
+        const locked = !isEditMode && blockedByEarlier && !active;
 
         return {
           section,
           active,
           complete: isComplete(section) && !active,
-          // The organizer can be standing on a section an out-of-section validator has just invalidated
-          // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
-          locked: !isEditMode && blockedByEarlier && !active,
+          locked,
           // Shared with the compact badge in the host, so the two can't disagree about what needs fixing.
           needsAttention: this.formService.sectionNeedsAttention(section, visited),
-          lineBelowComplete: isComplete(section),
+          // A locked row is behind an invalid earlier section, so its connector can't claim the chain is done
+          // even when this section itself validates.
+          lineBelowComplete: isComplete(section) && !locked,
           isLast: index === sections.length - 1,
         };
       });

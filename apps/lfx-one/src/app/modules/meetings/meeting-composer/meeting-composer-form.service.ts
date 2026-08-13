@@ -135,10 +135,11 @@ export class MeetingComposerFormService {
   private readonly contextProjectUid = signal<string | null>(null);
 
   /**
-   * Bumped on every form value/status change, and by the methods here that mark controls
-   * touched/dirty/pristine without emitting either.
-   * @description FormGroup state is not reactive, so template computeds that depend on section
-   * validity — or on a control's `pristine` flag — must read this signal to re-evaluate.
+   * Bumped on every form value/status change, and explicitly by `validateForSubmit()`.
+   * @description FormGroup state is not reactive, so template computeds that depend on section validity —
+   * or on a control's `pristine` flag — must read this signal to re-evaluate. `validateForSubmit()` needs
+   * the explicit bump because `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor
+   * `statusChanges`; every other writer here pairs its marks with a `setValue` that does emit.
    */
   public readonly revision = signal<number>(0);
 
@@ -304,16 +305,24 @@ export class MeetingComposerFormService {
     return (isEditMode || visitedSections.has(section.id)) && !this.isSectionValid(section.id);
   }
 
-  /** Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer. */
+  /**
+   * Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer.
+   * @description Edit mode only: `meetingId` is also set by a successful create, and re-fetching there
+   * would hydrate a create form from the meeting it just saved. Guests are re-fetched only if their own
+   * request failed too — the two calls are independent, and one can fail while the other succeeds.
+   */
   public retryLoadMeeting(): void {
     const meetingUid = this.meetingId();
 
-    if (!meetingUid || this.loading()) {
+    if (!this.isEditMode() || !meetingUid || this.loading()) {
       return;
     }
 
     this.loadMeeting(meetingUid);
-    this.loadGuests(meetingUid);
+
+    if (this.guestsLoadFailed()) {
+      this.loadGuests(meetingUid);
+    }
   }
 
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
