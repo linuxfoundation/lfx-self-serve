@@ -9,7 +9,7 @@ import { InputNumberComponent } from '@components/input-number/input-number.comp
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
   EARLY_JOIN_CHIP_OPTIONS,
   EARLY_JOIN_TOOLTIP,
@@ -85,19 +85,6 @@ export class ComposerDateScheduleComponent implements OnInit {
     }
 
     this.showCustomRecurrence.set(this.form().get('recurrenceType')?.value === 'custom');
-
-    this.form()
-      .get('duration')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => {
-        const customDuration = this.form().get('customDuration');
-        if (value === 'custom') {
-          customDuration?.setValidators([Validators.required, Validators.min(MIN_CUSTOM_DURATION), Validators.max(MAX_CUSTOM_DURATION)]);
-        } else {
-          customDuration?.clearValidators();
-        }
-        customDuration?.updateValueAndValidity();
-      });
 
     this.form()
       .get('startDate')

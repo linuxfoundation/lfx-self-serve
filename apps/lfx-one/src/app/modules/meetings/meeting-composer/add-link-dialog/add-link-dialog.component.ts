@@ -6,7 +6,7 @@ import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import type { MeetingLinkDialogResult } from '@lfx-one/shared/interfaces';
-import { httpsUrlValidator } from '@lfx-one/shared/validators';
+import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
@@ -23,7 +23,7 @@ export class AddLinkDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
 
   protected readonly form = new FormGroup({
-    title: new FormControl('', [Validators.required]),
+    title: new FormControl('', [trimmedRequired()]),
     url: new FormControl('', [Validators.required, httpsUrlValidator()]),
   });
 
