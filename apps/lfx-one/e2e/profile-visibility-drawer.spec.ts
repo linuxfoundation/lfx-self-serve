@@ -15,6 +15,8 @@
  *      only once the queued flush drains, still carrying the close-time edit.
  *   7. A superseded failed save (an older write that fails while a newer one is already queued) does
  *      not pin the inline indicator on "Saving".
+ *   8. A failed load, then a close and reopen, re-triggers the load (switchMap on open$) and the
+ *      second attempt succeeds and seeds the form.
  *
  * Every test stubs GET and PATCH /api/profile/visibility so the real account is never mutated — the
  * assertions are on the seeded state, the drawer behaviour, and the PATCH payloads.
@@ -411,5 +413,51 @@ test.describe('Profile visibility drawer', () => {
     );
     expect(patchSections[1]?.skills, 'the superseding save carries the newer edit').toBe(true);
     expect(patchSections[1]?.badges, 'the superseding save retains the earlier toggle').toBe(true);
+  });
+
+  test('S8: a failed load recovers when the drawer is closed and reopened', async ({ page }) => {
+    // Only the first GET fails; a close+reopen re-emits open$ so switchMap re-runs the load. Guards
+    // against a switchMap→mergeMap regression of reopen-after-failure (S5 only covers in-place Retry).
+    let failNext = true;
+    await page.route('**/api/profile/visibility', async (route) => {
+      if (route.request().method() === 'GET') {
+        if (failNext) {
+          failNext = false;
+          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ isPublic: true, sections: sectionsMap({ basic: true, badges: true }), preferenceId: 'pref-1' }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoProfile(page);
+    await openDrawer(page);
+
+    // First load failed → the error + retry block renders instead of the form.
+    await expect(page.getByTestId('profile-visibility-drawer-error'), 'error block should render on the first (failed) load').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // Close the drawer (no pending saves → it closes immediately) rather than using the in-place retry.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('profile-visibility-drawer-body'), 'drawer should close after dismissing the error state').toBeHidden({
+      timeout: ELEMENT_TIMEOUT,
+    });
+
+    // Reopen → open$ re-fires, the switchMap re-runs the (now succeeding) load, and the form seeds.
+    await openDrawer(page);
+    await expect(page.getByTestId('profile-visibility-drawer-error'), 'error block should be gone on the successful reopen').toBeHidden({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('profile-visibility-drawer-tab-sections'), 'the tablist should render after the reopen load').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(toggleInput(page, 'badges'), 'the reopened load should seed the badges toggle on').toBeChecked({ timeout: ELEMENT_TIMEOUT });
   });
 });
