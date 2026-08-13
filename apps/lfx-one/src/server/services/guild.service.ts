@@ -22,6 +22,11 @@ const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_messa
 // per-viewer timestamp localization deferred to LFXAI-99.
 const GUILD_HISTORY_LIMIT = 100;
 
+// Max raw events fetched when scanning a session for the Brand Kit output
+// envelope. Raw mode includes system events (llm_start/llm_done, task events),
+// which are far chattier than chat history — hence the higher cap.
+const GUILD_RAW_EVENTS_LIMIT = 500;
+
 // Leading `@mention` prefix — matches an @handle followed by whitespace OR the
 // end of the string, so a mention-only message (e.g. `@foo`) is stripped too.
 const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
@@ -127,6 +132,55 @@ export class GuildService {
       .filter((entry): entry is { message: MktgChatMessage; createdAt: string } => entry !== null)
       .sort((a, b) => toEpoch(a.createdAt) - toEpoch(b.createdAt))
       .map((entry) => entry.message);
+  }
+
+  /**
+   * Fetch a session's raw events with NO type filter, as opaque JSON payloads.
+   *
+   * Used by the Brand Kit session-consumer: per the live-smoke A3 verdict the
+   * authoritative typed output is the `finalize_brand_kit` tool RESULT, which
+   * rides system events (`llm_start`/`llm_done` stream bodies, task events)
+   * that the filtered history path drops. Callers scan the serialized payloads
+   * for the contract envelope; this method makes no shape assumptions beyond
+   * `{ items: [...] }` with an optional `type` per item.
+   *
+   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
+   * intake answers are echoed verbatim into the trigger message, so a caller
+   * could otherwise plant a schema-valid envelope in an answer and have it
+   * selected as the agent's output. The authoritative envelope only ever rides
+   * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
+   */
+  public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
+    this.assertConfigured('guild_get_raw_events');
+
+    const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}`;
+
+    logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
+
+    const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
+    await this.assertOk(response, 'guild_get_raw_events', path);
+
+    const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
+    const rawItems = data.items || [];
+    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+
+    // Last-valid-wins selection downstream depends on chronological order —
+    // normalize it here instead of trusting the API's ordering.
+    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
+
+    // Truncation guard: a full page means the session may have more events than
+    // the cap, so the terminal envelope could be missing (or a stale draft could
+    // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
+    // The limit applies to the UNFILTERED response — check the raw count, or a
+    // full page would slip under the threshold after user-event filtering.
+    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
+      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', {
+        count: rawItems.length,
+        limit: GUILD_RAW_EVENTS_LIMIT,
+      });
+    }
+
+    return sorted.map((item) => JSON.stringify(item));
   }
 
   /**

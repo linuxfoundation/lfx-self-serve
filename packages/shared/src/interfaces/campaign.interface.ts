@@ -266,6 +266,18 @@ export interface CampaignBriefPersistenceState {
    * brief is stored but not yet usable.
    */
   message: string | null;
+
+  /**
+   * Is the stored brief APPROVED, and therefore usable for campaign creation?
+   *
+   * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
+   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * approved before creating campaigns" — so the Implementation tab has to know, and matching on
+   * banner prose to find out would break the first time the copy is edited.
+   *
+   * Meaningful only on `saved`; `false` elsewhere, where there is no stored brief to approve.
+   */
+  approved: boolean;
 }
 
 /**
@@ -613,6 +625,35 @@ export interface CampaignCreateRequest {
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+}
+
+/**
+ * The INTERNAL result of `CampaignServiceClient.createCampaigns` — not a wire shape.
+ *
+ * `POST /api/campaigns/create` never sends this. The controller translates it: `{ jobId }` on
+ * success, `{ jobId: '', error }` on refusal, and on `enabled: false` it falls through to the
+ * legacy path and answers with that path's response instead. `enabled` is a routing signal
+ * between these two layers and is stripped before anything reaches the client, so a client coded
+ * against it would read `undefined` forever.
+ *
+ * Deliberately NOT the legacy `{ jobId, result?, error? }` shape. The legacy path inline-waits up
+ * to 45s and can return a finished `result`; campaign-service answers 202 with a job id and
+ * nothing else, because dispatch is genuinely asynchronous there — the platforms are called by a
+ * dispatcher the request does not wait for.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is the steady state everywhere the
+ * cutover is dark, and the caller must fall through to the legacy path rather than showing an
+ * error.
+ */
+export interface CampaignServiceCreateResult {
+  enabled: boolean;
+  /** The campaign-service job id (a UUID). Poll it through the existing job-status route. */
+  jobId: string | null;
+  /**
+   * Why the cutover could not be used for this request, when `enabled` is true but `jobId` is
+   * null. Never a raw upstream error — the caller renders this.
+   */
+  error: string | null;
 }
 
 export interface CampaignCreateResult {

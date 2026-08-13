@@ -587,7 +587,9 @@ describe('PlanningTabComponent brief read-back', () => {
     (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
     await fixture.whenStable();
 
-    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123' }]);
+    // `approved` rides along with the id: campaign-service refuses a create from an unapproved
+    // brief, and the parent files a restored brief as create-ready without it.
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', approved: true }]);
     expect(generated).toEqual([]);
   });
 
