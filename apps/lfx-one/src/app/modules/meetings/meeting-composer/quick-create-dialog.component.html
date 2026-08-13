@@ -14,7 +14,7 @@
     <div class="flex min-w-0 flex-col gap-6">
       <lfx-composer-details-access [form]="formService.form()" [showHeading]="false" />
 
-      @if (prefilledType()) {
+      @if (prefilledDetails()) {
         <p class="text-xs text-gray-500" data-testid="quick-create-prefill-hint">Pre-filled for this meeting type — edit freely.</p>
       }
 
@@ -30,7 +30,7 @@
           [maxlength]="agendaMaxLength"
           data-testid="quick-create-agenda-textarea" />
         <div class="flex items-center justify-between gap-2">
-          @if (prefilledType()) {
+          @if (prefilledAgenda()) {
             <p class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">Suggested agenda template — adjust as needed.</p>
           }
           <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>

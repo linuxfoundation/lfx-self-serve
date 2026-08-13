@@ -41,20 +41,22 @@ export class MeetingComposerRailComponent {
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
   // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
   // isn't there — matching what the desktop edit rows already do.
-  protected readonly activeChipAriaCurrent: Signal<string> = computed(() => (this.composer.isEditMode() ? 'true' : 'step'));
+  protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.composer.isEditMode() ? 'true' : 'step'));
 
   public constructor() {
     // The chip row is wider than a phone, so a section reached from the footer would otherwise
     // highlight a chip scrolled off-screen. `afterRenderEffect` so the chip carrying the marker is the
     // freshly active one, and because it never runs during SSR.
-    afterRenderEffect(() => {
-      this.composer.activeSection();
+    afterRenderEffect({
+      read: () => {
+        this.composer.activeSection();
 
-      if (!this.compact()) {
-        return;
-      }
+        if (!this.compact()) {
+          return;
+        }
 
-      this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+        this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      },
     });
   }
 
@@ -90,7 +92,9 @@ export class MeetingComposerRailComponent {
           // The organizer can be standing on a section an out-of-section validator has just invalidated
           // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
           locked: !isEditMode && blockedByEarlier && !active,
-          needsAttention: !isEditMode && section.required && visited.has(section.id) && !valid,
+          // Edit mode has no visited gate: every section is reachable from the start, so an invalid one the
+          // organizer hasn't opened yet is the case where the dot is the only clue Save is blocked on it.
+          needsAttention: section.required && (isEditMode || visited.has(section.id)) && !valid,
           lineBelowComplete: isComplete(section),
           isLast: index === sections.length - 1,
         };
