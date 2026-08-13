@@ -38,6 +38,11 @@
  *       empty-tree/search-reachable bucket, since that shape isn't guaranteed by a single real
  *       account — but when it is, this exercises the path directly rather than only asserting
  *       picker shape.
+ * - M1: (separate describe block, `mobile-chrome` project only — see `skipOnDesktopViewport`)
+ *       LFXV2-3248: the mobile drawer's own Create trigger (`create-rail-button-mobile`) opens a
+ *       distinctly-testid'd popover (`create-menu-mobile`) anchored near the tapped button, not
+ *       pinned at the desktop rail's fixed coordinates — regression guard for the `lg`-scoped
+ *       rail-anchoring CSS in `lens-switcher.component.scss`.
  *
  * What this suite does NOT attempt: a deterministic "committee target selectable for meeting but
  * not newsletter" scenario. That requires a fixture user with a specific, known grant shape
@@ -53,6 +58,8 @@
  *   committee for S1-S8 to run past `beforeEach`; otherwise they skip (see
  *   `skipWhenNoCreatePermission`). S9 lives in its own describe block with a lighter beforeEach
  *   and self-skips independently — see its inline comment.
+ * - M1 only runs under the `mobile-chrome` Playwright project (viewport width < 1024px); it
+ *   self-skips on `chromium`/`firefox` via `skipOnDesktopViewport`.
  *
  * Note: this suite stops at the dialog boundary. It does not assert the post-Continue
  * create page — that path is enforced by each route's writerGuard.
@@ -268,12 +275,13 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
 
 // The mobile drawer's own Create trigger is a separate element from the desktop rail button
 // (data-testid="create-rail-button-mobile"), opening a distinctly-testid'd copy of the same
-// popover (data-testid="create-menu-mobile") — see LFXV2-3248. Desktop projects (chromium,
-// firefox) never render the mobile drawer content behind a viewport this wide, so this suite
-// only runs on the narrow (mobile-chrome) project.
+// popover (data-testid="create-menu-mobile") — see LFXV2-3248. The regression this suite guards
+// (lens-switcher.component.scss's rail-anchoring CSS) is gated at the `lg` breakpoint (1024px,
+// matching tailwind.config.js), so the skip boundary matches that rather than `md` (768px) —
+// a viewport in [768, 1024) would still get the desktop-anchored popover CSS applied.
 function skipOnDesktopViewport(page: Page): void {
   const viewport = page.viewportSize();
-  if (viewport && viewport.width >= 768) {
+  if (viewport && viewport.width >= 1024) {
     test.skip(true, 'Mobile-only trigger — desktop uses create-rail-button in the vertical rail');
   }
 }
@@ -299,12 +307,15 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
 
     // Popover must actually open near the tapped button, not pinned at the desktop rail's fixed
     // coordinates (left:56px/top:58px) — regression guard for the rail-anchoring CSS scoped to
-    // the `lg` breakpoint.
+    // the `lg` breakpoint. Check X, not Y: the mobile trigger sits in a right-aligned (`ml-auto`)
+    // icon group, far from the rail's x=56, while the rail's fixed top:58px happens to land close
+    // to the mobile trigger's real Y position too — so a Y-only check would likely still pass even
+    // if the `@media (min-width: 1024px)` scoping regressed. X actually distinguishes the two.
     const [menuBox, triggerBox] = await Promise.all([menu.boundingBox(), trigger.boundingBox()]);
     expect(menuBox).not.toBeNull();
     expect(triggerBox).not.toBeNull();
     if (menuBox && triggerBox) {
-      expect(Math.abs(menuBox.y - triggerBox.y)).toBeLessThan(150);
+      expect(Math.abs(menuBox.x - triggerBox.x)).toBeLessThan(150);
     }
   });
 });
