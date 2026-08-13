@@ -17,6 +17,14 @@ const guildMocks = vi.hoisted(() => ({
 const objectStoreMocks = vi.hoisted(() => ({
   putObjectIfAbsent: vi.fn(),
 }));
+const loggerMocks = vi.hoisted(() => ({
+  startOperation: vi.fn(() => 0),
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  debug: vi.fn(),
+  info: vi.fn(),
+}));
 
 vi.mock('@lfx-one/shared/utils', async () => {
   const utils = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
@@ -39,7 +47,7 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: loggerMocks,
 }));
 
 import type { Request } from 'express';
@@ -182,6 +190,17 @@ describe('BrandKitService', () => {
       expect(result.status).toBe('ready');
       expect(result.documentMarkdown).toBe(envelope['document_markdown']);
       expect(result.persistence).toBeUndefined();
+    });
+
+    it('logs a persistence failure at WARN (graceful degradation), never ERROR', async () => {
+      objectStoreMocks.putObjectIfAbsent.mockRejectedValue(new Error('storage down'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      await service.getResult(req, 's');
+
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('Object-store write failed'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
     });
 
     it('suppresses an envelope whose content_sha256 does not match the document bytes', async () => {
