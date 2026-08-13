@@ -5,8 +5,8 @@
  * Org Lens · Project Detail sub-page (LFXV2-1885) payload contracts.
  *
  * Populated by the Snowflake-backed BFF (`OrgLensProjectDetailService`). Sparklines and
- * trend series are stored on a 36-month axis (oldest → newest); the client slices to the
- * active `?range=` toggle (1y / 2y / all).
+ * trend series are oldest → newest. `1y`/`2y` are trailing monthly points the client slices;
+ * `all` is an adaptive lifetime-bucketed series (≤12) with a server-emitted `periods[]` axis.
  */
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
@@ -221,7 +221,7 @@ export interface OrgLensInfluenceBlock {
   periods?: string[];
 }
 
-/** B6 Influence Trend block — the per-org monthly combined-influence series. Range-scoped (client slices). */
+/** B6 Influence Trend block — per-org combined-influence series. `1y`/`2y` are trailing monthly (client slices); `all` is adaptive lifetime buckets with `periods[]`. */
 export interface OrgLensTrendBlock {
   trend: OrgLensProjectTrendSeries[];
   /**
