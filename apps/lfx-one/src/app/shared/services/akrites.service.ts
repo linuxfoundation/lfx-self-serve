@@ -154,7 +154,9 @@ export class AkritesService {
       userId: user?.sub ?? '',
       username: user?.nickname || user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null,
       displayName: user?.name || null,
-      avatarUrl: user?.picture || null,
+      // effectiveAvatarUrl, not the raw picture claim — otherwise an activity entry logged right
+      // after an avatar upload would show the stale Auth0 picture instead of the new one (LFXV2-2628).
+      avatarUrl: this.userService.effectiveAvatarUrl() || null,
     };
   }
 }

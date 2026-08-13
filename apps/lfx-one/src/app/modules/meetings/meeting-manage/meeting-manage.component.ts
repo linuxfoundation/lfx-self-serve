@@ -48,6 +48,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
@@ -571,7 +572,7 @@ export class MeetingManageComponent {
         : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
-      committees: formValue.committees || [],
+      committees: sanitizeMeetingCommittees(formValue.committees),
     };
   }
 
@@ -848,7 +849,7 @@ export class MeetingManageComponent {
       reminderHours: reminderHours,
       reminderMinutes: reminderTotalMinutes % 60,
       recurrenceType: finalRecurrenceValue,
-      committees: meeting.committees || [],
+      committees: sanitizeMeetingCommittees(meeting.committees),
     });
 
     // Populate the recurrence FormGroup if there's recurrence data

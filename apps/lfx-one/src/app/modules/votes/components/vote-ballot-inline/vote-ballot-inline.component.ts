@@ -9,8 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { maxCodePointsValidator } from '@lfx-one/shared/validators';
-import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { MessageService } from 'primeng/api';
@@ -76,7 +76,7 @@ export class VoteBallotInlineComponent {
     }
     const userVoteContent = isAbstain || !question ? undefined : this.buildAnswers(question);
     // Comments are independent of abstain — a voter can abstain and still leave a comment.
-    const commentResponses = this.buildCommentResponses();
+    const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
 
@@ -125,10 +125,7 @@ export class VoteBallotInlineComponent {
   private initCommentPromptsData(): Signal<CommentResponseFormData[]> {
     return computed(() => {
       this.formVersion(); // re-evaluate when comment controls are added/removed
-      return this.commentPrompts().map((prompt) => ({
-        prompt,
-        control: this.commentForm.get(prompt.prompt_id) as FormControl<string>,
-      }));
+      return getCommentPromptsData(this.commentForm, this.commentPrompts());
     });
   }
 
@@ -139,7 +136,10 @@ export class VoteBallotInlineComponent {
 
     toObservable(this.commentPrompts)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((prompts) => this.rebuildCommentForm(prompts));
+      .subscribe((prompts) => {
+        reconcileCommentFormControls(this.commentForm, prompts);
+        this.formVersion.update((v) => v + 1);
+      });
 
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.formVersion.update((v) => v + 1));
 
@@ -182,28 +182,5 @@ export class VoteBallotInlineComponent {
       choiceIds = raw ? [raw] : [];
     }
     return [{ question_id: question.question_id, choice_ids: choiceIds }];
-  }
-
-  private rebuildCommentForm(prompts: PollCommentPrompt[]): void {
-    const desiredIds = new Set(prompts.map((p) => p.prompt_id));
-    for (const existingId of Object.keys(this.commentForm.controls)) {
-      if (!desiredIds.has(existingId)) this.commentForm.removeControl(existingId, { emitEvent: false });
-    }
-    for (const prompt of prompts) {
-      if (this.commentForm.contains(prompt.prompt_id)) continue;
-      this.commentForm.addControl(
-        prompt.prompt_id,
-        new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
-        { emitEvent: false }
-      );
-    }
-    this.formVersion.update((v) => v + 1);
-  }
-
-  private buildCommentResponses(): CommentResponseInput[] | undefined {
-    const responses = this.commentPromptsData()
-      .map((data) => ({ prompt_id: data.prompt.prompt_id, comment_text: (data.control.value ?? '').trim() }))
-      .filter((response) => response.comment_text.length > 0);
-    return responses.length > 0 ? responses : undefined;
   }
 }

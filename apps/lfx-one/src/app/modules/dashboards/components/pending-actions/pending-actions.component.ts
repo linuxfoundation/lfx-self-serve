@@ -15,6 +15,7 @@ import {
   PENDING_ACTION_FADE_OUT_MS,
   PENDING_ACTION_LABEL,
   PENDING_ACTION_SKELETON_HOLD_MS,
+  VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS,
 } from '@lfx-one/shared/constants';
 import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
@@ -410,7 +411,9 @@ export class PendingActionsComponent {
     if (questions.length !== 1) return true;
     const type = questions[0]?.type;
     if (type !== 'single_choice' && type !== 'multiple_choice') return true;
-    return isRanked;
+    if (isRanked) return true;
+    // Many comment prompts crowd the inline row, so prompt-heavy votes cast in the drawer instead.
+    return (vote.poll_comment_prompts?.length ?? 0) > VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS;
   }
 
   // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), so an unmount within the animation window can't cancel the cookie write, then drive the fade → drop → skeleton-arrival animation through two timers.

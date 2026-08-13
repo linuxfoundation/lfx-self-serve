@@ -51,10 +51,16 @@
         <i class="fa-light fa-building text-2xl" aria-hidden="true"></i>
       </div>
       <h2 class="text-base font-semibold text-gray-900" data-testid="org-overview-empty-title">No organization selected</h2>
-      <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-empty-description">
-        We couldn't find any organizations you have access to in this environment. If you expect to see one or more here, double-check your invite status with
-        your admin or contact support.
-      </p>
+      @if (isStaff()) {
+        <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-empty-description-staff">
+          Search for an organization in the switcher above to view its Org Lens.
+        </p>
+      } @else {
+        <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-empty-description">
+          We couldn't find any organizations you have access to in this environment. If you expect to see one or more here, double-check your invite status with
+          your admin or contact support.
+        </p>
+      }
     </section>
   } @else {
     <!-- Organization Involvement Section -->
