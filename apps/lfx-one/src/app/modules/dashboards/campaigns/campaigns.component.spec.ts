@@ -1058,8 +1058,6 @@ describe('CampaignsComponent — email delivery channel', () => {
     onTabKeydown(event: KeyboardEvent, index: number, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
-    implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
-    resetToPlanning(): void;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -1264,8 +1262,8 @@ describe('CampaignsComponent — email delivery channel', () => {
 /**
  * LFXV2-3229: leaving the Implement tab must not discard what the user typed.
  *
- * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves ad-account lists in
- * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 mounts the planner would issue that
+ * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves the LinkedIn ad-account list in
+ * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 (PR #1437, pending) proposes mounting the planner would issue that
  * request on every page load for a tab many users never open. The component is therefore still
  * destroyed on a tab switch; what changed is that its edits now live on the parent.
  *
@@ -1281,6 +1279,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
     selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
+    resetToPlanning(): void;
   }
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
 
@@ -1335,10 +1334,70 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(headlineInput()?.value).toBe('Hand-edited headline');
   });
 
+  it('seeds the parent draft with the brief copy, not the empty initial control', async () => {
+    // Regression: `replaceCopyArray` originally suppressed emission for BOTH callers, so the
+    // brief seed never reached the parent and the draft held the form's empty starting control.
+    // Switching away and back then restored `[""]` over real generated headlines — the fix
+    // making the bug worse than the bug. Emission is now the caller's decision.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().implementationDraft()?.headlines).toEqual(['Generated A', 'Generated B']);
+  });
+
+  it('carries a corrected registration URL back, which is where the spend lands', async () => {
+    // The highest-cost field on the form: a reverted URL sends paid traffic at the stale scraped
+    // value. It is a plain text input the user types into, and populateFromBrief re-stamps it
+    // from the brief on every remount — so it needs the same treatment as the copy.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const url = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-reg-url"]') as HTMLInputElement | null;
+    expect(url).not.toBeNull();
+    url!.value = 'https://corrected.example.com/register';
+    url!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const back = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-reg-url"]') as HTMLInputElement | null;
+    expect(back?.value).toBe('https://corrected.example.com/register');
+  });
+
+  it('discards the draft when the brief it belongs to is discarded', async () => {
+    // `resetToPlanning` is the one draft-CLEARING path this change adds, and it was declared on
+    // Internals without ever being driven. Keeping the draft here would replay the discarded
+    // brief's copy over whatever is generated next — the eventSlug guard cannot catch that,
+    // because a program switch can land on the same event.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().implementationDraft()).not.toBeNull();
+
+    internals().resetToPlanning();
+    fixture.detectChanges();
+
+    expect(internals().implementationDraft()).toBeNull();
+  });
+
   it('does not replay one event edits onto a different brief', async () => {
     // The guard that makes the draft safe to hold un-keyed on the parent. Without it, generating
     // a brief for event B and opening Implement would restore event A's copy over it.
     internals().implementationDraft.set({
+      eventName: 'Event A',
+      countryCode: 'US',
+      registrationUrl: 'https://event-a.example.com',
       headlines: ['Copy for event A'],
       descriptions: [],
       budgetUsd: 999,

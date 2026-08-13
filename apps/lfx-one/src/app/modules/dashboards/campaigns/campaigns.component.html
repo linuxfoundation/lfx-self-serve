@@ -238,7 +238,7 @@
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
           <!-- `draft`/`draftChange` keep the user's edits alive across this panel's teardown
                (LFXV2-3229). The panel stays inside the @switch on purpose — the component
-               resolves ad-account lists in ngOnInit, so mounting it eagerly would issue that
+               resolves the LinkedIn ad-account list in ngOnInit, so mounting it eagerly would issue that
                request on every page load for a tab many users never open. Lifting the edits is
                the cheaper half of that trade. -->
           <lfx-implementation-tab

@@ -244,26 +244,57 @@ export interface CampaignBriefPersistResult {
  * user believing their brief is saved when it is not, and this repo has already been bitten by
  * a graceful degradation that hid a 100% failure rate behind a clean UI.
  */
+export interface CampaignBriefPersistenceState {
+  status: 'off' | 'saving' | 'saved' | 'error';
+  briefId: string | null;
+  /**
+   * The banner text, or `null` when the state needs none.
+   *
+   * Set on `error`, and also on `saved` when the write landed but the APPROVAL did not — a
+   * durable row that campaign creation and audience building both refuse, because they gate on
+   * `approved`. That case stays `saved` rather than becoming `error`: describing a write that
+   * really did land as failed would be its own falsehood, and the honest report is that the
+   * brief is stored but not yet usable.
+   */
+  message: string | null;
+}
+
 /**
  * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
  *
  * `ImplementationTabComponent` lives inside a structural `@switch`, so leaving the tab destroys
- * it and everything it owns locally. LFXV2-3202 fixed that for the Plan tab by keeping the
- * planner mounted, but the same treatment is wrong here: this component fetches ad-account lists
- * in `ngOnInit`, so mounting it eagerly would issue that request on every page load for a tab the
- * user may never open. Lifting the edits out instead keeps the component cheap to destroy while
- * the user's typing survives (LFXV2-3229).
+ * it and everything it owns locally. LFXV2-3202 (PR #1437, not yet merged) proposes keeping the
+ * planner mounted for the Plan tab, but the same treatment is wrong here: this component fetches
+ * the LinkedIn ad-account list in `ngOnInit`, so mounting it eagerly would issue that request on
+ * every page load for a tab the user may never open. Lifting the edits out instead keeps the
+ * component cheap to destroy while the user's typing survives (LFXV2-3229).
  *
- * Deliberately a SNAPSHOT of user-editable fields only, not the whole component state. Anything
- * re-derivable from the brief (event name, slug, registration URL) or from a fetch (results,
- * progress, account lists) is left to re-derive — restoring those would be restoring a cache, and
- * a stale one. What cannot be recovered is what the user typed.
+ * Deliberately a SNAPSHOT of the fields a user TYPES, not the whole component state. Anything
+ * re-derived from a fetch (results, progress, the LinkedIn account list) is left to re-derive —
+ * restoring those would be restoring a cache, and a stale one.
+ *
+ * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
+ * against the brief on screen so one event's edits cannot replay onto another's.
+ *
+ * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
+ * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
+ * user-editable and are still discarded, because they live in signals rather than this form and
+ * would need their own plumbing. The Google copy and budget carried here are the highest-volume
+ * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
  * field, and replaying that over a freshly generated brief would erase it.
  */
 export interface CampaignImplementationDraft {
+  /**
+   * Event identity as edited. All three are plain text inputs the user types into, and
+   * `registrationUrl` carries `Validators.required` — it is where the paid traffic lands, so a
+   * silently reverted one sends spend at a stale scraped URL.
+   */
+  eventName: string;
+  countryCode: string;
+  registrationUrl: string;
   /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
   headlines: string[];
   descriptions: string[];
@@ -280,21 +311,6 @@ export interface CampaignImplementationDraft {
    * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
    */
   eventSlug: string;
-}
-
-export interface CampaignBriefPersistenceState {
-  status: 'off' | 'saving' | 'saved' | 'error';
-  briefId: string | null;
-  /**
-   * The banner text, or `null` when the state needs none.
-   *
-   * Set on `error`, and also on `saved` when the write landed but the APPROVAL did not — a
-   * durable row that campaign creation and audience building both refuse, because they gate on
-   * `approved`. That case stays `saved` rather than becoming `error`: describing a write that
-   * really did land as failed would be its own falsehood, and the honest report is that the
-   * brief is stored but not yet usable.
-   */
-  message: string | null;
 }
 
 /**

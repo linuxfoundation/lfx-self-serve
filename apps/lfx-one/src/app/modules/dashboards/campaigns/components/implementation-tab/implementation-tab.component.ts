@@ -86,8 +86,8 @@ export class ImplementationTabComponent implements OnInit {
    * Edits carried over from a previous mount, or `null` on a first visit (LFXV2-3229).
    *
    * This component sits inside a structural `@switch`, so every trip to another tab destroys it
-   * and everything it holds. Keeping it mounted the way LFXV2-3202 keeps the planner mounted is
-   * the wrong fix here — `ngOnInit` resolves ad-account lists, so an eager mount would issue that
+   * and everything it holds. Keeping it mounted the way LFXV2-3202 (PR #1437, pending) proposes keeping the planner mounted is
+   * the wrong fix here — `ngOnInit` resolves the LinkedIn ad-account list, so an eager mount would issue that
    * request on every page load for a tab the user may never open. The parent holds the edits
    * instead, and this component is still free to be destroyed.
    */
@@ -571,6 +571,9 @@ export class ImplementationTabComponent implements OnInit {
     // re-enter `emitDraft` and write the draft back over itself while it is being applied.
     this.campaignForm.patchValue(
       {
+        eventName: draft.eventName,
+        countryCode: draft.countryCode,
+        registrationUrl: draft.registrationUrl,
         budgetUsd: draft.budgetUsd,
         searchBudgetPct: draft.searchBudgetPct,
         startDate: draft.startDate,
@@ -581,8 +584,8 @@ export class ImplementationTabComponent implements OnInit {
       { emitEvent: false }
     );
 
-    this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline);
-    this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription);
+    this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
+    this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
   }
 
   /**
@@ -592,10 +595,24 @@ export class ImplementationTabComponent implements OnInit {
    * of the seed inlined this twice, which is how a validator ends up on one array and not the
    * other.
    */
-  private replaceCopyArray(target: FormArray, values: string[], maxLength: number): void {
+  private replaceCopyArray(target: FormArray, values: string[], maxLength: number, emitEvent: boolean): void {
     target.clear({ emitEvent: false });
     for (const value of values) {
       target.push(this.fb.control(value, [Validators.required, Validators.maxLength(maxLength)]), { emitEvent: false });
+    }
+    // Emission is the CALLER's decision, and BOTH answers are load-bearing — an earlier revision
+    // of this helper hardcoded suppression for both and made the original bug strictly worse.
+    //
+    // The brief seed MUST emit. `populateFromBrief`'s `patchValue` above emits while these arrays
+    // still hold the form's initial empty control, so the draft the parent snapshots is `[""]`.
+    // Without a second emission after the arrays are filled, nothing ever corrects it, and a user
+    // who typed NOTHING lost all generated copy on a plain tab round-trip.
+    //
+    // The draft restore must NOT emit, or applying it re-enters `emitDraft` and writes the draft
+    // back over itself mid-apply. Emitted once at the end rather than per control, so a
+    // five-headline seed is one update rather than five.
+    if (emitEvent) {
+      target.updateValueAndValidity();
     }
   }
 
@@ -603,15 +620,21 @@ export class ImplementationTabComponent implements OnInit {
   private emitDraft(): void {
     const form = this.campaignForm.getRawValue();
     this.draftChange.emit({
-      headlines: (form.headlines as string[]) ?? [],
-      descriptions: (form.descriptions as string[]) ?? [],
-      budgetUsd: form.budgetUsd ?? 0,
-      searchBudgetPct: form.searchBudgetPct ?? CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
-      startDate: form.startDate ?? '',
-      endDate: form.endDate ?? '',
-      includeSearch: form.includeSearch ?? false,
-      includeDemandGen: form.includeDemandGen ?? false,
-      eventSlug: form.eventSlug ?? '',
+      eventName: form.eventName,
+      countryCode: form.countryCode,
+      registrationUrl: form.registrationUrl,
+      // No `??` fallbacks: the form is `fb.nonNullable.group`, so `getRawValue()` cannot yield
+      // null here — `submit()` reads the same fields unguarded. A dead `budgetUsd ?? 0` would
+      // also be an actively WRONG default, since 0 fails the control's own Validators.min(1).
+      headlines: form.headlines as string[],
+      descriptions: form.descriptions as string[],
+      budgetUsd: form.budgetUsd,
+      searchBudgetPct: form.searchBudgetPct,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      includeSearch: form.includeSearch,
+      includeDemandGen: form.includeDemandGen,
+      eventSlug: form.eventSlug,
     });
   }
 
@@ -641,8 +664,8 @@ export class ImplementationTabComponent implements OnInit {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
 
-      this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline);
-      this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription);
+      this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, true);
+      this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
     }
 
     if (brief.linkedInCopy) {

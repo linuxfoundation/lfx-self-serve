@@ -84,8 +84,8 @@ export class CampaignsComponent {
    * The Implementation tab's in-progress edits, held here so a tab switch cannot discard them
    * (LFXV2-3229).
    *
-   * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves ad-account lists in
-   * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 mounts the planner would issue that
+   * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves the LinkedIn ad-account list in
+   * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 (PR #1437, pending) proposes mounting the planner would issue that
    * request on every page load for a tab many users never open. Holding its edits up here is the
    * cheaper half of that trade: the component is still destroyed, but the user's typing is not.
    *
