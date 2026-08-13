@@ -15,7 +15,7 @@
  *      only once the queued flush drains, still carrying the close-time edit.
  *   7. A superseded failed save (an older write that fails while a newer one is already queued) does
  *      not pin the inline indicator on "Saving".
- *   8. A failed load, then a close and reopen, re-triggers the load (switchMap on open$) and the
+ *   8. A failed load, then a close and reopen, re-triggers the load (open$ re-emits) and the
  *      second attempt succeeds and seeds the form.
  *
  * Every test stubs GET and PATCH /api/profile/visibility so the real account is never mutated — the
@@ -416,8 +416,8 @@ test.describe('Profile visibility drawer', () => {
   });
 
   test('S8: a failed load recovers when the drawer is closed and reopened', async ({ page }) => {
-    // Only the first GET fails; a close+reopen re-emits open$ so switchMap re-runs the load. Guards
-    // against a switchMap→mergeMap regression of reopen-after-failure (S5 only covers in-place Retry).
+    // Only the first GET fails; a close+reopen re-emits open$ so the load re-runs and the second
+    // (succeeding) attempt seeds the form — the reopen recovery path, distinct from S5's in-place Retry.
     let failNext = true;
     await page.route('**/api/profile/visibility', async (route) => {
       if (route.request().method() === 'GET') {
@@ -450,7 +450,7 @@ test.describe('Profile visibility drawer', () => {
       timeout: ELEMENT_TIMEOUT,
     });
 
-    // Reopen → open$ re-fires, the switchMap re-runs the (now succeeding) load, and the form seeds.
+    // Reopen → open$ re-fires, the load re-runs (now succeeding), and the form seeds.
     await openDrawer(page);
     await expect(page.getByTestId('profile-visibility-drawer-error'), 'error block should be gone on the successful reopen').toBeHidden({
       timeout: ELEMENT_TIMEOUT,
