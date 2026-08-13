@@ -4,6 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
@@ -612,5 +613,174 @@ describe('PlanningTabComponent brief read-back', () => {
 
     expect(restored).toHaveLength(1);
     expect(restored[0].briefId).toBe('brief-xyz');
+  });
+});
+
+/**
+ * LFXV2-3201: the planner serves both delivery types from one component, moded by `deliveryType`.
+ *
+ * These pin the three things that differ, because each can regress on its own and two of the
+ * three fail SILENTLY — a stray `platforms` on the request still returns a valid brief, and a
+ * re-shown Ad Channels card still lets the user proceed. Only the `canGenerate` regression is
+ * loud, and it is the one that blocked the channel before this ticket.
+ */
+describe('PlanningTabComponent delivery-type mode', () => {
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let generateBrief: ReturnType<typeof vi.fn>;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  function canGenerate(): boolean {
+    return (fixture.componentInstance as unknown as { canGenerate(): boolean }).canGenerate();
+  }
+
+  /** Fill only the fields the form marks required, so validity is the sole remaining variable. */
+  function fillRequiredFields(): void {
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+  }
+
+  /** Deselect every ad platform, which the paid default pre-populates with google-ads. */
+  function clearPlatforms(): void {
+    (fixture.componentInstance as unknown as { selectedPlatforms: { set(v: Set<string>): void } }).selectedPlatforms.set(new Set());
+    fixture.detectChanges();
+  }
+
+  async function build(deliveryType?: 'paid-marketing' | 'email'): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    if (deliveryType) {
+      fixture.componentRef.setInput('deliveryType', deliveryType);
+    }
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+    }).compileComponents();
+
+    // Never completes: generate() stays in flight, so the request argument is observable without
+    // the component advancing past 'generating' and clearing the state under test.
+    generateBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockImplementation(generateBrief);
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it('hides the Ad Channels card in email mode', async () => {
+    await build('email');
+    // querySelector, not debugElement.query: the latter walks the LOGICAL tree and resolves nodes
+    // that are no longer rendered, which would make this assertion vacuous.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).toBeNull();
+  });
+
+  it('keeps the Ad Channels card in paid mode', async () => {
+    await build('paid-marketing');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
+  });
+
+  it('defaults to paid mode when deliveryType is not bound', async () => {
+    // The input is additive: the paid container binds nothing, so an omitted binding must keep
+    // exactly the pre-3201 behaviour rather than silently switching a live tab to email.
+    await build();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
+  });
+
+  it('allows generation in email mode with no ad platform selected', async () => {
+    await build('email');
+    fillRequiredFields();
+    clearPlatforms();
+    expect(canGenerate()).toBe(true);
+  });
+
+  it('still requires an ad platform in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    clearPlatforms();
+    expect(canGenerate()).toBe(false);
+  });
+
+  it('omits platforms from the generation request in email mode', async () => {
+    await build('email');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief).toHaveBeenCalledTimes(1);
+    const request = generateBrief.mock.calls[0][0];
+    // Absent, not empty: `[]` would claim the user deselected every channel rather than that ad
+    // channels do not apply. `toBeUndefined` alone would pass on an explicit `platforms: undefined`,
+    // so assert the key is not present at all.
+    expect('platforms' in request).toBe(false);
+  });
+
+  it('sends platforms in the generation request in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief).toHaveBeenCalledTimes(1);
+    expect(generateBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
+  });
+
+  /**
+   * Refine is the second request that carries `platforms`, and it is reachable in email mode —
+   * nothing gates the refine panel on delivery type. Fixing only `generate` would have left the
+   * ad copy to come back on the first refine, which is the "fixed at one layer only" shape.
+   */
+  it('omits platforms from the refine request in email mode', async () => {
+    const refineBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('email');
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      submitRefine(): void;
+    };
+    // Both are preconditions submitRefine returns early on.
+    component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
+    component.refineFeedback.set('Make the subject shorter');
+    component.submitRefine();
+    await fixture.whenStable();
+
+    expect(refineBrief).toHaveBeenCalledTimes(1);
+    expect('platforms' in refineBrief.mock.calls[0][0]).toBe(false);
+  });
+
+  it('sends platforms in the refine request in paid mode', async () => {
+    const refineBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('paid-marketing');
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      submitRefine(): void;
+    };
+    component.structuredCopy.set({ searchHeadlines: ['Attend KubeCon EU 2026'] });
+    component.refineFeedback.set('Make the headlines punchier');
+    component.submitRefine();
+    await fixture.whenStable();
+
+    expect(refineBrief).toHaveBeenCalledTimes(1);
+    expect(refineBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
   });
 });

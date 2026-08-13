@@ -81,24 +81,19 @@
       @case ('planning') {
         <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
           <!--
-            KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
+            LFXV2-3201 settled the question this comment used to pose: ONE planner, moded by
+            `deliveryType`, rather than two components. The two types share the expensive halves —
+            the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
+            stream, and brief save/restore. What differs is one card and one validity rule.
 
-            Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
-            platform to proceed (`canGenerate` requires `selectedPlatforms().size > 0`, and the set
-            defaults to `google-ads`), and generates RSA copy, Demand Gen copy, ad keywords and a
-            LinkedIn targeting strategy. None of that is email — no template, subject, sender or
-            preview text — and `onEmailProceedToImplementation` stores a brief the Implement panel
-            reads only for EXISTENCE. The payload is never consumed.
+            In email mode the planner drops the Ad Channels card, drops the ad-platform
+            requirement from `canGenerate`, and omits `platforms` from the generation request.
 
-            It ships this way deliberately: this PR replaces a "coming soon" placeholder, and the
-            email brief shape is a feature, not a review fix. It needs a delivery-type mode on the
-            planner (or a separate component), a different `canGenerate` gate, and a generation
-            request that carries email fields instead of `platforms` — plus a decision about
-            whether the two delivery types should share a component at all. LFXV2-3201 owns that
-            decision; LFXV2-3197 (merged) supplies the template picker the Implement half needs.
-
-            Until then the Plan tab is honest about the event URL and scrape, which the two types
-            genuinely do share, and misleading about everything below it.
+            STILL OPEN: the brief this emits is the paid brief shape, and
+            `onEmailProceedToImplementation` stores it for EXISTENCE only — the Implement panel
+            does not read the payload. Email-specific generated fields (subject, preview text,
+            sender) come with the `email-copy` endpoint under LFXV2-3198, together with the
+            template picker that panel needs.
           -->
           <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
@@ -114,13 +109,18 @@
               [data-testid="campaigns-email-planning-tab"] [data-testid="planning-url-input"]
               [data-testid="campaigns-planning-tab"]       [data-testid="planning-url-input"]
 
-            Namespacing the planner's own ids per instance would be the stronger fix, but it
-            changes a component both delivery types share and belongs with LFXV2-3201, which
-            revisits whether they should share it at all.
+            Namespacing the planner's own ids per instance would be the stronger fix. It stays
+            unfixed: LFXV2-3201 confirmed the two types SHARE this component, so per-instance ids
+            would have to come from an input threaded through every `data-testid` in the planner
+            — a wider change than the host-scoped selectors above, which already work.
+
+            Note `planning-platform-<id>` now resolves to ONE element, not two: the email
+            instance no longer renders the Ad Channels card. The url/generate ids still double.
           -->
           @for (program of [selectedProgramType()]; track program) {
             <lfx-planning-tab
               [programTypeConfig]="activeProgramTypeConfig()"
+              deliveryType="email"
               (proceedToImplementation)="onEmailProceedToImplementation($event)"
               data-testid="campaigns-email-planning-tab" />
           }

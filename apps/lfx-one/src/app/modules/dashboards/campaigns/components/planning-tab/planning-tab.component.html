@@ -187,34 +187,37 @@
       </div>
     </form>
 
-    <!-- Ad Channels Card -->
-    <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        @for (platform of platforms; track platform.id) {
-          <button
-            type="button"
-            (click)="platform.disabled ? null : togglePlatform(platform.id)"
-            [disabled]="platform.disabled"
-            [class]="
-              platform.disabled
-                ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
-                : isPlatformSelected(platform.id)
-                  ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
-                  : 'flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50'
-            "
-            [attr.data-testid]="'planning-platform-' + platform.id">
-            <i [class]="platform.icon" aria-hidden="true"></i>
-            <span class="flex flex-col items-start gap-0">
-              {{ platform.label }}
-              @if (platform.disabled) {
-                <span class="text-[10px] font-normal leading-tight text-gray-400">Coming soon</span>
-              }
-            </span>
-          </button>
-        }
+    <!-- Ad Channels Card — paid only. Email has no ad channel to pick; its destination is the
+         HubSpot template chosen on the Implement tab (LFXV2-3198). -->
+    @if (!isEmail()) {
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          @for (platform of platforms; track platform.id) {
+            <button
+              type="button"
+              (click)="platform.disabled ? null : togglePlatform(platform.id)"
+              [disabled]="platform.disabled"
+              [class]="
+                platform.disabled
+                  ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
+                  : isPlatformSelected(platform.id)
+                    ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
+                    : 'flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+              "
+              [attr.data-testid]="'planning-platform-' + platform.id">
+              <i [class]="platform.icon" aria-hidden="true"></i>
+              <span class="flex flex-col items-start gap-0">
+                {{ platform.label }}
+                @if (platform.disabled) {
+                  <span class="text-[10px] font-normal leading-tight text-gray-400">Coming soon</span>
+                }
+              </span>
+            </button>
+          }
+        </div>
       </div>
-    </div>
+    }
 
     <!-- Generate Button -->
     <div class="flex items-center gap-3">

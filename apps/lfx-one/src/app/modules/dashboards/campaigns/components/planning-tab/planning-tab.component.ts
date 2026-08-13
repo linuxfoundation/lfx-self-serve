@@ -18,6 +18,7 @@ import type {
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
+  CampaignDeliveryType,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -49,6 +50,23 @@ export class PlanningTabComponent implements OnInit {
 
   // === Inputs ===
   public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
+
+  /**
+   * Which delivery channel this planner is planning for (LFXV2-3201).
+   *
+   * One component rather than two, because the halves the two types genuinely share are the
+   * expensive ones: the event URL, the scrape, the goal/audience/value-prop inputs, the SSE
+   * generation stream, and the brief save/restore round trip. What differs is a single card and
+   * one validity rule, which is a poor reason to fork ~800 lines and then maintain the shared
+   * parts twice.
+   *
+   * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
+   * additive — an omitted binding keeps exactly today's behaviour.
+   */
+  public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
+
+  /** Whether this planner is planning an email rather than paid ads. */
+  protected readonly isEmail = computed(() => this.deliveryType() === 'email');
 
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
@@ -179,7 +197,15 @@ export class PlanningTabComponent implements OnInit {
 
   // === Computed Signals ===
   private readonly formValid = toSignal(this.briefForm.statusChanges, { initialValue: this.briefForm.status });
-  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && this.selectedPlatforms().size > 0);
+  /**
+   * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.
+   *
+   * The paid rule stands: a brief with no platform selected produces copy for nothing, so the
+   * gate is real there. For email the same rule was a dead end — the user was shown "Ad Channels"
+   * under a tab labelled Email and had to pick Google Ads before the channel would let them
+   * proceed, which is not a requirement so much as a bug wearing one's clothes.
+   */
+  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && (this.isEmail() || this.selectedPlatforms().size > 0));
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
   protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
@@ -458,7 +484,12 @@ export class PlanningTabComponent implements OnInit {
     const budgetStr = typeof budgetRaw === 'string' ? budgetRaw.trim() : String(budgetRaw ?? '');
     const request = {
       url: this.briefForm.controls.url.value.trim(),
-      platforms: [...this.selectedPlatforms()] as CampaignPlatform[],
+      // OMITTED for email, not sent empty. `platforms` drives which per-platform ad copy the
+      // generator produces — RSA headlines, Demand Gen copy, a LinkedIn targeting strategy — none
+      // of which an email brief has any use for. Sending the paid default would bill an AI call
+      // for copy nothing reads, and sending `[]` would claim the user deselected every channel
+      // rather than that channels do not apply here.
+      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
@@ -659,7 +690,10 @@ export class PlanningTabComponent implements OnInit {
       currentKeywords: this.keywords(),
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
-      platforms: [...this.selectedPlatforms()],
+      // Omitted for email for the same reason as the generate request above: refine re-runs the
+      // per-platform copy generators, so a lingering `platforms` here would put the ad copy back
+      // that the generate path just left out.
+      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] }),
       programType: this.programTypeConfig().id,
     };
 
