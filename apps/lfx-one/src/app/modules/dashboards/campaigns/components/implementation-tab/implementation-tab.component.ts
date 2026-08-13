@@ -258,18 +258,23 @@ export class ImplementationTabComponent implements OnInit {
     // saved as they clicked. Disabling for the moment it takes is the honest reading; the button
     // re-enables on its own when the save lands.
     //
-    // Blocked in `error` too, and that one matters more than it looks. A conflict outcome
-    // (`stale-brief`, `unverified-validator`, `superseded-after-write`) still carries a
-    // `briefId` — the id of the STORED row, which by definition is not the brief on screen. A
-    // create from there would launch paid campaigns off someone else's version while the user
-    // reads their own unsaved copy. The id being present is exactly what makes it dangerous.
+    // `error` splits in two, and the brief id is what tells them apart — blocking the whole
+    // status was too broad, blocking none of it was too narrow.
     //
-    // `status`-based, deliberately — not "briefId is null". A brief that was never saved is a
-    // different case, handled by the create path's own refusal, and blocking on a null id would
-    // disable the button permanently whenever the cutover is dark (no brief id is ever produced
-    // there, and the legacy path needs none). `off` and `saved` both proceed.
-    const persistence = this.briefPersistence().status;
-    if (persistence === 'saving' || persistence === 'error') return false;
+    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
+    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
+    //     brief on screen — the save was refused precisely because the two disagree. Creating
+    //     from it would launch paid campaigns off another writer's version while the user reads
+    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //
+    //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
+    //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
+    //     at all. ALLOWED — blocking it would contradict the message the user is reading. If the
+    //     cutover is on, `createCampaigns` refuses on the empty id with its own wording; that is
+    //     a different message for a different situation, and it is the create path's to give.
+    const persistence = this.briefPersistence();
+    if (persistence.status === 'saving') return false;
+    if (persistence.status === 'error' && persistence.briefId !== null) return false;
 
     return true;
   });

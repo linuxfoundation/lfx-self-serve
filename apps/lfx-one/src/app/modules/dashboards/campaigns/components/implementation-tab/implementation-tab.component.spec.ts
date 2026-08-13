@@ -102,6 +102,24 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(false);
   });
 
+  /**
+   * The other half of `error`, and the reason the guard keys on the brief id rather than the
+   * status. A save that simply FAILED carries no id, and its own banner tells the user "You can
+   * continue setting up the campaign" — so disabling Create here would contradict the message
+   * they are reading. With the cutover dark the legacy create needs no brief id at all.
+   */
+  it('does not block submit when a save failed without leaving a brief id', async () => {
+    makeOtherwiseValid();
+
+    setPersistence({
+      status: 'error',
+      briefId: null,
+      message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+    });
+
+    expect(canSubmit()).toBe(true);
+  });
+
   it('does not block submit when persistence is off', async () => {
     // The cutover-dark case. `briefId` is null here too, so a guard written as "block on a null
     // brief id" would disable the button permanently — for a path that needs no brief id at all.
