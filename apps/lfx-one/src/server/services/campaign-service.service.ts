@@ -7,6 +7,8 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  HubSpotEmailSearchResult,
+  HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
   CampaignJobStatus,
@@ -449,6 +451,58 @@ export class CampaignServiceClient {
    * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
    * the accurate answer. Only genuinely indeterminate failures reach the lookup.
    */
+  /**
+   * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
+   *
+   * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
+   * REQUIRED with no default, and staging clones a template, so a user who cannot choose one
+   * cannot stage anything.
+   *
+   * A SEARCH rather than a dropdown, deliberately. campaign-service pages nothing and caps an
+   * unfiltered listing, so a portal with hundreds of emails would silently show a truncated
+   * "complete" list — the exact shape of falsehood a picker must not have. The query is passed
+   * through to the service, which does the filtering against HubSpot.
+   *
+   * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
+   * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
+   * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
+   */
+  public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
+    if (projectSlug === '') {
+      // Refused rather than defaulted, for the reason `loadBrief` refuses: `/projects//…` is a
+      // DIFFERENT route that 404s at the gateway, and a gateway 404 is not the service saying
+      // "no such project".
+      return { enabled: true, emails: [], error: 'A HubSpot template search requires the project it is scoped to.' };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/emails`;
+    try {
+      // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
+      // method, query, data)` — passing them sixth would send them as a body, which a GET
+      // discards, and the search would silently return the unfiltered list.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<{ emails?: CampaignServiceMarketingEmail[] }>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'GET',
+        query === '' ? undefined : { q: query }
+      );
+      return { enabled: true, emails: (response.data?.emails ?? []).map(fromMarketingEmail), error: null };
+    } catch (error) {
+      // A missing connection is not a failure of this request. campaign-service answers 404 for
+      // a project with no HubSpot connection, which is indistinguishable to the user from "you
+      // have not connected HubSpot yet" — because that is exactly what it is.
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return { enabled: false, emails: [], error: null };
+      }
+      logger.warning(req, 'hubspot_email_search', 'campaign-service refused the HubSpot template search', {
+        projectSlug,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return { enabled: true, emails: [], error: 'HubSpot templates could not be loaded. Try again, or check the HubSpot connection.' };
+    }
+  }
+
   private async reconcileLostCreate(
     req: Request,
     basePath: string,
@@ -811,6 +865,32 @@ export class CampaignServiceClient {
       throw error;
     }
   }
+}
+
+/** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
+interface CampaignServiceMarketingEmail {
+  id?: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updated_at?: string;
+}
+
+/**
+ * One wire email onto the shared interface.
+ *
+ * Only `id` is guaranteed by the service's design, so everything else is optional here rather
+ * than defaulted to `''` — an empty string would render as a nameless row that looks like data,
+ * where an absent field lets the template show what it actually knows.
+ */
+function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarketingEmail {
+  return {
+    id: email.id ?? '',
+    name: email.name,
+    subject: email.subject,
+    state: email.state,
+    updatedAt: email.updated_at,
+  };
 }
 
 /**

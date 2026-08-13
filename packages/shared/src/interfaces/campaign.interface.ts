@@ -1022,6 +1022,44 @@ export interface RedditMonitorResponse {
 // HubSpot UTM
 // ---------------------------------------------------------------------------
 
+/**
+ * One HubSpot marketing email, as the template picker lists it.
+ *
+ * `id` is the only field campaign-service guarantees, and it is the one that matters: it is what
+ * `hubspotConfig.sourceEmailId` takes, and that field is REQUIRED with no default — staging an
+ * email clones a template, so without a choice here the email channel cannot dispatch at all.
+ *
+ * `state` is worth rendering. A template can be a DRAFT, and cloning one is legitimate but worth
+ * seeing first. Note it can never say ARCHIVED: HubSpot models archival as a separate flag rather
+ * than a lifecycle state, and this search does not request archived rows, so they are absent from
+ * the result entirely rather than present with a different `state`.
+ *
+ * `updatedAt` earns its place because two templates routinely share a name — the date is what
+ * tells them apart. The service already returns the list most-recently-updated first.
+ */
+export interface HubSpotMarketingEmail {
+  id: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updatedAt?: string;
+}
+
+/**
+ * What the template search returns.
+ *
+ * `enabled: false` is a first-class outcome rather than a failure, matching the other
+ * campaign-service reads: it means this project has no usable HubSpot connection, which is the
+ * steady state until someone connects one. The picker renders a "connect HubSpot" empty state for
+ * it, not an error.
+ */
+export interface HubSpotEmailSearchResult {
+  enabled: boolean;
+  emails: HubSpotMarketingEmail[];
+  /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
+  error: string | null;
+}
+
 export interface HubSpotUtmLookupResult {
   found: boolean;
   hs_utm: string | null;

@@ -1379,3 +1379,90 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+/**
+ * The HubSpot template search, which is what makes the email channel usable at all:
+ * `hubspotConfig.sourceEmailId` is required with no default, so a user who cannot pick a template
+ * cannot stage an email.
+ *
+ * The argument-position assertions are the point. `proxyRequestWithResponse` takes `query` fifth
+ * and `data` sixth, both typed `any`, so passing the query sixth compiles fine and sends it as a
+ * body — which a GET discards, silently returning the UNFILTERED list. That failure looks like a
+ * working search that ignores what the user typed, and no type checker can catch it.
+ */
+describe('CampaignServiceClient.searchHubSpotEmails', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends the query as a query PARAM, not a body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [] } });
+
+    await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', 'kubecon');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/connection-hubspot/emails');
+    expect(call[3]).toBe('GET');
+    expect(call[4]).toEqual({ q: 'kubecon' });
+  });
+
+  it('omits the query entirely when it is empty, rather than sending q=""', async () => {
+    // An empty `q` is not the same request as no `q`: the service treats absent as "list the most
+    // recent", which is the useful default before a user knows what to search for.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [] } });
+
+    await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(proxyRequestWithResponse.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it('maps the wire shape onto the shared interface', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({
+      data: { emails: [{ id: '112233', name: 'KubeCon promo', subject: 'Join us', state: 'PUBLISHED', updated_at: '2026-08-01T00:00:00Z' }] },
+    });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    // snake_case on the wire, camelCase in the app.
+    expect(result.emails[0]).toEqual({
+      id: '112233',
+      name: 'KubeCon promo',
+      subject: 'Join us',
+      state: 'PUBLISHED',
+      updatedAt: '2026-08-01T00:00:00Z',
+    });
+  });
+
+  it('reports a project with no HubSpot connection as disabled, not as an error', async () => {
+    // The steady state everywhere the channel is not set up. Rendering it as a failure would put
+    // an error in front of every project that has simply not connected HubSpot yet.
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', {}));
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result).toEqual({ enabled: false, emails: [], error: null });
+  });
+
+  it('refuses a missing project rather than requesting an empty path segment', async () => {
+    // `/projects//connection-hubspot/emails` is a DIFFERENT route that 404s at the gateway, and a
+    // gateway 404 is not the service saying "no such project".
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, '', 'kubecon');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('reports an upstream failure without claiming the channel is unconfigured', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('boom', 503, 'UNAVAILABLE', {}));
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    // `enabled` stays true: HubSpot IS connected, the read just failed. Reporting `false` would
+    // tell the user to connect something they already connected.
+    expect(result.enabled).toBe(true);
+    expect(result.emails).toEqual([]);
+    expect(result.error).toBeTruthy();
+  });
+});

@@ -19,6 +19,7 @@ import {
   CampaignJobStatus,
   CampaignMonitorResponse,
   CampaignSSEEventType,
+  HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
@@ -201,6 +202,25 @@ export class CampaignService {
 
   public getAudience(days: number = 30): Observable<AudienceDemographics> {
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails, for the Email channel's template picker.
+   *
+   * `projectSlug` travels as a query param for the reason `loadBrief` takes one: a HubSpot
+   * connection is per-project, and the server refuses the request rather than defaulting — so
+   * one foundation's templates can never be listed to another.
+   *
+   * `query` may be empty, which lists the most recently updated templates. That is the useful
+   * default before a user knows what they are looking for, and the service already orders by
+   * last-modified.
+   */
+  public searchHubSpotEmails(projectSlug: string, query: string): Observable<HubSpotEmailSearchResult> {
+    let params = new HttpParams().set('project', projectSlug);
+    if (query !== '') {
+      params = params.set('q', query);
+    }
+    return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
