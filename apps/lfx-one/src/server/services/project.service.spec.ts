@@ -576,6 +576,23 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(curve!).toContain('DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY');
     });
 
+    // The client maps the points array straight onto the x-axis without sorting, so the SQL order
+    // is the plot order. DAYS_TO_EVENT runs from the earliest day (most negative) up to 0 on the
+    // event day; a DESC order would put the event day leftmost and draw every series in reverse —
+    // a chart that still renders, with no error, showing registrations falling to zero.
+    it('returns the curve oldest-day-first so the chart plots left to right', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const curve = execute.mock.calls
+        .map(([sql]) => String(sql))
+        .find((sql) => sql.includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS') && sql.includes('DAYS_TO_EVENT'));
+
+      expect(curve).toBeDefined();
+      expect(curve!).not.toMatch(/ORDER BY DAYS_TO_EVENT\s+DESC/i);
+    });
+
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
     // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so

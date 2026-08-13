@@ -7991,13 +7991,15 @@ export class ProjectService {
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        -- The "current year" series is the predicted curve truncated at today, matching PCC:
-        -- days at or before today carry it, later days are null so the solid line stops where
-        -- the dashed prediction takes over. There is no measured per-day actual-registrations
-        -- column on this table — CURRENT_EVENT_CUMULATIVE_REGISTRATIONS does not exist, and PCC
-        -- never reads one either. Labelling this "Current year" overstates it, but diverging here
-        -- would draw a different chart from the one EDs already read in PCC.
+        -- The "current year" series reads CUMULATIVE_AVG_PREDICTED_REGISTRATIONS, which holds the
+        -- measured count on days at or before today rather than a forecast: the upstream model
+        -- writes the actual cumulative registrations into all three CUMULATIVE_*_PREDICTED columns
+        -- for known days, and only forecasts future ones. Verified in the warehouse — all 72,622
+        -- known rows have LOW = AVG = HIGH, while 2,925 of 3,031 future rows have LOW <> HIGH, so
+        -- the band opens only where the prediction begins. The label is accurate, not a rename of
+        -- predicted data.
         --
+        -- Nulled past today so the solid actuals line stops where the dashed prediction takes over.
         -- FINAL_CURRENT_* is deliberately not used: it is an event-level constant repeated on
         -- every row, so plotting it per day would draw a flat line at the final total.
         --
@@ -8013,7 +8015,10 @@ export class ProjectService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
       WHERE EVENT_ID = ?
       GROUP BY DAYS_TO_EVENT
-      ORDER BY DAYS_TO_EVENT DESC
+      -- Ascending, matching PCC: DAYS_TO_EVENT runs from the earliest day (most negative) up to 0
+      -- on the event day, and the chart maps this array straight onto the x-axis. DESC would plot
+      -- the event day leftmost and draw every series in reverse.
+      ORDER BY DAYS_TO_EVENT
     `;
 
     try {
