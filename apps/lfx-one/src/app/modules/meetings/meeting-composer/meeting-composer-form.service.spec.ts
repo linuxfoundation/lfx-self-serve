@@ -28,7 +28,7 @@ describe('MeetingComposerFormService — submit generation guard', () => {
 
   beforeEach(() => {
     createMeeting = vi.fn();
-    addMeetingRegistrants = vi.fn().mockReturnValue(of([{ added: 1, failed: 0 }]));
+    addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0 } }));
     messageAdd = vi.fn();
 
     TestBed.configureTestingModule({
@@ -73,6 +73,27 @@ describe('MeetingComposerFormService — submit generation guard', () => {
     expect(emissions).toEqual([]);
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Partially saved' }));
+  });
+
+  it('does not emit when the composer reopened while the dependent work was in flight', () => {
+    const registrants = new Subject<unknown>();
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+    addMeetingRegistrants.mockReturnValue(registrants);
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    // The save itself already landed, so this exercises the guard after the dependent work — not the
+    // one before it.
+    expect(addMeetingRegistrants).toHaveBeenCalled();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    registrants.next({ summary: { successful: 0, failed: 1 } });
+    registrants.complete();
+
+    expect(emissions).toEqual([]);
+    expect(messageAdd).not.toHaveBeenCalled();
   });
 
   it('stays silent about partial saves when nothing was queued to attach', () => {

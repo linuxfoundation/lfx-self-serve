@@ -21,6 +21,8 @@ import type { CardSelectorOption } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { map, of, startWith, switchMap } from 'rxjs';
 
+import { MeetingComposerFormService } from '../meeting-composer-form.service';
+
 /**
  * Details & Access section of the meeting composer (LFXV2-3235).
  * @description Owns `title`, `meeting_type`, `visibility`, and `restricted`. Visibility and join
@@ -34,6 +36,7 @@ import { map, of, startWith, switchMap } from 'rxjs';
 })
 export class ComposerDetailsAccessComponent {
   private readonly personaService = inject(PersonaService);
+  private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
 
@@ -43,9 +46,8 @@ export class ComposerDetailsAccessComponent {
   protected readonly youtubeAmberThreshold = YOUTUBE_MEETING_TITLE_WARNING_LENGTH;
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
-  protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
-
   private readonly hydratedMeetingType: Signal<MeetingType | null> = this.initHydratedMeetingType();
+  protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
 
   private initTitleLength(): Signal<number> {
     return toSignal(
@@ -63,10 +65,11 @@ export class ComposerDetailsAccessComponent {
     );
   }
 
-  // Reads the control once per form instance rather than tracking valueChanges: the retained option has
-  // to stay the *hydrated* type, or switching away from it would drop it from the list permanently.
+  // Reads the loaded meeting rather than the control: the retained option has to stay the *stored*
+  // type, or switching away from it — or remounting this section — would drop it from the list. Signal
+  // state also means this survives hydration landing after the section renders.
   private initHydratedMeetingType(): Signal<MeetingType | null> {
-    return computed(() => (this.form().get('meeting_type')?.value as MeetingType | null) ?? null);
+    return computed(() => (this.formService.meeting()?.meeting_type as MeetingType | null) || null);
   }
 
   private initMeetingTypeOptions(): Signal<CardSelectorOption<MeetingType>[]> {
