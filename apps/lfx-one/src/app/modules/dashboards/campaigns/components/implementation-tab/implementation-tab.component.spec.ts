@@ -120,6 +120,26 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(true);
   });
 
+  /**
+   * The FIRST save of a session, which the status alone cannot express.
+   *
+   * `CampaignsComponent` leaves `briefPersistence` at `off` while that save is in flight — the
+   * persistence flag lives on the server and is unknown until the response lands, so showing a
+   * spinner would put a banner in front of every user in every environment where the cutover is
+   * dark. The parent also switches to Implementation before the save starts, so a fast click was
+   * reaching a create with `briefId: ''` and the terminal "brief has not been saved yet" refusal.
+   */
+  it('blocks submit during the first save, when the status still reads off', async () => {
+    makeOtherwiseValid();
+    setPersistence({ status: 'off', briefId: null, message: null });
+    expect(canSubmit()).toBe(true);
+
+    fixture.componentRef.setInput('briefSaveInFlight', true);
+    fixture.detectChanges();
+
+    expect(canSubmit()).toBe(false);
+  });
+
   it('does not block submit when persistence is off', async () => {
     // The cutover-dark case. `briefId` is null here too, so a guard written as "block on a null
     // brief id" would disable the button permanently — for a path that needs no brief id at all.

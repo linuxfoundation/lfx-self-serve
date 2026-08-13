@@ -84,6 +84,20 @@ export class ImplementationTabComponent implements OnInit {
   public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
 
   /**
+   * Is a brief save running right now?
+   *
+   * Separate from `briefPersistence` because that input drives a BANNER, and the first save of a
+   * session deliberately shows none — the persistence flag lives on the server, so it is unknown
+   * until that first response lands. Its status therefore reads `off` while the save is in
+   * flight, which is indistinguishable from "the cutover is dark".
+   *
+   * The difference matters here and nowhere else: a create issued during that window carries an
+   * empty brief id and is TERMINALLY refused with the cutover on. Defaults to false so the input
+   * is additive.
+   */
+  public readonly briefSaveInFlight = input(false);
+
+  /**
    * Text for the always-present live region in the template.
    *
    * Kept separate from the visible banners because the announcement and the banner have
@@ -272,6 +286,12 @@ export class ImplementationTabComponent implements OnInit {
     //     at all. ALLOWED — blocking it would contradict the message the user is reading. If the
     //     cutover is on, `createCampaigns` refuses on the empty id with its own wording; that is
     //     a different message for a different situation, and it is the create path's to give.
+    // `briefSaveInFlight` rather than `status === 'saving'`, because the status does not cover the
+    // FIRST save of a session: it stays `off` until the persistence flag is known, so a fast click
+    // straight after Proceed submitted an empty brief id and hit the terminal refusal. The
+    // dedicated input answers "is a save running" for every save, first or not.
+    if (this.briefSaveInFlight()) return false;
+
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
     if (persistence.status === 'error' && persistence.briefId !== null) return false;

@@ -80,6 +80,23 @@ export class CampaignsComponent {
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
   /**
+   * Is a brief save in flight, independent of whether a banner is shown for it?
+   *
+   * These were the same thing, and that conflation was a bug. `briefPersistence` drives the
+   * BANNER, and the first save of a session deliberately shows none — the persistence flag lives
+   * on the server, so until the first response arrives we cannot know whether the cutover is even
+   * on, and a "Saving this brief…" banner would otherwise appear for every user in every
+   * environment where it is dark (all of them, by default). So the first save sits in `off`.
+   *
+   * `off` therefore meant two different things: "the cutover is dark" and "the first save is
+   * running and we do not yet know". The Implementation tab needs to tell them apart, because a
+   * create issued during that window carries an empty brief id and is TERMINALLY refused with the
+   * cutover on. This signal is the half that answers "is a save running", with no bearing on what
+   * is displayed.
+   */
+  protected readonly briefSaveInFlight = signal(false);
+
+  /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
    * rules forbid — and which would read badly here anyway, since the three cases are unrelated
    * situations rather than degrees of one.
@@ -672,6 +689,10 @@ export class CampaignsComponent {
       this.briefPersistence.set(this.idlePersistence);
     }
 
+    // Set for BOTH branches, unlike the banner above. Whether a save is running has nothing to do
+    // with whether we have decided to show a spinner for it.
+    this.briefSaveInFlight.set(true);
+
     this.persistChain = this.persistChain.then(() => {
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
@@ -882,6 +903,17 @@ export class CampaignsComponent {
           message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
         });
       }
+    });
+
+    // Cleared AFTER the terminal catch, so it runs on every outcome — success, refusal and throw
+    // alike. Putting it in the success arm would leave the flag stuck on after a failure, which
+    // disables Create for the rest of the session.
+    //
+    // NOT generation-gated, unlike the banner writes above. This says "no save is running", and
+    // that is true of the whole component once the chain drains — gating it on generation would
+    // leave the flag set forever whenever a superseded save is the last to finish.
+    this.persistChain = this.persistChain.then(() => {
+      this.briefSaveInFlight.set(false);
     });
   }
 

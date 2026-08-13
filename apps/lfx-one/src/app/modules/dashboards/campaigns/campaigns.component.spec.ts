@@ -54,6 +54,11 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
+  /** Whether a save is running — deliberately NOT derivable from `state()`; see the tests below. */
+  function inFlight(): boolean {
+    return (fixture.componentInstance as unknown as { briefSaveInFlight(): boolean }).briefSaveInFlight();
+  }
+
   /**
    * `selectorForm` is protected; a program switch is the real path that discards a brief. The
    * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
@@ -1032,6 +1037,46 @@ describe('CampaignsComponent brief persistence', () => {
     // Not 'error': there is no brief on screen to warn about, and the amber banner would be
     // about work the user already abandoned.
     expect(state().status).toBe('off');
+  });
+
+  /**
+   * `briefSaveInFlight` exists because the BANNER state cannot answer "is a save running".
+   *
+   * The first save of a session shows no banner — the persistence flag lives on the server and is
+   * unknown until the response lands, so `briefPersistence` stays `off` throughout. The
+   * Implementation tab needs the difference: a create issued in that window carries an empty
+   * brief id and is terminally refused with the cutover on.
+   */
+  it('reports a save as in flight even while the banner still reads off', async () => {
+    const pending = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(pending);
+
+    proceed();
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+    // The banner is deliberately silent for this first save; that is exactly why the separate
+    // signal is needed rather than reading the status.
+    expect(state().status).toBe('off');
+  });
+
+  it('clears the in-flight flag when a save FAILS, not only when it succeeds', async () => {
+    // The stuck-forever case. Clearing it in the success arm alone would leave Create disabled
+    // for the rest of the session after one failed save.
+    const failing = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(failing);
+
+    proceed();
+    await fixture.whenStable();
+    expect(inFlight()).toBe(true);
+
+    failing.error(new Error('500'));
+    await fixture.whenStable();
+    // A second drain: the clear is chained AFTER the terminal catch, so it settles one
+    // microtask-turn later than the banner write does.
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
   });
 });
 
