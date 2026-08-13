@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { addDays } from 'date-fns';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION } from '../constants/poll.constants';
+import { FormControl, type FormGroup } from '@angular/forms';
+import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
   CommentPromptFormValue,
+  CommentResponseFormData,
+  CommentResponseInput,
   CreatePollCommentPrompt,
   CreatePollQuestion,
   CreateVoteRequest,
@@ -156,6 +160,39 @@ export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormVa
     .map((commentPrompt) => ({ prompt: commentPrompt.prompt.trim() }));
 
   return nonBlank.length > 0 ? nonBlank : undefined;
+}
+
+/** Reconciles a ballot comment form against the vote's prompts, keyed by prompt_id.
+ *  Uses { emitEvent: false } — callers bump their form-version signal after calling. */
+export function reconcileCommentFormControls(commentForm: FormGroup, prompts: PollCommentPrompt[]): void {
+  const desiredIds = new Set(prompts.map((prompt) => prompt.prompt_id));
+  for (const existingId of Object.keys(commentForm.controls)) {
+    if (!desiredIds.has(existingId)) commentForm.removeControl(existingId, { emitEvent: false });
+  }
+  for (const prompt of prompts) {
+    if (commentForm.contains(prompt.prompt_id)) continue;
+    commentForm.addControl(
+      prompt.prompt_id,
+      new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
+      { emitEvent: false }
+    );
+  }
+}
+
+/** Pairs each prompt with its response control for template iteration, dropping prompts whose
+ *  control is missing — a computed can evaluate before the reconcile pass adds controls. */
+export function getCommentPromptsData(commentForm: FormGroup, prompts: PollCommentPrompt[]): CommentResponseFormData[] {
+  return prompts
+    .map((prompt) => ({ prompt, control: commentForm.get(prompt.prompt_id) as FormControl<string> | null }))
+    .filter((data): data is CommentResponseFormData => data.control !== null);
+}
+
+/** Builds comment_responses from ballot form data, omitting empty/whitespace-only responses so a skipped optional prompt sends nothing. */
+export function buildCommentResponses(commentPromptsData: CommentResponseFormData[]): CommentResponseInput[] | undefined {
+  const responses = commentPromptsData
+    .map((data) => ({ prompt_id: data.prompt.prompt_id, comment_text: (data.control.value ?? '').trim() }))
+    .filter((response) => response.comment_text.length > 0);
+  return responses.length > 0 ? responses : undefined;
 }
 
 const DRAFT_OPTION_PAD_LABELS = DRAFT_VOTE_PLACEHOLDER_QUESTION.choices.map((choice) => choice.choice_text);
