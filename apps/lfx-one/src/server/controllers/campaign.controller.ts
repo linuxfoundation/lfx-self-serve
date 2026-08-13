@@ -159,7 +159,18 @@ export class CampaignController {
     // (that guard stays, since this controller is not the only caller), but only this one is
     // reached over HTTP, so only this one decides what the user reads.
     if (body.deliveryType === 'email') {
-      res.status(400).json({ error: 'Refining email copy is not supported yet.' });
+      // `ServiceValidationError`, not a manual `res.status().json()` — the sibling checks below
+      // all use it, and `docs/reviews/backend-checklist.md` §8 forbids the manual form. Going
+      // around the error middleware would have skipped the standard error shape and its
+      // centralized log line, so the one refusal a caller is most likely to hit would have been
+      // the one the logs never recorded.
+      _next(
+        ServiceValidationError.forField('deliveryType', 'refining email copy is not supported yet', {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
       return;
     }
 

@@ -1711,8 +1711,10 @@ function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails
     ? `\n${isEducation ? 'COURSE' : 'EVENT'}: ${body.eventDetails.name}\n${isEducation ? 'Duration' : 'Dates'}: ${body.eventDetails.dates}\n${isEducation ? '' : `City: ${body.eventDetails.city}\n`}`
     : '';
-  // No email branch: buildCopyPrompt is only reached from the two ad-copy paths, and both refuse
-  // email before calling it (generate skips the block, refine returns an error).
+  // No email branch: this helper belongs to the REFINE path only, and `streamRefinedBrief`
+  // rejects email before it gets here. (The comment used to name `buildCopyPrompt` — a copy of
+  // the note from that function, left behind when this one was written. Two helpers, one per
+  // path: generate uses `buildCopyPrompt`, refine uses this.)
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');

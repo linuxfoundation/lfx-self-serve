@@ -823,10 +823,16 @@ describe('CampaignController.refineBrief email refusal', () => {
 
     await controller.refineBrief(buildReq(body), res, next);
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Refining email copy is not supported yet.' });
-    // Not routed to the error middleware as a field-validation failure.
-    expect(next).not.toHaveBeenCalled();
+    // Through the error middleware as a ServiceValidationError, like every sibling check in this
+    // method — not a manual `res.status().json()`, which would skip the standard error shape and
+    // the centralized log line (backend-checklist §8).
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'deliveryType', message: 'refining email copy is not supported yet', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
   });
 
   it('still validates currentCopy for a PAID refine', async () => {
