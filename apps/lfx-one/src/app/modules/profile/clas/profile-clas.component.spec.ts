@@ -101,9 +101,7 @@ describe('ProfileClasComponent', () => {
   });
 
   it('omits the possessive when a list-miss row has no company name', async () => {
-    await render([
-      agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', statusReason: 'not_on_approval_list', pdfAvailable: false }),
-    ]);
+    await render([agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', statusReason: 'not_on_approval_list', pdfAvailable: false })]);
 
     const note = fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-attn"]') as HTMLElement | null;
     expect(note?.textContent?.trim()).toBe('No longer matches the approval criteria.');

@@ -98,7 +98,6 @@ export class ProfileClasComponent {
       case 'invalidated':
         return 'fa-light fa-circle-xmark';
       case 'unknown':
-        // Exhaustive only — the template must not bind this icon (unknown is plain text).
         return 'fa-light fa-minus';
       case 'superseded':
         return 'fa-light fa-clock-rotate-left';
@@ -106,18 +105,18 @@ export class ProfileClasComponent {
   }
 
   /**
- * Explanatory note beneath the status pill. Only a completed Approved List
- * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
- */
-protected statusNote(agreement: MyClaAgreement): string | undefined {
-  if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
-    return undefined;
+   * Explanatory note beneath the status pill. Only a completed Approved List
+   * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
+   */
+  protected statusNote(agreement: MyClaAgreement): string | undefined {
+    if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
+      return undefined;
+    }
+    if (agreement.companyName) {
+      return `No longer matches ${agreement.companyName}'s approval criteria.`;
+    }
+    return 'No longer matches the approval criteria.';
   }
-  if (agreement.companyName) {
-    return `No longer matches ${agreement.companyName}'s approval criteria.`;
-  }
-  return 'No longer matches the approval criteria.';
-}
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
     event.stopPropagation();
