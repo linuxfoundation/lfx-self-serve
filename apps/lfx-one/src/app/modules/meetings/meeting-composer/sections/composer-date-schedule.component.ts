@@ -12,6 +12,7 @@ import { TimePickerComponent } from '@components/time-picker/time-picker.compone
 import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   EARLY_JOIN_CHIP_OPTIONS,
+  EARLY_JOIN_TOOLTIP,
   MAX_CUSTOM_DURATION,
   MAX_EARLY_JOIN_TIME,
   MEETING_DURATION_CHIP_OPTIONS,
@@ -19,7 +20,9 @@ import {
   MIN_EARLY_JOIN_TIME,
   RECURRING_MEETING_FEATURE,
   TIMEZONES,
+  WEEKDAY_CODES,
 } from '@lfx-one/shared/constants';
+import { RecurrenceType } from '@lfx-one/shared/enums';
 import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -28,9 +31,9 @@ import { MeetingRecurrencePatternComponent } from '../../components/meeting-recu
 /**
  * Date & Schedule section of the meeting composer (LFXV2-3236).
  * @description Owns `startDate`, `startTime`, `duration`/`customDuration`, `timezone`,
- * `early_join_time_minutes`, and the recurring card. Recurrence payload mapping stays in
- * `lfx-meeting-recurrence-pattern` and the form service, so the emitted `recurrence` group is
- * unchanged from the wizard.
+ * `early_join_time_minutes`, and the recurring card. Owns the simple-cadence → `recurrence` mapping
+ * (daily / weekly / weekdays / monthly); `custom` is owned by `lfx-meeting-recurrence-pattern`. The
+ * emitted `recurrence` group is unchanged from the wizard.
  */
 @Component({
   selector: 'lfx-composer-date-schedule',
@@ -59,6 +62,7 @@ export class ComposerDateScheduleComponent implements OnInit {
   protected readonly maxCustomDuration = MAX_CUSTOM_DURATION;
   protected readonly minEarlyJoinTime = MIN_EARLY_JOIN_TIME;
   protected readonly maxEarlyJoinTime = MAX_EARLY_JOIN_TIME;
+  protected readonly earlyJoinTooltip = EARLY_JOIN_TOOLTIP;
 
   protected readonly showCustomRecurrence = signal<boolean>(false);
   // Cadence labels name the selected day ("Weekly on Thursday"), so they are rebuilt per start date.
@@ -98,9 +102,9 @@ export class ComposerDateScheduleComponent implements OnInit {
     this.form()
       .get('startDate')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((newDate) => {
-        this.handleStartDateChange(newDate as Date);
-        this.timezoneOptions.set(this.buildTimezoneOptions((newDate as Date) ?? new Date()));
+      .subscribe((newDate: Date | null) => {
+        this.handleStartDateChange(newDate);
+        this.timezoneOptions.set(this.buildTimezoneOptions(newDate ?? new Date()));
       });
 
     this.form()
@@ -147,11 +151,13 @@ export class ComposerDateScheduleComponent implements OnInit {
     ];
   }
 
-  private handleStartDateChange(newDate: Date): void {
+  private handleStartDateChange(newDate: Date | null): void {
     this.cadenceOptions.set(this.buildCadenceOptions(newDate));
 
     const currentRecurrenceType = this.form().get('recurrenceType')?.value;
-    if (!currentRecurrenceType || currentRecurrenceType === 'none') {
+    // The calendar input is user-editable, so clearing it emits null; the day-derived cadences below
+    // have no day to derive from until a date comes back.
+    if (!newDate || !currentRecurrenceType || currentRecurrenceType === 'none') {
       return;
     }
 
@@ -210,16 +216,16 @@ export class ComposerDateScheduleComponent implements OnInit {
 
     switch (recurrenceType) {
       case 'daily':
-        recurrence.patchValue({ type: 1, repeat_interval: 1 });
+        recurrence.patchValue({ type: RecurrenceType.DAILY, repeat_interval: 1 });
         break;
 
       case 'weekly':
         // weekly_days is 1-7 upstream while Date.getDay() is 0-6.
-        recurrence.patchValue({ type: 2, repeat_interval: 1, weekly_days: startDate ? String(startDate.getDay() + 1) : null });
+        recurrence.patchValue({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: startDate ? String(startDate.getDay() + 1) : null });
         break;
 
       case 'weekdays':
-        recurrence.patchValue({ type: 2, repeat_interval: 1, weekly_days: '2,3,4,5,6' });
+        recurrence.patchValue({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: WEEKDAY_CODES });
         break;
 
       case 'monthly_nth':
@@ -229,7 +235,7 @@ export class ComposerDateScheduleComponent implements OnInit {
         }
         const { weekOfMonth, isLastWeek } = getWeekOfMonth(startDate);
         recurrence.patchValue({
-          type: 3,
+          type: RecurrenceType.MONTHLY,
           repeat_interval: 1,
           monthly_week: isLastWeek ? -1 : weekOfMonth,
           monthly_week_day: startDate.getDay() + 1,

@@ -27,6 +27,8 @@ export class CalendarComponent {
   public readonly maxDate = input<Date | null>(null);
   public readonly appendTo = input<string | undefined>(undefined);
   public readonly styleClass = input<string>('w-full');
+  // Forwarded to the inner input so an external `<label for>` can associate with it.
+  public readonly inputId = input<string | undefined>(undefined);
 
   // Events
   public readonly onSelect = output<any>();

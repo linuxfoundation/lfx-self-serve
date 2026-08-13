@@ -15,7 +15,7 @@
         [form]="form()"
         control="startDate"
         appendTo="body"
-        id="composer-start-date"
+        inputId="composer-start-date"
         placeholder="Select date"
         [minDate]="minDate()"
         class="w-full"
@@ -31,7 +31,7 @@
       <lfx-time-picker
         [form]="form()"
         control="startTime"
-        id="composer-start-time"
+        inputId="composer-start-time"
         placeholder="Select time"
         styleClass="w-full"
         data-testid="composer-start-time" />
@@ -47,8 +47,8 @@
 
   <!-- Duration -->
   <div class="flex flex-col gap-2">
-    <span class="text-sm font-medium text-gray-900"> Duration <span class="text-red-500">*</span> </span>
-    <div data-testid="composer-duration-chips">
+    <span id="composer-duration-label" class="text-sm font-medium text-gray-900"> Duration <span class="text-red-500">*</span> </span>
+    <div role="group" aria-labelledby="composer-duration-label" data-testid="composer-duration-chips">
       <lfx-select-button [form]="form()" control="duration" [options]="durationOptions" [unselectable]="false" [required]="true" />
     </div>
     @if (form().get('duration')?.errors?.['required'] && form().get('duration')?.touched) {
@@ -64,7 +64,7 @@
             size="small"
             id="composer-custom-duration"
             [placeholder]="minCustomDuration + '–' + maxCustomDuration"
-            styleClass="w-30"
+            styleClass="w-[7.5rem]"
             data-testid="composer-custom-duration" />
           <span class="text-sm text-gray-500">minutes</span>
         </div>
@@ -104,16 +104,19 @@
 
   <!-- Early join -->
   <div class="flex flex-col gap-2">
-    <span class="flex items-center gap-2 text-sm font-medium text-gray-900">
+    <span id="composer-early-join-label" class="flex items-center gap-2 text-sm font-medium text-gray-900">
       Early join
       <i
         class="fa-light fa-info-circle cursor-help text-gray-400"
-        pTooltip="Allow guests to join the meeting early. Useful for informal networking before the official start time"
+        tabindex="0"
+        role="img"
+        [attr.aria-label]="earlyJoinTooltip"
+        [pTooltip]="earlyJoinTooltip"
+        tooltipEvent="both"
         tooltipPosition="right"
-        tooltipStyleClass="text-xs max-w-xs"
-        aria-hidden="true"></i>
+        tooltipStyleClass="text-xs max-w-xs"></i>
     </span>
-    <div data-testid="composer-early-join-chips">
+    <div role="group" aria-labelledby="composer-early-join-label" data-testid="composer-early-join-chips">
       <lfx-select-button [form]="form()" control="early_join_time_minutes" [options]="earlyJoinOptions" [unselectable]="false" />
     </div>
     @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
@@ -130,10 +133,14 @@
   <lfx-feature-toggle [feature]="recurringFeature" [form]="form()">
     @if (form().get('isRecurring')?.value) {
       <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
-        <span class="text-sm font-medium text-gray-900"> Cadence <span class="text-red-500">*</span> </span>
-        <div data-testid="composer-cadence-chips">
-          <lfx-select-button [form]="form()" control="recurrenceType" [options]="cadenceOptions()" [unselectable]="false" [required]="true" />
-        </div>
+        <span id="composer-cadence-label" class="text-sm font-medium text-gray-900"> Cadence <span class="text-red-500">*</span> </span>
+        @if (cadenceOptions().length === 0) {
+          <p class="text-sm text-gray-500" data-testid="composer-cadence-needs-date">Pick a start date to choose how often this meeting repeats.</p>
+        } @else {
+          <div role="group" aria-labelledby="composer-cadence-label" data-testid="composer-cadence-chips">
+            <lfx-select-button [form]="form()" control="recurrenceType" [options]="cadenceOptions()" [unselectable]="false" [required]="true" />
+          </div>
+        }
 
         @if (showCustomRecurrence()) {
           <lfx-meeting-recurrence-pattern [form]="form()" data-testid="composer-custom-recurrence" />

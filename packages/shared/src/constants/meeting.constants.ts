@@ -420,12 +420,6 @@ export const WEEKDAY_CODES = '2,3,4,5,6';
 export const TIME_ROUNDING_MINUTES = 15;
 
 /**
- * Default meeting type when none is selected
- * @description Fallback value for meeting type field
- */
-export const DEFAULT_MEETING_TYPE = 'None';
-
-/**
  * Default meeting platform
  * @description Primary platform used for hosting meetings
  */
@@ -696,6 +690,11 @@ export const EARLY_JOIN_CHIP_OPTIONS = [
   { label: '30 min', value: 30 },
   { label: '1 hour', value: 60 },
 ];
+
+/**
+ * Tooltip text explaining the early-join window
+ */
+export const EARLY_JOIN_TOOLTIP = 'Allow guests to join the meeting early. Useful for informal networking before the official start time.';
 
 // ============================================================================
 // Template Re-exports
