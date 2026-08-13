@@ -576,7 +576,7 @@ export interface PollCommentResponse {
   comment_text: string;
   /** Voter's display name — absent when the vote is pseudo-anonymous */
   user_name?: string;
-  /** Voter's profile picture URL — absent when the vote is pseudo-anonymous */
+  /** Voter's profile picture URL — absent when the vote is pseudo-anonymous. Reserved for future avatar rendering; the results drawer does not render it yet. */
   profile_picture?: string;
   /** Timestamp when the voter submitted their vote */
   vote_creation_time: string;
@@ -624,7 +624,7 @@ export interface CommentResponseView extends PollCommentResponse {
 export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
   /** Page-sliced responses with display-ready paragraph splits */
   responses: CommentResponseView[];
-  /** Total submitted responses before pagination slicing */
+  /** Post-BFF-cap response count before pagination slicing; the pre-cap total lives in `total_responses` */
   totalResponses: number;
   /** Offset of the first visible response within the full responses list */
   first: number;

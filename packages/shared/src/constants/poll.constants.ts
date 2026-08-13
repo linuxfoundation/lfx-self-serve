@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import { TagSeverity } from '../interfaces/components.interface';
-import { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
+import type { TagSeverity } from '../interfaces/components.interface';
+import type { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
 
 /**
  * Configurable labels for votes displayed throughout the UI
@@ -272,6 +272,9 @@ export const VOTE_COMMENT_PROMPT_MAX_LENGTH = 500;
 
 /** Maximum character length for a voter's comment response text (upstream contract limit). */
 export const VOTE_COMMENT_RESPONSE_MAX_LENGTH = 5000;
+
+/** Maximum comment prompts rendered on the inline ballot — votes with more route to the cast drawer. */
+export const VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS = 2;
 
 /** Default close window applied to draft votes when the user has not picked an end date. */
 export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;

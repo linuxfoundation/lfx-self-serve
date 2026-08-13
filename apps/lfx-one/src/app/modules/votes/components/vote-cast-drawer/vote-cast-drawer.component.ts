@@ -13,8 +13,8 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { maxCodePointsValidator } from '@lfx-one/shared/validators';
-import { CommentResponseFormData, CommentResponseInput, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -110,7 +110,10 @@ export class VoteCastDrawerComponent {
     // Rebuild the comment form when the loaded vote's comment prompts change.
     toObservable(this.commentPrompts)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((prompts) => this.rebuildCommentForm(prompts));
+      .subscribe((prompts) => {
+        reconcileCommentFormControls(this.commentForm, prompts);
+        this.bumpFormVersion();
+      });
 
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
@@ -184,7 +187,7 @@ export class VoteCastDrawerComponent {
     }
     const userVoteContent = isAbstain ? undefined : this.buildAnswers(vote.poll_questions ?? []);
     // Comments are independent of abstain — a voter can abstain and still leave a comment.
-    const commentResponses = this.buildCommentResponses();
+    const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
 
@@ -262,10 +265,7 @@ export class VoteCastDrawerComponent {
   private initCommentPromptsData(): Signal<CommentResponseFormData[]> {
     return computed(() => {
       this.formVersion(); // re-evaluate when comment controls are added/removed
-      return this.commentPrompts().map((prompt) => ({
-        prompt,
-        control: this.commentForm.get(prompt.prompt_id) as FormControl<string>,
-      }));
+      return getCommentPromptsData(this.commentForm, this.commentPrompts());
     });
   }
 
@@ -326,33 +326,8 @@ export class VoteCastDrawerComponent {
     this.bumpFormVersion();
   }
 
-  /** Reconciles the comment form against the current vote's comment prompts, keyed by prompt_id. */
-  private rebuildCommentForm(prompts: PollCommentPrompt[]): void {
-    const desiredIds = new Set(prompts.map((p) => p.prompt_id));
-    for (const existingId of Object.keys(this.commentForm.controls)) {
-      if (!desiredIds.has(existingId)) this.commentForm.removeControl(existingId, { emitEvent: false });
-    }
-    for (const prompt of prompts) {
-      if (this.commentForm.contains(prompt.prompt_id)) continue;
-      this.commentForm.addControl(
-        prompt.prompt_id,
-        new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_RESPONSE_MAX_LENGTH)] }),
-        { emitEvent: false }
-      );
-    }
-    this.bumpFormVersion();
-  }
-
   private bumpFormVersion(): void {
     this.formVersion.update((v) => v + 1);
-  }
-
-  /** Omits empty/whitespace-only responses so a skipped optional prompt sends nothing. */
-  private buildCommentResponses(): CommentResponseInput[] | undefined {
-    const responses = this.commentPromptsData()
-      .map((data) => ({ prompt_id: data.prompt.prompt_id, comment_text: (data.control.value ?? '').trim() }))
-      .filter((response) => response.comment_text.length > 0);
-    return responses.length > 0 ? responses : undefined;
   }
 
   private buildAnswers(questions: PollQuestion[]): VoteAnswerInput[] {
