@@ -65,10 +65,12 @@ export class MeetingComposerHostComponent {
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
-   * @description Taken from the form service, which is also what the rail and `isSectionValid` read, so
-   * the header, footer and section rows cannot describe different modes. `composer.context()` is the other
-   * candidate and is written first — `initialize()` only runs from the subscription in this constructor —
-   * so the two are briefly out of step on every open; the enforceable part is that nothing reads both.
+   * @description Taken from the form service, which is also what the rail's row locking and
+   * `sectionNeedsAttention` read, so the header, footer and section rows cannot describe different modes.
+   * `composer.context()` is the other candidate and is written first — `initialize()` only runs from the
+   * subscription in this constructor — so a context-derived reader would lead this one by a flush on every
+   * open, and would hold a different value whenever the new mode differs from the retained one. The
+   * enforceable part is that nothing reads both.
    * The form service is the lagging side, and because `initialize()` is the only writer of `mode` and only
    * runs for a non-null context, it also keeps the previous mode across a close. Fixing that means
    * deriving `mode` from the context rather than writing it in `initialize()`.
