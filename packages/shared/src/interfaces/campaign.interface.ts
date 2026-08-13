@@ -1126,19 +1126,27 @@ export interface HubSpotEmailSearchResult {
    * Whether this list may have been cut off by the unfiltered cap.
    *
    * True only for an EMPTY query that came back exactly at the cap — the one case where a
-   * complete portal listing and a truncated first screen are indistinguishable on the wire. A
-   * filtered search is never truncated, so this is always false for one. The picker should say
-   * "showing the 500 most recent — type to search older templates" rather than presenting the
-   * list as everything.
+   * complete portal listing and a truncated first screen are indistinguishable on the wire.
+   *
+   * A filtered search is COMPLETE-OR-ERROR rather than truncatable: campaign-service's walk is
+   * capped at 200 pages and returns an error on exhausting it, never a partial list. So this is
+   * always false for a filtered search — not because the walk is unbounded, but because a partial
+   * one fails instead of answering.
+   *
+   * The picker should say "showing the first 500 — type to search the rest" rather than
+   * presenting the list as everything. NOT "the 500 most recent": the service takes the first 500
+   * rows in server order and sorts them AFTER truncating, so the set is not the portal's newest
+   * 500 and telling the user otherwise would be a second falsehood on top of the first.
    */
   possiblyTruncated: boolean;
-  // ---------------------------------------------------------------------------
-  // HubSpot UTM
-  // ---------------------------------------------------------------------------
 
   /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
   error: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// HubSpot UTM
+// ---------------------------------------------------------------------------
 
 export interface HubSpotUtmLookupResult {
   found: boolean;

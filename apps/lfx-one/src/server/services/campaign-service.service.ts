@@ -703,10 +703,17 @@ export class CampaignServiceClient {
    * have. `possiblyTruncated` below is how the caller can tell.
    *
    * `q` does NOT reach HubSpot. Its list endpoint cannot be queried by name or subject, so
-   * campaign-service walks every page and matches in-process — which is precisely why a filtered
-   * search is unbounded while the empty-query screen is capped. Do not describe this as
-   * server-side search: the service's own design warns that reading it that way invites
-   * optimising the walk away, reintroducing the false absence the cap exists to prevent.
+   * campaign-service walks every page and matches in-process. Do not describe this as server-side
+   * search: the service's own design warns that reading it that way invites optimising the walk
+   * away, reintroducing the false absence the cap exists to prevent.
+   *
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
+   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
+   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
+   * filtered search either sees every page or fails; it never quietly returns a subset. That is
+   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
+   * case where a partial result is returned as if complete.
    *
    * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
    * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
@@ -735,12 +742,23 @@ export class CampaignServiceClient {
       // Rows without an id are DROPPED, not mapped to `id: ''`. This is the value the staging
       // config's required `sourceEmailId` takes, so an id-less row is a choice the user cannot
       // make — rendering it would offer a template that fails on submit.
+      // A 200 with no `emails` ARRAY is malformed, not an empty portal, and the difference is the
+      // whole point of this component. `?? []` reported it as `enabled: true` with zero templates
+      // — indistinguishable from a portal that genuinely has none, which is the false absence this
+      // search exists to avoid. campaign-service draws the same line one layer up: `SearchEmails`
+      // treats a nil results array as a decode error precisely because a genuinely empty portal
+      // returns `[]`, not nothing. Thrown so the catch below reports a read failure.
+      const wire = response.data?.emails;
+      if (!Array.isArray(wire)) {
+        throw new Error('campaign-service returned a 2xx with no emails array');
+      }
+
       // The WIRE count, taken BEFORE the id filter below. Truncation is a property of what
       // campaign-service sent, not of what survived our filtering: a genuinely capped 500 carrying
       // one id-less row filters to 499, and `499 >= 500` would report a truncated listing as
       // complete — the precise falsehood this flag exists to prevent.
-      const wireCount = (response.data?.emails ?? []).length;
-      const emails = (response.data?.emails ?? []).filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
+      const wireCount = wire.length;
+      const emails = wire.filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
       // Derived here because the wire cannot express it: a capped 500 and a complete 500 are the
       // same bytes. Only an EMPTY query is capped, so a filtered search is never flagged.
       return { enabled: true, emails, error: null, possiblyTruncated: query === '' && wireCount >= UNFILTERED_EMAIL_CAP };

@@ -1804,6 +1804,25 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
    * comparison (`499 >= 500`) reports a truncated listing as complete — the precise falsehood the
    * flag exists to prevent, and the case that makes it worth reading the wire count.
    */
+  /**
+   * A 200 with no `emails` ARRAY is malformed, not an empty portal — and reporting it as
+   * `enabled: true` with zero templates is indistinguishable from a portal that genuinely has
+   * none. That false absence is the exact failure this whole search is built to avoid.
+   *
+   * campaign-service draws the same line one layer up: `SearchEmails` treats a nil results array
+   * as a decode error, because a genuinely empty portal returns `[]` rather than nothing.
+   */
+  it('reports a 2xx with no emails array as a failure, not as an empty portal', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    expect(result.emails).toEqual([]);
+    // The error is what separates it from a genuinely empty portal, which returns a null error.
+    expect(result.error).toBeTruthy();
+  });
+
   it('flags a capped screen even when a row is dropped for having no id', async () => {
     const wire = Array.from({ length: 500 }, (_, i) => ({ id: String(i) }));
     wire[0] = { id: '' } as (typeof wire)[number];
