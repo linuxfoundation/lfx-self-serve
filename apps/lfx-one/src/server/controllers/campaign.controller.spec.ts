@@ -835,6 +835,21 @@ describe('CampaignController.refineBrief email refusal', () => {
     ]);
   });
 
+  it('rejects a MISSPELLED deliveryType instead of blaming currentCopy', async () => {
+    // The gap an exact `=== 'email'` match leaves: `'emial'` falls past it into the paid-only
+    // checks and produces "currentCopy is required" — the same misleading message the email guard
+    // exists to prevent, for a caller whose only mistake was a typo.
+    const body = { deliveryType: 'emial', feedback: 'shorter', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
   it('still validates currentCopy for a PAID refine', async () => {
     // The contrast: without it the guard above could swallow every refine, email or not.
     const body = { feedback: 'punchier', currentCopy: null, currentKeywords: [] };
