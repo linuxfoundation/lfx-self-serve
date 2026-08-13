@@ -69,15 +69,24 @@ test.describe('Profile header avatar', () => {
     await expect(image).toHaveAttribute('src', PNG_DATA_URI);
   });
 
-  test('falls back to initials when no picture is set', async ({ page }) => {
+  test('falls back to the Auth0 OIDC picture claim (or initials) when no uploaded avatar is set', async ({ page }) => {
     await mockProfile(page, null);
     await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     await expect(page.getByTestId('profile-display-name')).toContainText('Ada Lovelace', { timeout: 10000 });
 
-    await expect(page.getByTestId('profile-avatar-image')).not.toBeAttached();
-    await expect(page.getByTestId('profile-avatar')).toContainText('A');
+    // With no uploaded avatar, the effective source is the always-present Auth0 OIDC `picture` claim
+    // on the signed-in e2e test account (LFXV2-2628) — this mock only controls user_metadata.picture,
+    // not that claim, so whether it's actually populated depends on the test account's Auth0 profile.
+    // Branch on what's actually rendered instead of assuming either outcome.
+    const image = page.getByTestId('profile-avatar-image');
+    if (await image.isVisible().catch(() => false)) {
+      await expect(image).toHaveAttribute('src', /^https?:\/\//);
+    } else {
+      await expect(image).not.toBeAttached();
+      await expect(page.getByTestId('profile-avatar')).toContainText('A');
+    }
   });
 
   test('falls back to initials when the picture URL fails to load', async ({ page }) => {

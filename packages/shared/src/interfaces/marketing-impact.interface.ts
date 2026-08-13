@@ -218,6 +218,12 @@ export interface EmailTypeRow {
 export interface TopCampaignRow {
   name: string;
   type: string;
+  /**
+   * Day-level send date, or null when the source row carries none. The breakdown groups by
+   * PUBLISHED_DATE, so one campaign sent twice produces two rows — this is what distinguishes
+   * them, both visually and in the @for track key.
+   */
+  sendDate: string | null;
   sends: string;
   opens: string;
   openRate: string;

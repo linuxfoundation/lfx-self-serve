@@ -40,25 +40,159 @@
 
   <hr class="border-gray-200" />
 
-  @if (selectedDeliveryType() === 'email') {
-    <!-- Email delivery is under active development — placeholder until it ships. -->
-    <div
-      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-      data-testid="campaigns-email-placeholder">
-      <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
-      <h2 class="text-base font-semibold text-gray-900">Email campaigns are coming soon</h2>
-      <p class="max-w-md text-sm text-gray-500">The Email delivery channel is under active development.</p>
-      <lfx-button label="Switch to Paid Marketing" [text]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
+  <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
+       is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
+       destroy an in-progress email brief on every round-trip to Paid Marketing. -->
+  <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
+    <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
+         change when the OTHER container becomes active.
+
+         `aria-controls` is set only on the SELECTED tab, deliberately. The panels live inside an
+         @switch, so exactly one is in the DOM at a time; setting it on every tab would point
+         assistive technology at element ids that do not exist. ARIA 1.2 makes aria-controls
+         optional on a tab for this reason, and a dangling reference is worse than an absent
+         attribute — a screen reader following it lands nowhere. marketing-impact.component.html
+         sets it unconditionally over a single @switch-rendered panel and therefore does have
+         dangling ids on its inactive tabs; that is a bug there rather than a pattern to copy. -->
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
+      @for (tab of emailTabs; track tab.id; let i = $index) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="selectedEmailTab() === tab.id"
+          [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
+          [attr.id]="'email-tab-' + tab.id"
+          [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id, 'email')"
+          (keydown)="onTabKeydown($event, i, 'email')"
+          [class]="
+            selectedEmailTab() === tab.id
+              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+          "
+          [attr.data-testid]="'campaigns-email-' + tab.id + '-tab'">
+          <i [class]="tab.icon" aria-hidden="true"></i>
+          {{ tab.label }}
+        </button>
+      }
     </div>
-  }
+
+    @switch (selectedEmailTab()) {
+      @case ('planning') {
+        <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
+          <!--
+            KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
+
+            Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
+            platform to proceed (`canGenerate` requires `selectedPlatforms().size > 0`, and the set
+            defaults to `google-ads`), and generates RSA copy, Demand Gen copy, ad keywords and a
+            LinkedIn targeting strategy. None of that is email — no template, subject, sender or
+            preview text — and `onEmailProceedToImplementation` stores a brief the Implement panel
+            reads only for EXISTENCE. The payload is never consumed.
+
+            It ships this way deliberately: this PR replaces a "coming soon" placeholder, and the
+            email brief shape is a feature, not a review fix. It needs a delivery-type mode on the
+            planner (or a separate component), a different `canGenerate` gate, and a generation
+            request that carries email fields instead of `platforms` — plus a decision about
+            whether the two delivery types should share a component at all. LFXV2-3201 owns that
+            decision; LFXV2-3197 (merged) supplies the template picker the Implement half needs.
+
+            Until then the Plan tab is honest about the event URL and scrape, which the two types
+            genuinely do share, and misleading about everything below it.
+          -->
+          <!-- Keyed on the program type for the same reason the paid side is: the component
+               holds its brief state locally and does not reset on input change. -->
+          <!--
+            TWO planning-tab instances are in the DOM at once, because both delivery containers are
+            visibility-toggled rather than swapped with `@if` (destroying either would wipe an
+            in-progress brief). The planner emits FIXED internal test ids — `planning-url-input`,
+            `planning-generate-btn`, `planning-platform-<id>` — so each of those now resolves to
+            two elements, one of them hidden.
+
+            Any selector on a bare `planning-*` id MUST therefore be scoped under its host:
+
+              [data-testid="campaigns-email-planning-tab"] [data-testid="planning-url-input"]
+              [data-testid="campaigns-planning-tab"]       [data-testid="planning-url-input"]
+
+            Namespacing the planner's own ids per instance would be the stronger fix, but it
+            changes a component both delivery types share and belongs with LFXV2-3201, which
+            revisits whether they should share it at all.
+          -->
+          @for (program of [selectedProgramType()]; track program) {
+            <lfx-planning-tab
+              [programTypeConfig]="activeProgramTypeConfig()"
+              (proceedToImplementation)="onEmailProceedToImplementation($event)"
+              data-testid="campaigns-email-planning-tab" />
+          }
+        </div>
+      }
+      @case ('implementation') {
+        <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
+          <!--
+            The staging form is the half of this channel that still needs a service endpoint:
+            campaign create clones a caller-specified source email and `sourceEmailId` has no
+            default, so the form cannot be built until the template picker has something to
+            list (LFXV2-3197 → LFXV2-3198). Said plainly rather than as "coming soon", which
+            would repeat the claim this PR exists to correct — the channel IS implemented in
+            campaign-service; what is missing is one route and the form over it.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-implementation-pending">
+            <i class="fa-light fa-envelope-open-text text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email staging is not wired up yet</h2>
+            <!--
+              The brief sentence is gated on there BEING a brief. This tab is directly clickable
+              with no disabled binding, so it is reachable before anything has been generated —
+              and "Your brief is ready" is then simply false, told to someone who has not started.
+              The rest of the panel is true either way: it explains what is missing from the
+              channel, which does not depend on the user's progress.
+            -->
+            <p class="max-w-md text-sm text-gray-500">
+              @if (emailBriefOutput()) {
+                Your brief is ready.
+              }
+              Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint that is still in
+              review.
+            </p>
+          </div>
+        </div>
+      }
+      @case ('insights') {
+        <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
+          <!--
+            Deliberately NOT <lfx-monitoring-tab>. That component is paid-ads only: its
+            `PlatformType` union is 'google' | 'linkedin' | 'reddit' | 'meta', it defaults to
+            'google', and it contains no reference to HubSpot or email at all. Rendering it here
+            would put Google Ads spend and clicks under a tab labelled Email — numbers that are
+            real, plausible, and about a different campaign entirely, which is worse than showing
+            nothing.
+
+            The email metrics read exists in campaign-service (LFXV2-3058), so this needs a
+            reader of its own rather than a reuse.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-insights-pending">
+            <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
+            <p class="max-w-md text-sm text-gray-500">
+              Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is not
+              wired to the email channel.
+            </p>
+          </div>
+        </div>
+      }
+    }
+  </div>
   <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
-       while the Email placeholder shows. PlanningTabComponent owns the brief form +
+       while the Email container above shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
        silently wipe the user's in-progress brief — hiding it keeps the instance alive.
        Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
        display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
        so [hidden] alone would leave both views rendered. An inline style always wins. -->
-  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? 'none' : null" data-testid="campaigns-paid-marketing">
+  <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
     <!-- Tab Navigation -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
       @for (tab of tabs; track tab.id; let i = $index) {
@@ -69,8 +203,8 @@
           [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
           [attr.id]="'tab-' + tab.id"
           [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id)"
-          (keydown)="onTabKeydown($event, i)"
+          (click)="selectTab(tab.id, 'paid-marketing')"
+          (keydown)="onTabKeydown($event, i, 'paid-marketing')"
           [class]="
             selectedTab() === tab.id
               ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'

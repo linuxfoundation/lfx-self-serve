@@ -100,8 +100,10 @@ export class ProfileLayoutComponent {
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
 
-  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
-  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
+  // Avatar image URL: prefer the uploaded avatar (auth0 user_metadata.picture) and fall back to
+  // the always-present Auth0 OIDC picture claim, so this rail never shows a placeholder for a user
+  // who simply hasn't uploaded a custom avatar (LFXV2-2628).
+  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || this.userService.user()?.picture || '');
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -194,6 +196,13 @@ export class ProfileLayoutComponent {
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
     this.applyOptimisticProfileUpdate(metadata);
+
+    // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
+    // (which read UserService.effectiveAvatarUrl, not this layout's own profileData) reflect it in
+    // the same session without waiting for the next full-page load's post-hydration fetch.
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
   }
 
   /**

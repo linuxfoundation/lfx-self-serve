@@ -31,6 +31,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env[BUCKET_ENV];
+  delete process.env['CDN_URL_PREFIX'];
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -165,6 +166,30 @@ describe('projectPublicProfile', () => {
     expect(projected.isPublic).toBe(false);
     // Round-trip through JSON to drop undefined keys, mirroring the wire payload.
     expect(JSON.parse(JSON.stringify(projected))).toEqual({ isPublic: false, basic: { Name: 'Jane' } });
+  });
+
+  it('derives basic.avatarUrl from the requested username when CDN_URL_PREFIX is configured', () => {
+    process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'Jane.Doe');
+    expect(projected.basic?.avatarUrl).toBe('https://cdn.example.com/avatars/jane.doe');
+  });
+
+  it('omits basic.avatarUrl when no username is passed (e.g. unit-testing projection in isolation)', () => {
+    process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } });
+    expect(projected.basic?.avatarUrl).toBeUndefined();
+  });
+
+  it('omits basic.avatarUrl when CDN_URL_PREFIX is unset, even with a username', () => {
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
+    expect(projected.basic?.avatarUrl).toBeUndefined();
+  });
+
+  it('omits basic.avatarUrl instead of throwing when CDN_URL_PREFIX is a bare hostname (misconfigured)', () => {
+    process.env['CDN_URL_PREFIX'] = 'avatars-public.dev.downloads.lfx.community';
+    expect(() => projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe')).not.toThrow();
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
+    expect(projected.basic?.avatarUrl).toBeUndefined();
   });
 });
 

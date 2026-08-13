@@ -71,6 +71,7 @@
           <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
             <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
             <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+            <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SEND DATE</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
             <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
@@ -78,10 +79,14 @@
           </div>
 
           <!-- Rows -->
-          @for (row of topCampaigns(); track row.type + '|' + row.name; let idx = $index) {
+          @for (row of topCampaigns(); track row.type + '|' + row.name + '|' + row.sendDate; let idx = $index) {
             <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
               <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell">{{ row.name }}</span>
               <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>
+              <!-- An em dash, not the raw value: sendDate is null for source rows with no usable
+                   publish date, and Angular interpolates null as an empty string — so without the
+                   fallback the cell would render blank rather than reading as "no date". -->
+              <span class="w-24 text-xs text-gray-500" role="cell">{{ row.sendDate || '—' }}</span>
               <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
               <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
               <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>

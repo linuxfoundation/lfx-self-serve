@@ -701,6 +701,32 @@ export interface EventChannelAttribution {
   sharePercent: number;
 }
 
+/** One paid-ad campaign's performance for an event. */
+export interface EventPaidCampaign {
+  /** Campaign name as recorded on the ad platform. */
+  name: string;
+  /** Platform the campaign ran on, e.g. "Google Ads", "LinkedIn", "Reddit". */
+  platform: string;
+  spend: number;
+  conversions: number;
+  clicks: number;
+  impressions: number;
+  /** Cost per conversion in dollars; null when no conversions. */
+  cpa: number | null;
+}
+
+/** One email campaign's engagement for an event. */
+export interface EventEmailCampaign {
+  name: string;
+  sends: number;
+  opens: number;
+  clicks: number;
+  /** Open rate as a percentage (0–100). */
+  openRate: number;
+  /** Click-through rate as a percentage (0–100). */
+  ctr: number;
+}
+
 /**
  * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
  * Mirrors PCC's EventPredictionDrilldown grain.
@@ -764,6 +790,10 @@ export interface EventDetailResponse {
   cfpStatus: string;
   sponsorshipTiers: EventSponsorshipTier[];
   channels: EventChannelAttribution[];
+  /** Paid-ad campaigns matched to this event (empty when none ran). */
+  paidCampaigns: EventPaidCampaign[];
+  /** Email campaigns matched to this event by name (empty when none). */
+  emailCampaigns: EventEmailCampaign[];
   pacing: EventPacing;
 }
 

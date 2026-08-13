@@ -17,7 +17,14 @@ const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
+  // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
+  CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
+  // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
+  // asserted SQL diverge from what production actually sends.
+  EMAIL_CAMPAIGN_LIMIT: 12,
   EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
+  PAID_CAMPAIGN_LIMIT: 25,
   getYearForRange: vi.fn(),
   HEALTH_METRICS_RANGES: {},
   isHealthMetricsRange: vi.fn(),
@@ -475,6 +482,107 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       }
     });
 
+    // The campaign enrichment matches on an event-NAME substring, which is not a scope: another
+    // foundation can run a campaign whose name contains the same words, and this feeds an ED-only
+    // response. A non-umbrella caller must therefore carry FOUNDATION_SLUG into both reads.
+    it('scopes the paid and email campaign lookups to a non-umbrella foundation', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        expect(sql).toContain('FOUNDATION_SLUG = ?');
+        expect(binds).toContain('cncf');
+      }
+    });
+
+    // The headline aggregate has no outer GROUP BY, so it returns exactly one row even when the
+    // event has no prediction records — every column NULL. A truthiness check on that row reports
+    // available: true and renders "Current 0 / Predicted 0", which reads as a measured zero rather
+    // than an absent model.
+    it('reports pacing unavailable when the prediction aggregate comes back all-NULL', async () => {
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
+          return Promise.resolve({ rows: [{ DAYS_LEFT: null, CUR_REGS: null, PRIOR: null, PRED_AVG: null, PRED_LOW: null, PRED_HIGH: null }] });
+        }
+        if (text.includes('MARKETING_EVENT_REGISTRATIONS r') || text.includes('SPONSORSHIPS_BY_TIER t')) {
+          return Promise.resolve({ rows: text.includes('SPONSORSHIPS_BY_TIER t') ? [] : [eventRow] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.pacing.available).toBe(false);
+      expect(result?.pacing.current).toBeNull();
+    });
+
+    // The two pacing reads target different tables and neither is interchangeable: the base
+    // predictions table is event-grained and carries only the FINAL_* totals, while the per-day
+    // curve columns exist solely on _DRILLDOWN. Querying one for the other's columns raises an
+    // invalid-identifier error, which getEventPacing propagates — so the whole drawer fails, not
+    // just pacing. A rebuild collapsed these onto one table once already.
+    it('reads the headline from the predictions table and the curve from the drilldown', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const pacingReads = execute.mock.calls.filter(([sql]) => String(sql).includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS'));
+      const head = pacingReads.find(([sql]) => String(sql).includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS'));
+      const curve = pacingReads.find(([sql]) => String(sql).includes('DAYS_TO_EVENT'));
+
+      expect(head).toBeDefined();
+      expect(curve).toBeDefined();
+      // The headline must not come from the drilldown, nor the curve from the base table.
+      expect(String(head![0])).not.toContain('_DRILLDOWN');
+      expect(String(curve![0])).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN');
+    });
+
+    // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
+    // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
+    // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so
+    // an annual event's window stops short of the previous edition's own campaign month.
+    it("bounds the campaign match to this edition's run-up window", async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        // Month-truncated, because CAMPAIGN_MONTH/PUBLISHED_DATE are month-grained: day-level
+        // bounds off a mid-month event date clip the first lookback month.
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', -9,");
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', 2,");
+        // The event's own start date bounds both ends of the window.
+        expect(binds.slice(-2)).toEqual([eventRow.START_DATE, eventRow.START_DATE]);
+      }
+    });
+
+    // The umbrella foundation deliberately spans every project, so it stays unfiltered — the same
+    // exception buildFoundationFilter makes everywhere else. Asserted so a later "tighten the
+    // scope" change cannot silently blank the umbrella view.
+    it('leaves the umbrella foundation unfiltered on the campaign lookups', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql] of campaignReads) {
+        expect(sql).not.toContain('FOUNDATION_SLUG = ?');
+      }
+    });
+
     // An event outside the caller's foundation is filtered out by the slug_resolve join, so it
     // is indistinguishable from a nonexistent one — no existence oracle for other foundations.
     it('returns null when the event is not in the caller’s foundation', async () => {
@@ -531,6 +639,35 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       const result = await service.getEventDetail('evt-1', 'tlf');
 
       expect(result?.eventUrl).toBe('');
+    });
+  });
+
+  // The roster's period handling is easy to get backwards: every month the picker offers has
+  // already ended, so a bare range predicate silently drops every upcoming row and turns
+  // "Including past" into "past only".
+  describe('getEventRoster period scoping', () => {
+    const month = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any;
+
+    it('leaves the upcoming roster unbounded when includePast is false', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', false, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE');
+      expect(sql).not.toContain('EVENT_START_DATE >=');
+      expect(binds).toEqual(['tlf']);
+    });
+
+    // Regression guard: past events from the range are ADDED to the upcoming ones.
+    it('adds past events from the period instead of replacing the upcoming roster', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', true, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE OR');
+      expect(binds).toEqual(['tlf', '2026-03-01', '2026-04-01']);
     });
   });
 });

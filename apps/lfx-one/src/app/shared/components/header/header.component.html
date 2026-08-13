@@ -56,7 +56,7 @@
                       </a>
                     }
                     <lfx-avatar
-                      [image]="userService.user()?.picture"
+                      [image]="userService.effectiveAvatarUrl()"
                       [icon]="'fa-light fa-user'"
                       [label]="userService.user()?.name"
                       size="normal"
