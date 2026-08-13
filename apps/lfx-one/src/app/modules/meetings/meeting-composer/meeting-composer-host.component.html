@@ -18,19 +18,20 @@
           <div class="mt-1 flex items-center gap-3">
             <!-- `aria-disabled` rather than `disabled`, matching the rail: the toast auto-dismisses, so an
                  unreachable control here would leave a screen-reader user no way to hear why it did nothing.
-                 `onEditCreatedMeeting` is the real guard. -->
+                 The reason rides on `aria-label`/`title` rather than an sr-only child, because PrimeNG's
+                 toast item is an `aria-atomic` live region — adding or removing a child re-announces the
+                 whole toast. `onEditCreatedMeeting` is the real guard. -->
             <button
               type="button"
               class="inline-flex items-center gap-1 text-xs font-medium"
-              [ngClass]="canEditFromToast() ? 'text-blue-700 hover:text-blue-800 hover:underline' : 'cursor-not-allowed text-gray-500'"
-              [attr.aria-disabled]="canEditFromToast() ? null : 'true'"
+              [ngClass]="editFromToastBlockedReason() ? 'cursor-not-allowed text-gray-600' : 'text-blue-700 hover:text-blue-800 hover:underline'"
+              [attr.aria-disabled]="editFromToastBlockedReason() ? 'true' : null"
+              [attr.aria-label]="editFromToastBlockedReason() ? 'Edit meeting — ' + editFromToastBlockedReason() : null"
+              [attr.title]="editFromToastBlockedReason()"
               data-testid="meeting-composer-toast-edit"
               (click)="onEditCreatedMeeting(toastData)">
               <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
               <span>Edit meeting</span>
-              @if (!canEditFromToast()) {
-                <span class="sr-only">Close the open composer first</span>
-              }
             </button>
             <a
               [routerLink]="toastData.meetingUrl"
@@ -79,6 +80,22 @@
 
     @if (formService.loading()) {
       <p class="text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
+    } @else if (formService.meetingLoadFailed()) {
+      <!-- Without this the failed fetch leaves an empty form and a disabled Save with nothing saying why -->
+      <div class="flex min-w-0 flex-1 flex-col items-start gap-3" data-testid="meeting-composer-load-error">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-semibold text-gray-900">Couldn't load this meeting</span>
+          <span class="text-sm text-gray-600">It may have been deleted, or you may not have permission to edit it.</span>
+        </div>
+
+        <lfx-button
+          label="Try again"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          data-testid="meeting-composer-load-retry"
+          (onClick)="formService.retryLoadMeeting()" />
+      </div>
     } @else {
       <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto">
         <!-- Stands in for the hidden rail: where you are, what's done, and what still needs fixing.

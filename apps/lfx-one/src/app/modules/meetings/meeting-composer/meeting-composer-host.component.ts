@@ -75,29 +75,20 @@ export class MeetingComposerHostComponent {
     return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
-  /**
-   * Whether a required section is currently invalid, matching the rail's dots.
-   * @description Create mode only counts sections already visited — flagging a section the stepper hasn't
-   * reached yet would report the form as broken before it has been filled. Edit mode drops that gate:
-   * every section is reachable from the start and Save is gated on all of them, so an unvisited invalid
-   * one is exactly the case where the organizer has no other way to find out why Save is disabled. An
-   * edit whose meeting never arrived is excluded — that form is empty because the fetch failed, not
-   * because of anything the organizer did.
-   */
+  /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
 
-    const isEditMode = this.composer.isEditMode();
     const visited = this.composer.visitedSections();
 
-    if (isEditMode && !this.formService.meeting()) {
-      return false;
-    }
-
-    return this.sections.some((section) => section.required && (isEditMode || visited.has(section.id)) && !this.formService.isSectionValid(section.id));
+    return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
-  /** Whether the toast's Edit action can act — a composer already open would lose its draft to it. */
-  protected readonly canEditFromToast: Signal<boolean> = computed(() => !this.composer.isOpen() && this.projectContextService.canWrite());
+  /**
+   * Why the toast's Edit action can't act, or `null` when it can.
+   * @description Doubles as the enabled check. Reopening while another meeting is part-way through the
+   * composer would discard that draft, and reopening after write access was lost would only fail on save.
+   */
+  protected readonly editFromToastBlockedReason: Signal<string | null> = this.initEditFromToastBlockedReason();
 
   public constructor() {
     toObservable(this.composer.context)
@@ -168,12 +159,11 @@ export class MeetingComposerHostComponent {
 
   /**
    * Reopens the composer on the meeting the toast was raised for.
-   * @description Guarded by `canEditFromToast`, which the template also reflects as `aria-disabled` —
-   * reopening while another meeting is part-way through the composer would discard that draft, and
-   * reopening after write access was lost would only fail on save.
+   * @description Guarded by `editFromToastBlockedReason`, which the template also reflects as
+   * `aria-disabled` plus a tooltip naming the reason.
    */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
-    if (!this.canEditFromToast()) {
+    if (this.editFromToastBlockedReason()) {
       return;
     }
 
@@ -183,6 +173,16 @@ export class MeetingComposerHostComponent {
 
   protected onDismissToast(): void {
     this.messageService.clear(this.toastKey);
+  }
+
+  private initEditFromToastBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      if (this.composer.isOpen()) {
+        return 'Close the open composer first';
+      }
+
+      return this.projectContextService.canWrite() ? null : 'You no longer have write access';
+    });
   }
 
   /**

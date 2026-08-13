@@ -53,10 +53,12 @@
         }
       </button>
     } @else {
+      <!-- Locked rows are greyed by surface rather than opacity: they stay keyboard-reachable, so their text
+           has to stay legible, and the tint is what separates them from a row that just isn't done yet -->
       <button
         type="button"
         class="group relative flex items-start gap-3 rounded-md py-2 pl-1 pr-3 text-left"
-        [ngClass]="row.locked ? 'cursor-not-allowed' : 'cursor-pointer'"
+        [ngClass]="row.locked ? 'cursor-not-allowed bg-gray-50' : 'cursor-pointer'"
         [attr.aria-disabled]="row.locked ? 'true' : null"
         [attr.aria-current]="row.active ? 'step' : null"
         [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
@@ -72,8 +74,9 @@
             class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
             [ngClass]="{
               'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
-              'border-blue-600 bg-white text-blue-600': !row.active && row.complete,
-              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete,
+              'border-blue-600 bg-white text-blue-600': !row.active && row.complete && !row.locked,
+              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete && !row.locked,
+              'border-gray-200 bg-gray-100 text-gray-500': row.locked,
             }">
             @if (row.complete) {
               <i class="fa-light fa-check" aria-hidden="true"></i>

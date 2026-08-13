@@ -48,9 +48,11 @@ export class QuickCreateDialogComponent {
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
 
-  // What the type's template wrote, tracked per hint so the agenda hint can't claim a suggestion just
-  // because the title next to it was seeded.
-  private readonly seededDetails = signal(false);
+  // What the type's template wrote, tracked per control: most templates estimate a duration off the chip
+  // scale, which `applyTypeTemplate` skips, so a single flag would keep the details hint alive on the
+  // untouched `duration` control long after the organizer rewrote the title.
+  private readonly seededTitle = signal(false);
+  private readonly seededDuration = signal(false);
   private readonly seededAgenda = signal(false);
 
   // Derived rather than snapshotted: a hint has to go quiet the moment the organizer rewrites the field,
@@ -105,6 +107,32 @@ export class QuickCreateDialogComponent {
     this.create.emit();
   }
 
+  // Private initializer functions
+  private initPrefilledDetails(): Signal<boolean> {
+    return computed(() => {
+      // `revision` is what makes control state reactive here — the form service bumps it on value and
+      // status changes and on the methods that only mark controls dirty.
+      this.formService.revision();
+
+      const form = this.formService.form();
+      // Each seed paired with its own control: an OR across both flags would let the never-seeded control
+      // keep the hint alive.
+      const titleStillTemplate = this.seededTitle() && !!form.get('title')?.pristine;
+      const durationStillTemplate = this.seededDuration() && !!form.get('duration')?.pristine;
+
+      return titleStillTemplate || durationStillTemplate;
+    });
+  }
+
+  private initPrefilledAgenda(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+
+      return this.seededAgenda() && !!this.formService.form().get('description')?.pristine;
+    });
+  }
+
+  // Other private helper methods
   /**
    * Seeds title, agenda and duration from the meeting type's first template.
    * @description Guarded on `pristine` rather than on emptiness: switching type after editing a field must
@@ -116,7 +144,8 @@ export class QuickCreateDialogComponent {
     const template = meetingType ? this.firstTemplate(meetingType) : null;
 
     if (!template) {
-      this.seededDetails.set(false);
+      this.seededTitle.set(false);
+      this.seededDuration.set(false);
       this.seededAgenda.set(false);
       return;
     }
@@ -125,43 +154,28 @@ export class QuickCreateDialogComponent {
     const title = form.get('title');
     const description = form.get('description');
     const duration = form.get('duration');
-    let seededDetails = false;
+    let seededTitle = false;
+    let seededDuration = false;
+    let seededAgenda = false;
 
     if (title?.pristine) {
       title.setValue(template.title);
-      seededDetails = true;
+      seededTitle = true;
     }
 
     if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
       this.formService.setDuration(template.estimatedDuration);
-      seededDetails = true;
+      seededDuration = true;
     }
 
     if (description?.pristine) {
       description.setValue(template.content);
+      seededAgenda = true;
     }
 
-    this.seededDetails.set(seededDetails);
-    this.seededAgenda.set(!!description?.pristine);
-  }
-
-  private initPrefilledDetails(): Signal<boolean> {
-    return computed(() => {
-      // `revision` is what makes control state reactive here.
-      this.formService.revision();
-
-      const form = this.formService.form();
-
-      return this.seededDetails() && (!!form.get('title')?.pristine || !!form.get('duration')?.pristine);
-    });
-  }
-
-  private initPrefilledAgenda(): Signal<boolean> {
-    return computed(() => {
-      this.formService.revision();
-
-      return this.seededAgenda() && !!this.formService.form().get('description')?.pristine;
-    });
+    this.seededTitle.set(seededTitle);
+    this.seededDuration.set(seededDuration);
+    this.seededAgenda.set(seededAgenda);
   }
 
   private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {
