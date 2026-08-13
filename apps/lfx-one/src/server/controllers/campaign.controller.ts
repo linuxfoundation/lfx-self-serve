@@ -990,7 +990,7 @@ export class CampaignController {
     if (!includesSearch) return null;
 
     const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
-    // KNOWN GAP, tracked separately — read before enabling this cutover on a non-USD account.
+    // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
     //
     // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
     // the ad ACCOUNT's currency (NOT USD — the client does no FX)" (campaign-service
@@ -1026,7 +1026,8 @@ export class CampaignController {
    * `budget`. Passing the object through unchanged leaves `budget` at its zero value, which the
    * Meta client rejects with "invalid budget: must be a positive number" on every dispatch.
    *
-   * SAME KNOWN GAP as `buildGoogleAdsConfig` — the rename does NOT convert the denomination.
+   * SAME KNOWN GAP as `buildGoogleAdsConfig` (LFXV2-3251) — the rename does NOT convert the
+   * denomination.
    * `meta.go:29`: "Budget is in whole units of the ad ACCOUNT's currency (NOT USD — the client
    * does no FX conversion)". On a non-USD Meta account this spends the number in that account's
    * currency. Not fixable here (no FX anywhere in campaign-service, and the account currency is

@@ -242,9 +242,8 @@ export class CampaignServiceClient {
    * their campaign creation was lost when it may be running perfectly well. Note the asymmetry is
    * deliberate: if campaign-service ever changes that body shape, a real expired job surfaces as
    * an error rather than as a false "lost" — loud instead of quietly wrong.
-   */
-  /**
-   * Poll a campaign-service job, scoped to the project that owns it.
+   *
+   * ## Scoped to the project that owns the job
    *
    * `projectSlug` is a REQUIRED parameter rather than a module constant, and that change is the
    * other half of the creation cutover rather than a tidy-up. The constant was `'tlf'`, and its
@@ -584,7 +583,11 @@ export class CampaignServiceClient {
       return {
         enabled: true,
         jobId: null,
-        error: 'Demand Gen campaigns cannot be created through campaign-service yet. Remove Demand Gen, or create this campaign with the cutover disabled.',
+        // No internal vocabulary: the siblings above say what the user did and what to do next,
+        // and "campaign-service"/"the cutover" are neither. A user who deselects Demand Gen gets
+        // a Search campaign; one who needs Demand Gen needs an operator, and telling them to
+        // "disable the cutover" names a control they do not have.
+        error: 'Demand Gen campaigns are not supported yet. Deselect Demand Gen to create the Search campaign, or contact support to run this campaign.',
       };
     }
 
