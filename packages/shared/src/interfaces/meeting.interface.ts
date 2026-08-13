@@ -1444,9 +1444,16 @@ export interface MeetingComposerContext {
    * @description Takes precedence over the ambient project context, which resolves asynchronously.
    */
   projectUid?: string;
-  /** Section to land on; defaults to the first section. */
+  /** Section to land on; defaults to the first section. Ignored by the quick create dialog. */
   section?: MeetingComposerSectionId;
+  /** Surface to open — the full drawer (default) or the quick create dialog. */
+  variant?: MeetingComposerVariant;
+  /** Meeting type the quick create dialog opens pre-selected with, so its template prefill runs immediately. */
+  meetingType?: MeetingType;
 }
+
+/** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
+export type MeetingComposerVariant = 'drawer' | 'quick';
 
 /** Dialog data for the composer's manual guest entry dialog. */
 export interface ManualGuestDialogData {

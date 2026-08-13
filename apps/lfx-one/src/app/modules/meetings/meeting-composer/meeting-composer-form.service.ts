@@ -16,6 +16,7 @@ import {
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
+  MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
@@ -25,6 +26,7 @@ import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   Committee,
+  CommitteeMember,
   CreateMeetingRequest,
   ImportantLinkFormValue,
   Meeting,
@@ -45,6 +47,7 @@ import {
   combineDateTime,
   formatTo12HourInTimezone,
   generateRecurrenceObject,
+  generateTempId,
   getDefaultStartDateTime,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
@@ -198,6 +201,11 @@ export class MeetingComposerFormService {
     if (context.mode === 'edit' && context.meetingUid) {
       this.loadMeeting(context.meetingUid);
       this.loadGuests(context.meetingUid);
+    }
+
+    // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.
+    if (context.mode === 'create' && context.meetingType) {
+      this.form().get('meeting_type')?.setValue(context.meetingType);
     }
   }
 
@@ -396,6 +404,142 @@ export class MeetingComposerFormService {
   /** Recurrence the current form state would submit — for read-only summaries such as the preview. */
   public recurrencePayload(): MeetingRecurrence | null {
     return this.buildRecurrencePayload(this.form().getRawValue());
+  }
+
+  /**
+   * Writes a duration in minutes across the chip control and its custom companion.
+   * @description Duration lives in two controls, so every writer outside Date & Schedule — the agenda
+   * template estimate, the AI estimate, the quick create prefill — has to set both or leave the pair
+   * inconsistent. Values off the chip scale land in `customDuration` and mark it touched, so its
+   * range error is visible rather than silently deadening submit.
+   */
+  public setDuration(minutes: number): void {
+    const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === minutes);
+    const form = this.form();
+
+    form.get('duration')?.setValue(isChipValue ? minutes : 'custom');
+    form.get('customDuration')?.setValue(isChipValue ? null : minutes);
+
+    if (!isChipValue) {
+      form.get('customDuration')?.markAsTouched();
+    }
+  }
+
+  /**
+   * Reconciles the guest list against the members of the currently selected groups.
+   * @description Members already invited keep their saved state so they aren't deleted and re-created,
+   * members that dropped out of every selected group are queued for deletion, and the rest are added.
+   * Lives here rather than in the Guests section because the quick create dialog selects groups too.
+   */
+  public syncCommitteeMembers(members: CommitteeMember[]): void {
+    const memberByEmail = new Map<string, CommitteeMember>();
+    members.forEach((member) => {
+      if (member.email) {
+        memberByEmail.set(member.email.toLowerCase(), member);
+      }
+    });
+
+    const suppressed = this.suppressedGuestEmails();
+
+    this.updateGuests((current) => {
+      const reconciled = current.reduce<MeetingRegistrantWithState[]>((kept, guest) => {
+        if (guest.type !== 'committee') {
+          kept.push(guest);
+          return kept;
+        }
+
+        const email = guest.email?.toLowerCase() ?? '';
+        if (memberByEmail.has(email)) {
+          memberByEmail.delete(email);
+          // Reconciliation has to be idempotent: a guest queued for deletion because they left every
+          // selected group is restored when they turn up in one again. A guest the organizer removed by
+          // hand is suppressed, so their deletion survives re-emission.
+          const restore = guest.state === 'deleted' && !suppressed.has(email);
+          kept.push(restore ? { ...guest, state: 'existing' } : guest);
+          return kept;
+        }
+
+        if (guest.state !== 'new') {
+          kept.push({ ...guest, state: 'deleted' });
+        }
+
+        return kept;
+      }, []);
+
+      const invited = new Set(reconciled.filter((guest) => guest.state !== 'deleted').map((guest) => guest.email?.toLowerCase() ?? ''));
+
+      // Whatever is left in the map is a member nobody has invited or explicitly removed yet.
+      const additions = Array.from(memberByEmail.values())
+        .filter((member) => {
+          const email = member.email?.toLowerCase() ?? '';
+          return !invited.has(email) && !suppressed.has(email);
+        })
+        .map((member) => this.toGroupGuest(member));
+
+      return [...reconciled, ...additions];
+    });
+  }
+
+  /** Fields shared by every locally-added guest; `created_at` / `updated_at` are stamped upstream. */
+  public newGuestDefaults(): MeetingRegistrantWithState {
+    return {
+      uid: '',
+      meeting_id: this.meetingId() ?? '',
+      occurrence_id: null,
+      email: '',
+      first_name: '',
+      last_name: '',
+      job_title: null,
+      org_name: null,
+      host: false,
+      org_is_member: false,
+      org_is_project_member: false,
+      avatar_url: null,
+      username: null,
+      linkedin_profile: null,
+      created_at: '',
+      updated_at: '',
+      type: 'direct',
+      invite_accepted: null,
+      attended: null,
+      state: 'new',
+      tempId: generateTempId(),
+    };
+  }
+
+  /**
+   * Minutes the form currently resolves to, whichever of the two duration controls holds it.
+   * @description `customDuration` starts out as an empty string and holds whatever the numeric input
+   * produces, so it is coerced rather than cast.
+   */
+  public effectiveDuration(): number | null {
+    const duration = this.form().get('duration')?.value as number | 'custom' | null;
+
+    if (duration !== 'custom') {
+      return duration ?? null;
+    }
+
+    const customDuration = Number(this.form().get('customDuration')?.value);
+
+    return Number.isFinite(customDuration) && customDuration > 0 ? customDuration : null;
+  }
+
+  private toGroupGuest(member: CommitteeMember): MeetingRegistrantWithState {
+    return {
+      ...this.newGuestDefaults(),
+      email: member.email,
+      first_name: member.first_name,
+      last_name: member.last_name,
+      job_title: member.job_title || null,
+      org_name: member.organization?.name || null,
+      username: member.username || null,
+      linkedin_profile: member.linkedin_profile || null,
+      type: 'committee',
+      committee_uid: member.committee_uid,
+      committee_name: member.committee_name,
+      committee_role: member.role?.name || null,
+      committee_voting_status: member.voting?.status || null,
+    };
   }
 
   // Private initializer functions
