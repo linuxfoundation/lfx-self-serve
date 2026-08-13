@@ -41,7 +41,7 @@ export interface EasyClaMyCla {
    * approval lists. This is authoritative — SS does not recompute it.
    */
   valid?: boolean;
-  status?: 'valid' | 'needs_attention' | 'invalidated' | 'unknown';
+  status: 'valid' | 'needs_attention' | 'invalidated' | 'unknown';
   statusReason?: 'not_on_approval_list' | 'unknown';
   documentMajorVersion?: number;
   documentMinorVersion?: number;
