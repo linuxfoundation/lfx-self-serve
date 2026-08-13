@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventDetailDrawerComponent } from './event-detail-drawer.component';
 
@@ -44,6 +44,15 @@ describe('EventDetailDrawerComponent', () => {
 
   let fixture: ComponentFixture<EventDetailDrawerComponent>;
   let getEventDetail: ReturnType<typeof vi.fn>;
+
+  // The drawer is a PrimeNG overlay: it renders into document.body, NOT into the fixture host, so
+  // every assertion here queries the global document. Without teardown a previous test's overlay
+  // survives into the next one and those queries match the wrong DOM — order-dependent failures
+  // that pass in isolation and flake in a full run.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
 
   async function setup(impl: ReturnType<typeof vi.fn>): Promise<void> {
     getEventDetail = impl;
@@ -350,6 +359,276 @@ describe('EventDetailDrawerComponent', () => {
 
       expect(document.querySelector('[data-testid="event-detail-event-link"]')).toBeTruthy();
     }
+  });
+
+  // The range is suppressed at the precision the reader sees, not at raw-float precision. Both
+  // ends render through metricCount, which rounds, so 472.6–473.2 passes a `low !== high` test
+  // and then prints "(473–473)" — exactly the non-forecast the suppression exists to hide. The
+  // model emits fractional counts, so sub-unit intervals are the expected shape here.
+  it('hides a predicted range that collapses once rounded for display', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 473,
+              predictedLow: 472.6,
+              predictedHigh: 473.2,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Predicted');
+    expect(text).not.toContain('473–473');
+  });
+
+  // DAYS_LEFT_FROM_YESTERDAY is negative while an event is upcoming (-54 against a curve spanning
+  // -86..0, verified in the warehouse) and rises past 0 once it has passed. The previous `> 0`
+  // guard therefore hid this block for every upcoming event — the only case it serves — and showed
+  // it for past ones, which is how "-8 Days left" reached production.
+  it('counts down the days remaining for an upcoming event', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -54,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Days left');
+    expect(text).toContain('54');
+    expect(text).not.toContain('-54');
+  });
+
+  // "1 Days left" only became reachable once the sign fix let this block render for upcoming
+  // events at all — the old guard hid every one of them, so the boundary never showed.
+  it('says "Day left" in the singular on the final day', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -1,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Day left');
+    expect(text).not.toContain('Days left');
+  });
+
+  // A past event has no days left to count, so the block goes rather than showing a negative.
+  it('drops the days-left block once the event has passed', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 8,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).not.toContain('Days left');
+  });
+
+  // The pipe's whole reason for existing: the model emits fractional people, and formatNumber's
+  // sub-1,000 branch renders the raw float. Every other test here pre-rounds its fixtures, so
+  // deleting Math.round from the pipe left the suite green while "444.471" returned to the card.
+  it('rounds a fractional headline count for display', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 444.471,
+              priorYear: null,
+              predictedAvg: 488.918,
+              predictedLow: 400.024,
+              predictedHigh: 500.512,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('444');
+    expect(text).not.toContain('444.471');
+    expect(text).not.toContain('488.918');
+  });
+
+  // available: true with empty points is the partial success that hid the original bug: the
+  // headline arrives, the curve read fails, and the card rendered a heading above blank space.
+  // Nothing asserted this branch, so a template regression could restore the silence unnoticed.
+  it('says the curve is unavailable when the headline arrives without points', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 473,
+              priorYear: 400,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing-curve-unavailable"]')).toBeTruthy();
+    // The headline must survive: the point of the split reads is that one failing keeps the other.
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')?.textContent).toContain('473');
+  });
+
+  // The sibling caption, on the branch where the curve DOES render but carries no baseline.
+  it('says there is no prior event data when the curve renders without a baseline', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            hasPriorYear: false,
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [{ daysToEvent: -30, current: 473, priorYear: null, predictedAvg: 500, predictedLow: 450, predictedHigh: 550 }],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing-no-prior"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-pacing-curve-unavailable"]')).toBeNull();
+
+    // The caption alone is not the regression. This fixture carries a non-null vsLastYear (1.1)
+    // and compScore 'high' alongside hasPriorYear: false — exactly the contradiction that shipped,
+    // where a card read "no prior year" beneath a green "Ahead of last year" badge. Asserting only
+    // the caption leaves both guards removable with this test still green.
+    const drawer = document.body.textContent ?? '';
+    expect(drawer).not.toContain('+10% vs last year');
+    expect(drawer).not.toContain('Ahead of last year');
+    expect(drawer).toContain('no prior year');
+    expect(drawer).toContain('No pace signal');
+  });
+
+  // Above 1,000 the display compacts to one decimal, so 1,240 and 1,244 round apart but both
+  // print "1.2K". A gate comparing rounded NUMBERS passes here and prints the collapsed range
+  // anyway — and the low thousands are the scale these events actually run at.
+  it('hides a predicted range that collapses under compact formatting', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 1240,
+              priorYear: null,
+              predictedAvg: 1242,
+              predictedLow: 1240,
+              predictedHigh: 1244,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Predicted');
+    // No parenthesised range at all. Asserting only that "1.2K–1.2K" is absent passes for a gate
+    // that compares raw numbers and renders "(1240–1244)" — distinct, but not what the reader is
+    // shown beside a headline of 1.2K, and not a range the display can express.
+    expect(text).not.toMatch(/\(\s*[\d.,KM]+\s*–\s*[\d.,KM]+\s*\)/);
+  });
+
+  // The mirror: a range wider than one whole registration is a real forecast and must survive.
+  it('shows a predicted range that stays distinct after rounding', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('450');
+    expect(text).toContain('550');
   });
 
   it('hides the sponsorship-only sections in the attendance view', async () => {

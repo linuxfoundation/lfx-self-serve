@@ -10,7 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, EMAIL_CAMPAIGN_LIMIT, lfxColors, ON_TRACK_PERCENT_THRESHOLD, PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { formatIsoDateLabel, formatNumber, hexToRgba } from '@lfx-one/shared/utils';
-import { MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
+import { MetricCountPipe, MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
@@ -30,6 +30,7 @@ import type { EventDetailResponse, EventDrawerFocus, EventPaidCampaign } from '@
     CardComponent,
     TagComponent,
     ChartComponent,
+    MetricCountPipe,
     MetricMoneyPipe,
     MetricNumberPipe,
     MetricPercentPipe,
@@ -200,12 +201,41 @@ export class EventDetailDrawerComponent {
     return Math.min(100, Math.round((d.sponsorshipRevenue.actual / d.sponsorshipRevenue.goal) * 100));
   });
 
-  // Whether we have a daily curve to plot (needs the drilldown prediction data).
+  // Whether we have a daily curve to plot (needs the per-day prediction rows).
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
+
+  /**
+   * Days remaining before the event, counting down, or null once it has passed.
+   *
+   * DAYS_LEFT_FROM_YESTERDAY is negative while an event is upcoming and rises toward 0 on the day
+   * itself — verified in the warehouse: Linux Plumbers Conference 2026 reads -54 against a curve
+   * spanning -86..0. A past event keeps counting up past 0. Negating it turns the column into the
+   * number a reader means by "days left", and makes "has it happened yet" a single sign test.
+   */
+  protected readonly daysLeft = computed<number | null>(() => {
+    const raw = this.detail()?.pacing.daysLeft;
+    if (raw === null || raw === undefined) return null;
+    const remaining = -raw;
+    return remaining > 0 ? remaining : null;
+  });
+
+  protected readonly predictedRange = computed<{ low: string; high: string } | null>(() => {
+    const pacing = this.detail()?.pacing;
+    if (!pacing || !pacing.available || pacing.predictedLow === null || pacing.predictedHigh === null) return null;
+    // Compared as rendered text, not as rounded numbers. Rounding alone only settles the sub-1,000
+    // branch: above it formatNumber compacts to one decimal, so 1,240 and 1,244 round apart, pass
+    // a numeric gate, and then both print "1.2K" — the collapsed range this exists to hide, at the
+    // scale these events actually run (the curve fix cites an event at 1,244). Formatting here and
+    // handing the template strings means the gate compares exactly what the reader sees.
+    const low = formatNumber(Math.round(pacing.predictedLow));
+    const high = formatNumber(Math.round(pacing.predictedHigh));
+    return low === high ? null : { low, high };
+  });
 
   // Registration-pacing line chart over days-to-event: the predicted average with its low/high
   // band, plus the current-year actuals and — when the event has a prior edition — last year's
-  // curve. The actuals come from the _DRILLDOWN table's per-day cumulative columns.
+  // curve. The actuals come from MARKETING_EVENT_REGISTRATION_PREDICTIONS' per-day cumulative
+  // columns, which hold the measured count for every day at or before today.
   protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
 
   protected readonly pacingChartOptions: ChartOptions<'line'> = {
@@ -225,13 +255,25 @@ export class EventDetailDrawerComponent {
           filter: (item) => item.text !== 'Predicted high' && item.text !== 'Predicted low',
         },
       },
-      tooltip: { enabled: true },
+      tooltip: {
+        enabled: true,
+        callbacks: {
+          // Rounded to match the headline. Chart.js renders the raw datum by default, so hovering
+          // a point showed "444.471" beneath a card reading "444" — the same fractional person the
+          // metricCount pipe exists to remove, on the larger of the two surfaces.
+          //
+          // `parsed.y` is nullable because the current-year series is deliberately null past
+          // today; those points carry no value to label, so the row is dropped rather than
+          // rendered as a rounded zero.
+          label: (item) => (item.parsed.y === null ? '' : `${item.dataset.label}: ${formatNumber(Math.round(item.parsed.y))}`),
+        },
+      },
     },
     scales: {
       x: {
         // No `reverse` here. This is a category axis, so points render in array order, and the
-        // query already returns DAYS_TO_EVENT descending — the event (0) lands on the right.
-        // Reversing as well would flip it back and run the timeline backwards.
+        // query returns DAYS_TO_EVENT ascending — most negative first, 0 (the event) last, so the
+        // event lands on the right. Reversing as well would flip it back and run time backwards.
         title: { display: true, text: 'Days to event', color: lfxColors.gray[400], font: { size: 10 } },
         grid: { display: false },
         ticks: { color: lfxColors.gray[500], font: { size: 10 }, maxTicksLimit: 8 },
@@ -252,7 +294,7 @@ export class EventDetailDrawerComponent {
    * template invocation would re-run on every change-detection pass (docs/reviews/frontend-checklist.md §4).
    */
   protected readonly dateLabel = computed(() => formatIsoDateLabel(this.detail()?.startDate ?? ''));
-  protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null));
+  protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null, this.detail()?.hasPriorYear ?? false));
   protected readonly locationLabel = computed(() => {
     const d = this.detail();
     if (!d) return '';
@@ -270,15 +312,28 @@ export class EventDetailDrawerComponent {
     return 'critical';
   });
 
-  /** Human label for the comparison pace rating. */
+  /**
+   * Human label for the comparison pace rating.
+   *
+   * Every label names the baseline explicitly. This tag reads against the prior edition's
+   * registration curve, while the sentence beside it reads against the goal — two different
+   * axes that legitimately disagree, so an event registering faster than last year but still
+   * short of goal showed a green "Pacing ahead" tag directly opposite "327 registrations behind
+   * goal". Naming the baseline is what makes both readable as true at once.
+   */
   protected readonly paceRatingLabel = computed(() => {
+    // Gated on hasPriorYear for the same reason the "vs Last year" card is: every label here
+    // names last year as its baseline, so without a prior edition there is nothing to be ahead
+    // of. The warehouse supplies a compScore regardless, which put "Ahead of last year" directly
+    // above "no prior year" on the same event.
+    if (!this.detail()?.hasPriorYear) return 'No pace signal';
     switch (this.detail()?.compScore) {
       case 'high':
-        return 'Pacing ahead';
+        return 'Ahead of last year';
       case 'medium':
-        return 'On pace';
+        return 'On pace with last year';
       case 'low':
-        return 'Pacing behind';
+        return 'Behind last year';
       default:
         return 'No pace signal';
     }
@@ -310,6 +365,9 @@ export class EventDetailDrawerComponent {
   // === Protected Helpers (template) ===
   /** lfx-tag severity for the registration-pace rating. */
   protected paceSeverity(): 'success' | 'warn' | 'danger' | 'secondary' {
+    // Same gate as paceRatingLabel, which it colours: without it a "No pace signal" badge kept
+    // compScore's green, reading as a healthy verdict the label explicitly declines to make.
+    if (!this.detail()?.hasPriorYear) return 'secondary';
     switch (this.detail()?.compScore) {
       case 'high':
         return 'success';
@@ -337,8 +395,17 @@ export class EventDetailDrawerComponent {
     return 'fa-solid fa-bullhorn';
   }
 
-  /** Registration pace vs last year as a signed percent string, or null when no baseline. */
-  private formatVsLastYear(vsLastYear: number | null): string | null {
+  /**
+   * Registration pace vs last year as a signed percent string, or null when no baseline.
+   *
+   * `hasPriorYear` is checked first and independently of the ratio: the warehouse supplies a
+   * non-null PERCENT_COMPARISON_TO_PREV_YEAR even for an event with no prior edition, and a
+   * ratio of exactly 1 then rendered as "On par with last year" — a comparison against an
+   * edition that never happened. Returning null here routes the template to its
+   * "no prior year" branch instead, which is the honest reading.
+   */
+  private formatVsLastYear(vsLastYear: number | null, hasPriorYear: boolean): string | null {
+    if (!hasPriorYear) return null;
     if (vsLastYear === null) return null;
     const pct = Math.round((vsLastYear - 1) * 100);
     if (pct > 0) return `+${pct}% vs last year`;
@@ -366,6 +433,7 @@ export class EventDetailDrawerComponent {
   private buildPacingChart(): ChartData<'line'> {
     const points = this.detail()?.pacing.points ?? [];
     const labels = points.map((point) => point.daysToEvent);
+
     return {
       labels,
       datasets: [
