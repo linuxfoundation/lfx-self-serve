@@ -662,23 +662,33 @@ export class ImplementationTabComponent implements OnInit {
     const currentSlug = this.campaignForm.controls.eventSlug.value ?? '';
     if (draft.eventSlug !== currentSlug) return;
 
-    // `emitEvent: false` throughout: this is a restore, not a user edit. Letting it emit would
-    // re-enter `emitDraft` and write the draft back over itself while it is being applied.
-    this.campaignForm.patchValue(
-      {
-        eventName: draft.eventName,
-        countryCode: draft.countryCode,
-        registrationUrl: draft.registrationUrl,
-        budgetUsd: draft.budgetUsd,
-        searchBudgetPct: draft.searchBudgetPct,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-        includeSearch: draft.includeSearch,
-        includeDemandGen: draft.includeDemandGen,
-      },
-      { emitEvent: false }
-    );
+    // EMITS, unlike the first version of this method, and the difference is visible to the user.
+    //
+    // Two displays are derived from `valueChanges` through `toSignal` — the budget-split label
+    // (`displayBudgetPct`) and the campaign-name preview (`campaignName`). Patching with
+    // `emitEvent: false` restored the CONTROLS but never recomputed those, so the slider thumb
+    // moved to the draft value while the label beside it still read the brief's number. The
+    // restore looked applied and half of it was not.
+    //
+    // Suppressing emission was never what prevented the draft being written back over itself —
+    // `seeding` is, and it is already true for the whole of this call (see the effect that wraps
+    // it, where the `valueChanges` subscription returns early while it is set). Letting the patch
+    // emit therefore reaches the derived signals without reopening that loop.
+    this.campaignForm.patchValue({
+      eventName: draft.eventName,
+      countryCode: draft.countryCode,
+      registrationUrl: draft.registrationUrl,
+      budgetUsd: draft.budgetUsd,
+      searchBudgetPct: draft.searchBudgetPct,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      includeSearch: draft.includeSearch,
+      includeDemandGen: draft.includeDemandGen,
+    });
 
+    // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
+    // emits per control, so letting these through would fire `campaignName`'s recompute once per
+    // headline for no gain. The single patch above is enough to settle every derived signal.
     this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
     this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
   }

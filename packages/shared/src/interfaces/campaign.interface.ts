@@ -266,7 +266,18 @@ export interface CampaignBriefPersistenceState {
    * approved before creating campaigns" — so the Implementation tab has to know, and matching on
    * banner prose to find out would break the first time the copy is edited.
    *
-   * Meaningful only on `saved`; `false` elsewhere, where there is no stored brief to approve.
+   * Load-bearing on `saved` AND on `off`-with-a-briefId, which is the RESTORE state. An earlier
+   * version of this line said "meaningful only on `saved`; `false` elsewhere, where there is no
+   * stored brief to approve" — every clause of that became false once restore began carrying the
+   * stored brief's own approval through (`onRestoreSavedBrief` → `onProceedToImplementation`).
+   *
+   * So the two states that gate creation on it are:
+   *   `saved`            — this session wrote the brief; `approved` is that write's approval.
+   *   `off` + a briefId  — a brief was RESTORED; `approved` is the stored row's.
+   *
+   * `off` with a NULL briefId is the genuinely-not-applicable case (cutover dark, or nothing
+   * saved yet), and `false` there means "no opinion", not "unapproved". The Implementation tab
+   * reads it exactly that way — see `canSubmit`, which checks the brief id before the flag.
    */
   approved: boolean;
 }

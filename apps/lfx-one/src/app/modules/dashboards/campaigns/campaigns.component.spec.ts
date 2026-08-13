@@ -1535,6 +1535,55 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     fixture.detectChanges();
   });
 
+  /** The budget-split slider, and the label DERIVED from it through `toSignal(valueChanges)`. */
+  const budgetSlider = (): HTMLInputElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-split"]');
+  const budgetLabel = (): string => {
+    const el = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-split"]')?.previousElementSibling;
+    return el?.textContent?.trim() ?? '';
+  };
+
+  /**
+   * The field class the other round-trip tests miss, raised by @dealako.
+   *
+   * Every existing restore assertion reads a native input's `.value`, and a native input's DOM
+   * tracks its control REGARDLESS of whether the patch emitted. So a restore that suppressed
+   * emission passed them all while leaving the DERIVED displays stale — the slider thumb moved to
+   * the draft value and the label beside it still showed the brief's.
+   *
+   * Asserting the rendered label is what catches that, because it is computed from
+   * `valueChanges` rather than read off the control.
+   */
+  it('restores the budget-split LABEL, not just the slider value', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const slider = budgetSlider();
+    expect(slider).not.toBeNull();
+
+    // Drag the split to 30% search / 70% display.
+    slider!.value = '30';
+    slider!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(budgetLabel()).toContain('Search 30%');
+    expect(budgetLabel()).toContain('Display 70%');
+
+    // Leave and come back — this destroys the component.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The control restores either way; the LABEL is what the suppressed emission broke.
+    expect(budgetSlider()!.value).toBe('30');
+    expect(budgetLabel()).toContain('Search 30%');
+    expect(budgetLabel()).toContain('Display 70%');
+  });
+
   it('carries a typed headline back after a trip to another tab', async () => {
     internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
     internals().selectTab('implementation', 'paid-marketing');
@@ -1660,6 +1709,15 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
   it('does not replay one event edits onto a different brief', async () => {
     // The guard that makes the draft safe to hold un-keyed on the parent. Without it, generating
     // a brief for event B and opening Implement would restore event A's copy over it.
+    //
+    // ORDER MATTERS, and an earlier version of this test had it wrong (@dealako caught it):
+    // `onProceedToImplementation` runs `implementationDraft.set(null)` FIRST, so seeding the
+    // draft before that call left the child mounting with `draft === null`. `applyDraft` then
+    // returned at its `if (!draft)` line and never reached the `eventSlug` mismatch branch —
+    // deleting the guard entirely still passed. Proceed first, seed the stale draft after, so the
+    // child mounts with a draft whose slug genuinely disagrees.
+    internals().onProceedToImplementation(briefFor('event-b'));
+
     internals().implementationDraft.set({
       eventName: 'Event A',
       countryCode: 'US',
@@ -1675,7 +1733,6 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       eventSlug: 'event-a',
     });
 
-    internals().onProceedToImplementation(briefFor('event-b'));
     internals().selectTab('implementation', 'paid-marketing');
     fixture.detectChanges();
     await fixture.whenStable();
