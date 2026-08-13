@@ -52,17 +52,7 @@
             <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
           }
           @case ('guests') {
-            @if (formService.meetingId(); as meetingUid) {
-              <lfx-meeting-registrants-manager
-                [meetingUid]="meetingUid"
-                [form]="formService.form()"
-                [registrantUpdates]="formService.registrantUpdates()"
-                (registrantUpdatesChange)="onRegistrantUpdatesChange($event)"
-                [refresh]="formService.registrantUpdatesRefresh$"
-                [committeeContext]="formService.committeeContext()" />
-            } @else {
-              <p class="text-sm text-gray-500" data-testid="meeting-composer-guests-locked">Create the meeting first to invite guests.</p>
-            }
+            <lfx-composer-guests [form]="formService.form()" />
           }
           @case ('agenda-resources') {
             <!-- Temporary agenda field — the composer's own Agenda & Resources section lands in LFXV2-3239 -->

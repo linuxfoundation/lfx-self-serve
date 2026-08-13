@@ -20,6 +20,8 @@ export class RegistrantFormComponent {
   // Inputs
   public form = input.required<FormGroup>();
   public registrant = input<MeetingRegistrant | null>(null);
+  /** Skips the search step entirely — for callers that already own their own search field. */
+  public manualOnly = input<boolean>(false);
 
   // Output event for when a user is selected from search (for direct add)
   public readonly onUserSelected = output<void>();
@@ -35,6 +37,13 @@ export class RegistrantFormComponent {
         filter((registrant) => registrant !== null),
         take(1)
       )
+      .subscribe(() => {
+        this.showIndividualFields.set(true);
+      });
+
+    // An input can't be read in the constructor, so bridge it through an observable.
+    toObservable(this.manualOnly)
+      .pipe(filter(Boolean), take(1))
       .subscribe(() => {
         this.showIndividualFields.set(true);
       });

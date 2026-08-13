@@ -7,18 +7,18 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerSection, MeetingComposerSectionId, RegistrantPendingChanges } from '@lfx-one/shared/interfaces';
+import type { MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, pairwise } from 'rxjs';
 
-import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
+import { ComposerGuestsComponent } from './sections/composer-guests.component';
 import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-features.component';
 
 /**
@@ -37,7 +37,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
     ComposerPlatformFeaturesComponent,
-    MeetingRegistrantsManagerComponent,
+    ComposerGuestsComponent,
     MeetingResourcesSummaryComponent,
   ],
   templateUrl: './meeting-composer-host.component.html',
@@ -121,10 +121,6 @@ export class MeetingComposerHostComponent {
     if (previous) {
       this.composer.setSection(previous.id);
     }
-  }
-
-  protected onRegistrantUpdatesChange(updates: RegistrantPendingChanges): void {
-    this.formService.registrantUpdates.set(updates);
   }
 
   /** Jumps to the section that owns the title field. */

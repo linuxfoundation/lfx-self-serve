@@ -54,7 +54,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { toZonedTime } from 'date-fns-tz';
 import { MessageService } from 'primeng/api';
 import {
-  BehaviorSubject,
   catchError,
   concat,
   EMPTY,
@@ -103,7 +102,6 @@ export class MeetingComposerFormService {
   public readonly pendingAttachmentDeletions = signal<string[]>([]);
 
   public readonly registrantUpdates = signal<RegistrantPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });
-  public readonly registrantUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
 
   public readonly committeeContext = signal<Committee | null>(null);
   public readonly originalStartTime = signal<string | null>(null);
@@ -797,8 +795,12 @@ export class MeetingComposerFormService {
     }
 
     if (registrantUpdates.toAdd.length > 0) {
+      // Guests can be queued before the meeting exists, so the payloads carry an empty `meeting_id`.
+      // This is the first point that knows the saved id.
+      const toAdd = registrantUpdates.toAdd.map((registrant) => ({ ...registrant, meeting_id: meetingId }));
+
       operations.push(
-        this.meetingService.addMeetingRegistrants(meetingId, registrantUpdates.toAdd).pipe(
+        this.meetingService.addMeetingRegistrants(meetingId, toAdd).pipe(
           map((response: BatchRegistrantOperationResponse<MeetingRegistrant>) => ({
             type: 'add' as const,
             success: response.summary.successful,
