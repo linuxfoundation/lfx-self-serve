@@ -185,6 +185,11 @@ export class BrandKitFormComponent implements OnDestroy {
           if (this.result()) {
             // The document is already displayed — a failed background
             // persistence-retry poll must not surface an error or clear it.
+            // Spend the remaining retry budget instead of abandoning it on a
+            // single transient failure; the same cap bounds both paths.
+            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            }
             return;
           }
           // Tolerate transient failures — a multi-minute generation should not be
