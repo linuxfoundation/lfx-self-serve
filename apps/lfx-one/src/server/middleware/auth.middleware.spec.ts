@@ -69,6 +69,39 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to a public meeting join (/meetings/:id)', async () => {
+    const req = buildReq({ path: '/meetings/abc123' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /meetings/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/meetings/abc123/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // Deeper than the anchored `/meetings/<segment>` rule → falls through to the catch-all `required`
+    // row, so an unauthenticated visitor reaches login before the in-shell catch-all 404 (LFXV2-3095).
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat a nested /groups/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/groups/abc123/edit' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('still redirects an anonymous GET to a protected SSR route', async () => {
     const req = buildReq({ path: '/foundation/overview' });
     const res = buildRes();

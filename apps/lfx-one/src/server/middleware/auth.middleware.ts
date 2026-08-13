@@ -26,11 +26,14 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public API routes - optional authentication with token benefits
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },
 
-  // Public meeting join - no authentication required
-  { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
+  // Public meeting join (`/meetings/:id`, `/meetings/not-found`) — anchored to a single segment so
+  // deeper paths (authenticated `/meetings/create|:id/edit` and unknown `/meetings/:id/extra`) fall
+  // through to the default `required` auth and reach login before the in-shell catch-all 404.
+  { pattern: /^\/meetings\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
-  // Public group detail - anonymous access with optional auth for membership enrichment
-  { pattern: '/groups/', type: 'ssr', auth: 'optional' },
+  // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so deeper
+  // paths don't fail-open onto the in-shell catch-all; anonymous access with optional auth for enrichment.
+  { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
