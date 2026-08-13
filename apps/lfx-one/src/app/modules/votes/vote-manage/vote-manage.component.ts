@@ -442,7 +442,10 @@ export class VoteManageComponent {
 
     for (const commentPrompt of formValue.commentPrompts) {
       const commentPromptGroup = new FormGroup({
-        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [trimmedRequired(), maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+        prompt: new FormControl(commentPrompt.prompt, {
+          nonNullable: true,
+          validators: [trimmedRequired(), maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)],
+        }),
       });
       commentPromptsArray.push(commentPromptGroup);
     }
