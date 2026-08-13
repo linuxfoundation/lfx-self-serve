@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import type { ClaStatus, MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
@@ -78,6 +78,7 @@ export class ProfileClasComponent {
 
   protected readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
+  protected readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   protected readonly claStatusLabel = claStatusLabel;
   protected readonly claStatusSeverity = claStatusSeverity;
@@ -107,27 +108,6 @@ export class ProfileClasComponent {
   protected statusNote(agreement: MyClaAgreement): string | undefined {
     void agreement;
     return undefined;
-  }
-
-  protected rowMenuItems(agreement: MyClaAgreement): MenuItem[] {
-    if (agreement.pdfAvailable) {
-      return [
-        {
-          label: 'Download PDF',
-          icon: 'fa-light fa-download',
-          command: () => this.onDownload(agreement),
-        },
-      ];
-    }
-    if (agreement.kind === 'ECLA') {
-      return [
-        {
-          label: 'Covered by Corporate CLA (CCLA)',
-          disabled: true,
-        },
-      ];
-    }
-    return [];
   }
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
@@ -160,5 +140,40 @@ export class ProfileClasComponent {
         });
       },
     });
+  }
+
+  /**
+   * Stable per-row menu models. Binding a fresh `MenuItem[]` from the template on every
+   * change-detection pass makes the PrimeNG popup overlay miss the first click.
+   */
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const agreement of this.agreements()) {
+        map.set(agreement.id, this.buildRowMenuItems(agreement));
+      }
+      return map;
+    });
+  }
+
+  private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
+    if (agreement.pdfAvailable) {
+      return [
+        {
+          label: 'Download PDF',
+          icon: 'fa-light fa-download',
+          command: () => this.onDownload(agreement),
+        },
+      ];
+    }
+    if (agreement.kind === 'ECLA') {
+      return [
+        {
+          label: 'Covered by Corporate CLA (CCLA)',
+          disabled: true,
+        },
+      ];
+    }
+    return [];
   }
 }
