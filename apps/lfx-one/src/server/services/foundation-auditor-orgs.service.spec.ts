@@ -102,4 +102,18 @@ describe('FoundationAuditorOrgsService — verify-then-elevate token boundary', 
 
     expect(req.bearerToken).toBe('user-token');
   });
+
+  it('fails closed on a denied auditor check: no roster read, no M2M elevation, no display-doc fetch', async () => {
+    const { tokensByType } = stubQueryService('succeed');
+    checkAccess.mockResolvedValue(new Map([['f-1#auditor', false]]));
+    const req = { bearerToken: 'user-token' } as unknown as Request;
+
+    const orgs = await new FoundationAuditorOrgsService().findAuditedMemberOrgs(req, 'carol', 'ac');
+
+    expect(orgs).toEqual([]);
+    expect(tokensByType.has('project_membership')).toBe(false);
+    expect(tokensByType.has('b2b_org')).toBe(false);
+    expect(generateM2MToken).not.toHaveBeenCalled();
+    expect(req.bearerToken).toBe('user-token');
+  });
 });
