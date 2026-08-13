@@ -1,0 +1,156 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Click-outside backdrop (writes the visible model directly — the genuine two-way close path) -->
+<div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-filters-backdrop" (click)="visible.set(false)"></div>
+
+<div #panelContainer class="filters-panel" role="dialog" aria-label="Filters" tabindex="-1" data-testid="social-listening-filters-panel">
+  <div class="mb-5 flex items-center justify-between">
+    <h3 class="text-sm font-bold tracking-wide text-gray-800">FILTERS</h3>
+    @if (activeFilterCount() > 0) {
+      <button type="button" class="clear-btn" data-testid="social-listening-filters-clear-all" (click)="clearFilters()">Clear all</button>
+    }
+  </div>
+
+  <!-- Sentiment -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-sentiment">Sentiment</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="sentiment"
+      [options]="sentimentOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-sentiment"
+      ariaLabel="Filter by sentiment"
+      styleClass="w-full"
+      data-testid="social-listening-filters-sentiment" />
+  </div>
+
+  <!-- Relevance -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-relevance">Relevance</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="relevance"
+      [options]="relevanceOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-relevance"
+      ariaLabel="Filter by relevance"
+      styleClass="w-full"
+      data-testid="social-listening-filters-relevance" />
+  </div>
+
+  <!-- Language (options scoped by foundation + period) -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-language">Language</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="language"
+      [options]="languageOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [loading]="languagesLoading()"
+      inputId="sl-filter-language"
+      ariaLabel="Filter by language"
+      styleClass="w-full"
+      data-testid="social-listening-filters-language" />
+  </div>
+
+  <!-- Has Title -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-has-title">Has Title</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="hasTitle"
+      [options]="hasTitleOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-has-title"
+      ariaLabel="Filter by title presence"
+      styleClass="w-full"
+      data-testid="social-listening-filters-has-title" />
+  </div>
+
+  <!-- Authors (options cascade off every other filter) -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-authors">Authors</label>
+    @if (authorsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-authors-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="authors"
+        [options]="availableAuthors()"
+        optionLabel="AUTHOR"
+        optionValue="AUTHOR"
+        filterBy="AUTHOR"
+        [showToggleAll]="false"
+        placeholder="Select authors"
+        emptyMessage="No authors match the current filters"
+        emptyFilterMessage="No authors match the current filters"
+        panelStyleClass="sl-author-multiselect-panel"
+        inputId="sl-filter-authors"
+        ariaLabel="Filter by author"
+        styleClass="w-full"
+        data-testid="social-listening-filters-authors">
+        <ng-template let-option #item>
+          <div class="flex w-full items-center gap-2">
+            <i [class]="option.platformIcon + ' shrink-0 text-sm ' + option.platformIconClass" aria-hidden="true"></i>
+            <span class="min-w-0 flex-1 truncate text-sm">{{ option.AUTHOR }}</span>
+            <span class="shrink-0 text-xs text-gray-400">{{ option.MENTION_COUNT }} mentions</span>
+          </div>
+        </ng-template>
+      </lfx-multi-select>
+    }
+  </div>
+
+  <!-- Keywords -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-keywords">Keywords</label>
+    @if (keywordsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-keywords-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="keywords"
+        [options]="displayedKeywordOptions()"
+        optionLabel="label"
+        optionValue="value"
+        filterBy="label"
+        [showToggleAll]="false"
+        placeholder="Select keywords"
+        emptyMessage="No keywords match the current filters"
+        emptyFilterMessage="No keywords match the current filters"
+        inputId="sl-filter-keywords"
+        ariaLabel="Filter by keyword"
+        styleClass="w-full"
+        data-testid="social-listening-filters-keywords" />
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-tags">Tags</label>
+    @if (tagsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-tags-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="tags"
+        [options]="displayedTagOptions()"
+        optionLabel="label"
+        optionValue="value"
+        filterBy="label"
+        [showToggleAll]="false"
+        placeholder="Select tags"
+        emptyMessage="No tags match the current filters"
+        emptyFilterMessage="No tags match the current filters"
+        inputId="sl-filter-tags"
+        ariaLabel="Filter by tag"
+        styleClass="w-full"
+        data-testid="social-listening-filters-tags" />
+    }
+  </div>
+</div>

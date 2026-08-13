@@ -6,9 +6,17 @@
  * Ported from PCC; the bookmark (`mentionIds`) client branch is deferred to a follow-up ticket.
  */
 
-import { MENTION_PLATFORM_CONFIG } from '../constants/social-listening.constants';
+import {
+  DEFAULT_MENTION_PREDICATE,
+  MENTION_HAS_TITLE_OPTIONS,
+  MENTION_PLATFORM_CONFIG,
+  MENTION_RELEVANCE_OPTIONS,
+  MENTION_SENTIMENT_OPTIONS,
+} from '../constants/social-listening.constants';
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   AuthorOption,
+  FilterPredicate,
   Mention,
   MentionFilters,
   MentionPlatform,
@@ -20,6 +28,7 @@ import type {
   SocialListeningPlatform,
   SocialListeningSubProject,
 } from '../interfaces/social-listening.interface';
+import { capitalizeFirst } from './string.utils';
 
 /** Lowercases + dedupes keywords so filter state and payloads stay canonical. */
 export const normalizeKeywords = (keywords: string[]): string[] => [...new Set(keywords.map((keyword) => keyword.toLowerCase()))];
@@ -118,6 +127,23 @@ export function mapAuthorsToOptions(authors: SocialListeningMentionAuthor[]): Au
 }
 
 /**
+ * Formats a raw Social Listening tag for display: underscores become spaces, each word is
+ * capitalized, and `ai` is special-cased to `AI` (e.g. `ai_agents` -> `AI Agents`).
+ * Standalone so non-template consumers (e.g. the filters panel's option mapping) share it
+ * with the `formatTag` pipe (rule: pipes needing programmatic access wrap a function).
+ */
+export function formatTag(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  return value
+    .split('_')
+    .map((word) => (word === 'ai' ? 'AI' : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(' ');
+}
+
+/**
  * The author list cascades off other filters, so a kept selection can drop out of
  * the rescoped options. Re-add those as placeholders so the multiselect chip label
  * still resolves.
@@ -155,4 +181,59 @@ function mapRelevance(score: string): MentionRelevance {
     return normalized;
   }
   return 'low';
+}
+
+/** First two values joined, then `+N more`; the full list rides along for the pill tooltip. */
+function summarizePillValues(values: string[]): { summary: string; full: string } {
+  const full = values.join(', ');
+  if (values.length <= 2) {
+    return { summary: full, full };
+  }
+  return { summary: `${values.slice(0, 2).join(', ')} +${values.length - 2} more`, full };
+}
+
+/**
+ * Builds the active-filter summary pills (LFXV2-3017): one `FilterPillOption` per non-default
+ * predicate dimension, in predicate field order, so the pills row always matches the Filters
+ * button badge (`countActiveFilters`). `id` is the `FilterPredicate` key — the page maps it back
+ * to the signal it resets when a pill is clicked. `fullLabel` carries the remove affordance plus
+ * the untruncated values (the pills component surfaces it as both tooltip and aria-label).
+ */
+export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOption[] {
+  const labelFor = (options: SocialListeningOption[], value: string): string => options.find((o) => o.value === value)?.label ?? value;
+  const pill = (id: string, dimension: string, summary: string, full?: string): FilterPillOption => ({
+    id,
+    label: `${dimension}: ${summary}`,
+    fullLabel: `Remove ${dimension}: ${full ?? summary}`,
+  });
+
+  const pills: FilterPillOption[] = [];
+  if (predicate.sentiment !== DEFAULT_MENTION_PREDICATE.sentiment) {
+    pills.push(pill('sentiment', 'Sentiment', labelFor(MENTION_SENTIMENT_OPTIONS, predicate.sentiment)));
+  }
+  if (predicate.relevance !== DEFAULT_MENTION_PREDICATE.relevance) {
+    pills.push(pill('relevance', 'Relevance', labelFor(MENTION_RELEVANCE_OPTIONS, predicate.relevance)));
+  }
+  if (predicate.language !== DEFAULT_MENTION_PREDICATE.language) {
+    pills.push(pill('language', 'Language', capitalizeFirst(predicate.language)));
+  }
+  if (predicate.hasTitle !== DEFAULT_MENTION_PREDICATE.hasTitle) {
+    pills.push(pill('hasTitle', 'Has Title', labelFor(MENTION_HAS_TITLE_OPTIONS, predicate.hasTitle)));
+  }
+  if (predicate.keywords.length > 0) {
+    const { summary, full } = summarizePillValues(predicate.keywords);
+    pills.push(pill('keywords', 'Keywords', summary, full));
+  }
+  if (predicate.tags.length > 0) {
+    const { summary, full } = summarizePillValues(predicate.tags.map(formatTag));
+    pills.push(pill('tags', 'Tags', summary, full));
+  }
+  if (predicate.authors.length > 0) {
+    const { summary, full } = summarizePillValues(predicate.authors);
+    pills.push(pill('authors', 'Authors', summary, full));
+  }
+  if (predicate.search !== DEFAULT_MENTION_PREDICATE.search) {
+    pills.push(pill('search', 'Search', predicate.search));
+  }
+  return pills;
 }

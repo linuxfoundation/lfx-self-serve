@@ -7,9 +7,11 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_MENTION_PAGE_SIZE,
+  DEFAULT_MENTION_PREDICATE,
   MENTION_MAX_CACHED_WINDOWS,
   MENTION_PAGE_SIZE_OPTIONS,
   MENTION_SEARCH_DEBOUNCE_MS,
@@ -19,13 +21,18 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   applyPredicateToSignals,
+  buildActiveFilterPills,
   buildMentionFilters,
+  countActiveFilters,
   decodePredicateFromQueryParams,
   encodePredicateToQueryParams,
   getDefaultMarketingImpactPeriod,
+  mapAuthorsToOptions,
+  mapLanguagesToOptions,
   mapPlatformsToOptions,
   mapRawToMention,
   mapSubProjectsToOptions,
+  mergeSelectedAuthors,
   predicatesEqual,
   predicateFromSignals,
   queryParamsEqual,
@@ -47,10 +54,12 @@ import {
   of,
   startWith,
   switchMap,
+  take,
   tap,
 } from 'rxjs';
 
 import type {
+  AuthorOption,
   FilterPredicate,
   LoadableState,
   Mention,
@@ -60,12 +69,14 @@ import type {
   SocialListeningFeedRequest,
   SocialListeningFeedResponse,
   SocialListeningPlatform,
+  SocialListeningScopedOptionsRequest,
   SocialListeningSignals,
   SocialListeningSubProject,
   SocialListeningTab,
 } from '@lfx-one/shared/interfaces';
 
 import { FeedHeaderComponent } from './components/feed-header/feed-header.component';
+import { FiltersPanelComponent } from './components/filters-panel/filters-panel.component';
 import { MentionsListComponent } from './components/mentions-list/mentions-list.component';
 
 /** Shared immutable empty-feed value for initial/error/no-scope states. */
@@ -80,7 +91,7 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
  */
 @Component({
   selector: 'lfx-social-listening',
-  imports: [CardComponent, EmptyStateComponent, MessageComponent, FeedHeaderComponent, MentionsListComponent],
+  imports: [CardComponent, EmptyStateComponent, FilterPillsComponent, MessageComponent, FeedHeaderComponent, FiltersPanelComponent, MentionsListComponent],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',
 })
@@ -118,6 +129,10 @@ export class SocialListeningComponent {
   private readonly windowCache = signal<Map<number, SocialListeningFeedResponse>>(new Map());
   private readonly backgroundLoading = signal(false);
 
+  // === Filters panel state (LFXV2-3017) ===
+  public readonly filtersOpen = signal(false);
+  private readonly filtersOpenedOnce = signal(false);
+
   /** Shared heartbeat that re-evaluates relative timestamps on rendered cards (one interval per page, not per card). */
   public readonly timeTick = signal(0);
 
@@ -145,6 +160,28 @@ export class SocialListeningComponent {
   public readonly subProjectOptions = computed(() => mapSubProjectsToOptions(this.subProjectsState().data));
   public readonly platformOptions = computed(() => mapPlatformsToOptions(this.platformsState().data));
   public readonly optionsLoading = computed(() => this.subProjectsState().loading || this.platformsState().loading);
+
+  // === Filter-option pipelines (3017): lazy — gated on filtersOpenedOnce, never fire on page load ===
+  private readonly languagesState: Signal<LoadableState<string[]>> = this.initLanguagesState();
+  private readonly keywordsState: Signal<LoadableState<string[]>> = this.initScopedOptionsState((req) => this.socialListeningService.getMentionsKeywords(req));
+  private readonly tagsState: Signal<LoadableState<string[]>> = this.initScopedOptionsState((req) =>
+    this.socialListeningService.getMentionsTags(req).pipe(map((tags) => tags.map((tag) => tag.TAG)))
+  );
+  private readonly authorsState: Signal<LoadableState<AuthorOption[]>> = this.initAuthorsState();
+
+  public readonly languageOptions = computed(() => mapLanguagesToOptions(this.languagesState().data));
+  public readonly languagesLoading = computed(() => this.languagesState().loading);
+  public readonly availableKeywords = computed(() => this.keywordsState().data);
+  public readonly keywordsLoading = computed(() => this.keywordsState().loading);
+  public readonly availableTags = computed(() => this.tagsState().data);
+  public readonly tagsLoading = computed(() => this.tagsState().loading);
+  // A kept author selection can drop out of the rescoped options — mergeSelectedAuthors re-adds
+  // it as a placeholder so the multiselect chip label still resolves.
+  public readonly availableAuthors = computed(() => mergeSelectedAuthors(this.authorsState().data, this.selectedAuthors()));
+  public readonly authorsLoading = computed(() => this.authorsState().loading);
+
+  public readonly activeFilterCount = computed(() => countActiveFilters(this.currentPredicate()));
+  public readonly activeFilterPills = computed(() => buildActiveFilterPills(this.currentPredicate()));
 
   private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? this.feedState().data);
 
@@ -255,11 +292,53 @@ export class SocialListeningComponent {
       }
       this.previousScopeKey = scopeKey;
     });
+
+    // One-way latch (3017) — defer filter-option requests until the panel is first opened. Covers
+    // keyboard/programmatic activation; pointer users typically arm it earlier via
+    // prefetchFilterOptions() on hover so the fetches are already in flight when the panel appears.
+    toObservable(this.filtersOpen)
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.filtersOpenedOnce.set(true));
   }
 
   public onPageChange(event: { page: number; rows: number }): void {
     this.currentPage.set(event.page);
     this.pageSize.set(event.rows);
+  }
+
+  /**
+   * Arms the deferred filter-option fetches before the panel actually opens. Called on
+   * hover/focus of the Filters button so the network round-trip can happen during the
+   * ~150–500 ms between intent and click, hiding the skeletons (PCC port).
+   */
+  public prefetchFilterOptions(): void {
+    if (!this.filtersOpenedOnce()) {
+      this.filtersOpenedOnce.set(true);
+    }
+  }
+
+  /**
+   * Resets the predicate to DEFAULT_MENTION_PREDICATE (search included — the badge counts it).
+   * `applyPredicateToSignals` already clones the array fields, so every signal gets a fresh
+   * instance and the URL-write effect re-encodes to a clean query string.
+   */
+  public clearAllFilters(): void {
+    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
+  }
+
+  /** Removes one active filter dimension from the summary pills row (id = FilterPredicate key). */
+  public removeFilterPill(id: string): void {
+    const resetters: Record<keyof FilterPredicate, () => void> = {
+      sentiment: () => this.selectedSentiment.set(DEFAULT_MENTION_PREDICATE.sentiment),
+      relevance: () => this.selectedRelevance.set(DEFAULT_MENTION_PREDICATE.relevance),
+      language: () => this.selectedLanguage.set(DEFAULT_MENTION_PREDICATE.language),
+      hasTitle: () => this.selectedHasTitle.set(DEFAULT_MENTION_PREDICATE.hasTitle),
+      keywords: () => this.selectedKeywords.set([]),
+      tags: () => this.selectedTags.set([]),
+      authors: () => this.selectedAuthors.set([]),
+      search: () => this.searchInput.set(''),
+    };
+    resetters[id as keyof FilterPredicate]?.();
   }
 
   private computeScopeKey(): string | null {
@@ -405,6 +484,119 @@ export class SocialListeningComponent {
 
   private initSubProjectsState(): Signal<LoadableState<SocialListeningSubProject[]>> {
     return this.initFoundationOptions((foundationSlug) => this.socialListeningService.getMentionsProjects({ foundationSlug }));
+  }
+
+  /**
+   * Languages option fetch (3017): scoped by foundation + period, deferred until the Filters
+   * button is first hovered/focused/opened (`filtersOpenedOnce`) so page load never fires it.
+   */
+  private initLanguagesState(): Signal<LoadableState<string[]>> {
+    return toSignal(
+      toObservable(computed(() => ({ foundationSlug: this.foundationSlug(), period: this.selectedPeriod(), opened: this.filtersOpenedOnce() }))).pipe(
+        debounceTime(0), // Coalesce synchronous signal changes (foundation switch + scope reset) into one fetch
+        filter((t) => !!t.foundationSlug && !!t.period && t.opened),
+        switchMap((t) =>
+          this.socialListeningService.getMentionsLanguages({ foundationSlug: t.foundationSlug, period: t.period }).pipe(
+            map((data): LoadableState<string[]> => ({ loading: false, error: null, data })),
+            catchError(() => of<LoadableState<string[]>>({ loading: false, error: 'Failed to load options', data: [] })),
+            startWith<LoadableState<string[]>>({ loading: true, error: null, data: [] })
+          )
+        )
+      ),
+      { initialValue: { loading: false, error: null, data: [] } }
+    );
+  }
+
+  /**
+   * Keywords/tags option fetches (3017): like languages but also refetch when the platform or
+   * sub-project scope changes (their option lists rescope — PCC's `initializeScopedFilterOptions`).
+   */
+  private initScopedOptionsState<T>(fetchFn: (req: SocialListeningScopedOptionsRequest) => Observable<T[]>): Signal<LoadableState<T[]>> {
+    return toSignal(
+      toObservable(
+        computed(() => ({
+          foundationSlug: this.foundationSlug(),
+          period: this.selectedPeriod(),
+          platform: this.selectedPlatform(),
+          sourceProjectId: this.selectedProject(),
+          opened: this.filtersOpenedOnce(),
+        }))
+      ).pipe(
+        debounceTime(0), // Coalesce synchronous signal changes (foundation switch + scope reset) into one fetch
+        filter((t) => !!t.foundationSlug && !!t.period && t.opened),
+        switchMap((t) =>
+          fetchFn({
+            foundationSlug: t.foundationSlug,
+            period: t.period,
+            platform: t.platform !== 'all' ? t.platform : undefined,
+            sourceProjectId: t.sourceProjectId !== 'all' ? t.sourceProjectId : undefined,
+          }).pipe(
+            map((data): LoadableState<T[]> => ({ loading: false, error: null, data })),
+            catchError(() => of<LoadableState<T[]>>({ loading: false, error: 'Failed to load options', data: [] })),
+            startWith<LoadableState<T[]>>({ loading: true, error: null, data: [] })
+          )
+        )
+      ),
+      { initialValue: { loading: false, error: null, data: [] } }
+    );
+  }
+
+  /**
+   * Author options (3017): cascade off every OTHER filter — the request deliberately never
+   * includes the current `authors` selection (`SocialListeningAuthorsRequest` omits it). The
+   * heavier aggregation waits for the feed load to finish plus a 300 ms debounce so it does not
+   * contend with feed/count for the server's Snowflake connection pool (PCC `initializeAuthors`).
+   */
+  private initAuthorsState(): Signal<LoadableState<AuthorOption[]>> {
+    return toSignal(
+      toObservable(
+        computed(() => {
+          const req = {
+            foundationSlug: this.foundationSlug(),
+            period: this.selectedPeriod(),
+            platform: this.selectedPlatform(),
+            sourceProjectId: this.selectedProject(),
+            sentiment: this.selectedSentiment(),
+            relevance: this.selectedRelevance(),
+            language: this.selectedLanguage(),
+            hasTitle: this.selectedHasTitle(),
+            keywords: this.selectedKeywords(),
+            tags: this.selectedTags(),
+            search: this.searchQuery(),
+          };
+          const ready = !!req.foundationSlug && !!req.period && this.filtersOpenedOnce() && !this.feedState().loading;
+          return { req, key: JSON.stringify(req), ready };
+        })
+      ).pipe(
+        filter((t) => t.ready),
+        debounceTime(300),
+        distinctUntilChanged((a, b) => a.key === b.key),
+        switchMap(({ req }) =>
+          this.socialListeningService
+            .getMentionsAuthors({
+              foundationSlug: req.foundationSlug,
+              period: req.period,
+              ...buildMentionFilters({
+                sentiment: req.sentiment,
+                relevance: req.relevance,
+                platform: req.platform,
+                keywords: req.keywords,
+                tags: req.tags,
+                sourceProjectId: req.sourceProjectId,
+                language: req.language,
+                hasTitle: req.hasTitle,
+                search: req.search,
+              }),
+            })
+            .pipe(
+              map((data): LoadableState<AuthorOption[]> => ({ loading: false, error: null, data: mapAuthorsToOptions(data) })),
+              catchError(() => of<LoadableState<AuthorOption[]>>({ loading: false, error: null, data: [] })),
+              startWith<LoadableState<AuthorOption[]>>({ loading: true, error: null, data: [] })
+            )
+        )
+      ),
+      { initialValue: { loading: false, error: null, data: [] } }
+    );
   }
 
   private initPlatformsState(): Signal<LoadableState<SocialListeningPlatform[]>> {
