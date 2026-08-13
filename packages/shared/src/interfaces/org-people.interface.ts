@@ -51,6 +51,12 @@ export interface OrgAllEmployeeActivityOption {
 export interface OrgAllEmployeeRow {
   personKey: string;
   lfid: string | null;
+  /**
+   * Lowercased LF username — the identity a row is merged on when present. A person legitimately
+   * holds several email addresses, so the address is not an identifier; this is. `null` for sources
+   * that carry no verified identity (key contacts, pending invites), which then fall back to email.
+   */
+  lfUsername: string | null;
   cdpMemberId: string | null;
   name: string;
   /** Given name. Populated directly by live sources; for Snowflake-only rows it is a best-effort split of `name`. */
@@ -58,7 +64,19 @@ export interface OrgAllEmployeeRow {
   /** Family name. Populated directly by live sources; for Snowflake-only rows it is a best-effort split of `name`. */
   lastName: string | null;
   title: string | null;
+  /** Preferred display address: the stored roster's when the row has one, else the first live address contributing. */
   email: string | null;
+  /** Every lowercased address that contributed to this row. Length > 1 is the normal result of a merge. */
+  emails: string[];
+  /** Diagnostic: the merge keys that collapsed into this row (e.g. `identity:mcderk`). Lets a reviewer explain a merge without re-deriving it. */
+  mergedFrom?: string[];
+  /**
+   * Org Lens access badge for the principal the merge actually attributed to this person, or `null`
+   * when none was. Authoritative: the client's own address-based join cannot tell two people who
+   * share an address apart, so it would attribute one person's role to the other. Absent on payloads
+   * cached before this field existed, which fall back to that join.
+   */
+  accessBadge?: OrgAccessBadgeState | null;
   /** Avatar/photo URL (CDP user photo or org-logo fallback); `null` when absent. The UI falls back to initials. */
   avatarUrl: string | null;
   /** Which upstream(s) contributed this person. Stored-only rows are `['snowflake']`; `?live` rows may carry several. */

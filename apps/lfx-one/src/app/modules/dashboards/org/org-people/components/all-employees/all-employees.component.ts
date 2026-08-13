@@ -18,6 +18,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
 import type {
+  OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeeDetail,
@@ -160,17 +161,13 @@ export class AllEmployeesComponent {
   // Exposed to the template so per-row @let blocks can build the composite (account, person) detail-cache key without reaching into private services.
   protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
-  // Lowercased email -> 'admin' | 'viewer' | 'invited' for the currently selected org. Empty until the
-  // shared cache hydrates (either from this tab's ensureLoaded below, or pushed in by the Access tab).
-  private readonly accessByEmail = this.accessState.accessByEmailFor(this.currentAccountId);
-
   public constructor() {
-    // Hydrate the shared Org Lens access cache for every org we see (including the initial one) so the
-    // access cell can render badges without each row triggering its own fetch. The service dedups concurrent
-    // calls and short-circuits cache hits, so this is cheap on re-visits. Per-fetch `catchError` keeps the
-    // outer stream alive on a transient backend failure — the Access tab still has its own error banner +
-    // retry CTA, so silent EMPTY here just means badges stay empty until the user visits Access or switches
-    // orgs and the next fetch succeeds.
+    // Warm the shared Org Lens access cache for every org we see (including the initial one), so the
+    // Access tab opens against a hydrated cache. This tab no longer reads it — badges now come from the
+    // roster's own `accessBadge` — but the prefetch is kept because it is what makes that tab instant.
+    // The service dedups concurrent calls and short-circuits cache hits, so it is cheap on re-visits.
+    // Per-fetch `catchError` keeps the outer stream alive on a transient backend failure; the Access tab
+    // has its own error banner + retry CTA, so a silent EMPTY here only costs the prefetch.
     this.orgUid$
       .pipe(
         switchMap((uid) => this.accessState.ensureLoaded(uid).pipe(catchError(() => EMPTY))),
@@ -280,17 +277,14 @@ export class AllEmployeesComponent {
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
-    const byEmail = this.accessByEmail();
-    // The live directory endpoint already merges access-only principals into `rows` server-side, so there is
-    // no client-side synthetic UNION here. The access cache is still joined per row to render the badge cell.
+    // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
+    // on each one, so there is neither a client-side synthetic UNION nor an address join here.
     return this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
       avatarKey: row.avatarUrl ? `${row.personKey}::${row.avatarUrl}` : '',
-      // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
-      // always present, server-lowercased). Rows without an email can't be joined and render `—`.
-      access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
+      access: AllEmployeesComponent.resolveAccessBadge(row),
       // Live-only people (no `snowflake` source) carry a synthetic `live-` personKey with no stored Snowflake
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
@@ -465,6 +459,17 @@ export class AllEmployeesComponent {
       default:
         return 0;
     }
+  }
+
+  /**
+   * The access badge comes solely from the server, which knows which principal it merged into each
+   * person. There is deliberately no address-based fallback: two people can share an address while
+   * the merge keeps them as separate rows, so a lookup by address would give one person's role to
+   * the other. Every principal is attributed to exactly one row (an unmatched one becomes its own),
+   * so a fallback could never add a badge the server omitted — only a wrong one.
+   */
+  private static resolveAccessBadge(row: OrgAllEmployeeRow): OrgAccessBadgeState | null {
+    return row.accessBadge ?? null;
   }
 
   private static computeInitials(name: string): string {
