@@ -33,37 +33,40 @@ describe('EmailTabComponent', () => {
     ctrStatus: 'GOOD',
   });
 
-  const response = (sendDate: string | null): EmailCtrResponse =>
-    ({
-      currentCtr: 5,
-      changePercentage: 0,
-      momChangePercentage: null,
-      trend: 'up',
-      monthlyData: [],
-      monthlyLabels: [],
-      campaignGroups: [],
-      monthlySends: [],
-      monthlyOpens: [],
-      emailTypeBreakdown: [
-        {
-          emailType: 'EVENT',
-          campaignCount: 1,
-          totalSends: 1000,
-          totalOpens: 400,
-          totalClicks: 50,
-          openRate: 40,
-          ctr: 5,
-          performance: 'GOOD',
-          campaigns: [campaign(sendDate)],
-        },
-      ],
-    }) as unknown as EmailCtrResponse;
+  const response = (sendDate: string | null): EmailCtrResponse => ({
+    currentCtr: 5,
+    changePercentage: 0,
+    momChangePercentage: null,
+    trend: 'up',
+    monthlyData: [],
+    monthlyLabels: [],
+    campaignGroups: [],
+    monthlySends: [],
+    monthlyOpens: [],
+    emailTypeBreakdown: [
+      {
+        emailType: 'EVENT',
+        campaignCount: 1,
+        totalSends: 1000,
+        totalOpens: 400,
+        totalClicks: 50,
+        openRate: 40,
+        ctr: 5,
+        performance: 'GOOD',
+        campaigns: [campaign(sendDate)],
+      },
+    ],
+  });
 
   let fixture: ComponentFixture<EmailTabComponent>;
 
   async function renderCampaigns(campaigns: ReturnType<typeof campaign>[]): Promise<void> {
-    const body = response(null) as unknown as { emailTypeBreakdown: { campaigns: unknown[] }[] };
-    body.emailTypeBreakdown[0].campaigns = campaigns;
+    const body = response(null);
+    // Narrowed rather than cast: emailTypeBreakdown is optional on the contract, so a change to
+    // it should fail this fixture at compile time rather than be waved through.
+    const [breakdown] = body.emailTypeBreakdown ?? [];
+    if (!breakdown) throw new Error('fixture must carry an email type breakdown');
+    breakdown.campaigns = campaigns;
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({

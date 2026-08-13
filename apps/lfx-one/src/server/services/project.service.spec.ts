@@ -424,13 +424,14 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
   // into a zero-filled 200. It reached the email tab as a success, so an outage rendered
   // "Total Sends 0 · CTR 0.00%" as measurements and no client guard could see the difference.
   describe('getEmailCtr', () => {
+    // Typed rather than cast: a change to ResolvedPeriodRange should break this at compile time.
+    const EMAIL_CTR_PERIOD: ResolvedPeriodRange = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' };
+
     it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
       const failure = new Error('snowflake timeout');
       execute.mockRejectedValue(failure);
 
-      await expect(
-        service.getEmailCtr('tlf', undefined, { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any)
-      ).rejects.toBe(failure);
+      await expect(service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD)).rejects.toBe(failure);
     });
   });
 
