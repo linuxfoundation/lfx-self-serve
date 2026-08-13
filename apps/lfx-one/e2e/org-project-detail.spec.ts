@@ -357,6 +357,58 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
   });
 });
 
+test.describe('Org Project Detail — all-time range', () => {
+  test('All time fetches range=all influence + trend with aligned adaptive periods', async ({ page }) => {
+    await page.goto(DETAIL_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('project-detail-technical-card-maintainers')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const influenceAll = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return url.pathname.endsWith('/influence') && url.searchParams.get('range') === 'all' && response.status() === 200;
+      },
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('project-detail-time-range-all').click();
+    await expect(page).toHaveURL(/range=all/);
+    const influenceBody = (await (await influenceAll).json()) as { periods?: string[]; technical?: { sparkline?: unknown[] }[] };
+    expect(Array.isArray(influenceBody.periods)).toBe(true);
+    expect(influenceBody.periods!.length).toBeGreaterThan(0);
+    expect(influenceBody.periods!.length).toBeLessThanOrEqual(12);
+    // Every label must be one of the formats the server can emit — `MMM YYYY`, `Q# YYYY`, `YYYY`,
+    // `YYYY–YYYY`, plus `YYYY–?` for a multi-year bucket whose end date is missing. A length-only
+    // assertion passes on empty or malformed labels, which is exactly what an unparseable bucket start
+    // produces, so it would hide a regression in the label derivation. The unknown-end form is allowed
+    // rather than rejected: it is deliberate server output, so failing on it would turn this spec into
+    // a warehouse data-quality gate.
+    for (const period of influenceBody.periods!) {
+      expect(period).toMatch(/^(?:[A-Z][a-z]{2} \d{4}|Q[1-4] \d{4}|\d{4}(?:\u2013(?:\d{4}|\?))?)$/);
+    }
+    const sparkline = influenceBody.technical?.[0]?.sparkline;
+    expect(Array.isArray(sparkline)).toBe(true);
+    expect(sparkline!.length).toBe(influenceBody.periods!.length);
+
+    const trendAll = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return url.pathname.endsWith('/trend') && url.searchParams.get('range') === 'all' && response.status() === 200;
+      },
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('project-detail-tab-pd-leaderboards').click();
+    const trendBody = (await (await trendAll).json()) as { periods?: string[]; trend?: { combined?: unknown[] }[] };
+    expect(Array.isArray(trendBody.periods)).toBe(true);
+    // Same labels, not merely the same count: the influence cards and the trend must share one
+    // lifetime axis, and equal-length-but-different calendars would still break that contract.
+    expect(trendBody.periods).toEqual(influenceBody.periods);
+    expect(Array.isArray(trendBody.trend)).toBe(true);
+    expect(trendBody.trend!.length).toBeGreaterThan(0);
+    for (const series of trendBody.trend!) {
+      expect(series.combined?.length).toBe(trendBody.periods!.length);
+    }
+  });
+});
+
 test.describe('Org Project Detail — Contributors drawer deep-link', () => {
   test('auto-opens the Contributors drawer from ?card=contributors', async ({ page }) => {
     await page.goto(`${DETAIL_URL}?card=contributors`, { waitUntil: 'domcontentloaded' });

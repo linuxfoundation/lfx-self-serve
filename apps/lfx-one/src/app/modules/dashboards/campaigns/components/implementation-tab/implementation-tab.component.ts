@@ -15,6 +15,7 @@ import {
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { map, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
@@ -67,6 +68,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 export class ImplementationTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -80,7 +82,21 @@ export class ImplementationTabComponent implements OnInit {
    * next stretch of work — a "not saved" warning is only useful in front of the person about to
    * lose something. The default is the `off` state, which renders nothing at all.
    */
-  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
+  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null, approved: false });
+
+  /**
+   * Is a brief save running right now?
+   *
+   * Separate from `briefPersistence` because that input drives a BANNER, and the first save of a
+   * session deliberately shows none — the persistence flag lives on the server, so it is unknown
+   * until that first response lands. Its status therefore reads `off` while the save is in
+   * flight, which is indistinguishable from "the cutover is dark".
+   *
+   * The difference matters here and nowhere else: a create issued during that window carries an
+   * empty brief id and is TERMINALLY refused with the cutover on. Defaults to false so the input
+   * is additive.
+   */
+  public readonly briefSaveInFlight = input(false);
 
   /**
    * Edits carried over from a previous mount, or `null` on a first visit (LFXV2-3229).
@@ -273,6 +289,54 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+
+    // Blocked while a brief save is in flight, because the create needs the id that save produces.
+    //
+    // The parent sets `briefId: null` for the duration of a save, so submitting during that window
+    // sent an empty `brief_id` — which the cutover refuses TERMINALLY, with no fall-through to the
+    // legacy path. The user would see "brief has not been saved yet" for a brief that was being
+    // saved as they clicked. Disabling for the moment it takes is the honest reading; the button
+    // re-enables on its own when the save lands.
+    //
+    // `error` splits in two, and the brief id is what tells them apart — blocking the whole
+    // status was too broad, blocking none of it was too narrow.
+    //
+    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
+    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
+    //     brief on screen — the save was refused precisely because the two disagree. Creating
+    //     from it would launch paid campaigns off another writer's version while the user reads
+    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //
+    //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
+    //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
+    //     at all. ALLOWED — blocking it would contradict the message the user is reading. If the
+    //     cutover is on, `createCampaigns` refuses on the empty id with its own wording; that is
+    //     a different message for a different situation, and it is the create path's to give.
+    // `briefSaveInFlight` rather than `status === 'saving'`, because the status does not cover the
+    // FIRST save of a session: it stays `off` until the persistence flag is known, so a fast click
+    // straight after Proceed submitted an empty brief id and hit the terminal refusal. The
+    // dedicated input answers "is a save running" for every save, first or not.
+    if (this.briefSaveInFlight()) return false;
+
+    const persistence = this.briefPersistence();
+    if (persistence.status === 'saving') return false;
+    if (persistence.status === 'error' && persistence.briefId !== null) return false;
+
+    // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
+    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
+    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
+    // the hard way. Read from the explicit `approved` field rather than the banner prose, which
+    // would break the first time the copy is edited.
+    if (persistence.status === 'saved' && !persistence.approved) return false;
+
+    // A RESTORED brief arrives as `off` carrying its own id, and Planning deliberately lets an
+    // unapproved one be restored (the banner says to get it approved). `off` also covers the
+    // cutover-dark case, where there is no brief id and none is needed — so the id is again what
+    // separates them: an id present here means a restored brief, and an unapproved one cannot
+    // create.
+    if (persistence.status === 'off' && persistence.briefId !== null && !persistence.approved) return false;
+
     return true;
   });
 
@@ -546,7 +610,15 @@ export class ImplementationTabComponent implements OnInit {
         : {}),
     };
 
-    this.campaignService.createCampaign(request).subscribe({
+    // Read once, here, and carry it into the poll rather than re-reading per request. The
+    // foundation is switchable while a job runs, and `GetJob` matches the brief's project
+    // EXACTLY — a poll sent under a foundation the user switched to answers `not_found`, which
+    // is terminal for the poller and would be reported as a lost campaign that is in fact
+    // running.
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const briefId = this.briefPersistence().briefId ?? '';
+
+    this.campaignService.createCampaign(request, projectSlug, briefId).subscribe({
       next: (response) => {
         if (response.result) {
           this.results.set(response.result.campaigns);
@@ -565,7 +637,7 @@ export class ImplementationTabComponent implements OnInit {
           return;
         }
         this.creationProgress.update((msgs) => [...msgs, `Job started: ${response.jobId}`]);
-        this.pollJob(response.jobId);
+        this.pollJob(response.jobId, projectSlug);
       },
       error: () => {
         this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
@@ -747,11 +819,11 @@ export class ImplementationTabComponent implements OnInit {
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }
 
-  private pollJob(jobId: string): void {
+  private pollJob(jobId: string, projectSlug: string): void {
     const MAX_POLL_DURATION_MS = 300_000;
     const MAX_POLLS = Math.ceil(MAX_POLL_DURATION_MS / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.jobSubscription = this.campaignService
-      .getCreateResult(jobId)
+      .getCreateResult(jobId, projectSlug)
       .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (outcome: CampaignJobOutcome | null) => {

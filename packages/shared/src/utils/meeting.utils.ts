@@ -23,6 +23,7 @@ import {
   CalendarColor,
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingOccurrenceRoute,
@@ -1249,4 +1250,32 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
     return rankDelta;
   }
   return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+}
+
+/**
+ * Drops null/blank committee entries from a meeting payload.
+ *
+ * PrimeNG MultiSelect builds its trigger label with `label += getLabelByValue(...)`.
+ * Unmatched values return JS `null`, and `'' + null === 'null'`, so a committees
+ * array of `[null]` / `{ uid: null }` renders the literal label "null" instead of
+ * the empty placeholder (GH-1430).
+ */
+export function sanitizeMeetingCommittees(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): MeetingCommittee[] {
+  if (!Array.isArray(committees) || committees.length === 0) {
+    return [];
+  }
+
+  return committees.filter((committee): committee is MeetingCommittee => Boolean(committee?.uid?.trim()));
+}
+
+/**
+ * Drops null/blank committee UIDs from a MultiSelect form value so the control
+ * stays `[]` rather than `[null]` / `[undefined]`.
+ */
+export function sanitizeMeetingCommitteeUids(uids: ReadonlyArray<string | null | undefined> | null | undefined): string[] {
+  if (!Array.isArray(uids) || uids.length === 0) {
+    return [];
+  }
+
+  return uids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0);
 }

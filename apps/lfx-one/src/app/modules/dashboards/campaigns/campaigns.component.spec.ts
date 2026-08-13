@@ -55,6 +55,11 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
+  /** Whether a save is running — deliberately NOT derivable from `state()`; see the tests below. */
+  function inFlight(): boolean {
+    return (fixture.componentInstance as unknown as { briefSaveInFlight(): boolean }).briefSaveInFlight();
+  }
+
   /**
    * `selectorForm` is protected; a program switch is the real path that discards a brief. The
    * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
@@ -153,7 +158,7 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null });
+    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null, approved: true });
   });
 
   it('renders nothing when the cutover is dark', async () => {
@@ -203,7 +208,7 @@ describe('CampaignsComponent brief persistence', () => {
     late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     expect(tab()).toBe('planning');
   });
 
@@ -306,7 +311,7 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       // Not 'saved' with tlf's id: that id names a row in tlf's table, and CNCF is selected now.
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     it('drops a save that resolves after the foundation changed', async () => {
@@ -320,7 +325,7 @@ describe('CampaignsComponent brief persistence', () => {
       late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
       await fixture.whenStable();
 
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     /**
@@ -1033,6 +1038,80 @@ describe('CampaignsComponent brief persistence', () => {
     // Not 'error': there is no brief on screen to warn about, and the amber banner would be
     // about work the user already abandoned.
     expect(state().status).toBe('off');
+  });
+
+  /**
+   * `briefSaveInFlight` exists because the BANNER state cannot answer "is a save running".
+   *
+   * The first save of a session shows no banner — the persistence flag lives on the server and is
+   * unknown until the response lands, so `briefPersistence` stays `off` throughout. The
+   * Implementation tab needs the difference: a create issued in that window carries an empty
+   * brief id and is terminally refused with the cutover on.
+   */
+  it('reports a save as in flight even while the banner still reads off', async () => {
+    const pending = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(pending);
+
+    proceed();
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+    // The banner is deliberately silent for this first save; that is exactly why the separate
+    // signal is needed rather than reading the status.
+    expect(state().status).toBe('off');
+  });
+
+  /**
+   * Two saves queued: the flag must stay true across the seam between them.
+   *
+   * Saves serialise on `persistChain` and each appends its own clear. With a boolean, both
+   * `set(true)` calls ran synchronously at enqueue time while A's clear landed between A finishing
+   * and B starting — so the flag went false with a save still pending, and Create re-enabled in
+   * exactly the window the guard exists to close. Counting is what closes it.
+   */
+  it('keeps the in-flight flag set while a second save is still queued', async () => {
+    const first = new Subject<CampaignBriefPersistResult>();
+    const second = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    // Two saves for DIFFERENT events, no program switch: switching discards the brief, so that
+    // save is dropped rather than queued and its clear never runs — which is a different case.
+    proceed();
+    proceed(otherBrief);
+    await fixture.whenStable();
+
+    // A resolves; B is still outstanding.
+    first.next({ enabled: true, briefId: 'brief-a', etag: 'W/"1"', created: true, approved: true });
+    first.complete();
+    // Drain generously: A's chain link has several `.then` steps before B's request is issued.
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+
+    second.next({ enabled: true, briefId: 'brief-b', etag: 'W/"1"', created: true, approved: true });
+    second.complete();
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
+  });
+
+  it('clears the in-flight flag when a save FAILS, not only when it succeeds', async () => {
+    // The stuck-forever case. Clearing it in the success arm alone would leave Create disabled
+    // for the rest of the session after one failed save.
+    const failing = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(failing);
+
+    proceed();
+    await fixture.whenStable();
+    expect(inFlight()).toBe(true);
+
+    failing.error(new Error('500'));
+    await fixture.whenStable();
+    // A second drain: the clear is chained AFTER the terminal catch, so it settles one
+    // microtask-turn later than the banner write does.
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
   });
 });
 

@@ -54,12 +54,12 @@ export class OrgLensProjectDetailController {
   }
 
   public async getTrendBlock(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { orgUid, projectSlug } = this.context(req);
-    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_trend', { org_uid: orgUid, project_slug: projectSlug });
+    const { orgUid, projectSlug, range } = this.context(req);
+    const startTime = logger.startOperation(req, 'get_org_lens_project_detail_trend', { org_uid: orgUid, project_slug: projectSlug, range });
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_detail_trend');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_trend');
-      const block = await this.service.getTrendBlock(orgUid, projectSlug);
+      const block = await this.service.getTrendBlock(orgUid, projectSlug, range);
       this.sendBlock(req, res, 'get_org_lens_project_detail_trend', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);

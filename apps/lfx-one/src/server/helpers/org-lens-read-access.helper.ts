@@ -48,11 +48,13 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
 
   let hasGrant = false;
   let degraded = false;
+  let isStaff = false;
   try {
-    const { resolved, upstreamFailed } = await roleGrants.getAccessAwareOrgs(req, username);
+    const { resolved, upstreamFailed, isStaff: staff } = await roleGrants.getAccessAwareOrgs(req, username);
     // `getAccessAwareOrgs` degrades to an empty grant map on upstream failure instead of throwing,
     // so an unverified lookup is indistinguishable from "no grants" unless this flag is checked.
     degraded = upstreamFailed;
+    isStaff = staff;
     hasGrant = resolved.has(orgUid);
     if (degraded) {
       logger.warning(req, operation, 'Role-grants lookup degraded; cannot verify Org Lens read access', { org_uid: orgUid });
@@ -63,6 +65,15 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       err: error instanceof Error ? error.message : String(error),
     });
     throw unavailable(error);
+  }
+
+  // LF staff hold `auditor` on every b2b_org, so the per-org grant lookup is not the question for
+  // them. Checked before the degraded branch because the two resolutions are independent upstream
+  // calls: a roster outage must not withhold access the staff grant already established. Placing the
+  // entitlement here rather than in each controller is what makes it uniform across every view that
+  // gates through this helper.
+  if (isStaff) {
+    return;
   }
 
   // Thrown after the try, not inside it, so a deliberate 403/503 isn't caught above and re-mapped
