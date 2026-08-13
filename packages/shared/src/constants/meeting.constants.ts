@@ -653,7 +653,8 @@ export const MAX_CUSTOM_DURATION = 480;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
- * @description `custom` reveals the `customDuration` control, which owns the minute bounds.
+ * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
+ * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
  */
 export const MEETING_DURATION_CHIP_OPTIONS = [
   { label: '15 min', value: 15 },

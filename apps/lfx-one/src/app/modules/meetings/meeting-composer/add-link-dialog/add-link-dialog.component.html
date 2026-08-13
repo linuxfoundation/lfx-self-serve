@@ -26,7 +26,7 @@
   </div>
 
   <div class="flex justify-end gap-2">
-    <lfx-button size="small" label="Cancel" severity="secondary" [outlined]="true" (click)="onCancel()" data-testid="composer-link-cancel" />
-    <lfx-button size="small" label="Add link" severity="info" [disabled]="!form.valid" (click)="onSubmit()" data-testid="composer-link-submit" />
+    <lfx-button size="small" label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="composer-link-cancel" />
+    <lfx-button size="small" label="Add link" severity="info" [disabled]="!form.valid" (onClick)="onSubmit()" data-testid="composer-link-submit" />
   </div>
 </div>

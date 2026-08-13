@@ -45,11 +45,18 @@ export class MeetingCommitteeManagerComponent {
   public readonly committeesLoading = signal<boolean>(true);
 
   /**
-   * Whether a member fetch has resolved at least once.
-   * @description Gates `committeeMembersChange`, so consumers never reconcile against the synthetic
-   * empty list that `toSignal` emits before the first fetch returns.
+   * Emission gate for `committeeMembersChange`, kept as plain fields so reading them in the emit
+   * pipeline's `filter` doesn't make them reactive dependencies of it.
+   * @description Consumers reconcile their guest list against every emission, so an emission that
+   * isn't a truthful picture of the selected groups' membership would queue saved guests for
+   * deletion. `membersResolved` only flips once a fetch settles; an empty selection counts as settled
+   * only after the parent's committees have actually been applied (until then the empty list is a
+   * mount-time artifact); and a failed fetch is never emitted, since "no members" and "we couldn't
+   * ask" are indistinguishable in the result but opposite in consequence.
    */
-  private readonly membersResolved = signal<boolean>(false);
+  private membersResolved = false;
+  private membersFetchFailed = false;
+  private selectionApplied = false;
 
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
@@ -118,7 +125,7 @@ export class MeetingCommitteeManagerComponent {
     // Emit committee members whenever they change
     toObservable(this.filteredCommitteeMembers)
       .pipe(
-        filter(() => this.membersResolved()),
+        filter(() => this.membersResolved && !this.membersFetchFailed),
         takeUntilDestroyed()
       )
       .subscribe((members) => this.committeeMembersChange.emit(members));
@@ -128,6 +135,8 @@ export class MeetingCommitteeManagerComponent {
    * Initialize the component state from the selected committees input
    */
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
+    this.selectionApplied = true;
+
     const committeeIds = committees.map((c) => c.uid);
     this.selectedCommitteeIds.set(committeeIds);
 
@@ -198,8 +207,12 @@ export class MeetingCommitteeManagerComponent {
     return toSignal(
       toObservable(this.selectedCommitteeIds).pipe(
         switchMap((committeeIds) => {
+          this.membersResolved = false;
+          this.membersFetchFailed = false;
+
           if (!committeeIds || committeeIds.length === 0) {
-            return of([]).pipe(tap(() => this.membersResolved.set(true)));
+            this.membersResolved = this.selectionApplied;
+            return of([]);
           }
 
           // Load members for all selected committees
@@ -214,6 +227,7 @@ export class MeetingCommitteeManagerComponent {
               ),
               catchError((error) => {
                 console.error(`Failed to load members for committee ${id}:`, error);
+                this.membersFetchFailed = true;
                 return of([]);
               })
             );
@@ -248,7 +262,9 @@ export class MeetingCommitteeManagerComponent {
 
               return Array.from(memberMap.values());
             }),
-            tap(() => this.membersResolved.set(true))
+            tap(() => {
+              this.membersResolved = true;
+            })
           );
         })
       ),

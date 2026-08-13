@@ -79,7 +79,8 @@ export function generateAcceptString(): string {
  * formatFileSize(1_468_006);
  */
 export function formatFileSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
+  // Sub-byte values would drive the log below to a negative unit index.
+  if (!Number.isFinite(bytes) || bytes < 1) {
     return '0 B';
   }
 

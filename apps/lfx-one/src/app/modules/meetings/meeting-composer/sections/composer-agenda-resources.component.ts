@@ -17,12 +17,13 @@ import {
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { GenerateAgendaRequest, MeetingAttachment, MeetingLinkDialogResult, MeetingTemplate, PendingAttachment } from '@lfx-one/shared/interfaces';
-import { formatFileSize, generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { finalize, take, tap } from 'rxjs';
+import { catchError, EMPTY, finalize, take, tap } from 'rxjs';
 
 import { AgendaTemplateSelectorComponent } from '../../components/agenda-template-selector/agenda-template-selector.component';
 import { AddLinkDialogComponent } from '../add-link-dialog/add-link-dialog.component';
@@ -36,7 +37,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-agenda-resources',
-  imports: [NgClass, ButtonComponent, FileUploadComponent, TextareaComponent, AgendaTemplateSelectorComponent],
+  imports: [NgClass, ButtonComponent, FileUploadComponent, TextareaComponent, FileSizePipe, AgendaTemplateSelectorComponent],
   templateUrl: './composer-agenda-resources.component.html',
 })
 export class ComposerAgendaResourcesComponent {
@@ -50,7 +51,6 @@ export class ComposerAgendaResourcesComponent {
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
   protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
-  protected readonly maxFileSizeMb = MAX_FILE_SIZE_MB;
   protected readonly acceptString = generateAcceptString();
   protected readonly acceptedTypesDisplay = getAcceptedFileTypesDisplay();
 
@@ -83,14 +83,11 @@ export class ComposerAgendaResourcesComponent {
     this.formService.attachments().filter((attachment) => attachment.type === 'file')
   );
   protected readonly pendingDeletionSet: Signal<Set<string>> = computed(() => new Set(this.formService.pendingAttachmentDeletions()));
+  // FormArray mutates `controls` in place, so a copy is what makes the recompute a real signal change.
   protected readonly linkControls: Signal<FormGroup[]> = computed(() => {
     this.formService.revision();
-    return this.linksArray().controls as FormGroup[];
+    return [...this.linksArray().controls] as FormGroup[];
   });
-
-  protected fileSize(bytes: number): string {
-    return formatFileSize(bytes);
-  }
 
   protected onToggleTemplates(): void {
     if (!this.meetingType()) {
@@ -156,10 +153,12 @@ export class ComposerAgendaResourcesComponent {
             this.onCancelAiHelper();
             this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
           },
-          error: () => {
+          error: (error: unknown) => {
+            console.error('Failed to generate agenda:', error);
             this.messageService.add({ severity: 'error', summary: 'Generation failed', detail: 'Could not generate an agenda. Please try again.' });
           },
         }),
+        catchError(() => EMPTY),
         finalize(() => this.isGeneratingAgenda.set(false))
       )
       .subscribe();
@@ -249,18 +248,26 @@ export class ComposerAgendaResourcesComponent {
 
   /**
    * Applies a template's or AI draft's estimated duration to the schedule controls.
-   * @description Out-of-range estimates are written to `customDuration` rather than clamped, so the
-   * control's own min/max validators surface the problem instead of silently swallowing it.
+   * @description Estimates outside the chip values go to `customDuration` rather than being clamped.
+   * The form service owns that control's min/max validators, so an out-of-range estimate blocks submit
+   * and shows its error in Date & Schedule instead of being silently swallowed — hence the toast,
+   * since the duration the organizer picked has just been overwritten in a section they can't see.
    */
   private applyEstimatedDuration(estimatedDuration: number): void {
     const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
+    const customDuration = this.form().get('customDuration');
 
     this.form()
       .get('duration')
       ?.setValue(isChipValue ? estimatedDuration : 'custom');
-    this.form()
-      .get('customDuration')
-      ?.setValue(isChipValue ? null : estimatedDuration);
+    customDuration?.setValue(isChipValue ? null : estimatedDuration);
+    customDuration?.markAsTouched();
+
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Duration updated',
+      detail: `Meeting duration set to ${estimatedDuration} minutes. Change it in Date & Schedule if that's not right.`,
+    });
   }
 
   private validateFile(file: File, queued: PendingAttachment[]): string | null {
