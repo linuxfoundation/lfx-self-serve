@@ -599,8 +599,18 @@ export class MeetingService {
    *   caller is rendering; when omitted, each registrant's most recent RSVP is
    *   returned regardless of scope — correct only for non-recurring meetings or
    *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
+   * @param failOnPartial - If true, throw instead of returning a truncated roster when a
+   *   later page fails. Callers that rely on the complete list for correctness (e.g.
+   *   importing every registrant) should set this; default preserves the existing
+   *   partial-tolerant behavior for callers that just render whatever loaded.
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    failOnPartial: boolean = false
+  ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
@@ -610,11 +620,14 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
 
-    let registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    let registrants = await fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
     );
 
     // If include_rsvp is true, fetch RSVP data and attach to registrants.

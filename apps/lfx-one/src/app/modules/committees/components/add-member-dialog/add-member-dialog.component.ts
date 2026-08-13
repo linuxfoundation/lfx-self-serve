@@ -309,7 +309,7 @@ export class AddMemberDialogComponent {
 
     this.importing.set(true);
     this.meetingService
-      .getMeetingRegistrants(meetingId, false)
+      .getMeetingRegistrants(meetingId, false, undefined, true)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
@@ -688,7 +688,7 @@ export class AddMemberDialogComponent {
 
   private initMeetingOptions(): Signal<MeetingSelectOption[]> {
     const projectUid = this.committee?.project_uid;
-    if (!projectUid) {
+    if (!projectUid || this.isDirectAdd()) {
       return signal<MeetingSelectOption[]>([]);
     }
 
@@ -697,7 +697,6 @@ export class AddMemberDialogComponent {
     return toSignal(
       fetchPage().pipe(
         expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
-        take(10),
         toArray(),
         map((responses) =>
           responses
