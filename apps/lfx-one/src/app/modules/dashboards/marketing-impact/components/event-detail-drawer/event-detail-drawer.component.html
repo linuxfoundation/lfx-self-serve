@@ -163,15 +163,19 @@
                        implies a confidence the model did not express. The computed hands over the
                        rounded pair so these are the same numbers the gate compared. -->
                   @if (predictedRange(); as range) {
-                    <span class="text-gray-400">({{ range.low | metricCount }}–{{ range.high | metricCount }})</span>
+                    <span class="text-gray-400">({{ range.low }}–{{ range.high }})</span>
                   }
                 </span>
               </div>
-              <!-- DAYS_LEFT_FROM_YESTERDAY keeps counting down past the event, so a past event
-                   yields a negative. "Days left" is meaningless then — drop the whole block. -->
-              @if (d.pacing.daysLeft !== null && d.pacing.daysLeft > 0) {
+              <!-- DAYS_LEFT_FROM_YESTERDAY is NEGATIVE while an event is upcoming and rises toward
+                   0 on the day: Linux Plumbers Conference 2026 reads -54 against a curve spanning
+                   -86..0. The old `> 0` guard therefore hid this block for every upcoming event —
+                   the only case it exists to serve — while a past event, which keeps counting up
+                   past 0, was the one thing it let through. `daysLeft()` returns the count as a
+                   reader means it, positive and counting down, and null once the event has passed. -->
+              @if (daysLeft(); as remaining) {
                 <div class="ml-auto flex flex-col text-right">
-                  <span class="text-xl font-semibold text-gray-900">{{ d.pacing.daysLeft | metricNumber }}</span>
+                  <span class="text-xl font-semibold text-gray-900">{{ remaining | metricCount }}</span>
                   <span class="text-xs text-gray-400">Days left</span>
                 </div>
               }

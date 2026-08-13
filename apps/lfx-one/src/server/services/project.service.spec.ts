@@ -590,7 +590,10 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
         .find((sql) => sql.includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS') && sql.includes('DAYS_TO_EVENT'));
 
       expect(curve).toBeDefined();
-      expect(curve!).not.toMatch(/ORDER BY DAYS_TO_EVENT\s+DESC/i);
+      // Positive form: asserting only the absence of DESC stays green if the ORDER BY is
+      // deleted outright, which leaves plot order at Snowflake's discretion — the same reversed
+      // chart by another route.
+      expect(curve!).toMatch(/ORDER BY DAYS_TO_EVENT(?!\s+DESC)/i);
     });
 
     // hasPriorYear comes from the measured prior-year total, not EVENT_CREATED_LAST_YEAR, because
@@ -623,10 +626,23 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(result!.hasPriorYear).toBe(true);
     });
 
-    // The mirror case: no measured prior-year registrations means no baseline, whatever the
-    // warehouse says elsewhere, so the drawer falls back to its "no prior year" branch.
-    it('reports no prior year when the prior-year total is zero', async () => {
+    // A zero total is not proof of absence. This table writes 0 rather than NULL for a prior-year
+    // total, so a prior edition still at zero this far into its curve looks identical to an event
+    // that never ran before — and early in a campaign, which is when this drawer is most used,
+    // that is the normal state. The row flag decides it, and the earlier version of this test
+    // asserted the opposite, pinning a first-timer verdict onto an event with a real baseline.
+    it('reports a prior year when the total is zero but the row flag says an edition ran', async () => {
       mockWithPacingHead({ ...eventRow, CREATED_LAST_YEAR: true }, 0);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result).not.toBeNull();
+      expect(result!.hasPriorYear).toBe(true);
+    });
+
+    // Both blind sources agreeing is what a genuine first-timer looks like.
+    it('reports no prior year when neither the total nor the row flag finds one', async () => {
+      mockWithPacingHead({ ...eventRow, CREATED_LAST_YEAR: false }, 0);
 
       const result = await service.getEventDetail('evt-1', 'tlf');
 
@@ -672,8 +688,39 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(curve).toBeDefined();
       // Grouped by type in an inner query, so the outer SUM sees one row per type per day.
       expect(curve!).toContain('GROUP BY DAYS_TO_EVENT, EVENT_REGISTRATION_TYPE');
-      // The raw columns must not be summed directly — that is the doubling.
-      expect(curve!).not.toMatch(/SUM\(\s*CUMULATIVE_AVG_PREDICTED_REGISTRATIONS\s*\)/);
+      // Every measure, not just the average. Naming one column let the doubling be restored on the
+      // Last-year line and both band edges with this test still green — three of the five series.
+      expect(curve!).not.toMatch(/SUM\(\s*(CUMULATIVE_(AVG|LOW|HIGH)_PREDICTED|PRIOR_EVENT_CUMULATIVE)_REGISTRATIONS\s*\)/);
+    });
+
+    // The text assertions above pin the shape of the SQL; this pins the outcome. A rewrite that
+    // dedupes by some other means should keep passing, and one that drops the collapse should fail
+    // however it is spelled — the doubling was a real curve reading 2,488 where 1,244 was correct.
+    it('sums each registration type once when the warehouse returns duplicate rows', async () => {
+      const duplicated = [
+        { DAYS_TO_EVENT: -10, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 },
+        { DAYS_TO_EVENT: -10, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 },
+      ];
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('MARKETING_EVENT_REGISTRATIONS r')) return Promise.resolve({ rows: [eventRow] });
+        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
+          return Promise.resolve({ rows: [{ DAYS_LEFT: -30, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 }] });
+        }
+        // The curve read. Snowflake collapses the duplicates, so the driver returns one row per
+        // day — the mock returns two to prove the mapping does not re-multiply what SQL merged.
+        if (text.includes('DAYS_TO_EVENT')) return Promise.resolve({ rows: duplicated });
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result).not.toBeNull();
+      // One point per DAYS_TO_EVENT, carrying the single day's values rather than their sum.
+      const day = result!.pacing.points.filter((point) => point.daysToEvent === -10);
+      expect(day).toHaveLength(2);
+      expect(day.every((point) => point.predictedAvg === 100)).toBe(true);
+      expect(day.every((point) => point.priorYear === 90)).toBe(true);
     });
 
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns

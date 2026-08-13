@@ -28,6 +28,11 @@ export class MetricNumberPipe implements PipeTransform {
  * "444.471" people, with "(400.024–488.918)" beside it. People are integers no matter what the
  * model returns, so the rounding belongs here rather than in the shared compact formatter,
  * which other call sites legitimately use for fractional values.
+ *
+ * The rounding is only observable below 1,000. At or above it formatNumber compacts to one
+ * decimal ("1.2K"), which already hides any fraction — so this changes nothing there, and
+ * anything comparing counts for equality must compare the FORMATTED strings rather than assume
+ * rounding made them distinct.
  */
 @Pipe({ standalone: true, name: 'metricCount', pure: true })
 export class MetricCountPipe implements PipeTransform {

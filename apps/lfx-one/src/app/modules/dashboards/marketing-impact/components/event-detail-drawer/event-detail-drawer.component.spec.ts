@@ -382,6 +382,95 @@ describe('EventDetailDrawerComponent', () => {
     expect(text).not.toContain('473–473');
   });
 
+  // DAYS_LEFT_FROM_YESTERDAY is negative while an event is upcoming (-54 against a curve spanning
+  // -86..0, verified in the warehouse) and rises past 0 once it has passed. The previous `> 0`
+  // guard therefore hid this block for every upcoming event — the only case it serves — and showed
+  // it for past ones, which is how "-8 Days left" reached production.
+  it('counts down the days remaining for an upcoming event', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -54,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Days left');
+    expect(text).toContain('54');
+    expect(text).not.toContain('-54');
+  });
+
+  // A past event has no days left to count, so the block goes rather than showing a negative.
+  it('drops the days-left block once the event has passed', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 8,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).not.toContain('Days left');
+  });
+
+  // Above 1,000 the display compacts to one decimal, so 1,240 and 1,244 round apart but both
+  // print "1.2K". A gate comparing rounded NUMBERS passes here and prints the collapsed range
+  // anyway — and the low thousands are the scale these events actually run at.
+  it('hides a predicted range that collapses under compact formatting', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 1240,
+              priorYear: null,
+              predictedAvg: 1242,
+              predictedLow: 1240,
+              predictedHigh: 1244,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Predicted');
+    // No parenthesised range at all. Asserting only that "1.2K–1.2K" is absent passes for a gate
+    // that compares raw numbers and renders "(1240–1244)" — distinct, but not what the reader is
+    // shown beside a headline of 1.2K, and not a range the display can express.
+    expect(text).not.toMatch(/\(\s*[\d.,KM]+\s*–\s*[\d.,KM]+\s*\)/);
+  });
+
   // The mirror: a range wider than one whole registration is a real forecast and must survive.
   it('shows a predicted range that stays distinct after rounding', async () => {
     await setup(

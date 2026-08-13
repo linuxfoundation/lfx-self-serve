@@ -5434,15 +5434,20 @@ export class ProjectService {
       // COMP_SCORE — two cards contradicting each other from one row. The pacing read already
       // computes this total, so the whole drawer now answers the question from one measured fact.
       //
-      // Only while that measurement exists, though. `pacing.priorYear` is null both for an event
-      // with no prior edition AND for one whose pacing read degraded — an unmaterialized table
-      // makes every event look like a first-timer, and five consumers then assert it: the card
-      // prints "no prior year", the badge drops to "No pace signal", the Last year series
-      // disappears and the chart states "No prior event data". That is a claim about the event's
-      // history sourced from a pipeline outage, which is the defect class this branch exists to
-      // fix. When pacing is unavailable there is no measurement to prefer, so the row flag —
-      // wrong on some rows, but an actual statement about the event — is the better answer.
-      hasPriorYear: pacing.available ? (pacing.priorYear ?? 0) > 0 : row.CREATED_LAST_YEAR === true,
+      // Either source proving a prior edition is enough, because each is blind in a different way.
+      //
+      // The measured total is absent both for an event with no prior edition AND for one whose
+      // pacing read degraded, so trusting it alone let an unmaterialized table make every event
+      // look like a first-timer — a claim about an event's history sourced from a pipeline outage.
+      // It is also 0, never NULL, for a prior-year total (40,514 zero rows against 0 nulls when
+      // checked), so a prior edition still at zero this far into its curve cannot be told from no
+      // prior edition by this column at all.
+      //
+      // The row flag is wrong in the other direction, claiming false where editions demonstrably
+      // exist. Neither is reliable alone; requiring only one to be positive means a first-timer
+      // needs both to agree, and five consumers stop asserting a history the data does not deny:
+      // the card, the badge label, the badge colour, the Last year series and the chart caption.
+      hasPriorYear: (pacing.priorYear ?? 0) > 0 || row.CREATED_LAST_YEAR === true,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
       sponsorshipTiers: tierResult.rows.map((t) => ({
@@ -8058,8 +8063,9 @@ export class ProjectService {
 
     try {
       // Decoupled deliberately: EventPacing permits an empty `points` array, so a headline is
-      // still useful when only the daily-curve model has yet to land. Fetching them as one unit
-      // meant an unmaterialized drilldown discarded a perfectly good summary.
+      // still useful when the curve read alone fails. Both now hit the same table, so they can no
+      // longer diverge on the table existing — but they remain two statements that can fail
+      // independently, and one failing should not discard the other's result.
       //
       // expectMissingObject marks the rollout miss as expected so SnowflakeService does not count
       // it toward the global circuit breaker — an anticipated absent table is not an outage.

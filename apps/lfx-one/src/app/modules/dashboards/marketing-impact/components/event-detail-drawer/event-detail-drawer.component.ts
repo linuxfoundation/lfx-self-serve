@@ -216,11 +216,31 @@ export class EventDetailDrawerComponent {
    * A boolean would leave the template re-reading the raw nulls, which neither narrows for the
    * type-checker nor guarantees it renders what the gate actually compared.
    */
-  protected readonly predictedRange = computed<{ low: number; high: number } | null>(() => {
+  /**
+   * Days remaining before the event, counting down, or null once it has passed.
+   *
+   * DAYS_LEFT_FROM_YESTERDAY is negative while an event is upcoming and rises toward 0 on the day
+   * itself — verified in the warehouse: Linux Plumbers Conference 2026 reads -54 against a curve
+   * spanning -86..0. A past event keeps counting up past 0. Negating it turns the column into the
+   * number a reader means by "days left", and makes "has it happened yet" a single sign test.
+   */
+  protected readonly daysLeft = computed<number | null>(() => {
+    const raw = this.detail()?.pacing.daysLeft;
+    if (raw === null || raw === undefined) return null;
+    const remaining = -raw;
+    return remaining > 0 ? remaining : null;
+  });
+
+  protected readonly predictedRange = computed<{ low: string; high: string } | null>(() => {
     const pacing = this.detail()?.pacing;
-    if (!pacing || pacing.predictedLow === null || pacing.predictedHigh === null) return null;
-    const low = Math.round(pacing.predictedLow);
-    const high = Math.round(pacing.predictedHigh);
+    if (!pacing || !pacing.available || pacing.predictedLow === null || pacing.predictedHigh === null) return null;
+    // Compared as rendered text, not as rounded numbers. Rounding alone only settles the sub-1,000
+    // branch: above it formatNumber compacts to one decimal, so 1,240 and 1,244 round apart, pass
+    // a numeric gate, and then both print "1.2K" — the collapsed range this exists to hide, at the
+    // scale these events actually run (the curve fix cites an event at 1,244). Formatting here and
+    // handing the template strings means the gate compares exactly what the reader sees.
+    const low = formatNumber(Math.round(pacing.predictedLow));
+    const high = formatNumber(Math.round(pacing.predictedHigh));
     return low === high ? null : { low, high };
   });
 
