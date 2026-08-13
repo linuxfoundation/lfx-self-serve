@@ -414,6 +414,28 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
     value:
 
+  # Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
+  # services. Same accepted values and same default-deny as the two flags above.
+  #
+  # Depends on LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS and is checked after it: the create route is
+  # /projects/{slug}/briefs/{brief_id}/campaigns, so there is no create-without-a-brief path.
+  # Turning this on while briefs are off yields no brief id and every create falls back to the
+  # legacy path — safe, but silently pointless. The log line says so rather than failing.
+  #
+  # It inherits the id-shape backstop the jobs flag introduced, which is what makes an
+  # overlapping rollout safe: campaign-service mints UUID job ids and the legacy path mints
+  # `job_...`, so a poll is answered by whichever system owns that job regardless of which pod
+  # serves it. A flag-on pod creating and a flag-off pod polling still works.
+  #
+  # OPERATIONAL PRECONDITION, and it is not optional: campaign-service reads ad-platform
+  # credentials from its OWN connection tables, never from this application's GADS_ / LINKEDIN_
+  # environment variables. Those values do not reach it. Install the system account with the
+  # service binary's `bootstrap-system-account` subcommand BEFORE turning this on, or every
+  # dispatch fails on a missing connection — and the failure surfaces per-campaign, not at
+  # startup, so nothing warns you at deploy time.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
+    value:
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

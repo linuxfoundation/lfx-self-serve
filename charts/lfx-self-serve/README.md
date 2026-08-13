@@ -191,12 +191,13 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                         | Description                                                                         | Required | Default |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`   | Serves campaign job status from campaign-service; see the accepted values below     | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` | Persists the generated brief in campaign-service instead of only in the browser tab | No       | off     |
+| Parameter                                         | Description                                                                             | Required | Default |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`   | Serves campaign job status from campaign-service; see the accepted values below         | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` | Persists the generated brief in campaign-service instead of only in the browser tab     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE` | Creates campaigns through campaign-service instead of the per-platform Express services | No       | off     |
 
-Both flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+All three flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
 operator setting `yes` and expecting it to be ignored would route production traffic at
