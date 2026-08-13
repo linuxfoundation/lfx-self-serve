@@ -67,14 +67,14 @@ export function applyViewScopeToSignals(scope: SavedViewScope, s: SocialListenin
 }
 
 /** Coerces unknown input into a valid SavedViewScope. Missing/invalid fields fall back to defaults. */
-export function normalizeViewScope(raw: unknown): SavedViewScope {
+export function normalizeViewScope(raw: unknown, defaultPeriod: string): SavedViewScope {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { ...DEFAULT_MENTION_VIEW_SCOPE };
+    return { ...DEFAULT_MENTION_VIEW_SCOPE, period: defaultPeriod };
   }
   const s = raw as Partial<SavedViewScope>;
   const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
   return {
-    period: str(s.period, DEFAULT_MENTION_VIEW_SCOPE.period),
+    period: str(s.period, defaultPeriod),
     sourceProjectId: str(s.sourceProjectId, DEFAULT_MENTION_VIEW_SCOPE.sourceProjectId),
     platform: str(s.platform, DEFAULT_MENTION_VIEW_SCOPE.platform),
   };
@@ -232,11 +232,14 @@ export function scopesEqual(a: ScopeState, b: ScopeState): boolean {
   return a.activeTab === b.activeTab && a.period === b.period && a.sourceProjectId === b.sourceProjectId && a.platform === b.platform;
 }
 
-/** Treats missing, null, and empty-string values as equivalent to prevent the URL write effect from looping. */
+/**
+ * Compares only the codec-owned keys — live router params also carry `project` and any `utm_*`,
+ * and unioning those in would make the URL write effect diff forever. Treats missing, null, and
+ * empty-string values as equivalent for the same reason.
+ */
 export function queryParamsEqual(a: SocialListeningQueryParams, b: SocialListeningQueryParams): boolean {
   const normalize = (v: string | string[] | null | undefined): string => asScalar(v) ?? '';
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
+  for (const key of Object.values(SOCIAL_LISTENING_QUERY_PARAMS)) {
     if (normalize(a[key]) !== normalize(b[key])) return false;
   }
   return true;

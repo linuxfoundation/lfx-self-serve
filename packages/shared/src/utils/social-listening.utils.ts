@@ -57,9 +57,16 @@ export function normalizePlatformKey(network: string): MentionPlatform {
   return 'other';
 }
 
+/** Upstream also emits values like `mixed`/`unknown`, which have no config entry — those fall back to `neutral`. */
+export function normalizeSentiment(sentiment: string | null | undefined): MentionSentiment {
+  const normalized = (sentiment || '').toLowerCase().trim();
+  if (Object.hasOwn(MENTION_SENTIMENT_CONFIG, normalized)) return normalized as MentionSentiment;
+  return 'neutral';
+}
+
 export function mapRawToMention(raw: SocialListeningMention): Mention {
   const platform = normalizePlatformKey(raw.SOURCE_PLATFORM || raw.SOCIAL_NETWORK);
-  const sentiment = (raw.SENTIMENT?.toLowerCase() || 'neutral') as MentionSentiment;
+  const sentiment = normalizeSentiment(raw.SENTIMENT);
   const analysis = raw.RELEVANCE_COMMENT || `Mention from ${raw.SOCIAL_NETWORK || 'social media'} with ${sentiment} sentiment.`;
 
   return {

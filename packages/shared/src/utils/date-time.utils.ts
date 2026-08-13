@@ -691,6 +691,7 @@ export function timeAgo(timestamp: string): string {
   if (diffHours < 24) return pluralize(diffHours, 'hour');
   if (diffDays < 7) return pluralize(diffDays, 'day');
   if (diffDays < 30) return pluralize(diffWeeks, 'week');
-  if (diffMonths < 12) return pluralize(diffMonths, 'month');
+  // Gate on days, not months: 360–364 days is 12 "30-day months" but still 0 years.
+  if (diffDays < 365) return pluralize(diffMonths, 'month');
   return pluralize(diffYears, 'year');
 }

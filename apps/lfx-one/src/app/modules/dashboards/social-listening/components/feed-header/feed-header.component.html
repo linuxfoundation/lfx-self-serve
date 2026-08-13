@@ -71,7 +71,7 @@
         [badge]="activeFilterCount() > 0 ? activeFilterCount().toString() : undefined"
         badgeSeverity="info"
         (onClick)="toggleFilters()"
-        (onFocus)="filtersPrefetch.emit()"
+        (focusin)="filtersPrefetch.emit()"
         (mouseenter)="filtersPrefetch.emit()"
         data-testid="social-listening-filters-button" />
     }

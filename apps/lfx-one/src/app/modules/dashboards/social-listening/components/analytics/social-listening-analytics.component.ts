@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, ElementRef, inject, input, model, PLATFORM_ID, Signal, untracked, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input, model, PLATFORM_ID, Signal, untracked, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -51,6 +51,7 @@ import type {
   styleUrl: './social-listening-analytics.component.scss',
 })
 export class SocialListeningAnalyticsComponent {
+  private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly socialListeningService = inject(SocialListeningService);
 
@@ -155,7 +156,11 @@ export class SocialListeningAnalyticsComponent {
     },
   };
 
+  private destroyed = false;
+
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+
     // Export trigger: the page increments exportNonce; the component owns its content element
     // and performs the capture itself. Effect = signal → imperative DOM sink (html-to-image),
     // which is the sanctioned effect use; the initial run is a no-op via the nonce guard.
@@ -177,7 +182,9 @@ export class SocialListeningAnalyticsComponent {
     try {
       await downloadCardAsImage(element, `social-listening-analytics-${this.period() || 'export'}`, { backgroundColor: lfxColors.white });
     } finally {
-      this.isExporting.set(false);
+      // A tab switch destroys this component mid-export; writing the model then throws, and the
+      // page clears its own `exporting` on teardown.
+      if (!this.destroyed) this.isExporting.set(false);
     }
   }
 
@@ -233,7 +240,7 @@ export class SocialListeningAnalyticsComponent {
           icon: 'fa-light fa-ear-listen',
           iconContainerClass: 'bg-blue-100 text-blue-600',
           label: 'Total Mentions',
-          value: overview ? overview.TOTAL_MENTIONS.toLocaleString() : '0',
+          value: overview ? overview.TOTAL_MENTIONS.toLocaleString('en-US') : '0',
           subLine: overview ? `across ${overview.CHILD_PROJECTS_COUNT} projects` : undefined,
           delta: buildAnalyticsDelta(overview?.TOTAL_MENTIONS_CHANGE_PCT ?? null),
         },

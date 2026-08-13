@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, input, model, output, Signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, model, output, Signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MENTION_HAS_TITLE_OPTIONS, MENTION_RELEVANCE_OPTIONS, MENTION_SENTIMENT_OPTIONS } from '@lfx-one/shared/constants';
@@ -23,7 +23,7 @@ import type { AuthorOption, SocialListeningOption } from '@lfx-one/shared/interf
  * State lives in the page container and round-trips through query params; this component only
  * two-way-binds it via `model()`. The `lfx-select` / `lfx-multi-select` wrappers are form-bound,
  * so an internal `filtersForm` bridges the two (form → model via `valueChanges`; model → form via
- * `setValue(..., { emitEvent: false })`, which cannot loop) — the same pattern as the feed header.
+ * `toObservable` + `setValue(..., { emitEvent: false })`) — the same pattern as the feed header.
  *
  * The panel owns its click-outside backdrop, which writes `visible` directly — that is what makes
  * the open state genuinely two-way. "Clear all" only emits `filtersCleared`; the page performs the
@@ -63,7 +63,7 @@ export class FiltersPanelComponent {
   // === Outputs ===
   public readonly filtersCleared = output<void>();
 
-  // Neutral defaults — the model→form effects below populate the real values at construction
+  // Neutral defaults — the model→form bridges below populate the real values at construction
   // (required models can't be read in field initializers).
   protected readonly filtersForm = this.fb.nonNullable.group({
     sentiment: ['all'],
@@ -89,13 +89,14 @@ export class FiltersPanelComponent {
   public constructor() {
     // External state (query-param decode, clear-all, pill removal) pushes into the form;
     // emitEvent: false so the valueChanges bridges below don't echo it back and loop.
-    effect(() => this.filtersForm.controls.sentiment.setValue(this.selectedSentiment(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.relevance.setValue(this.selectedRelevance(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.language.setValue(this.selectedLanguage(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.hasTitle.setValue(this.selectedHasTitle(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.keywords.setValue(this.selectedKeywords(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.tags.setValue(this.selectedTags(), { emitEvent: false }));
-    effect(() => this.filtersForm.controls.authors.setValue(this.selectedAuthors(), { emitEvent: false }));
+    const controls = this.filtersForm.controls;
+    this.bindModelToControl(this.selectedSentiment, controls.sentiment);
+    this.bindModelToControl(this.selectedRelevance, controls.relevance);
+    this.bindModelToControl(this.selectedLanguage, controls.language);
+    this.bindModelToControl(this.selectedHasTitle, controls.hasTitle);
+    this.bindModelToControl(this.selectedKeywords, controls.keywords);
+    this.bindModelToControl(this.selectedTags, controls.tags);
+    this.bindModelToControl(this.selectedAuthors, controls.authors);
 
     this.filtersForm.controls.sentiment.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedSentiment.set(value));
     this.filtersForm.controls.relevance.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedRelevance.set(value));
@@ -113,6 +114,13 @@ export class FiltersPanelComponent {
   /** Emits only — the page resets the predicate so the panel and the pills row share one clear path. */
   protected clearFilters(): void {
     this.filtersCleared.emit();
+  }
+
+  /** Signal → form is a non-reactive sink, so it runs off `toObservable` rather than an effect (repo convention). */
+  private bindModelToControl<T>(source: Signal<T>, control: FormControl<T>): void {
+    toObservable(source)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => control.setValue(value, { emitEvent: false }));
   }
 
   private initDisplayedKeywordOptions(): Signal<SocialListeningOption[]> {

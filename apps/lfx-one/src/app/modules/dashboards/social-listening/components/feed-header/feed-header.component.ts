@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, model, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Component, computed, DestroyRef, effect, inject, input, model, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -28,7 +28,7 @@ const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
  * State lives in the page container and round-trips through query params; this component only
  * two-way-binds it via `model()`. The `lfx-select` / `lfx-input-text` wrappers are form-bound,
  * so an internal `headerForm` bridges the two (form → model via `valueChanges`; model → form
- * via `setValue(..., { emitEvent: false })`, which cannot loop).
+ * via `toObservable` + `setValue(..., { emitEvent: false })`, which cannot loop).
  */
 @Component({
   selector: 'lfx-feed-header',
@@ -59,7 +59,7 @@ export class FeedHeaderComponent {
   public readonly exporting = input(false);
   public readonly exportAnalytics = output<void>();
 
-  // Neutral defaults — the model→form effects below populate the real values at construction
+  // Neutral defaults — the model→form bridges below populate the real values at construction
   // (required models can't be read in field initializers).
   protected readonly headerForm = this.fb.nonNullable.group({
     period: [''],
@@ -80,10 +80,11 @@ export class FeedHeaderComponent {
   public constructor() {
     // External state (query-param decode, reset effects) pushes into the form; emitEvent: false
     // so the valueChanges bridges below don't echo it back and loop.
-    effect(() => this.headerForm.controls.period.setValue(this.selectedPeriod(), { emitEvent: false }));
-    effect(() => this.headerForm.controls.sourceProject.setValue(this.selectedProject(), { emitEvent: false }));
-    effect(() => this.headerForm.controls.platform.setValue(this.selectedPlatform(), { emitEvent: false }));
-    effect(() => this.headerForm.controls.search.setValue(this.searchInput(), { emitEvent: false }));
+    const controls = this.headerForm.controls;
+    this.bindModelToControl(this.selectedPeriod, controls.period);
+    this.bindModelToControl(this.selectedProject, controls.sourceProject);
+    this.bindModelToControl(this.selectedPlatform, controls.platform);
+    this.bindModelToControl(this.searchInput, controls.search);
 
     // A foundation with a single sub-project locks the select to it (ported from PCC).
     effect(() => {
@@ -107,5 +108,12 @@ export class FeedHeaderComponent {
 
   protected toggleFilters(): void {
     this.filtersVisible.update((visible) => !visible);
+  }
+
+  /** Signal → form is a non-reactive sink, so it runs off `toObservable` rather than an effect (repo convention). */
+  private bindModelToControl(source: Signal<string>, control: FormControl<string>): void {
+    toObservable(source)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => control.setValue(value, { emitEvent: false }));
   }
 }

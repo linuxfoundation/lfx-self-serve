@@ -41,7 +41,8 @@ export class MentionCardComponent {
   public readonly timeTick = input<number>(0);
 
   public readonly copied = signal(false);
-  public readonly imageLoadError = signal(false);
+  /** Keyed by URL, not a boolean: row components are reused across pages, so a flag would hide the next mention's thumbnail. */
+  public readonly failedImageUrl = signal<string | null>(null);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   public readonly platformConfig = computed<MentionPlatformConfigEntry>(
@@ -58,7 +59,7 @@ export class MentionCardComponent {
   public readonly hasTitle = computed(() => !!this.mention().title);
   public readonly timeAgo: Signal<string> = this.initTimeAgo();
   public readonly hasImage = computed(() => !!this.mention().imageUrl && isValidUrl(this.mention().imageUrl));
-  public readonly isImageVisible = computed(() => this.hasImage() && !this.imageLoadError());
+  public readonly isImageVisible = computed(() => this.hasImage() && this.failedImageUrl() !== this.mention().imageUrl);
   /** Pre-filled share message (subject `{Keyword} - Worth sharing`) for the forward-by-email anchor. */
   public readonly forwardEmailHref: Signal<string> = this.initForwardEmailHref();
 
@@ -90,7 +91,7 @@ export class MentionCardComponent {
   }
 
   public onImageError(): void {
-    this.imageLoadError.set(true);
+    this.failedImageUrl.set(this.mention().imageUrl);
   }
 
   private initTimeAgo(): Signal<string> {

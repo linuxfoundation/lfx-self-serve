@@ -271,6 +271,13 @@ export class SocialListeningComponent {
       });
     });
 
+    // Leaving the analytics tab destroys the child mid-export, so its own reset can never land —
+    // the parent owns clearing the header's loading state.
+    effect(() => {
+      if (this.activeTab() === 'analytics') return;
+      untracked(() => this.exporting.set(false));
+    });
+
     // Any scope/filter change restarts pagination from the first page with a cold window cache.
     // (foundationSlug + selectedPeriod are explicit deps; the selects feed in via currentFilters.)
     effect(() => {
@@ -471,7 +478,11 @@ export class SocialListeningComponent {
                   });
                 }),
                 ignoreElements(),
-                catchError(() => EMPTY),
+                // Drop the half-filled window so a revisit refetches instead of rendering an empty page.
+                catchError(() => {
+                  this.evictWindowCache(windowIdx);
+                  return EMPTY;
+                }),
                 finalize(() => this.backgroundLoading.set(false))
               );
 
@@ -668,6 +679,15 @@ export class SocialListeningComponent {
       for (const key of Array.from(updated.keys())) {
         if (Math.abs(key - windowIdx) > MENTION_MAX_CACHED_WINDOWS) updated.delete(key);
       }
+      return updated;
+    });
+  }
+
+  private evictWindowCache(windowIdx: number): void {
+    this.windowCache.update((cache) => {
+      if (!cache.has(windowIdx)) return cache;
+      const updated = new Map(cache);
+      updated.delete(windowIdx);
       return updated;
     });
   }
