@@ -249,16 +249,15 @@
          The reasoning was already applied one level up and simply not carried down to the tabs.
 
          Only Planning is hoisted out of the @switch, deliberately. Implementation, Insights and
-         Optimization all fetch in ngOnInit — ad-account lookups on all three, plus metrics reads
-         on Insights and Optimization — so mounting them eagerly would issue network calls for
-         tabs the user may never open, on every page load. They keep the lazy @switch below.
+         Optimization all fetch in ngOnInit — metrics reads and ad-account lookups — so mounting
+         them eagerly would issue network calls for tabs the user may never open, on every page
+         load. They keep the lazy @switch below.
 
          That is a TRADE, not a free win, and the cost belongs here rather than implied:
          Implementation also holds local state, including hand-edited headline and description
-         FormArrays, and a tab switch still discards it — the component is destroyed, and on
-         remount a constructor `effect` re-derives the form from `briefData`, so typed edits do
-         not survive. Insights and Optimization re-fetch what they display, so those two
-         genuinely lose nothing.
+         FormArrays, and a tab switch still discards it — `populateFromBrief` re-derives the form
+         from `briefData` on the way back, so typed edits do not survive. Insights and
+         Optimization re-fetch what they display, so those two genuinely lose nothing.
 
          Planning is hoisted and Implementation is not because the two losses are not comparable:
          a brief is a slow, non-deterministic AI generation that cannot be reproduced, while

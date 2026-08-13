@@ -1266,16 +1266,23 @@ describe('CampaignsComponent — email delivery channel', () => {
    * `lfx-planning-tab` inside it would reintroduce the state loss this PR fixes, and a display
    * check could not see it.
    *
-   * **Honest limit:** these tests are revert-verified against the shape the bug actually had —
-   * the panel back inside the `@switch` — and each side fails only its own test. They are NOT
-   * verified against that narrower wrapper-kept-planner-recreated shape. Substituting an `@if`
-   * on `lfx-planning-tab` to simulate it leaves the suite green, and the reason is worth
-   * recording so nobody reads that as coverage: the surrounding `[style.display]` binding
-   * updates (the panel reports `none`) while the `@if` does not remove the element in the same
-   * pass, so the simulation does not reproduce the destruction it is meant to stand for.
+   * **Honest limit, and it survived two reviewers arguing the opposite — so it is stated as an
+   * OBSERVATION, not a mechanism.** These tests are revert-verified against the shape the bug
+   * actually had (the panel back inside the `@switch`), and each side fails only its own test.
+   * They are NOT verified against the narrower wrapper-kept/planner-recreated shape.
+   *
+   * Substituting `@if (selectedTab() === 'planning')` on `lfx-planning-tab` — both wrapping the
+   * `@for` and nested inside it — leaves the suite green. An instrumented probe at the hidden
+   * assertion printed `tab=insights` with the planner element still present, so the element was
+   * genuinely not removed at the point the test looks. Do not infer a general rule about `@if`
+   * timing from that: the sibling `still mounts the fetch-on-init tabs lazily` test proves one
+   * `detectChanges()` DOES remove `@switch`-gated panels in the same pass. Why this particular
+   * substitution behaves differently is unresolved, which is exactly why it is recorded as
+   * something seen rather than something explained.
+   *
    * Pinning that case properly needs a test at the planner's own level, not this one.
    */
-  const plannerInstance = (container: 'campaigns-paid-marketing' | 'campaigns-email', testid: string): unknown =>
+  const plannerElement = (container: 'campaigns-paid-marketing' | 'campaigns-email', testid: string): HTMLElement | null =>
     // querySelector, NOT debugElement.query: the rendered DOM is the only view that forgets a
     // destroyed node. Scoped to the container because both are always mounted.
     (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${container}"] [data-testid="${testid}"]`) ?? null;
@@ -1283,8 +1290,8 @@ describe('CampaignsComponent — email delivery channel', () => {
   /**
    * LFXV2-3202: leaving the Plan tab must not DESTROY the planner.
    *
-   * `PlanningTabComponent` owns ~20 signals locally — the generated brief, the edited RSA copy,
-   * the resolved HubSpot UTM, the keyword list — and none of it is lifted to this component. A
+   * `PlanningTabComponent` owns its state locally — the generated brief, the edited RSA copy, the
+   * resolved HubSpot UTM, the keyword list — and none of it is lifted to this component. A
    * structural `@switch` therefore threw all of it away the moment the user looked at another
    * tab, and a brief is a slow, non-deterministic AI generation: it cannot be reproduced by
    * re-running it. The panel is now visibility-toggled instead, the same treatment the two
@@ -1294,42 +1301,35 @@ describe('CampaignsComponent — email delivery channel', () => {
    * it changed correctly both before and after this fix.
    */
   it('keeps the paid planner mounted when the user moves to another tab', () => {
-    const before = plannerInstance('campaigns-paid-marketing', 'campaigns-planning-tab');
+    const before = plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab');
     expect(before).not.toBeNull();
 
     internals().selectTab('insights', 'paid-marketing');
     fixture.detectChanges();
 
-    // The SAME component instance, not merely a present element: a re-created planner satisfies
-    // a null check — and even an element-identity check — while having lost every signal it held.
-    // The SAME rendered element, not merely a present one: a destroyed-and-recreated planner
-    // is a different node, and it takes every signal it owned with it.
-    // Still RENDERED while hidden — not merely still in some tree. This is the assertion that
-    // catches a wrapper kept mounted while the planner inside it is structurally recreated:
-    // the panel would still report display:none, but the planner element would be gone.
-    const whileHidden = plannerInstance('campaigns-paid-marketing', 'campaigns-planning-tab');
+    // Still RENDERED while hidden, and the SAME node — hidden rather than swapped for a fresh
+    // one, which would have taken every signal it owned with it.
+    const whileHidden = plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab');
     expect(whileHidden).not.toBeNull();
-    // And the SAME node, so it was hidden rather than swapped for a fresh one, which would
-    // have taken every signal it owned with it.
     expect(whileHidden).toBe(before);
     expect(byTestId('campaigns-planning-panel')?.style.display).toBe('none');
 
     internals().selectTab('planning', 'paid-marketing');
     fixture.detectChanges();
 
-    expect(plannerInstance('campaigns-paid-marketing', 'campaigns-planning-tab')).toBe(before);
+    expect(plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab')).toBe(before);
     expect(byTestId('campaigns-planning-panel')?.style.display).not.toBe('none');
   });
 
   it('keeps the email planner mounted when the user moves to another tab', () => {
     selectEmail();
-    const before = plannerInstance('campaigns-email', 'campaigns-email-planning-tab');
+    const before = plannerElement('campaigns-email', 'campaigns-email-planning-tab');
     expect(before).not.toBeNull();
 
     internals().selectTab('implementation', 'email');
     fixture.detectChanges();
 
-    expect(plannerInstance('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
+    expect(plannerElement('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
     expect(byTestId('campaigns-email-planning-panel')?.style.display).toBe('none');
 
     // The return leg, which the paid test above also covers. Without it, a binding typo that
@@ -1337,7 +1337,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     internals().selectTab('planning', 'email');
     fixture.detectChanges();
 
-    expect(plannerInstance('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
+    expect(plannerElement('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
     expect(byTestId('campaigns-email-planning-panel')?.style.display).not.toBe('none');
   });
 
@@ -1365,6 +1365,15 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Swapped, not stacked: the previous panel is gone from the DOM rather than hidden.
     expect(byTestId('campaigns-optimization-panel')).toBeNull();
     expect(byTestId('campaigns-implementation-panel')).toBeNull();
+
+    // And still REACHABLE. Asserting only that the lazy panels are absent leaves the other
+    // direction unpinned: a typo'd `@case ('implementation')` would make the tab permanently
+    // blank while every absence assertion above stayed green.
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(byTestId('campaigns-implementation-panel')).not.toBeNull();
+    expect(byTestId('campaigns-insights-panel')).toBeNull();
   });
 
   it('still mounts the EMAIL non-planning panels lazily', () => {
