@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Same shape as campaign-service.service.spec.ts: the `@lfx-one/shared/*` alias is not wired into
 // this app's vitest config, so runtime collaborators are mocked.
@@ -47,6 +47,25 @@ describe('CampaignProxyService email delivery type', () => {
     for await (const e of gen) events.push(e);
     return events;
   }
+
+  // Captured so `afterEach` can put it back, matching `ai.service.spec.ts`.
+  //
+  // Hygiene rather than a live bug fix, and worth being precise about which: a review round said
+  // the two AI vars below contaminate later specs because `vitest.config.ts` enables neither
+  // `unstubGlobals` nor `unstubEnvs`. That part is true, but the config ALSO sets no isolation
+  // override, so Vitest's default `isolate: true` gives each FILE a fresh environment — I probed
+  // it with a throwaway spec asserting `AI_PROXY_URL` was unset, and it passed with this teardown
+  // removed. So nothing leaks across files today.
+  //
+  // Kept anyway: the guarantee is a default, not a decision this file made, and turning isolation
+  // off for speed is an ordinary thing to do later. Restoring what you stub costs nothing and
+  // stops that change from quietly breaking a missing-AI-configuration test elsewhere.
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
 
   beforeEach(() => {
     aiCalls = [];
