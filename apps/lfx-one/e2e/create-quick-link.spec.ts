@@ -319,6 +319,11 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     // default `static` regardless of the outer panel's state, making the assertion a no-op. The
     // rail-anchoring rule (and PrimeNG's own base stylesheet) target the outer panel element,
     // identified here by its unique `lfx-create-popover` class.
+    //
+    // Deliberate exception to data-testid-first selection: PrimeNG's `p-popover` panel is
+    // CDK-portaled to `body` and exposes only `styleClass` as an extension point (no testid
+    // passthrough), so the class this test already relies on to scope the SCSS override is also
+    // the only stable hook available here.
     const panel = page.locator('.p-popover.lfx-create-popover');
     const menuPosition = await panel.evaluate((el) => getComputedStyle(el).position);
     // PrimeNG's own anchor-relative default sets `position: absolute`; the regressed (rail-pinned)
