@@ -1387,6 +1387,43 @@ export interface MeetingComposerSection {
 }
 
 /**
+ * A rail row's derived display state for one composer section.
+ * @description `complete` is validity for required sections and "has been visited" for optional ones —
+ * an optional section can never be invalid, so visiting it is the only signal that it was considered.
+ */
+export interface MeetingComposerRailRow {
+  section: MeetingComposerSection;
+  active: boolean;
+  complete: boolean;
+  locked: boolean;
+  /** Active required section that isn't valid yet — drives the row's attention dot. */
+  needsAttention: boolean;
+  /** Whether the connector above / below this row should read as completed. */
+  lineAboveComplete: boolean;
+  lineBelowComplete: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
+/** One feature row in the composer preview, resolved from {@link MEETING_COMPOSER_PREVIEW_FEATURES}. */
+export interface MeetingComposerPreviewFeature {
+  label: string;
+  icon: string;
+}
+
+/** Day/month pair for the composer preview's date chip — placeholder glyphs until a date is picked. */
+export interface MeetingComposerPreviewDateChip {
+  day: string;
+  month: string;
+}
+
+/** Visibility row in the composer preview, resolved from the shared visibility options. */
+export interface MeetingComposerPreviewVisibility {
+  label: string;
+  icon: string;
+}
+
+/**
  * What the meeting composer was opened with.
  * @description Set by whichever entry point calls `MeetingComposerService.open()` — a dashboard
  * button, a meeting card's edit action, a group's meetings tab, or a `/meetings/...` deep link.

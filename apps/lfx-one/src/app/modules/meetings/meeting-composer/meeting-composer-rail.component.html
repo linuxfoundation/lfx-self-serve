@@ -1,0 +1,66 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Composer section rail (LFXV2-3240) -->
+<nav class="flex flex-col" aria-label="Composer sections" data-testid="meeting-composer-rail">
+  @for (row of rows(); track row.section.id) {
+    @if (composer.isEditMode()) {
+      <button
+        type="button"
+        class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors"
+        [ngClass]="row.active ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
+        [attr.aria-current]="row.active ? 'step' : null"
+        [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
+        (click)="onSelect(row)">
+        <i class="w-4 text-center" [class]="row.section.icon" aria-hidden="true"></i>
+        <span class="truncate">{{ row.section.label }}</span>
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="group relative flex items-start gap-3 rounded-md py-2 pl-1 pr-3 text-left"
+        [ngClass]="row.locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'"
+        [disabled]="row.locked"
+        [attr.aria-current]="row.active ? 'step' : null"
+        [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
+        (click)="onSelect(row)">
+        <span class="relative flex w-8 shrink-0 justify-center self-stretch">
+          @if (!row.isLast) {
+            <span
+              class="absolute left-1/2 top-8 h-full w-0.5 -translate-x-1/2"
+              [ngClass]="row.lineBelowComplete ? 'bg-blue-600' : 'bg-gray-200'"
+              aria-hidden="true"></span>
+          }
+          <span
+            class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
+            [ngClass]="
+              row.active
+                ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50'
+                : row.complete
+                  ? 'border-blue-600 bg-white text-blue-600'
+                  : 'border-gray-200 bg-white text-gray-400'
+            ">
+            @if (row.complete) {
+              <i class="fa-light fa-check" aria-hidden="true"></i>
+            } @else {
+              <i [class]="row.section.icon" aria-hidden="true"></i>
+            }
+          </span>
+        </span>
+
+        <span class="flex min-w-0 flex-col gap-0.5 pt-1.5">
+          <span class="flex items-center gap-1.5 text-sm font-medium" [ngClass]="row.active ? 'text-gray-900' : 'text-gray-600'">
+            <span class="truncate">{{ row.section.label }}</span>
+            @if (row.needsAttention) {
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="'meeting-composer-rail-attention-' + row.section.id"></span>
+              <span class="sr-only">Required fields still missing</span>
+            }
+          </span>
+          @if (row.locked) {
+            <span class="text-xs text-gray-400">Complete earlier sections first</span>
+          }
+        </span>
+      </button>
+    }
+  }
+</nav>

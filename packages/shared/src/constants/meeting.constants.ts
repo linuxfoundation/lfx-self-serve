@@ -320,6 +320,18 @@ export const MEETING_COMPOSER_SECTIONS = [
 ] as const;
 
 /**
+ * Feature rows the composer preview lists, in display order.
+ * @description Each entry names the form control that turns the feature on; the label is the preview's
+ * own shorter wording rather than the section's toggle title.
+ */
+export const MEETING_COMPOSER_PREVIEW_FEATURES = [
+  { control: 'recording_enabled', label: 'Recording', icon: 'fa-light fa-video' },
+  { control: 'zoom_ai_enabled', label: 'AI meeting summary', icon: 'fa-light fa-microchip-ai' },
+  { control: 'transcript_enabled', label: 'Transcript', icon: 'fa-light fa-file-lines' },
+  { control: 'youtube_upload_enabled', label: 'Auto-upload to YouTube', icon: 'fa-light fa-upload' },
+] as const;
+
+/**
  * Default meeting duration in minutes
  * @description Standard meeting length when no custom duration is specified
  */
