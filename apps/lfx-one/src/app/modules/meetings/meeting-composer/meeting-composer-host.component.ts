@@ -13,13 +13,13 @@ import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, pairwise } from 'rxjs';
 
-import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
 import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
+import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-features.component';
 
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
@@ -36,7 +36,7 @@ import { ComposerDetailsAccessComponent } from './sections/composer-details-acce
     TextareaComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
-    MeetingPlatformFeaturesComponent,
+    ComposerPlatformFeaturesComponent,
     MeetingRegistrantsManagerComponent,
     MeetingResourcesSummaryComponent,
   ],

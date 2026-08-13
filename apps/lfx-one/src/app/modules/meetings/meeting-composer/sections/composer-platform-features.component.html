@@ -1,0 +1,168 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="composer-platform-features">
+  <div class="flex flex-col gap-1">
+    <h2>Platform &amp; features</h2>
+    <p class="text-sm text-gray-500">Select your video platform and enable transparency features like recording and transcripts.</p>
+  </div>
+
+  <!-- Platform -->
+  <div class="flex flex-col gap-2">
+    <span class="text-sm font-medium text-gray-900"> Platform <span class="text-red-500">*</span> </span>
+    <div data-testid="composer-platform-chips">
+      <lfx-select-button
+        [form]="form()"
+        control="platform"
+        [options]="platformChipOptions"
+        optionDisabled="disabled"
+        [unselectable]="false"
+        [required]="true" />
+    </div>
+    @if (form().get('platform')?.errors?.['required'] && form().get('platform')?.touched) {
+      <p class="text-sm text-red-600" data-testid="composer-platform-required-error">Please select a meeting platform</p>
+    }
+  </div>
+
+  <!-- Features -->
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-gray-900">Meeting features</span>
+      <p class="text-xs text-gray-500">
+        Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community members
+        who can't attend live and creates valuable documentation.
+      </p>
+    </div>
+
+    <lfx-feature-toggle [feature]="recordingFeature" [form]="form()" />
+
+    <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
+      @if (form().get('zoom_ai_enabled')?.value) {
+        <div class="mt-4 border-t border-gray-200 pt-4">
+          <lfx-checkbox
+            [form]="form()"
+            control="require_ai_summary_approval"
+            label="Requires host approval before sharing with guests"
+            labelClass="text-sm text-gray-700"
+            data-testid="composer-ai-approval-checkbox" />
+        </div>
+      }
+    </lfx-feature-toggle>
+
+    <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()" />
+
+    <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()" />
+
+    @if (!form().get('recording_enabled')?.value) {
+      <p class="text-xs text-gray-500" data-testid="composer-recording-dependency-hint">Transcripts and YouTube upload need recording enabled.</p>
+    }
+
+    @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
+      <div class="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4" data-testid="composer-youtube-title-warning">
+        <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
+        <div class="flex flex-col gap-1">
+          <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
+          <p class="text-sm text-amber-700">
+            The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title has
+            {{ titleLength() }} characters.
+          </p>
+          <button
+            type="button"
+            class="self-start text-sm font-medium text-amber-800 underline hover:text-amber-900"
+            (click)="goToTitleSection.emit()"
+            data-testid="composer-youtube-title-fix-button">
+            Go back to Details &amp; Access to shorten the title
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Artifact access -->
+  @if (form().get('recording_enabled')?.value || form().get('zoom_ai_enabled')?.value) {
+    <div class="flex flex-col gap-2">
+      <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+      <label id="composer-artifact-visibility-label" class="text-sm font-medium text-gray-900">
+        @if (form().get('recording_enabled')?.value && form().get('zoom_ai_enabled')?.value) {
+          Who can access recordings &amp; summaries
+        } @else if (form().get('recording_enabled')?.value) {
+          Who can access recordings
+        } @else {
+          Who can access summaries
+        }
+      </label>
+      <lfx-select
+        [form]="form()"
+        control="artifact_visibility"
+        [options]="artifactVisibilityOptions"
+        appendTo="body"
+        inputId="composer-artifact-visibility"
+        ariaLabelledBy="composer-artifact-visibility-label"
+        placeholder="Select artifact visibility"
+        styleClass="w-full"
+        dataTest="composer-artifact-visibility-select" />
+    </div>
+  }
+
+  <!-- Email reminder -->
+  <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()">
+    @if (form().get('auto_email_reminder_enabled')?.value) {
+      <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
+          <div class="flex items-center gap-2">
+            <lfx-input-number
+              class="w-20 flex-none"
+              [form]="form()"
+              control="reminderHours"
+              size="small"
+              id="composer-reminder-hours"
+              data-testid="composer-reminder-hours" />
+            <label for="composer-reminder-hours" class="text-sm text-gray-900">hours</label>
+          </div>
+          <div class="flex items-center gap-2">
+            <lfx-input-number
+              class="w-20 flex-none"
+              [form]="form()"
+              control="reminderMinutes"
+              size="small"
+              id="composer-reminder-minutes"
+              data-testid="composer-reminder-minutes" />
+            <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
+          </div>
+          <span class="text-sm text-gray-900">before the meeting starts</span>
+          <i
+            class="fa-light fa-info-circle cursor-help text-gray-400"
+            tabindex="0"
+            role="img"
+            [attr.aria-label]="emailReminderTooltip"
+            [pTooltip]="emailReminderTooltip"
+            tooltipEvent="both"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"
+            data-testid="composer-reminder-tooltip"></i>
+        </div>
+        @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
+        }
+        @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
+        }
+        @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">Reminder must be at least 2 hours before the meeting starts</p>
+        }
+        @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">Reminder cannot be more than 24 hours before the meeting starts</p>
+        }
+        @if (
+          (form().get('reminderMinutes')?.errors?.['required'] ||
+            form().get('reminderMinutes')?.errors?.['pattern'] ||
+            form().get('reminderMinutes')?.errors?.['min'] ||
+            form().get('reminderMinutes')?.errors?.['max']) &&
+          form().get('reminderMinutes')?.touched
+        ) {
+          <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+        }
+      </div>
+    }
+  </lfx-feature-toggle>
+</div>
