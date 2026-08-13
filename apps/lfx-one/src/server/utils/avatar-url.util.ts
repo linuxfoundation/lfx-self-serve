@@ -37,20 +37,24 @@ export function getAvatarCdnPrefix(): string | null {
   if (!cdnPrefix) {
     return null;
   }
+  // Trim before validating and returning — new URL() trims ASCII whitespace internally, so an
+  // untrimmed value with leading/trailing spaces would pass validation while the raw string
+  // (with the spaces still in it) got returned and interpolated into a malformed URL downstream.
+  const trimmedCdnPrefix = cdnPrefix.trim();
   // New URL() (rather than a `^https?:\/\//` regex) also rejects a scheme-only value like
   // "https://" — that string starts with the required prefix but has no hostname, and a regex
   // check alone would let it through and silently produce a malformed "https:/avatars/..." URL
   // after the trailing-slash trim below.
   let parsed: URL;
   try {
-    parsed = new URL(cdnPrefix);
+    parsed = new URL(trimmedCdnPrefix);
   } catch {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
   if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
-  return cdnPrefix.replace(/\/+$/, '');
+  return trimmedCdnPrefix.replace(/\/+$/, '');
 }
 
 /**

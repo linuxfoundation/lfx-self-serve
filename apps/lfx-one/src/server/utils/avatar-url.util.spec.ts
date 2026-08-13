@@ -42,6 +42,11 @@ describe('avatar-url.util', () => {
       process.env['CDN_URL_PREFIX'] = 'ftp://cdn.example.com';
       expect(() => getAvatarCdnPrefix()).toThrow(/CDN_URL_PREFIX must be an absolute http\(s\) URL/);
     });
+
+    it('trims leading/trailing whitespace from the returned prefix', () => {
+      process.env['CDN_URL_PREFIX'] = '  https://cdn.example.com/  ';
+      expect(getAvatarCdnPrefix()).toBe('https://cdn.example.com');
+    });
   });
 
   describe('toAvatarKeySegment / toAvatarObjectKey', () => {
