@@ -434,7 +434,6 @@ export class ProfileLayoutComponent {
       phoneNumber: profile.profile?.phone_number || '',
       tshirtSize: normalizeTShirtSize(profile.profile?.t_shirt_size),
       aboutMe: profile.profile?.bio || '',
-      avatarUrl: profile.profile?.picture || '',
     };
   }
 }
