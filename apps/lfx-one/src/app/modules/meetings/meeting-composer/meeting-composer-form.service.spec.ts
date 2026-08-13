@@ -3,12 +3,12 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
-import type { Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingRegistrant, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -202,5 +202,79 @@ describe('MeetingComposerFormService — guest list', () => {
 
     expect(service.guests()).toEqual([]);
     expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
+  });
+});
+
+/**
+ * Covers the retry behind the edit-mode load-failure state. `meetingId` is also set by a successful
+ * create, so an unguarded retry would hydrate a create form from the meeting it just saved.
+ */
+describe('MeetingComposerFormService — load retry', () => {
+  let service: MeetingComposerFormService;
+  let getMeeting: ReturnType<typeof vi.fn>;
+  let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    getMeeting = vi.fn().mockReturnValue(throwError(() => new Error('not found')));
+    getMeetingRegistrants = vi.fn().mockReturnValue(of([] as MeetingRegistrant[]));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants,
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+  });
+
+  it('re-fetches the meeting after a failed edit-mode load', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.meetingLoadFailed()).toBe(true);
+    expect(getMeeting).toHaveBeenCalledTimes(1);
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a guest list that loaded fine alone on retry', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+    expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);
+
+    service.retryLoadMeeting();
+
+    expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fetches the guests too when their own request failed', () => {
+    getMeetingRegistrants.mockReturnValueOnce(throwError(() => new Error('boom')));
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.guestsLoadFailed()).toBe(true);
+
+    service.retryLoadMeeting();
+
+    expect(getMeetingRegistrants).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-fetch in create mode, where meetingId comes from the save', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.meetingId.set('meeting-1');
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).not.toHaveBeenCalled();
   });
 });

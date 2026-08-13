@@ -14,7 +14,7 @@
         class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         [ngClass]="{
           'border-blue-700 bg-blue-700 text-white': row.active,
-          'border-blue-200 bg-white text-blue-700': !row.active && row.complete && !row.locked,
+          'border-blue-200 bg-white text-blue-700': row.complete,
           'border-gray-200 bg-white text-gray-600': !row.active && !row.complete && !row.locked,
           'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-600': row.locked,
         }"
@@ -37,7 +37,7 @@
           <span class="sr-only">Complete earlier sections first</span>
         }
       </button>
-    } @else if (composer.isEditMode()) {
+    } @else if (isEditMode()) {
       <button
         type="button"
         class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors"
@@ -74,7 +74,7 @@
             class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
             [ngClass]="{
               'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
-              'border-blue-600 bg-white text-blue-600': !row.active && row.complete && !row.locked,
+              'border-blue-600 bg-white text-blue-600': row.complete,
               'border-gray-200 bg-white text-gray-400': !row.active && !row.complete && !row.locked,
               'border-gray-200 bg-gray-100 text-gray-600': row.locked,
             }">

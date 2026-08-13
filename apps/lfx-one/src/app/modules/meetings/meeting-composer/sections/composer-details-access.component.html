@@ -19,7 +19,12 @@
       id="composer-meeting-title"
       placeholder="Enter meeting title"
       styleClass="w-full"
+      [ariaDescribedBy]="titleHint() ? 'composer-title-hint' : undefined"
       data-testid="composer-title-input" />
+
+    @if (titleHint(); as hint) {
+      <p id="composer-title-hint" class="text-xs text-gray-500" data-testid="composer-title-hint">{{ hint }}</p>
+    }
 
     @if (form().get('youtube_upload_enabled')?.value) {
       <div class="flex items-center justify-between gap-2">

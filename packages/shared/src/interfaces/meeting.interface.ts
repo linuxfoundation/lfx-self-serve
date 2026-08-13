@@ -1396,6 +1396,7 @@ export interface MeetingComposerSection {
 export interface MeetingComposerRailRow {
   section: MeetingComposerSection;
   active: boolean;
+  /** Done and reachable — never set on the active row, and never on a locked one. */
   complete: boolean;
   /** Blocked by an earlier invalid required section — never set on the active row. */
   locked: boolean;

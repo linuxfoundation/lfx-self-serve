@@ -15,6 +15,7 @@
         [class]="styleClass()"
         class="w-full"
         [autocomplete]="autocomplete()"
+        [attr.aria-describedby]="ariaDescribedBy()"
         [attr.data-test]="dataTest()" />
     </p-iconfield>
   } @else {
@@ -28,6 +29,7 @@
       [class]="styleClass()"
       class="w-full"
       [autocomplete]="autocomplete()"
+      [attr.aria-describedby]="ariaDescribedBy()"
       [attr.data-test]="dataTest()" />
   }
 </ng-container>

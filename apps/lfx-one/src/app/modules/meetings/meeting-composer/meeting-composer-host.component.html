@@ -72,8 +72,8 @@
 
   <div class="flex h-full min-h-0 gap-6">
     <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (LFXV2-3243).
-         Both are hidden when the fetch failed: there is no form behind them, so every row would report empty and
-         clicking one would swap a section the organizer can't see. -->
+         The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
+         would report empty and clicking one would swap a section the organizer can't see. -->
     @if (!formService.meetingLoadFailed()) {
       <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
         <lfx-meeting-composer-rail />
