@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, type Signal } from '@angular/core';
+import { afterRenderEffect, Component, computed, ElementRef, inject, input, type Signal } from '@angular/core';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerRailRow, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 
@@ -10,10 +10,12 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 
 /**
- * Left-rail section navigation for the meeting composer (LFXV2-3240).
+ * Section navigation for the meeting composer (LFXV2-3240).
  * @description Create mode is a progress stepper: later sections stay locked until every earlier
  * required section is valid, so the organizer can't skip past a section that would block submit.
- * Edit mode is a flat menu — the meeting already exists, so every section is reachable.
+ * Edit mode is a flat menu — the meeting already exists, so every section is reachable. `compact`
+ * renders either mode as a horizontal chip row, which is what the composer shows below `lg` where the
+ * rail column is hidden (LFXV2-3243).
  */
 @Component({
   selector: 'lfx-meeting-composer-rail',
@@ -23,6 +25,7 @@ import { MeetingComposerService } from './meeting-composer.service';
 export class MeetingComposerRailComponent {
   protected readonly composer = inject(MeetingComposerService);
   private readonly formService = inject(MeetingComposerFormService);
+  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /**
    * Renders as a horizontal chip row instead of a vertical stepper.
@@ -36,6 +39,24 @@ export class MeetingComposerRailComponent {
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
   // Both layouts can be in the DOM at once, so their test ids have to differ.
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
+  // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
+  // isn't there — matching what the desktop edit rows already do.
+  protected readonly activeChipAriaCurrent: Signal<string> = computed(() => (this.composer.isEditMode() ? 'true' : 'step'));
+
+  public constructor() {
+    // The chip row is wider than a phone, so a section reached from the footer would otherwise
+    // highlight a chip scrolled off-screen. `afterRenderEffect` so the chip carrying the marker is the
+    // freshly active one, and because it never runs during SSR.
+    afterRenderEffect(() => {
+      this.composer.activeSection();
+
+      if (!this.compact()) {
+        return;
+      }
+
+      this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+  }
 
   protected onSelect(row: MeetingComposerRailRow): void {
     if (row.locked || row.active) {

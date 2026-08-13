@@ -73,9 +73,18 @@ export class MeetingComposerHostComponent {
     return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
-  /** Whether a required section the organizer has already been through is currently invalid. */
+  /**
+   * Whether a required section the organizer has already been through is currently invalid.
+   * @description Create mode only, matching the rail's per-section dots — an edit-mode badge would have
+   * no dot to point at, and a past meeting fails the future-date validator the moment it loads.
+   */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
+
+    if (this.composer.isEditMode()) {
+      return false;
+    }
+
     const visited = this.composer.visitedSections();
 
     return this.sections.some((section) => section.required && visited.has(section.id) && !this.formService.isSectionValid(section.id));
@@ -143,12 +152,23 @@ export class MeetingComposerHostComponent {
         this.announceCreatedMeeting(meeting);
       }
 
+      this.composer.notifySaved();
       this.composer.close();
     });
   }
 
-  /** Reopens the composer on the meeting the toast was raised for. */
+  /**
+   * Reopens the composer on the meeting the toast was raised for.
+   * @description The toast outlives the composer that raised it, so the organizer can already be part-way
+   * through another meeting by the time it is clicked — reopening would discard that draft. Losing write
+   * access in the meantime is the other case, where the save would only fail upstream. Both leave the
+   * toast standing rather than swallowing the click.
+   */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
+    if (this.composer.isOpen() || !this.projectContextService.canWrite()) {
+      return;
+    }
+
     this.messageService.clear(this.toastKey);
     this.composer.open({ mode: 'edit', meetingUid: data.meetingUid });
   }
@@ -173,6 +193,9 @@ export class MeetingComposerHostComponent {
       meetingUid: meeting.id,
       meetingTitle: meeting.title ?? 'Untitled meeting',
       meetingUrl: `/meetings/${meeting.id}`,
+      // The join page rejects a private or restricted meeting without its password and redirects to
+      // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
+      meetingQueryParams: meeting.password ? { password: meeting.password } : {},
     };
 
     this.messageService.add({
