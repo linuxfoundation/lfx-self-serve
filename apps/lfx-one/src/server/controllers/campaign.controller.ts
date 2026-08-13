@@ -9,6 +9,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignCreateRequest,
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
@@ -238,8 +239,85 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_create', {});
 
     try {
+      // Try the cutover FIRST, and fall through to the legacy path ONLY when the cutover is dark
+      // (`enabled: false`). "Anything short of an accepted job" would be the wrong rule and the
+      // dangerous one: an enabled-but-REFUSED create is terminal, because the legacy path has
+      // side effects on the ad platforms and would create the campaigns for real while the user
+      // is being told creation failed. Both branches below are explicit about which case they
+      // are, and the distinction is safety-critical for paid campaigns.
+      //
+      // `?project=` and `?brief_id=` mirror the persist route's convention rather than moving
+      // them into the body, so a caller that already knows how to save a brief knows how to
+      // create from it.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+      const body = req.body as CampaignCreateRequest;
+      const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+      const configEnvelope = this.createConfigEnvelope(body);
+
+      // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
+      // being left to `createCampaigns`.
+      //
+      // Left to fall through, a missing slug produced "this campaign could not be created because
+      // its brief has not been saved yet" — which is wrong (the brief may be saved; the caller
+      // just omitted the param) and, worse, is a TERMINAL refusal that blocks legacy fall-through,
+      // so with the cutover dark a missing slug failed a create the legacy path could have served.
+      // A missing query param is a client 400.
+      //
+      // Only when the cutover is on: with the flags off the legacy path neither reads nor needs
+      // these params, so requiring them there would be the same category error as the
+      // unconfigured-platform guard was.
+      //
+      // All THREE flags, matching `createCampaigns` exactly. Checking CREATE alone was a narrower
+      // version of that same mistake: with CREATE on but BRIEFS or JOBS off the cutover is dark,
+      // `createCampaigns` returns `enabled: false`, and the request is served by the legacy path —
+      // which needs no slug. Rejecting it here would 400 a request that path handles fine.
+      const cutoverOn =
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+      if (cutoverOn && projectSlug === '') {
+        next(
+          ServiceValidationError.forField('project', 'creating through campaign-service requires the project the brief was saved under', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // The unconfigured-platform refusal lives INSIDE `createCampaigns`, deliberately, so that it
+      // is gated by the cutover flags along with everything else there.
+      //
+      // It was here for one revision, above this call, and that was a regression: the guard tests
+      // for a CAMPAIGN-SERVICE envelope key, but sitting here it ran unconditionally and refused
+      // demand-gen-only Google creates even with every flag OFF — a case the legacy path has
+      // always supported, because `includeGoogle` gates on platform membership alone and Google's
+      // inputs live on the request root rather than in a config object. Gating the legacy path on
+      // a concept it does not have is a category error.
+      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope, {
+        campaignTypes: body?.campaignTypes,
+      });
+
+      if (viaService.enabled && viaService.jobId !== null) {
+        logger.success(req, 'campaign_create', startTime, { jobId: viaService.jobId, via: 'campaign-service' });
+        // The SAME response shape as the legacy path, so the client polls one way. The job id is
+        // a UUID here and `job_...` there, which is exactly what lets the poll route send each
+        // one back to the system that owns it.
+        res.json({ jobId: viaService.jobId });
+        return;
+      }
+      if (viaService.enabled && viaService.error !== null) {
+        // Enabled but refused: do NOT fall through. The legacy path would create campaigns on the
+        // platforms while the user is being told creation failed, which is the one outcome worth
+        // more than a confusing error message.
+        logger.warning(req, 'campaign_create', 'campaign-service refused the create; not falling back', { briefId, projectSlug });
+        res.json({ jobId: '', error: viaService.error });
+        return;
+      }
+
       const result = await this.proxyService.createCampaign(req, req.body);
-      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId });
+      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId, via: 'legacy' });
       res.json(result);
     } catch (error) {
       next(error);
@@ -261,11 +339,13 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route: creation is not cut over, so
-    // `createCampaign` above still mints `job_<epoch>_<rand>` into the in-process map, and
-    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id` — it would answer
+    // The flag is necessary but NOT sufficient to route. With CREATE off — still the default —
+    // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
+    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment
-    // the flag went on, which is the failure the flag exists to fix. `isCampaignServiceJobId`
+    // the JOBS flag went on, which is the failure the flag exists to fix. With CREATE on, both id
+    // shapes are in flight at once — which is the case the id check really serves.
+    // `isCampaignServiceJobId`
     // adds the second condition, and it needs no separate flag of its own: a `job_` id can only
     // have come from this process and a UUID can only have come from campaign-service, so ids
     // minted either side of the create cutover keep resolving against the store that holds them.
@@ -280,7 +360,29 @@ export class CampaignController {
       // running — turning a transient outage into a spurious terminal state the client
       // stops polling on. Letting the error through keeps the failure visible and the
       // flag is the way back.
-      const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
+      // The slug the create was made under. campaign-service stores it on the brief and `GetJob`
+      // joins on it with an EXACT comparison, so polling under a different project answers
+      // `not_found` for a job that exists — and `not_found` is terminal for the poller.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      if (viaCampaignService && projectSlug === '') {
+        // Refuse rather than guess. The old module constant guessed 'tlf' for everyone, which was
+        // survivable only while no UUID job could exist; creation through campaign-service is what
+        // makes them real. Guessing here would answer "campaign lost" for another foundation's job.
+        // `ServiceValidationError`, matching the `jobId` check above and every other validation
+        // failure in this file. A bare `Error` is not a `BaseApiError`, so the error middleware
+        // falls through to a generic 500 `{ error: 'Internal server error' }` — the message below
+        // never reaches the client, and a missing query param is reported as a server fault.
+        next(
+          ServiceValidationError.forField('project', 'a campaign-service job poll requires the project it was created under', {
+            operation: 'campaign_job_status',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      const status = viaCampaignService
+        ? await this.campaignServiceClient.getJobStatus(req, jobId, projectSlug)
+        : await this.proxyService.getJobStatus(req, jobId);
       logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
     } catch (error) {
@@ -829,5 +931,153 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /**
+   * The per-platform config envelope campaign-service expects, built from the legacy request.
+   *
+   * The service's `config` is an object keyed by `googleAdsConfig` / `linkedInConfig` /
+   * `redditConfig` / `metaConfig` with `hsToken` as a top-level sibling. LinkedIn and Reddit carry
+   * the service's own field names already, so those are projections; Google and Meta are
+   * translations, because the legacy request stores their inputs in a different shape (see each
+   * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
+   * absent config as "not selected", and a null one as a malformed selection.
+   */
+  private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
+    const envelope: Record<string, unknown> = {};
+    if (body?.hsToken) envelope['hsToken'] = body.hsToken;
+
+    const googleAdsConfig = this.buildGoogleAdsConfig(body);
+    if (googleAdsConfig) envelope['googleAdsConfig'] = googleAdsConfig;
+
+    const linkedInConfig = this.buildLinkedInConfig(body);
+    if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
+    if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
+
+    const metaConfig = this.buildMetaConfig(body);
+    if (metaConfig) envelope['metaConfig'] = metaConfig;
+
+    return envelope;
+  }
+
+  /**
+   * Google's config, translated from the flat legacy request.
+   *
+   * Google is the one platform whose inputs live on the request root rather than in a
+   * `<platform>Config` object, because the legacy path had a dedicated Google endpoint. Every
+   * field below is one the dispatcher reads from `config` and cannot recover from the stored
+   * brief: sending nothing creates a campaign with no budget and an ad group with no criteria,
+   * which per `googleAdsConfig.Keywords` "can never serve". The dispatcher's remaining optional
+   * fields are omitted because this request has no source for them — `audienceSegments` expects
+   * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
+   * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
+   *
+   * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
+   * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
+   * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
+   * no Search campaign to fund, so this returns null.
+   *
+   * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
+   * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
+   * caller already refused; it did not. `platforms` was passed through unfiltered, and
+   * campaign-service reads an absent config key as a zero value, so google-ads dispatched with
+   * budget 0 and no headlines. The refusal is real now rather than assumed.
+   */
+  private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.platforms?.includes('google-ads')) return null;
+
+    const types = body.campaignTypes ?? [];
+    const includesSearch = types.includes('search');
+    if (!includesSearch) return null;
+
+    const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
+    //
+    // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
+    // the ad ACCOUNT's currency (NOT USD — the client does no FX)" (campaign-service
+    // `internal/dispatch/googleads.go:49`; `meta.go:29` says the same). This field is fed from
+    // `budgetUsd`, so on a non-USD account 5000 becomes 5000 EUR/JPY rather than $5000.
+    //
+    // NOT fixable here: no FX conversion exists anywhere in campaign-service, and the account's
+    // currency is not exposed to this application — the connection read returns no currency field,
+    // so there is nothing to convert against. The real fix is either to surface the account
+    // currency on the connection and convert, or to collect an account-currency amount in the UI
+    // and stop calling it USD. campaign-service already made that second choice for X/Twitter
+    // (`twitter.go:42`: "The old `budgetUsd` name was misleading").
+    //
+    // Left as-is deliberately rather than silently renamed: renaming the variable would not change
+    // the denomination, and would make the gap harder to find. Every account in play today is USD.
+    const budget = ((body.budgetUsd ?? 0) * pct) / 100;
+
+    return {
+      budget,
+      headlines: body.headlines ?? [],
+      descriptions: body.descriptions ?? [],
+      // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
+      // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
+      // dispatcher has no field for.
+      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+    };
+  }
+
+  /**
+   * LinkedIn's config, translated from `linkedInConfig` on the legacy request.
+   *
+   * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
+   * adapter exists at all:
+   *
+   * 1. `adAccountId` is REJECTED on mismatch, not ignored. campaign-service resolves the account
+   *    from its own connection row, and honours a caller override only when it matches exactly —
+   *    `linkedin.go:143` returns "cross-account campaigns are not allowed" otherwise. The legacy
+   *    request carries this application's `LINKEDIN_AD_ACCOUNT_ID`, which has no reason to equal
+   *    the project's connection. Stripped: letting the connection decide is the whole point of
+   *    the cutover, and an override that matches adds nothing.
+   *
+   * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
+   *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
+   *    request carries `targetingProfile` (SINGULAR — the one the user picked) and no exclusions,
+   *    so without this the client fails with "profile not found in runtime config" for the
+   *    ordinary `cloud-native` and `mcp` selections. Both come from `getLinkedInConfig()`, which
+   *    is the same source the legacy path reads.
+   *
+   * The singular `targetingProfile` still travels: it is the user's SELECTION, and the catalogue
+   * is what that selection is resolved against. They are not duplicates of each other.
+   */
+  private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.linkedInConfig) return null;
+
+    // Built by copy-and-delete rather than destructuring-with-rest: the lint config does not
+    // exempt an underscore-prefixed destructured binding, so `{ adAccountId: _x, ...rest }` is a
+    // no-unused-vars error.
+    const rest: Record<string, unknown> = { ...body.linkedInConfig };
+    delete rest['adAccountId'];
+    const runtime = getLinkedInConfig();
+
+    return {
+      ...rest,
+      targetingProfiles: runtime.targetingProfiles,
+      employerExclusions: runtime.employerExclusions,
+    };
+  }
+
+  /**
+   * Meta's config, translated from `metaConfig` on the legacy request.
+   *
+   * The one difference is the budget key: the request says `budgetUsd`, the dispatcher reads
+   * `budget`. Passing the object through unchanged leaves `budget` at its zero value, which the
+   * Meta client rejects with "invalid budget: must be a positive number" on every dispatch.
+   *
+   * SAME KNOWN GAP as `buildGoogleAdsConfig` (LFXV2-3251) — the rename does NOT convert the
+   * denomination.
+   * `meta.go:29`: "Budget is in whole units of the ad ACCOUNT's currency (NOT USD — the client
+   * does no FX conversion)". On a non-USD Meta account this spends the number in that account's
+   * currency. Not fixable here (no FX anywhere in campaign-service, and the account currency is
+   * not exposed to this application); see the fuller note on `buildGoogleAdsConfig`.
+   */
+  private buildMetaConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.metaConfig) return null;
+
+    const { budgetUsd, ...rest } = body.metaConfig;
+    return { ...rest, budget: budgetUsd };
   }
 }

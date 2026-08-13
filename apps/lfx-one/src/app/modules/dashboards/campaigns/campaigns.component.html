@@ -229,14 +229,23 @@
             <lfx-planning-tab
               [programTypeConfig]="activeProgramTypeConfig()"
               (proceedToImplementation)="onProceedToImplementation($event)"
-              (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId)"
+              (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
               data-testid="campaigns-planning-tab" />
           }
         </div>
       }
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-          <lfx-implementation-tab [briefData]="briefOutput()" [briefPersistence]="briefPersistence()" data-testid="campaigns-implementation-tab" />
+          <!-- `briefSaveInFlight` is separate from `briefPersistence` on purpose: the banner state
+               shows `off` during the FIRST save of a session (the cutover flag is unknown until
+               that response lands, and a spinner everywhere it is dark would be wrong), so the
+               banner cannot answer "is a save running". A create issued in that window carries an
+               empty brief id and is terminally refused. -->
+          <lfx-implementation-tab
+            [briefData]="briefOutput()"
+            [briefPersistence]="briefPersistence()"
+            [briefSaveInFlight]="briefSaveInFlight()"
+            data-testid="campaigns-implementation-tab" />
         </div>
       }
       @case ('insights') {

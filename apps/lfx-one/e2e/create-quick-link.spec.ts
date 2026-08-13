@@ -38,6 +38,11 @@
  *       empty-tree/search-reachable bucket, since that shape isn't guaranteed by a single real
  *       account — but when it is, this exercises the path directly rather than only asserting
  *       picker shape.
+ * - M1: (separate describe block, `mobile-chrome` project only — see `skipOnDesktopViewport`)
+ *       LFXV2-3248: the mobile drawer's own Create trigger (`create-rail-button-mobile`) opens a
+ *       distinctly-testid'd popover (`create-menu-mobile`) anchored near the tapped button, not
+ *       pinned at the desktop rail's fixed coordinates — regression guard for the `lg`-scoped
+ *       rail-anchoring CSS in `lens-switcher.component.scss`.
  *
  * What this suite does NOT attempt: a deterministic "committee target selectable for meeting but
  * not newsletter" scenario. That requires a fixture user with a specific, known grant shape
@@ -53,6 +58,8 @@
  *   committee for S1-S8 to run past `beforeEach`; otherwise they skip (see
  *   `skipWhenNoCreatePermission`). S9 lives in its own describe block with a lighter beforeEach
  *   and self-skips independently — see its inline comment.
+ * - M1 only runs under the `mobile-chrome` Playwright project (viewport width < 1024px); it
+ *   self-skips on `chromium`/`firefox` via `skipOnDesktopViewport`.
  *
  * Note: this suite stops at the dialog boundary. It does not assert the post-Continue
  * create page — that path is enforced by each route's writerGuard.
@@ -263,5 +270,76 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
 
     await searchResult.click();
     await expect(continueButton(page)).toBeEnabled();
+  });
+});
+
+// The mobile drawer's own Create trigger is a separate element from the desktop rail button
+// (data-testid="create-rail-button-mobile"), opening a distinctly-testid'd copy of the same
+// popover (data-testid="create-menu-mobile") — see LFXV2-3248. The regression this suite guards
+// (lens-switcher.component.scss's rail-anchoring CSS) is gated at the `lg` breakpoint (1024px,
+// matching tailwind.config.js), so the skip boundary matches that rather than `md` (768px) —
+// a viewport in [768, 1024) still renders the mobile drawer (the app's own responsive split is
+// keyed on `lg`, not `md`), so gating the skip at `md` would incorrectly treat that range as
+// desktop and skip M1 even though the regression this test guards still applies there.
+function skipOnDesktopViewport(page: Page): void {
+  const viewport = page.viewportSize();
+  if (viewport && viewport.width >= 1024) {
+    test.skip(true, 'Mobile-only trigger — desktop uses create-rail-button in the vertical rail');
+  }
+}
+
+test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    skipOnDesktopViewport(page);
+  });
+
+  // M1 — the mobile drawer's own Create button renders and opens its own popover instance
+  test('M1: the mobile "Create" button opens the artifact-type popover from the drawer', async ({ page }) => {
+    await page.getByTestId('mobile-menu-button').click();
+
+    const trigger = page.getByTestId('create-rail-button-mobile');
+    await expect(trigger).toBeVisible({ timeout: RAIL_TIMEOUT });
+    await trigger.click();
+
+    const menu = page.getByTestId('create-menu-mobile');
+    await expect(menu).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('create-menu-mobile-option-meeting')).toBeVisible();
+
+    // Regression guard for the rail-anchoring CSS scoped to the `lg` breakpoint
+    // (lens-switcher.component.scss): assert the computed style directly rather than a pixel-
+    // distance heuristic. A bounding-box comparison against the trigger was tried first, but on
+    // the real Pixel 5 layout the mobile trigger's measured x (~115px, confirmed via a live
+    // authenticated session) sits close enough to the rail's fixed x=56 that any tolerance loose
+    // enough to avoid flaking on icon-group width (canImpersonate() adds/removes an icon,
+    // shifting the trailing `ml-auto` group) would also pass while the bug is present.
+    //
+    // Read `position` off the actual `.p-popover` panel, not `menu` — `menu` (create-menu-mobile)
+    // is the projected content div PrimeNG renders *inside* the popover, and `position` isn't an
+    // inherited CSS property, so reading it off that inner div would always resolve to the UA
+    // default `static` regardless of the outer panel's state, making the assertion a no-op. The
+    // rail-anchoring rule (and PrimeNG's own base stylesheet) target the outer panel element,
+    // identified here by its unique `lfx-create-popover` class.
+    //
+    // Deliberate exception to data-testid-first selection: `<p-popover>` doesn't currently wire a
+    // data-testid onto its panel root — it could via PrimeNG's `pt.root` passthrough (as
+    // button.component.ts does for `aria-pressed`), but adding that is a production-template
+    // change out of scope for this test-only commit. The class this test already relies on to
+    // scope the SCSS override is the stable hook available today.
+    //
+    // `.filter({ visible: true })`: `lfx-lens-switcher` mounts twice at once (desktop rail +
+    // mobile drawer instances in main-layout.component.html), each with its own `.p-popover
+    // .lfx-create-popover` panel. This only resolves to one element today because PrimeNG lazily
+    // creates the panel DOM on first `show()`/`toggle()` — the never-toggled desktop instance's
+    // panel isn't in the DOM during this test. The visibility filter hardens that assumption so a
+    // future PrimeNG version with eager panel creation fails on the real regression instead of a
+    // Playwright strict-mode "resolved to 2 elements" error.
+    const panel = page.locator('.p-popover.lfx-create-popover').filter({ visible: true });
+    const menuPosition = await panel.evaluate((el) => getComputedStyle(el).position);
+    // PrimeNG's own anchor-relative default sets `position: absolute`; the regressed (rail-pinned)
+    // state is `position: fixed`. Assert the specific expected value, not just an exclusion, so an
+    // unrelated regression to some other value (e.g. `static`) doesn't slip through either.
+    expect(menuPosition).toBe('absolute');
   });
 });

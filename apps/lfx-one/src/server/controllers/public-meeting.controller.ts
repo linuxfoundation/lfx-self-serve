@@ -8,7 +8,7 @@ import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegist
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { AuthorizationError } from '../errors/authentication.error';
+import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
   applyHostKeyVisibility,
@@ -500,7 +500,13 @@ export class PublicMeetingController {
 
   /**
    * POST /public/api/meetings/register
-   * Registers a user to a public, non-restricted meeting
+   * Registers an authenticated user to a public, non-restricted meeting.
+   *
+   * Meeting validation (public + non-restricted check) uses M2M so the GET endpoint's viewer
+   * FGA check doesn't block users who aren't yet registered. The user's bearer token is then
+   * restored before calling POST /itx/meetings/{id}/registrants/self so the meeting service
+   * sources identity from the caller's JWT. Authentication is required; unauthenticated
+   * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
@@ -511,41 +517,46 @@ export class PublicMeetingController {
     });
 
     try {
-      // Validate the meeting ID is provided
-      if (!meetingId) {
-        const validationError = ServiceValidationError.forField('meeting_id', 'Meeting ID is required', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      if (!this.validateMeetingId(meetingId, 'register_for_public_meeting', req, next)) {
+        return;
       }
 
-      // Validate required fields
-      if (!registrantData.email || !registrantData.first_name || !registrantData.last_name) {
-        const validationError = ServiceValidationError.fromFieldErrors(
-          {
-            email: !registrantData.email ? 'Email is required' : [],
-            first_name: !registrantData.first_name ? 'First name is required' : [],
-            last_name: !registrantData.last_name ? 'Last name is required' : [],
-          },
-          'Registration data validation failed',
-          {
+      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+        return next(
+          new AuthenticationError('Authentication required to register for a meeting', {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
             path: req.path,
-          }
+          })
         );
-
-        return next(validationError);
       }
 
-      // Generate M2M token
-      const m2mToken = await this.setupM2MToken(req);
+      const userToken = req.bearerToken;
 
-      // Fetch the meeting to validate it's public and non-restricted
-      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      if (!registrantData.first_name || !registrantData.last_name) {
+        return next(
+          ServiceValidationError.fromFieldErrors(
+            {
+              first_name: !registrantData.first_name ? 'First name is required' : [],
+              last_name: !registrantData.last_name ? 'Last name is required' : [],
+            },
+            'Registration data validation failed',
+            {
+              operation: 'register_for_public_meeting',
+              service: 'public_meeting_controller',
+              path: req.path,
+            }
+          )
+        );
+      }
+
+      let meeting: Awaited<ReturnType<typeof this.meetingService.getMeetingById>>;
+      try {
+        await this.setupM2MToken(req);
+        meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      } finally {
+        req.bearerToken = userToken;
+      }
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', meetingId, {
@@ -555,30 +566,10 @@ export class PublicMeetingController {
         });
       }
 
-      // Validate the meeting is public
-      if (meeting.visibility !== MeetingVisibility.PUBLIC) {
-        const authError = new AuthorizationError('Registration is not allowed for non-public meetings', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
+      const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
+      if (authError) return next(authError);
 
-        return next(authError);
-      }
-
-      // Validate the meeting is not restricted
-      if (meeting.restricted) {
-        const authError = new AuthorizationError('Registration is not allowed for restricted meetings', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
-
-        return next(authError);
-      }
-
-      // Add the registrant using M2M token
-      const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
+      const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
 
       logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_id: meetingId,
@@ -616,6 +607,27 @@ export class PublicMeetingController {
       operation,
       service: 'public_meeting_controller',
     });
+  }
+
+  /**
+   * Returns an AuthorizationError if the meeting is non-public or restricted, or null if valid.
+   */
+  private checkMeetingIsPublicAndNotRestricted(req: Request, meeting: Pick<Meeting, 'visibility' | 'restricted'>): AuthorizationError | null {
+    if (meeting.visibility !== MeetingVisibility.PUBLIC) {
+      return new AuthorizationError('Registration is not allowed for non-public meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    if (meeting.restricted) {
+      return new AuthorizationError('Registration is not allowed for restricted meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    return null;
   }
 
   /**

@@ -32,10 +32,7 @@
       }
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select a company via Impersonate to view group participation."
-      data-testid="org-groups-no-company-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view group participation." data-testid="org-groups-no-company-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
       icon="fa-light fa-circle-exclamation"

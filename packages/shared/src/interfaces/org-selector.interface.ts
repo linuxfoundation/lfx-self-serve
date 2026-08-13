@@ -20,6 +20,10 @@ export interface OrgItem {
   isMember?: boolean;
   /** Spec 022 — populated only for inherited (cascading) rows; the parent org's display name, used to render the dropdown tooltip. */
   parentName?: string | null;
+  /** LF membership status from the indexed doc; supplementary detail behind the membership chip. `omitempty` upstream, so absent for many orgs and the UI must degrade to the bare chip. */
+  status?: string | null;
+  /** False only for a row surfaced by staff catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
+  isAssigned?: boolean;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -66,6 +70,17 @@ export interface GetOrgItemsParams {
   selectedUid?: string;
 }
 
+/** A switcher row plus the section heading it introduces, if any. A heading is carried by the first row of its group so an empty group cannot leave a stray heading behind. */
+export interface OrgSelectorRow {
+  display: DisplayOrgItem;
+  /** Non-null only on the first row of a section, and only when the list is sectioned at all. */
+  heading: string | null;
+  /** Membership chip text, precomputed so the template reads a prepared value rather than calling a method per change-detection pass. Null on assigned rows, which carry no chip. */
+  membershipLabel: string | null;
+  /** Finer membership status behind the chip's tooltip, repeated as screen-reader text because a tooltip on a non-focusable span is never announced. Null when upstream omits it. */
+  membershipStatus: string | null;
+}
+
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
 export interface CascadingRoleGrant {
   /** Child org's uid (the inherited grant target). */
@@ -90,6 +105,8 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
+  /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
+  isStaff: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -196,6 +213,8 @@ export interface OrgListState {
   loaded: WritableSignal<boolean>;
   nextPageToken: WritableSignal<string | null>;
   hasMore: Signal<boolean>;
+  /** Last response reported an upstream failure. Lets the list say the search broke rather than that nothing matched — indistinguishable otherwise for a caller with no assigned rows. */
+  upstreamFailed: WritableSignal<boolean>;
   pendingDefaultSelection: WritableSignal<boolean>;
   /** Incremented on every reset; nextPage emissions tagged with the value at dispatch. */
   generation: WritableSignal<number>;
@@ -212,6 +231,8 @@ export interface B2bOrgIndexedDoc {
   is_member?: boolean;
   /** Spec 022 — true when this org has child orgs in the b2b_org index. Drives cascading-children lookup per D-004. */
   is_parent?: boolean;
+  /** Member-service `LF_Membership_Status__c` (`json:"status,omitempty"`), published whole by the indexer. Frequently absent. */
+  status?: string | null;
 }
 
 /** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
@@ -292,6 +313,8 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
+  /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  isStaff: boolean;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -301,4 +324,6 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
+  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
+  isStaff: boolean;
 }

@@ -208,6 +208,9 @@ export class MeetingJoinComponent implements OnInit {
   protected pastMeetingFullAccess = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
+  // Set immediately on self-registration success so the UI responds before the meeting refetch
+  // settles the invited flag (query-service indexing lag).
+  private optimisticInvited = signal(false);
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
@@ -285,6 +288,7 @@ export class MeetingJoinComponent implements OnInit {
   protected hasAttendanceData = computed(() => this.isPastMeeting() && this.participantCount() > 0);
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
+  public effectivelyInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -350,12 +354,26 @@ export class MeetingJoinComponent implements OnInit {
         this.optimisticAddedAttachments.set([]);
       });
 
+    // Reset post-registration optimistic flag when navigating to a different meeting so a
+    // previous registration doesn't grant registrant-list access for an unrelated meeting.
+    // Use getMeetingSeriesUid (not meeting.id) because past-occurrence composite ids differ
+    // from the live-series uid — occurrence navigation must not clear the flag.
+    toObservable(this.meeting)
+      .pipe(
+        map((m) => (m ? getMeetingSeriesUid(m) : undefined)),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.optimisticInvited.set(false));
+
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
     this.pastMeetingParticipants = this.initializePastMeetingParticipants();
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
+    this.effectivelyInvited = computed(() => this.isInvited() || this.optimisticInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canToggleRsvpView = this.initializeCanToggleRsvpView();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -447,7 +465,7 @@ export class MeetingJoinComponent implements OnInit {
 
   public onRegistrantsToggle(): void {
     const meeting = this.meeting();
-    if (!meeting.organizer && !meeting.invited) {
+    if (!meeting.organizer && !meeting.invited && !this.optimisticInvited()) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Show Members is not enabled',
@@ -565,7 +583,8 @@ export class MeetingJoinComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
-        // Trigger refresh to update meeting data with invitation status
+        this.optimisticInvited.set(true);
+        this.registrantsRefresh$.next();
         this.refreshTrigger$.next();
       }
     });
@@ -1097,7 +1116,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializeCanRegisterForMeeting(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
-      return !this.isInvited() && !meeting?.restricted && meeting?.visibility === 'public';
+      return !this.isInvited() && !this.optimisticInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
   }
 
@@ -1394,9 +1413,10 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.currentOccurrence).pipe(distinctUntilChanged((a, b) => a?.occurrence_id === b?.occurrence_id)),
         toObservable(this.authenticated),
         this.registrantsRefresh$,
+        toObservable(this.optimisticInvited),
       ]).pipe(
-        switchMap(([meeting, occurrence, authenticated]) => {
-          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited) || this.isPastMeeting()) {
+        switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
+          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
