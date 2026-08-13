@@ -117,6 +117,14 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-ecla')).toEqual([expect.objectContaining({ label: 'Covered by Corporate CLA (CCLA)', disabled: true })]);
   });
 
+  it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })]);
+
+    const first = menuItems('s-icla');
+    fixture.detectChanges();
+    expect(menuItems('s-icla')).toBe(first);
+  });
+
   it('does not render placeholder Invalidate or Request approval items', async () => {
     await render([
       agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true }),
