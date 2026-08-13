@@ -314,7 +314,7 @@ describe('analytics', () => {
   it('serves a zeroed overview when the query returns no rows', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
-    const overview = await service().getAnalyticsOverview(req, { foundationSlug: 'cncf', ...SCOPE });
+    const overview = await service().getAnalyticsOverview(req, SCOPE);
 
     expect(overview).toEqual({
       TOTAL_MENTIONS: 0,
