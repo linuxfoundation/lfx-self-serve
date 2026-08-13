@@ -618,6 +618,42 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Search the project's HubSpot marketing emails for the template picker.
+   *
+   * `?project=` is required rather than defaulted, for the same reason every other
+   * campaign-service read here requires it: a HubSpot connection is per-project, and guessing the
+   * project would list one foundation's templates to another.
+   *
+   * `?q=` is optional — an empty query lists the most recently updated templates, which is the
+   * useful default when a user does not yet know what they are looking for.
+   */
+  public async searchHubSpotEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'hubspot_email_search',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const rawQuery = req.query['q'];
+    const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+    const startTime = logger.startOperation(req, 'hubspot_email_search', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.searchHubSpotEmails(req, projectSlug, query);
+      logger.success(req, 'hubspot_email_search', startTime, { enabled: result.enabled, count: result.emails.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async lookupHubSpotUtm(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rawEventName = req.query['event_name'];
     const eventName = typeof rawEventName === 'string' ? rawEventName : undefined;
