@@ -16,8 +16,8 @@
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
  *   S5  Project lens — contributor without canWrite hides Newsletters
  *   S6  Project lens — contributor with canWrite sees Newsletters
- *   S7  Route guard — executiveDirectorGuard redirects non-ED to /foundation/overview
- *   S8  Route guard — executiveDirectorGuard passes for ED persona
+ *   S7  Route guard — executiveDirectorGuard redirects non-ED to /foundation/overview (incl. /foundation/social-listening)
+ *   S8  Route guard — executiveDirectorGuard passes for ED persona (incl. /foundation/social-listening page content)
  *   S9  Route guard — writerGuard redirects contributor without write access
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
@@ -186,6 +186,20 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ sfid: null }),
+    })
+  );
+}
+
+/**
+ * Every social-listening endpoint is Snowflake-backed, so the page is stubbed empty — the
+ * assertions are about the guard letting an ED through, not about feed content.
+ */
+async function stubSocialListeningApi(page: Page): Promise<void> {
+  await page.route('**/api/social-listening/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mentions: [], computedAt: null, total: 0, options: [], data: [] }),
     })
   );
 }
@@ -493,6 +507,24 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
       timeout: ELEMENT_TIMEOUT,
     });
   });
+
+  test('board-member navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+    await stubPersona(page, ['board-member']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+    await setPersonaCookie(page, ['board-member']);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=board-member should be redirected away from /foundation/social-listening').toHaveURL(/\/foundation\/overview/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-page'), 'persona=board-member should never render the social listening page').toHaveCount(0);
+  });
 });
 
 test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona', () => {
@@ -511,6 +543,30 @@ test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona'
     await expect(page, 'persona=executive-director should remain on /foundation/health-metrics').toHaveURL(/\/foundation\/health-metrics/, {
       timeout: ELEMENT_TIMEOUT,
     });
+  });
+
+  test('ED navigating to /foundation/social-listening reaches the page and sees its content', async ({ page }) => {
+    await stubPersona(page, ['executive-director']);
+    await stubNavLensItems(page, 'foundation');
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, true);
+    await stubSocialListeningApi(page);
+    await setPersonaCookie(page, ['executive-director']);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=executive-director should remain on /foundation/social-listening').toHaveURL(/\/foundation\/social-listening/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-page'), 'persona=executive-director lens=foundation page=social-listening').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('social-listening-title'), 'persona=executive-director lens=foundation page=social-listening title').toHaveText(
+      'Social Listening'
+    );
   });
 });
 
