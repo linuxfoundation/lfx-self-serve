@@ -44,7 +44,7 @@
       <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
         @switch (composer.activeSection()) {
           @case ('details-access') {
-            <lfx-meeting-type-selection [form]="formService.form()" />
+            <lfx-composer-details-access [form]="formService.form()" />
           }
           @case ('date-schedule') {
             <lfx-meeting-details [form]="formService.form()" />

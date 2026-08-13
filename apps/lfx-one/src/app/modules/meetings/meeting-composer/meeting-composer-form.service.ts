@@ -192,14 +192,10 @@ export class MeetingComposerFormService {
 
     switch (section) {
       case 'details-access':
-        return !!form.get('meeting_type')?.value;
+        return !!(form.get('title')?.value && form.get('title')?.valid && form.get('meeting_type')?.value);
 
-      // `title` is checked here because that is where the field currently renders; LFXV2-3235 moves it
-      // into Details & Access. Gating a section on a control the user cannot see would deadlock Next.
       case 'date-schedule':
         return !!(
-          form.get('title')?.value &&
-          form.get('title')?.valid &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&

@@ -16,9 +16,9 @@ import { MeetingDetailsComponent } from '../components/meeting-details/meeting-d
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
 import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
-import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
+import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
 
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
@@ -32,7 +32,7 @@ import { MeetingComposerService } from './meeting-composer.service';
     NgClass,
     DrawerModule,
     ButtonComponent,
-    MeetingTypeSelectionComponent,
+    ComposerDetailsAccessComponent,
     MeetingDetailsComponent,
     MeetingPlatformFeaturesComponent,
     MeetingRegistrantsManagerComponent,
@@ -111,9 +111,9 @@ export class MeetingComposerHostComponent {
     this.formService.registrantUpdates.set(updates);
   }
 
-  /** Jumps to whichever section currently owns the title field. */
+  /** Jumps to the section that owns the title field. */
   protected onGoToTitleSection(): void {
-    this.composer.setSection('date-schedule');
+    this.composer.setSection('details-access');
   }
 
   protected onSubmit(): void {
