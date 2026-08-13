@@ -36,7 +36,7 @@ describe('EventRosterSectionComponent', () => {
 
   // `slug` is deliberately not a defaulted parameter — passing an explicit `undefined` must mean
   // "no foundation", which a default value would silently override.
-  async function render(events: EventRosterRow[], slug: string | undefined): Promise<void> {
+  async function render(events: EventRosterRow[], slug: string | undefined, eventsSplit: 'attendance' | 'sponsorship' | null = null): Promise<void> {
     const response: EventRosterResponse = { projectId: 'proj-1', events };
     getEventRoster = vi.fn().mockReturnValue(of(response));
 
@@ -48,6 +48,7 @@ describe('EventRosterSectionComponent', () => {
 
     fixture = TestBed.createComponent(EventRosterSectionComponent);
     fixture.componentRef.setInput('foundationSlug', slug);
+    fixture.componentRef.setInput('eventsSplit', eventsSplit);
     await fixture.whenStable();
   }
 
@@ -262,6 +263,37 @@ describe('EventRosterSectionComponent', () => {
 
     const drawer = fixture.debugElement.query(By.directive(EventDetailDrawerComponent));
     expect(drawer.componentInstance.focus()).toBe('b2b');
+  });
+
+  // The split hides the opposite metric column and changes which drawer story a row opens. Only
+  // the unsplit state was covered, so both halves could regress with the suite still green.
+  describe('events split', () => {
+    it('hides the sponsorship column under the attendance split', async () => {
+      await render([row({ eventId: 'evt-1' })], 'tlf', 'attendance');
+
+      expect(fixture.nativeElement.querySelector('[data-testid="event-roster-b2c-evt-1"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="event-roster-b2b-evt-1"]')).toBeNull();
+    });
+
+    it('hides the registrations column under the sponsorship split', async () => {
+      await render([row({ eventId: 'evt-1' })], 'tlf', 'sponsorship');
+
+      expect(fixture.nativeElement.querySelector('[data-testid="event-roster-b2b-evt-1"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="event-roster-b2c-evt-1"]')).toBeNull();
+    });
+
+    // A row click carries the split through to the drawer, so the sponsorship view opens the
+    // revenue story rather than the b2c default.
+    it('opens the drawer on the story matching the split', async () => {
+      await render([row({ eventId: 'evt-1' })], 'tlf', 'sponsorship');
+
+      rowEls()[0].click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const drawer = fixture.debugElement.query(By.directive(EventDetailDrawerComponent));
+      expect(drawer.componentInstance.focus()).toBe('b2b');
+    });
   });
 
   it('refetches when the past-events toggle changes', async () => {

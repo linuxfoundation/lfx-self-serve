@@ -110,6 +110,24 @@ describe('EmailTabComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('latest');
   });
 
+  // The ordering contract: newest first, undated last. A single-campaign fixture cannot see it.
+  it('orders sends newest first and puts undated rows last', async () => {
+    await renderCampaigns([
+      { ...campaign('2026-07-04'), campaignName: 'Older' },
+      { ...campaign(null), campaignName: 'Undated' },
+      { ...campaign('2026-07-20'), campaignName: 'Newest' },
+      { ...campaign('2026-07-11'), campaignName: 'Middle' },
+    ]);
+
+    // First cell of each row is the campaign name; the row's cells render without separators, so
+    // read the name cell directly rather than splitting the row text.
+    const names = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="email-campaign-row-"]') as NodeListOf<HTMLElement>).map(
+      (el) => el.querySelector('span')?.textContent?.trim() ?? ''
+    );
+    expect(names).toEqual(['Newest', 'Middle', 'Older', 'Undated']);
+    expect(fixture.nativeElement.textContent).toContain('4 sends');
+  });
+
   it('formats a valid send date for display', async () => {
     await render('2026-07-14');
 

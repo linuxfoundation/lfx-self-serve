@@ -187,8 +187,10 @@ export class EmailTabComponent {
       const data = this.emailData();
       if (!data?.emailTypeBreakdown?.length) return [];
 
-      // Every send in the selected period, newest first — deliberately uncapped so the table is a
-      // complete listing rather than a top-N. Undated rows sort last so they can't head the table.
+      // Sends in the selected period, newest first, capped at EMAIL_SENDS_ROW_LIMIT — the query
+      // behind this is unbounded, so an uncapped list builds every row during SSR and hydration.
+      // The cap is a render bound, not a ranking: the header says "latest N sends" when it bites.
+      // Undated rows sort last so they can't head the table.
       const allCampaigns = data.emailTypeBreakdown.flatMap((et) => et.campaigns ?? []);
       return allCampaigns
         .sort((a, b) => {
