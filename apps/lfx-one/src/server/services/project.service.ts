@@ -5426,7 +5426,14 @@ export class ProjectService {
       registrationRevenue: { actual: null, goal: row.REGREV_GOAL ?? 0 },
       sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
       vsLastYear: row.VS_LY,
-      hasPriorYear: row.CREATED_LAST_YEAR === true,
+      // Derived from the measured prior-year total rather than EVENT_CREATED_LAST_YEAR, which
+      // contradicts the rest of its own row: Linux Security Summit Europe 2026 carries
+      // CREATED_LAST_YEAR = false beside PERCENT_COMPARISON_TO_PREV_YEAR = 1.09 and COMP_SCORE
+      // 'high', with five prior editions in the predictions table and a prior-year total of 46.
+      // Trusting the flag rendered "no prior year" next to an "Ahead of last year" badge reading
+      // COMP_SCORE — two cards contradicting each other from one row. The pacing read already
+      // computes this total, so the whole drawer now answers the question from one measured fact.
+      hasPriorYear: (pacing.priorYear ?? 0) > 0,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
       sponsorshipTiers: tierResult.rows.map((t) => ({

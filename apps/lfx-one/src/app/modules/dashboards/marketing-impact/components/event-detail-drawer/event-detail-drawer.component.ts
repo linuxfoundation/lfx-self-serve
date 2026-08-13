@@ -281,6 +281,11 @@ export class EventDetailDrawerComponent {
    * goal". Naming the baseline is what makes both readable as true at once.
    */
   protected readonly paceRatingLabel = computed(() => {
+    // Gated on hasPriorYear for the same reason the "vs Last year" card is: every label here
+    // names last year as its baseline, so without a prior edition there is nothing to be ahead
+    // of. The warehouse supplies a compScore regardless, which put "Ahead of last year" directly
+    // above "no prior year" on the same event.
+    if (!this.detail()?.hasPriorYear) return 'No pace signal';
     switch (this.detail()?.compScore) {
       case 'high':
         return 'Ahead of last year';
@@ -319,6 +324,9 @@ export class EventDetailDrawerComponent {
   // === Protected Helpers (template) ===
   /** lfx-tag severity for the registration-pace rating. */
   protected paceSeverity(): 'success' | 'warn' | 'danger' | 'secondary' {
+    // Same gate as paceRatingLabel, which it colours: without it a "No pace signal" badge kept
+    // compScore's green, reading as a healthy verdict the label explicitly declines to make.
+    if (!this.detail()?.hasPriorYear) return 'secondary';
     switch (this.detail()?.compScore) {
       case 'high':
         return 'success';

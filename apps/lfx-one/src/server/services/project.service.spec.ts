@@ -593,6 +593,45 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(curve!).not.toMatch(/ORDER BY DAYS_TO_EVENT\s+DESC/i);
     });
 
+    // hasPriorYear comes from the measured prior-year total, not EVENT_CREATED_LAST_YEAR, because
+    // that flag contradicts the rest of its own row: Linux Security Summit Europe 2026 carries
+    // CREATED_LAST_YEAR = false beside a 1.09 comparison ratio and COMP_SCORE 'high', with five
+    // prior editions on record. Reading the flag rendered "no prior year" beneath an "Ahead of
+    // last year" badge — one row, two cards, opposite claims.
+    // Routed on the SQL rather than call order: getEventDetail fans its campaign and pacing reads
+    // out through Promise.all, so a positional mock silently feeds the pacing head row to whichever
+    // query happens to resolve in that slot.
+    function mockWithPacingHead(event: unknown, priorYear: number): void {
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
+          return Promise.resolve({
+            rows: [{ DAYS_LEFT: 30, CUR_REGS: 48, PRIOR: priorYear, PRED_AVG: 200, PRED_LOW: 190, PRED_HIGH: 210 }],
+          });
+        }
+        if (text.includes('MARKETING_EVENT_REGISTRATIONS r')) return Promise.resolve({ rows: [event] });
+        return Promise.resolve({ rows: [] });
+      });
+    }
+
+    it('reports a prior year from the measured total, not the CREATED_LAST_YEAR flag', async () => {
+      mockWithPacingHead({ ...eventRow, CREATED_LAST_YEAR: false }, 46);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result.hasPriorYear).toBe(true);
+    });
+
+    // The mirror case: no measured prior-year registrations means no baseline, whatever the
+    // warehouse says elsewhere, so the drawer falls back to its "no prior year" branch.
+    it('reports no prior year when the prior-year total is zero', async () => {
+      mockWithPacingHead({ ...eventRow, CREATED_LAST_YEAR: true }, 0);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result.hasPriorYear).toBe(false);
+    });
+
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
     // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so

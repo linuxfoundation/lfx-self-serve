@@ -181,6 +181,20 @@
               <div class="h-[240px]" data-testid="event-detail-pacing-chart">
                 <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
               </div>
+              <!-- Said outright rather than left to the legend: with no prior edition the chart
+                   carries current and predicted but no Last year line, and a reader who cannot
+                   see why reasonably assumes the comparison is broken. -->
+              @if (!d.hasPriorYear) {
+                <p class="text-xs text-gray-400" data-testid="event-detail-pacing-no-prior">
+                  No prior event data — showing this year and the prediction only.
+                </p>
+              }
+            } @else {
+              <!-- The curve read degrades to an empty array on failure, so without this the card
+                   renders its headline above blank space and says nothing about why. -->
+              <p class="text-sm text-gray-500" data-testid="event-detail-pacing-curve-unavailable">
+                Day-by-day pacing is unavailable for this event.
+              </p>
             }
           } @else {
             <p class="text-sm text-gray-500">Day-by-day pacing prediction is coming to this view.</p>
