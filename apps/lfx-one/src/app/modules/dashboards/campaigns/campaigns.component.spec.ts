@@ -1060,6 +1060,40 @@ describe('CampaignsComponent brief persistence', () => {
     expect(state().status).toBe('off');
   });
 
+  /**
+   * Two saves queued: the flag must stay true across the seam between them.
+   *
+   * Saves serialise on `persistChain` and each appends its own clear. With a boolean, both
+   * `set(true)` calls ran synchronously at enqueue time while A's clear landed between A finishing
+   * and B starting — so the flag went false with a save still pending, and Create re-enabled in
+   * exactly the window the guard exists to close. Counting is what closes it.
+   */
+  it('keeps the in-flight flag set while a second save is still queued', async () => {
+    const first = new Subject<CampaignBriefPersistResult>();
+    const second = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    // Two saves for DIFFERENT events, no program switch: switching discards the brief, so that
+    // save is dropped rather than queued and its clear never runs — which is a different case.
+    proceed();
+    proceed(otherBrief);
+    await fixture.whenStable();
+
+    // A resolves; B is still outstanding.
+    first.next({ enabled: true, briefId: 'brief-a', etag: 'W/"1"', created: true, approved: true });
+    first.complete();
+    // Drain generously: A's chain link has several `.then` steps before B's request is issued.
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+
+    second.next({ enabled: true, briefId: 'brief-b', etag: 'W/"1"', created: true, approved: true });
+    second.complete();
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
+  });
+
   it('clears the in-flight flag when a save FAILS, not only when it succeeds', async () => {
     // The stuck-forever case. Clearing it in the success arm alone would leave Create disabled
     // for the rest of the session after one failed save.

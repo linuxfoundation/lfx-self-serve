@@ -97,6 +97,15 @@ export class CampaignsComponent {
   protected readonly briefSaveInFlight = signal(false);
 
   /**
+   * How many saves are enqueued or running. Backs `briefSaveInFlight`.
+   *
+   * Saves are serialised on `persistChain`, so more than one can be outstanding: each appends its
+   * own clear, and with two queued the first one's clear lands between A finishing and B starting.
+   * Counting is what keeps the signal true across that seam.
+   */
+  private pendingBriefSaves = 0;
+
+  /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
    * rules forbid — and which would read badly here anyway, since the three cases are unrelated
    * situations rather than degrees of one.
@@ -694,6 +703,13 @@ export class CampaignsComponent {
 
     // Set for BOTH branches, unlike the banner above. Whether a save is running has nothing to do
     // with whether we have decided to show a spinner for it.
+    //
+    // A COUNTER, not a boolean, because saves queue. Both `set(true)` calls run synchronously at
+    // enqueue time, but each save appends its own clear to the chain — so with two saves queued,
+    // A's clear lands between A finishing and B starting, and B never re-asserts. The flag went
+    // false while a save was still pending, which is exactly the window this guard exists to
+    // close. The count is decremented in the chain, so it only reaches zero when the queue drains.
+    this.pendingBriefSaves += 1;
     this.briefSaveInFlight.set(true);
 
     this.persistChain = this.persistChain.then(() => {
@@ -919,8 +935,12 @@ export class CampaignsComponent {
     // NOT generation-gated, unlike the banner writes above. This says "no save is running", and
     // that is true of the whole component once the chain drains — gating it on generation would
     // leave the flag set forever whenever a superseded save is the last to finish.
+    //
+    // Decrement-and-test, so a save queued behind this one keeps the flag set: with two enqueued,
+    // this clear belongs to A and runs immediately before B's request starts.
     this.persistChain = this.persistChain.then(() => {
-      this.briefSaveInFlight.set(false);
+      this.pendingBriefSaves = Math.max(0, this.pendingBriefSaves - 1);
+      this.briefSaveInFlight.set(this.pendingBriefSaves > 0);
     });
   }
 
