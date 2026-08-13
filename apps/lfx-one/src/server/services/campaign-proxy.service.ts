@@ -626,6 +626,11 @@ export class CampaignProxyService {
     }
 
     const isRefinement = !!body.refineFeedback && !!body.previousCopy;
+    // Resolved HERE rather than beside the copy block below, because the extraction-failure
+    // message further down promises "generating copy from URL" — which is false for email, where
+    // no copy is generated at all. A status line that names work the stream will not do is the
+    // same class of falsehood as a silent skip.
+    const isEmail = body.deliveryType === 'email';
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
@@ -680,7 +685,12 @@ export class CampaignProxyService {
         };
       } catch (error) {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
-        yield { type: 'status', data: `Could not extract structured ${extractLabel}, generating copy from URL...` };
+        yield {
+          type: 'status',
+          data: isEmail
+            ? `Could not extract structured ${extractLabel}; continuing with the URL only.`
+            : `Could not extract structured ${extractLabel}, generating copy from URL...`,
+        };
       }
 
       const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
@@ -703,7 +713,6 @@ export class CampaignProxyService {
     // An email brief has no ad channels, so the paid default must not apply. `platforms` absence
     // cannot carry that meaning on its own — it already means "use the default" for every paid
     // caller — so the delivery type is read explicitly.
-    const isEmail = body.deliveryType === 'email';
     const selectedPlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
 
     // SKIPPED for email, not run with an empty platform list. `buildCopySystemPrompt` composes
@@ -1567,8 +1576,10 @@ function extractEventNameFromUrl(url: string): string {
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
-  // No email branch: buildCopyPrompt is only reached from the two ad-copy paths, and both refuse
-  // email before calling it (generate skips the block, refine returns an error).
+  // No email branch: only the GENERATE path reaches this function, and it skips the whole ad-copy
+  // block for email before calling it. (Refine builds its prompt with `buildRefinePrompt`, not
+  // this one, and refuses email earlier still — an earlier version of this comment said "the two
+  // ad-copy paths", which named the wrong function for half of the claim.)
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');

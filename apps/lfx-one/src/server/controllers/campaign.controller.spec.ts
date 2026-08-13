@@ -796,3 +796,47 @@ describe('CampaignController.searchHubSpotEmails', () => {
     expect(next).toHaveBeenCalledWith(failure);
   });
 });
+
+/**
+ * The email refusal has to happen HERE, not only in the service.
+ *
+ * An email brief has no generated copy and no keywords, so the paid-only field checks in
+ * `refineBrief` fire first and answer "currentCopy is required" — true, but it names a field the
+ * caller cannot supply and hides the real reason. The service refuses email refines too, and that
+ * guard stays (it is not the only caller), but only this path is reached over HTTP.
+ */
+describe('CampaignController.refineBrief email refusal', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('says refining email is unsupported rather than "currentCopy is required"', async () => {
+    // The shape an email brief really produces: no structured copy, no keywords.
+    const body = { deliveryType: 'email', feedback: 'shorter subject', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Refining email copy is not supported yet.' });
+    // Not routed to the error middleware as a field-validation failure.
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('still validates currentCopy for a PAID refine', async () => {
+    // The contrast: without it the guard above could swallow every refine, email or not.
+    const body = { feedback: 'punchier', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+  });
+});

@@ -152,6 +152,17 @@ export class CampaignController {
       return;
     }
 
+    // BEFORE the paid-only field checks below, deliberately. An email brief has no generated copy
+    // and no keywords — `structuredCopy` is null and `currentKeywords` is empty — so those checks
+    // fire first and answer "currentCopy is required", which is true but useless: it names a field
+    // the caller cannot supply and hides the actual reason. The service refuses email refines too
+    // (that guard stays, since this controller is not the only caller), but only this one is
+    // reached over HTTP, so only this one decides what the user reads.
+    if (body.deliveryType === 'email') {
+      res.status(400).json({ error: 'Refining email copy is not supported yet.' });
+      return;
+    }
+
     if (!body.currentCopy || typeof body.currentCopy !== 'object' || Array.isArray(body.currentCopy)) {
       const validationError = ServiceValidationError.forField('currentCopy', 'currentCopy is required', {
         operation: 'campaign_refine_brief',
