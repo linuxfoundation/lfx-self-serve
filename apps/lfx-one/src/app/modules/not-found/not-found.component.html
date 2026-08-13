@@ -1,6 +1,5 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
-<lfx-header [showMyMeetings]="false"></lfx-header>
 
 <div class="bg-gray-50 min-h-screen">
   <div class="container mx-auto py-6 px-8">
@@ -19,9 +18,20 @@
             The link you followed doesn't exist in LFX. This can happen from a mistyped URL or a stale bookmark.
           </p>
 
-          <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <lfx-button routerLink="/" icon="fa-light fa-house" label="Go to Dashboard" size="small" data-testid="not-found-dashboard-button"></lfx-button>
-            <lfx-button (click)="goBack()" label="Go Back" size="small" severity="secondary" icon="fa-light fa-arrow-left" data-testid="not-found-back-button">
+          <div class="flex sm:items-center flex-col sm:flex-row gap-6 justify-center">
+            <lfx-button routerLink="/" class="flex items-center" size="small" data-testid="not-found-dashboard-button">
+              <i class="fa-light fa-home mr-2"></i>
+              <span>Go to Dashboard</span>
+            </lfx-button>
+
+            <lfx-button
+              lfxOpenIntercom
+              class="flex items-center"
+              data-testid="not-found-contact-support-button"
+              icon="fa-light fa-life-ring"
+              label="Contact Support"
+              size="small"
+              severity="secondary">
             </lfx-button>
           </div>
         </div>

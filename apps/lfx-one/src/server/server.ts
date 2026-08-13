@@ -479,21 +479,33 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     impersonating: !!auth.impersonating,
   });
 
+  // Mutable per-request context — a not-found view sets `notFound` during SSR (via REQUEST_CONTEXT,
+  // the same object reference) so we emit a real 404 at the originally-requested path (no redirect).
+  const renderContext = {
+    auth,
+    runtimeConfig,
+    notFound: false,
+    providers: [
+      { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
+      { provide: REQUEST, useValue: req },
+    ],
+  };
+
   angularApp
-    .handle(req, {
-      auth,
-      runtimeConfig,
-      providers: [
-        { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
-        { provide: REQUEST, useValue: req },
-      ],
-    })
+    .handle(req, renderContext)
     .then((response) => {
-      if (response) {
-        return writeResponseToNodeResponse(response, res);
+      if (!response) {
+        return next();
       }
 
-      return next();
+      // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
+      // The `=== 200` guard avoids clobbering redirects or an already-set status.
+      const finalResponse =
+        renderContext.notFound && response.status === 200
+          ? new globalThis.Response(response.body, { status: 404, statusText: 'Not Found', headers: response.headers })
+          : response;
+
+      return writeResponseToNodeResponse(finalResponse, res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {

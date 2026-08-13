@@ -98,6 +98,9 @@ export * from './mailing-list.interface';
 // Runtime config interfaces
 export * from './runtime-config.interface';
 
+// Server request context (SSR REQUEST_CONTEXT shape)
+export * from './server-request-context.interface';
+
 // Poll interfaces
 export * from './poll.interface';
 
