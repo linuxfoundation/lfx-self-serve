@@ -8014,13 +8014,32 @@ export class ProjectService {
         -- day, so "today" is DAYS_LEFT_FROM_YESTERDAY (negative while the event is upcoming, e.g.
         -- -54 with the curve spanning -86..0) — not the end of the series. Splitting at 0 would
         -- mark the entire curve, future days included, as current-year.
-        SUM(CASE WHEN DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY THEN CUMULATIVE_AVG_PREDICTED_REGISTRATIONS END) AS CUR_REGS,
-        SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
-        SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
-        SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
-        SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
-      WHERE EVENT_ID = ?
+        SUM(CUR_REGS) AS CUR_REGS,
+        SUM(PRIOR) AS PRIOR,
+        SUM(PRED_AVG) AS PRED_AVG,
+        SUM(PRED_LOW) AS PRED_LOW,
+        SUM(PRED_HIGH) AS PRED_HIGH
+      FROM (
+        -- Collapsed per registration type before summing across them. The table carries duplicate
+        -- (event, type, day) rows — 1,669 such groups, two rows with the same values and different
+        -- _KEYs — and summing them doubled that day's point: Open Source Summit EU 2026 spiked from
+        -- 1,244 to 2,488 on a single day, drawing a vertical needle through the curve.
+        --
+        -- ANY_VALUE, not MAX: the duplicates hold identical values, so this deduplicates rather
+        -- than picking a winner. Summing across EVENT_REGISTRATION_TYPE (In Person / Virtual) is
+        -- still correct and still happens — in the outer query, where each type contributes once.
+        SELECT
+          DAYS_TO_EVENT,
+          EVENT_REGISTRATION_TYPE,
+          ANY_VALUE(CASE WHEN DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY THEN CUMULATIVE_AVG_PREDICTED_REGISTRATIONS END) AS CUR_REGS,
+          ANY_VALUE(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
+          ANY_VALUE(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
+          ANY_VALUE(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
+          ANY_VALUE(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+        WHERE EVENT_ID = ?
+        GROUP BY DAYS_TO_EVENT, EVENT_REGISTRATION_TYPE
+      )
       GROUP BY DAYS_TO_EVENT
       -- Ascending, matching PCC: DAYS_TO_EVENT runs from the earliest day (most negative) up to 0
       -- on the event day, and the chart maps this array straight onto the x-axis. DESC would plot

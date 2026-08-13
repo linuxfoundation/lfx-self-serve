@@ -632,6 +632,26 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(result.hasPriorYear).toBe(false);
     });
 
+    // The table holds duplicate (event, type, day) rows — 1,669 such groups, two rows carrying the
+    // same values under different _KEYs. Summing them straight doubled that day alone: Open Source
+    // Summit EU 2026 jumped 1,244 -> 2,488 on one day, drawing a vertical needle mid-curve. Each
+    // registration type has to collapse to one row before the types are summed together.
+    it('collapses duplicate rows per registration type before summing the curve', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const curve = execute.mock.calls
+        .map(([sql]) => String(sql))
+        .find((sql) => sql.includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS') && sql.includes('DAYS_TO_EVENT'));
+
+      expect(curve).toBeDefined();
+      // Grouped by type in an inner query, so the outer SUM sees one row per type per day.
+      expect(curve!).toContain('GROUP BY DAYS_TO_EVENT, EVENT_REGISTRATION_TYPE');
+      // The raw columns must not be summed directly — that is the doubling.
+      expect(curve!).not.toMatch(/SUM\(\s*CUMULATIVE_AVG_PREDICTED_REGISTRATIONS\s*\)/);
+    });
+
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
     // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so
