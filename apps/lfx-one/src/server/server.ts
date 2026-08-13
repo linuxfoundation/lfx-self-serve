@@ -493,19 +493,20 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
   angularApp
     .handle(req, renderContext)
-    .then((response) => {
+    .then(async (response) => {
       if (!response) {
         return next();
       }
 
       // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
-      // The `=== 200` guard avoids clobbering redirects or an already-set status.
-      const finalResponse =
-        renderContext.notFound && response.status === 200
-          ? new globalThis.Response(response.body, { status: 404, statusText: 'Not Found', headers: response.headers })
-          : response;
+      // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
+      if (renderContext.notFound && response.status === 200) {
+        const body = await response.text();
+        const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
+        return writeResponseToNodeResponse(finalResponse, res);
+      }
 
-      return writeResponseToNodeResponse(finalResponse, res);
+      return writeResponseToNodeResponse(response, res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
