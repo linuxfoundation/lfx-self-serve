@@ -9,6 +9,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
+  CampaignImplementationDraft,
   CampaignDeliveryType,
   CampaignProgramType,
   CampaignTab,
@@ -1487,5 +1488,256 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Still the paid brief: a shared signal here would show an email brief under Paid
     // Marketing's Implement tab after a round-trip.
     expect(internals().briefOutput()).toEqual(exampleBrief);
+  });
+});
+
+/**
+ * LFXV2-3229: leaving the Implement tab must not discard what the user typed.
+ *
+ * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves the LinkedIn ad-account list in
+ * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 (PR #1437, pending) proposes mounting the planner would issue that
+ * request on every page load for a tab many users never open. The component is therefore still
+ * destroyed on a tab switch; what changed is that its edits now live on the parent.
+ *
+ * Driven through the real DOM rather than by poking the child, because the destruction IS the
+ * mechanism under test — a test that kept one child instance alive would prove nothing.
+ */
+describe('CampaignsComponent — Implementation edits survive a tab switch', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+
+  interface Internals {
+    selectedTab: WritableSignal<CampaignTab>;
+    briefOutput: WritableSignal<CampaignBriefOutput | null>;
+    implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
+    selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
+    onProceedToImplementation(brief: CampaignBriefOutput): void;
+    resetToPlanning(): void;
+  }
+  const internals = (): Internals => fixture.componentInstance as unknown as Internals;
+
+  const briefFor = (slug: string): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon', slug, countryCode: 'US', registrationUrl: 'https://example.com' },
+      totalBudget: 500,
+      selectedPlatforms: ['google-ads'],
+      structuredCopy: { google_search: { headlines: ['Generated A', 'Generated B'], descriptions: ['Generated desc'] } },
+    }) as unknown as CampaignBriefOutput;
+
+  /** The first headline input inside the Implement panel, which is what a user actually types in. */
+  const headlineInput = (): HTMLInputElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-headline-0"]');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture.detectChanges();
+  });
+
+  /** The budget-split slider, and the label DERIVED from it through `toSignal(valueChanges)`. */
+  const budgetSlider = (): HTMLInputElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-split"]');
+  const budgetLabel = (): string => {
+    const el = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget-split"]')?.previousElementSibling;
+    return el?.textContent?.trim() ?? '';
+  };
+
+  /**
+   * The field class the other round-trip tests miss, raised by @dealako.
+   *
+   * Every existing restore assertion reads a native input's `.value`, and a native input's DOM
+   * tracks its control REGARDLESS of whether the patch emitted. So a restore that suppressed
+   * emission passed them all while leaving the DERIVED displays stale — the slider thumb moved to
+   * the draft value and the label beside it still showed the brief's.
+   *
+   * Asserting the rendered label is what catches that, because it is computed from
+   * `valueChanges` rather than read off the control.
+   */
+  it('restores the budget-split LABEL, not just the slider value', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const slider = budgetSlider();
+    expect(slider).not.toBeNull();
+
+    // Drag the split to 30% search / 70% display.
+    slider!.value = '30';
+    slider!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(budgetLabel()).toContain('Search 30%');
+    expect(budgetLabel()).toContain('Display 70%');
+
+    // Leave and come back — this destroys the component.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The control restores either way; the LABEL is what the suppressed emission broke.
+    expect(budgetSlider()!.value).toBe('30');
+    expect(budgetLabel()).toContain('Search 30%');
+    expect(budgetLabel()).toContain('Display 70%');
+  });
+
+  it('carries a typed headline back after a trip to another tab', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input = headlineInput();
+    expect(input).not.toBeNull();
+
+    // Type over the generated copy, the way a marketer would.
+    input!.value = 'Hand-edited headline';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The parent must already hold it — the child is about to be destroyed.
+    expect(internals().implementationDraft()?.headlines?.[0]).toBe('Hand-edited headline');
+
+    // Leave and come back. This DESTROYS the component; that is the point.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-implementation-panel"]')).toBeNull();
+
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(headlineInput()?.value).toBe('Hand-edited headline');
+  });
+
+  it('seeds the parent draft with the brief copy, not the empty initial control', async () => {
+    // Regression: `replaceCopyArray` originally suppressed emission for BOTH callers, so the
+    // brief seed never reached the parent and the draft held the form's empty starting control.
+    // Switching away and back then restored `[""]` over real generated headlines — the fix
+    // making the bug worse than the bug. Emission is now the caller's decision.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().implementationDraft()?.headlines).toEqual(['Generated A', 'Generated B']);
+  });
+
+  it('carries a corrected registration URL back, which is where the spend lands', async () => {
+    // The highest-cost field on the form: a reverted URL sends paid traffic at the stale scraped
+    // value. It is a plain text input the user types into, and populateFromBrief re-stamps it
+    // from the brief on every remount — so it needs the same treatment as the copy.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const url = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-reg-url"]') as HTMLInputElement | null;
+    expect(url).not.toBeNull();
+    url!.value = 'https://corrected.example.com/register';
+    url!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const back = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-reg-url"]') as HTMLInputElement | null;
+    expect(back?.value).toBe('https://corrected.example.com/register');
+  });
+
+  it('discards the draft when the brief it belongs to is discarded', async () => {
+    // `resetToPlanning` is the one draft-CLEARING path this change adds, and it was declared on
+    // Internals without ever being driven. Keeping the draft here would replay the discarded
+    // brief's copy over whatever is generated next — the eventSlug guard cannot catch that,
+    // because a program switch can land on the same event.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().implementationDraft()).not.toBeNull();
+
+    internals().resetToPlanning();
+    fixture.detectChanges();
+
+    expect(internals().implementationDraft()).toBeNull();
+  });
+
+  it('survives a SECOND tab leave with no typing in between', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input = headlineInput();
+    input!.value = 'Typed once';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // First round trip.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(headlineInput()?.value).toBe('Typed once');
+
+    // SECOND round trip, typing nothing. The remount re-seeded the parent from the brief and
+    // applyDraft restored silently, so without a re-emit the parent now holds the BRIEF copy
+    // while the form shows the edit — and this leave overwrites the edit with it.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(headlineInput()?.value).toBe('Typed once');
+  });
+
+  it('does not replay one event edits onto a different brief', async () => {
+    // The guard that makes the draft safe to hold un-keyed on the parent. Without it, generating
+    // a brief for event B and opening Implement would restore event A's copy over it.
+    //
+    // ORDER MATTERS, and an earlier version of this test had it wrong (@dealako caught it):
+    // `onProceedToImplementation` runs `implementationDraft.set(null)` FIRST, so seeding the
+    // draft before that call left the child mounting with `draft === null`. `applyDraft` then
+    // returned at its `if (!draft)` line and never reached the `eventSlug` mismatch branch —
+    // deleting the guard entirely still passed. Proceed first, seed the stale draft after, so the
+    // child mounts with a draft whose slug genuinely disagrees.
+    internals().onProceedToImplementation(briefFor('event-b'));
+
+    internals().implementationDraft.set({
+      eventName: 'Event A',
+      countryCode: 'US',
+      registrationUrl: 'https://event-a.example.com',
+      headlines: ['Copy for event A'],
+      descriptions: [],
+      budgetUsd: 999,
+      searchBudgetPct: 10,
+      startDate: '2026-01-01',
+      endDate: '2026-02-01',
+      includeSearch: true,
+      includeDemandGen: false,
+      eventSlug: 'event-a',
+    });
+
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Event B's own generated copy stands.
+    expect(headlineInput()?.value).toBe('Generated A');
   });
 });
