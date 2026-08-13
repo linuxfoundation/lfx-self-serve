@@ -1413,7 +1413,11 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
 
     await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
 
-    expect(proxyRequestWithResponse.mock.calls[0][4]).toBeUndefined();
+    const call = proxyRequestWithResponse.mock.calls[0];
+    // Both positions, because the failure this guards against is the param moving rather than
+    // vanishing: `undefined` fifth with `{ q: '' }` sixth would send it as a discarded body.
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toBeUndefined();
   });
 
   it('maps the wire shape onto the shared interface', async () => {
@@ -1437,11 +1441,15 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
   it('reports a project with no HubSpot connection as disabled, not as an error', async () => {
     // The steady state everywhere the channel is not set up. Rendering it as a failure would put
     // an error in front of every project that has simply not connected HubSpot yet.
-    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', {}));
+    // campaign-service's OWN typed not-found: "no HubSpot connection configured for this
+    // project". The body is what distinguishes it from a gateway 404 — see the test below.
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'no HubSpot connection configured for this project' } })
+    );
 
     const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
 
-    expect(result).toEqual({ enabled: false, emails: [], error: null });
+    expect(result).toEqual({ enabled: false, emails: [], error: null, possiblyTruncated: false });
   });
 
   it('refuses a missing project rather than requesting an empty path segment', async () => {
@@ -1452,6 +1460,46 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     expect(result.enabled).toBe(true);
     expect(result.error).toBeTruthy();
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('treats a BARE 404 as a failure, not as an unconfigured channel', async () => {
+    // A gateway 404 is not the service's 404. An empty path segment, a routing change or an
+    // ingress miss all produce one, and reporting those as "no connection" would tell the user to
+    // connect something already connected while hiding a real outage. campaign-service's own
+    // not-found carries a typed body; this one does not.
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { nope: true } }));
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('flags a capped first screen so a picker cannot present it as the whole portal', async () => {
+    // The wire cannot express this: campaign-service returns no pagination field, so a capped 500
+    // and a complete 500 are the same bytes. Only an EMPTY query is capped.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: Array.from({ length: 500 }, (_, i) => ({ id: String(i) })) } });
+
+    const capped = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+    expect(capped.possiblyTruncated).toBe(true);
+
+    // A FILTERED search is unbounded server-side, so it is never truncated — flagging it would
+    // tell the user to narrow a search that already returned everything matching.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: Array.from({ length: 500 }, (_, i) => ({ id: String(i) })) } });
+    const filtered = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', 'kubecon');
+    expect(filtered.possiblyTruncated).toBe(false);
+  });
+
+  it('drops a row with no id rather than offering an unselectable template', async () => {
+    // `id` is what `hubspotConfig.sourceEmailId` takes, and that field is required — so a row
+    // without one is a choice the user cannot make. Rendering it would offer a template that
+    // fails on submit.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [{ name: 'No id here' }, { id: '99', name: 'Real' }] } });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.emails).toHaveLength(1);
+    expect(result.emails[0].id).toBe('99');
   });
 
   it('reports an upstream failure without claiming the channel is unconfigured', async () => {
