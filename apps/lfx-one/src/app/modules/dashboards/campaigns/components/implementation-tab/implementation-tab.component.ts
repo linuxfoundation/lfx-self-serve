@@ -20,6 +20,7 @@ import { map, startWith, Subscription, take } from 'rxjs';
 import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
+  CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignJobOutcome,
   CampaignKeyword,
@@ -42,7 +43,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
  * part of any contract between the tiers. Two repo rules meet here and an intersection is the
- * only form satisfying both — `CLAUDE.md:176` prohibits the local `interface Foo {}` form inside
+ * only form satisfying both — CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule prohibits the local `interface Foo {}` form inside
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
@@ -70,6 +71,46 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
+
+  /**
+   * Whether the brief this tab is configuring has been saved.
+   *
+   * Rendered here rather than on the Planning tab because this is where the user spends the
+   * next stretch of work — a "not saved" warning is only useful in front of the person about to
+   * lose something. The default is the `off` state, which renders nothing at all.
+   */
+  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
+
+  /**
+   * Text for the always-present live region in the template.
+   *
+   * Kept separate from the visible banners because the announcement and the banner have
+   * different lifetimes: the banner is created and destroyed by `@switch`, while the region has
+   * to persist so a screen reader treats each new value as a CHANGE rather than an insertion.
+   * Empty in the `off` and `error` states — `off` has nothing to say, and `error` carries its own
+   * `role="alert"`, which would otherwise announce the same text twice.
+   */
+  protected readonly briefPersistenceAnnouncement = computed(() => {
+    switch (this.briefPersistence().status) {
+      case 'saving':
+        return 'Saving this brief.';
+      case 'saved':
+        // Must carry the SAME information as the visible banner, which tells the user to re-enter
+        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
+        // the reassurance without the instruction — and the instruction is the part they cannot
+        // recover on their own, since nothing else on the page says the brief needs a URL to come
+        // back.
+        //
+        // The unapproved message, when there is one, is appended rather than replacing this: the
+        // brief IS saved and the reload instruction still applies, so dropping either half would
+        // leave a screen-reader user with less than the visible banner shows.
+        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+          this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
+        }`;
+      default:
+        return '';
+    }
+  });
 
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
@@ -510,8 +551,15 @@ export class ImplementationTabComponent implements OnInit {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
       this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
       this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
-      if (brief.linkedInCopy.strategy) {
-        this.linkedInBudgetUsd.set(brief.linkedInCopy.strategy.budgetRecommendation.lifetimeBudgetUsd);
+      // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
+      // reaching here came straight from the generator, which always emits both; a RESTORED
+      // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
+      // discriminator and leaves the inner shape alone. A `strategy` without a
+      // `budgetRecommendation` therefore reaches this line and throws on the nested read —
+      // every other field in this block is assigned whole, so this is the only such reach.
+      const lifetimeBudget = brief.linkedInCopy.strategy?.budgetRecommendation?.lifetimeBudgetUsd;
+      if (typeof lifetimeBudget === 'number' && Number.isFinite(lifetimeBudget)) {
+        this.linkedInBudgetUsd.set(lifetimeBudget);
         this.linkedInLifetimeBudget.set(true);
       }
     }

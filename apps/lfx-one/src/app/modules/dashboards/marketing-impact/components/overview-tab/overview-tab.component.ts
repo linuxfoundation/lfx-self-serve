@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 
-import type { MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
+import type { EventsSplitView, MarketingImpactFocusProgram } from '@lfx-one/shared/interfaces';
 
 import { EventRosterSectionComponent } from '../event-roster-section/event-roster-section.component';
 import { EventsAttentionSectionComponent } from '../events-attention-section/events-attention-section.component';
@@ -22,7 +22,16 @@ export class OverviewTabComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly foundationName = input<string>('');
-  // Passed through to the summary tiles and the roster, both of which filter by it.
+  /** Scopes the events summary and roster to the picked period; forwarded to both sections. */
   public readonly selectedPeriod = input<string>('');
   public readonly focusProgram = input<MarketingImpactFocusProgram>('all');
+  /**
+   * Which half of the Events story to render. `null` means the campaign type does not split
+   * (All, and the non-Events types), so every section renders as it did before the split.
+   */
+  public readonly eventsSplit = input<EventsSplitView | null>(null);
+
+  // === Computed Signals ===
+  /** Attendance sections render unless sponsorship is explicitly selected. */
+  protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
 }

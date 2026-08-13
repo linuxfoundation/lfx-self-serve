@@ -24,6 +24,9 @@ import type { AttentionSeverity, EventAttentionItem, EventRosterResponse, EventR
   host: { '[style.display]': "showStrip() ? 'contents' : 'none'" },
 })
 export class EventsAttentionSectionComponent {
+  /** How many at-risk items to show before the "see more" toggle. */
+  private static readonly collapsedCount = 2;
+
   private readonly analyticsService = inject(AnalyticsService);
 
   // === Inputs ===
@@ -31,6 +34,8 @@ export class EventsAttentionSectionComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  /** When true, show every item; otherwise cap at EventsAttentionSectionComponent.collapsedCount. */
+  protected readonly showAll = signal(false);
 
   // === Computed Signals ===
   private readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -42,18 +47,33 @@ export class EventsAttentionSectionComponent {
    */
   protected readonly showStrip = computed(() => !this.loading() && this.hasItems());
 
+  /** Items actually rendered: first EventsAttentionSectionComponent.collapsedCount when collapsed, all when expanded. */
+  protected readonly visibleItems = computed(() => (this.showAll() ? this.items() : this.items().slice(0, EventsAttentionSectionComponent.collapsedCount)));
+  /** How many items are hidden behind the "see more" toggle. */
+  protected readonly hiddenCount = computed(() => Math.max(0, this.items().length - EventsAttentionSectionComponent.collapsedCount));
+
+  // === Protected Methods ===
+  protected toggleShowAll(): void {
+    this.showAll.update((v) => !v);
+  }
+
   // === Private Initializers ===
   private initRoster(): Signal<EventRosterResponse> {
     const slug$ = toObservable(this.foundationSlug);
     return toSignal(
       slug$.pipe(
         switchMap((slug) => {
+          // Collapse on every foundation change: showAll is a per-list view state, so carrying it
+          // across meant the next foundation opened expanded instead of at the documented
+          // two-item default.
+          this.showAll.set(false);
           if (!slug) {
             this.loading.set(false);
             return of({ projectId: '', events: [] });
           }
           this.loading.set(true);
-          // Upcoming only — attention is about events we can still influence.
+          // Upcoming only — attention is about events we can still influence, so the dashboard's
+          // month picker deliberately doesn't apply here: every month it offers is already past.
           //
           // catchError inside the switchMap, not outside: getEventRoster rethrows by design (a
           // roster outage must not read as "no events"), and an error reaching toSignal would
