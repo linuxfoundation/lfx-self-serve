@@ -227,13 +227,17 @@ export class OrgProjectDetailComponent {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     const periods = this.influenceState().data?.periods ?? null;
     const trimStart = this.lifetimeTrimStart();
-    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods, trimStart));
+    return (this.influenceState().data?.technical ?? []).map((card) =>
+      this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods, trimStart)
+    );
   });
   protected readonly ecosystemCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     const periods = this.influenceState().data?.periods ?? null;
     const trimStart = this.lifetimeTrimStart();
-    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods, trimStart));
+    return (this.influenceState().data?.ecosystem ?? []).map((card) =>
+      this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods, trimStart)
+    );
   });
   /**
    * First all-time bucket worth plotting on the influence cards. The lifetime spine can start well
