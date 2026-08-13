@@ -5,8 +5,8 @@
  * Org Lens · Project Detail sub-page (LFXV2-1885) payload contracts.
  *
  * Populated by the Snowflake-backed BFF (`OrgLensProjectDetailService`). Sparklines and
- * trend series are stored on a 36-month axis (oldest → newest); the client slices to the
- * active `?range=` toggle (1y / 2y / all).
+ * trend series are oldest → newest. `1y`/`2y` are trailing monthly points the client slices;
+ * `all` is an adaptive lifetime-bucketed series (≤12) with a server-emitted `periods[]` axis.
  */
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
@@ -81,11 +81,13 @@ export interface OrgLensProjectInfluenceCard {
   /** Source shown above the card for ecosystem metrics (project name or foundation name); null for technical. */
   scopeLabel: string | null;
   /**
-   * Dense monthly bins (up to 36), oldest → newest. Empty array → "No data". Client slices to active
-   * range. A `null` bin is a genuine gap (avg-merge-time months with no merged PRs) — not a zero.
+   * Plotted points, oldest → newest. Empty array → "No data". A `null` bin is a genuine gap
+   * (avg-merge-time periods with no merged PRs) — not a zero. Representation depends on the range:
+   * for 1y/2y these are dense monthly bins (up to 36) the client slices to the active range; for
+   * `all` they are the project's adaptive lifetime buckets, aligned 1:1 with the block's `periods`.
    */
   sparkline: (number | null)[];
-  /** Project-wide average monthly series (grey reference line). Same length as sparkline. */
+  /** Project-wide average series over the same points as `sparkline` (grey reference line). Same length. */
   projectSparkline: number[];
   /** Descriptive sentence split so the middle stat can render bold. */
   caption: { prefix: string; emphasis: string; suffix: string };
@@ -165,7 +167,11 @@ export interface OrgLensProjectLeaderboardRow {
   isViewingOrg: boolean;
 }
 
-/** Dense monthly combined-influence series for one org, oldest → newest. Feeds the stacked Influence Trend chart. */
+/**
+ * Combined-influence series for one org, oldest → newest, feeding the stacked Influence Trend chart.
+ * Dense monthly bins for 1y/2y; the project's adaptive lifetime buckets for `all`, aligned 1:1 with
+ * the block's `periods`.
+ */
 export interface OrgLensProjectTrendSeries {
   accountId: string;
   orgName: string;
@@ -211,11 +217,26 @@ export interface OrgLensInfluenceBlock {
   isNonLfProject: boolean;
   /** Viewing org's precomputed tiers for the section-title band chips; null when it has no leaderboard row. */
   levels: { technical: OrgLensProjectBand | null; ecosystem: OrgLensProjectBand | null };
+  /**
+   * Axis labels for the plotted points, one entry per point, oldest → newest, aligned 1:1 with each
+   * card's `sparkline` / `projectSparkline`. Emitted for the `all` range, where the axis is a variable
+   * number of adaptive buckets (monthly `Jan 2016`, quarterly `Q1 2016`, yearly `2016`, multi-year
+   * `2013–2015`) that the client cannot reconstruct locally. Absent for 1y/2y, where the client keeps
+   * deriving the fixed trailing monthly grid itself.
+   */
+  periods?: string[];
 }
 
-/** B6 Influence Trend block — the per-org monthly combined-influence series. Range-scoped (client slices). */
+/** B6 Influence Trend block — per-org combined-influence series. `1y`/`2y` are trailing monthly (client slices); `all` is adaptive lifetime buckets with `periods[]`. */
 export interface OrgLensTrendBlock {
   trend: OrgLensProjectTrendSeries[];
+  /**
+   * Axis labels for the stacked trend, one entry per plotted point, oldest → newest, aligned 1:1 with
+   * every series' `combined[]`. Emitted for the `all` range (variable-length adaptive buckets — see
+   * {@link OrgLensInfluenceBlock.periods}); absent for 1y/2y, where the client derives the fixed
+   * trailing monthly grid itself.
+   */
+  periods?: string[];
 }
 
 /**
