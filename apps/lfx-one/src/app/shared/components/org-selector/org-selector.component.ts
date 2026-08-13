@@ -5,7 +5,8 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { Account, DisplayOrgItem, OrgItem } from '@lfx-one/shared/interfaces';
+import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
@@ -95,6 +96,71 @@ export class OrgSelectorComponent {
     });
   });
 
+  /** Gates the catalogue-search affordance; only staff can reach beyond their own rows. */
+  protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
+
+  /**
+   * A staff caller's list is legitimately empty until the catalogue is queried, and the catalogue is
+   * only queried at `ORG_CATALOGUE_SEARCH_MIN_CHARS`. "No organizations found" there reads as a
+   * permissions failure rather than an invitation, so prompt instead; the not-found copy is reserved
+   * for a search that genuinely matched nothing.
+   */
+  protected readonly showSearchPrompt: Signal<boolean> = computed(
+    () => this.isStaff() && this.orgNavigationService.searchTerm()().trim().length < ORG_CATALOGUE_SEARCH_MIN_CHARS
+  );
+
+  /**
+   * An outage and a genuine no-match look identical to a caller with nothing assigned, and blaming the
+   * search term for an upstream failure sends them off to retype a term that was fine.
+   *
+   * Claimed only while a catalogue search is actually running: `upstreamFailed` covers any upstream
+   * failure, including a role-grants outage and a request that never carried a username, so keying the
+   * copy off the flag alone would blame search for failures search had no part in — telling a non-staff
+   * caller that search is unavailable when they have no search input at all, and telling a staff caller
+   * the same instead of prompting them to search, which still works.
+   */
+  protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed() && this.isStaff() && !this.showSearchPrompt());
+
+  /**
+   * True once the caller has actually run a catalogue search (FR-007/US2.5: sectioning is specified as
+   * a consequence of searching). `isAssigned === false` alone is not sufficient: a staff caller's
+   * cookie-restored selection is resolved from the catalogue and pinned to the list on load, with no
+   * search having run, and would otherwise carry the same flag and falsely trigger sectioning on an
+   * unsearched list.
+   */
+  private readonly searchActive: Signal<boolean> = computed(
+    () => this.isStaff() && this.orgNavigationService.searchTerm()().trim().length >= ORG_CATALOGUE_SEARCH_MIN_CHARS
+  );
+
+  /**
+   * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
+   * row of each group. Sectioning turns on only during an active search, so a non-staff caller, a
+   * staff caller who hasn't searched, and a staff caller whose restored pin alone is discovered all
+   * keep today's single flat list. Attaching the heading to a row rather than rendering it from a
+   * group count is what guarantees a heading can never appear above an empty group.
+   */
+  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => {
+    const rows = this.displayedItems();
+    const searchActive = this.searchActive();
+    const sectioned = searchActive && rows.some((row) => row.item.isAssigned === false);
+    if (!sectioned) {
+      return rows.map((display) => this.toRow(display, null, searchActive));
+    }
+
+    let assignedSeen = false;
+    let discoveredSeen = false;
+    return rows.map((display) => {
+      if (display.item.isAssigned === false) {
+        const heading = discoveredSeen ? null : 'All organizations';
+        discoveredSeen = true;
+        return this.toRow(display, heading, searchActive);
+      }
+      const heading = assignedSeen ? null : 'Your organizations';
+      assignedSeen = true;
+      return this.toRow(display, heading, searchActive);
+    });
+  });
+
   protected readonly autoLoadTriggerIndex: Signal<number> = computed(() => Math.max(0, this.displayedItems().length - 8));
 
   public constructor() {
@@ -163,6 +229,27 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /**
+   * Chip text is resolved here rather than in the template: only discovered rows carry one, because
+   * the caller has no other context for what such an organization is to the LF, whereas an assigned
+   * row's membership is already implied by the caller administering it.
+   */
+  private toRow(display: DisplayOrgItem, heading: string | null, searchActive: boolean): OrgSelectorRow {
+    // The chip is search-result context (this org's relationship to LF), not a property of the row
+    // that should surface before there is a search to explain it — a restored pin is discovered by
+    // the same flag with no search behind it.
+    if (display.item.isAssigned !== false || !searchActive) {
+      return { display, heading, membershipLabel: null, membershipStatus: null };
+    }
+
+    return {
+      display,
+      heading,
+      membershipLabel: display.item.isMember ? 'Member' : 'Non-member',
+      membershipStatus: display.item.status ?? null,
+    };
   }
 
   /**

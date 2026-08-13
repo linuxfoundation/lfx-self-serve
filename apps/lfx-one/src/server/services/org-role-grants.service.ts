@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  LF_STAFF_TEAM_ID,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -22,6 +23,7 @@ import {
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
@@ -34,9 +36,11 @@ export class OrgRoleGrantsService {
   private static readonly accessInFlight = new Map<string, Promise<AccessAwareOrgsResult>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly accessCheck: AccessCheckService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
+    this.accessCheck = new AccessCheckService();
   }
 
   /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
@@ -83,8 +87,8 @@ export class OrgRoleGrantsService {
 
   /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
   public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt);
+    const { resolved, loadedAt, isStaff } = await this.getAccessAwareOrgs(req, username);
+    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff);
   }
 
   /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
@@ -114,7 +118,10 @@ export class OrgRoleGrantsService {
       OrgRoleGrantsService.isEntryTupleArray(entry.orgDocByUid) &&
       typeof entry.username === 'string' &&
       typeof entry.loadedAt === 'string' &&
-      typeof entry.upstreamFailed === 'boolean'
+      typeof entry.upstreamFailed === 'boolean' &&
+      // Entries written before `isStaff` existed fail here and are recomputed, rather than
+      // deserializing to `undefined` and silently denying a staff caller for the rest of the TTL.
+      typeof entry.isStaff === 'boolean'
     );
   }
 
@@ -166,6 +173,7 @@ export class OrgRoleGrantsService {
       upstreamFailed: result.upstreamFailed,
       loadedAt: result.loadedAt,
       username: result.username,
+      isStaff: result.isStaff,
     };
   }
 
@@ -177,6 +185,7 @@ export class OrgRoleGrantsService {
       upstreamFailed: entry.upstreamFailed,
       loadedAt: entry.loadedAt,
       username: entry.username,
+      isStaff: entry.isStaff,
     };
   }
 
@@ -188,6 +197,7 @@ export class OrgRoleGrantsService {
       upstreamFailed: false,
       loadedAt,
       username,
+      isStaff: false,
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -196,6 +206,11 @@ export class OrgRoleGrantsService {
       });
       return empty;
     }
+
+    // Started here so it overlaps the roster query rather than serialising behind it, and
+    // resolved on every path below: the staff grant is independent of the roster, so it must survive
+    // both "no grants" (the defining staff case) and a roster lookup failure.
+    const staffPromise = this.resolveIsStaff(req, username);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -211,12 +226,14 @@ export class OrgRoleGrantsService {
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true };
+      return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
     }
+
+    const isStaff = await staffPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username };
+      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -226,7 +243,7 @@ export class OrgRoleGrantsService {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true };
+      return { ...empty, upstreamFailed: true, isStaff };
     }
 
     let cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>;
@@ -235,13 +252,36 @@ export class OrgRoleGrantsService {
       cascadingChildrenByParent = await this.fetchCascadingChildren(req, parentUids);
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream cascading-children fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true };
+      return { ...empty, upstreamFailed: true, isStaff };
     }
 
     const resolved = this.buildResolvedMap(directWriters, directAuditors, directOrgDocs, cascadingChildrenByParent);
     const orgDocByUid = this.mergeOrgDocs(directOrgDocs, cascadingChildrenByParent);
 
-    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username };
+    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username, isStaff };
+  }
+
+  /**
+   * Asks the platform authorizer whether the caller belongs to the LF staff team, which carries
+   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`). Shares
+   * `LF_STAFF_TEAM_ID` with `PersonaDetectionService.checkLFStaff`, so the two authorization paths
+   * cannot drift onto different team names.
+   *
+   * No permission semantics live here: the relation is defined in the FGA model and this only reads the
+   * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
+   * principle. Fails closed — `checkSingleAccess` already degrades to `false`, and the extra catch keeps
+   * an unexpected throw from failing the whole role-grants resolution for a caller who simply is not staff.
+   */
+  private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
+    try {
+      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
+    } catch (error) {
+      logger.warning(req, 'get_org_role_grants', 'LF staff membership check failed; treating caller as non-staff', {
+        username_length: username.length,
+        err: error,
+      });
+      return false;
+    }
   }
 
   private partitionDirectGrants(
@@ -468,7 +508,7 @@ export class OrgRoleGrantsService {
     return merged;
   }
 
-  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string): RoleGrantsResponse {
+  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string, isStaff: boolean): RoleGrantsResponse {
     const writers: string[] = [];
     const auditors: string[] = [];
     const cascadingWriters: CascadingRoleGrant[] = [];
@@ -493,7 +533,7 @@ export class OrgRoleGrantsService {
       }
     }
 
-    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt };
+    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt, isStaff };
   }
 
   /** Strip uids that would break query-service tag grammar before interpolating into `b2b_org_uid:` / `parent_b2b_org_uid:` tags. */

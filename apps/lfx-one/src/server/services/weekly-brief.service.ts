@@ -37,7 +37,7 @@ import { Request } from 'express';
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessToken } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { AiService } from './ai.service';
@@ -605,6 +605,19 @@ export class WeeklyBriefService {
    * Requires `WEEKLY_BRIEF_BACKEND=live` — throws a 409 `BACKEND_NOT_LIVE`
    * otherwise, after still enforcing the brief/writer/mailing-list
    * preconditions below (so mock-mode testing exercises the same guards).
+   *
+   * Unlike `/share-slack` and `/rating`, this is NOT blocked during impersonation
+   * (LFXV2-3093) — it stays usable so LF staff can trigger a share while
+   * impersonating a chair for support purposes. Instead, the write boundary (from
+   * the project-writer check through the newsletter create/send/cleanup below)
+   * runs under the REAL impersonating staff member's identity/token, resolved via
+   * `resolveRealAccessToken`/`getRealEmail`, not the impersonated target's — so
+   * authorization and attribution stay consistent (whoever is authorized to send
+   * is also who the send is attributed to) and the outgoing email is never sent
+   * under, or misattributed to, a user who never took the action. Preconditions
+   * above this point (brief existence/state, committee lookup, mailing-list
+   * check) stay on the effective/target identity, same as every other read in
+   * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
@@ -627,6 +640,22 @@ export class WeeklyBriefService {
     }
 
     const committee = await this.committeeService.getCommitteeById(req, committeeId);
+
+    // Everything from here through the newsletter create/send/cleanup below is the write
+    // boundary (LFXV2-3093) — resolved and authorized against the REAL impersonating staff
+    // member's identity, not the impersonated target's. Resolved once, up front: if the real
+    // token can't be resolved (no session token, or an expired one that fails to refresh),
+    // fail closed here rather than let the writer check pass against the target and only then
+    // fail deeper into the newsletter pipeline. A no-op when not impersonating (returns
+    // req.bearerToken as-is).
+    const realToken = await resolveRealAccessToken(req);
+    if (!realToken) {
+      throw new AuthenticationError('Unable to resolve your account for this action', {
+        operation: 'share_weekly_brief',
+        service: 'weekly_brief_service',
+      });
+    }
+
     // committee.writer is a superset of what we need here — per committee.interface.ts's
     // own doc comment, it's true for both a direct committee-level grant AND an inherited
     // project writer, but the newsletter service (which this repurposes for delivery)
@@ -635,7 +664,8 @@ export class WeeklyBriefService {
     // delegated/on-behalf-of token mechanism in this codebase to bridge that gap without
     // misattributing the send (the newsletter service resolves the sender's display name
     // from the signed JWT principal; an M2M token has none). Check the actual boundary
-    // directly instead, with the caller's own bearer token.
+    // directly instead, with the REAL caller's own bearer token (LFXV2-3093) — not the
+    // impersonated target's, so authorization and attribution stay consistent.
     //
     // checkSingleAccessStrict, not checkSingleAccess — the non-strict variant degrades a
     // transient access-check outage to "no access", which would surface here as a
@@ -644,11 +674,18 @@ export class WeeklyBriefService {
     // fail-closed-to-false is an acceptable trade-off), so misattributing an outage as a
     // permission denial is worse here — same rationale as committee-access.internal.helper.ts's
     // existing use of the strict variant.
-    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
-      resource: 'project',
-      id: committee.project_uid,
-      access: 'writer',
-    });
+    const originalTokenForAuthCheck = req.bearerToken;
+    req.bearerToken = realToken;
+    let isProjectWriter: boolean;
+    try {
+      isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+        resource: 'project',
+        id: committee.project_uid,
+        access: 'writer',
+      });
+    } finally {
+      req.bearerToken = originalTokenForAuthCheck;
+    }
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can share the weekly brief by email', {
         operation: 'share_weekly_brief',
@@ -660,6 +697,8 @@ export class WeeklyBriefService {
     // getCommitteeById's includeMailingListStatus would otherwise compute — a transient
     // query-service failure here must not be misreported as "no mailing list configured"
     // (409 NO_MAILING_LIST is a real, actionable precondition failure; an outage isn't).
+    // Read on the effective/target identity (req.bearerToken was restored above) — only the
+    // write below runs under the real identity.
     const hasMailingList = await this.committeeService.hasMailingListStrict(req, committeeId);
     if (!hasMailingList) {
       throw new ConflictError('Committee has no mailing list configured', 'NO_MAILING_LIST', {
@@ -684,7 +723,10 @@ export class WeeklyBriefService {
 
     const subject = `[Weekly Brief] ${committee.name} — ${formatUtcDateRangeLabel(brief.window_start, brief.window_end)}`;
     const bodyHtml = briefTextToHtml(brief.brief_text);
-    const edReplyEmail = getEffectiveEmail(req);
+    // getRealEmail, not getEffectiveEmail (LFXV2-3093) — the reply-to must be the real
+    // sender's address, never the impersonated target's, matching the real identity the
+    // newsletter is created and sent under below.
+    const edReplyEmail = getRealEmail(req);
     if (!edReplyEmail) {
       throw ServiceValidationError.forField('ed_reply_email', 'Unable to resolve your account email for the reply-to address', {
         operation: 'share_weekly_brief',
@@ -708,72 +750,82 @@ export class WeeklyBriefService {
       );
     }
 
-    // isProjectWriter (checked above) is the newsletter service's actual authorization
-    // boundary, so the caller's own bearer token is used as-is here — no token swap at
-    // this layer (see NewsletterServiceClient#sendNewsletter's doc comment). The sender's
-    // display name resolves from that token's JWT principal — which, under impersonation,
-    // is the TARGET's principal, since auth.middleware.ts has already swapped
-    // req.bearerToken to the impersonation token by the time this method runs (known
-    // pre-existing gap, tracked in LFXV2-3093; see weekly-brief.route.ts's /share comment).
-    const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
-      subject,
-      body_html: bodyHtml,
-      ed_reply_email: edReplyEmail,
-      committee_uids: [committeeId],
-    });
-
-    let sendResult: NewsletterSendResult;
+    // The newsletter draft is created and sent under the REAL caller's own bearer token
+    // (LFXV2-3093), restored to the impersonated/effective token in the finally below
+    // regardless of outcome — the same save/mutate/restore shape this codebase already uses
+    // for M2M tokens (e.g. meeting.controller.ts's getMyMeetingRegistrants), but with
+    // try/finally rather than that precedent's linear post-call restore, so the token is
+    // restored even if one of the awaited calls below throws, not just on the happy path.
+    // isProjectWriter (checked above, also against the real identity) is the newsletter
+    // service's actual authorization boundary; the sender's display name resolves from
+    // this token's JWT principal too (see NewsletterServiceClient#sendNewsletter's doc
+    // comment), so both the authorization and the visible "from" identity are the real
+    // staff member's, not the impersonated target's.
+    const originalTokenForSend = req.bearerToken;
+    req.bearerToken = realToken;
     try {
-      sendResult = await this.newsletterService.sendNewsletter(req, committee.project_uid, newsletter.id, newsletter.version);
-    } catch (error) {
-      // Only clean up on a deterministic rejection (draft validation failed,
-      // not found, etc). The send is asynchronous — a timeout or 5xx *after*
-      // upstream accepted it is indistinguishable from a real rejection here,
-      // and deleting the draft in that case would desync us from a send that
-      // actually went out. Ambiguous failures are left in place and logged.
-      const isDeterministicRejection =
-        error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
-      if (isDeterministicRejection) {
-        try {
-          await this.newsletterService.deleteNewsletter(req, committee.project_uid, newsletter.id);
-        } catch (cleanupError) {
-          logger.warning(req, 'share_weekly_brief_cleanup_failed', 'Failed to delete orphaned draft newsletter after a failed send', {
-            committee_id: committeeId,
-            newsletter_id: newsletter.id,
-            error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error',
-          });
-        }
-      } else {
-        // The original error is rethrown below and logged centrally by
-        // apiErrorHandler — no need to duplicate its message here, just the
-        // newsletter_id so an operator can find the orphaned draft.
-        logger.warning(
-          req,
-          'share_weekly_brief_ambiguous_send_failure',
-          'Send failed ambiguously (may have been accepted upstream) — leaving draft newsletter in place for manual review',
-          {
-            committee_id: committeeId,
-            newsletter_id: newsletter.id,
+      const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
+        subject,
+        body_html: bodyHtml,
+        ed_reply_email: edReplyEmail,
+        committee_uids: [committeeId],
+      });
+
+      let sendResult: NewsletterSendResult;
+      try {
+        sendResult = await this.newsletterService.sendNewsletter(req, committee.project_uid, newsletter.id, newsletter.version);
+      } catch (error) {
+        // Only clean up on a deterministic rejection (draft validation failed,
+        // not found, etc). The send is asynchronous — a timeout or 5xx *after*
+        // upstream accepted it is indistinguishable from a real rejection here,
+        // and deleting the draft in that case would desync us from a send that
+        // actually went out. Ambiguous failures are left in place and logged.
+        const isDeterministicRejection =
+          error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
+        if (isDeterministicRejection) {
+          try {
+            await this.newsletterService.deleteNewsletter(req, committee.project_uid, newsletter.id);
+          } catch (cleanupError) {
+            logger.warning(req, 'share_weekly_brief_cleanup_failed', 'Failed to delete orphaned draft newsletter after a failed send', {
+              committee_id: committeeId,
+              newsletter_id: newsletter.id,
+              error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error',
+            });
           }
-        );
+        } else {
+          // The original error is rethrown below and logged centrally by
+          // apiErrorHandler — no need to duplicate its message here, just the
+          // newsletter_id so an operator can find the orphaned draft.
+          logger.warning(
+            req,
+            'share_weekly_brief_ambiguous_send_failure',
+            'Send failed ambiguously (may have been accepted upstream) — leaving draft newsletter in place for manual review',
+            {
+              committee_id: committeeId,
+              newsletter_id: newsletter.id,
+            }
+          );
+        }
+        throw error;
       }
-      throw error;
+
+      // The newsletter API only accepts/queues the send here; upstream fan-out
+      // runs asynchronously in a detached job and can still fail completely
+      // afterward. Log as queued, not sent — an operator reading this event
+      // should not treat it as a delivery confirmation.
+      logger.info(req, 'share_weekly_brief_queued', 'Weekly brief queued for delivery via newsletter send pipeline', {
+        committee_id: committeeId,
+        newsletter_id: newsletter.id,
+        total_recipients: sendResult.total_recipients,
+      });
+
+      return {
+        committee_name: committee.name,
+        total_recipients: sendResult.total_recipients,
+      };
+    } finally {
+      req.bearerToken = originalTokenForSend;
     }
-
-    // The newsletter API only accepts/queues the send here; upstream fan-out
-    // runs asynchronously in a detached job and can still fail completely
-    // afterward. Log as queued, not sent — an operator reading this event
-    // should not treat it as a delivery confirmation.
-    logger.info(req, 'share_weekly_brief_queued', 'Weekly brief queued for delivery via newsletter send pipeline', {
-      committee_id: committeeId,
-      newsletter_id: newsletter.id,
-      total_recipients: sendResult.total_recipients,
-    });
-
-    return {
-      committee_name: committee.name,
-      total_recipients: sendResult.total_recipients,
-    };
   }
 
   /**
