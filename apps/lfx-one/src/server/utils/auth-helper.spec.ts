@@ -4,7 +4,7 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, resolveAuditUserDisplayName } from './auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getRealEmail, resolveAuditUserDisplayName, resolveRealAccessToken } from './auth-helper';
 
 interface TargetUser {
   email?: string;
@@ -73,6 +73,126 @@ describe('getEffectiveSub', () => {
   it('returns the OIDC sub when not impersonating', () => {
     const req = buildReq({ oidc: { sub: 'auth0|user' } });
     expect(getEffectiveSub(req)).toBe('auth0|user');
+  });
+});
+
+describe('getRealEmail', () => {
+  it('returns the OPERATOR OIDC email lowercased when impersonating — never the target', () => {
+    const req = buildReq({ impersonating: true, target: { email: 'target@example.com' }, oidc: OPERATOR_OIDC });
+    expect(getRealEmail(req)).toBe('operator@example.com');
+  });
+
+  it('returns the OIDC email lowercased when not impersonating', () => {
+    const req = buildReq({ oidc: { email: 'User@Example.com' } });
+    expect(getRealEmail(req)).toBe('user@example.com');
+  });
+
+  it('returns null when there is no OIDC email', () => {
+    const req = buildReq({});
+    expect(getRealEmail(req)).toBeNull();
+  });
+});
+
+describe('resolveRealAccessToken', () => {
+  interface FakeAccessToken {
+    access_token?: string;
+    isExpired: () => boolean;
+    refresh: () => Promise<{ access_token?: string } | undefined>;
+  }
+
+  // Separate fixture from buildReq: these tests need `bearerToken` and `oidc.accessToken`
+  // (isExpired/refresh), which the getEffective*/getRealEmail fixture above has no use for.
+  // `impersonationSessionExpired` models the race window this function must not fail open on:
+  // an impersonation token still stored in the session (so req.bearerToken was set from it by
+  // auth.middleware.ts earlier in the request), but impersonationExpiresAt has since elapsed —
+  // i.e. isImpersonating(req) would now report false even though req.bearerToken is stale.
+  function buildTokenReq(opts: {
+    impersonating?: boolean;
+    impersonationSessionExpired?: boolean;
+    bearerToken?: string;
+    accessToken?: FakeAccessToken;
+  }): Request {
+    const appSession =
+      opts.impersonating || opts.impersonationSessionExpired
+        ? {
+            impersonationToken: 'imp-token',
+            impersonationExpiresAt: opts.impersonationSessionExpired ? Date.now() - 1000 : Date.now() + 60_000,
+            impersonationUser: {},
+          }
+        : {};
+    return {
+      appSession,
+      bearerToken: opts.bearerToken,
+      oidc: { accessToken: opts.accessToken },
+    } as unknown as Request;
+  }
+
+  it('returns req.bearerToken as-is when not impersonating (no-op)', async () => {
+    const req = buildTokenReq({ bearerToken: 'user-token' });
+    await expect(resolveRealAccessToken(req)).resolves.toBe('user-token');
+  });
+
+  it('returns null when not impersonating and there is no bearer token', async () => {
+    const req = buildTokenReq({});
+    await expect(resolveRealAccessToken(req)).resolves.toBeNull();
+  });
+
+  it('returns the real (operator) access token when impersonating and it is not expired', async () => {
+    const req = buildTokenReq({
+      impersonating: true,
+      bearerToken: 'imp-token',
+      accessToken: { access_token: 'real-token', isExpired: () => false, refresh: async () => undefined },
+    });
+    await expect(resolveRealAccessToken(req)).resolves.toBe('real-token');
+  });
+
+  it('refreshes and returns the new token when impersonating and the real token is expired', async () => {
+    const req = buildTokenReq({
+      impersonating: true,
+      bearerToken: 'imp-token',
+      accessToken: { access_token: 'stale-token', isExpired: () => true, refresh: async () => ({ access_token: 'refreshed-token' }) },
+    });
+    await expect(resolveRealAccessToken(req)).resolves.toBe('refreshed-token');
+  });
+
+  it('returns null (fails closed) when impersonating and the refresh attempt throws', async () => {
+    const req = buildTokenReq({
+      impersonating: true,
+      bearerToken: 'imp-token',
+      accessToken: {
+        access_token: 'stale-token',
+        isExpired: () => true,
+        refresh: async () => {
+          throw new Error('refresh failed');
+        },
+      },
+    });
+    await expect(resolveRealAccessToken(req)).resolves.toBeNull();
+  });
+
+  it('returns null (fails closed) when impersonating and there is no real session access token at all', async () => {
+    const req = buildTokenReq({ impersonating: true, bearerToken: 'imp-token', accessToken: undefined });
+    await expect(resolveRealAccessToken(req)).resolves.toBeNull();
+  });
+
+  it('does NOT fail open to the stale impersonation token when impersonationExpiresAt elapses mid-request (LFXV2-3093 race window) — resolves the real token instead', async () => {
+    // req.bearerToken is still the impersonation token here (set once by auth.middleware.ts
+    // earlier in the request) even though the session's impersonationExpiresAt has now passed —
+    // isImpersonating(req) would report false in this state, but the stored impersonationToken
+    // is still present, so this must NOT trust req.bearerToken as the real token.
+    const req = buildTokenReq({
+      impersonationSessionExpired: true,
+      bearerToken: 'imp-token',
+      accessToken: { access_token: 'real-token', isExpired: () => false, refresh: async () => undefined },
+    });
+    await expect(resolveRealAccessToken(req)).resolves.toBe('real-token');
+  });
+
+  it('fails closed (never the stale impersonation token) in the same expired-session race window when the real token cannot be resolved', async () => {
+    const req = buildTokenReq({ impersonationSessionExpired: true, bearerToken: 'imp-token', accessToken: undefined });
+    const result = await resolveRealAccessToken(req);
+    expect(result).not.toBe('imp-token');
+    expect(result).toBeNull();
   });
 });
 

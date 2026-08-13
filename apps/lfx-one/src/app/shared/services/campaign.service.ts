@@ -118,16 +118,31 @@ export class CampaignService {
     });
   }
 
-  public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
-    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
+  /**
+   * `projectSlug` and `briefId` travel as query params because the campaign-service cutover reads
+   * them there, not from the body: creation posts to
+   * `/projects/{slug}/briefs/{id}/campaigns`, so both are path segments upstream and the server
+   * has no other source for them. They are not optional in practice — with the cutover flag on,
+   * a request missing either is refused outright and deliberately does NOT fall through to the
+   * legacy path, since falling through would create the campaigns on the ad platforms while the
+   * user is told creation failed.
+   */
+  public createCampaign(
+    request: CampaignCreateRequest,
+    projectSlug: string,
+    briefId: string
+  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
-  public getCreateResult(jobId: string): Observable<CampaignJobOutcome | null> {
+  public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {
     if (!jobId) {
       return of(null);
     }
 
-    return this.pollJobStatus(jobId).pipe(
+    return this.pollJobStatus(jobId, projectSlug).pipe(
       last(),
       map((status) => {
         // A `done` job always yields an outcome, even when neither field is populated.
@@ -232,11 +247,17 @@ export class CampaignService {
    * outlives all three still propagates: `getCreateResult` reports it, which is correct, because at
    * that point the job status genuinely is unknown.
    */
-  private pollJobStatus(jobId: string): Observable<CampaignJobStatus> {
+  private pollJobStatus(jobId: string, projectSlug: string): Observable<CampaignJobStatus> {
     const maxPolls = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     return timer(0, CAMPAIGN_JOB_POLL_INTERVAL_MS).pipe(
       take(maxPolls),
-      exhaustMap(() => this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`).pipe(retryTransientHttpError(2))),
+      exhaustMap(() =>
+        this.http
+          .get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`, {
+            params: new HttpParams().set('project', projectSlug),
+          })
+          .pipe(retryTransientHttpError(2))
+      ),
       takeWhile((status) => status.status === 'running', true)
     );
   }

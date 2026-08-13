@@ -13,6 +13,8 @@ import { TagComponent } from '@components/tag/tag.component';
 import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
 
+import { BrandKitFormComponent } from '../brand-kit-form/brand-kit-form.component';
+
 // Marketplace landing for the Marketing OS marketplace (LFXAI-98). Renders the
 // catalog tiles, client-side search, and the placeholder Alerts / Agents-in-Process
 // sections from the mockup. Tile clicks open a per-agent chat surface — wired here
@@ -20,7 +22,7 @@ import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
 // because the chat panel (LFXAI-99) is an in-page side panel, not a separate page.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent, BrandKitFormComponent],
   templateUrl: './mktg-os-agents.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -46,6 +48,12 @@ export class MktgOsAgentsComponent {
   // === Computed ===
   protected readonly tiles: Signal<{ agent: MktgAgent; iconClass: string; borderClass: string }[]> = this.initTiles();
   protected readonly selectedAgent = computed(() => MKTG_AGENTS.find((agent) => agent.id === this.selectedAgentId()) ?? null);
+  // The in-page surface the selected agent opens: the Brand Kit one-page form
+  // (dec-brand-kit-intake-form) or the default chat stub.
+  protected readonly selectedSurface = computed(() => {
+    const agent = this.selectedAgent();
+    return agent && agent.status === 'active' ? (agent.surface ?? 'chat') : null;
+  });
 
   // Accent → Tailwind classes. Kept as class fields (not module-level) with literal
   // class names so Tailwind's content scan (./src/**/*.ts) generates them.

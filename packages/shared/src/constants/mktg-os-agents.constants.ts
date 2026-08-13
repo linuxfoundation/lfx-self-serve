@@ -40,4 +40,17 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'blue',
     guildAgentHandle: 'foundation-message',
   },
+  {
+    id: 'brand-kit',
+    number: 2,
+    name: 'Brand Kit Agent',
+    tags: ['Branding', 'Positioning', 'Voice'],
+    status: 'active',
+    description:
+      "Develops a complete Brand Kit for a Linux Foundation project — positioning, personality & voice, audience messaging, visual identity direction, and tagline options — from a single seven-question intake form. Produces Paul Hinz's nine-section Brand Kit document.",
+    icon: 'fa-light fa-palette',
+    accent: 'violet',
+    guildAgentHandle: 'brand-kit',
+    surface: 'brand-kit-form',
+  },
 ];
