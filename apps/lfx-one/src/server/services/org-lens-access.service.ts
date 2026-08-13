@@ -227,6 +227,10 @@ export class OrgLensAccessService {
         const name = (principal.name ?? '').trim() || email.split('@')[0];
         byEmail.set(email, {
           email,
+          // Only an accepted principal has a username, and member-service emits its FGA tuple on
+          // exactly that condition — so this doubles as the "verified identity" signal the people
+          // directory merges on. Pending invites stay null and fall back to email matching.
+          username: status === 'accepted' ? (principal.username ?? '').trim().toLowerCase() || null : null,
           name,
           initials: this.deriveInitials(name),
           avatarUrl: principal.avatar?.trim() ? principal.avatar.trim() : null,

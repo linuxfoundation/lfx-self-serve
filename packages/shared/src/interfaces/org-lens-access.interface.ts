@@ -32,6 +32,12 @@ export interface OrgAccessTypeFilterOption {
 export interface OrgAccessUser {
   /** Lowercased; identity key for edit/remove. Always present. */
   email: string;
+  /**
+   * Lowercased LFID username, projected from the settings record. Set once an invite is accepted;
+   * absent for pending invites — member-service emits an FGA tuple only when the invite is accepted
+   * AND a username exists, so its absence means the principal is not yet a verified identity.
+   */
+  username: string | null;
   /** Display name; falls back to the email local-part when blank. */
   name: string;
   /** Derived for the avatar chip. */
