@@ -62,7 +62,9 @@ export class ComposerDateScheduleComponent implements OnInit {
    * Hint text for a duration that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting
    * type. It renders directly under the chips and is wired through `aria-describedby` on their group, so
-   * the hint is reachable from the control it is about rather than from the far end of the column.
+   * the hint is reachable from the control it is about rather than from the far end of the column. The
+   * association sits on the surrounding `role="group"` rather than on the chips themselves because
+   * `lfx-select-button` exposes no `ariaDescribedBy` input to pass it through.
    */
   public readonly durationHint = input<string | null>(null);
 

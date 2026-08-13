@@ -55,6 +55,13 @@ export class ComposerDetailsAccessComponent {
   protected readonly youtubeAmberThreshold = YOUTUBE_MEETING_TITLE_WARNING_LENGTH;
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
+  /**
+   * Ids the title input points at through `aria-describedby`.
+   * @description Built here rather than bound inline because the input takes a single attribute value:
+   * the prefill hint and the two error messages all describe the same field, so they have to be joined
+   * into one list instead of overwriting each other.
+   */
+  protected readonly titleDescribedBy: Signal<string | null> = this.initTitleDescribedBy();
   private readonly hydratedMeetingType: Signal<MeetingType | null> = this.initHydratedMeetingType();
   protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
 
@@ -72,6 +79,23 @@ export class ComposerDetailsAccessComponent {
       ),
       { initialValue: 0 }
     );
+  }
+
+  private initTitleDescribedBy(): Signal<string | null> {
+    return computed(() => {
+      // FormGroup state isn't reactive; `revision` is what re-evaluates the error gates below.
+      this.formService.revision();
+
+      const title = this.form().get('title');
+      const touched = !!title?.touched;
+      const ids = [
+        this.titleHint() ? 'composer-title-hint' : null,
+        touched && title?.errors?.['required'] ? 'composer-title-required-error' : null,
+        touched && title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
+      ].filter((id): id is string => id !== null);
+
+      return ids.length ? ids.join(' ') : null;
+    });
   }
 
   // Reads the loaded meeting rather than the control: the retained option has to stay the *stored*

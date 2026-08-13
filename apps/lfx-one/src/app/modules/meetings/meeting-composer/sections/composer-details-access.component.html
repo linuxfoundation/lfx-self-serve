@@ -19,7 +19,7 @@
       id="composer-meeting-title"
       placeholder="Enter meeting title"
       styleClass="w-full"
-      [ariaDescribedBy]="titleHint() ? 'composer-title-hint' : undefined"
+      [ariaDescribedBy]="titleDescribedBy()"
       data-testid="composer-title-input" />
 
     @if (titleHint(); as hint) {
@@ -44,10 +44,10 @@
     }
 
     @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
+      <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
     }
     @if (form().get('title')?.errors?.['maxlength'] && form().get('title')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
+      <p id="composer-title-maxlength-error" class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
         Meeting title cannot exceed {{ youtubeTitleLimit }} characters while YouTube uploads are enabled.
       </p>
     }

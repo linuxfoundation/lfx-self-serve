@@ -269,6 +269,37 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(getMeetingRegistrants).toHaveBeenCalledTimes(2);
   });
 
+  it('clears the failure and hydrates the form when the retry succeeds', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+    expect(service.meetingLoadFailed()).toBe(true);
+
+    getMeeting.mockReturnValue(of({ id: 'meeting-1', title: 'Retried meeting' } as Meeting));
+    service.retryLoadMeeting();
+
+    expect(service.meetingLoadFailed()).toBe(false);
+    expect(service.meeting()?.title).toBe('Retried meeting');
+    expect(service.form().get('title')?.value).toBe('Retried meeting');
+  });
+
+  it('ignores a retry while a load is still in flight', () => {
+    // A pending fetch leaves `loading` true, which is the state a second click on Try again would hit.
+    getMeeting.mockReturnValue(new Subject<Meeting>());
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+    expect(service.loading()).toBe(true);
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-fetch an edit-mode open that never had a meeting uid', () => {
+    service.initialize({ mode: 'edit' });
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).not.toHaveBeenCalled();
+  });
+
   it('does not re-fetch in create mode, where meetingId comes from the save', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.meetingId.set('meeting-1');
