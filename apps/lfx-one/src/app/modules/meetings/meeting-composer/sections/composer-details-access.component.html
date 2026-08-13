@@ -3,7 +3,7 @@
 
 <div class="flex flex-col gap-6" data-testid="composer-details-access">
   <div class="flex flex-col gap-1">
-    <h2 class="font-normal">Details &amp; Access</h2>
+    <h2>Details &amp; Access</h2>
     <p class="text-sm text-gray-500">Name the meeting and set who it's for.</p>
   </div>
 
@@ -48,10 +48,8 @@
 
   <!-- Meeting type -->
   <div class="flex flex-col gap-2">
-    <!-- p-select's inputId lands on a span[role=combobox], which `label[for]` can't associate with -->
-    <label id="composer-meeting-type-label" for="composer-meeting-type" class="text-sm font-medium text-gray-900">
-      Meeting type <span class="text-red-500">*</span>
-    </label>
+    <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+    <label id="composer-meeting-type-label" class="text-sm font-medium text-gray-900"> Meeting type <span class="text-red-500">*</span> </label>
     <lfx-select
       [form]="form()"
       control="meeting_type"
