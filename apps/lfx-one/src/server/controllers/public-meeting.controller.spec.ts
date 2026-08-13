@@ -17,6 +17,7 @@ const {
   getEffectiveEmailMock,
   getEffectiveUsernameMock,
   validatePasswordMock,
+  validateUidParameterMock,
   meetingSvc,
   projectSvc,
   addInvitedStatusToMeetingMock,
@@ -27,6 +28,7 @@ const {
   getEffectiveEmailMock: vi.fn(),
   getEffectiveUsernameMock: vi.fn(),
   validatePasswordMock: vi.fn(),
+  validateUidParameterMock: vi.fn<(uid: unknown, req: unknown, next: (err: unknown) => void) => boolean>(() => true),
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -51,7 +53,7 @@ vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => n
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
-vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
+vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
 
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
@@ -521,6 +523,10 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
   it('missing meeting_id returns validation error', async () => {
     const { req, res, next } = buildRegisterReq(true, { meeting_id: '' });
+    validateUidParameterMock.mockImplementationOnce((_uid, _req, nextFn) => {
+      nextFn(new Error('Meeting ID is required'));
+      return false;
+    });
 
     await controller.registerForPublicMeeting(req, res, next);
 
