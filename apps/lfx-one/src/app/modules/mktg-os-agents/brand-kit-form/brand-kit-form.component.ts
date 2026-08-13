@@ -20,14 +20,23 @@ const RESULT_POLL_INTERVAL_MS = 10_000;
 const RESULT_POLL_MAX_ATTEMPTS = 30;
 /** Consecutive transient poll failures tolerated before giving up. */
 const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
+/**
+ * Bounded background retries when a ready result arrives without a
+ * persistence receipt: each poll re-runs the idempotent server-side write
+ * (dec-brand-kit-storage-v2), so a transient storage outage still gets the
+ * document persisted. Bounded so environments where the bucket is
+ * intentionally unconfigured don't poll for the full budget.
+ */
+const PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
 /**
  * One-page Brand Kit intake form (dec-brand-kit-intake-form): all 7 of Paul's
  * questions, open-ended, single submission. Drives a one-shot form-mode agent
  * session via the BFF, polls for the validated document, and renders it with
  * a download option. The BFF persists the validated document server-side
- * (dec-brand-kit-storage-v2); this view renders it and does not consume the
- * persistence receipt.
+ * (dec-brand-kit-storage-v2); this view renders the document and, when the
+ * ready response is missing its persistence receipt, keeps polling a bounded
+ * number of extra times so the server retries the idempotent write.
  */
 @Component({
   selector: 'lfx-brand-kit-form',
@@ -93,7 +102,7 @@ export class BrandKitFormComponent implements OnDestroy {
           if (epoch !== this.pollEpoch) {
             return;
           }
-          this.pollResult(epoch, response.sessionId, response.ownerToken, 1, 0);
+          this.pollResult(epoch, response.sessionId, response.ownerToken, 1, 0, 0);
         },
         error: () => {
           if (epoch !== this.pollEpoch) {
@@ -140,7 +149,7 @@ export class BrandKitFormComponent implements OnDestroy {
   }
 
   // === Private methods ===
-  private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number): void {
+  private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number, persistRetries: number): void {
     this.brandKitService
       .getResult(sessionId, ownerToken)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -150,18 +159,32 @@ export class BrandKitFormComponent implements OnDestroy {
             return;
           }
           if (response.status === 'ready') {
+            // Show the validated document immediately — persistence is
+            // best-effort and never blocks the user.
             this.generating.set(false);
             this.result.set(response);
+            if (response.persistence || persistRetries >= PERSIST_RETRY_MAX_ATTEMPTS) {
+              return;
+            }
+            // Missing receipt: each extra poll re-triggers the server-side
+            // content-addressed write, recovering from transient storage
+            // outages without changing what the user sees.
+            this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
             return;
           }
           if (attempt >= RESULT_POLL_MAX_ATTEMPTS) {
             this.failGeneration('The generation is taking longer than expected. Please try again later.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries), RESULT_POLL_INTERVAL_MS);
         },
         error: () => {
           if (epoch !== this.pollEpoch) {
+            return;
+          }
+          if (this.result()) {
+            // The document is already displayed — a failed background
+            // persistence-retry poll must not surface an error or clear it.
             return;
           }
           // Tolerate transient failures — a multi-minute generation should not be
@@ -170,7 +193,10 @@ export class BrandKitFormComponent implements OnDestroy {
             this.failGeneration('Could not fetch the generation result. Please try again.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(
+            () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1, persistRetries),
+            RESULT_POLL_INTERVAL_MS
+          );
         },
       });
   }

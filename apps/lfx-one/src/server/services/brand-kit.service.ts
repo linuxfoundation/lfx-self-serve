@@ -125,8 +125,16 @@ export class BrandKitService {
       };
     } catch (error) {
       // Deliberate degrade: surface the validated document even when storage is
-      // down; the content-addressed write is retried on the next poll.
-      logger.error(req, 'brand_kit_persist', startTime, error, { project: envelope.project, version: envelope.version });
+      // down; the content-addressed write is retried on the next poll (the
+      // client keeps polling while the receipt is missing). WARN, not ERROR —
+      // graceful-degradation failures per logging-patterns.md, and the bucket
+      // env var is intentionally absent in deployed environments for now.
+      logger.warning(req, 'brand_kit_persist', 'Object-store write failed — returning document without a receipt; retried on next poll', {
+        project: envelope.project,
+        version: envelope.version,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
