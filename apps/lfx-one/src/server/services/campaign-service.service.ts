@@ -128,6 +128,85 @@ interface CampaignServiceBriefEnvelope {
 }
 
 /**
+ * The canonical slug for The Linux Foundation's own project row.
+ *
+ * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
+ * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
+ * project or slug segment", LF-scoped by construction. That is wrong: the route carries
+ * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
+ * foundation reaches the page with their own foundation selected. Anything that WRITES must
+ * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
+ *
+ * The job poll keeps the constant because it is currently unreachable with a real id:
+ * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
+ * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
+ * both the create and the poll in the same change, at which point this constant goes away.
+ *
+ * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
+ * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
+ * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
+ * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
+ * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
+ * written under `tlf` is invisible to a poll made under the project's uid. Resolving the slug
+ * to a uid here would look more canonical and find nothing.
+ */
+interface CampaignServiceBriefInput {
+  program_type: string;
+  event_slug: string;
+  url?: string;
+  platforms?: string[];
+  event_details?: Record<string, unknown>;
+  copy?: Record<string, unknown>;
+  keywords?: unknown;
+  targeting?: Record<string, unknown>;
+}
+
+/**
+ * `brief` as campaign-service returns it in the response BODY.
+ *
+ * No `etag` field, deliberately: the design maps it to the `ETag` HTTP header on every brief
+ * response, so Goa leaves it out of the generated body struct. Declaring it here would compile
+ * and read `undefined` forever. `readEtag` takes it off the headers instead.
+ *
+ * The four content fields are declared here as well as on the input above, because the read
+ * path needs them: `Brief` inherits `event_details`, `copy`, `keywords` and `targeting` from
+ * `BriefData` via `Reference`, so a find returns everything a save wrote. They stay `unknown`-ish
+ * for the same reason as on the input — the service validates none of them, so a value coming
+ * back is not evidence of its shape and the adapter has to check rather than trust.
+ */
+interface CampaignServiceBrief {
+  id: string;
+  project_id: string;
+  program_type: string;
+  event_slug: string;
+  status: string;
+  version: number;
+  // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
+  // these come back on the find whether or not this phase renders them. Declared for the create
+  // reconciliation, which has to tell THIS request's row from another writer's — not because the
+  // write path reads them.
+  url?: string;
+  platforms?: string[];
+  event_details?: unknown;
+  copy?: unknown;
+  keywords?: unknown;
+  targeting?: unknown;
+}
+
+/**
+ * The wrapper both `create-brief` and `update-brief` require around the payload.
+ *
+ * The body is `{"brief": {…}}`, NOT the brief object itself. Goa builds the request body from
+ * the payload attributes that are not mapped to the path, headers or query, and the design
+ * declares `Attribute("brief", BriefInput)` without a `Body("brief")` override — so the
+ * attribute name survives into the wire format. Posting a bare brief object produces a 400 on
+ * every required field at once, which reads like a mapping bug rather than a missing wrapper.
+ */
+interface CampaignServiceBriefEnvelope {
+  brief: CampaignServiceBriefInput;
+}
+
+/**
  * True when `jobId` is a job campaign-service could possibly know about.
  *
  * The flag alone is not a safe router, and this is the reason. Campaign CREATION has not been
@@ -521,10 +600,35 @@ export class CampaignServiceClient {
         projectSlug,
         error: error instanceof Error ? error.message : String(error),
       });
-      // Deliberately generic. The upstream message can name a connection, an account id or a
-      // platform error body, none of which the user can act on and some of which should not be
-      // rendered at all.
-      return { enabled: true, jobId: null, error: 'Campaign creation could not be started. Please try again.' };
+      // Deliberately generic about the CAUSE. The upstream message can name a connection, an
+      // account id or a platform error body, none of which the user can act on and some of which
+      // should not be rendered at all.
+      //
+      // But it must NOT be generic about whether retrying is safe. This endpoint answers 202 and
+      // dispatches work the request does not wait for, and neither it nor `/campaigns` declares
+      // an idempotency key — the same reason `saveBrief` reconciles instead of retrying. So on an
+      // indeterminate failure the POST may already have committed and real ad spend may already
+      // be running. Telling the user to "try again" there is an instruction to double-spend,
+      // which is the exact outcome this cutover exists to prevent.
+      //
+      // Same predicate as `reconcileLostWrite`, deliberately: a 4xx that is not 408 is a definite
+      // refusal — campaign-service decided, nothing was committed, and retrying is safe. Anything
+      // else (5xx, connection reset, and the 408 the client synthesises for a timeout) is
+      // indeterminate, and gets the non-retry wording the 202-no-job branch above already uses.
+      //
+      // Wording rather than reconciliation: a reconcile needs a lookup keyed by brief that would
+      // tell us whether a job exists, and the create endpoints expose no such route today. That
+      // is the better fix and belongs with an idempotency key on the service side; this stops the
+      // active harm of instructing the retry.
+      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+      if (definitelyRejected) {
+        return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
+      }
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
+      };
     }
   }
 

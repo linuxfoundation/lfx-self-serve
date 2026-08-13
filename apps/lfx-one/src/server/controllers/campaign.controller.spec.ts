@@ -413,6 +413,52 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
   });
 
+  /**
+   * The demand-gen-only Google case, which is the reachable one: `buildGoogleAdsConfig` returns
+   * null (it builds SEARCH config, and no Search campaign was selected), so google-ads would
+   * otherwise travel with no `googleAdsConfig`.
+   *
+   * That is not a harmless no-op upstream. `unmarshalPlatformConfig` in campaign-service returns
+   * nil for an absent key — "no per-platform config supplied; zero value is fine" — so the
+   * dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
+   * headlines. Nothing upstream refuses it, so it has to be refused here.
+   */
+  it('refuses a create when a selected platform has no config, without calling either path', async () => {
+    const demandGenOnly = { platforms: ['google-ads'], campaignTypes: ['demand-gen'], budgetUsd: 5000 };
+
+    await controller.createCampaign(buildReq(demandGenOnly, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    // Neither path runs: not campaign-service (nothing to dispatch) and NOT the legacy path,
+    // which would create the campaigns for real while the user is told creation was refused.
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
+  });
+
+  it('allows a create when the same platform IS configured', async () => {
+    // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
+    // config. Without this, the test above would pass on a controller that refused everything.
+    const withSearch = { platforms: ['google-ads'], campaignTypes: ['search'], budgetUsd: 5000, headlines: ['a'], descriptions: ['b'] };
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000002', error: null });
+
+    await controller.createCampaign(buildReq(withSearch, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: '9f1c2d3e-0000-4000-8000-000000000002' });
+  });
+
+  it('refuses only the unconfigured platform in a mixed selection, rather than dispatching a partial create', async () => {
+    // A silent partial success is the same class of bug the cutover exists to prevent: the user
+    // asked for Google and LinkedIn, and would get LinkedIn only, with nothing saying so.
+    const mixed = { platforms: ['google-ads', 'linkedin-ads'], campaignTypes: ['demand-gen'], linkedInConfig: { budgetUsd: 100 } };
+
+    await controller.createCampaign(buildReq(mixed, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
+  });
+
   it('passes the project slug and brief id from the query, not the body', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
@@ -430,12 +476,20 @@ describe('CampaignController.createCampaign cutover', () => {
   it('omits absent per-platform configs rather than sending them as null', async () => {
     // The dispatcher reads an absent config as "not selected" and a null one as a malformed
     // selection, so the difference is not cosmetic.
+    //
+    // The selection is now reddit + linkedin rather than reddit alone. A platform with NO config
+    // no longer reaches this call at all — it is refused before dispatch, because campaign-service
+    // reads an absent config key as a zero value and would have dispatched it with empty fields.
+    // So the property this test exists for is checked on the platform that IS configured: the
+    // envelope carries `linkedInConfig` and does not invent a null `redditConfig` beside it.
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
-    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'] }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+    const body = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 } };
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-1', 'tlf', ['reddit-ads'], {});
+    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
   });
 
   const googleBody = (overrides: Record<string, unknown> = {}) => ({
@@ -479,15 +533,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['budget']).toBe(600);
   });
 
-  it('omits googleAdsConfig when only demand-gen is selected', async () => {
+  it('builds no googleAdsConfig when only demand-gen is selected, and refuses rather than dispatching', async () => {
     // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
     // request as Search.
-    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
-    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
-
+    //
+    // Previously this asserted the envelope omitted `googleAdsConfig` — true, but it let the
+    // create proceed with `google-ads` still in `platforms`, which is the bug. campaign-service
+    // reads the absent key as a ZERO VALUE and calls Google Ads with budget 0 and no headlines,
+    // so "omitted from the envelope" was never the safe outcome it looked like. The refusal is
+    // what makes the omission safe, so that is what this pins.
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
   });
 
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {

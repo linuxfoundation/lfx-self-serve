@@ -44,6 +44,13 @@ export type MarketingImpactTab = 'all' | 'web' | 'social' | 'email' | 'paid' | '
  */
 export type EventsSplitView = 'attendance' | 'sponsorship';
 
+/**
+ * Which half of an event's story the detail drawer shows: 'b2c' is registrations and the campaigns
+ * that drove them, 'b2b' is sponsorship revenue and sponsors by tier. The sibling of
+ * EventsSplitView — the roster maps one onto the other via EVENTS_SPLIT_TO_DRAWER_FOCUS.
+ */
+export type EventDrawerFocus = 'b2c' | 'b2b';
+
 /** Sub-tab option for the Events attendance/sponsorship split. */
 export interface EventsSplitOption {
   id: EventsSplitView;
@@ -123,7 +130,6 @@ export interface EventRosterRowView {
   sponsorshipRevenue: EventRosterBar;
   /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
   atRisk: boolean;
-  cfpStatus: string;
 }
 
 /** Pre-formatted view-model for a single Events Summary stat tile. */
@@ -214,16 +220,17 @@ export interface EmailTypeRow {
   ctr: string;
 }
 
-/** View-model row for the top campaigns table. */
+/** View-model row for the email sends table. */
 export interface TopCampaignRow {
   name: string;
   type: string;
   /**
-   * Day-level send date, or null when the source row carries none. The breakdown groups by
-   * PUBLISHED_DATE, so one campaign sent twice produces two rows — this is what distinguishes
-   * them, both visually and in the @for track key.
+   * Formatted send date (e.g. "Jul 14, 2026"), or an em dash when the source row has no date.
+   * Already display-ready — the raw nullable YYYY-MM-DD lives on EmailCampaignPerformance; this
+   * is the view-model, so the template renders it directly and the @for track key uses it to tell
+   * repeated sends of one campaign apart.
    */
-  sendDate: string | null;
+  sendDate: string;
   sends: string;
   opens: string;
   openRate: string;

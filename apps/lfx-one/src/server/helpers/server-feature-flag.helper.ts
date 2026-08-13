@@ -75,16 +75,23 @@ export enum ServerFeatureFlag {
    * Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
    * services in `campaign-proxy.service.ts`. OFF keeps the legacy path byte-for-byte.
    *
-   * Depends on `CampaignServiceBriefs` and is checked AFTER it, because the create route is
-   * `/projects/{slug}/briefs/{brief_id}/campaigns` — there is no create-without-a-brief path.
-   * Turning this on while briefs are off yields no brief id and every create falls back to the
-   * legacy path, which is safe but silently pointless; the create path says so in its log line
-   * rather than failing.
+   * Requires BOTH `CampaignServiceBriefs` AND `CampaignServiceJobs` to be on. `createCampaigns`
+   * gates on all three together — with either prerequisite off it returns `enabled: false` and
+   * every create silently stays on the legacy path.
    *
-   * It inherits the id-shape backstop the jobs flag introduced, which is what makes an
-   * overlapping rollout safe: campaign-service mints UUID job ids and the legacy path mints
-   * `job_...`, so a poll is answered by whichever system actually owns that job regardless of
-   * which pod serves it. A flag-on pod creating and a flag-off pod polling still works.
+   * BRIEFS, because the create route is `/projects/{slug}/briefs/{brief_id}/campaigns` — there is
+   * no create-without-a-brief path, so without it there is no brief id to create from.
+   *
+   * JOBS, because a campaign-service create returns a job the client must then POLL. Creating
+   * through the new system while the poll route still assumes legacy `job_...` ids would strand
+   * the job: it exists and is spending, and nothing can report on it. JOBS is not merely an
+   * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
+   * it is a hard prerequisite.
+   *
+   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
+   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
+   * actually owns that job regardless of which pod serves it. A flag-on pod creating and a
+   * flag-off pod polling still works.
    *
    * What it does NOT survive is a create that lands flag-on while the ad-platform connection for
    * that project is unconfigured: campaign-service reads credentials from its own connection

@@ -605,7 +605,13 @@ export interface CampaignCreateRequest {
 }
 
 /**
- * What `POST /api/campaigns/create` reports when the campaign-service cutover is ON.
+ * The INTERNAL result of `CampaignServiceClient.createCampaigns` — not a wire shape.
+ *
+ * `POST /api/campaigns/create` never sends this. The controller translates it: `{ jobId }` on
+ * success, `{ jobId: '', error }` on refusal, and on `enabled: false` it falls through to the
+ * legacy path and answers with that path's response instead. `enabled` is a routing signal
+ * between these two layers and is stripped before anything reaches the client, so a client coded
+ * against it would read `undefined` forever.
  *
  * Deliberately NOT the legacy `{ jobId, result?, error? }` shape. The legacy path inline-waits up
  * to 45s and can return a finished `result`; campaign-service answers 202 with a job id and

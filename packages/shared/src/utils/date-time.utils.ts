@@ -588,3 +588,32 @@ export function formatFutureRelativeTime(date: Date): string {
   const diffDay = Math.floor(diffMs / 86_400_000);
   return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
 }
+
+/**
+ * Formats a date-only `YYYY-MM-DD` string as "Jul 14, 2026", or returns the input unchanged when
+ * it is not a real date.
+ *
+ * Parts are parsed explicitly rather than handed to `new Date(iso)`, which would interpret the
+ * string as UTC midnight and then render it in local time — a day early for anyone west of
+ * Greenwich. The range and round-trip checks matter because `Date.UTC` silently rolls invalid
+ * parts over: month 13 becomes January of the next year, and Feb 31 becomes March 3rd. Returning
+ * the raw string makes bad warehouse data visible instead of plausible.
+ */
+export function formatIsoDateLabel(iso: string): string {
+  // Shape-checked first: splitting alone accepts trailing junk, so "2026-07-14-extra" would parse
+  // to a valid-looking date and pass every check below.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return iso;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  // The year is round-tripped alongside month and day because Date.UTC remaps years 0–99 into the
+  // 1900s: 0001-01-01 would otherwise render as "Jan 1, 1901".
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}

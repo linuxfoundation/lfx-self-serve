@@ -905,21 +905,14 @@ export class AnalyticsService {
    * @returns Observable of email CTR response
    */
   public getEmailCtr(foundationSlug: string, classification?: string, period?: string): Observable<EmailCtrResponse> {
-    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params: this.buildFoundationParams(foundationSlug, classification, period) }).pipe(
-      catchError(() => {
-        return of({
-          currentCtr: 0,
-          changePercentage: 0,
-          momChangePercentage: null,
-          trend: 'up' as const,
-          monthlyData: [],
-          monthlyLabels: [],
-          campaignGroups: [],
-          monthlySends: [],
-          monthlyOpens: [],
-        });
-      })
-    );
+    // Propagates rather than resolving a zero-filled object, matching getEventRoster. Swallowing
+    // the failure here reached the tab as a successful response of all zeros, so an outage rendered
+    // "Total Sends 0 · CTR 0.0%" as measurements — and no downstream guard could tell the
+    // difference, because by then the error no longer existed. The caller catches it and renders a
+    // failure state instead.
+    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**

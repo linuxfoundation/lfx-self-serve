@@ -253,8 +253,34 @@ export class CampaignController {
       const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+      const configEnvelope = this.createConfigEnvelope(body);
 
-      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, this.createConfigEnvelope(body));
+      // A platform selected but left unconfigured is REFUSED here, before dispatch.
+      //
+      // This used to be a comment claiming the caller refused it. No caller did. The real
+      // behaviour was worse than a gap: `unmarshalPlatformConfig` in campaign-service returns nil
+      // for an absent key ("no per-platform config supplied; zero value is fine"), so the
+      // dispatcher proceeded with a ZERO-VALUE config and called Google Ads with budget 0, no
+      // headlines and no keywords. Nothing upstream refuses it — I checked the dispatcher rather
+      // than assuming.
+      //
+      // The reachable case is google-ads with Demand Gen only and no Search: `buildGoogleAdsConfig`
+      // correctly returns null (it builds Search config), and the platform then travelled alone.
+      //
+      // Refusing the WHOLE create rather than filtering the platform out, because a silent
+      // partial success is the same class of bug this cutover exists to prevent — the user asked
+      // for Google, would get no Google, and nothing would say so. This returns through the
+      // existing `enabled: true, jobId: null, error` branch, which already blocks the legacy
+      // fall-through, so a refusal cannot become a duplicate create on the old path.
+      const unconfigured = platforms.filter((p) => !this.hasPlatformConfig(p, configEnvelope));
+      if (unconfigured.length > 0) {
+        const detail = `No configuration was built for: ${unconfigured.join(', ')}. Check the campaign types selected for each platform.`;
+        logger.warning(req, 'campaign_create', 'Refusing a create with unconfigured platforms', { platforms, unconfigured });
+        res.json({ jobId: '', error: detail });
+        return;
+      }
+
+      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope);
 
       if (viaService.enabled && viaService.jobId !== null) {
         logger.success(req, 'campaign_create', startTime, { jobId: viaService.jobId, via: 'campaign-service' });
@@ -323,7 +349,16 @@ export class CampaignController {
         // Refuse rather than guess. The old module constant guessed 'tlf' for everyone, which was
         // survivable only while no UUID job could exist; creation through campaign-service is what
         // makes them real. Guessing here would answer "campaign lost" for another foundation's job.
-        next(new Error('A campaign-service job poll requires the project it was created under.'));
+        // `ServiceValidationError`, matching the `jobId` check above and every other validation
+        // failure in this file. A bare `Error` is not a `BaseApiError`, so the error middleware
+        // falls through to a generic 500 `{ error: 'Internal server error' }` — the message below
+        // never reaches the client, and a missing query param is reported as a server fault.
+        next(
+          ServiceValidationError.forField('project', 'a campaign-service job poll requires the project it was created under', {
+            operation: 'campaign_job_status',
+            service: 'campaign_controller',
+          })
+        );
         return;
       }
       const status = viaCampaignService
@@ -889,6 +924,30 @@ export class CampaignController {
    * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
    * absent config as "not selected", and a null one as a malformed selection.
    */
+  /**
+   * Does the envelope carry the config this platform needs to dispatch?
+   *
+   * The mapping is the dispatcher's, not ours: each `<platform>Dispatcher.Dispatch` reads exactly
+   * one envelope key, and `unmarshalPlatformConfig` treats an absent key as a zero value rather
+   * than an error — which is why the check has to happen on this side.
+   *
+   * An UNKNOWN platform returns true, deliberately. This method's job is to catch a platform we
+   * failed to configure, not to police the platform list; `createCampaigns` and campaign-service
+   * both reject unsupported platforms, and answering false here would turn a new platform's
+   * rollout into a mysterious local refusal.
+   */
+  private hasPlatformConfig(platform: string, envelope: Record<string, unknown>): boolean {
+    const requiredKey: Record<string, string> = {
+      'google-ads': 'googleAdsConfig',
+      'linkedin-ads': 'linkedInConfig',
+      'reddit-ads': 'redditConfig',
+      'meta-ads': 'metaConfig',
+    };
+    const key = requiredKey[platform];
+    if (key === undefined) return true;
+    return envelope[key] !== undefined;
+  }
+
   private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -920,8 +979,13 @@ export class CampaignController {
    * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
    * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
    * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
-   * no Search campaign to fund, and Google is returned as unconfigured so the caller refuses the
-   * create rather than silently dispatching a demand-gen request as Search.
+   * no Search campaign to fund, so this returns null.
+   *
+   * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
+   * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
+   * caller already refused; it did not. `platforms` was passed through unfiltered, and
+   * campaign-service reads an absent config key as a zero value, so google-ads dispatched with
+   * budget 0 and no headlines. The refusal is real now rather than assumed.
    */
   private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.platforms?.includes('google-ads')) return null;

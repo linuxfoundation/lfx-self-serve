@@ -49,174 +49,203 @@
     <div class="flex flex-col gap-6 pb-2" data-testid="event-detail-drawer-content">
       <!-- Headline stats -->
       <div class="flex flex-col gap-4 sm:flex-row" data-testid="event-detail-stats">
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Registrations</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ d.registrations.actual | metricNumber }}</span>
-            @if (d.registrations.goal > 0) {
-              <span class="text-xs text-gray-400">of {{ d.registrations.goal | metricNumber }} goal</span>
-            } @else {
-              <span class="text-xs text-gray-400">no goal set</span>
-            }
-          </div>
-        </lfx-card>
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Sponsorship revenue</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
-            @if (d.sponsorshipRevenue.goal > 0) {
-              <span class="text-xs text-gray-400">of {{ d.sponsorshipRevenue.goal | metricMoney }} goal</span>
-            } @else {
-              <span class="text-xs text-gray-400">no goal set</span>
-            }
-          </div>
-        </lfx-card>
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">vs Last year</span>
-            @if (vsLastYearLabel(); as vs) {
-              <span
-                class="text-2xl font-semibold"
-                [class.text-green-600]="(d.vsLastYear ?? 1) > 1"
-                [class.text-red-600]="(d.vsLastYear ?? 1) < 1"
-                [class.text-gray-900]="(d.vsLastYear ?? 1) === 1"
-                >{{ vs }}</span
-              >
-              <span class="text-xs text-gray-400">registration pace</span>
-            } @else {
-              <span class="text-2xl font-semibold text-gray-400">—</span>
-              <!-- hasPriorYear and vsLastYear are separate facts: a prior edition can exist while
-                   the comparison ratio is still missing. Saying "no prior year" in that case
-                   contradicts the pacing block below, which shows a Last year figure. -->
-              <span class="text-xs text-gray-400">{{ d.hasPriorYear ? 'no comparison available' : 'no prior year' }}</span>
-            }
-          </div>
-        </lfx-card>
+        <!-- Registrations is the attendance headline. -->
+        @if (showRegistrations()) {
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Registrations</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ d.registrations.actual | metricNumber }}</span>
+              @if (d.registrations.goal > 0) {
+                <span class="text-xs text-gray-400">of {{ d.registrations.goal | metricNumber }} goal</span>
+              } @else {
+                <span class="text-xs text-gray-400">no goal set</span>
+              }
+            </div>
+          </lfx-card>
+        }
+        <!-- Sponsorship revenue is the sponsorship headline. -->
+        @if (showSponsorship()) {
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Sponsorship revenue</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
+              @if (d.sponsorshipRevenue.goal > 0) {
+                <span class="text-xs text-gray-400">of {{ d.sponsorshipRevenue.goal | metricMoney }} goal</span>
+              } @else {
+                <span class="text-xs text-gray-400">no goal set</span>
+              }
+            </div>
+          </lfx-card>
+        }
+        <!-- "vs Last year" measures registration pace — an attendance stat. -->
+        @if (showRegistrations()) {
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">vs Last year</span>
+              @if (vsLastYearLabel(); as vs) {
+                <span
+                  class="text-2xl font-semibold"
+                  [class.text-green-600]="(d.vsLastYear ?? 1) > 1"
+                  [class.text-red-600]="(d.vsLastYear ?? 1) < 1"
+                  [class.text-gray-900]="(d.vsLastYear ?? 1) === 1"
+                  >{{ vs }}</span
+                >
+                <span class="text-xs text-gray-400">registration pace</span>
+              } @else {
+                <span class="text-2xl font-semibold text-gray-400">—</span>
+                <!-- hasPriorYear and vsLastYear are separate facts: a prior edition can exist while
+                     the comparison ratio is still missing. Saying "no prior year" in that case
+                     contradicts the pacing block below, which shows a Last year figure. -->
+                <span class="text-xs text-gray-400">{{ d.hasPriorYear ? 'no comparison available' : 'no prior year' }}</span>
+              }
+            </div>
+          </lfx-card>
+        }
       </div>
 
       <!-- Registration pacing -->
-      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <h3 class="text-sm font-semibold text-gray-900">Registration pacing</h3>
-            @if (behindGoalLabel(); as behind) {
-              <p class="text-sm text-gray-600">{{ behind }}</p>
-            }
+      <!-- Registration pacing is an attendance concern — hidden in the sponsorship view. -->
+      @if (showRegistrations()) {
+        <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-pacing">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">Registration pacing</h3>
+              @if (behindGoalLabel(); as behind) {
+                <p class="text-sm text-gray-600">{{ behind }}</p>
+              }
+            </div>
+            <lfx-tag [value]="paceRatingLabel()" [severity]="paceSeverity()" [rounded]="true" />
           </div>
-          <lfx-tag [value]="paceRatingLabel()" [severity]="paceSeverity()" [rounded]="true" />
-        </div>
 
-        @if (d.registrations.goal > 0 && regProgress() !== null) {
-          <div class="flex flex-col gap-1.5">
-            <div class="flex items-baseline justify-between text-sm">
-              <span class="font-semibold text-gray-900">{{ d.registrations.actual | metricNumber }}</span>
-              <span class="text-gray-400">{{ d.registrations.goal | metricNumber }} goal</span>
-            </div>
-            <div class="h-2.5 overflow-hidden rounded-full bg-gray-100">
-              <div
-                class="h-full rounded-full"
-                role="progressbar"
-                [attr.aria-valuenow]="regProgress()"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                [attr.aria-label]="'Registrations: ' + (d.registrations.actual | metricNumber) + ' of ' + (d.registrations.goal | metricNumber) + ' goal'"
-                [ngClass]="{
-                  'bg-emerald-500': registrationsTone() === 'good',
-                  'bg-amber-500': registrationsTone() === 'warn',
-                  'bg-red-400': registrationsTone() === 'critical',
-                }"
-                [style.width.%]="regProgress()"></div>
-            </div>
-          </div>
-        }
-
-        @if (d.pacing.available) {
-          <!-- Headline: current / last year / predicted, mirroring PCC -->
-          <div class="flex flex-wrap gap-8">
-            <div class="flex flex-col">
-              <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricNumber) : '—' }}</span>
-              <span class="text-xs text-gray-400">Current</span>
-            </div>
-            @if (d.hasPriorYear) {
-              <div class="flex flex-col">
-                <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricNumber) : '—' }}</span>
-                <span class="text-xs text-gray-400">Last year</span>
+          @if (d.registrations.goal > 0 && regProgress() !== null) {
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-baseline justify-between text-sm">
+                <span class="font-semibold text-gray-900">{{ d.registrations.actual | metricNumber }}</span>
+                <span class="text-gray-400">{{ d.registrations.goal | metricNumber }} goal</span>
               </div>
-            }
-            <div class="flex flex-col">
-              <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricNumber) : '—' }}</span>
-              <span class="text-xs text-gray-400">
-                Predicted
-                @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
-                  <span class="text-gray-400">({{ d.pacing.predictedLow | metricNumber }}–{{ d.pacing.predictedHigh | metricNumber }})</span>
-                }
-              </span>
-            </div>
-            <!-- DAYS_LEFT_FROM_YESTERDAY keeps counting down past the event, so a past event
-                 yields a negative. "Days left" is meaningless then — drop the whole block. -->
-            @if (d.pacing.daysLeft !== null && d.pacing.daysLeft > 0) {
-              <div class="ml-auto flex flex-col text-right">
-                <span class="text-xl font-semibold text-gray-900">{{ d.pacing.daysLeft | metricNumber }}</span>
-                <span class="text-xs text-gray-400">Days left</span>
+              <div class="h-2.5 overflow-hidden rounded-full bg-gray-100">
+                <div
+                  class="h-full rounded-full"
+                  role="progressbar"
+                  [attr.aria-valuenow]="regProgress()"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  [attr.aria-label]="'Registrations: ' + (d.registrations.actual | metricNumber) + ' of ' + (d.registrations.goal | metricNumber) + ' goal'"
+                  [ngClass]="{
+                    'bg-emerald-500': registrationsTone() === 'good',
+                    'bg-amber-500': registrationsTone() === 'warn',
+                    'bg-red-400': registrationsTone() === 'critical',
+                  }"
+                  [style.width.%]="regProgress()"></div>
               </div>
-            }
-          </div>
-
-          <!-- Daily cumulative registration curve -->
-          @if (hasPacingChart()) {
-            <div class="h-[240px]" data-testid="event-detail-pacing-chart">
-              <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
             </div>
           }
-        } @else {
-          <p class="text-sm text-gray-500">Day-by-day pacing prediction is coming to this view.</p>
-        }
 
-        @if (d.eventUrl) {
-          <a
-            [href]="d.eventUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
-            data-testid="event-detail-event-link">
-            <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-            View event page
-          </a>
-        }
-      </div>
+          @if (d.pacing.available) {
+            <!-- Headline: current / last year / predicted, mirroring PCC -->
+            <div class="flex flex-wrap gap-8">
+              <div class="flex flex-col">
+                <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricNumber) : '—' }}</span>
+                <span class="text-xs text-gray-400">Current</span>
+              </div>
+              @if (d.hasPriorYear) {
+                <div class="flex flex-col">
+                  <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricNumber) : '—' }}</span>
+                  <span class="text-xs text-gray-400">Last year</span>
+                </div>
+              }
+              <div class="flex flex-col">
+                <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricNumber) : '—' }}</span>
+                <span class="text-xs text-gray-400">
+                  Predicted
+                  @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
+                    <span class="text-gray-400">({{ d.pacing.predictedLow | metricNumber }}–{{ d.pacing.predictedHigh | metricNumber }})</span>
+                  }
+                </span>
+              </div>
+              <!-- DAYS_LEFT_FROM_YESTERDAY keeps counting down past the event, so a past event
+                   yields a negative. "Days left" is meaningless then — drop the whole block. -->
+              @if (d.pacing.daysLeft !== null && d.pacing.daysLeft > 0) {
+                <div class="ml-auto flex flex-col text-right">
+                  <span class="text-xl font-semibold text-gray-900">{{ d.pacing.daysLeft | metricNumber }}</span>
+                  <span class="text-xs text-gray-400">Days left</span>
+                </div>
+              }
+            </div>
+
+            <!-- Daily cumulative registration curve -->
+            @if (hasPacingChart()) {
+              <div class="h-[240px]" data-testid="event-detail-pacing-chart">
+                <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
+              </div>
+            }
+          } @else {
+            <p class="text-sm text-gray-500">Day-by-day pacing prediction is coming to this view.</p>
+          }
+        </div>
+      }
+      <!--
+        Outside the focus gates: the event page is a general action, not part of either
+        story. Inside the attendance block it disappeared when the drawer was opened from
+        the sponsorship bar.
+      -->
+      @if (d.eventUrl) {
+        <a
+          [href]="d.eventUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
+          data-testid="event-detail-event-link">
+          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          View event page
+        </a>
+      }
 
       <!-- Revenue detail -->
+      <!-- Revenue is the sponsorship story — hidden in the attendance view. -->
+      <!--
+        The card holds both halves' revenue, so it renders for either focus and each column is
+        gated on its own: registration revenue is an attendance figure, sponsorship revenue a
+        sponsorship one. Gating the whole card as sponsorship (as it briefly was) hid registration
+        revenue from the attendance view and showed it in the sponsorship view — backwards on both
+        counts.
+      -->
+      <!-- Renders for either focus; each revenue column is gated on its own half below. -->
       <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
         <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
         <div class="flex flex-col gap-4 sm:flex-row">
-          <div class="flex flex-1 flex-col gap-1">
-            <span class="text-sm text-gray-500">Registration revenue</span>
-            @if (d.registrationRevenue.actual !== null) {
-              <span class="text-xl font-semibold text-gray-900">{{ d.registrationRevenue.actual | metricMoney }}</span>
-            } @else {
-              <span class="text-xl font-semibold text-gray-300">—</span>
-            }
-            @if (d.registrationRevenue.goal > 0) {
-              <span class="text-xs text-gray-400">Goal {{ d.registrationRevenue.goal | metricMoney }}</span>
-            }
-          </div>
-          <div class="flex flex-1 flex-col gap-1">
-            <span class="text-sm text-gray-500">Sponsorship revenue</span>
-            <span class="text-xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
-            <div class="flex items-center gap-2">
-              @if (d.sponsorshipRevenue.goal > 0) {
-                <span class="text-xs text-gray-400">Goal {{ d.sponsorshipRevenue.goal | metricMoney }}</span>
+          @if (showRegistrations()) {
+            <div class="flex flex-1 flex-col gap-1">
+              <span class="text-sm text-gray-500">Registration revenue</span>
+              @if (d.registrationRevenue.actual !== null) {
+                <span class="text-xl font-semibold text-gray-900">{{ d.registrationRevenue.actual | metricMoney }}</span>
+              } @else {
+                <span class="text-xl font-semibold text-gray-300">—</span>
               }
-              @if (sponProgress() !== null) {
-                <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
+              @if (d.registrationRevenue.goal > 0) {
+                <span class="text-xs text-gray-400">Goal {{ d.registrationRevenue.goal | metricMoney }}</span>
               }
             </div>
-          </div>
+          }
+          @if (showSponsorship()) {
+            <div class="flex flex-1 flex-col gap-1">
+              <span class="text-sm text-gray-500">Sponsorship revenue</span>
+              <span class="text-xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
+              <div class="flex items-center gap-2">
+                @if (d.sponsorshipRevenue.goal > 0) {
+                  <span class="text-xs text-gray-400">Goal {{ d.sponsorshipRevenue.goal | metricMoney }}</span>
+                }
+                @if (sponProgress() !== null) {
+                  <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
+                }
+              </div>
+            </div>
+          }
         </div>
       </div>
 
       <!-- Sponsorship by tier -->
-      @if (d.sponsorshipTiers.length) {
+      @if (showSponsorship() && d.sponsorshipTiers.length) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-tiers">
           <h3 class="text-sm font-semibold text-gray-900">Sponsorship by tier</h3>
           <div class="flex flex-col gap-0">
@@ -236,32 +265,35 @@
       }
 
       <!-- Where registrations come from -->
-      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-channels">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Where registrations come from</h3>
-          <p class="text-sm text-gray-600">Web traffic attributed to each marketing channel.</p>
-        </div>
-        @if (d.channels.length) {
-          <div class="flex flex-col gap-3">
-            @for (channel of d.channels; track channel.channel) {
-              <div class="flex items-center gap-3" [attr.data-testid]="'event-detail-channel-' + channel.channel">
-                <span class="w-36 truncate text-sm font-medium text-gray-700">{{ channel.channel }}</span>
-                <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
-                  <div class="h-full rounded-full bg-blue-500" [style.width.%]="channel.sharePercent"></div>
-                </div>
-                <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ channel.sessions | metricNumber }}</span>
-                <span class="w-12 text-right text-xs text-gray-400">{{ channel.sharePercent }}%</span>
-              </div>
-            }
+      <!-- Registration sources are an attendance concern — hidden in the sponsorship view. -->
+      @if (showRegistrations()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-channels">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Where registrations come from</h3>
+            <p class="text-sm text-gray-600">Web traffic attributed to each marketing channel.</p>
           </div>
-        } @else {
-          <p class="text-sm text-gray-500">
-            No tracked registration traffic yet.
-            <span class="font-medium text-gray-700">Email and paid are the fastest levers to drive early registrations.</span>
-          </p>
-        }
-      </div>
-      @if (hasPaid()) {
+          @if (d.channels.length) {
+            <div class="flex flex-col gap-3">
+              @for (channel of d.channels; track channel.channel) {
+                <div class="flex items-center gap-3" [attr.data-testid]="'event-detail-channel-' + channel.channel">
+                  <span class="w-36 truncate text-sm font-medium text-gray-700">{{ channel.channel }}</span>
+                  <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div class="h-full rounded-full bg-blue-500" [style.width.%]="channel.sharePercent"></div>
+                  </div>
+                  <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ channel.sessions | metricNumber }}</span>
+                  <span class="w-12 text-right text-xs text-gray-400">{{ channel.sharePercent }}%</span>
+                </div>
+              }
+            </div>
+          } @else {
+            <p class="text-sm text-gray-500">
+              No tracked registration traffic yet.
+              <span class="font-medium text-gray-700">Email and paid are the fastest levers to drive early registrations.</span>
+            </p>
+          }
+        </div>
+      }
+      @if (showRegistrations() && hasPaid()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-paid-performance">
           <!-- Header doubles as the expand/collapse control; the summary pill stays visible when collapsed. -->
           <button
@@ -368,7 +400,7 @@
         </div>
       }
 
-      @if (hasEmail()) {
+      @if (showRegistrations() && hasEmail()) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4" data-testid="event-detail-email-performance">
           <button
             type="button"

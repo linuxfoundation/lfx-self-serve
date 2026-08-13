@@ -2767,21 +2767,17 @@ export class ProjectService {
         campaignInsightText,
       };
     } catch (error) {
-      logger.warning(undefined, 'get_email_ctr', 'Failed to fetch email CTR from Snowflake', {
+      // Propagates rather than resolving zero-filled defaults, the same contract
+      // project.service.spec.ts pins for getSocialReach. Returning zeros here reached the client
+      // as a successful 200, so a Snowflake outage rendered "Total Sends 0 · CTR 0.00%" as
+      // measurements — and no client-side guard could tell the difference, because the failure had
+      // already been converted into data. The optional per-type breakdown keeps its own fallback
+      // above; only the primary read is fatal.
+      logger.warning(undefined, 'get_email_ctr', 'Failed to fetch email CTR from Snowflake, propagating', {
         foundation_slug: foundationSlug,
         err: error,
       });
-      return {
-        currentCtr: 0,
-        changePercentage: 0,
-        momChangePercentage: null,
-        trend: 'up',
-        monthlyData: [],
-        monthlyLabels: [],
-        campaignGroups: [],
-        monthlySends: [],
-        monthlyOpens: [],
-      };
+      throw error;
     }
   }
 
