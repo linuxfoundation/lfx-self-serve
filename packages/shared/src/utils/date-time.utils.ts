@@ -588,3 +588,27 @@ export function formatFutureRelativeTime(date: Date): string {
   const diffDay = Math.floor(diffMs / 86_400_000);
   return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
 }
+
+/**
+ * Formats a date-only `YYYY-MM-DD` string as "Jul 14, 2026", or returns the input unchanged when
+ * it is not a real date.
+ *
+ * Parts are parsed explicitly rather than handed to `new Date(iso)`, which would interpret the
+ * string as UTC midnight and then render it in local time — a day early for anyone west of
+ * Greenwich. The range and round-trip checks matter because `Date.UTC` silently rolls invalid
+ * parts over: month 13 becomes January of the next year, and Feb 31 becomes March 3rd. Returning
+ * the raw string makes bad warehouse data visible instead of plausible.
+ */
+export function formatIsoDateLabel(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return iso;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}

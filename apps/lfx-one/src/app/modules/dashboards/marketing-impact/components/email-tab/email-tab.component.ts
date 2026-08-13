@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { computeMomPct, formatChangePct, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatIsoDateLabel, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { EMAIL_SENDS_ROW_LIMIT, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -217,33 +217,13 @@ export class EmailTabComponent {
           (c): TopCampaignRow => ({
             name: c.campaignName,
             type: c.emailType,
-            sendDate: c.sendDate ? this.formatSendDate(c.sendDate) : '—',
+            sendDate: c.sendDate ? formatIsoDateLabel(c.sendDate) : '—',
             sends: formatNumber(c.sends),
             opens: formatNumber(c.opens),
             openRate: `${c.openRate.toFixed(1)}%`,
             ctr: `${formatPercent(c.ctr)}%`,
           })
         );
-    });
-  }
-
-  /** Formats a YYYY-MM-DD send date as "Jul 14, 2026", parsing parts explicitly to avoid TZ drift. */
-  private formatSendDate(iso: string): string {
-    const [year, month, day] = iso.split('-').map(Number);
-    if (!year || !month || !day) return iso;
-    // Range-check before Date.UTC, matching the roster's formatDate: it silently rolls over
-    // out-of-range parts (month=13 becomes January of the next year), which would render a
-    // confidently wrong date rather than the raw value. Showing the unparsed string makes bad
-    // warehouse data visible instead of plausible.
-    if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    // Catches the in-range-but-invalid case too — 2026-02-31 rolls into March.
-    if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
-    return parsed.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC',
     });
   }
 }
