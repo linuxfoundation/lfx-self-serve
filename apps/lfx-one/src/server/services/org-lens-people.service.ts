@@ -25,6 +25,7 @@ interface OrgPeopleAllRow {
   ACCOUNT_ID: string;
   PERSON_KEY: string;
   LFID: string | null;
+  LF_USERNAME: string | null;
   CDP_MEMBER_ID: string | null;
   NAME: string | null;
   TITLE: string | null;
@@ -175,6 +176,7 @@ export class OrgLensPeopleService {
         ACCOUNT_ID,
         PERSON_KEY,
         LFID,
+        LF_USERNAME,
         CDP_MEMBER_ID,
         NAME,
         TITLE,
@@ -243,12 +245,14 @@ export class OrgLensPeopleService {
     return {
       personKey: row.PERSON_KEY,
       lfid: row.LFID,
+      lfUsername: (row.LF_USERNAME ?? '').trim().toLowerCase() || null,
       cdpMemberId: row.CDP_MEMBER_ID,
       name,
       firstName,
       lastName,
       title: row.TITLE,
       email: row.EMAIL,
+      emails: row.EMAIL ? [row.EMAIL.trim().toLowerCase()] : [],
       avatarUrl: row.PHOTO ?? null,
       sources: ['snowflake'] as OrgPersonSource[],
       seatsCount: row.SEATS_COUNT ?? 0,
@@ -461,7 +465,21 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
 
 function isAllEmployeesRaw(value: unknown): boolean {
   const v = value as { rowsRaw?: unknown; statsRaw?: unknown; foundationRaw?: unknown } | null;
-  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.statsRaw) && Array.isArray(v.foundationRaw);
+  return (
+    !!v &&
+    Array.isArray(v.rowsRaw) &&
+    Array.isArray(v.statsRaw) &&
+    Array.isArray(v.foundationRaw) &&
+    // Every row must carry LF_USERNAME, so entries cached before it was selected are rejected as a miss
+    // rather than replayed. A replayed row maps to a null username, which silently returns the people
+    // directory to email-only matching for the rest of the TTL. The value may legitimately be null, so
+    // this checks presence, not truthiness.
+    v.rowsRaw.every((row) => {
+      if (!row || typeof row !== 'object' || !('LF_USERNAME' in row)) return false;
+      const username = (row as { LF_USERNAME: unknown }).LF_USERNAME;
+      return username === null || typeof username === 'string';
+    })
+  );
 }
 
 function isEmployeeDetailRaw(value: unknown): boolean {
