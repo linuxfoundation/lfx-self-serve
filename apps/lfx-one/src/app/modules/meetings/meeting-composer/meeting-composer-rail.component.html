@@ -9,10 +9,10 @@
         type="button"
         class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors"
         [ngClass]="row.active ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
-        [attr.aria-current]="row.active ? 'step' : null"
+        [attr.aria-current]="row.active ? 'true' : null"
         [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
         (click)="onSelect(row)">
-        <i class="w-4 text-center" [class]="row.section.icon" aria-hidden="true"></i>
+        <i class="w-4 text-center" [ngClass]="row.section.icon" aria-hidden="true"></i>
         <span class="truncate">{{ row.section.label }}</span>
       </button>
     } @else {
@@ -33,17 +33,15 @@
           }
           <span
             class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
-            [ngClass]="
-              row.active
-                ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50'
-                : row.complete
-                  ? 'border-blue-600 bg-white text-blue-600'
-                  : 'border-gray-200 bg-white text-gray-400'
-            ">
+            [ngClass]="{
+              'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
+              'border-blue-600 bg-white text-blue-600': !row.active && row.complete,
+              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete,
+            }">
             @if (row.complete) {
               <i class="fa-light fa-check" aria-hidden="true"></i>
             } @else {
-              <i [class]="row.section.icon" aria-hidden="true"></i>
+              <i [ngClass]="row.section.icon" aria-hidden="true"></i>
             }
           </span>
         </span>

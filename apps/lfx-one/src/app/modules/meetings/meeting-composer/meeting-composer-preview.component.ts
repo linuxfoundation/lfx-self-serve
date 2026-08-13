@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
 import type { FormArray } from '@angular/forms';
 import { MEETING_COMPOSER_PREVIEW_FEATURES, MEETING_PLATFORMS, MEETING_TYPE_OPTIONS, MEETING_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
 import type { MeetingVisibility } from '@lfx-one/shared/enums';
-import type { MeetingComposerPreviewDateChip, MeetingComposerPreviewFeature, MeetingComposerPreviewVisibility } from '@lfx-one/shared/interfaces';
+import type { ImportantLinkFormValue, MeetingComposerPreviewDateChip, MeetingComposerPreviewRow } from '@lfx-one/shared/interfaces';
 import { buildRecurrenceSummary, convertRecurrenceToPattern } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -15,12 +16,14 @@ import { MeetingComposerService } from './meeting-composer.service';
 /**
  * Live preview of the meeting being created (LFXV2-3240).
  * @description Create mode only — in edit mode the meeting already exists and the sections themselves
- * show its saved state. Fields the organizer hasn't reached yet render as skeleton bars rather than
- * placeholder words, so the card never reads as a value that was actually chosen.
+ * show its saved state. Several controls are pre-filled with defaults, so a row only resolves once its
+ * owning section has been visited; until then it renders as a skeleton bar rather than presenting a
+ * default as a choice the organizer made. Details & Access is where the composer opens, so its rows
+ * resolve as soon as they have a value.
  */
 @Component({
   selector: 'lfx-meeting-composer-preview',
-  imports: [SkeletonModule],
+  imports: [NgClass, SkeletonModule],
   templateUrl: './meeting-composer-preview.component.html',
 })
 export class MeetingComposerPreviewComponent {
@@ -29,13 +32,13 @@ export class MeetingComposerPreviewComponent {
 
   protected readonly dateChip: Signal<MeetingComposerPreviewDateChip> = this.initDateChip();
   protected readonly title: Signal<string> = this.initTitle();
-  protected readonly whenSummary: Signal<string> = this.initWhenSummary();
+  protected readonly whenSummary: Signal<string | null> = this.initWhenSummary();
   protected readonly typeLabel: Signal<string | null> = this.initTypeLabel();
-  protected readonly visibility: Signal<MeetingComposerPreviewVisibility | null> = this.initVisibility();
+  protected readonly visibility: Signal<MeetingComposerPreviewRow | null> = this.initVisibility();
   protected readonly restricted: Signal<boolean> = this.initRestricted();
   protected readonly recurrenceSummary: Signal<string | null> = this.initRecurrenceSummary();
   protected readonly platformLabel: Signal<string | null> = this.initPlatformLabel();
-  protected readonly features: Signal<MeetingComposerPreviewFeature[]> = this.initFeatures();
+  protected readonly features: Signal<MeetingComposerPreviewRow[]> = this.initFeatures();
   protected readonly guestCount: Signal<number> = this.initGuestCount();
   protected readonly resourceCount: Signal<number> = this.initResourceCount();
 
@@ -62,14 +65,13 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
-  private initWhenSummary(): Signal<string> {
+  private initWhenSummary(): Signal<string | null> {
     return computed(() => {
       const startDate = this.startDate();
-      const startTime = (this.controlValue('startTime') as string | null) ?? '';
+      const startTime = startDate ? ((this.controlValue('startTime') as string | null) ?? '') : '';
       const date = startDate ? startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
-      const summary = [date, startTime].filter(Boolean).join(' · ');
 
-      return summary || 'No date set';
+      return [date, startTime].filter(Boolean).join(' · ') || null;
     });
   }
 
@@ -81,16 +83,17 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
-  private initVisibility(): Signal<MeetingComposerPreviewVisibility | null> {
+  /** Visibility row, or `null` when the stored value isn't one of the offered options. */
+  private initVisibility(): Signal<MeetingComposerPreviewRow | null> {
     return computed(() => {
       const visibility = this.controlValue('visibility') as MeetingVisibility | null;
       const option = MEETING_VISIBILITY_OPTIONS.find((candidate) => candidate.value === visibility);
 
-      if (!option) {
+      if (!option?.info?.icon) {
         return null;
       }
 
-      return { label: option.label, icon: option.info?.icon ?? '' };
+      return { label: option.label, icon: option.info.icon };
     });
   }
 
@@ -131,7 +134,7 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
-  private initFeatures(): Signal<MeetingComposerPreviewFeature[]> {
+  private initFeatures(): Signal<MeetingComposerPreviewRow[]> {
     return computed(() =>
       MEETING_COMPOSER_PREVIEW_FEATURES.filter((feature) => this.controlValue(feature.control) === true).map((feature) => ({
         label: feature.label,
@@ -144,20 +147,24 @@ export class MeetingComposerPreviewComponent {
     return computed(() => this.formService.guests().filter((guest) => guest.state !== 'deleted').length);
   }
 
+  /** Documents and links staged for upload. Saved attachments are ignored — nothing is saved yet in create mode. */
   private initResourceCount(): Signal<number> {
     return computed(() => {
       this.formService.revision();
 
       const pendingAttachments = (this.formService.form().get('attachments')?.value as unknown[] | null) ?? [];
-      const links = (this.formService.form().get('important_links') as FormArray | null)?.length ?? 0;
-      const pendingDeletions = new Set(this.formService.pendingAttachmentDeletions());
-      const savedAttachments = this.formService.attachments().filter((attachment) => !pendingDeletions.has(attachment.uid));
+      const links = ((this.formService.form().get('important_links') as FormArray | null)?.value ?? []) as ImportantLinkFormValue[];
 
-      return pendingAttachments.length + links + savedAttachments.length;
+      return pendingAttachments.length + links.filter((link) => !!link.url?.trim()).length;
     });
   }
 
+  /** Start date, or `null` while Date & Schedule is unvisited — the control opens pre-filled with a default. */
   private startDate(): Date | null {
+    if (!this.composer.visitedSections().has('date-schedule')) {
+      return null;
+    }
+
     const value = this.controlValue('startDate');
 
     return value instanceof Date && !Number.isNaN(value.getTime()) ? value : null;
