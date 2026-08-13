@@ -267,7 +267,16 @@ export class CampaignController {
       // Only when the cutover is on: with the flags off the legacy path neither reads nor needs
       // these params, so requiring them there would be the same category error as the
       // unconfigured-platform guard was.
-      if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) && projectSlug === '') {
+      //
+      // All THREE flags, matching `createCampaigns` exactly. Checking CREATE alone was a narrower
+      // version of that same mistake: with CREATE on but BRIEFS or JOBS off the cutover is dark,
+      // `createCampaigns` returns `enabled: false`, and the request is served by the legacy path —
+      // which needs no slug. Rejecting it here would 400 a request that path handles fine.
+      const cutoverOn =
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+      if (cutoverOn && projectSlug === '') {
         next(
           ServiceValidationError.forField('project', 'creating through campaign-service requires the project the brief was saved under', {
             operation: 'campaign_create',
@@ -977,6 +986,22 @@ export class CampaignController {
     if (!includesSearch) return null;
 
     const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    // KNOWN GAP, tracked separately — read before enabling this cutover on a non-USD account.
+    //
+    // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
+    // the ad ACCOUNT's currency (NOT USD — the client does no FX)" (campaign-service
+    // `internal/dispatch/googleads.go:49`; `meta.go:29` says the same). This field is fed from
+    // `budgetUsd`, so on a non-USD account 5000 becomes 5000 EUR/JPY rather than $5000.
+    //
+    // NOT fixable here: no FX conversion exists anywhere in campaign-service, and the account's
+    // currency is not exposed to this application — the connection read returns no currency field,
+    // so there is nothing to convert against. The real fix is either to surface the account
+    // currency on the connection and convert, or to collect an account-currency amount in the UI
+    // and stop calling it USD. campaign-service already made that second choice for X/Twitter
+    // (`twitter.go:42`: "The old `budgetUsd` name was misleading").
+    //
+    // Left as-is deliberately rather than silently renamed: renaming the variable would not change
+    // the denomination, and would make the gap harder to find. Every account in play today is USD.
     const budget = ((body.budgetUsd ?? 0) * pct) / 100;
 
     return {
@@ -994,9 +1019,14 @@ export class CampaignController {
    * Meta's config, translated from `metaConfig` on the legacy request.
    *
    * The one difference is the budget key: the request says `budgetUsd`, the dispatcher reads
-   * `budget` — and it is deliberately NOT USD there, it is whole units of the ad account's
-   * currency. Passing the object through unchanged leaves `budget` at its zero value, which the
+   * `budget`. Passing the object through unchanged leaves `budget` at its zero value, which the
    * Meta client rejects with "invalid budget: must be a positive number" on every dispatch.
+   *
+   * SAME KNOWN GAP as `buildGoogleAdsConfig` — the rename does NOT convert the denomination.
+   * `meta.go:29`: "Budget is in whole units of the ad ACCOUNT's currency (NOT USD — the client
+   * does no FX conversion)". On a non-USD Meta account this spends the number in that account's
+   * currency. Not fixable here (no FX anywhere in campaign-service, and the account currency is
+   * not exposed to this application); see the fuller note on `buildGoogleAdsConfig`.
    */
   private buildMetaConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;

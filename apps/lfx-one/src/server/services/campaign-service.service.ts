@@ -163,11 +163,18 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * campaign-service reads exactly one envelope key, and `unmarshalPlatformConfig` treats an absent
  * key as a zero value rather than an error — which is why the check has to happen on this side.
  *
- * An UNKNOWN platform returns true, deliberately. This function's job is to catch a platform we
- * failed to configure, not to police the platform list; `createCampaigns` and campaign-service both
- * reject unsupported platforms, and answering false here would turn a new platform's rollout into a
- * mysterious local refusal. The upstream `CampaignCreateInput` already allows `twitter-ads`,
- * `microsoft-ads` and `hubspot`, none of which this UI builds a config for yet.
+ * An unmapped platform is REFUSED, not waved through.
+ *
+ * The first version returned true for anything unmapped, reasoning that this should not police the
+ * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
+ * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
+ * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
+ * service builds no `twitterConfig`, `microsoftConfig` or `hubspotConfig` at all, so waving them
+ * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
+ * the mapped four are protected from.
+ *
+ * The cost of refusing is a clear error when a platform is enabled before its config builder
+ * exists, which is the failure you want. The cost of allowing was a dispatched, unusable job.
  */
 function hasPlatformConfig(platform: string, envelope: Record<string, unknown>): boolean {
   const requiredKey: Record<string, string> = {
@@ -177,7 +184,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'meta-ads': 'metaConfig',
   };
   const key = requiredKey[platform];
-  if (key === undefined) return true;
+  if (key === undefined) return false;
   return envelope[key] !== undefined;
 }
 

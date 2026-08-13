@@ -90,8 +90,14 @@ export enum ServerFeatureFlag {
    *
    * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
    * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-   * actually owns that job regardless of which pod serves it. A flag-on pod creating and a
-   * flag-off pod polling still works.
+   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
+   * CREATE-flag-off pod polling still works.
+   *
+   * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
+   * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
+   * sends the poll to its in-process map, where a UUID job does not exist. Enable JOBS first and
+   * leave it on; disable CREATE first on the way back, and keep JOBS on until every outstanding
+   * UUID job has drained. Otherwise a job that is real and SPENDING becomes unreportable.
    *
    * What it does NOT survive is a create that lands flag-on while the ad-platform connection for
    * that project is unconfigured: campaign-service reads credentials from its own connection

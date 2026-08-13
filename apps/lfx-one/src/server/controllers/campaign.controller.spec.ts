@@ -449,6 +449,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
   });
 
+  it('does not require a project slug when CREATE is on but a prerequisite is off', async () => {
+    // The guard must match `createCampaigns`, which gates on all three flags. Checking CREATE
+    // alone 400'd a request the legacy path serves fine: with JOBS off the cutover is dark,
+    // `createCampaigns` reports disabled, and the create falls through — needing no slug.
+    isServerFeatureEnabled.mockImplementation((flag: string) => !String(flag).includes('JOBS'));
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_partial_1' });
+
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('does not require a project slug while the cutover is dark', async () => {
     // The legacy path neither reads nor needs the param, so requiring it there would be the same
     // category error as putting the unconfigured-platform guard in the controller was.

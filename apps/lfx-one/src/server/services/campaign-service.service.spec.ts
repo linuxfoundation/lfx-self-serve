@@ -1597,16 +1597,19 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000009');
   });
 
-  it('does not refuse a platform it has no config mapping for', async () => {
-    // Unknown platforms pass: this check exists to catch a platform WE failed to configure, not to
-    // police the list. The upstream contract already allows twitter-ads/microsoft-ads/hubspot, and
-    // refusing them here would turn a future rollout into a mysterious local failure.
+  it('refuses a platform it has no config mapping for', async () => {
+    // An earlier revision waved unmapped platforms through, reasoning this should not police the
+    // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is
+    // `disabled: true` in the UI constants, but that is a CLIENT guarantee, and the upstream
+    // contract accepts twitter/microsoft/hubspot. This service builds no config for any of them,
+    // so waving them through queued a job whose dispatcher reads an absent key as a zero value.
     bothFlagsOn();
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000a' } });
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {});
 
-    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000a');
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('twitter-ads');
   });
 
   it('treats a 202 carrying no job id as unusable rather than a success', async () => {
