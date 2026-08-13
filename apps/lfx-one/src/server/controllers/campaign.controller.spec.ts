@@ -437,4 +437,71 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-1', 'tlf', ['reddit-ads'], {});
   });
+
+  const googleBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['google-ads'],
+    campaignTypes: ['search'],
+    budgetUsd: 1000,
+    searchBudgetPct: 60,
+    headlines: ['H1'],
+    descriptions: ['D1'],
+    keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'high', notes: 'n' }],
+    ...overrides,
+  });
+
+  const envelopeFor = (mock: typeof createCampaigns): Record<string, unknown> => mock.mock.calls[0][4] as Record<string, unknown>;
+
+  it('sends googleAdsConfig so the campaign has a budget and servable keywords', async () => {
+    // Without this the dispatcher creates a campaign with a zero budget and an ad group with no
+    // criteria, which per the service's own contract "can never serve".
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 1000,
+      headlines: ['H1'],
+      descriptions: ['D1'],
+      // `text`, not `term`, and an upper-case enum: the service's keyword shape.
+      keywords: [{ text: 'kubernetes', matchType: 'EXACT' }],
+    });
+  });
+
+  it('funds Google with the SEARCH share when demand-gen is also selected', async () => {
+    // The dispatcher composes a "Search Campaign" and creates exactly one Search campaign, so the
+    // combined budget would spend the demand-gen half on Search.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['search', 'demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['budget']).toBe(600);
+  });
+
+  it('omits googleAdsConfig when only demand-gen is selected', async () => {
+    // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
+    // request as Search.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+  });
+
+  it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
+    // Passing metaConfig through unchanged leaves `budget` at zero, and the Meta client rejects
+    // every such dispatch with "invalid budget: must be a positive number".
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const metaConfig = { budgetUsd: 250, lifetimeBudget: false, geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }] };
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(250);
+    expect(sent).not.toHaveProperty('budgetUsd');
+    expect(sent['geoTargets']).toEqual(['US']);
+  });
 });

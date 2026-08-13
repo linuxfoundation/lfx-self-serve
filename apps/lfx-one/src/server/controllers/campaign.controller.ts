@@ -879,18 +879,80 @@ export class CampaignController {
   /**
    * The per-platform config envelope campaign-service expects, built from the legacy request.
    *
-   * The service's `config` is an object keyed by `linkedInConfig` / `redditConfig` / `metaConfig`
-   * with `hsToken` as a top-level sibling — the same names this request already carries, so this
-   * is a projection rather than a translation. Keys with no config are omitted rather than sent
-   * as null: the dispatcher treats an absent config as "not selected", and a null one as a
-   * malformed selection.
+   * The service's `config` is an object keyed by `googleAdsConfig` / `linkedInConfig` /
+   * `redditConfig` / `metaConfig` with `hsToken` as a top-level sibling. LinkedIn and Reddit carry
+   * the service's own field names already, so those are projections; Google and Meta are
+   * translations, because the legacy request stores their inputs in a different shape (see each
+   * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
+   * absent config as "not selected", and a null one as a malformed selection.
    */
   private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
+
+    const googleAdsConfig = this.buildGoogleAdsConfig(body);
+    if (googleAdsConfig) envelope['googleAdsConfig'] = googleAdsConfig;
+
     if (body?.linkedInConfig) envelope['linkedInConfig'] = body.linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
-    if (body?.metaConfig) envelope['metaConfig'] = body.metaConfig;
+
+    const metaConfig = this.buildMetaConfig(body);
+    if (metaConfig) envelope['metaConfig'] = metaConfig;
+
     return envelope;
+  }
+
+  /**
+   * Google's config, translated from the flat legacy request.
+   *
+   * Google is the one platform whose inputs live on the request root rather than in a
+   * `<platform>Config` object, because the legacy path had a dedicated Google endpoint. Every
+   * field below is one the dispatcher reads from `config` and cannot recover from the stored
+   * brief: sending nothing creates a campaign with no budget and an ad group with no criteria,
+   * which per `googleAdsConfig.Keywords` "can never serve". The dispatcher's remaining optional
+   * fields are omitted because this request has no source for them — `audienceSegments` expects
+   * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
+   * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
+   *
+   * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
+   * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
+   * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
+   * no Search campaign to fund, and Google is returned as unconfigured so the caller refuses the
+   * create rather than silently dispatching a demand-gen request as Search.
+   */
+  private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.platforms?.includes('google-ads')) return null;
+
+    const types = body.campaignTypes ?? [];
+    const includesSearch = types.includes('search');
+    if (!includesSearch) return null;
+
+    const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    const budget = ((body.budgetUsd ?? 0) * pct) / 100;
+
+    return {
+      budget,
+      headlines: body.headlines ?? [],
+      descriptions: body.descriptions ?? [],
+      // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
+      // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
+      // dispatcher has no field for.
+      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+    };
+  }
+
+  /**
+   * Meta's config, translated from `metaConfig` on the legacy request.
+   *
+   * The one difference is the budget key: the request says `budgetUsd`, the dispatcher reads
+   * `budget` — and it is deliberately NOT USD there, it is whole units of the ad account's
+   * currency. Passing the object through unchanged leaves `budget` at its zero value, which the
+   * Meta client rejects with "invalid budget: must be a positive number" on every dispatch.
+   */
+  private buildMetaConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.metaConfig) return null;
+
+    const { budgetUsd, ...rest } = body.metaConfig;
+    return { ...rest, budget: budgetUsd };
   }
 }

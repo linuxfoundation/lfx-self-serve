@@ -15,6 +15,7 @@ import {
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { map, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
@@ -66,6 +67,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 export class ImplementationTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -479,7 +481,15 @@ export class ImplementationTabComponent implements OnInit {
         : {}),
     };
 
-    this.campaignService.createCampaign(request).subscribe({
+    // Read once, here, and carry it into the poll rather than re-reading per request. The
+    // foundation is switchable while a job runs, and `GetJob` matches the brief's project
+    // EXACTLY — a poll sent under a foundation the user switched to answers `not_found`, which
+    // is terminal for the poller and would be reported as a lost campaign that is in fact
+    // running.
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const briefId = this.briefPersistence().briefId ?? '';
+
+    this.campaignService.createCampaign(request, projectSlug, briefId).subscribe({
       next: (response) => {
         if (response.result) {
           this.results.set(response.result.campaigns);
@@ -498,7 +508,7 @@ export class ImplementationTabComponent implements OnInit {
           return;
         }
         this.creationProgress.update((msgs) => [...msgs, `Job started: ${response.jobId}`]);
-        this.pollJob(response.jobId);
+        this.pollJob(response.jobId, projectSlug);
       },
       error: () => {
         this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
@@ -603,11 +613,11 @@ export class ImplementationTabComponent implements OnInit {
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }
 
-  private pollJob(jobId: string): void {
+  private pollJob(jobId: string, projectSlug: string): void {
     const MAX_POLL_DURATION_MS = 300_000;
     const MAX_POLLS = Math.ceil(MAX_POLL_DURATION_MS / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.jobSubscription = this.campaignService
-      .getCreateResult(jobId)
+      .getCreateResult(jobId, projectSlug)
       .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (outcome: CampaignJobOutcome | null) => {
