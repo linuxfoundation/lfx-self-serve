@@ -19,6 +19,7 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 
 function buildOrgsRouter(): Router {
   const router = Router();
@@ -44,6 +45,13 @@ function buildOrgsRouter(): Router {
   router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+
+  // Every org-lens read is gated on the caller holding a relation on the requested organization.
+  // Mounted on the shared prefix rather than added per route so a new lens endpoint is covered by
+  // default — the alternative (a per-controller check) is what let the whole family ship ungated,
+  // with only the caller-supplied account id scoping the response. Some routes below name the param
+  // `:accountId`; the prefix match here still binds it as `orgUid`, and both carry the same SFID.
+  router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
   // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
   // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
