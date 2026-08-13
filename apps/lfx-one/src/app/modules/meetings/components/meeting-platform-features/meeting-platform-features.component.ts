@@ -30,7 +30,7 @@ import { map, of, startWith, switchMap } from 'rxjs';
 export class MeetingPlatformFeaturesComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   public readonly form = input.required<FormGroup>();
-  public readonly goToStep = output<void>();
+  public readonly goToTitleSection = output<void>();
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly titleLength = toSignal(
     toObservable(this.form).pipe(

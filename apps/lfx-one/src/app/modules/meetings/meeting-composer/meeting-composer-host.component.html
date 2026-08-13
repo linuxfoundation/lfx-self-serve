@@ -50,7 +50,7 @@
             <lfx-meeting-details [form]="formService.form()" />
           }
           @case ('platform-features') {
-            <lfx-meeting-platform-features [form]="formService.form()" (goToStep)="onGoToTitleSection()" />
+            <lfx-meeting-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
           }
           @case ('guests') {
             @if (formService.meetingId(); as meetingUid) {

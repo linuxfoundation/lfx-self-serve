@@ -632,7 +632,7 @@ test.describe('S10: Route guard — writerGuard fast path for ED persona', () =>
     await expect(page, 'persona=executive-director should reach the meetings list, not be redirected away').toHaveURL(/\/project\/meetings(\?|$)/, {
       timeout: ELEMENT_TIMEOUT,
     });
-    await expect(page.getByTestId('meeting-composer-drawer')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });
 
