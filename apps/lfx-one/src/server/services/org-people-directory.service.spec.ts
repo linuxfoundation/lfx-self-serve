@@ -207,7 +207,7 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
     expect(rows[0].emails).toHaveLength(3);
   });
 
-  it('keeps the stored personKey so a merged row stays expandable (FR-006)', async () => {
+  it('keeps the stored personKey so a merged row stays expandable', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
 
@@ -218,7 +218,7 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
   });
 });
 
-describe('OrgPeopleDirectoryService.merge — false-merge protection (SC-005)', () => {
+describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   it('does not merge two different people who share an address', async () => {
     // The Snowflake address→member index links dqualls@linuxfoundation.org to Jim Zemlin's member
     // record. Two distinct usernames must never collapse, whatever their addresses say.
@@ -246,7 +246,7 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection (SC-005)', 
 });
 
 describe('OrgPeopleDirectoryService.merge — invariants', () => {
-  it('INV-5: a live seat does not increment a stored row\u2019s seat counters (DR-002)', async () => {
+  it('a live seat does not increment a stored row\u2019s seat counters', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat(), seat({ uid: 'seat-2', committee_name: 'P&E&IT&Mktg_Ops' })]);
 
@@ -258,7 +258,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
     expect(rows[0].boardSeatsCount).toBe(2);
   });
 
-  it('INV-5: a live-only row still accumulates its own live seat counts', async () => {
+  it('a live-only row still accumulates its own live seat counts', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'someone@example.com' }), seat({ uid: 'seat-2', username: null, email: 'someone@example.com' })]);
 
     const { rows } = await run();
@@ -267,7 +267,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
     expect(rows[0].seatsCount).toBe(2);
   });
 
-  it('INV-2/INV-3: sources are de-duplicated and emails are lowercased and unique', async () => {
+  it('sources are de-duplicated and emails are lowercased and unique', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat({ email: 'KMcDermott@LinuxFoundation.org' }), seat({ uid: 'seat-2', email: 'kmcdermott@linuxfoundation.org' })]);
 
@@ -278,7 +278,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
     expect(rows[0].emails.every((e) => e === e.toLowerCase())).toBe(true);
   });
 
-  it('FR-008: a pending invite is not merged into a person, even when the address matches', async () => {
+  it('a pending invite is not merged into a person, even when the address matches', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] })]));
     getAccessPrincipals.mockResolvedValue([accessUser({ username: null, inviteStatus: 'pending', isPending: true })]);
 
@@ -288,7 +288,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
   });
 });
 
-describe('OrgPeopleDirectoryService.merge — no regression for single-source people (FR-010)', () => {
+describe('OrgPeopleDirectoryService.merge — no regression for single-source people', () => {
   it('leaves a stored-only person untouched', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
 

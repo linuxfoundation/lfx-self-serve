@@ -60,7 +60,7 @@ function isAllEmployeeRow(value: unknown): boolean {
 }
 
 /**
- * Identity of a source record for merge purposes (DR-001).
+ * Identity of a source record for merge purposes.
  *
  * A person holds ONE LF username but MANY email addresses, so the address is not an identifier —
  * keying on it is what splits one human across several rows. Prefer the verified username; fall
@@ -209,8 +209,8 @@ export class OrgPeopleDirectoryService {
             title: seat.job_title?.trim() || null,
           });
           // Count live seats only for live-only rows; Snowflake rows already carry authoritative seat counts, so
-          // incrementing here would double-count the same seat (DR-002 — verified: a seat held under a secondary
-          // address is already inside the stored count, because the roster's governance join resolves it by LFID).
+          // incrementing here would double-count the same seat. Verified: a seat held under a person's secondary
+          // address is already inside the stored count, because the roster's governance join resolves it by LFID.
           if (!existing.sources.includes('snowflake')) this.addSeat(existing, source);
         } else {
           byKey.set(key, this.rowFromSeat(seat, email, source, key));

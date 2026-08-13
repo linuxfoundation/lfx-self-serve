@@ -46,11 +46,11 @@ function buildOrgsRouter(): Router {
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
 
-  // Every org-lens read is gated on the caller holding a relation on the requested organization.
-  // Mounted on the shared prefix rather than added per route so a new lens endpoint is covered by
-  // default — the alternative (a per-controller check) is what let the whole family ship ungated,
-  // with only the caller-supplied account id scoping the response. Some routes below name the param
-  // `:accountId`; the prefix match here still binds it as `orgUid`, and both carry the same SFID.
+  // Org-membership read gate for the whole lens family. Previously only the meetings, ROI and
+  // groups handlers called `assertOrgLensRead`; every other route let the caller-supplied `:orgUid`
+  // both select and authorize the data, which is the ADR-0038 failure. Mounting it on the shared
+  // prefix covers each existing route and any future one by default. Some routes below name the
+  // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
   router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
   // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named

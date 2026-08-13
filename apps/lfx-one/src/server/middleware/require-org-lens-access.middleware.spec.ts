@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const getAccessAwareOrgs = vi.fn();
 const getEffectiveUsername = vi.fn();
 
+// The middleware delegates to `assertOrgLensRead`, so these mocks target what that helper consumes —
+// the tests therefore exercise the real gate logic, not a reimplementation of it.
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
