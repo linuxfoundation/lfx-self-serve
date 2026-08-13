@@ -252,14 +252,18 @@ export class ComposerAgendaResourcesComponent {
 
   /**
    * Applies a template's or AI draft's estimated duration to the schedule controls.
-   * @description Three outcomes: an estimate outside the allowed range is dropped with a warning
-   * (writing it would trip the form service's min/max validators and deaden submit from a section the
-   * organizer can't see); an estimate that already matches the current duration is a silent no-op; any
-   * other estimate is written and announced, since the duration they picked has just been overwritten.
-   * Estimates outside the chip values go to `customDuration` rather than being clamped.
+   * @description The estimate is rounded first, since the AI path can return a fractional minute count
+   * and the duration controls only accept whole minutes. Three outcomes then follow: an estimate outside
+   * the allowed range is dropped with a warning (writing it would trip the form service's min/max
+   * validators and deaden submit from a section the organizer can't see); an estimate that already
+   * matches the current duration is a silent no-op; any other estimate is written and announced, since
+   * the duration they picked has just been overwritten. Estimates outside the chip values go to
+   * `customDuration` rather than being clamped.
    */
-  private applyEstimatedDuration(estimatedDuration: number): void {
-    if (!Number.isInteger(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
+  private applyEstimatedDuration(estimate: number): void {
+    const estimatedDuration = Math.round(estimate);
+
+    if (!Number.isFinite(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Duration left unchanged',

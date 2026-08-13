@@ -21,7 +21,8 @@
   </ng-template>
 
   <div class="flex h-full min-h-0 gap-6">
-    <div class="flex w-[262px] shrink-0 flex-col gap-4 overflow-y-auto">
+    <!-- Narrow viewports navigate with the footer buttons only; LFXV2-3243 refines the collapsed layout. -->
+    <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
       <lfx-meeting-composer-rail />
 
       @if (!composer.isEditMode()) {

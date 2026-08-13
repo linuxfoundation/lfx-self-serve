@@ -11,8 +11,12 @@
     </div>
 
     <div class="flex min-w-0 flex-col gap-1">
-      <span class="truncate text-sm font-semibold text-gray-900" data-testid="meeting-composer-preview-title">{{ title() }}</span>
-      <span class="text-xs text-gray-500" data-testid="meeting-composer-preview-when">{{ whenSummary() }}</span>
+      <span class="truncate text-sm font-semibold text-gray-900" [title]="title()" data-testid="meeting-composer-preview-title">{{ title() }}</span>
+      @if (whenSummary(); as when) {
+        <span class="text-xs text-gray-500" data-testid="meeting-composer-preview-when">{{ when }}</span>
+      } @else {
+        <span class="w-28"><span class="sr-only">Date and time not set</span><p-skeleton height="0.75rem" /></span>
+      }
     </div>
   </div>
 
@@ -24,21 +28,19 @@
       @if (typeLabel()) {
         <dd class="truncate font-medium text-gray-900" data-testid="meeting-composer-preview-type">{{ typeLabel() }}</dd>
       } @else {
-        <dd class="w-24"><p-skeleton height="0.75rem" /></dd>
+        <dd class="w-24"><span class="sr-only">Not set</span><p-skeleton height="0.75rem" /></dd>
       }
     </div>
 
-    <div class="flex items-center justify-between gap-2">
-      <dt class="text-gray-500">Visibility</dt>
-      @if (visibility(); as visibilityRow) {
+    @if (visibility(); as visibilityRow) {
+      <div class="flex items-center justify-between gap-2">
+        <dt class="text-gray-500">Visibility</dt>
         <dd class="flex items-center gap-1.5 font-medium text-gray-900" data-testid="meeting-composer-preview-visibility">
-          <i [class]="visibilityRow.icon" class="text-gray-400"></i>
+          <i [ngClass]="visibilityRow.icon" class="text-gray-400" aria-hidden="true"></i>
           <span class="truncate">{{ visibilityRow.label }}</span>
         </dd>
-      } @else {
-        <dd class="w-24"><p-skeleton height="0.75rem" /></dd>
-      }
-    </div>
+      </div>
+    }
 
     @if (restricted()) {
       <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-preview-restricted">
@@ -59,14 +61,14 @@
       @if (platformLabel(); as platform) {
         <dd class="truncate font-medium text-gray-900" data-testid="meeting-composer-preview-platform">{{ platform }}</dd>
       } @else {
-        <dd class="w-24"><p-skeleton height="0.75rem" /></dd>
+        <dd class="w-24"><span class="sr-only">Not set</span><p-skeleton height="0.75rem" /></dd>
       }
     </div>
 
     @for (feature of features(); track feature.label) {
       <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-preview-feature">
         <dt class="flex items-center gap-1.5 text-gray-500">
-          <i [class]="feature.icon" class="text-gray-400"></i>
+          <i [ngClass]="feature.icon" class="text-gray-400" aria-hidden="true"></i>
           <span class="truncate">{{ feature.label }}</span>
         </dt>
         <dd class="font-medium text-emerald-600">On</dd>

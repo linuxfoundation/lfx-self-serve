@@ -203,7 +203,9 @@ export class MeetingComposerFormService {
 
   /**
    * Replaces the guest list and re-derives the pending registrant changes from it.
-   * @description Single write path, so `registrantUpdates` can never drift from `guests`.
+   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` is
+   * always empty today — the composer has no guest-edit affordance, so nothing produces a `'modified'`
+   * guest; it stays wired so adding that affordance is a change to the Guests section alone.
    */
   public setGuests(next: MeetingRegistrantWithState[]): void {
     this.guests.set(next);
@@ -221,7 +223,7 @@ export class MeetingComposerFormService {
     this.setGuests(reducer(this.guests()));
   }
 
-  /** Records a removed guest's email so group reconciliation treats the removal as intentional. */
+  /** Records a removed group guest's email so group reconciliation treats the removal as intentional. */
   public suppressGuestEmail(email: string | null | undefined): void {
     if (!email) {
       return;
@@ -391,12 +393,12 @@ export class MeetingComposerFormService {
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
   }
 
-  // Private initializer functions
-
   /** Recurrence the current form state would submit — for read-only summaries such as the preview. */
   public recurrencePayload(): MeetingRecurrence | null {
     return this.buildRecurrencePayload(this.form().getRawValue());
   }
+
+  // Private initializer functions
 
   private createMeetingFormGroup(): FormGroup {
     const defaultDateTime = getDefaultStartDateTime();

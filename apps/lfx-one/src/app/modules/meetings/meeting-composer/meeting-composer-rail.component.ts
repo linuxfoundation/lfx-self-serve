@@ -24,6 +24,8 @@ export class MeetingComposerRailComponent {
   protected readonly composer = inject(MeetingComposerService);
   private readonly formService = inject(MeetingComposerFormService);
 
+  private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
+
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
 
   protected onSelect(row: MeetingComposerRailRow): void {
@@ -39,29 +41,27 @@ export class MeetingComposerRailComponent {
       // FormGroup validity isn't reactive on its own — the revision signal is what makes it one.
       this.formService.revision();
 
-      const sections = MEETING_COMPOSER_SECTIONS as readonly MeetingComposerSection[];
+      const sections = this.sections;
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
       const isEditMode = this.composer.isEditMode();
-      const completeById = new Map<MeetingComposerSectionId, boolean>(
-        sections.map((section) => [section.id, section.required ? this.formService.isSectionValid(section.id) : visited.has(section.id)])
-      );
+      const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
+      const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
       return sections.map((section, index) => {
         const active = section.id === activeSection;
-        const valid = this.formService.isSectionValid(section.id);
-        const locked = !isEditMode && sections.slice(0, index).some((earlier) => earlier.required && !this.formService.isSectionValid(earlier.id));
-        const previous = sections[index - 1];
+        const valid = validById.get(section.id) ?? false;
+        const blockedByEarlier = sections.slice(0, index).some((earlier) => earlier.required && !validById.get(earlier.id));
 
         return {
           section,
           active,
-          complete: (completeById.get(section.id) ?? false) && !active,
-          locked,
-          needsAttention: !isEditMode && section.required && active && !valid,
-          lineAboveComplete: index > 0 && (completeById.get(previous.id) ?? false),
-          lineBelowComplete: completeById.get(section.id) ?? false,
-          isFirst: index === 0,
+          complete: isComplete(section) && !active,
+          // The organizer can be standing on a section an out-of-section validator has just invalidated
+          // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
+          locked: !isEditMode && blockedByEarlier && !active,
+          needsAttention: !isEditMode && section.required && visited.has(section.id) && !valid,
+          lineBelowComplete: isComplete(section),
           isLast: index === sections.length - 1,
         };
       });
