@@ -174,8 +174,8 @@ export function capitalizeFirst(str: string): string {
  */
 export function stripMarkdown(text: string): string {
   return text
-    .replace(/!\[.*?\]\(.*?\)/g, '')
-    .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')
+    .replace(/!\[[^\][]*\]\([^()]*\)/g, '')
+    .replace(/\[([^\][]*)\]\([^()]*\)/g, '$1')
     .replace(/#{1,6}\s+/g, '')
     .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, '$2')
     .replace(/~~(.*?)~~/g, '$1')
