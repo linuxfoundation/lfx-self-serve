@@ -702,6 +702,13 @@ test.describe('Org Selector — staff sections and membership chips (S19)', () =
     skipWhenOrgLensOff(page);
     await openSelector(page, { expectSearch: true });
 
+    // Sectioning and chips are search-result context (FR-007/US2.5): they must not appear on the
+    // unsearched bootstrap list, only once the caller has actually searched.
+    await expect(page.getByTestId('org-selector-section-discovered')).toHaveCount(0);
+    await expect(page.getByTestId(`org-item-${DISCOVERED_UID}-membership-chip`)).toHaveCount(0);
+
+    await page.getByTestId('org-search-input').fill('co');
+
     await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your organizations');
     await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All organizations');
 

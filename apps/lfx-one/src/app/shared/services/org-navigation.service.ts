@@ -145,6 +145,13 @@ export class OrgNavigationService {
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }
+          // A catalogue page can dedupe to zero rows while still carrying a live cursor — the BFF's
+          // own skip-ahead has a cap, and the caller-visible page beyond it is empty. No new row means
+          // the viewport sentinel is never recreated, so nothing would ever ask for the next page;
+          // paging has to drive itself here instead of waiting on a scroll event that can't happen.
+          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed) {
+            this.loadNextPage();
+          }
         }),
         // Dedupe by uid when appending pages — an injected selected row can also appear in a later page.
         scan((acc: OrgItem[], page: OrgListPage) => {
