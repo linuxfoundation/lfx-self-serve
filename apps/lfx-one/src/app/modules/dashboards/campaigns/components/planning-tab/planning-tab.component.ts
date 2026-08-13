@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
@@ -275,6 +275,17 @@ export class PlanningTabComponent implements OnInit {
     // foundation the user has already left.
     combineLatest([this.slugInput$, this.activeFoundationSlug$])
       .pipe(
+        // Paid only, and gated at the SOURCE rather than by hiding the banner.
+        //
+        // Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row
+        // this finds is a PAID brief — offering it under Email would restore RSA headlines and a
+        // keyword list into an email plan. The email host also binds no `restoreSavedBriefRequested`
+        // handler, so Restore emitted into nothing and the click did nothing at all.
+        //
+        // Not merely a hidden banner: suppressing the request too means no `loadBrief` call per
+        // keystroke-debounce for a result that can never be used. Delivery-aware persistence is
+        // LFXV2-3198's to introduce, together with the email brief shape it would store.
+        filter(() => !this.isEmail()),
         distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
         debounceTime(500),
         switchMap(([slug, project]) =>

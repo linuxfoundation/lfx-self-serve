@@ -713,6 +713,45 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * The server refuses an email refine, so offering the button would walk the user into a
    * guaranteed error. Asserted on the review step, which is the only place it renders.
    */
+  /**
+   * Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row this
+   * would find is a PAID brief — restoring it under Email would put RSA headlines and a keyword
+   * list into an email plan. The email host also binds no `restoreSavedBriefRequested` handler,
+   * so the Restore button emitted into nothing and the click did nothing at all.
+   *
+   * Asserted on the REQUEST rather than the banner: suppressing the lookup means no call per
+   * debounce for a result that can never be used, and a banner-only guard would leave that.
+   */
+  it('does not look up a saved brief in email mode', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('email');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).not.toHaveBeenCalled();
+  });
+
+  it('still looks up a saved brief in paid mode', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('paid-marketing');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalled();
+  });
+
   it('does not offer Refine Brief in email mode', async () => {
     await build('email');
     (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
@@ -725,6 +764,38 @@ describe('PlanningTabComponent delivery-type mode', () => {
     (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * Edit and Copy All are as wrong for email as Refine was, and guarding only Refine left the two
+   * worse ones behind: Edit opens an EMPTY editor whose Save Edits writes empty
+   * `google_search`/`google_display` objects onto an email brief, and Copy All silently copies an
+   * empty buffer. Both entry points to Edit are covered — the header one and the action row.
+   */
+  it('hides the ad-copy actions in email mode', async () => {
+    await build('email');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-btn"]')).toBeNull();
+    // Delivery-agnostic, so it must SURVIVE — otherwise this test would pass on a template that
+    // rendered no review step at all.
+    expect(host.querySelector('[data-testid="planning-proceed-btn"]')).not.toBeNull();
+  });
+
+  it('keeps the ad-copy actions in paid mode', async () => {
+    await build('paid-marketing');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).not.toBeNull();
   });
 
   it('hides the Budget & Assets card in email mode', async () => {

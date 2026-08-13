@@ -333,7 +333,9 @@
             <span class="text-sm font-semibold text-green-800">Brief generated successfully</span>
           }
         </div>
-        @if (!isEditing()) {
+        <!-- The header's Edit entry point. Same reason as the action row below: an email brief
+             has no `structuredCopy`, so this opens an empty editor. -->
+        @if (!isEditing() && !isEmail()) {
           <button
             type="button"
             (click)="enterEditMode()"
@@ -958,10 +960,17 @@
           ariaLabel="Proceed to implement with this brief"
           data-testid="planning-proceed-btn" />
         <!--
-          Hidden for email: the server refuses an email refine (there is no email copy to refine
-          until the `email-copy` endpoint lands, LFXV2-3198), so offering the button would walk
-          the user into a guaranteed error. The server refusal stays as the backstop rather than
-          this being the only guard — a client-only check would be undone by the next caller.
+          The three copy actions, hidden together for email because all three operate on ad copy
+          an email brief does not have. Guarding only Refine was the shallower fix and left two
+          worse buttons behind:
+
+            Refine   — the server refuses it outright (no email copy to refine until `email-copy`
+                       lands, LFXV2-3198), so it was a guaranteed error.
+            Edit     — `structuredCopy` is null, so it opens an EMPTY editor whose Save Edits
+                       writes empty `google_search`/`google_display` objects onto an email brief.
+            Copy All — copies the empty copy buffer, silently putting nothing on the clipboard.
+
+          Proceed and New Brief stay: both are delivery-agnostic.
         -->
         @if (!isEmail()) {
           <lfx-button
@@ -972,23 +981,23 @@
             (onClick)="enterRefineMode()"
             ariaLabel="Provide feedback to regenerate the brief"
             data-testid="planning-refine-brief-btn" />
+          <lfx-button
+            label="Edit Brief"
+            icon="fa-light fa-pen-to-square"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="enterEditMode()"
+            ariaLabel="Edit the generated brief"
+            data-testid="planning-edit-brief-btn" />
+          <lfx-button
+            label="Copy All"
+            icon="fa-light fa-clipboard"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="copyToClipboard()"
+            ariaLabel="Copy all ad copy to clipboard"
+            data-testid="planning-copy-all-btn" />
         }
-        <lfx-button
-          label="Edit Brief"
-          icon="fa-light fa-pen-to-square"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="enterEditMode()"
-          ariaLabel="Edit the generated brief"
-          data-testid="planning-edit-brief-btn" />
-        <lfx-button
-          label="Copy All"
-          icon="fa-light fa-clipboard"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="copyToClipboard()"
-          ariaLabel="Copy all ad copy to clipboard"
-          data-testid="planning-copy-all-btn" />
         <lfx-button
           label="New Brief"
           icon="fa-light fa-rotate"
