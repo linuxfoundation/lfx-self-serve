@@ -10,7 +10,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { BEHIND_GOAL_PERCENT_THRESHOLD, EMAIL_CAMPAIGN_LIMIT, lfxColors, ON_TRACK_PERCENT_THRESHOLD, PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { formatIsoDateLabel, formatNumber, hexToRgba } from '@lfx-one/shared/utils';
-import { MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
+import { MetricCountPipe, MetricMoneyPipe, MetricNumberPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { AnalyticsService } from '@services/analytics.service';
 import { DrawerModule } from 'primeng/drawer';
 import { Skeleton } from 'primeng/skeleton';
@@ -30,6 +30,7 @@ import type { EventDetailResponse, EventDrawerFocus, EventPaidCampaign } from '@
     CardComponent,
     TagComponent,
     ChartComponent,
+    MetricCountPipe,
     MetricMoneyPipe,
     MetricNumberPipe,
     MetricPercentPipe,
@@ -252,7 +253,7 @@ export class EventDetailDrawerComponent {
    * template invocation would re-run on every change-detection pass (docs/reviews/frontend-checklist.md §4).
    */
   protected readonly dateLabel = computed(() => formatIsoDateLabel(this.detail()?.startDate ?? ''));
-  protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null));
+  protected readonly vsLastYearLabel = computed(() => this.formatVsLastYear(this.detail()?.vsLastYear ?? null, this.detail()?.hasPriorYear ?? false));
   protected readonly locationLabel = computed(() => {
     const d = this.detail();
     if (!d) return '';
@@ -270,15 +271,23 @@ export class EventDetailDrawerComponent {
     return 'critical';
   });
 
-  /** Human label for the comparison pace rating. */
+  /**
+   * Human label for the comparison pace rating.
+   *
+   * Every label names the baseline explicitly. This tag reads against the prior edition's
+   * registration curve, while the sentence beside it reads against the goal — two different
+   * axes that legitimately disagree, so an event registering faster than last year but still
+   * short of goal showed a green "Pacing ahead" tag directly opposite "327 registrations behind
+   * goal". Naming the baseline is what makes both readable as true at once.
+   */
   protected readonly paceRatingLabel = computed(() => {
     switch (this.detail()?.compScore) {
       case 'high':
-        return 'Pacing ahead';
+        return 'Ahead of last year';
       case 'medium':
-        return 'On pace';
+        return 'On pace with last year';
       case 'low':
-        return 'Pacing behind';
+        return 'Behind last year';
       default:
         return 'No pace signal';
     }
@@ -337,8 +346,17 @@ export class EventDetailDrawerComponent {
     return 'fa-solid fa-bullhorn';
   }
 
-  /** Registration pace vs last year as a signed percent string, or null when no baseline. */
-  private formatVsLastYear(vsLastYear: number | null): string | null {
+  /**
+   * Registration pace vs last year as a signed percent string, or null when no baseline.
+   *
+   * `hasPriorYear` is checked first and independently of the ratio: the warehouse supplies a
+   * non-null PERCENT_COMPARISON_TO_PREV_YEAR even for an event with no prior edition, and a
+   * ratio of exactly 1 then rendered as "On par with last year" — a comparison against an
+   * edition that never happened. Returning null here routes the template to its
+   * "no prior year" branch instead, which is the honest reading.
+   */
+  private formatVsLastYear(vsLastYear: number | null, hasPriorYear: boolean): string | null {
+    if (!hasPriorYear) return null;
     if (vsLastYear === null) return null;
     const pct = Math.round((vsLastYear - 1) * 100);
     if (pct > 0) return `+${pct}% vs last year`;

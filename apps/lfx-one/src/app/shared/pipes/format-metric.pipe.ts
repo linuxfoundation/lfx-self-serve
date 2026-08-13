@@ -21,6 +21,22 @@ export class MetricNumberPipe implements PipeTransform {
   }
 }
 
+/**
+ * Whole-count metric — registrations, attendees, speakers. Rounds before formatting because
+ * formatNumber's sub-1,000 branch renders the raw float, and these counts come from a
+ * prediction model that emits fractions: a predicted registration count reached the drawer as
+ * "444.471" people, with "(400.024–488.918)" beside it. People are integers no matter what the
+ * model returns, so the rounding belongs here rather than in the shared compact formatter,
+ * which other call sites legitimately use for fractional values.
+ */
+@Pipe({ standalone: true, name: 'metricCount', pure: true })
+export class MetricCountPipe implements PipeTransform {
+  public transform(value: number): string {
+    if (!Number.isFinite(value)) return formatNumber(value);
+    return formatNumber(Math.round(value));
+  }
+}
+
 /** Compact currency — $1.2K / $11.9M — matching the shared formatter used server-side. */
 @Pipe({ standalone: true, name: 'metricMoney', pure: true })
 export class MetricMoneyPipe implements PipeTransform {

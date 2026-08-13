@@ -145,21 +145,24 @@
             <!-- Headline: current / last year / predicted, mirroring PCC -->
             <div class="flex flex-wrap gap-8">
               <div class="flex flex-col">
-                <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricNumber) : '—' }}</span>
+                <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricCount) : '—' }}</span>
                 <span class="text-xs text-gray-400">Current</span>
               </div>
               @if (d.hasPriorYear) {
                 <div class="flex flex-col">
-                  <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricNumber) : '—' }}</span>
+                  <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricCount) : '—' }}</span>
                   <span class="text-xs text-gray-400">Last year</span>
                 </div>
               }
               <div class="flex flex-col">
-                <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricNumber) : '—' }}</span>
+                <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricCount) : '—' }}</span>
                 <span class="text-xs text-gray-400">
                   Predicted
-                  @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
-                    <span class="text-gray-400">({{ d.pacing.predictedLow | metricNumber }}–{{ d.pacing.predictedHigh | metricNumber }})</span>
+                  <!-- Suppressed when the interval collapses onto the prediction: a "(473–473)"
+                       range is not a forecast, it is the current count repeated, and printing it
+                       as an interval implies a confidence the model did not express. -->
+                  @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null && d.pacing.predictedLow !== d.pacing.predictedHigh) {
+                    <span class="text-gray-400">({{ d.pacing.predictedLow | metricCount }}–{{ d.pacing.predictedHigh | metricCount }})</span>
                   }
                 </span>
               </div>
@@ -183,22 +186,6 @@
             <p class="text-sm text-gray-500">Day-by-day pacing prediction is coming to this view.</p>
           }
         </div>
-      }
-      <!--
-        Outside the focus gates: the event page is a general action, not part of either
-        story. Inside the attendance block it disappeared when the drawer was opened from
-        the sponsorship bar.
-      -->
-      @if (d.eventUrl) {
-        <a
-          [href]="d.eventUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
-          data-testid="event-detail-event-link">
-          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
-          View event page
-        </a>
       }
 
       <!-- Revenue detail -->
