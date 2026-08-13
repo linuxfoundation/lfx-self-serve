@@ -96,10 +96,31 @@ export type BrandKitGenerateResponse = MktgRunSessionResponse;
 export type BrandKitResultRequest = MktgRunResultBody;
 
 /**
+ * Receipt of a successful Brand Kit persistence write (dec-brand-kit-storage-v2).
+ * Carries exactly the fields needed for later Artifact metadata minting
+ * (deferred behind wi-lfx-one-service-actor) — no graph writes happen now.
+ */
+export interface BrandKitPersistReceipt {
+  /** Content-addressed object key: brand-kit/{project}/{content_sha256}.md. */
+  s3_key: string;
+  /** Validated + recomputed document SHA-256. */
+  content_sha256: string;
+  /** Project slug (storage partition). */
+  project: string;
+  /** Document draft version from the envelope. */
+  version: number;
+  /** How the intake answers were collected. */
+  intake_mode: BrandKitIntakeMode;
+}
+
+/**
  * Response of `POST /api/mktg-agents/brand-kit/result`.
  * `pending` until the session emits a valid envelope; then `ready` with the
- * validated document. The document is DISPLAYED to the user only — no
- * server-side persistence in this iteration (persistence deferred).
+ * validated document. On `ready` the BFF also persists the document to
+ * versioned object storage (the dec-brand-kit-storage-v2 write path) and
+ * reports the receipt; a missing `persistence` on a `ready` response means
+ * the write failed and will be retried on the next poll (content-addressed
+ * keys make retries idempotent).
  * Extends the generic run-flow result (status/documentMarkdown/version) the
  * form-first run shell polls, adding brand-kit envelope provenance fields.
  */
@@ -110,6 +131,8 @@ export interface BrandKitResultResponse extends MktgRunResultResponse {
   project?: string;
   /** How the intake answers were collected, from the envelope. Present when ready. */
   intakeMode?: BrandKitIntakeMode;
+  /** Persistence receipt for the returned document. Present when ready AND the object-store write succeeded. */
+  persistence?: BrandKitPersistReceipt;
 }
 
 /** Structured result of validating a candidate envelope. */

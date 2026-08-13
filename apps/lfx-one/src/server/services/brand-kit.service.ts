@@ -1,18 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BrandKitEnvelope, BrandKitResultResponse } from '@lfx-one/shared/interfaces';
-import { extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
+import { BRAND_KIT_MAX_DOCUMENT_BYTES } from '@lfx-one/shared/constants';
+import { BrandKitEnvelope, BrandKitPersistReceipt, BrandKitResultResponse } from '@lfx-one/shared/interfaces';
+import { buildBrandKitObjectKey, extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
+import { ObjectStoreService } from './object-store.service';
 
 /**
- * Brand Kit generation flow — agent invocation WITHOUT persistence (the
- * dec-brand-kit-storage-v1 write path is deferred; this service only drives
- * the session and surfaces the validated document for display).
+ * Brand Kit generation flow — the BFF drives the Guild session, validates the
+ * typed output, and persists the validated document to versioned object
+ * storage (the dec-brand-kit-storage-v2 write path).
  *
  * Flow: the one-page form answers are rendered into the agent's batch-intake
  * message (dec-brand-kit-intake-form) and submitted as a new Guild form-mode
@@ -21,9 +23,16 @@ import { logger } from './logger.service';
  * (live-smoke A3 verdict) — the `__submit__`-ed text may be prose or abridged
  * and is never trusted. Every candidate envelope is schema-validated and the
  * document sha256 is recomputed server-side before anything reaches the user.
+ *
+ * On a ready result the raw `document_markdown` bytes are written to the
+ * shared private marketing artifacts bucket under the content-addressed key
+ * `brand-kit/{project}/{content_sha256}.md`. All graph writes stay deferred
+ * (wi-lfx-one-service-actor): the response carries a receipt with exactly the
+ * fields needed for later Artifact minting.
  */
 export class BrandKitService {
   private readonly guildService = new GuildService();
+  private readonly objectStore = new ObjectStoreService();
 
   /**
    * Start a one-shot form-mode generation session. Returns the session id;
@@ -36,7 +45,8 @@ export class BrandKitService {
 
   /**
    * Fetch the session's current result: `pending` until a valid envelope
-   * appears in the event stream, then `ready` with the validated document.
+   * appears in the event stream, then `ready` with the validated document and
+   * (when the object-store write succeeds) its persistence receipt.
    */
   public async getResult(req: Request, sessionId: string): Promise<BrandKitResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -53,6 +63,8 @@ export class BrandKitService {
       document_chars: envelope.document_markdown.length,
     });
 
+    const persistence = await this.persistEnvelope(req, envelope);
+
     return {
       status: 'ready',
       documentMarkdown: envelope.document_markdown,
@@ -60,7 +72,62 @@ export class BrandKitService {
       project: envelope.project,
       version: envelope.version,
       intakeMode: envelope.intake.mode,
+      ...(persistence && { persistence }),
     };
+  }
+
+  /**
+   * Persist the validated envelope's raw document bytes to the shared private
+   * marketing artifacts bucket (contract §3 steps 4–5: size gate, key derived
+   * from validated fields only). Idempotent under polling — content-addressed
+   * keys make the repeat write a HEAD no-op.
+   *
+   * A persistence failure degrades gracefully: the document was already fully
+   * validated, so the user still gets it; the receipt is simply omitted and
+   * the next poll retries the write.
+   */
+  private async persistEnvelope(req: Request, envelope: BrandKitEnvelope): Promise<BrandKitPersistReceipt | null> {
+    const startTime = logger.startOperation(req, 'brand_kit_persist', { project: envelope.project, version: envelope.version });
+    try {
+      const documentBytes = Buffer.from(envelope.document_markdown, 'utf8');
+
+      // Size gate (defense in depth — also checked byte-accurately by the
+      // shared validator via TextEncoder before the envelope got here).
+      if (documentBytes.length > BRAND_KIT_MAX_DOCUMENT_BYTES) {
+        logger.warning(req, 'brand_kit_persist', 'Document exceeds the 20 MB object size cap — not persisted', {
+          project: envelope.project,
+          bytes: documentBytes.length,
+        });
+        return null;
+      }
+
+      // Key derived from validated fields only — the sha was recomputed against
+      // the document bytes in findAuthoritativeEnvelope before selection.
+      const key = buildBrandKitObjectKey(envelope.project, envelope.content_sha256);
+
+      const written = await this.objectStore.putObjectIfAbsent(req, 'marketing-os-artifacts', key, documentBytes, 'text/markdown; charset=utf-8', 'private');
+
+      logger.success(req, 'brand_kit_persist', startTime, {
+        key,
+        written,
+        project: envelope.project,
+        version: envelope.version,
+        intake_mode: envelope.intake.mode,
+      });
+
+      return {
+        s3_key: key,
+        content_sha256: envelope.content_sha256,
+        project: envelope.project,
+        version: envelope.version,
+        intake_mode: envelope.intake.mode,
+      };
+    } catch (error) {
+      // Deliberate degrade: surface the validated document even when storage is
+      // down; the content-addressed write is retried on the next poll.
+      logger.error(req, 'brand_kit_persist', startTime, error, { project: envelope.project, version: envelope.version });
+      return null;
+    }
   }
 
   /**
