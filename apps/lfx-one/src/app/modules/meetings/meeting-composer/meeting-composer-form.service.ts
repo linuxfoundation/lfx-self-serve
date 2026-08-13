@@ -221,7 +221,7 @@ export class MeetingComposerFormService {
     this.setGuests(reducer(this.guests()));
   }
 
-  /** Records an unsaved guest's email so group reconciliation treats the removal as intentional. */
+  /** Records a removed guest's email so group reconciliation treats the removal as intentional. */
   public suppressGuestEmail(email: string | null | undefined): void {
     if (!email) {
       return;

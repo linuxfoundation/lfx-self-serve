@@ -157,6 +157,7 @@ export class ComposerAgendaResourcesComponent {
             this.onCancelAiHelper();
             this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
           },
+          // `MeetingService.generateAgenda` already logs the failure before re-throwing.
           error: () => {
             this.messageService.add({ severity: 'error', summary: 'Generation failed', detail: 'Could not generate an agenda. Please try again.' });
           },
@@ -251,13 +252,14 @@ export class ComposerAgendaResourcesComponent {
 
   /**
    * Applies a template's or AI draft's estimated duration to the schedule controls.
-   * @description Estimates outside the chip values go to `customDuration` rather than being clamped.
-   * An estimate outside the allowed range is dropped rather than written: the form service's min/max
-   * validators would block submit from a section the organizer can't see. The toast fires either way
-   * because the duration they picked has just been overwritten — or deliberately left alone.
+   * @description Three outcomes: an estimate outside the allowed range is dropped with a warning
+   * (writing it would trip the form service's min/max validators and deaden submit from a section the
+   * organizer can't see); an estimate that already matches the current duration is a silent no-op; any
+   * other estimate is written and announced, since the duration they picked has just been overwritten.
+   * Estimates outside the chip values go to `customDuration` rather than being clamped.
    */
   private applyEstimatedDuration(estimatedDuration: number): void {
-    if (!Number.isFinite(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
+    if (!Number.isInteger(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Duration left unchanged',
@@ -266,13 +268,13 @@ export class ComposerAgendaResourcesComponent {
       return;
     }
 
-    const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
-    const customDuration = this.form().get('customDuration');
-    const durationControl = this.form().get('duration');
-
     if (this.effectiveDuration() === estimatedDuration) {
       return;
     }
+
+    const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
+    const customDuration = this.form().get('customDuration');
+    const durationControl = this.form().get('duration');
 
     durationControl?.setValue(isChipValue ? estimatedDuration : 'custom');
     customDuration?.setValue(isChipValue ? null : estimatedDuration);
@@ -288,15 +290,21 @@ export class ComposerAgendaResourcesComponent {
     });
   }
 
-  /** Minutes the form currently resolves to, whichever of the two duration controls holds it. */
+  /**
+   * Minutes the form currently resolves to, whichever of the two duration controls holds it.
+   * @description `customDuration` starts out as an empty string and holds whatever the numeric input
+   * produces, so it is coerced rather than cast.
+   */
   private effectiveDuration(): number | null {
     const duration = this.form().get('duration')?.value as number | 'custom' | null;
 
-    if (duration === 'custom') {
-      return (this.form().get('customDuration')?.value as number | null) ?? null;
+    if (duration !== 'custom') {
+      return duration ?? null;
     }
 
-    return duration ?? null;
+    const customDuration = Number(this.form().get('customDuration')?.value);
+
+    return Number.isFinite(customDuration) && customDuration > 0 ? customDuration : null;
   }
 
   private validateFile(file: File, queued: PendingAttachment[]): string | null {

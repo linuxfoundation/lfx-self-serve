@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingRegistrant, MeetingTypeConfig } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -318,22 +318,6 @@ export const MEETING_COMPOSER_SECTIONS = [
   { id: 'guests', label: 'Guests', icon: 'fa-light fa-users', required: false },
   { id: 'agenda-resources', label: 'Agenda & Resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
-
-/**
- * Registrant fields the composer lets an organizer edit.
- * @description Compared against the saved snapshot to tell an edited guest from an untouched one.
- */
-export const EDITABLE_GUEST_FIELDS = [
-  'first_name',
-  'last_name',
-  'job_title',
-  'org_name',
-  'host',
-  'avatar_url',
-  'username',
-  'linkedin_profile',
-  'occurrence_id',
-] as const satisfies readonly (keyof MeetingRegistrant)[];
 
 /**
  * Default meeting duration in minutes
