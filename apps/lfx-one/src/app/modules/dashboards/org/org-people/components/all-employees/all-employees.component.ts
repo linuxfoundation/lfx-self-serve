@@ -5,14 +5,13 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
-import { OrgLensAccessStateService } from '@services/org-lens-access-state.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
@@ -47,7 +46,6 @@ export class AllEmployeesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(AllEmployeesService);
   private readonly directory = inject(OrgPeopleDirectoryStateService);
-  private readonly accessState = inject(OrgLensAccessStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -162,19 +160,6 @@ export class AllEmployeesComponent {
   protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
   public constructor() {
-    // Warm the shared Org Lens access cache for every org we see (including the initial one), so the
-    // Access tab opens against a hydrated cache. This tab no longer reads it — badges now come from the
-    // roster's own `accessBadge` — but the prefetch is kept because it is what makes that tab instant.
-    // The service dedups concurrent calls and short-circuits cache hits, so it is cheap on re-visits.
-    // Per-fetch `catchError` keeps the outer stream alive on a transient backend failure; the Access tab
-    // has its own error banner + retry CTA, so a silent EMPTY here only costs the prefetch.
-    this.orgUid$
-      .pipe(
-        switchMap((uid) => this.accessState.ensureLoaded(uid).pipe(catchError(() => EMPTY))),
-        takeUntilDestroyed()
-      )
-      .subscribe();
-
     // Reset all state and cancel in-flight detail fetches only when the actual org uid changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. Snowflake enrichment re-setting the same account) and wipe user search/filter state.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.detailCancel$.next();
