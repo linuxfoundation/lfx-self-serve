@@ -240,6 +240,30 @@ describe('EventRosterSectionComponent', () => {
     expect(drawer.componentInstance.focus()).toBe('b2b');
   });
 
+  // Nested interactive elements: the cell buttons sit inside a row that also opens the drawer,
+  // and a native button turns Enter into a click. If the cell does not stop the keydown it also
+  // reaches the row's keydown.enter, which opens the row's default b2c focus — landing a
+  // sponsorship activation on the attendance story.
+  //
+  // Driven through the row rather than the cell: dispatching on the cell cannot reproduce the
+  // browser's implicit Enter-to-click in jsdom, so this asserts the outcome that actually matters
+  // — an Enter originating in the sponsorship cell must not leave the drawer on b2c.
+  it('keeps a sponsorship-cell Enter from opening the row default focus', async () => {
+    await render([row({ eventId: 'evt-9' })], 'tlf');
+
+    const cell = fixture.nativeElement.querySelector('[data-testid="event-roster-b2b-evt-9"]') as HTMLElement;
+    expect(cell).toBeTruthy();
+
+    // The click is what the browser would synthesise; the keydown is what must not bubble past it.
+    cell.click();
+    cell.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const drawer = fixture.debugElement.query(By.directive(EventDetailDrawerComponent));
+    expect(drawer.componentInstance.focus()).toBe('b2b');
+  });
+
   it('refetches when the past-events toggle changes', async () => {
     await render([row()], 'tlf');
     expect(getEventRoster).toHaveBeenCalledWith('tlf', false, undefined);

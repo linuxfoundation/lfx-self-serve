@@ -93,7 +93,14 @@
             }
           </div>
 
-          <!-- Registrations bar → B2C drawer (marketing campaigns) -->
+          <!--
+            Registrations bar → B2C drawer (marketing campaigns).
+
+            The cell buttons stop Enter and Space rather than handling them: a native button already
+            turns both into a click, so acting again would open the drawer twice — and unstopped,
+            Enter bubbles to the row's own keydown.enter, which opens the row's default b2c focus
+            and lands a sponsorship click on the attendance story.
+          -->
           @if (showRegistrations()) {
             <div class="w-52" role="cell">
               <button
@@ -102,7 +109,8 @@
                 title="View registrations & marketing campaigns"
                 [attr.aria-label]="'View registrations and marketing campaigns for ' + row.eventName"
                 (click)="openFocused(row.eventId, 'b2c', $event)"
-                (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
+                (keydown.enter)="$event.stopPropagation()"
+                (keydown.space)="$event.stopPropagation()"
                 [attr.data-testid]="'event-roster-b2c-' + row.eventId">
                 <div class="flex items-center gap-2">
                   <span class="w-10 shrink-0 text-right text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
@@ -138,7 +146,8 @@
                 title="View sponsorship & partnerships"
                 [attr.aria-label]="'View sponsorship and partnerships for ' + row.eventName"
                 (click)="openFocused(row.eventId, 'b2b', $event)"
-                (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
+                (keydown.enter)="$event.stopPropagation()"
+                (keydown.space)="$event.stopPropagation()"
                 [attr.data-testid]="'event-roster-b2b-' + row.eventId">
                 <div class="flex items-center gap-2">
                   <span class="w-12 shrink-0 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>

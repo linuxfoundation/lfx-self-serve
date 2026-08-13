@@ -11,14 +11,19 @@
   <!-- Tiles -->
   @if (loading()) {
     <!--
-      Column counts are capped by the tile count at every breakpoint, not just lg. The sponsorship
-      view renders a single tile, so a fixed grid-cols-2/sm:grid-cols-3 left half or two-thirds of
-      the row as dead columns below 1024px. The caps stay for the six-tile attendance view —
-      min() takes whichever is smaller. The loaded-tiles grid below carries the same rule; they
-      must move together or the layout shifts when data resolves.
+      Column counts follow the tile count below lg, where a fixed grid-cols-2/sm:grid-cols-3 left
+      half or two-thirds of the row empty in the one-tile sponsorship view.
+
+      Static classes via ngClass rather than repeat(min(var(--cols),N)): CSS Grid requires an
+      integer repeat count, so a min() there is invalid and the browser discards the whole
+      grid-template-columns declaration — which collapses the grid to a single implicit column,
+      the opposite of the fix. The lg rule keeps the custom property because it resolves to a
+      plain integer. The loaded grid below carries the same pair; they must move together or the
+      layout shifts when data resolves.
     -->
     <div
-      class="grid gap-x-6 gap-y-5 [grid-template-columns:repeat(min(var(--cols),2),minmax(0,1fr))] sm:[grid-template-columns:repeat(min(var(--cols),3),minmax(0,1fr))] lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      class="grid gap-x-6 gap-y-5 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      [ngClass]="tileCount() === 1 ? 'grid-cols-1 sm:grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'"
       [style.--cols]="tileCount()"
       data-testid="events-summary-skeleton">
       @for (i of skeletons(); track i) {
@@ -30,7 +35,8 @@
     </div>
   } @else {
     <div
-      class="grid gap-x-6 gap-y-5 [grid-template-columns:repeat(min(var(--cols),2),minmax(0,1fr))] sm:[grid-template-columns:repeat(min(var(--cols),3),minmax(0,1fr))] lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      class="grid gap-x-6 gap-y-5 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      [ngClass]="tileCount() === 1 ? 'grid-cols-1 sm:grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'"
       [style.--cols]="tileCount()"
       role="list"
       data-testid="events-summary-tiles">

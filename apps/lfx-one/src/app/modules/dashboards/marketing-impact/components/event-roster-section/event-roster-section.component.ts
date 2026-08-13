@@ -85,7 +85,9 @@ export class EventRosterSectionComponent {
   /**
    * Open the detail drawer scoped to one story. Called from the individual
    * column cells so registrations open the B2C (campaigns) view and sponsorship
-   * opens the B2B view. `event` is stopped so the row-level click doesn't also fire.
+   * opens the B2B view. `event` is stopped so the row-level click doesn't also fire — the cell
+   * buttons stop Enter and Space in the template for the same reason, since a native button
+   * turns both into a click and the row has its own keydown handlers.
    */
   protected openFocused(eventId: string, focus: EventDrawerFocus, event?: Event): void {
     event?.stopPropagation();
