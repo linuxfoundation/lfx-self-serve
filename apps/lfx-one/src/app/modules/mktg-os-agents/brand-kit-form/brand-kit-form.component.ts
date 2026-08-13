@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnDestroy, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnDestroy, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -35,6 +36,7 @@ const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
 export class BrandKitFormComponent implements OnDestroy {
   private readonly brandKitService = inject(BrandKitService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   /** Emitted when the user leaves the form back to the marketplace grid. */
   public readonly back = output<void>();
@@ -116,6 +118,10 @@ export class BrandKitFormComponent implements OnDestroy {
   }
 
   protected onDownload(): void {
+    // SSR guard: Blob/URL/document are browser-only (ssr-safety rule).
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     const current = this.result();
     if (!current?.documentMarkdown) {
       return;

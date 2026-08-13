@@ -9,13 +9,13 @@ import {
   BrandKitResultResponse,
   MktgChatRequest,
   MktgChatResponse,
+  MktgHistoryRequest,
   MktgHistoryResponse,
 } from '@lfx-one/shared/interfaces';
 import { validateBrandKitIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
-import { getStringQueryParam } from '../helpers/validation.helper';
 import { BrandKitService } from '../services/brand-kit.service';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
@@ -124,19 +124,22 @@ export class MktgAgentsController {
   }
 
   /**
-   * GET /api/mktg-agents/history?sessionId=&ownerToken=
+   * POST /api/mktg-agents/history
    * Returns the session's messages mapped to the chat format.
    * Session transcripts can carry sensitive user input (e.g. the Brand Kit
    * intake answers ride the trigger_message), so reads require the same
    * creator-binding owner-token proof as writes — a session id alone must
-   * never unlock another user's transcript.
+   * never unlock another user's transcript. POST (not GET) so the owner
+   * token travels in the body and stays out of access logs and proxies.
    */
   public async history(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const sessionId = getStringQueryParam(req, 'sessionId')?.trim() || undefined;
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken } = (req.body ?? {}) as Partial<MktgHistoryRequest>;
 
-    if (!sessionId) {
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
       next(
-        ServiceValidationError.forField('sessionId', 'sessionId query parameter is required', {
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
           operation: 'mktg_agents_history',
           service: 'mktg_agents_controller',
           path: req.path,
@@ -157,8 +160,8 @@ export class MktgAgentsController {
       return;
     }
 
-    const ownerToken = getStringQueryParam(req, 'ownerToken')?.trim() || undefined;
-    if (!verifySessionOwnerToken(ownerToken, userId, sessionId)) {
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken.trim() ? ownerToken.trim() : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
       next(
         new AuthorizationError('You do not have permission to read this session.', {
           operation: 'mktg_agents_history',
@@ -171,7 +174,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'mktg_agents_history', {});
 
     try {
-      const messages = await this.guildService.getHistory(req, sessionId);
+      const messages = await this.guildService.getHistory(req, validSessionId);
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
       const response: MktgHistoryResponse = { messages };
       res.json(response);
