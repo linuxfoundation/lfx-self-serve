@@ -236,6 +236,7 @@ export enum DashboardDrawerType {
   BrandReach = 'brand-reach',
   BrandHealth = 'brand-health',
   RevenueImpact = 'revenue-impact',
+  Education = 'education',
 }
 
 /** Lifecycle stage of a foundation project */
@@ -627,6 +628,200 @@ export interface EventsSummaryResponse {
   sponsorshipGoal: number;
   /** Progress percentage: revenue/goal*100; 0 when goal is zero */
   sponsorshipProgressPct: number;
+}
+
+/**
+ * A single Events Summary metric: its period value and the period-over-period change.
+ * `changeFraction` is a ratio from Snowflake (0.52 = +52%), not a percentage; null when
+ * there is no prior-period baseline to compare against.
+ */
+export interface EventsOverviewMetric {
+  /**
+   * The metric's value, or null when it isn't derivable for the requested period. Attendee,
+   * country, organization, and sponsorship counts only exist as pre-aggregated YTD rollups in
+   * Snowflake, so a month-scoped request returns null for them rather than passing off a
+   * year-to-date figure as a monthly one.
+   */
+  value: number | null;
+  changeFraction: number | null;
+}
+
+/** Comparison rating for an upcoming event's registration pace (from COMP_SCORE). */
+export type EventCompScore = 'high' | 'medium' | 'low' | 'unknown';
+
+/**
+ * One event row for the Event Roster table, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS joined to sponsorship actuals.
+ * Goals of 0 mean "no goal required" — the UI renders no progress bar in that case (matches PCC).
+ */
+export interface EventRosterRow {
+  eventId: string;
+  eventName: string;
+  /** Event start date, ISO (YYYY-MM-DD). */
+  startDate: string;
+  isPast: boolean;
+  country: string;
+  /** Public event URL (Cvent etc.) for the row link-out; '' when unknown. */
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  /** Sponsorship revenue in dollars — actual summed from the tier table, goal from the event. */
+  sponsorshipRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  compScore: EventCompScore;
+  /** CFP / speaking-proposal status text, e.g. "Review Complete"; '' when none. */
+  cfpStatus: string;
+}
+
+/** Event Roster response for a foundation: upcoming (default) or all events. */
+export interface EventRosterResponse {
+  projectId: string;
+  events: EventRosterRow[];
+}
+
+/** One sponsorship tier row for the per-event detail drawer. */
+export interface EventSponsorshipTier {
+  /** Tier name (Diamond, Gold, Platinum, …); '' when unlabeled. */
+  tier: string;
+  /** Sponsorship revenue in dollars for this tier at this event. */
+  revenue: number;
+  /** Number of sponsors in this tier. */
+  sponsorCount: number;
+}
+
+/** One marketing-channel row for an event: how registrations/traffic are attributed. */
+export interface EventChannelAttribution {
+  /** Consolidated channel label (Organic Search, Email / HubSpot, Social, …). */
+  channel: string;
+  sessions: number;
+  uniqueVisitors: number;
+  /** Linear-attributed revenue in dollars. */
+  revenue: number;
+  /** Share of the event's total sessions, 0–100. */
+  sharePercent: number;
+}
+
+/** One paid-ad campaign's performance for an event. */
+export interface EventPaidCampaign {
+  /** Campaign name as recorded on the ad platform. */
+  name: string;
+  /** Platform the campaign ran on, e.g. "Google Ads", "LinkedIn", "Reddit". */
+  platform: string;
+  spend: number;
+  conversions: number;
+  clicks: number;
+  impressions: number;
+  /** Cost per conversion in dollars; null when no conversions. */
+  cpa: number | null;
+}
+
+/** One email campaign's engagement for an event. */
+export interface EventEmailCampaign {
+  name: string;
+  sends: number;
+  opens: number;
+  clicks: number;
+  /** Open rate as a percentage (0–100). */
+  openRate: number;
+  /** Click-through rate as a percentage (0–100). */
+  ctr: number;
+}
+
+/**
+ * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
+ * Mirrors PCC's EventPredictionDrilldown grain.
+ */
+export interface EventPacingPoint {
+  daysToEvent: number;
+  /** Current-year cumulative registrations (null for future days not yet reached). */
+  current: number | null;
+  /** Prior-year cumulative registrations aligned by days-to-event. */
+  priorYear: number | null;
+  predictedAvg: number | null;
+  predictedLow: number | null;
+  predictedHigh: number | null;
+}
+
+/**
+ * Per-event registration-pacing summary + daily curve. Populated once the pacing prediction
+ * models land (MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]); until then `available` is
+ * false, `points` is empty, and the UI shows a placeholder that links to PCC. Headline numbers
+ * mirror PCC's EventPrediction; `points` mirrors EventPredictionDrilldown.
+ */
+export interface EventPacing {
+  available: boolean;
+  daysLeft: number | null;
+  current: number | null;
+  priorYear: number | null;
+  predictedAvg: number | null;
+  predictedLow: number | null;
+  predictedHigh: number | null;
+  /** The day-by-day cumulative curve; empty until the drilldown model lands. */
+  points: EventPacingPoint[];
+}
+
+/**
+ * Per-event detail for the roster drawer, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS (event meta + goals) and
+ * MARKETING_EVENT_SPONSORSHIPS_BY_TIER (tier breakdown). No daily-pacing time-series is
+ * available in these tables — that lives in PCC's prediction service, linked via eventUrl.
+ */
+export interface EventDetailResponse {
+  eventId: string;
+  eventName: string;
+  startDate: string;
+  isPast: boolean;
+  /** Full venue string, e.g. "InterContinental Grand Seoul Parnas"; '' when unknown. */
+  location: string;
+  city: string;
+  country: string;
+  /** Event lifecycle status from the source (Active, Archived, …). */
+  status: string;
+  eventUrl: string;
+  registrations: { actual: number; goal: number };
+  /** Registration revenue; actual is null until the source exposes it (goal is known). */
+  registrationRevenue: { actual: number | null; goal: number };
+  sponsorshipRevenue: { actual: number; goal: number };
+  /** Ratio of this year's registrations to last year's (1.0 = on par); null when no baseline. */
+  vsLastYear: number | null;
+  /** Whether a prior-year edition of this event exists to compare against. */
+  hasPriorYear: boolean;
+  compScore: EventCompScore;
+  cfpStatus: string;
+  sponsorshipTiers: EventSponsorshipTier[];
+  channels: EventChannelAttribution[];
+  /** Paid-ad campaigns matched to this event (empty when none ran). */
+  paidCampaigns: EventPaidCampaign[];
+  /** Email campaigns matched to this event by name (empty when none). */
+  emailCampaigns: EventEmailCampaign[];
+  pacing: EventPacing;
+}
+
+/**
+ * Foundation-wide events summary for the Marketing Impact Overview tab, sourced from
+ * ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_OVERVIEW (per-project, pre-computed period
+ * columns) + MARKETING_EVENT_SPONSORSHIPS. One row per foundation slug (project spine rolls
+ * children up). Counts are for the selected period (YTD by default).
+ */
+export interface EventsOverviewSummaryResponse {
+  /** Snowflake PROJECT_ID echoed for PCC deep-link navigation; '' when the slug resolves to nothing. */
+  projectId: string;
+  /**
+   * The period these figures actually cover, which is not always the one requested: the source
+   * rollups carry no date grain, so a trailing preset (last-3/last-6) is served year-to-date.
+   * Callers label from this rather than from the picker, so numbers are never titled with a scope
+   * they don't have.
+   */
+  scope: 'ytd' | 'month';
+  registrations: EventsOverviewMetric;
+  attendees: EventsOverviewMetric;
+  speakers: EventsOverviewMetric;
+  countries: EventsOverviewMetric;
+  /** "Organizations" tile — COMPANIES_COUNT in the source model. */
+  organizations: EventsOverviewMetric;
+  events: EventsOverviewMetric;
+  /** Sponsorship revenue in dollars; no YoY change is modeled, so changeFraction is null. */
+  sponsorship: EventsOverviewMetric;
 }
 
 // ============================================

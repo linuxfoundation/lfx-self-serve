@@ -89,6 +89,65 @@ export function stableKeyParity(key: string): 0 | 1 {
   return (sum & 1) as 0 | 1;
 }
 
+/**
+ * Splits plain text (e.g. a textarea-submitted comment) into paragraphs on blank lines.
+ * Two or more consecutive line breaks (lines containing only spaces/tabs count as blank)
+ * separate paragraphs; single line breaks are preserved inside the paragraph for the
+ * template to render (e.g. via `whitespace-pre-line`). Paragraphs are trimmed and empty
+ * results dropped, so empty/whitespace-only input returns `[]`.
+ * @param text - The raw plain-text input
+ * @returns One entry per paragraph, in source order
+ */
+export function splitIntoParagraphs(text: string): string[] {
+  return text
+    .split(/(?:\r?\n[ \t]*){2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+}
+
+/**
+ * Count the Unicode code points in a string (like Go's `len([]rune(s))`), so an emoji or
+ * non-BMP char counts once where `String.length` would count its two UTF-16 units.
+ * @param value - The string to measure
+ * @returns The number of Unicode code points
+ */
+export function codePointLength(value: string): number {
+  // The string iterator (via spread) walks by code point, so a surrogate pair counts once.
+  return [...value].length;
+}
+
+/**
+ * Clip `next` to `max` code points by trimming only the region that changed vs `previous`, so a
+ * mid-string insertion into a full field drops the excess input rather than unrelated trailing text.
+ * @param previous - The last within-cap value (must itself be <= max code points)
+ * @param next - The candidate value after an edit
+ * @param max - The maximum allowed number of code points
+ * @returns `next` unchanged when within the cap, otherwise clipped at the changed region to exactly `max`
+ *
+ * Known limitation: string-only prefix/suffix diffing can't distinguish a select-all replace from a
+ * mid-selection replace, so an over-cap paste-over-selection that coincidentally shares a trailing (or
+ * leading) code point with `previous` can displace one boundary code point. The result is still `<= max`
+ * code points; a fully faithful fix needs the input's real selection range rather than a `(prev, next)` diff.
+ */
+export function capCodePointEdit(previous: string, next: string, max: number): string {
+  const nextCP = [...next];
+  if (nextCP.length <= max) return next;
+
+  const prevCP = [...previous];
+  // Common prefix, then common suffix (bounded so prefix and suffix never overlap in either string).
+  let prefix = 0;
+  while (prefix < prevCP.length && prefix < nextCP.length && prevCP[prefix] === nextCP[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < prevCP.length - prefix && suffix < nextCP.length - prefix && prevCP[prevCP.length - 1 - suffix] === nextCP[nextCP.length - 1 - suffix])
+    suffix++;
+
+  const allowedInsert = Math.max(0, max - prefix - suffix);
+  const head = nextCP.slice(0, prefix);
+  const inserted = nextCP.slice(prefix, prefix + allowedInsert);
+  const tail = nextCP.slice(nextCP.length - suffix);
+  return [...head, ...inserted, ...tail].join('');
+}
+
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();

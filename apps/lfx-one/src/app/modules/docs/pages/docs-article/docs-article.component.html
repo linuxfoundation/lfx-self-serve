@@ -66,19 +66,16 @@
         <div class="prose prose-lfx mt-4 max-w-none" [innerHTML]="a.bodyHtml" data-testid="docs-article-body"></div>
       </div>
 
-      @if (siblings().length > 0) {
+      @if (topicArticles().length > 0) {
         <aside
           class="flex flex-col gap-3 border-t border-gray-200 pt-6 lg:sticky lg:top-[105px] lg:mt-6 lg:w-1/4 lg:shrink-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0"
           aria-labelledby="docs-siblings-heading">
           <h2 id="docs-siblings-heading" class="text-xs uppercase tracking-wide text-gray-500">More in this topic</h2>
           <ul class="flex flex-col gap-2" data-testid="docs-article-siblings">
-            @for (sibling of siblings(); track sibling.slug) {
+            @for (entry of topicArticles(); track entry.slug) {
               <li>
-                <a
-                  [routerLink]="sibling.url"
-                  class="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                  data-testid="docs-article-sibling-link">
-                  {{ sibling.title }}
+                <a [routerLink]="entry.url" [attr.aria-current]="entry.ariaCurrent" [class]="entry.linkClass" data-testid="docs-article-sibling-link">
+                  {{ entry.title }}
                 </a>
               </li>
             }

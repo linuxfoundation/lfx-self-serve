@@ -90,6 +90,7 @@ export * from './org-lens-projects.interface';
 
 // Org Lens · Project Detail sub-page (LFXV2-1885) interfaces
 export * from './org-lens-project-detail.interface';
+export * from './org-leaderboard-detail-drawer.interface';
 
 // Mailing list interfaces
 export * from './mailing-list.interface';

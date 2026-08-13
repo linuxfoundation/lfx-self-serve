@@ -48,11 +48,14 @@ export function formatValueLost(value: number): string {
  * - Handles NaN and Infinity gracefully
  * - Normalizes negative zero so "-0.0%" never renders
  * - Returns the number only; callers add the "%" suffix
+ * - `digits` defaults to 1. Pass 2 for rates that live below 1% — paid CTR and conversion rate
+ *   are routinely 0.04%, which one decimal erases to "0.0" and misreports as a measured zero.
+ *   The server keeps two decimals for those fields precisely so the UI can show them.
  */
-export function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) return '0.0';
-  const rounded = Number(value.toFixed(1));
-  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(1);
+export function formatPercent(value: number, digits = 1): string {
+  if (!Number.isFinite(value)) return (0).toFixed(digits);
+  const rounded = Number(value.toFixed(digits));
+  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(digits);
 }
 
 /** Centralized compact formatter — thresholds, scales, and rounding in one place.
@@ -64,6 +67,23 @@ export function formatCompact(abs: number, sign: string, prefix = ''): string {
   if (abs >= 999_950) return `${sign}${prefix}${stripTrailingZero((abs / 1_000_000).toFixed(1))}M`;
   if (abs >= 1_000) return `${sign}${prefix}${stripTrailingZero((abs / 1_000).toFixed(1))}K`;
   return `${sign}${prefix}${abs.toLocaleString('en-US')}`;
+}
+
+/**
+ * Format a compact figure rounded to at most one decimal place.
+ * The compact branches (K/M/B) already round to one decimal, but the sub-1000 branch
+ * renders whatever precision it is handed — so derived values like CPA arrive as
+ * "586.302…". Use this for computed/derived figures; use the plain formatters for
+ * exact amounts (e.g. cents-denominated currency) where dropping a decimal would
+ * misstate the value.
+ */
+export function formatCompactRounded(num: number, prefix = ''): string {
+  if (!Number.isFinite(num)) return `${prefix}0`;
+  // toFixed, not Math.round: Math.round resolves halves toward +Infinity, so -3.75 would round to
+  // -3.7 while 3.75 rounds to 3.8 — understating negative derived values. toFixed rounds away
+  // from zero on both signs, matching formatPercent.
+  const rounded = Number(num.toFixed(1));
+  return formatCompact(Math.abs(rounded), rounded < 0 ? '-' : '', prefix);
 }
 
 /** Strip trailing zeros (and a dangling decimal point) from a fixed-decimal string. */

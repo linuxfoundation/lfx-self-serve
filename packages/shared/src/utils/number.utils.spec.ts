@@ -3,9 +3,28 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { formatCurrency, formatPercent } from './number.utils';
+import { formatCompactRounded, formatCurrency, formatPercent } from './number.utils';
 
 describe('formatPercent', () => {
+  // Paid CTR and conversion rate live below 1% routinely, and the server keeps two decimals for
+  // them on purpose. One decimal erases a measured 0.04% into "0.0" — a real value reported as a
+  // zero, which is the failure this suite exists to prevent elsewhere.
+  it('keeps two decimals when asked, for rates that live below one percent', () => {
+    expect(formatPercent(0.04, 2)).toBe('0.04');
+    expect(formatPercent(0.12, 2)).toBe('0.12');
+    expect(formatPercent(0.35, 2)).toBe('0.35');
+  });
+
+  it('still defaults to one decimal', () => {
+    expect(formatPercent(0.04)).toBe('0.0');
+    expect(formatPercent(94.919659091)).toBe('94.9');
+  });
+
+  it('normalizes negative zero at any precision', () => {
+    expect(formatPercent(-0.001)).toBe('0.0');
+    expect(formatPercent(-0.0001, 2)).toBe('0.00');
+  });
+
   it('rounds a raw Snowflake float to a single decimal place', () => {
     // The bug this exists to fix: NRR arrived as 94.919659091 and rendered verbatim.
     expect(formatPercent(94.919659091)).toBe('94.9');
@@ -60,5 +79,47 @@ describe('formatCurrency compact thresholds', () => {
   it('falls back to $0 for non-finite input', () => {
     expect(formatCurrency(Number.NaN)).toBe('$0');
     expect(formatCurrency(Number.POSITIVE_INFINITY)).toBe('$0');
+  });
+});
+
+describe('formatCompactRounded', () => {
+  // The reason this helper exists: the sub-1000 branch of formatCompact renders whatever
+  // precision it is handed, so a derived CPA arrived as "586.302…".
+  it('caps sub-1000 values at one decimal', () => {
+    expect(formatCompactRounded(586.302_158, '$')).toBe('$586.3');
+    expect(formatCompactRounded(0.4237, '$')).toBe('$0.4');
+  });
+
+  it('strips a trailing zero rather than rendering a bare decimal point', () => {
+    expect(formatCompactRounded(586.04, '$')).toBe('$586');
+    expect(formatCompactRounded(12, '$')).toBe('$12');
+  });
+
+  // Math.round resolves halves toward +Infinity, which understated negatives: -3.75 became
+  // -3.7 while 3.75 became 3.8. Both must round away from zero.
+  it('rounds a negative midpoint symmetrically with its positive counterpart', () => {
+    expect(formatCompactRounded(-3.75, '$')).toBe('-$3.8');
+    expect(formatCompactRounded(3.75, '$')).toBe('$3.8');
+  });
+
+  it('places the sign outside the prefix', () => {
+    expect(formatCompactRounded(-42.5, '$')).toBe('-$42.5');
+  });
+
+  it('applies the K/M/B thresholds like the plain formatter', () => {
+    expect(formatCompactRounded(999)).toBe('999');
+    expect(formatCompactRounded(1_000)).toBe('1K');
+    expect(formatCompactRounded(999_950)).toBe('1M');
+    expect(formatCompactRounded(999_950_000)).toBe('1B');
+  });
+
+  it('works without a prefix', () => {
+    expect(formatCompactRounded(586.302_158)).toBe('586.3');
+  });
+
+  it("falls back to a zero of the caller's unit for non-finite input", () => {
+    expect(formatCompactRounded(Number.NaN, '$')).toBe('$0');
+    expect(formatCompactRounded(Number.POSITIVE_INFINITY, '$')).toBe('$0');
+    expect(formatCompactRounded(Number.NaN)).toBe('0');
   });
 });

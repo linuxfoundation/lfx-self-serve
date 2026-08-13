@@ -50,6 +50,8 @@ test.describe('Committee engagement — structural contract (flag on)', () => {
     await expect(page.getByTestId('members-engagement-chip-m-high')).toBeVisible();
     await expect(page.getByTestId('members-engagement-meetings-m-emeritus')).toBeVisible();
     await expect(page.getByTestId('members-engagement-chip-m-emeritus')).toBeVisible();
+    await expect(page.getByTestId('members-engagement-meetings-m-lf-staff')).toBeVisible();
+    await expect(page.getByTestId('members-engagement-chip-m-lf-staff')).toBeVisible();
 
     // The At Risk chip joins the existing chip row's testid scheme.
     await expect(page.getByTestId('members-filter-chips').getByTestId('members-chip-atRisk')).toBeVisible();

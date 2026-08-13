@@ -110,6 +110,11 @@
     <lfx-org-roi-category-donut />
 
     <lfx-org-roi-projects-donut [method]="method()" />
+
+    <!-- Same condition as the donuts, deliberately not a fourth guard of its own: the identity
+         check is what stops one organization's projects rendering under another's header, and a
+         separate condition here is how it would come to diverge. -->
+    <lfx-org-roi-projects-section [method]="method()" />
   }
 
   <!-- Mounted outside the branches above, on the same condition as its trigger. Inside the

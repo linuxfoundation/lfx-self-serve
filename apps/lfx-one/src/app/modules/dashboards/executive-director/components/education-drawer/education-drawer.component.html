@@ -1,0 +1,190 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="education-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="education-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="education-drawer-title">Education</h2>
+        <p class="text-sm text-gray-500">Executive Director · Training &amp; Certification</p>
+      </div>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="education-drawer-close" />
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="education-drawer-content">
+    <!-- Summary Stats -->
+    <div class="flex gap-4" data-testid="education-drawer-stats">
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Enrollments</span>
+          @if (totalEnrollments() > 0) {
+            <span class="text-2xl font-semibold text-gray-900">{{ totalEnrollmentsLabel() }}</span>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-400">—</span>
+          }
+        </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Net Revenue</span>
+          <!-- A measured $0 is data; the dash is only for the all-edX case where revenue is untracked. -->
+          @if (hasTrackedRevenue()) {
+            <span class="text-2xl font-semibold text-gray-900">{{ totalRevenueLabel() }}</span>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-400">—</span>
+          }
+        </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <!--
+            Denominator is named explicitly: this divides by revenue-bearing enrollments only
+            (edX excluded), so it deliberately does not reconcile with the Enrollments card
+            whenever edX has enrollments. See revenuePerEnrollmentLabel in the component.
+          -->
+          <span class="text-sm text-gray-500">Revenue / Paid Enrollment</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ revenuePerEnrollmentLabel() }}</span>
+          @if (hasUntrackedRevenueEnrollments()) {
+            <span class="text-xs text-gray-400">Excludes edX (revenue untracked)</span>
+          }
+        </div>
+      </lfx-card>
+    </div>
+
+    <!-- FIRST FOLD: Needs Your Attention -->
+    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+        data-testid="education-drawer-attention">
+        <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+          <i class="fa-light fa-triangle-exclamation text-red-600"></i>
+          <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+        </div>
+
+        @for (action of attentionActions(); track action.title) {
+          <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
+              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+              <p class="text-sm text-gray-500">{{ action.description }}</p>
+            </div>
+            @if (action.priority === 'high') {
+              <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+            } @else {
+              <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+            }
+          </div>
+        }
+
+        @for (insight of attentionInsights(); track insight.text) {
+          <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+            <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
+            <span>{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- SECOND FOLD: Performing Well -->
+    @if (performingActions().length > 0 || performingInsights().length > 0) {
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+        data-testid="education-drawer-performing">
+        <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+          <i class="fa-light fa-check text-green-600"></i>
+          <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+        </div>
+
+        @for (action of performingActions(); track action.title) {
+          <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
+              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+              <p class="text-sm text-gray-500">{{ action.description }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of performingInsights(); track insight.text) {
+          <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+            <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
+            <span>{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Neutral facts: reported without a performing/attention verdict, since the leading
+         format may be the same one flagged as a concentration risk above. -->
+    @if (neutralFacts().length > 0) {
+      <div class="flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden" data-testid="education-drawer-facts">
+        @for (fact of neutralFacts(); track fact) {
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 last:border-b-0 text-sm text-gray-700">
+            <i class="fa-light fa-circle-info text-gray-400 flex-shrink-0"></i>
+            <span>{{ fact }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Enrollments by Format -->
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="education-drawer-formats">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Enrollments by Format</h3>
+        <p class="text-sm text-gray-600">Enrollments and net revenue across each education format</p>
+      </div>
+      @if (totalEnrollments() > 0) {
+        <div class="flex flex-col gap-0">
+          @for (row of categoryRows(); track row.label) {
+            <div class="flex flex-col gap-2 py-3 px-1 border-b border-gray-100" data-testid="education-drawer-format-row">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
+                <div class="flex items-center gap-4 flex-shrink-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ row.enrollments | number }}</span>
+                  <!-- Fixed width keeps the revenue column aligned across rows -->
+                  <span class="text-sm text-gray-500 w-20 text-right">
+                    @if (row.revenue !== null) {
+                      {{ row.revenue | currency: 'USD' : 'symbol' : '1.0-0' }}
+                    } @else {
+                      <span class="text-gray-400" title="edX revenue is not tracked upstream">not tracked</span>
+                    }
+                  </span>
+                </div>
+              </div>
+              <!-- Share bar: enrollment share of total, not revenue share -->
+              <div class="flex items-center gap-2">
+                <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-500 rounded-full" [style.width.%]="row.enrollmentSharePct"></div>
+                </div>
+                <span class="text-xs text-gray-400 w-10 text-right">{{ row.enrollmentShareLabel }}</span>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="education-drawer-formats-empty">
+          Training and certification data not yet available
+        </div>
+      }
+    </div>
+
+    <!-- Source note: explains why there is no trend chart here -->
+    <p class="text-xs text-gray-400" data-testid="education-drawer-source-note">
+      Source reports pre-aggregated totals per reporting window with no monthly grain, so no trend is shown. edX contributes enrollments but carries no revenue.
+    </p>
+  </div>
+</p-drawer>

@@ -355,14 +355,14 @@ export class SidebarNavService {
 
       const marketingItems: SidebarMenuItem[] = [
         {
-          label: 'Marketing Impact',
+          label: 'Campaign Impact',
           icon: 'fa-light fa-bullhorn',
           routerLink: '/foundation/marketing-impact',
           testId: 'sidebar-marketing-impact',
         },
       ];
 
-      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Marketing Impact but not Campaigns.
+      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Campaign Impact but not Campaigns.
       if (this.personaService.currentPersona() === 'executive-director') {
         marketingItems.push({
           label: 'Campaigns',

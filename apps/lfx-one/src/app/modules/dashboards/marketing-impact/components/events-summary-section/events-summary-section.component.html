@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="events-summary-section">
+  <!-- Header -->
+  <div class="flex flex-col gap-0.5">
+    <h3 class="text-base font-semibold text-gray-900">{{ heading() }}</h3>
+    <p class="text-xs text-gray-500">{{ subheading() }} · {{ foundationName() || 'All foundations' }}</p>
+  </div>
+
+  <!-- Tiles -->
+  @if (loading()) {
+    <!--
+      Column counts follow the tile count below lg, where a fixed grid-cols-2/sm:grid-cols-3 left
+      half or two-thirds of the row empty in the one-tile sponsorship view.
+
+      Static classes via ngClass rather than repeat(min(var(--cols),N)): CSS Grid requires an
+      integer repeat count, so a min() there is invalid and the browser discards the whole
+      grid-template-columns declaration — which collapses the grid to a single implicit column,
+      the opposite of the fix. The lg rule keeps the custom property because it resolves to a
+      plain integer. The loaded grid below carries the same pair; they must move together or the
+      layout shifts when data resolves.
+    -->
+    <div
+      class="grid gap-x-6 gap-y-5 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      [ngClass]="tileCount() === 1 ? 'grid-cols-1 sm:grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'"
+      [style.--cols]="tileCount()"
+      data-testid="events-summary-skeleton">
+      @for (i of skeletons(); track i) {
+        <div class="flex flex-col gap-2">
+          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-7 w-16 animate-pulse rounded bg-gray-200"></div>
+        </div>
+      }
+    </div>
+  } @else {
+    <div
+      class="grid gap-x-6 gap-y-5 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+      [ngClass]="tileCount() === 1 ? 'grid-cols-1 sm:grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'"
+      [style.--cols]="tileCount()"
+      role="list"
+      data-testid="events-summary-tiles">
+      @for (stat of stats(); track stat.id) {
+        <div class="flex flex-col gap-2" role="listitem" [attr.data-testid]="'events-summary-tile-' + stat.id">
+          <div class="flex items-center gap-1.5">
+            <span class="inline-flex h-6 w-6 items-center justify-center rounded-md" [ngClass]="stat.iconClass">
+              <i [class]="stat.icon + ' text-xs'" aria-hidden="true"></i>
+            </span>
+            <span class="text-xs font-medium text-gray-500">{{ stat.label }}</span>
+          </div>
+          <span class="text-2xl font-semibold text-gray-900">{{ stat.value }}</span>
+          @if (stat.delta) {
+            <span
+              class="text-xs font-medium"
+              [ngClass]="{
+                'text-emerald-600': stat.deltaTrend === 'up',
+                'text-red-600': stat.deltaTrend === 'down',
+                'text-gray-400': stat.deltaTrend === 'neutral',
+              }"
+              >{{ stat.delta }}</span
+            >
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

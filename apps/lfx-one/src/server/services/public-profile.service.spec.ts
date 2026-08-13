@@ -10,6 +10,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { logger } from './logger.service';
 import { getPublicProfilesBucketUrl, projectPublicProfile, PublicProfileService, resolvePublicFlag } from './public-profile.service';
 
 const req = {} as unknown as Request;
@@ -30,6 +31,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env[BUCKET_ENV];
+  delete process.env['CDN_URL_PREFIX'];
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -164,6 +166,30 @@ describe('projectPublicProfile', () => {
     expect(projected.isPublic).toBe(false);
     // Round-trip through JSON to drop undefined keys, mirroring the wire payload.
     expect(JSON.parse(JSON.stringify(projected))).toEqual({ isPublic: false, basic: { Name: 'Jane' } });
+  });
+
+  it('derives basic.avatarUrl from the requested username when CDN_URL_PREFIX is configured', () => {
+    process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'Jane.Doe');
+    expect(projected.basic?.avatarUrl).toBe('https://cdn.example.com/avatars/jane.doe');
+  });
+
+  it('omits basic.avatarUrl when no username is passed (e.g. unit-testing projection in isolation)', () => {
+    process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/';
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } });
+    expect(projected.basic?.avatarUrl).toBeUndefined();
+  });
+
+  it('omits basic.avatarUrl when CDN_URL_PREFIX is unset, even with a username', () => {
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
+    expect(projected.basic?.avatarUrl).toBeUndefined();
+  });
+
+  it('omits basic.avatarUrl instead of throwing when CDN_URL_PREFIX is a bare hostname (misconfigured)', () => {
+    process.env['CDN_URL_PREFIX'] = 'avatars-public.dev.downloads.lfx.community';
+    expect(() => projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe')).not.toThrow();
+    const projected = projectPublicProfile({ basic: { Name: 'Jane' } }, req, 'jane-doe');
+    expect(projected.basic?.avatarUrl).toBeUndefined();
   });
 });
 
@@ -361,6 +387,63 @@ describe('projectPublicProfile — training_activities allow-list projection', (
     expect(projectPublicProfile({ training_activities: 'nope' }).training_activities).toBeUndefined();
     expect(projectPublicProfile({ training_activities: { Name: 'A' } }).training_activities).toBeUndefined();
   });
+
+  it('emits a drift warning signal counting rows dropped for an unrecognized Type despite an allow-listed Status', () => {
+    projectPublicProfile(
+      {
+        training_activities: [
+          { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
+          { Name: 'Renamed type', Type: 'eLearning', Status: 'Completed' },
+          { Name: 'Another renamed type', Type: 'Self-Paced', Status: 'Enrolled' },
+          { Name: 'Known excluded, not drift', Type: 'Bundle', Status: 'Completed' },
+          { Name: 'Dropped for status, not type', Type: 'Bundle', Status: 'Cancelled' },
+        ],
+      },
+      req
+    );
+
+    // Only the two genuinely-unrecognized Types count; the Completed Bundle is a known excluded type.
+    expect(logger.warning).toHaveBeenCalledWith(req, 'project_public_profile', expect.stringContaining('unrecognized Type'), { dropped_for_unknown_type: 2 });
+  });
+
+  it('does not emit the drift signal when every dropped row also fails the Status allow-list', () => {
+    projectPublicProfile(
+      {
+        training_activities: [
+          { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
+          { Name: 'Bad type and status', Type: 'Bundle', Status: 'Cancelled' },
+        ],
+      },
+      req
+    );
+
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('does not emit the drift signal for a known excluded Type with an allow-listed Status', () => {
+    projectPublicProfile(
+      {
+        training_activities: [
+          { Name: 'Kept', Type: 'E-Learning', Status: 'Completed' },
+          { Name: 'Exam', Type: 'Certification Exam', Status: 'Completed' },
+          { Name: 'Sub', Type: 'Subscription', Status: 'Enrolled' },
+          { Name: 'Bundle', Type: 'Bundle', Status: 'Completed' },
+        ],
+      },
+      req
+    );
+
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('scrubs only a leading epoch year, leaving a value that merely contains 1970 intact (startsWith, not includes)', () => {
+    const projected = projectPublicProfile({
+      training_activities: [{ Name: 'A', Type: 'E-Learning', Status: 'Completed', StartDate: '11970000000', EndDate: '1970-01-01T00:00:00Z' }],
+    });
+
+    // StartDate contains "1970" but does not start with it — kept; EndDate is a leading epoch placeholder — blanked.
+    expect(projected.training_activities?.[0]).toEqual({ Name: 'A', Type: 'E-Learning', StartDate: '11970000000', EndDate: '' });
+  });
 });
 
 describe('projectPublicProfile — certification_activities allow-list projection', () => {
@@ -403,6 +486,26 @@ describe('projectPublicProfile — certification_activities allow-list projectio
       EndDate: '2028-01-02T00:00:00Z',
     });
     expect(projected.certification_activities?.[0]).not.toHaveProperty('Status');
+  });
+
+  it('sorts the kept certifications by Name ascending (matching the trainings rail)', () => {
+    const projected = projectPublicProfile({
+      certification_activities: [
+        { Name: 'Zeta', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'Alpha', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z' },
+        { Name: 'Mango', Status: 'Completed', StartDate: '2025-01-02T00:00:00Z' },
+      ],
+    });
+
+    expect(projected.certification_activities?.map((c) => c.Name)).toEqual(['Alpha', 'Mango', 'Zeta']);
+  });
+
+  it('keeps a StartDate that merely contains 1970 but does not start with it (startsWith, not includes)', () => {
+    const projected = projectPublicProfile({
+      certification_activities: [{ Name: 'Contains 1970', Status: 'Completed', StartDate: '11970000000' }],
+    });
+
+    expect(projected.certification_activities?.map((c) => c.Name)).toEqual(['Contains 1970']);
   });
 
   it('returns undefined when certification_activities is missing or not an array', () => {

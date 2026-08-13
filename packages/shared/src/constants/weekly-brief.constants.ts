@@ -37,6 +37,42 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 /** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
 
+/**
+ * Timeout for the "Share to Slack" incoming-webhook POST. A plain webhook call should complete
+ * in well under a second; this is generous headroom, not a tuned budget — deliberately far
+ * short of `NEWSLETTER_SEND_TIMEOUT_MS` (120s), which accounts for an entirely different,
+ * heavier upstream call.
+ */
+export const SLACK_WEBHOOK_POST_TIMEOUT_MS = 10_000;
+
+/**
+ * Slack's documented hard limit on an incoming-webhook message's `text` field. Checked
+ * server-side before the POST (mirrors shareBrief's NEWSLETTER_BODY_MAX_LENGTH guard) so an
+ * oversized brief surfaces as an actionable 400 instead of an opaque 502 from Slack. Escaping
+ * (`&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`) can expand brief_text up to 5x, so this is checked
+ * against the final composed text, not brief_text's own (smaller) WEEKLY_BRIEF_TEXT_MAX_LENGTH.
+ */
+export const SLACK_MESSAGE_TEXT_MAX_LENGTH = 40_000;
+
+/**
+ * Cap on how much of Slack's plain-text error response (invalid_payload, channel_not_found,
+ * etc.) is read and surfaced when a webhook POST is rejected — bounds both the log line and the
+ * client-facing error message against an unexpectedly large response body.
+ */
+export const SLACK_ERROR_BODY_MAX_LENGTH = 500;
+
+/**
+ * Matches Slack's own documented incoming-webhook error strings — short lowercase/underscore
+ * tokens (`invalid_payload`, `channel_not_found`, `action_prohibited`, `rate_limited`, …). Used
+ * to gate whether a rejected share's response body is safe to echo into the client-facing error
+ * message: the actual body could be arbitrary third-party content (an HTML error page, an
+ * intermediary proxy's response), and only a recognizable Slack token should ever reach a
+ * browser toast. The untrimmed body — still bounded by SLACK_ERROR_BODY_MAX_LENGTH above, and
+ * only when the body was actually readable — reaches operators via the log-only
+ * `errorBody.reason` regardless of whether it matches this pattern.
+ */
+export const SLACK_ERROR_TOKEN_PATTERN = /^[a-z_]{1,64}$/;
+
 /** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
 export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
 

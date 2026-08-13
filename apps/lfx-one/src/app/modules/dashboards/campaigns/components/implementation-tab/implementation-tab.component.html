@@ -1,6 +1,57 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!--
+  Brief persistence status.
+
+  The live region is SEPARATE from the banner and always in the DOM, including the 'off' state.
+  An aria-live element that is inserted with its text already present is not reliably announced —
+  the region has to exist first and then have its CONTENTS change. The earlier version put
+  role="status" on the banners themselves, which @switch destroys and recreates on every
+  transition, so each message arrived as a fresh insertion and screen-reader users could miss
+  both "Saving" and "Saved".
+
+  Polite, not assertive — the save runs in the background and must not interrupt whatever the
+  user is reading in the form below. The error arm still gets role="alert" on the banner: an
+  assertive announcement is the point there, and it is a different region from this one.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
+
+<!-- Nothing renders in the 'off' state — see briefPersistence. -->
+@switch (briefPersistence().status) {
+  @case ('saving') {
+    <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="implementation-brief-saving">
+      <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Saving this brief…
+    </div>
+  }
+  @case ('saved') {
+    <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
+      <!--
+        Names the ACTION a recovery needs, rather than promising a reload just works. It does
+        not: the read is keyed on the event slug, and after a reload the page holds no URL to
+        derive one from, so the brief comes back only once the user pastes the event URL again.
+        "It will still be here if you reload" would be the same false assurance the 'error' arm
+        below exists to prevent, pointed the other way.
+      -->
+      <!--
+        Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
+        separate strings and drifted: the banner gained the re-entry instruction while the live
+        region still announced only "Brief saved.", so screen-reader users got the reassurance
+        without the part they cannot recover on their own. One source cannot drift.
+      -->
+      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>{{ briefPersistenceAnnouncement() }}
+    </div>
+  }
+  @case ('error') {
+    <div
+      role="alert"
+      class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="implementation-brief-save-error">
+      <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+    </div>
+  }
+}
+
 <!-- Form Step -->
 @if (step() === 'form') {
   <div class="flex flex-col gap-6" data-testid="implementation-form-step">

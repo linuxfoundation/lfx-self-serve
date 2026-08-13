@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
@@ -21,6 +21,7 @@ import {
   Meeting,
   PastMeeting,
   ProfileAuthStatus,
+  ProfilePictureUploadResponse,
   ProfileUpdateRequest,
   ProfileVisibility,
   ProfileVisibilityUpdateRequest,
@@ -47,6 +48,17 @@ export class UserService {
   public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
+  /**
+   * The current user's uploaded avatar (Auth0 user_metadata.picture), null until the one-time
+   * post-hydration profile fetch resolves — that field never reaches `user` (it's absent from the
+   * OIDC claims `user` is seeded from) or is set from the profile-edit upload flow (LFXV2-2628).
+   */
+  public readonly uploadedAvatarUrl: WritableSignal<string | null> = signal<string | null>(null);
+  /**
+   * Single source of truth for "which avatar to show" everywhere in the app for the logged-in
+   * user: the uploaded avatar when set, else the always-present Auth0 OIDC `picture` claim.
+   */
+  public readonly effectiveAvatarUrl: Signal<string> = computed(() => this.uploadedAvatarUrl() || this.user()?.picture || '');
   /**
    * The viewer's LFID as it appears on meeting `created_by` / host records — null when unresolved.
    * Single source for viewer-identity comparisons (e.g. the "Organized by you" chip and the
@@ -86,6 +98,12 @@ export class UserService {
         takeUntilDestroyed()
       )
       .subscribe(() => {
+        // Drop the previous user's uploaded avatar — impersonation start/stop swaps `user` without
+        // a page reload, and without this reset the new user's sidebar/header would briefly (or
+        // permanently, if they never uploaded one themselves) show the previous user's avatar
+        // until/unless a fresh post-hydration fetch happens to overwrite it (LFXV2-2628).
+        this.uploadedAvatarUrl.set(null);
+
         // Tear down the old chains first — their shareReplay keeps the source alive under
         // refCount:false, so nulling the field alone would leave them subscribed to refresh$.
         this.userMeetingsDestroy$.next();
@@ -98,6 +116,31 @@ export class UserService {
         this.userPastMeetings$ = null;
         this.userLatestPastMeetings$ = null;
       });
+
+    // Client-only, one-time: user_metadata.picture isn't part of the OIDC claims transferred from
+    // SSR (see server.ts's AuthContext), so the only way to learn it is a follow-up fetch of the
+    // existing /api/profile endpoint. afterNextRender never runs during SSR, so this never adds
+    // latency to a server-rendered response — it fires once, after the first client render.
+    afterNextRender(() => {
+      if (!this.user()) {
+        return;
+      }
+      this.getCurrentUserProfile()
+        .pipe(take(1))
+        .subscribe({
+          next: (profile) => {
+            // Only seed from this fetch if nothing has set the signal since it was kicked off —
+            // an in-session upload (onProfileSaved) that completes first must win, not get
+            // clobbered by this slower, now-stale fetch resolving afterward.
+            if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
+              this.uploadedAvatarUrl.set(profile.profile.picture);
+            }
+          },
+          // Best-effort: leave uploadedAvatarUrl null so effectiveAvatarUrl falls back to the
+          // Auth0 picture claim, which is already showing.
+          error: () => {},
+        });
+    });
   }
 
   // Create a new user with permissions
@@ -120,6 +163,14 @@ export class UserService {
    */
   public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
     return this.http.patch('/api/profile', data).pipe(take(1));
+  }
+
+  /**
+   * Upload a new profile picture. Sent as raw bytes with the file's MIME type as
+   * Content-Type (the backend parses this with express.raw, not multipart/form-data).
+   */
+  public uploadProfilePicture(file: File): Observable<ProfilePictureUploadResponse> {
+    return this.http.post<ProfilePictureUploadResponse>('/api/profile/picture-upload', file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
   }
 
   // Public-profile visibility methods (LFXV2-2629)

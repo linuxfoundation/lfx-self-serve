@@ -21,6 +21,14 @@ export const VOTE_LABEL = {
 } as const;
 
 /**
+ * Max sequential page requests when walking cursor tokens for a direct page jump in the votes dashboard
+ * @description Cursor pagination only returns the *next* page's token, so an uncached page jump (e.g. clicking
+ * "last page" on a cold token cache) walks forward one request per page. This bound caps that serial walk — on
+ * overflow the paginator clamps to the last reached page. Matches the meetings-dashboard cursor-walk bound.
+ */
+export const VOTES_PAGE_WALK_LIMIT = 10;
+
+/**
  * Poll status display labels
  * @description Human-readable labels for poll statuses
  */
@@ -255,6 +263,15 @@ export const OPEN_VOTE_CONFIRMATION = {
 
 /** Minimum trimmed length for a vote question prompt — used by the form validator. */
 export const VOTE_QUESTION_MIN_LENGTH = 10;
+
+/** Maximum number of comment prompts allowed per vote (upstream contract limit). */
+export const VOTE_COMMENT_PROMPT_MAX_COUNT = 50;
+
+/** Maximum character length for a comment prompt's text (upstream contract limit). */
+export const VOTE_COMMENT_PROMPT_MAX_LENGTH = 500;
+
+/** Maximum character length for a voter's comment response text (upstream contract limit). */
+export const VOTE_COMMENT_RESPONSE_MAX_LENGTH = 5000;
 
 /** Default close window applied to draft votes when the user has not picked an end date. */
 export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;

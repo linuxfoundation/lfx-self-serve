@@ -2,6 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, Page, Route, test } from '@playwright/test';
+// Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
+// @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
+import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
+
+/**
+ * Written down here rather than imported from the component constants, deliberately.
+ *
+ * These four numbers are a product contract — how many projects each view promises to draw, and how
+ * many the default selection starts with. Importing them would make the assertions restate the
+ * implementation: changing the bar cap from 25 to 24 would move the component and the expectation
+ * together and the truncation test would still pass, having stopped testing anything. A silent
+ * change to any of these should fail here and make someone confirm it was intended.
+ */
+export const PICKER_DEFAULT_COUNT = 5;
+export const BAR_MAX_ROWS = 25;
+export const SANKEY_MAX_PROJECTS = 12;
+export const BUBBLE_MAX_POINTS = 250;
+
+/** Imported, unlike the ceilings above: a rendering detail rather than a promise to the viewer. */
+export const NO_VALUE = ORG_LENS_ROI_NO_VALUE;
 
 export const ORG_ROI_URL = '/org/roi';
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
@@ -9,8 +31,7 @@ export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 /**
  * Only the year still in progress is labelled partial, so every year-bearing fixture is anchored to
  * the current year rather than hardcoded — otherwise these assertions would quietly invert next
- * January. A hardcoded end year was one of three defects that reached review on the earlier
- * portfolio-summary work.
+ * January.
  */
 export const CURRENT_YEAR = new Date().getFullYear();
 
@@ -29,10 +50,17 @@ export function skipWhenAuthMissing(page: Page): void {
   }
 }
 
+/**
+ * Preselect the organization the ROI page reads.
+ *
+ * The cookie name comes from the shared constant rather than a literal. It was previously
+ * `lfx-selected-account`, which the app has never read — so no organization was ever selected, the
+ * page sat on its loading skeleton forever, and nothing caught it because the suite had never run.
+ */
 export async function seedSelectedOrgCookie(page: Page): Promise<void> {
   await page.context().addCookies([
     {
-      name: 'lfx-selected-account',
+      name: ACCOUNT_COOKIE_KEY,
       value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }),
       domain: 'localhost',
       path: '/',
@@ -165,6 +193,88 @@ export const NEGATIVE_PROJECTS = MOCK_PROJECT_INPUTS.filter((input) => input.ret
 
 export const NEGATIVE_PROJECTS_TOTAL = NEGATIVE_PROJECTS.reduce((sum, project) => sum + project.profit, 0);
 
+/**
+ * The payload arrives ordered by return descending, and the projects section takes its default
+ * selection straight off the front of it. Derived here rather than listed, so reordering the
+ * fixture above cannot leave this silently describing the wrong five.
+ */
+export const PROJECTS_BY_RETURN = [...MOCK_PROJECT_INPUTS].sort((a, b) => b.return - a.return);
+
+export const DEFAULT_SELECTED_PROJECTS = PROJECTS_BY_RETURN.slice(0, PICKER_DEFAULT_COUNT);
+
+export const UNSELECTED_PROJECT = PROJECTS_BY_RETURN[PICKER_DEFAULT_COUNT];
+
+/**
+ * Several hundred projects, for paging the table and for the truncation disclosures the chart views
+ * show when "All" is selected. Returns descend with the index so the ordering is unambiguous.
+ */
+export const MANY_PROJECT_COUNT = 300;
+
+export const MANY_PROJECT_INPUTS = Array.from({ length: MANY_PROJECT_COUNT }, (unused, index) => ({
+  slug: `project-${String(index).padStart(3, '0')}`,
+  name: `Project ${String(index).padStart(3, '0')}`,
+  expenditure: 1_000_000 + (MANY_PROJECT_COUNT - index) * 1_000,
+  return: (MANY_PROJECT_COUNT - index) * 10_000_000,
+}));
+
+export const MANY_PROJECTS = {
+  method: 'logit',
+  rows: MANY_PROJECT_INPUTS.map((input) => projectRow(input.slug, input.name, input.expenditure, input.return)),
+};
+
+/**
+ * A project with no investment. The warehouse returns NULL — never zero — for a ratio it cannot
+ * divide, and the table must render that as the no-value indicator rather than as 0.
+ */
+export const NO_INVESTMENT_PROJECT = {
+  projectId: 'prj-unmeasured',
+  projectSlug: 'unmeasured',
+  projectName: 'Unmeasured Project',
+  totalExpenditure: 0,
+  totalReturn: 0,
+  profit: 0,
+  roi: null,
+  bcr: null,
+  breakevenMarkup: null,
+  categories: [],
+};
+
+export const PROJECTS_WITH_NULL_RATIOS = { method: 'logit', rows: [...MOCK_PROJECTS.rows, NO_INVESTMENT_PROJECT] };
+
+/** The project the detail specs drill into — the top of the fixture by return. */
+export const DETAIL_PROJECT = PROJECTS_BY_RETURN[0];
+
+/** A loss-making one, so the detail view's negative net return is exercised as the mainline it is. */
+export const DETAIL_LOSS_PROJECT = MOCK_PROJECT_INPUTS.find((input) => input.return < input.expenditure) as (typeof MOCK_PROJECT_INPUTS)[number];
+
+export function orgRoiProjectDetailUrl(slug: string): string {
+  return `/org/roi/projects/${slug}`;
+}
+
+/**
+ * The detail payload for one of the fixture's projects, wrapping the same row shape `/projects`
+ * serves. Built from `MOCK_PROJECTS` rather than typed out again, so the drill-down and the table
+ * it is reached from cannot disagree about a project's figures.
+ */
+export function mockProjectDetail(slug: string, hasOrgLensProject = true): unknown {
+  const project = (MOCK_PROJECTS.rows as { projectSlug: string }[]).find((row) => row.projectSlug === slug);
+  return { orgUid: MOCK_ACCOUNT_ID, method: 'logit', project, hasOrgLensProject };
+}
+
+/**
+ * A project's yearly distribution. `efficiencyConstant` is always true in the contract — per-year
+ * ROI and BCR cancel to the lifetime figure — and the disclosure is driven by it, so a case can
+ * flip it to prove the copy is not hardcoded.
+ */
+export function mockProjectAnnual(slug: string, efficiencyConstant = true, apportioned = true): unknown {
+  const rows = [
+    annualRow(CURRENT_YEAR - 2, 1_200_000_000, 30_000_000),
+    annualRow(CURRENT_YEAR - 1, 1_300_000_000, 20_000_000),
+    annualRow(CURRENT_YEAR, 500_000_000, 10_000_000),
+  ];
+  return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
+}
+
 interface StubOptions {
   hasAccess?: boolean;
   summary?: unknown;
@@ -172,6 +282,10 @@ interface StubOptions {
   annual?: unknown;
   investmentBreakdown?: unknown;
   projects?: unknown;
+  /** Status to answer both project-detail routes with; 200 uses the payloads below. */
+  projectDetailStatus?: number;
+  projectDetail?: unknown;
+  projectAnnual?: unknown;
 }
 
 export async function stubOrgLensContext(page: Page, options: StubOptions = {}): Promise<void> {
@@ -182,6 +296,21 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   await page.route('**/api/orgs/*/lens/roi/annual*', (route) => fulfillJson(route, options.annual ?? MOCK_ANNUAL));
   await page.route('**/api/orgs/*/lens/roi/investment-breakdown*', (route) => fulfillJson(route, options.investmentBreakdown ?? MOCK_INVESTMENT_BREAKDOWN));
   await page.route('**/api/orgs/*/lens/roi/projects*', (route) => fulfillJson(route, options.projects ?? MOCK_PROJECTS));
+
+  // These three globs cannot overlap: `*` does not cross a `/`, so the collection route above
+  // cannot capture `/projects/{slug}`, and neither can capture `/projects/{slug}/annual`. That
+  // mirrors the server, where the same distinction is made by registration order instead.
+  await page.route('**/api/orgs/*/lens/roi/projects/*', (route) => {
+    const status = options.projectDetailStatus ?? 200;
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    return fulfillJson(route, options.projectDetail ?? mockProjectDetail(DETAIL_PROJECT.slug));
+  });
+
+  await page.route('**/api/orgs/*/lens/roi/projects/*/annual*', (route) => {
+    const status = options.projectDetailStatus ?? 200;
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    return fulfillJson(route, options.projectAnnual ?? mockProjectAnnual(DETAIL_PROJECT.slug));
+  });
 
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, {
@@ -222,15 +351,48 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   );
 }
 
+/**
+ * Pin feature flags for this page, before any application code runs.
+ *
+ * Without this the ROI specs cannot run at all. `/org/roi` sits behind a `canMatch` guard, and the
+ * flag SDK evaluates twice — first against an anonymous context at bootstrap, then again once the
+ * authenticated user context is applied. A flag targeted at named users is false in that first
+ * window, so the guard can resolve against it and redirect before the real value arrives, leaving
+ * every case skipped or asserting against a page that has already navigated away.
+ *
+ * The override is read only by non-production builds; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
+ */
+export async function stubFeatureFlags(page: Page, flags: Record<string, boolean>): Promise<void> {
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+    JSON.stringify(flags),
+  ] as const);
+}
+
 export async function gotoOrgRoiPage(page: Page): Promise<void> {
+  await gotoRoiRoute(page, ORG_ROI_URL, 'org-roi-page');
+}
+
+/**
+ * The project detail route. It is a child of `/org/roi`, so it is matched by the same fail-closed
+ * dark-launch guard — the flag override below is what lets it resolve at all.
+ */
+export async function gotoOrgRoiProjectDetail(page: Page, slug: string): Promise<void> {
+  await gotoRoiRoute(page, orgRoiProjectDetailUrl(slug), 'org-roi-project-detail-page');
+}
+
+async function gotoRoiRoute(page: Page, url: string, testId: string): Promise<void> {
+  await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
   await seedSelectedOrgCookie(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.goto(ORG_ROI_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-  if (!page.url().includes('/org/roi')) {
-    test.skip(true, 'org-lens-roi-enabled flag appears off — /org/roi redirected away');
-  }
+
+  // The guard redirects asynchronously, so arriving at the URL is not the same as staying on it —
+  // asserting immediately would pass against a page that is about to leave.
+  await expect(page).toHaveURL(/\/org\/roi/, { timeout: 15_000 });
+  await expect(page.getByTestId(testId)).toBeVisible({ timeout: 15_000 });
 }

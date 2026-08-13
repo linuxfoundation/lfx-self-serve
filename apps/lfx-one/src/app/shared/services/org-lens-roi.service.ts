@@ -8,6 +8,8 @@ import type {
   OrgLensRoiCoverage,
   OrgLensRoiInvestmentBreakdown,
   OrgLensRoiMethod,
+  OrgLensRoiProjectAnnual,
+  OrgLensRoiProjectDetail,
   OrgLensRoiProjects,
   OrgLensRoiSummary,
 } from '@lfx-one/shared/interfaces';
@@ -46,8 +48,31 @@ export class OrgLensRoiService {
     return this.http.get<OrgLensRoiInvestmentBreakdown>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/investment-breakdown`);
   }
 
+  /**
+   * Two surfaces read this — the leading-projects donut and the projects section — so a page load
+   * issues it twice. Deliberate rather than overlooked, and cheaper than it looks: on hydration
+   * both are served from Angular's HTTP transfer cache, which serves a key repeatedly rather than
+   * consuming it, and after that the second is a BFF round-trip answered by the shared server-side
+   * cache rather than the warehouse. De-duplicating it client-side needs memoisation whose
+   * interaction with synchronous cache replay, subscription cancellation and completion semantics
+   * costs more in subtlety than the request it saves. The structural fix, if this ever becomes a
+   * real cost, is to fetch once in the page and pass the rows into both surfaces as inputs.
+   */
   public getProjects(orgUid: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjects> {
     return this.http.get<OrgLensRoiProjects>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects`, {
+      params: new HttpParams().set('method', method),
+    });
+  }
+
+  /** 404s when the slug names no project of this organization — never an empty 200. */
+  public getProjectDetail(orgUid: string, projectSlug: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjectDetail> {
+    return this.http.get<OrgLensRoiProjectDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects/${encodeURIComponent(projectSlug)}`, {
+      params: new HttpParams().set('method', method),
+    });
+  }
+
+  public getProjectAnnual(orgUid: string, projectSlug: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjectAnnual> {
+    return this.http.get<OrgLensRoiProjectAnnual>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects/${encodeURIComponent(projectSlug)}/annual`, {
       params: new HttpParams().set('method', method),
     });
   }

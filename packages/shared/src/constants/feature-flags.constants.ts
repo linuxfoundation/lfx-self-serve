@@ -8,3 +8,33 @@ export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
+/**
+ * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
+ * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this
+ * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that
+ * parent flag (committee-overview.component.ts), but committee-settings-tab does not sit behind
+ * it at all (rendered unconditionally from the Settings tab in committee-view.component.html) —
+ * so flipping this flag alone is sufficient to expose the settings card. Default false: the
+ * upstream committee-service has no chat_webhook_url field yet, so every save would 409 today —
+ * see committee.service.ts's updateCommittee/getSlackWebhookUrlStrict comments.
+ *
+ * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through the OpenFeature Web SDK,
+ * which never runs server-side, so it cannot gate an Express handler. The actual write
+ * (`committee.service.ts`'s `updateCommittee`) and send (`weekly-brief.service.ts`'s
+ * `shareToSlack`) paths are gated independently, server-side, by
+ * `ServerFeatureFlag.WeeklyBriefSlack` (`server-feature-flag.helper.ts`) — an env-var kill switch
+ * that also defaults off. Both must be enabled for the feature to actually be reachable; flipping
+ * only this one hides/shows the UI without changing what a direct API caller can do.
+ */
+export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
+
+/**
+ * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
+ * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
+ *
+ * This is the supported way to pin a flag in an e2e run. Flag-gated routes are otherwise untestable
+ * — the SDK evaluates against an anonymous context before the authenticated one, so a flag targeted
+ * at named users reads false in that window and a route guard can redirect before the real value
+ * lands.
+ */
+export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';

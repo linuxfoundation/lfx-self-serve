@@ -1,0 +1,203 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="event-roster-section">
+  <!-- Header -->
+  <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div class="flex flex-col gap-0.5">
+      <h3 class="text-base font-semibold text-gray-900">Events</h3>
+      <!-- Names what the split actually shows: the combined copy claimed sponsorship was present
+           in the attendance view and registrations in the sponsorship view, each after hiding it. -->
+      <p class="text-xs text-gray-500">{{ subtitle() }} · click an event to open it</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="relative">
+        <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" aria-hidden="true"></i>
+        <input
+          type="search"
+          [formControl]="search"
+          placeholder="Search events…"
+          aria-label="Search events"
+          class="w-56 rounded-md border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          data-testid="event-roster-search" />
+      </div>
+      <div class="flex items-center gap-1 rounded-full border border-gray-200 p-1" role="group" aria-label="Event scope">
+        <button
+          type="button"
+          class="rounded-full px-3 py-1 text-xs font-semibold"
+          [ngClass]="!includePast() ? 'bg-blue-500 text-white' : 'text-gray-500'"
+          [attr.aria-pressed]="!includePast()"
+          (click)="toggleIncludePast(false)"
+          data-testid="event-roster-upcoming">
+          Upcoming
+        </button>
+        <button
+          type="button"
+          class="rounded-full px-3 py-1 text-xs font-semibold"
+          [ngClass]="includePast() ? 'bg-blue-500 text-white' : 'text-gray-500'"
+          [attr.aria-pressed]="includePast()"
+          (click)="toggleIncludePast(true)"
+          data-testid="event-roster-all">
+          <!--
+            "Including past", not "All events": the page's period picker scopes this list, so with
+            a period selected this shows past + upcoming *within that period* rather than the full
+            history. Labelling it "All events" claimed a range it does not return.
+          -->
+          Including past
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  @if (loading()) {
+    <div class="flex flex-col gap-3" data-testid="event-roster-skeleton">
+      @for (i of skeletons; track i) {
+        <div class="flex items-center gap-4">
+          <!-- Same column set as the loaded rows: the split hides one metric column, so an
+               unconditional four-block skeleton reflows horizontally when data lands. -->
+          <div class="h-4 w-20 animate-pulse rounded bg-gray-200"></div>
+          <div class="h-4 flex-1 animate-pulse rounded bg-gray-100"></div>
+          @if (showRegistrations()) {
+            <div class="h-4 w-52 animate-pulse rounded bg-gray-100"></div>
+          }
+          @if (showSponsorship()) {
+            <div class="h-4 w-52 animate-pulse rounded bg-gray-100"></div>
+          }
+        </div>
+      }
+    </div>
+  } @else if (hasRows()) {
+    <div class="flex flex-col gap-0 overflow-x-auto" role="table" aria-label="Event roster" data-testid="event-roster-table">
+      <!-- Header row -->
+      <div class="flex items-center gap-4 border-b border-gray-200 pb-2 text-[11px] font-semibold tracking-wide text-gray-400" role="row">
+        <span class="w-24" role="columnheader">DATE</span>
+        <span class="flex-1 min-w-[180px]" role="columnheader">NAME</span>
+        @if (showRegistrations()) {
+          <span class="w-52" role="columnheader">REGISTRATIONS</span>
+        }
+        @if (showSponsorship()) {
+          <span class="w-52" role="columnheader">SPONSORSHIP REV.</span>
+        }
+      </div>
+
+      <!-- Rows -->
+      @for (row of rows(); track row.eventId) {
+        <div
+          class="flex cursor-pointer items-center gap-4 border-b border-gray-100 py-1.5 transition-colors hover:bg-blue-50/40"
+          role="row"
+          tabindex="0"
+          (click)="openEvent(row.eventId)"
+          (keydown.enter)="openEvent(row.eventId)"
+          (keydown.space)="$event.preventDefault(); openEvent(row.eventId)"
+          [attr.aria-label]="'View detail for ' + row.eventName"
+          [attr.data-testid]="'event-roster-row-' + row.eventId">
+          <span class="w-24 text-xs text-gray-500 tabular-nums" role="cell">{{ row.dateLabel }}</span>
+
+          <div class="flex flex-1 min-w-[180px] items-center gap-2" role="cell">
+            <span class="truncate text-xs font-semibold text-blue-600">{{ row.eventName }}</span>
+            @if (row.atRisk && eventsSplit() !== 'sponsorship') {
+              <i class="fa-solid fa-circle-exclamation text-xs text-red-500" aria-label="Behind registration goal" title="Behind registration goal"></i>
+            }
+          </div>
+
+          <!--
+            Registrations bar → B2C drawer (marketing campaigns).
+
+            The cell buttons stop Enter and Space rather than handling them: a native button already
+            turns both into a click, so acting again would open the drawer twice — and unstopped,
+            Enter bubbles to the row's own keydown.enter, which opens the row's default b2c focus
+            and lands a sponsorship click on the attendance story.
+          -->
+          @if (showRegistrations()) {
+            <div class="w-52" role="cell">
+              <button
+                type="button"
+                class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
+                title="View registrations & marketing campaigns"
+                [attr.aria-label]="
+                  row.eventName +
+                  ' registrations ' +
+                  row.registrations.actual +
+                  (row.registrations.hasGoal ? ' of ' + row.registrations.goal : '') +
+                  ' — view registrations and marketing campaigns'
+                "
+                (click)="openFocused(row.eventId, 'b2c', $event)"
+                (keydown.enter)="$event.stopPropagation()"
+                (keydown.space)="$event.stopPropagation()"
+                [attr.data-testid]="'event-roster-b2c-' + row.eventId">
+                <div class="flex items-center gap-2">
+                  <span class="w-10 shrink-0 text-right text-xs font-semibold text-blue-600 tabular-nums">{{ row.registrations.actual }}</span>
+                  @if (row.registrations.hasGoal) {
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        class="h-full rounded-full"
+                        aria-hidden="true"
+                        [ngClass]="{
+                          'bg-emerald-500': row.registrations.tone === 'good',
+                          'bg-amber-500': row.registrations.tone === 'warn',
+                          'bg-red-400': row.registrations.tone === 'critical',
+                        }"
+                        [style.width.%]="row.registrations.percent"></div>
+                    </div>
+                    <span class="w-8 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.registrations.goal }}</span>
+                  }
+                </div>
+              </button>
+            </div>
+          }
+
+          <!-- Sponsorship revenue bar → B2B drawer (sponsorship & partnerships) -->
+          @if (showSponsorship()) {
+            <div class="w-52" role="cell">
+              <button
+                type="button"
+                class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
+                title="View sponsorship & partnerships"
+                [attr.aria-label]="
+                  row.eventName +
+                  ' sponsorship revenue ' +
+                  row.sponsorshipRevenue.actual +
+                  (row.sponsorshipRevenue.hasGoal ? ' of ' + row.sponsorshipRevenue.goal : '') +
+                  ' — view sponsorship and partnerships'
+                "
+                (click)="openFocused(row.eventId, 'b2b', $event)"
+                (keydown.enter)="$event.stopPropagation()"
+                (keydown.space)="$event.stopPropagation()"
+                [attr.data-testid]="'event-roster-b2b-' + row.eventId">
+                <div class="flex items-center gap-2">
+                  <span class="w-12 shrink-0 text-right text-xs font-semibold text-gray-900 tabular-nums">{{ row.sponsorshipRevenue.actual }}</span>
+                  @if (row.sponsorshipRevenue.hasGoal) {
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        class="h-full rounded-full"
+                        aria-hidden="true"
+                        [ngClass]="{
+                          'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
+                          'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',
+                          'bg-red-400': row.sponsorshipRevenue.tone === 'critical',
+                        }"
+                        [style.width.%]="row.sponsorshipRevenue.percent"></div>
+                    </div>
+                    <span class="w-10 shrink-0 text-right text-[11px] font-medium text-gray-600 tabular-nums">{{ row.sponsorshipRevenue.goal }}</span>
+                  }
+                </div>
+              </button>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  } @else if (failed()) {
+    <div class="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-red-200 bg-red-50 p-8" data-testid="event-roster-error">
+      <p class="text-sm font-medium text-red-700">We couldn't load your events.</p>
+      <p class="text-xs text-red-600">Refresh to try again.</p>
+    </div>
+  } @else {
+    <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="event-roster-empty">
+      <p class="text-sm text-gray-500">{{ emptyMessage() }}</p>
+    </div>
+  }
+</div>
+
+<lfx-event-detail-drawer [(visible)]="drawerVisible" [eventId]="selectedEventId()" [foundationSlug]="foundationSlug()" [focus]="drawerFocus()" />

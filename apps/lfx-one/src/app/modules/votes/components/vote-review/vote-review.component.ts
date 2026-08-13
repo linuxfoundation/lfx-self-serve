@@ -7,7 +7,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
-import { CommitteeReference, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
+import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
+import { isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
 import { filter, switchMap } from 'rxjs';
 
 @Component({
@@ -40,6 +41,7 @@ export class VoteReviewComponent {
   public readonly eligibleParticipantsLabel: Signal<string> = this.initEligibleParticipantsLabel();
   public readonly closeDate: Signal<Date | null> = this.initCloseDate();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
+  public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
 
   // Public methods
   public onEditStep(step: number): void {
@@ -123,6 +125,23 @@ export class VoteReviewComponent {
           options,
         };
       });
+    });
+  }
+
+  private initCommentPrompts(): Signal<VoteReviewCommentPrompt[]> {
+    return computed(() => {
+      this.formValue();
+      const commentPromptsArray = this.form().get('commentPrompts') as FormArray<FormGroup>;
+      if (!commentPromptsArray) {
+        return [];
+      }
+
+      // Mirrors submit-side blank-dropping (mapCommentPromptsToApiFormat);
+      // index is recomputed after filtering so numbering stays contiguous.
+      return commentPromptsArray.controls
+        .map((promptGroup) => ((promptGroup.get('prompt')?.value as string) || '').trim())
+        .filter(isNonBlankCommentPrompt)
+        .map((prompt, index) => ({ index: index + 1, prompt }));
     });
   }
 }

@@ -20,6 +20,41 @@
             <p class="text-xs text-gray-500">{{ programTypeConfig().urlHelp }}</p>
           </div>
 
+          <!--
+            Saved brief for this event.
+
+            An OFFER, never an automatic restore: the form is the user's, and swapping their
+            blank start for a brief saved weeks ago would be a surprise. Restoring goes straight
+            to the Implementation tab, which is where an already-approved brief belongs.
+          -->
+          <!--
+            One stable live region for both branches below, always in the DOM. An aria-live
+            element inserted with its text already present is not reliably announced — the region
+            has to exist first and then have its CONTENTS change. Putting role="status" on the
+            @if branches themselves would announce nothing, because @if creates them populated.
+          -->
+          <div role="status" aria-live="polite" class="sr-only" data-testid="planning-saved-brief-live">{{ savedBriefAnnouncement() }}</div>
+
+          @if (savedBrief(); as saved) {
+            <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-saved-brief">
+              <i class="fa-light fa-rotate-left mt-0.5 text-blue-600" aria-hidden="true"></i>
+              <div class="flex flex-col gap-2">
+                <p class="text-xs text-blue-900">
+                  A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
+                  >. Restore it instead of generating a new one.
+                </p>
+                <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-restore-brief" />
+              </div>
+            </div>
+          }
+
+          <!-- Amber, not blue: unlike the offer above, this one says generating will REPLACE something. -->
+          @if (savedBriefWarning(); as warning) {
+            <p class="text-xs text-amber-700" data-testid="planning-saved-brief-warning">
+              <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
+            </p>
+          }
+
           <!-- HubSpot UTM Token -->
           @if (hsUtm() || hsSearching() || hsCreating() || hsStatus() || hsNotFound()) {
             <div class="flex flex-col gap-2" data-testid="planning-hubspot-section">

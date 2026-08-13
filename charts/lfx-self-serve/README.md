@@ -119,6 +119,13 @@ environment:
 | `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
 | `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
 | `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
+
+`tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
 
 ### Environment Variables
 
@@ -184,18 +191,41 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                       | Description                                                                     | Required | Default |
-| ----------------------------------------------- | ------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` | Serves campaign job status from campaign-service; see the accepted values below | No       | off     |
+| Parameter                                         | Description                                                                         | Required | Default |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`   | Serves campaign job status from campaign-service; see the accepted values below     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` | Persists the generated brief in campaign-service instead of only in the browser tab | No       | off     |
 
-`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+Both flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
 operator setting `yes` and expecting it to be ignored would route production traffic at
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
 in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
 
-The flag is necessary but not sufficient: a poll reaches campaign-service only when the job id is
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
+(`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the
+Implementation tab) and the READ-BACK (`GET /api/campaigns/brief` and the Planning tab's restore
+offer). With it off both answer "off" and call nothing; the brief stays where it has always
+lived, in the browser tab, and is lost on reload.
+
+Read and write share one flag deliberately — a pod that read while the write flag was off would
+report an empty brief for one sitting in front of the user.
+
+Because the read exists, an overlapping rollout is no longer free. Requests are not sticky, so a
+lookup can land flag-off (brief not offered, user regenerates) while the following save lands
+flag-on (finds the row, refuses as `unowned-brief-exists`). Confusing, but safe — nothing is
+overwritten in either direction. Prefer a no-overlap rollout when flipping this flag; see
+`values.yaml` for the detail.
+
+Turning it off after it has been on leaves already-saved briefs untouched; they simply stop being
+offered.
+
+The two flags are independent and gate different endpoints: setting `..._BRIEFS` does not route
+job polling anywhere new, and setting `..._JOBS` does not persist anything. The paragraph below is
+about `..._JOBS` alone.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` is necessary but not sufficient: a poll reaches campaign-service only when the job id is
 also a UUID, which is the shape campaign-service mints. Creation is not cut over yet and still
 mints `job_<epoch>_<rand>` ids in this application, so with the flag ON today every real poll
 still goes to the in-process job map. Do not read "flag on, no errors" as a verified cutover —
