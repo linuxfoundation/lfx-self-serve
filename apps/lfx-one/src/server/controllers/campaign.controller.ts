@@ -295,7 +295,9 @@ export class CampaignController {
       // always supported, because `includeGoogle` gates on platform membership alone and Google's
       // inputs live on the request root rather than in a config object. Gating the legacy path on
       // a concept it does not have is a category error.
-      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope);
+      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope, {
+        campaignTypes: body?.campaignTypes,
+      });
 
       if (viaService.enabled && viaService.jobId !== null) {
         logger.success(req, 'campaign_create', startTime, { jobId: viaService.jobId, via: 'campaign-service' });

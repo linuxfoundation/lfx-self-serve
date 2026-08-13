@@ -490,8 +490,13 @@ export class CampaignServiceClient {
     briefId: string,
     projectSlug: string,
     platforms: string[],
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    // Named-optional rather than a sixth positional string[], which would sit next to `platforms`
+    // and be silently swappable with it — both are string arrays, so a transposition would type-
+    // check and only surface as a wrong refusal. Read only for the Demand Gen check below.
+    opts: { campaignTypes?: string[] } = {}
   ): Promise<CampaignServiceCreateResult> {
+    const campaignTypes = opts.campaignTypes;
     // CREATE has TWO prerequisites, and neither is an independent switch. Treating them as
     // independent is the difference between a dark cutover and a broken page, because a
     // half-set pair answers `enabled: true` — the one result the controller may NOT fall
@@ -551,6 +556,28 @@ export class CampaignServiceClient {
         enabled: true,
         jobId: null,
         error: `No configuration was built for: ${unconfigured.join(', ')}. Check the campaign types selected for each platform.`,
+      };
+    }
+
+    // Demand Gen is refused outright, because campaign-service cannot create one.
+    //
+    // There is no Demand Gen path anywhere in the service — `internal/dispatch/googleads.go`
+    // creates a Search campaign and nothing else. The legacy path DOES support it
+    // (`createDemandGenCampaign`), so this is a capability the cutover loses rather than one
+    // nobody has.
+    //
+    // Both selections are wrong, in different ways, and neither is safe to let through:
+    //   - demand-gen ONLY  → `buildGoogleAdsConfig` returns null, caught by the check above.
+    //   - search + demand-gen → the config carries only the SEARCH budget share, so the create
+    //     succeeds having silently dropped half of what the user asked for and half their budget.
+    //
+    // The second is the dangerous one: it looks like success. Refusing keeps the user on a path
+    // that can actually serve the request until the service grows Demand Gen support.
+    if (campaignTypes?.includes('demand-gen')) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Demand Gen campaigns cannot be created through campaign-service yet. Remove Demand Gen, or create this campaign with the cutover disabled.',
       };
     }
 

@@ -1597,6 +1597,50 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000009');
   });
 
+  /**
+   * campaign-service has NO Demand Gen path — `internal/dispatch/googleads.go` creates a Search
+   * campaign and nothing else. The legacy path does support it, so this is a capability the
+   * cutover loses rather than one nobody has.
+   *
+   * The mixed selection is the dangerous one because it looks like success: the config carries
+   * only the SEARCH budget share, so the create would succeed having silently dropped half the
+   * request and half the budget.
+   */
+  it('refuses a mixed search + demand-gen create rather than silently dropping the demand-gen half', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Demand Gen');
+  });
+
+  it('still creates a search-only google campaign', async () => {
+    // The contrast: without it the test above would pass on a client that refused every Google
+    // create outright.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000b' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000b');
+  });
+
   it('refuses a platform it has no config mapping for', async () => {
     // An earlier revision waved unmapped platforms through, reasoning this should not police the
     // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is

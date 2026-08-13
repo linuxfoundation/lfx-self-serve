@@ -484,10 +484,16 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // Slug, NOT a UUID: campaign-service stamps it into the campaign name and keys the dispatch
     // connection lookup on it, so a UUID here fails twice over.
-    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-9', 'cncf', ['linkedin-ads'], {
-      hsToken: 'hs-1',
-      linkedInConfig: { budgetUsd: 100 },
-    });
+    expect(createCampaigns).toHaveBeenCalledWith(
+      expect.anything(),
+      'b-9',
+      'cncf',
+      ['linkedin-ads'],
+      { hsToken: 'hs-1', linkedInConfig: { budgetUsd: 100 } },
+      // The options object carries `campaignTypes` for the Demand Gen refusal. Asserted rather
+      // than loosened to `expect.anything()`, so dropping the argument fails here too.
+      { campaignTypes: undefined }
+    );
   });
 
   it('omits absent per-platform configs rather than sending them as null', async () => {
@@ -505,7 +511,16 @@ describe('CampaignController.createCampaign cutover', () => {
     const body = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 } };
     await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(createCampaigns).toHaveBeenCalledWith(expect.anything(), 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+    expect(createCampaigns).toHaveBeenCalledWith(
+      expect.anything(),
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      {
+        campaignTypes: undefined,
+      }
+    );
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
   });
 
