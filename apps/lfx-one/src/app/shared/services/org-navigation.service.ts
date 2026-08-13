@@ -5,7 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { LENS_DEFAULT_ROUTES, ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
@@ -133,36 +133,35 @@ export class OrgNavigationService {
 
     const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(searchTerm(), token, loading, false, generation(), generation, null)));
 
-    // Rounds of client-driven auto-follow (below) for the current search. Reset whenever a page
-    // actually carries a row or a new search starts, so a fresh term always gets its own full budget.
-    let consecutiveEmptyAutoFollows = 0;
-
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
         // Drop responses from a superseded generation (e.g. a scroll fetch that lands after a new search reset).
         filter(({ generation: pageGen }) => pageGen === generation()),
         map(({ page }) => page),
         tap((page) => {
+          // The cursor this page was fetched with (nextPageToken() still holds it — it's only
+          // overwritten below). Comparing it against the cursor this page hands back is how the
+          // auto-follow loop tells "the catalogue has more to walk" apart from "upstream is stuck".
+          const requestedToken = nextPageToken();
           nextPageToken.set(page.nextPageToken);
           upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }
-          if (page.reset || page.items.length > 0) {
-            consecutiveEmptyAutoFollows = 0;
-          }
           // A catalogue page can dedupe to zero rows while still carrying a live cursor — the BFF's
           // own skip-ahead has a cap, and the caller-visible page beyond it is empty. No new row means
-          // the viewport sentinel is never recreated, so nothing would ever ask for the next page;
-          // paging has to drive itself here instead of waiting on a scroll event that can't happen.
+          // the viewport sentinel is never recreated (it keys off item count), so nothing would ever
+          // ask for the next page; paging has to drive itself here instead of waiting on a scroll
+          // event that can't happen.
           //
-          // Capped at ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP consecutive rounds — reusing the BFF's own
-          // per-request bound — so a term with no reachable match anywhere in the catalogue, or an
-          // upstream cursor that never advances, cannot drive the client into the same unbounded,
-          // scroll-free walk the server cap exists to prevent.
-          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed && consecutiveEmptyAutoFollows < ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP) {
-            consecutiveEmptyAutoFollows += 1;
+          // Follows as long as the cursor keeps advancing — bounded by the catalogue's finite size,
+          // same as manual scrolling would be — and stops only when upstream hands back the exact
+          // cursor it was just given, the one case that would otherwise spin forever.
+          // A reset page (new search) has no "requested cursor" of its own to compare against —
+          // whatever nextPageToken still held was the previous search's leftover, not this one's input.
+          const cursorAdvanced = page.reset || page.nextPageToken !== requestedToken;
+          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed && cursorAdvanced) {
             this.loadNextPage();
           }
         }),
