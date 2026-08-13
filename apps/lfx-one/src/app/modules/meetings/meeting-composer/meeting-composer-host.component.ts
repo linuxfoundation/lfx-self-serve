@@ -3,12 +3,14 @@
 
 import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerSection } from '@lfx-one/shared/interfaces';
+import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_LIFE } from '@lfx-one/shared/constants';
+import type { Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { ToastModule } from 'primeng/toast';
 import { filter, pairwise } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -41,6 +43,8 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
     QuickCreateDialogComponent,
+    ToastModule,
+    RouterLink,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
@@ -53,6 +57,7 @@ export class MeetingComposerHostComponent {
   protected readonly formService = inject(MeetingComposerFormService);
 
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
+  protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
 
   protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
   protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
@@ -121,14 +126,52 @@ export class MeetingComposerHostComponent {
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
     // means the current open is the one that was saved.
-    this.formService.submit().subscribe(() => {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Success',
-        detail: wasEditMode ? 'Meeting updated successfully' : 'Meeting created successfully',
-      });
+    this.formService.submit().subscribe((meeting) => {
+      if (wasEditMode) {
+        this.messageService.add({ severity: 'success', summary: 'Meeting updated', detail: 'Your changes have been saved.' });
+      } else {
+        this.announceCreatedMeeting(meeting);
+      }
 
       this.composer.close();
+    });
+  }
+
+  /** Reopens the composer on the meeting the toast was raised for. */
+  protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
+    this.messageService.clear(this.toastKey);
+    this.composer.open({ mode: 'edit', meetingUid: data.meetingUid });
+  }
+
+  protected onDismissToast(): void {
+    this.messageService.clear(this.toastKey);
+  }
+
+  /**
+   * Raises the post-create toast (LFXV2-3242).
+   * @description Creating no longer navigates to the saved meeting, so this toast is the only route back
+   * to it. A create that returned no meeting has nothing to link to, and falls back to a plain
+   * confirmation rather than a toast whose actions would dead-end.
+   */
+  private announceCreatedMeeting(meeting: Meeting | null): void {
+    if (!meeting?.id) {
+      this.messageService.add({ severity: 'success', summary: 'Meeting created', detail: 'Open it from the list to review the details.' });
+      return;
+    }
+
+    const data: MeetingComposerToastData = {
+      meetingUid: meeting.id,
+      meetingTitle: meeting.title ?? 'Untitled meeting',
+      meetingUrl: `/meetings/${meeting.id}`,
+    };
+
+    this.messageService.add({
+      key: this.toastKey,
+      severity: 'success',
+      summary: 'Meeting created',
+      detail: data.meetingTitle,
+      life: MEETING_COMPOSER_TOAST_LIFE,
+      data,
     });
   }
 }
