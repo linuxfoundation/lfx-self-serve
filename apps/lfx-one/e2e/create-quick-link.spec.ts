@@ -265,3 +265,46 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
     await expect(continueButton(page)).toBeEnabled();
   });
 });
+
+// The mobile drawer's own Create trigger is a separate element from the desktop rail button
+// (data-testid="create-rail-button-mobile"), opening a distinctly-testid'd copy of the same
+// popover (data-testid="create-menu-mobile") — see LFXV2-3248. Desktop projects (chromium,
+// firefox) never render the mobile drawer content behind a viewport this wide, so this suite
+// only runs on the narrow (mobile-chrome) project.
+function skipOnDesktopViewport(page: Page): void {
+  const viewport = page.viewportSize();
+  if (viewport && viewport.width >= 768) {
+    test.skip(true, 'Mobile-only trigger — desktop uses create-rail-button in the vertical rail');
+  }
+}
+
+test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    skipOnDesktopViewport(page);
+  });
+
+  // M1 — the mobile drawer's own Create button renders and opens its own popover instance
+  test('M1: the mobile "Create" button opens the artifact-type popover from the drawer', async ({ page }) => {
+    await page.getByTestId('mobile-menu-button').click();
+
+    const trigger = page.getByTestId('create-rail-button-mobile');
+    await expect(trigger).toBeVisible({ timeout: RAIL_TIMEOUT });
+    await trigger.click();
+
+    const menu = page.getByTestId('create-menu-mobile');
+    await expect(menu).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('create-menu-mobile-option-meeting')).toBeVisible();
+
+    // Popover must actually open near the tapped button, not pinned at the desktop rail's fixed
+    // coordinates (left:56px/top:58px) — regression guard for the rail-anchoring CSS scoped to
+    // the `lg` breakpoint.
+    const [menuBox, triggerBox] = await Promise.all([menu.boundingBox(), trigger.boundingBox()]);
+    expect(menuBox).not.toBeNull();
+    expect(triggerBox).not.toBeNull();
+    if (menuBox && triggerBox) {
+      expect(Math.abs(menuBox.y - triggerBox.y)).toBeLessThan(150);
+    }
+  });
+});
