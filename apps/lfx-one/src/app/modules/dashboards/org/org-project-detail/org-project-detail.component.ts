@@ -974,10 +974,11 @@ export class OrgProjectDetailComponent {
   }
 
   /**
-   * Builds a 100%-stacked area chart from the real per-org monthly combined-influence series.
-   * The server already sends the top-N named orgs plus a single "All others" band that sums the
-   * complete remaining tail, so every series is rendered as-is (no client-side truncation) and
-   * each month is normalized so all series sum to 100%.
+   * Builds a 100%-stacked area chart from the real per-org combined-influence series. The server
+   * already sends the top-N named orgs plus a single "All others" band that sums the complete
+   * remaining tail, so no org is dropped client-side, and each point is normalized so all series
+   * sum to 100%. For the all-time range, leading points where no org has any activity are trimmed
+   * so the axis opens on the project's first real data rather than on empty spine buckets.
    */
   private buildStackedTrend(): ChartData<ChartType> {
     const trend = this.trendState().data?.trend ?? [];
@@ -993,15 +994,27 @@ export class OrgProjectDetailComponent {
     const len = series.reduce((max, s) => Math.max(max, s.data.length), 0);
     if (len === 0) return { labels: [], datasets: [] };
 
-    const labels = useBuckets ? periods.slice(-len) : this.monthLabels.slice(-len);
-    const entries = series.map((s) => ({ name: s.name, data: this.padStart(s.data, len) }));
+    const allLabels = useBuckets ? periods.slice(-len) : this.monthLabels.slice(-len);
+    const allEntries = series.map((s) => ({ name: s.name, data: this.padStart(s.data, len) }));
 
-    // Normalize each month so all series sum to 100%.
-    const monthTotals = Array.from({ length: len }, (_, i) => entries.reduce((sum, e) => sum + (e.data[i] ?? 0), 0));
-    const pctSeries = entries.map((e) => e.data.map((val, i) => (monthTotals[i] > 0 ? (val / monthTotals[i]) * 100 : 0)));
+    // Total across every org at each point — also marks the points where nothing happened at all.
+    const allTotals = Array.from({ length: len }, (_, i) => allEntries.reduce((sum, e) => sum + (e.data[i] ?? 0), 0));
 
-    // Rank by most-recent-month share (most influential now → first/bottom of stack).
-    const lastIdx = len - 1;
+    // All time: the lifetime bucket spine can start well before the project's first real activity,
+    // which renders as leading 0% dead space. Open the axis on the first bucket that has data.
+    // 1y/2y keep the whole requested window — an empty leading month there is real information.
+    const firstWithData = useBuckets ? allTotals.findIndex((total) => total > 0) : 0;
+    if (firstWithData === -1) return { labels: [], datasets: [] };
+
+    const labels = allLabels.slice(firstWithData);
+    const entries = allEntries.map((e) => ({ name: e.name, data: e.data.slice(firstWithData) }));
+    const totals = allTotals.slice(firstWithData);
+
+    // Normalize each point so all series sum to 100%.
+    const pctSeries = entries.map((e) => e.data.map((val, i) => (totals[i] > 0 ? (val / totals[i]) * 100 : 0)));
+
+    // Rank by most-recent share (most influential now → first/bottom of stack).
+    const lastIdx = labels.length - 1;
     const ranked = entries.map((entry, i) => ({ entry, pct: pctSeries[i], lastShare: pctSeries[i][lastIdx] ?? 0 })).sort((a, b) => b.lastShare - a.lastShare);
 
     const datasets = ranked.map((item, rankIdx) => {
