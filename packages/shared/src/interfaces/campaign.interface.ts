@@ -257,6 +257,18 @@ export interface CampaignBriefPersistenceState {
    * brief is stored but not yet usable.
    */
   message: string | null;
+
+  /**
+   * Is the stored brief APPROVED, and therefore usable for campaign creation?
+   *
+   * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
+   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * approved before creating campaigns" — so the Implementation tab has to know, and matching on
+   * banner prose to find out would break the first time the copy is edited.
+   *
+   * Meaningful only on `saved`; `false` elsewhere, where there is no stored brief to approve.
+   */
+  approved: boolean;
 }
 
 /**

@@ -81,7 +81,7 @@ export class ImplementationTabComponent implements OnInit {
    * next stretch of work — a "not saved" warning is only useful in front of the person about to
    * lose something. The default is the `off` state, which renders nothing at all.
    */
-  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
+  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null, approved: false });
 
   /**
    * Is a brief save running right now?
@@ -295,6 +295,14 @@ export class ImplementationTabComponent implements OnInit {
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
     if (persistence.status === 'error' && persistence.briefId !== null) return false;
+
+    // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
+    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
+    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
+    // the hard way. Read from the explicit `approved` field rather than the banner prose, which
+    // would break the first time the copy is edited.
+    if (persistence.status === 'saved' && !persistence.approved) return false;
 
     return true;
   });

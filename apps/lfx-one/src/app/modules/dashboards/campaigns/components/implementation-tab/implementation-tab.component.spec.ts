@@ -73,17 +73,17 @@ describe('ImplementationTabComponent submit gate', () => {
     makeOtherwiseValid();
     expect(canSubmit()).toBe(true);
 
-    setPersistence({ status: 'saving', briefId: null, message: null });
+    setPersistence({ status: 'saving', briefId: null, message: null, approved: false });
 
     expect(canSubmit()).toBe(false);
   });
 
   it('re-enables submit once the save lands', async () => {
     makeOtherwiseValid();
-    setPersistence({ status: 'saving', briefId: null, message: null });
+    setPersistence({ status: 'saving', briefId: null, message: null, approved: false });
     expect(canSubmit()).toBe(false);
 
-    setPersistence({ status: 'saved', briefId: 'brief-1', message: null });
+    setPersistence({ status: 'saved', briefId: 'brief-1', message: null, approved: true });
 
     expect(canSubmit()).toBe(true);
   });
@@ -97,7 +97,7 @@ describe('ImplementationTabComponent submit gate', () => {
   it('blocks submit when a save conflicted, even though it carries a brief id', async () => {
     makeOtherwiseValid();
 
-    setPersistence({ status: 'error', briefId: 'brief-stored-1', message: 'This brief changed elsewhere.' });
+    setPersistence({ status: 'error', briefId: 'brief-stored-1', message: 'This brief changed elsewhere.', approved: false });
 
     expect(canSubmit()).toBe(false);
   });
@@ -115,6 +115,7 @@ describe('ImplementationTabComponent submit gate', () => {
       status: 'error',
       briefId: null,
       message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+      approved: false,
     });
 
     expect(canSubmit()).toBe(true);
@@ -131,11 +132,29 @@ describe('ImplementationTabComponent submit gate', () => {
    */
   it('blocks submit during the first save, when the status still reads off', async () => {
     makeOtherwiseValid();
-    setPersistence({ status: 'off', briefId: null, message: null });
+    setPersistence({ status: 'off', briefId: null, message: null, approved: false });
     expect(canSubmit()).toBe(true);
 
     fixture.componentRef.setInput('briefSaveInFlight', true);
     fixture.detectChanges();
+
+    expect(canSubmit()).toBe(false);
+  });
+
+  /**
+   * A durable but unapproved brief. `saved` is honest — the write landed — but campaign-service
+   * refuses a create from it (`brief.go:439`, 400 "brief must be approved before creating
+   * campaigns"), so leaving Create enabled invited the user to discover that the hard way.
+   */
+  it('blocks submit when the brief saved but was not approved', async () => {
+    makeOtherwiseValid();
+
+    setPersistence({
+      status: 'saved',
+      briefId: 'brief-1',
+      message: 'This brief was saved but not approved, so campaigns cannot be created from it yet.',
+      approved: false,
+    });
 
     expect(canSubmit()).toBe(false);
   });
@@ -145,7 +164,7 @@ describe('ImplementationTabComponent submit gate', () => {
     // brief id" would disable the button permanently — for a path that needs no brief id at all.
     makeOtherwiseValid();
 
-    setPersistence({ status: 'off', briefId: null, message: null });
+    setPersistence({ status: 'off', briefId: null, message: null, approved: false });
 
     expect(canSubmit()).toBe(true);
   });

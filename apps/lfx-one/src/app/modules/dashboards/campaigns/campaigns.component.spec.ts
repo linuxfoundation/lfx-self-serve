@@ -157,7 +157,7 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null });
+    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null, approved: true });
   });
 
   it('renders nothing when the cutover is dark', async () => {
@@ -207,7 +207,7 @@ describe('CampaignsComponent brief persistence', () => {
     late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     expect(tab()).toBe('planning');
   });
 
@@ -310,7 +310,7 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       // Not 'saved' with tlf's id: that id names a row in tlf's table, and CNCF is selected now.
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     it('drops a save that resolves after the foundation changed', async () => {
@@ -324,7 +324,7 @@ describe('CampaignsComponent brief persistence', () => {
       late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
       await fixture.whenStable();
 
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     /**

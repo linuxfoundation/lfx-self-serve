@@ -61,7 +61,7 @@ export class CampaignsComponent {
    *
    * Declared before briefPersistence because a class field cannot read one declared after it.
    */
-  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
+  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null, approved: false };
 
   /** The Paid Marketing side's current tab. Email keeps its own — see the delivery-type effect. */
   protected readonly selectedTab = signal<CampaignTab>('planning');
@@ -524,6 +524,9 @@ export class CampaignsComponent {
         status: 'off',
         briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
         message: null,
+        // `off` never gates the create on approval (that is the legacy path's state too), so this
+        // is false-as-not-applicable rather than a claim the restored brief is unapproved.
+        approved: false,
       });
       return;
     }
@@ -676,7 +679,7 @@ export class CampaignsComponent {
     // that the first save shows no in-flight banner, only its outcome; every later one in the
     // same session shows both.
     if (this.briefPersistenceEnabled()) {
-      this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+      this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
     } else {
       // Clear rather than leave whatever was there. The flag being unknown is the FIRST save of a
       // session — but a first save that FAILED leaves an error banner and does not flip the flag,
@@ -834,6 +837,7 @@ export class CampaignsComponent {
               status: 'error',
               briefId: result.briefId,
               message: this.conflictMessages[result.conflict],
+              approved: false,
             });
             return;
           }
@@ -850,6 +854,7 @@ export class CampaignsComponent {
           this.briefPersistence.set({
             status: 'saved',
             briefId: result.briefId,
+            approved: result.approved,
             message: result.approved
               ? null
               : 'This brief was saved but not approved, so campaigns cannot be created from it yet. Ask an administrator to approve the stored brief.',
@@ -874,6 +879,7 @@ export class CampaignsComponent {
             status: 'error',
             briefId: null,
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+            approved: false,
           });
         }
       );
@@ -901,6 +907,7 @@ export class CampaignsComponent {
           status: 'error',
           briefId: null,
           message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+          approved: false,
         });
       }
     });
