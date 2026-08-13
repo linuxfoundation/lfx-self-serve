@@ -1,0 +1,138 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="composer-guests">
+  <div class="flex flex-col gap-1">
+    <h2>Invite guests</h2>
+    <p class="text-sm text-gray-500">Add key stakeholders and contributors who should participate in this discussion.</p>
+  </div>
+
+  <!-- Search and add -->
+  <div class="flex flex-col gap-2">
+    <label id="composer-guest-search-label" class="text-sm font-medium text-gray-900">Search and add guests</label>
+    <lfx-user-search
+      [form]="quickAddForm"
+      searchType="meeting_registrant"
+      emailControl="email"
+      firstNameControl="first_name"
+      lastNameControl="last_name"
+      jobTitleControl="job_title"
+      organizationNameControl="org_name"
+      placeholder="Search people by name or email"
+      styleClass="w-full"
+      inputStyleClass="w-full text-sm"
+      panelStyleClass="w-full"
+      dataTestId="composer-guest-search"
+      (onUserSelect)="onUserSelected()"
+      (onManualEntry)="onOpenManualDialog()" />
+    <p class="text-sm text-gray-500">
+      Not finding a certain guest?
+      <button
+        type="button"
+        class="font-medium text-blue-700 underline hover:text-blue-800"
+        (click)="onOpenManualDialog()"
+        data-testid="composer-guest-manual-link">
+        Add manually
+      </button>
+    </p>
+  </div>
+
+  <!-- Groups -->
+  <lfx-meeting-committee-manager
+    [selectedCommittees]="form().get('committees')?.value || []"
+    [form]="form()"
+    [committeeContext]="formService.committeeContext()"
+    (committeeMembersChange)="onCommitteeMembersChange($event)" />
+
+  <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()" [comingSoon]="true" />
+
+  <!-- Invited list -->
+  @if (loading()) {
+    <p class="text-sm text-gray-500" data-testid="composer-guests-loading">Loading guests…</p>
+  } @else if (guestCount() === 0) {
+    <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 p-8 text-center" data-testid="composer-guests-empty">
+      <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-semibold text-gray-900">No guests yet</p>
+      <p class="text-sm text-gray-500">Search for people or add a group to invite everyone at once.</p>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-2">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <span class="text-sm font-medium text-gray-900">Invited · {{ guestCount() }}</span>
+        <span class="text-xs text-gray-500" data-testid="composer-guests-stats">
+          @if (groupGuestCount() > 0) {
+            <span>{{ groupGuestCount() }} from groups</span>
+          }
+          @if (groupGuestCount() > 0 && directGuestCount() > 0) {
+            <span> · </span>
+          }
+          @if (directGuestCount() > 0) {
+            <span>{{ directGuestCount() }} direct guest{{ directGuestCount() === 1 ? '' : 's' }}</span>
+          }
+        </span>
+      </div>
+
+      <ul class="flex max-h-96 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3" data-testid="composer-guests-list">
+        @for (guest of visibleRegistrants(); track guest.uid || guest.tempId) {
+          <li class="flex items-center gap-3 rounded-md border border-gray-200 p-3">
+            <span class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600" aria-hidden="true">
+              {{ initials(guest) }}
+            </span>
+            <div class="flex min-w-0 flex-1 flex-col">
+              <div class="flex items-center gap-2">
+                <span class="truncate text-sm font-medium text-gray-900">{{ guest.first_name }} {{ guest.last_name }}</span>
+                @if (guest.host) {
+                  <span class="flex-none rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Host</span>
+                }
+              </div>
+              <span class="truncate text-xs text-gray-500">{{ secondaryLine(guest) }}</span>
+            </div>
+            @if (guest.committee_name) {
+              <span class="flex-none truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">via {{ guest.committee_name }}</span>
+            }
+            <button
+              type="button"
+              class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-red-600"
+              [attr.aria-label]="'Remove ' + guest.first_name + ' ' + guest.last_name"
+              (click)="onRemoveGuest(guest)"
+              [attr.data-testid]="'composer-guest-remove-' + guest.email">
+              <i class="fa-light fa-xmark" aria-hidden="true"></i>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
+  }
+</div>
+
+<!-- Add guest manually -->
+<p-dialog
+  [visible]="manualDialogVisible()"
+  (visibleChange)="manualDialogVisible.set($event)"
+  header="Add guest manually"
+  [modal]="true"
+  [draggable]="false"
+  [dismissableMask]="true"
+  styleClass="w-[min(560px,94vw)]"
+  data-testid="composer-guest-manual-dialog">
+  <lfx-registrant-form [form]="manualForm" [registrant]="null" [manualOnly]="true" />
+
+  <ng-template #footer>
+    <div class="flex justify-end gap-2">
+      <lfx-button
+        size="small"
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        (click)="manualDialogVisible.set(false)"
+        data-testid="composer-guest-manual-cancel" />
+      <lfx-button
+        size="small"
+        label="Add guest"
+        severity="info"
+        [disabled]="!manualForm.valid"
+        (click)="onAddManualGuest()"
+        data-testid="composer-guest-manual-submit" />
+    </div>
+  </ng-template>
+</p-dialog>

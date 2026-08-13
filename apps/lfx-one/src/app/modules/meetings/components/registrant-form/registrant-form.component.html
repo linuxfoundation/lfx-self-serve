@@ -42,7 +42,7 @@
     @if (showIndividualFields()) {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-testid="registrant-form-fields-grid">
         <!-- Back to Search Button -->
-        @if (!registrant()) {
+        @if (!registrant() && !manualOnly()) {
           <div class="md:col-span-2">
             <button type="button" class="text-sm text-primary hover:underline" (click)="backToSearch()">← Back to search</button>
           </div>
