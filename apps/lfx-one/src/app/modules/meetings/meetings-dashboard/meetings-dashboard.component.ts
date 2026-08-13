@@ -48,7 +48,6 @@ import {
   distinctUntilChanged,
   EMPTY,
   expand,
-  filter,
   finalize,
   from,
   map,
@@ -57,6 +56,7 @@ import {
   Observable,
   of,
   scan,
+  skip,
   Subject,
   switchMap,
   take,
@@ -271,11 +271,12 @@ export class MeetingsDashboardComponent {
 
     // The composer saves in place instead of navigating, so this list is what the organizer looks at
     // straight after creating a meeting — refetch rather than leave the new meeting missing from it.
+    // `skip(1)` drops the value `toObservable` replays on subscribe. The counter is monotonic and lives in
+    // a root service, so on any mount after the first save that replay is a non-zero count describing a
+    // save this instance already loaded — refetching on it would double every request the streams below
+    // just made.
     toObservable(this.composer.saveCount)
-      .pipe(
-        filter((count) => count > 0),
-        takeUntilDestroyed()
-      )
+      .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.refreshMeetings());
   }
 

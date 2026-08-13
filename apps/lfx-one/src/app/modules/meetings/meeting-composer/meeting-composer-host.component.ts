@@ -74,21 +74,23 @@ export class MeetingComposerHostComponent {
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
   /**
-   * Whether a required section the organizer has already been through is currently invalid.
-   * @description Create mode only, matching the rail's per-section dots — an edit-mode badge would have
-   * no dot to point at, and a past meeting fails the future-date validator the moment it loads.
+   * Whether a required section is currently invalid and the organizer has been shown it.
+   * @description Mirrors the rail's per-section dots, so the badge always has a dot to point at. Create
+   * mode only counts sections already visited — flagging a section the stepper hasn't reached yet would
+   * report the form as broken before it has been filled. Edit mode drops that gate: every section is
+   * reachable from the start and Save is gated on all of them, so an unvisited invalid one is exactly the
+   * case where the organizer has no other way to find out why Save is disabled.
    */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
 
-    if (this.composer.isEditMode()) {
-      return false;
-    }
-
+    const isEditMode = this.composer.isEditMode();
     const visited = this.composer.visitedSections();
 
-    return this.sections.some((section) => section.required && visited.has(section.id) && !this.formService.isSectionValid(section.id));
+    return this.sections.some((section) => section.required && (isEditMode || visited.has(section.id)) && !this.formService.isSectionValid(section.id));
   });
+  /** Whether the toast's Edit action can act — a composer already open would lose its draft to it. */
+  protected readonly canEditFromToast: Signal<boolean> = computed(() => !this.composer.isOpen() && this.projectContextService.canWrite());
 
   public constructor() {
     toObservable(this.composer.context)
@@ -159,13 +161,12 @@ export class MeetingComposerHostComponent {
 
   /**
    * Reopens the composer on the meeting the toast was raised for.
-   * @description The toast outlives the composer that raised it, so the organizer can already be part-way
-   * through another meeting by the time it is clicked — reopening would discard that draft. Losing write
-   * access in the meantime is the other case, where the save would only fail upstream. Both leave the
-   * toast standing rather than swallowing the click.
+   * @description Guarded by `canEditFromToast`, which also disables the action — reopening while another
+   * meeting is part-way through the composer would discard that draft, and reopening after write access
+   * was lost would only fail on save.
    */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
-    if (this.composer.isOpen() || !this.projectContextService.canWrite()) {
+    if (!this.canEditFromToast()) {
       return;
     }
 

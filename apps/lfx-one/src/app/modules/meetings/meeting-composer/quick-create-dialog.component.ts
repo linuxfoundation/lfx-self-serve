@@ -48,8 +48,10 @@ export class QuickCreateDialogComponent {
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
 
-  /** Meeting type whose template was applied, so the prefill hints only claim what was actually filled. */
-  protected readonly prefilledType = signal<MeetingType | null>(null);
+  // Tracked per hint rather than per template, so the agenda hint can't claim a suggestion over an agenda
+  // the organizer wrote themselves just because the title next to it was seeded.
+  protected readonly prefilledDetails = signal(false);
+  protected readonly prefilledAgenda = signal(false);
 
   protected readonly agendaLength: Signal<number> = computed(() => {
     this.formService.revision();
@@ -109,7 +111,8 @@ export class QuickCreateDialogComponent {
     const template = meetingType ? this.firstTemplate(meetingType) : null;
 
     if (!template) {
-      this.prefilledType.set(null);
+      this.prefilledDetails.set(false);
+      this.prefilledAgenda.set(false);
       return;
     }
 
@@ -117,26 +120,24 @@ export class QuickCreateDialogComponent {
     const title = form.get('title');
     const description = form.get('description');
     const duration = form.get('duration');
-    let prefilled = false;
+    let prefilledDetails = false;
 
     if (title?.pristine) {
       title.setValue(template.title);
-      prefilled = true;
-    }
-
-    if (description?.pristine) {
-      description.setValue(template.content);
-      prefilled = true;
+      prefilledDetails = true;
     }
 
     if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
       this.formService.setDuration(template.estimatedDuration);
-      prefilled = true;
+      prefilledDetails = true;
     }
 
-    // The hints below the fields claim a prefill happened, so they must not show when every field was
-    // already the organizer's own.
-    this.prefilledType.set(prefilled ? meetingType : null);
+    if (description?.pristine) {
+      description.setValue(template.content);
+    }
+
+    this.prefilledDetails.set(prefilledDetails);
+    this.prefilledAgenda.set(!!description?.pristine);
   }
 
   private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {
