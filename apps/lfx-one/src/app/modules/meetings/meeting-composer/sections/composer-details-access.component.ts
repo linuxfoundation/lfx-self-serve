@@ -87,11 +87,15 @@ export class ComposerDetailsAccessComponent {
       this.formService.revision();
 
       const title = this.form().get('title');
-      const touched = !!title?.touched;
+      // Deliberately not gated on `touched`, unlike the paragraphs themselves: a blur-driven
+      // `markAsTouched()` emits on neither `valueChanges` nor `statusChanges`, so this would keep a stale
+      // list through exactly the case the errors exist for — tabbing out of an empty title. An id whose
+      // element isn't rendered yet is ignored when the accessibility tree resolves the list, so listing it
+      // early costs nothing and the pointer starts resolving the moment the paragraph appears.
       const ids = [
         this.titleHint() ? 'composer-title-hint' : null,
-        touched && title?.errors?.['required'] ? 'composer-title-required-error' : null,
-        touched && title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
+        title?.errors?.['required'] ? 'composer-title-required-error' : null,
+        title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
       ].filter((id): id is string => id !== null);
 
       return ids.length ? ids.join(' ') : null;
