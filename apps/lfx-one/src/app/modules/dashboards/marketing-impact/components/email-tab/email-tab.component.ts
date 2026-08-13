@@ -30,14 +30,16 @@ export class EmailTabComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  /** True when the request failed, so the tab can say so instead of rendering zeros. */
+  protected readonly failed = signal(false);
 
   // === Computed Signals ===
   protected readonly emailData: Signal<EmailCtrResponse | null> = this.initEmailData();
   protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
   protected readonly emailTypeRows: Signal<EmailTypeRow[]> = this.initEmailTypeRows();
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
-  /** True once a response has landed. Null covers both the loading state and a failed request. */
-  protected readonly hasLoaded = computed(() => this.emailData() !== null);
+  /** True once a real response has landed — not merely "not loading". */
+  protected readonly hasLoaded = computed(() => !this.failed() && this.emailData() !== null);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
   /**
@@ -68,10 +70,16 @@ export class EmailTabComponent {
             return of(null);
           }
           this.loading.set(true);
+          this.failed.set(false);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
+          // Caught here rather than in the service: a failure must render "couldn't load" rather
+          // than the zero-filled KPIs it used to resolve, which read as measurements.
           return this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(
             finalize(() => this.loading.set(false)),
-            catchError(() => of(null))
+            catchError(() => {
+              this.failed.set(true);
+              return of(null);
+            })
           );
         })
       ),

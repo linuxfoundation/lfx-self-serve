@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnalyticsService } from '@services/analytics.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EMAIL_SENDS_ROW_LIMIT } from '@lfx-one/shared/constants';
@@ -108,6 +108,26 @@ describe('EmailTabComponent', () => {
 
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="email-campaign-row-"]')).toHaveLength(EMAIL_SENDS_ROW_LIMIT);
     expect(fixture.nativeElement.textContent).toContain('latest');
+  });
+
+  // The service used to swallow failures into a zero-filled response, so an outage rendered
+  // "Total Sends 0 · CTR 0.0%" as measurements and no downstream gate could tell the difference.
+  // It propagates now; this asserts the tab says so rather than showing zeros.
+  it('states a load failure instead of rendering zeros', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [EmailTabComponent],
+      providers: [{ provide: AnalyticsService, useValue: { getEmailCtr: vi.fn().mockReturnValue(throwError(() => new Error('outage'))) } }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EmailTabComponent);
+    fixture.componentRef.setInput('foundationSlug', 'tlf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="email-tab-error"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="email-kpi-grid"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('0 sends');
   });
 
   // The boundary the flag exists for: a source of exactly the cap is complete, not truncated. The

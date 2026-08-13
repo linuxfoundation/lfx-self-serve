@@ -8,122 +8,131 @@
     <p class="text-xs text-gray-500">Email engagement metrics · {{ foundationName() || 'All foundations' }}</p>
   </div>
 
-  <!-- KPI Cards -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="email-kpi-grid">
-    @if (loading()) {
-      @for (i of [1, 2, 3, 4]; track i) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="email-kpi-skeleton">
-          <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
-        </div>
-      }
-    } @else {
-      @for (kpi of kpiCards(); track kpi.id) {
-        <lfx-sparkline-kpi-card [kpi]="kpi" section="email" />
-      }
-    }
-  </div>
-
-  <!-- Email type breakdown table -->
-  @if (!loading()) {
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-type-breakdown">
-      <h4 class="text-sm font-semibold text-gray-900">Performance by email type</h4>
-
-      @if (hasEmailTypes()) {
-        <div class="flex flex-col gap-0" role="table" aria-label="Performance by email type" data-testid="email-type-table">
-          <!-- Table header -->
-          <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
-            <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGNS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
-            <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
-            <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
+  <!-- Load failure — stated rather than rendered as zeros. The service propagates now, so an
+       outage reaches here as an error instead of a zero-filled response that reads as measured. -->
+  @if (failed()) {
+    <div class="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-red-200 bg-red-50 p-8" data-testid="email-tab-error">
+      <p class="text-sm font-medium text-red-700">We couldn't load email performance.</p>
+      <p class="text-xs text-red-600">Refresh to try again.</p>
+    </div>
+  } @else {
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="email-kpi-grid">
+      @if (loading()) {
+        @for (i of [1, 2, 3, 4]; track i) {
+          <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="email-kpi-skeleton">
+            <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-8 w-32 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-3 w-40 animate-pulse rounded bg-gray-200"></div>
           </div>
-
-          <!-- Rows -->
-          @for (row of emailTypeRows(); track row.emailType; let idx = $index) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-type-row-' + idx">
-              <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.emailType }}</span>
-              <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.campaignCount }}</span>
-              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
-              <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
-              <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
-              <span class="flex-1 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
-            </div>
-          }
-        </div>
+        }
       } @else {
-        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-type-empty">
-          <p class="text-sm text-gray-500">No email type data available.</p>
-        </div>
+        @for (kpi of kpiCards(); track kpi.id) {
+          <lfx-sparkline-kpi-card [kpi]="kpi" section="email" />
+        }
       }
     </div>
 
-    <!-- Email sends table -->
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-top-campaigns">
-      <div class="flex items-baseline justify-between gap-3">
-        <h4 class="text-sm font-semibold text-gray-900">Email sends</h4>
-        <!--
+    <!-- Email type breakdown table -->
+    @if (!loading()) {
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-type-breakdown">
+        <h4 class="text-sm font-semibold text-gray-900">Performance by email type</h4>
+
+        @if (hasEmailTypes()) {
+          <div class="flex flex-col gap-0" role="table" aria-label="Performance by email type" data-testid="email-type-table">
+            <!-- Table header -->
+            <div class="flex items-center gap-3 border-b border-gray-200 pb-2" role="row">
+              <span class="w-36 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+              <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGNS</span>
+              <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
+              <span class="w-24 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
+              <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
+              <span class="flex-1 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
+            </div>
+
+            <!-- Rows -->
+            @for (row of emailTypeRows(); track row.emailType; let idx = $index) {
+              <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-type-row-' + idx">
+                <span class="w-36 truncate text-xs font-medium text-gray-700" role="cell">{{ row.emailType }}</span>
+                <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.campaignCount }}</span>
+                <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
+                <span class="w-24 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
+                <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
+                <span class="flex-1 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-type-empty">
+            <p class="text-sm text-gray-500">No email type data available.</p>
+          </div>
+        }
+      </div>
+
+      <!-- Email sends table -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="email-top-campaigns">
+        <div class="flex items-baseline justify-between gap-3">
+          <h4 class="text-sm font-semibold text-gray-900">Email sends</h4>
+          <!--
           Only after a response lands. emailData() is null while loading AND after a failed
           request, so rendering the count unconditionally reports "0 sends" for data that was
           never measured — the same conflation the neutral empty-state copy below avoids. A
           successful empty response still shows zero, which is a real measurement.
         -->
-        @if (hasLoaded()) {
-          <span class="text-[11px] text-gray-500" data-testid="email-campaigns-count">{{ topCampaignsCountLabel() }}</span>
-        }
-      </div>
+          @if (hasLoaded()) {
+            <span class="text-[11px] text-gray-500" data-testid="email-campaigns-count">{{ topCampaignsCountLabel() }}</span>
+          }
+        </div>
 
-      @if (hasTopCampaigns()) {
-        <!-- Capped at EMAIL_SENDS_ROW_LIMIT and scrolled within the card, so neither the DOM nor
+        @if (hasTopCampaigns()) {
+          <!-- Capped at EMAIL_SENDS_ROW_LIMIT and scrolled within the card, so neither the DOM nor
              the page grows without limit; the header says "latest N sends" when it truncates.
              tabindex="0" so keyboard-only users can focus the region and scroll to the rows below
              the fold; without it the overflow is reachable by pointer only. -->
-        <div
-          class="flex max-h-[32rem] flex-col gap-0 overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-          tabindex="0"
-          role="table"
-          aria-label="Email sends"
-          data-testid="email-campaigns-table">
-          <!-- Table header -->
-          <div class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white pb-2" role="row">
-            <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
-            <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
-            <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SEND DATE</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
-            <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
-            <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
-          </div>
-
-          <!-- Rows -->
-          @for (row of topCampaigns(); track row.type + '|' + row.name + '|' + row.sendDate; let idx = $index) {
-            <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
-              <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell" [title]="row.name">{{ row.name }}</span>
-              <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>
-              <!-- Already display-ready: initTopCampaigns formats the date and substitutes an em
-                   dash when the source row has none, so this binds the value directly. -->
-              <span class="w-24 text-xs text-gray-500" role="cell">{{ row.sendDate }}</span>
-              <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
-              <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
-              <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
-              <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
+          <div
+            class="flex max-h-[32rem] flex-col gap-0 overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+            tabindex="0"
+            role="table"
+            aria-label="Email sends"
+            data-testid="email-campaigns-table">
+            <!-- Table header -->
+            <div class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white pb-2" role="row">
+              <span class="flex-1 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CAMPAIGN</span>
+              <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">TYPE</span>
+              <span class="w-24 text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SEND DATE</span>
+              <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">SENDS</span>
+              <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPENS</span>
+              <span class="w-20 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">OPEN RATE</span>
+              <span class="w-16 text-right text-[11px] font-semibold tracking-wide text-gray-400" role="columnheader">CTR</span>
             </div>
-          }
-        </div>
-      } @else {
-        <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
-          <!--
+
+            <!-- Rows -->
+            @for (row of topCampaigns(); track row.type + '|' + row.name + '|' + row.sendDate; let idx = $index) {
+              <div class="flex items-center gap-3 border-b border-gray-100 py-2.5" role="row" [attr.data-testid]="'email-campaign-row-' + idx">
+                <span class="flex-1 truncate text-xs font-medium text-gray-700" role="cell" [title]="row.name">{{ row.name }}</span>
+                <span class="w-24 truncate text-[11px] text-gray-500" role="cell">{{ row.type }}</span>
+                <!-- Already display-ready: initTopCampaigns formats the date and substitutes an em
+                   dash when the source row has none, so this binds the value directly. -->
+                <span class="w-24 text-xs text-gray-500" role="cell">{{ row.sendDate }}</span>
+                <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.sends }}</span>
+                <span class="w-20 text-right text-xs text-gray-900" role="cell">{{ row.opens }}</span>
+                <span class="w-20 text-right text-xs text-gray-500" role="cell">{{ row.openRate }}</span>
+                <span class="w-16 text-right text-xs font-medium text-gray-900" role="cell">{{ row.ctr }}</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
+            <!--
             Neutral wording on purpose: initEmailData catches request failures to null, so this
             branch also renders during an analytics outage. "No email sends in this period" would
             report a measured zero for data that never loaded — the same conflation the
             getSocialReach regression guards exist to prevent.
           -->
-          <p class="text-sm text-gray-500">No email sends to show.</p>
-        </div>
-      }
-    </div>
+            <p class="text-sm text-gray-500">No email sends to show.</p>
+          </div>
+        }
+      </div>
+    }
   }
 </div>

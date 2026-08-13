@@ -91,11 +91,14 @@
                 @if (projectExpanded) {
                   @for (campaign of row.campaigns; track $index) {
                     <div
-                      class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2 pl-6"
+                      class="flex items-center gap-3 border-b border-gray-50 bg-gray-50/50 py-2"
                       role="row"
                       [attr.data-testid]="'campaign-row-' + projectKey + '-' + $index">
                       <!-- Flexes with the parent name column; pl-6 supplies the indent. -->
-                      <span class="min-w-0 flex-1 truncate text-[11px] text-gray-500" [title]="campaign.campaignName" role="cell">{{
+                      <!-- Indent on the name cell, not the row: pl-6 on the row shortened its
+                           content box, so every fixed-width metric cell landed 24px left of its
+                           header and of the parent row's columns. -->
+                      <span class="min-w-0 flex-1 truncate pl-6 text-[11px] text-gray-500" [title]="campaign.campaignName" role="cell">{{
                         campaign.campaignName
                       }}</span>
                       <span class="w-24 shrink-0 text-right text-[11px] text-gray-500 tabular-nums" role="cell">{{ campaign.spend }}</span>
