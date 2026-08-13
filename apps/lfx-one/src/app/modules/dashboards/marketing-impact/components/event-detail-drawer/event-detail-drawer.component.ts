@@ -205,18 +205,6 @@ export class EventDetailDrawerComponent {
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
 
   /**
-   * The predicted range as the reader will see it, or null when it is not worth printing.
-   *
-   * Rounded here rather than compared raw: both ends render through `metricCount`, which rounds,
-   * so a 472.6–473.2 interval passes a `low !== high` test and then prints "(473–473)" — the very
-   * non-forecast that suppressing it was meant to hide. The model emits fractional counts, so
-   * sub-unit intervals are the expected shape rather than an edge case.
-   *
-   * Returns the rounded pair rather than a boolean so the template binds these exact numbers.
-   * A boolean would leave the template re-reading the raw nulls, which neither narrows for the
-   * type-checker nor guarantees it renders what the gate actually compared.
-   */
-  /**
    * Days remaining before the event, counting down, or null once it has passed.
    *
    * DAYS_LEFT_FROM_YESTERDAY is negative while an event is upcoming and rises toward 0 on the day
@@ -267,7 +255,19 @@ export class EventDetailDrawerComponent {
           filter: (item) => item.text !== 'Predicted high' && item.text !== 'Predicted low',
         },
       },
-      tooltip: { enabled: true },
+      tooltip: {
+        enabled: true,
+        callbacks: {
+          // Rounded to match the headline. Chart.js renders the raw datum by default, so hovering
+          // a point showed "444.471" beneath a card reading "444" — the same fractional person the
+          // metricCount pipe exists to remove, on the larger of the two surfaces.
+          //
+          // `parsed.y` is nullable because the current-year series is deliberately null past
+          // today; those points carry no value to label, so the row is dropped rather than
+          // rendered as a rounded zero.
+          label: (item) => (item.parsed.y === null ? '' : `${item.dataset.label}: ${formatNumber(Math.round(item.parsed.y))}`),
+        },
+      },
     },
     scales: {
       x: {

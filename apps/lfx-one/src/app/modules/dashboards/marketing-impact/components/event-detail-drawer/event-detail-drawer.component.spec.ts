@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { EventDetailDrawerComponent } from './event-detail-drawer.component';
 
@@ -44,6 +44,15 @@ describe('EventDetailDrawerComponent', () => {
 
   let fixture: ComponentFixture<EventDetailDrawerComponent>;
   let getEventDetail: ReturnType<typeof vi.fn>;
+
+  // The drawer is a PrimeNG overlay: it renders into document.body, NOT into the fixture host, so
+  // every assertion here queries the global document. Without teardown a previous test's overlay
+  // survives into the next one and those queries match the wrong DOM — order-dependent failures
+  // that pass in isolation and flake in a full run.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
 
   async function setup(impl: ReturnType<typeof vi.fn>): Promise<void> {
     getEventDetail = impl;
@@ -437,6 +446,92 @@ describe('EventDetailDrawerComponent', () => {
 
     const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
     expect(text).not.toContain('Days left');
+  });
+
+  // The pipe's whole reason for existing: the model emits fractional people, and formatNumber's
+  // sub-1,000 branch renders the raw float. Every other test here pre-rounds its fixtures, so
+  // deleting Math.round from the pipe left the suite green while "444.471" returned to the card.
+  it('rounds a fractional headline count for display', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 444.471,
+              priorYear: null,
+              predictedAvg: 488.918,
+              predictedLow: 400.024,
+              predictedHigh: 500.512,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('444');
+    expect(text).not.toContain('444.471');
+    expect(text).not.toContain('488.918');
+  });
+
+  // available: true with empty points is the partial success that hid the original bug: the
+  // headline arrives, the curve read fails, and the card rendered a heading above blank space.
+  // Nothing asserted this branch, so a template regression could restore the silence unnoticed.
+  it('says the curve is unavailable when the headline arrives without points', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 473,
+              priorYear: 400,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing-curve-unavailable"]')).toBeTruthy();
+    // The headline must survive: the point of the split reads is that one failing keeps the other.
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')?.textContent).toContain('473');
+  });
+
+  // The sibling caption, on the branch where the curve DOES render but carries no baseline.
+  it('says there is no prior event data when the curve renders without a baseline', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            hasPriorYear: false,
+            pacing: {
+              available: true,
+              daysLeft: -30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [{ daysToEvent: -30, current: 473, priorYear: null, predictedAvg: 500, predictedLow: 450, predictedHigh: 550 }],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing-no-prior"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-pacing-curve-unavailable"]')).toBeNull();
   });
 
   // Above 1,000 the display compacts to one decimal, so 1,240 and 1,244 round apart but both

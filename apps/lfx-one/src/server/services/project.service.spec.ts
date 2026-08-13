@@ -693,35 +693,12 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(curve!).not.toMatch(/SUM\(\s*(CUMULATIVE_(AVG|LOW|HIGH)_PREDICTED|PRIOR_EVENT_CUMULATIVE)_REGISTRATIONS\s*\)/);
     });
 
-    // The text assertions above pin the shape of the SQL; this pins the outcome. A rewrite that
-    // dedupes by some other means should keep passing, and one that drops the collapse should fail
-    // however it is spelled — the doubling was a real curve reading 2,488 where 1,244 was correct.
-    it('sums each registration type once when the warehouse returns duplicate rows', async () => {
-      const duplicated = [
-        { DAYS_TO_EVENT: -10, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 },
-        { DAYS_TO_EVENT: -10, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 },
-      ];
-      execute.mockImplementation((sql: string) => {
-        const text = String(sql);
-        if (text.includes('MARKETING_EVENT_REGISTRATIONS r')) return Promise.resolve({ rows: [eventRow] });
-        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
-          return Promise.resolve({ rows: [{ DAYS_LEFT: -30, CUR_REGS: 100, PRIOR: 90, PRED_AVG: 100, PRED_LOW: 95, PRED_HIGH: 105 }] });
-        }
-        // The curve read. Snowflake collapses the duplicates, so the driver returns one row per
-        // day — the mock returns two to prove the mapping does not re-multiply what SQL merged.
-        if (text.includes('DAYS_TO_EVENT')) return Promise.resolve({ rows: duplicated });
-        return Promise.resolve({ rows: [] });
-      });
-
-      const result = await service.getEventDetail('evt-1', 'tlf');
-
-      expect(result).not.toBeNull();
-      // One point per DAYS_TO_EVENT, carrying the single day's values rather than their sum.
-      const day = result!.pacing.points.filter((point) => point.daysToEvent === -10);
-      expect(day).toHaveLength(2);
-      expect(day.every((point) => point.predictedAvg === 100)).toBe(true);
-      expect(day.every((point) => point.priorYear === 90)).toBe(true);
-    });
+    // Deliberately NOT paired with a behavioural test here. The dedupe happens inside Snowflake,
+    // and `execute` is mocked at the driver boundary — downstream of the collapse — so any fixture
+    // this suite can write describes rows the query has ALREADY merged. A test asserting the
+    // mapper does not re-multiply them passes with the whole subquery deleted, which makes it read
+    // as coverage while binding nothing. The SQL assertions above are the honest guard at this
+    // level; proving the collapse itself needs a live-warehouse test the suite does not have.
 
     // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
     // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a

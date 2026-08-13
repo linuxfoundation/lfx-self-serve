@@ -7939,8 +7939,10 @@ export class ProjectService {
   /**
    * Get the per-event registration-pacing summary + daily curve from
    * MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is day-grained and carries both. It is
-   * mirrored from PCC and may not exist yet; any failure (missing table, no rows) resolves to an
-   * unavailable pacing block so the drawer degrades to its placeholder rather than erroring.
+   * mirrored from PCC and may not exist yet, so a MISSING TABLE or an empty result resolves to an
+   * unavailable pacing block and the drawer degrades to its placeholder. Every other failure —
+   * timeout, permissions, an invalid column — propagates: those are outages, and swallowing them
+   * is what let a query against a non-existent table look like an event with no pacing data.
    */
   private async getEventPacing(eventId: string): Promise<EventPacing> {
     const unavailable: EventPacing = {
