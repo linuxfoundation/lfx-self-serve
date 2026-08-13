@@ -311,11 +311,19 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     // the real Pixel 5 layout the mobile trigger's measured x (~115px, confirmed via a live
     // authenticated session) sits close enough to the rail's fixed x=56 that any tolerance loose
     // enough to avoid flaking on icon-group width (canImpersonate() adds/removes an icon,
-    // shifting the trailing `ml-auto` group) would also pass while the bug is present. Asserting
-    // `position` directly targets exactly what the `@media (min-width: 1024px)` scoping controls:
+    // shifting the trailing `ml-auto` group) would also pass while the bug is present.
+    //
+    // Read `position` off the actual `.p-popover` panel, not `menu` — `menu` (create-menu-mobile)
+    // is the projected content div PrimeNG renders *inside* the popover, and `position` isn't an
+    // inherited CSS property, so reading it off that inner div would always resolve to the UA
+    // default `static` regardless of the outer panel's state, making the assertion a no-op. The
+    // rail-anchoring rule (and PrimeNG's own base stylesheet) target the outer panel element,
+    // identified here by its unique `lfx-create-popover` class.
+    const panel = page.locator('.p-popover.lfx-create-popover');
+    const menuPosition = await panel.evaluate((el) => getComputedStyle(el).position);
     // PrimeNG's own anchor-relative default sets `position: absolute`; the regressed (rail-pinned)
-    // state is `position: fixed`.
-    const menuPosition = await menu.evaluate((el) => getComputedStyle(el).position);
-    expect(menuPosition).not.toBe('fixed');
+    // state is `position: fixed`. Assert the specific expected value, not just an exclusion, so an
+    // unrelated regression to some other value (e.g. `static`) doesn't slip through either.
+    expect(menuPosition).toBe('absolute');
   });
 });
