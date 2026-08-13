@@ -1113,11 +1113,17 @@ export interface HubSpotMarketingEmail {
  * because the wire result carries no pagination field and a capped 500 is byte-identical to a
  * complete 500.
  *
- * A FILTERED search is deliberately UNBOUNDED, because truncating one would report an email that
- * exists as absent. The cost is latency: `q` never reaches HubSpot — its list endpoint cannot be
- * queried by name or subject — so campaign-service walks every page and matches name-or-subject
- * case-insensitively in-process. On a large portal a typed query is a slow call, which is why the
- * picker must debounce rather than search per keystroke.
+ * A FILTERED search is exempt from that 500-row cap — truncating one would report an email that
+ * exists as absent — but it is NOT unbounded, which an earlier version of this comment claimed.
+ * campaign-service walks at most `maxListPages = 200` and returns an error on exhausting them
+ * rather than a partial list, so a filtered search is COMPLETE-OR-ERROR: it either matched across
+ * every page or it failed. That is why `possiblyTruncated` is always false for one.
+ *
+ * The cost is latency: `q` never reaches HubSpot — its list endpoint cannot be queried by name or
+ * subject — so campaign-service walks the pages and matches name-or-subject case-insensitively
+ * in-process. On a large portal a typed query is a slow call, which is why the picker must
+ * debounce rather than search per keystroke, and why callers should not assume unlimited
+ * traversal time.
  */
 export interface HubSpotEmailSearchResult {
   enabled: boolean;

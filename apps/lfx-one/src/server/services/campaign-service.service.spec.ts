@@ -1790,8 +1790,11 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     const capped = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
     expect(capped.possiblyTruncated).toBe(true);
 
-    // A FILTERED search is unbounded server-side, so it is never truncated — flagging it would
-    // tell the user to narrow a search that already returned everything matching.
+    // A FILTERED search is exempt from the 500-row cap and is COMPLETE-OR-ERROR within its
+    // 200-page bound — it either matched across every page or it failed, never a partial list. So
+    // it is never truncated, and flagging it would tell the user to narrow a search that already
+    // returned everything matching. (Not "unbounded": the walk does stop, it just fails loudly
+    // rather than answering with a subset.)
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: Array.from({ length: 500 }, (_, i) => ({ id: String(i) })) } });
     const filtered = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', 'kubecon');
     expect(filtered.possiblyTruncated).toBe(false);
