@@ -162,12 +162,15 @@ export class CampaignController {
     // `'emial'` falls past it into those same paid-only checks and produces the same misleading
     // message, for a caller whose only mistake was a misspelling.
     //
-    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES` rather than a fourth hardcoded list — the
-    // service already keeps its own copy, and a third one here would be the one that drifts.
+    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES`, and so is the MESSAGE below — the sibling
+    // `platform` check already interpolates its own Set for exactly this reason. The service now
+    // derives from the same constant too, so this is the single source of truth; a hardcoded tail
+    // in the error string would have been the last copy left to drift, and the one a reader trusts
+    // most because it is what the API actually says.
     const supportedDeliveryTypes = new Set<string>(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
     if (body.deliveryType !== undefined && !supportedDeliveryTypes.has(body.deliveryType)) {
       _next(
-        ServiceValidationError.forField('deliveryType', 'deliveryType must be one of: paid-marketing, email', {
+        ServiceValidationError.forField('deliveryType', `deliveryType must be one of: ${[...supportedDeliveryTypes].join(', ')}`, {
           operation: 'campaign_refine_brief',
           service: 'campaign_controller',
           path: req.path,
