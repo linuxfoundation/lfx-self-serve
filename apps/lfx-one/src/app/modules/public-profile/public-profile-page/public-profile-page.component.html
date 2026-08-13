@@ -2,7 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (notFound()) {
-  <lfx-public-profile-not-found [isPrivate]="isPrivate()" data-testid="public-profile-not-found"></lfx-public-profile-not-found>
+  <!-- Keep the "Powered by LFX" branding header on the not-found/private view, matching the loaded profile chrome. -->
+  <div class="flex min-h-screen flex-col bg-gray-50">
+    <div class="mx-auto w-full max-w-[1240px] px-4 sm:px-10">
+      <lfx-public-profile-topbar data-testid="public-profile-topbar"></lfx-public-profile-topbar>
+    </div>
+    <lfx-public-profile-not-found [isPrivate]="isPrivate()" data-testid="public-profile-not-found"></lfx-public-profile-not-found>
+  </div>
 } @else {
   <div class="min-h-screen bg-white text-gray-900">
     <div class="mx-auto max-w-[1240px] px-4 pb-20 sm:px-10">
