@@ -473,9 +473,10 @@ export class OrgLensProjectDetailService {
         ecosystem: isNonLf || !viewing ? null : (this.mapBand(viewing.LEVEL_ECOSYSTEM) ?? 'silent'),
       },
       // Only the all-time axis is variable/bucketed; 1y/2y stay client-derived (periods omitted).
-      // Tested against undefined rather than truthiness on purpose: an all-time project with an empty
-      // bucket spine yields `[]`, which must still be emitted, or the cache validator would reject the
-      // very block that was just written and re-query Snowflake on every request.
+      // The requirement this states: an all-time project with an empty bucket spine yields `[]`, and
+      // that MUST still be emitted, or `hasAdaptivePeriods` would reject the block just written. An
+      // empty array is truthy, so a truthiness test behaves identically here; the explicit undefined
+      // check just makes the intent legible without relying on the reader recalling that.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
     if (key !== null) {
@@ -921,7 +922,8 @@ export class OrgLensProjectDetailService {
 
   /**
    * Adaptive-bucket axis label for the wire `periods[]` (D9): monthly `MMM YYYY`, quarterly `Q# YYYY`,
-   * yearly `YYYY`, multi-year `YYYY–YYYY`. Derived from the bucket's start (and end for multi-year).
+   * yearly `YYYY`, multi-year `YYYY–YYYY`, and `YYYY–?` for a multi-year bucket whose end date is
+   * missing or unparseable. Derived from the bucket's start (and end for multi-year).
    */
   private bucketLabel(granularity: string | null, start: Date | string | null, end: Date | string | null): string {
     const startDate = this.parseUtcDate(start);
