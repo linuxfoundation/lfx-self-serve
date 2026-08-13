@@ -43,8 +43,10 @@
       </div>
     }
 
-    <!-- `aria-describedby` on the input reaches these, so they are read on the next focus of the field
-         rather than when they appear — no composer error message is in a live region yet. -->
+    <!-- `aria-describedby` on the input reaches the two title errors below, so each is read the next time
+         the field takes focus rather than when it appears — no composer error message is in a live region
+         yet. Matters for both: `required` only shows after blur, and `maxlength` typically shows while the
+         field still has focus. -->
     @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
       <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
     }
