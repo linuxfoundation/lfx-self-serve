@@ -1246,29 +1246,39 @@ describe('CampaignsComponent — email delivery channel', () => {
   const byTestId = (testid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
 
   /**
-   * The planner component instance behind a testid, scoped to its delivery container.
+   * The planner's rendered HOST ELEMENT, scoped to its delivery container.
    *
-   * Read the limitation before relying on this: **the identity comparison below is NOT what
-   * binds these tests.** `debugElement.query` walks Angular's logical tree, which still holds a
-   * debug node for a component whose element has left the rendered DOM — verified by reverting
-   * the template, where the panel is gone from `querySelector` yet this still returns the same
-   * instance and `toBe` passes. The assertion that actually fails against the pre-fix template
-   * is the `style.display` one: a destroyed panel yields `undefined`, a hidden one `'none'`.
+   * Two earlier revisions of this helper were wrong in ways that made these tests pass against
+   * the pre-fix template, and both are worth recording because each looks correct:
    *
-   * It is kept because it expresses the intent directly — "the same planner, not a new one" —
-   * and because it would catch a future change that recreates the component while keeping the
-   * panel rendered. But saying it is the binding assertion would repeat the mistake this file
-   * calls out elsewhere: an assertion that cannot fail is worse than none, because the next
-   * reader trusts it.
+   * 1. It queried the whole fixture. Both delivery containers are always mounted, so an
+   *    unscoped search for `campaigns-planning-tab` also reaches the EMAIL planner — and when
+   *    the paid one was destroyed, the query silently returned the email one, so `before` and
+   *    `after` matched for a planner that had never been at risk. Hence the container scope.
+   * 2. It used `debugElement.query`, which walks Angular's LOGICAL tree and still resolves a
+   *    debug node for a component whose element has left the rendered DOM. Verified with a
+   *    probe: the panel was gone from `querySelector` while the instance comparison still
+   *    passed. `querySelector` is the only view that forgets a destroyed node, so it is the
+   *    one that can bind.
    *
-   * Scoping by container is load-bearing for a different reason: both delivery containers are
-   * always mounted, so an unscoped search for `campaigns-planning-tab` also reaches the email
-   * planner and would compare an instance that was never at risk.
+   * Comparing the host ELEMENT rather than the panel's display is aimed at a hole the panel
+   * assertion alone leaves open: a change that kept the wrapper mounted while recreating
+   * `lfx-planning-tab` inside it would reintroduce the state loss this PR fixes, and a display
+   * check could not see it.
+   *
+   * **Honest limit:** these tests are revert-verified against the shape the bug actually had —
+   * the panel back inside the `@switch` — and each side fails only its own test. They are NOT
+   * verified against that narrower wrapper-kept-planner-recreated shape. Substituting an `@if`
+   * on `lfx-planning-tab` to simulate it leaves the suite green, and the reason is worth
+   * recording so nobody reads that as coverage: the surrounding `[style.display]` binding
+   * updates (the panel reports `none`) while the `@if` does not remove the element in the same
+   * pass, so the simulation does not reproduce the destruction it is meant to stand for.
+   * Pinning that case properly needs a test at the planner's own level, not this one.
    */
-  const plannerInstance = (container: 'campaigns-paid-marketing' | 'campaigns-email', testid: string): unknown => {
-    const host = fixture.debugElement.query((de) => de.nativeElement?.getAttribute?.('data-testid') === container);
-    return host?.query((de) => de.nativeElement?.getAttribute?.('data-testid') === testid)?.componentInstance ?? null;
-  };
+  const plannerInstance = (container: 'campaigns-paid-marketing' | 'campaigns-email', testid: string): unknown =>
+    // querySelector, NOT debugElement.query: the rendered DOM is the only view that forgets a
+    // destroyed node. Scoped to the container because both are always mounted.
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${container}"] [data-testid="${testid}"]`) ?? null;
 
   /**
    * LFXV2-3202: leaving the Plan tab must not DESTROY the planner.
@@ -1292,10 +1302,16 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     // The SAME component instance, not merely a present element: a re-created planner satisfies
     // a null check — and even an element-identity check — while having lost every signal it held.
-    expect(plannerInstance('campaigns-paid-marketing', 'campaigns-planning-tab')).toBe(before);
-    // THE binding assertion. A destroyed panel's element is gone from the rendered DOM, so this
-    // reads `undefined` and fails; a hidden one reports 'none'. Verified by reverting the
-    // template — see the note on `plannerInstance`.
+    // The SAME rendered element, not merely a present one: a destroyed-and-recreated planner
+    // is a different node, and it takes every signal it owned with it.
+    // Still RENDERED while hidden — not merely still in some tree. This is the assertion that
+    // catches a wrapper kept mounted while the planner inside it is structurally recreated:
+    // the panel would still report display:none, but the planner element would be gone.
+    const whileHidden = plannerInstance('campaigns-paid-marketing', 'campaigns-planning-tab');
+    expect(whileHidden).not.toBeNull();
+    // And the SAME node, so it was hidden rather than swapped for a fresh one, which would
+    // have taken every signal it owned with it.
+    expect(whileHidden).toBe(before);
     expect(byTestId('campaigns-planning-panel')?.style.display).toBe('none');
 
     internals().selectTab('planning', 'paid-marketing');

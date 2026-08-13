@@ -85,9 +85,12 @@
 
     <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
          the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
-         structural @switch destroyed an in-progress brief on every trip to another tab. The other
-         email panels stay in the lazy @switch — the Implement panel reads `emailBriefOutput()`,
-         which the parent holds. -->
+         structural @switch destroyed an in-progress brief on every trip to another tab.
+
+         The other email panels stay in the lazy @switch, but NOT for the paid side's reason —
+         they are static placeholders with no component, no ngOnInit and no local state, so
+         eager-mounting them would cost nothing. They stay switched so both containers keep the
+         same structure and the paid side's carve-out is not re-litigated one container over. -->
     <div
       role="tabpanel"
       id="email-panel-planning"
