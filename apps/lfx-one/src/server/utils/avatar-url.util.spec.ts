@@ -47,6 +47,16 @@ describe('avatar-url.util', () => {
       process.env['CDN_URL_PREFIX'] = '  https://cdn.example.com/  ';
       expect(getAvatarCdnPrefix()).toBe('https://cdn.example.com');
     });
+
+    it('rejects a prefix with a query string', () => {
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com?token=x';
+      expect(() => getAvatarCdnPrefix()).toThrow(/CDN_URL_PREFIX must be an absolute http\(s\) URL/);
+    });
+
+    it('rejects a prefix with a fragment', () => {
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com/base#frag';
+      expect(() => getAvatarCdnPrefix()).toThrow(/CDN_URL_PREFIX must be an absolute http\(s\) URL/);
+    });
   });
 
   describe('toAvatarKeySegment / toAvatarObjectKey', () => {

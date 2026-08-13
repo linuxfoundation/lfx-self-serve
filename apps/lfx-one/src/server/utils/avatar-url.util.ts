@@ -51,7 +51,11 @@ export function getAvatarCdnPrefix(): string | null {
   } catch {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
-  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
+  // A query or fragment also can't survive buildAvatarUrl's plain string concatenation: appending
+  // "/avatars/<key>" after "?token=x" lands the avatar path inside the query string instead of the
+  // path, and after "#frag" it's hidden in the fragment — either way the resulting URL doesn't
+  // point at the object it claims to.
+  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || parsed.search || parsed.hash) {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
   return trimmedCdnPrefix.replace(/\/+$/, '');

@@ -419,6 +419,16 @@ export class ProfileLayoutComponent {
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {
     this.loading.set(false);
     this.combinedProfile = profile;
+
+    // Seed the shared avatar signal from this response, with the same no-clobber guard as
+    // UserService's own post-hydration fetch. This response is the profile GET itself, so unlike
+    // that guard (which runs inside afterNextRender and never fires during SSR) this one also runs
+    // server-side — the profile page's first render already carries the uploaded avatar instead of
+    // waiting on a second, client-only fetch to correct it (LFXV2-2628).
+    if (profile.profile?.picture && this.userService.uploadedAvatarUrl() === null) {
+      this.userService.uploadedAvatarUrl.set(profile.profile.picture);
+    }
+
     return {
       firstName: profile.user.first_name || '',
       lastName: profile.user.last_name || '',
