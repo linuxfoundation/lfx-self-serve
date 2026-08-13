@@ -37,7 +37,17 @@ export function getAvatarCdnPrefix(): string | null {
   if (!cdnPrefix) {
     return null;
   }
-  if (!/^https?:\/\//i.test(cdnPrefix)) {
+  // New URL() (rather than a `^https?:\/\//` regex) also rejects a scheme-only value like
+  // "https://" — that string starts with the required prefix but has no hostname, and a regex
+  // check alone would let it through and silently produce a malformed "https:/avatars/..." URL
+  // after the trailing-slash trim below.
+  let parsed: URL;
+  try {
+    parsed = new URL(cdnPrefix);
+  } catch {
+    throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
+  }
+  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
   return cdnPrefix.replace(/\/+$/, '');

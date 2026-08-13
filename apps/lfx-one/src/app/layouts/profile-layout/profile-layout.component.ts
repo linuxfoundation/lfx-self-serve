@@ -100,10 +100,11 @@ export class ProfileLayoutComponent {
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
 
-  // Avatar image URL: prefer the uploaded avatar (auth0 user_metadata.picture) and fall back to
-  // the always-present Auth0 OIDC picture claim, so this rail never shows a placeholder for a user
-  // who simply hasn't uploaded a custom avatar (LFXV2-2628).
-  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || this.userService.user()?.picture || '');
+  // Avatar image URL: read the shared signal (uploaded avatar > Auth0 OIDC picture claim) instead
+  // of this component's own profileData fetch — that GET is eventually consistent (see comment
+  // above on fetchedProfileData), so after an upload elsewhere this rail must not fall back to its
+  // own possibly-stale copy (LFXV2-2628).
+  public readonly avatarUrl = this.userService.effectiveAvatarUrl;
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
