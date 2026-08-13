@@ -144,6 +144,21 @@ describe('BrandKitService', () => {
       await expect(service.getResult(req, 's')).resolves.toEqual({ status: 'pending' });
     });
 
+    it('falls back to an older hash-valid envelope when a newer candidate fails the sha recompute', async () => {
+      const v1 = buildEnvelope();
+      const v2Doc = `${buildDocument()}\nRevised.`;
+      const tamperedV2 = buildEnvelope({ version: 2, document_markdown: v2Doc, content_sha256: 'a'.repeat(64) });
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        JSON.stringify({ type: 'llm_done', content: v1 }),
+        JSON.stringify({ type: 'llm_done', content: tamperedV2 }),
+      ]);
+
+      const result = await service.getResult(req, 's');
+
+      expect(result.status).toBe('ready');
+      expect(result.version).toBe(1);
+    });
+
     it('prefers the highest version among valid envelopes regardless of event order', async () => {
       const v2Doc = `${buildDocument()}\nRevised.`;
       const v1 = buildEnvelope();

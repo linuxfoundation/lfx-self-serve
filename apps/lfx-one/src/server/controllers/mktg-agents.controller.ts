@@ -105,7 +105,8 @@ export class MktgAgentsController {
         return;
       }
 
-      // Follow-up: only the session's creator may post into it (reads stay open).
+      // Follow-up: only the session's creator may post into it (reads are
+      // owner-gated too — see history()).
       if (!verifySessionOwnerToken(ownerToken, userId, validSessionId)) {
         next(
           new AuthorizationError('You do not have permission to post to this session.', { operation: 'mktg_agents_chat', service: 'mktg_agents_controller' })
@@ -123,8 +124,12 @@ export class MktgAgentsController {
   }
 
   /**
-   * GET /api/mktg-agents/history?sessionId=
+   * GET /api/mktg-agents/history?sessionId=&ownerToken=
    * Returns the session's messages mapped to the chat format.
+   * Session transcripts can carry sensitive user input (e.g. the Brand Kit
+   * intake answers ride the trigger_message), so reads require the same
+   * creator-binding owner-token proof as writes — a session id alone must
+   * never unlock another user's transcript.
    */
   public async history(req: Request, res: Response, next: NextFunction): Promise<void> {
     const sessionId = getStringQueryParam(req, 'sessionId')?.trim() || undefined;
@@ -135,6 +140,29 @@ export class MktgAgentsController {
           operation: 'mktg_agents_history',
           service: 'mktg_agents_controller',
           path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'mktg_agents_history',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const ownerToken = getStringQueryParam(req, 'ownerToken')?.trim() || undefined;
+    if (!verifySessionOwnerToken(ownerToken, userId, sessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'mktg_agents_history',
+          service: 'mktg_agents_controller',
         })
       );
       return;

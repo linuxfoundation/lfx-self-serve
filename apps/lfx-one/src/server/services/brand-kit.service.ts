@@ -46,19 +46,6 @@ export class BrandKitService {
       return { status: 'pending' };
     }
 
-    // Contract §3 step 2 (kept from the persistence path): recompute the sha
-    // over the UTF-8 bytes and require equality — envelope integrity rests
-    // wholly on the BFF (A2/A3 verdicts). A mismatch means the candidate is
-    // not trustworthy; treat as still pending rather than surfacing bad data.
-    const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-    if (recomputedSha !== envelope.content_sha256) {
-      logger.warning(req, 'brand_kit_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-        expected: envelope.content_sha256,
-        recomputed: recomputedSha,
-      });
-      return { status: 'pending' };
-    }
-
     logger.info(req, 'brand_kit_result', 'Brand Kit document ready', {
       project: envelope.project,
       version: envelope.version,
@@ -81,6 +68,10 @@ export class BrandKitService {
    * for envelope candidates and return the authoritative one: the highest
    * `version` among valid candidates, with the latest occurrence winning ties
    * (later events supersede earlier drafts within a session).
+   *
+   * The sha256 integrity gate runs PER CANDIDATE, before version selection —
+   * a newer candidate that fails the recompute must not shadow an older
+   * hash-valid envelope (it is simply not a valid candidate).
    */
   private findAuthoritativeEnvelope(req: Request, payloads: string[]): BrandKitEnvelope | null {
     let best: BrandKitEnvelope | null = null;
@@ -94,6 +85,21 @@ export class BrandKitService {
         if (result.valid) {
           // Safe: validateBrandKitEnvelope passed every schema gate.
           const envelope = candidate as BrandKitEnvelope;
+
+          // Contract §3 step 2 (kept from the persistence path): recompute the
+          // sha over the UTF-8 bytes and require equality — envelope integrity
+          // rests wholly on the BFF (A2/A3 verdicts). A mismatch disqualifies
+          // THIS candidate only; older hash-valid envelopes stay eligible.
+          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+          if (recomputedSha !== envelope.content_sha256) {
+            invalidCount++;
+            logger.warning(req, 'brand_kit_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+              expected: envelope.content_sha256,
+              recomputed: recomputedSha,
+            });
+            continue;
+          }
+
           if (!best || envelope.version >= best.version) {
             best = envelope;
           }

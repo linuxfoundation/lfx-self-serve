@@ -11,7 +11,7 @@ const mktgAgentsController = new MktgAgentsController();
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
 
-// GET /api/mktg-agents/history - fetch mapped session history
+// GET /api/mktg-agents/history - fetch mapped session history (owner-token gated)
 router.get('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
 
 // POST /api/mktg-agents/brand-kit/generate - start a one-shot form-mode Brand Kit generation
