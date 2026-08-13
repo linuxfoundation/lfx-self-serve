@@ -91,6 +91,8 @@
         (click)="toggleCreateMenu($event)"
         data-testid="create-rail-button"
         aria-label="Create new artifact"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="createMenu.overlayVisible"
         pTooltip="New"
         tooltipPosition="right"
         class="group mb-3 flex flex-col items-center gap-1 w-full">
