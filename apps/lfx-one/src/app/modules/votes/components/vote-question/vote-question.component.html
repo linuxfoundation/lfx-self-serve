@@ -156,7 +156,9 @@
                 [dataTest]="'vote-comment-prompt-textarea-' + cIdx">
               </lfx-textarea>
               <div class="flex justify-between">
-                @if (commentPromptData.promptControl.touched && commentPromptData.promptControl.errors?.['maxCodePoints']) {
+                @if (commentPromptData.promptControl.touched && commentPromptData.promptControl.errors?.['trimmedRequired']) {
+                  <p class="text-red-500 text-xs">Comment question is required.</p>
+                } @else if (commentPromptData.promptControl.touched && commentPromptData.promptControl.errors?.['maxCodePoints']) {
                   <p class="text-red-500 text-xs">Comment question must be {{ commentPromptMaxLength }} characters or fewer.</p>
                 } @else {
                   <span></span>

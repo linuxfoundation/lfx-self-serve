@@ -94,6 +94,21 @@ const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
 function trimTrailingPunctuation(url: string): string {
   let trimmed = url;
 
+  // Tally each bracket pair's balance up front so every strip below is O(1) — re-counting per strip would compound to O(n^2) on adversarial input.
+  // Punctuation stripping never removes bracket chars (the sets are disjoint), so the tallies stay valid across the fixpoint loop.
+  const unmatchedClosers = new Map<string, number>();
+  for (const [closer, opener] of Object.entries(TRAILING_BRACKETS)) {
+    let balance = 0;
+    for (const char of trimmed) {
+      if (char === closer) {
+        balance++;
+      } else if (char === opener) {
+        balance--;
+      }
+    }
+    unmatchedClosers.set(closer, balance);
+  }
+
   // Fixpoint loop: stripping an unmatched bracket can expose new trailing punctuation
   // (`https://example.com/page.)` → strip `)` → now-trailing `.`), so the two passes
   // re-run until neither strips anything. Each pass visits each char at most once.
@@ -107,17 +122,14 @@ function trimTrailingPunctuation(url: string): string {
     }
 
     let lastChar = trimmed.charAt(trimmed.length - 1);
-    let opener = TRAILING_BRACKETS[lastChar];
-    while (opener) {
-      const opens = trimmed.split(opener).length - 1;
-      const closes = trimmed.split(lastChar).length - 1;
-      if (closes <= opens) {
-        break;
-      }
+    let balance = unmatchedClosers.get(lastChar);
+    while (balance !== undefined && balance > 0) {
       trimmed = trimmed.slice(0, -1);
+      balance--;
+      unmatchedClosers.set(lastChar, balance);
       changed = true;
       lastChar = trimmed.charAt(trimmed.length - 1);
-      opener = TRAILING_BRACKETS[lastChar];
+      balance = unmatchedClosers.get(lastChar);
     }
   }
 
