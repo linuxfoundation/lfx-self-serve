@@ -255,6 +255,19 @@ export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform
 export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
 
 /**
+ * Sections of the meeting composer, in rail order.
+ * @description `required` drives both the create-mode forward-navigation lock and the rail's
+ * completion marker: required sections complete on validity, optional ones on visit.
+ */
+export const MEETING_COMPOSER_SECTIONS = [
+  { id: 'details-access', label: 'Details & Access', icon: 'fa-light fa-circle-info', required: true },
+  { id: 'date-schedule', label: 'Date & Schedule', icon: 'fa-light fa-calendar-days', required: true },
+  { id: 'platform-features', label: 'Platform & Features', icon: 'fa-light fa-video', required: false },
+  { id: 'guests', label: 'Guests', icon: 'fa-light fa-users', required: false },
+  { id: 'agenda-resources', label: 'Agenda & Resources', icon: 'fa-light fa-list-check', required: false },
+] as const;
+
+/**
  * PrimeNG stepper panel value for the Meeting Details step (1-based)
  * @description Used when navigating back to Meeting Details from a later step
  */

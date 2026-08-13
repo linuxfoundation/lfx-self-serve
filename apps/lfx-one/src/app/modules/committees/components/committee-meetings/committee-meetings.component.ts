@@ -23,6 +23,7 @@ import {
   surveyToCalendarEvent,
   voteToCalendarEvent,
 } from '@lfx-one/shared/utils';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -60,6 +61,7 @@ export class CommitteeMeetingsComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly composer = inject(MeetingComposerService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -80,10 +82,6 @@ export class CommitteeMeetingsComponent {
   // Convenience computed signals — avoids repeating viewMode() === '...' in template
   public isListView = computed(() => this.viewMode() === 'list');
   public isCalendarView = computed(() => this.viewMode() === 'calendar');
-
-  // Query params for the create-meeting route. Includes project slug so writerGuard
-  // can resolve write access — without it the guard redirects to the lens overview.
-  public createMeetingQueryParams: Signal<Record<string, string>> = this.initCreateMeetingQueryParams();
 
   // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
@@ -176,7 +174,7 @@ export class CommitteeMeetingsComponent {
     void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
-  /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
+  /** Checks writer permission fresh before opening the composer — prevents a demoted member from scheduling. */
   protected onScheduleMeeting(): void {
     if (this.creating()) return;
     const committee = this.committee();
@@ -198,24 +196,13 @@ export class CommitteeMeetingsComponent {
             deny();
             return;
           }
-          void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
+          this.composer.open({ mode: 'create', committeeUid: committee.uid });
         },
         error: () => deny(),
       });
   }
 
   // Private initializer functions
-
-  private initCreateMeetingQueryParams(): Signal<Record<string, string>> {
-    return computed(() => {
-      const committee = this.committee();
-      const params: Record<string, string> = { committee_uid: committee.uid };
-      if (committee.project_slug) {
-        params['project'] = committee.project_slug;
-      }
-      return params;
-    });
-  }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
     return computed(() => {

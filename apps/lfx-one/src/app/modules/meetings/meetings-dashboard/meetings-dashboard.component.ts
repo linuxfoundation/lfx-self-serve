@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -87,6 +88,7 @@ export class MeetingsDashboardComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
+  private readonly composer = inject(MeetingComposerService);
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -252,6 +254,10 @@ export class MeetingsDashboardComponent {
     this.calendarLoading = computed(() =>
       this.activeLens() === 'me' ? this.meetingsLoading() || this.pastMeetingsLoading() : this.fpUpcomingLoading() || this.fpPastLoading()
     );
+  }
+
+  public onCreateMeeting(): void {
+    this.composer.open({ mode: 'create' });
   }
 
   public refreshMeetings(): void {

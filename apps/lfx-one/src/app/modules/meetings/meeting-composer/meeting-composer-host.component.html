@@ -1,0 +1,116 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Meeting composer drawer (LFXV2-3234) -->
+<p-drawer
+  [visible]="composer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="true"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="meeting-composer-drawer">
+  <ng-template #header>
+    <div class="flex min-w-0 flex-col" data-testid="meeting-composer-header">
+      <span class="truncate text-lg font-semibold text-gray-900">
+        {{ composer.isEditMode() ? 'Edit meeting' : 'Create meeting' }}
+      </span>
+      @if (composer.isEditMode() && formService.meeting(); as meeting) {
+        <span class="truncate text-sm text-gray-500">{{ meeting.title }}</span>
+      }
+    </div>
+  </ng-template>
+
+  <div class="flex h-full flex-col gap-4">
+    <!-- Temporary flat section switcher — replaced by the rail in LFXV2-3240 -->
+    <nav class="flex flex-wrap gap-2 border-b border-gray-200 pb-3" aria-label="Composer sections" data-testid="meeting-composer-sections">
+      @for (section of sections; track section.id) {
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium"
+          [class]="section.id === composer.activeSection() ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
+          [attr.aria-current]="section.id === composer.activeSection()"
+          [attr.data-testid]="'meeting-composer-section-' + section.id"
+          (click)="onSectionChange(section.id)">
+          <i [class]="section.icon" aria-hidden="true"></i>
+          {{ section.label }}
+        </button>
+      }
+    </nav>
+
+    @if (formService.loading()) {
+      <p class="text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
+    } @else {
+      <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
+        @switch (composer.activeSection()) {
+          @case ('details-access') {
+            <lfx-meeting-type-selection [form]="formService.form()" />
+          }
+          @case ('date-schedule') {
+            <lfx-meeting-details [form]="formService.form()" />
+          }
+          @case ('platform-features') {
+            <lfx-meeting-platform-features [form]="formService.form()" />
+          }
+          @case ('guests') {
+            @if (formService.meetingId(); as meetingUid) {
+              <lfx-meeting-registrants-manager
+                [meetingUid]="meetingUid"
+                [form]="formService.form()"
+                [registrantUpdates]="formService.registrantUpdates()"
+                (registrantUpdatesChange)="onRegistrantUpdatesChange($event)"
+                [refresh]="formService.registrantUpdatesRefresh$"
+                [committeeContext]="formService.committeeContext()" />
+            } @else {
+              <p class="text-sm text-gray-500" data-testid="meeting-composer-guests-locked">Create the meeting first to invite guests.</p>
+            }
+          }
+          @case ('agenda-resources') {
+            <lfx-meeting-resources-summary
+              [form]="formService.form()"
+              [meetingId]="formService.meetingId()"
+              [existingAttachments]="formService.attachments()"
+              [isEditMode]="formService.isEditMode()"
+              [deletingAttachmentId]="formService.deletingAttachmentId()"
+              [pendingAttachmentDeletions]="formService.pendingAttachmentDeletions()"
+              (deleteAttachment)="formService.deleteAttachment($event)"
+              (undoDeleteAttachment)="formService.undoDeleteAttachment($event)"
+              (deleteLinkAttachment)="formService.deleteLinkAttachment($event)" />
+          }
+        }
+      </div>
+    }
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-between gap-2 border-t border-gray-200 pt-3" data-testid="meeting-composer-footer">
+      <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="meeting-composer-cancel" (onClick)="composer.close()" />
+
+      <div class="flex items-center gap-2">
+        @if (!composer.isEditMode() && activeIndex() > 0) {
+          <lfx-button label="Back" severity="secondary" [outlined]="true" size="small" data-testid="meeting-composer-back" (onClick)="onBack()" />
+        }
+
+        @if (composer.isEditMode()) {
+          <lfx-button
+            label="Save changes"
+            size="small"
+            [loading]="formService.submitting()"
+            [disabled]="!canSubmit()"
+            data-testid="meeting-composer-save"
+            (onClick)="onSubmit()" />
+        } @else if (isLastSection()) {
+          <lfx-button
+            label="Create meeting"
+            size="small"
+            [loading]="formService.submitting()"
+            [disabled]="!canSubmit()"
+            data-testid="meeting-composer-create"
+            (onClick)="onSubmit()" />
+        } @else {
+          <lfx-button label="Next" size="small" [disabled]="!canProceed()" data-testid="meeting-composer-next" (onClick)="onNext()" />
+        }
+      </div>
+    </div>
+  </ng-template>
+</p-drawer>

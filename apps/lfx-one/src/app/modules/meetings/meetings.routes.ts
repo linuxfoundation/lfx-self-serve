@@ -14,13 +14,13 @@ export const MEETING_ROUTES: Routes = [
   },
   {
     path: 'create',
-    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    loadComponent: () => import('./meeting-composer/meeting-composer-route.component').then((m) => m.MeetingComposerRouteComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'meetings' },
   },
   {
     path: ':id/edit',
-    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    loadComponent: () => import('./meeting-composer/meeting-composer-route.component').then((m) => m.MeetingComposerRouteComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'meetings' },
   },

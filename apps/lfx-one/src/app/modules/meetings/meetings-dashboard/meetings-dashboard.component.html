@@ -19,7 +19,7 @@
               [attr.data-testid]="'meeting-create-button'"
               label="Create Meeting"
               size="small"
-              [routerLink]="['/meetings', 'create']">
+              (onClick)="onCreateMeeting()">
             </lfx-button>
           }
         </div>

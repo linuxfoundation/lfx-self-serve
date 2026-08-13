@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import { TagSeverity } from './components.interface';
+import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -1352,4 +1353,50 @@ export interface MeLensMeetingFilters {
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
+}
+
+/** Outcome of one batched registrant operation (add / update / delete) issued on composer submit. */
+export interface MeetingRegistrantOperationResult {
+  type: 'add' | 'update' | 'delete';
+  success: number;
+  failed: number;
+}
+
+/** Aggregated outcome of the attachment deletions, file uploads, and link creations run on submit. */
+export interface MeetingAttachmentOperationResults {
+  deletions: { successes: number; failures: string[] };
+  uploads: { successes: PresignAttachmentResponse[]; failures: { fileName: string; error: unknown }[] };
+  links: { successes: MeetingAttachment[]; failures: { linkName: string; error: unknown }[] };
+}
+
+/** Whether the meeting composer is creating a new meeting or editing an existing one. */
+export type MeetingComposerMode = 'create' | 'edit';
+
+/**
+ * Identifier of a meeting composer section.
+ * Derived from {@link MEETING_COMPOSER_SECTIONS} so the union stays in sync with the rail order.
+ */
+export type MeetingComposerSectionId = (typeof MEETING_COMPOSER_SECTIONS)[number]['id'];
+
+/** A single meeting composer section as rendered by the rail. */
+export interface MeetingComposerSection {
+  id: MeetingComposerSectionId;
+  label: string;
+  icon: string;
+  required: boolean;
+}
+
+/**
+ * What the meeting composer was opened with.
+ * @description Set by whichever entry point calls `MeetingComposerService.open()` — a dashboard
+ * button, a meeting card's edit action, a group's meetings tab, or a `/meetings/...` deep link.
+ */
+export interface MeetingComposerContext {
+  mode: MeetingComposerMode;
+  /** Required in edit mode — the meeting being edited. */
+  meetingUid?: string;
+  /** Group/committee the meeting is scoped to; pre-fills and locks the committees field. */
+  committeeUid?: string;
+  /** Section to land on; defaults to the first section. */
+  section?: MeetingComposerSectionId;
 }

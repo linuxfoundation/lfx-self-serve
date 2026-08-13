@@ -30,6 +30,7 @@ import {
   MeetingDeleteTypeSelectionComponent,
 } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -118,6 +119,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
+  private readonly composer = inject(MeetingComposerService);
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
@@ -198,15 +200,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
-  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-    if (meeting.project_slug) params['project'] = meeting.project_slug;
-    const committeeUid = meeting.committees?.[0]?.uid;
-    if (committeeUid) params['committee_uid'] = committeeUid;
-    return params;
-  });
-
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
   public readonly committeeLabel = COMMITTEE_LABEL;
@@ -262,6 +255,14 @@ export class MeetingCardComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.refreshAttachments$.next());
+  }
+
+  public onEditMeeting(): void {
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: this.meeting().id,
+      committeeUid: this.meeting().committees?.[0]?.uid,
+    });
   }
 
   public ngOnInit(): void {

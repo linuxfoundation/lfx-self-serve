@@ -1353,7 +1353,7 @@ export class NewsletterManageComponent {
     const bodyHtml = draft.body_html ?? '';
 
     // scheduled_at hydration mirrors populateFormWithMeetingData in
-    // meeting-manage.component.ts: convert the saved UTC instant into the
+    // the meeting composer form service: convert the saved UTC instant into the
     // picker's local date/time pair for the newsletter's own timezone (or the
     // browser's, for older drafts saved before per-draft timezone existed).
     let sendMode: 'now' | 'schedule' = 'now';
