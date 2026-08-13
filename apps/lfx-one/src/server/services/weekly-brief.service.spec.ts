@@ -26,6 +26,11 @@ const {
   buildCacheKey,
   getCommitteeForSlackShareMock,
   checkSingleAccessStrictMock,
+  getCommitteeByIdMock,
+  hasMailingListStrictMock,
+  createNewsletterMock,
+  sendNewsletterMock,
+  deleteNewsletterMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
@@ -73,6 +78,13 @@ const {
     // that touch committeeService/accessCheckService.
     getCommitteeForSlackShareMock: vi.fn(),
     checkSingleAccessStrictMock: vi.fn(),
+    // shareBrief's (LFXV2-2914 / LFXV2-3093) own committee + newsletter collaborators —
+    // controlled per-test in the 'shareBrief' describe block below.
+    getCommitteeByIdMock: vi.fn(),
+    hasMailingListStrictMock: vi.fn(),
+    createNewsletterMock: vi.fn(),
+    sendNewsletterMock: vi.fn(),
+    deleteNewsletterMock: vi.fn(),
   };
 });
 
@@ -110,17 +122,25 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
-// shareBrief's collaborators — shareBrief itself isn't exercised by this spec, but
-// WeeklyBriefService's constructor instantiates all three, so they must at least be
-// constructible without pulling in their own real import chains. getCommitteeForSlackShare /
-// checkSingleAccessStrict back shareToSlack's (LFXV2-3080) precondition chain — see the
-// 'shareToSlack' describe block below.
+// shareBrief's / shareToSlack's collaborators — getCommitteeForSlackShare / checkSingleAccessStrict
+// back shareToSlack's (LFXV2-3080) precondition chain (see the 'shareToSlack' describe block
+// below); getCommitteeById / hasMailingListStrict / createNewsletter / sendNewsletter /
+// deleteNewsletter back shareBrief's (LFXV2-2914 / LFXV2-3093) precondition + send chain (see the
+// 'shareBrief' describe block below).
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeForSlackShare = getCommitteeForSlackShareMock;
+    public getCommitteeById = getCommitteeByIdMock;
+    public hasMailingListStrict = hasMailingListStrictMock;
   },
 }));
-vi.mock('./newsletter.service', () => ({ NewsletterService: class {} }));
+vi.mock('./newsletter.service', () => ({
+  NewsletterService: class {
+    public createNewsletter = createNewsletterMock;
+    public sendNewsletter = sendNewsletterMock;
+    public deleteNewsletter = deleteNewsletterMock;
+  },
+}));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccessStrict = checkSingleAccessStrictMock;
@@ -1239,6 +1259,199 @@ describe('WeeklyBriefService', () => {
       const originalError = caught?.getLogContext()['original_error'] as string | undefined;
       expect(originalError).toContain('[redacted-url]');
       expect(originalError).not.toContain('hooks.slack.com');
+    });
+  });
+
+  describe('shareBrief (LFXV2-2914 / LFXV2-3093)', () => {
+    beforeEach(() => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' });
+      hasMailingListStrictMock.mockResolvedValue(true);
+      checkSingleAccessStrictMock.mockResolvedValue(true);
+      createNewsletterMock.mockResolvedValue({ id: 'newsletter-1', version: 1 });
+      sendNewsletterMock.mockResolvedValue({ total_recipients: 42 });
+    });
+
+    /** A brief in a shareable state, queued up for the getCurrentBrief call shareBrief makes internally. */
+    function mockShareableBrief(overrides: Record<string, unknown> = {}): void {
+      proxyRequest.mockResolvedValueOnce({
+        brief: {
+          uid: 'b1',
+          state: 'generated',
+          revision: 1,
+          brief_text: 'Hello committee',
+          window_start: '2026-01-01',
+          window_end: '2026-01-07',
+          ...overrides,
+        },
+        throttle: null,
+      });
+    }
+
+    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com' } }, bearerToken: 'writer-token' } as unknown as Request;
+
+    /**
+     * Impersonation session: `bearerToken` starts as the impersonation token (what
+     * auth.middleware.ts would have set), `oidc.user.email` is the real staff member's own OIDC
+     * identity, and `oidc.accessToken` is the real staff member's own (never impersonation-swapped)
+     * session token — see resolveRealAccessToken's doc comment for why this is the source of the
+     * "real" identity during impersonation.
+     */
+    function buildImpersonatingReq(opts: { realTokenExpired?: boolean; refreshedToken?: string; refreshFails?: boolean } = {}): Request {
+      const refresh = opts.refreshFails
+        ? vi.fn(async () => {
+            throw new Error('refresh failed');
+          })
+        : vi.fn(async () => ({ access_token: opts.refreshedToken ?? 'refreshed-real-token' }));
+      return {
+        appSession: {
+          impersonationToken: 'imp-token',
+          impersonationExpiresAt: Date.now() + 60_000,
+          impersonationUser: { email: 'Target@Example.com', sub: 'auth0|target' },
+        },
+        oidc: {
+          user: { email: 'Staff@Example.com' },
+          accessToken: {
+            access_token: 'real-staff-token',
+            isExpired: () => !!opts.realTokenExpired,
+            refresh,
+          },
+        },
+        bearerToken: 'imp-token',
+      } as unknown as Request;
+    }
+
+    it("non-impersonating: authorizes and sends under the caller's own token/email, unaffected by the real-identity plumbing", async () => {
+      mockShareableBrief();
+
+      const result = await service.shareBrief(nonImpersonatingReq, 'committee-1', 1);
+
+      expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 42 });
+      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(nonImpersonatingReq, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(createNewsletterMock).toHaveBeenCalledWith(
+        nonImpersonatingReq,
+        'project-1',
+        expect.objectContaining({ ed_reply_email: 'writer@example.com', committee_uids: ['committee-1'] })
+      );
+      expect(nonImpersonatingReq.bearerToken).toBe('writer-token');
+    });
+
+    it("impersonating: authorizes and sends under the REAL staff member's token/email, not the impersonated target's, and restores the impersonation token afterward", async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq();
+
+      let tokenDuringAuthCheck: string | undefined;
+      checkSingleAccessStrictMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringAuthCheck = r.bearerToken;
+        return true;
+      });
+      let tokenDuringMailingListCheck: string | undefined;
+      hasMailingListStrictMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringMailingListCheck = r.bearerToken;
+        return true;
+      });
+      let tokenDuringCreate: string | undefined;
+      createNewsletterMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringCreate = r.bearerToken;
+        return { id: 'newsletter-1', version: 1 };
+      });
+      let tokenDuringSend: string | undefined;
+      sendNewsletterMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringSend = r.bearerToken;
+        return { total_recipients: 7 };
+      });
+
+      const result = await service.shareBrief(req, 'committee-1', 1);
+
+      expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 7 });
+      expect(tokenDuringAuthCheck).toBe('real-staff-token');
+      expect(tokenDuringCreate).toBe('real-staff-token');
+      expect(tokenDuringSend).toBe('real-staff-token');
+      // hasMailingListStrict is a precondition READ — stays on the effective/target identity
+      // (the impersonation token), not the real one, same as every other read in this method.
+      expect(tokenDuringMailingListCheck).toBe('imp-token');
+      expect(createNewsletterMock).toHaveBeenCalledWith(req, 'project-1', expect.objectContaining({ ed_reply_email: 'staff@example.com' }));
+      // Restored to the impersonation token once the write finishes, regardless of outcome.
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('impersonating: refreshes an expired real access token and sends under the refreshed token', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq({ realTokenExpired: true, refreshedToken: 'refreshed-token' });
+
+      let tokenDuringCreate: string | undefined;
+      createNewsletterMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringCreate = r.bearerToken;
+        return { id: 'newsletter-1', version: 1 };
+      });
+
+      await service.shareBrief(req, 'committee-1', 1);
+
+      expect(tokenDuringCreate).toBe('refreshed-token');
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('impersonating: the REAL user being denied project-writer access is rejected even though the impersonated target might have it — proving authorization runs against the real identity', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq();
+      checkSingleAccessStrictMock.mockResolvedValueOnce(false);
+
+      await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+      expect(createNewsletterMock).not.toHaveBeenCalled();
+      // Token restored even on the authorization-failure path.
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('impersonating: fails closed with an AuthenticationError — never falls back to the impersonation token — when the real access token cannot be resolved', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq({ realTokenExpired: true, refreshFails: true });
+
+      await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 401, code: 'AUTHENTICATION_REQUIRED' });
+      expect(checkSingleAccessStrictMock).not.toHaveBeenCalled();
+      expect(createNewsletterMock).not.toHaveBeenCalled();
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('impersonating: cleans up the orphaned draft on a deterministic send rejection, still under the real token, and restores the impersonation token afterward', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq();
+      const rejection = new MicroserviceError('Bad request', 400, 'INVALID_REQUEST', {});
+      sendNewsletterMock.mockRejectedValueOnce(rejection);
+
+      await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toBe(rejection);
+
+      expect(deleteNewsletterMock).toHaveBeenCalledWith(req, 'project-1', 'newsletter-1');
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('throws 404 when there is no brief to share', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
+
+      await expect(service.shareBrief(nonImpersonatingReq, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
+      expect(checkSingleAccessStrictMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 REVISION_MISMATCH when the caller-supplied revision is stale', async () => {
+      mockShareableBrief({ revision: 2 });
+
+      await expect(service.shareBrief(nonImpersonatingReq, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'REVISION_MISMATCH' });
+      expect(checkSingleAccessStrictMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 NO_MAILING_LIST when the committee has no mailing list configured', async () => {
+      mockShareableBrief();
+      hasMailingListStrictMock.mockResolvedValueOnce(false);
+
+      await expect(service.shareBrief(nonImpersonatingReq, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_MAILING_LIST' });
+      expect(createNewsletterMock).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other precondition passes', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      mockShareableBrief();
+
+      await expect(service.shareBrief(nonImpersonatingReq, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'BACKEND_NOT_LIVE' });
+      expect(createNewsletterMock).not.toHaveBeenCalled();
     });
   });
 });

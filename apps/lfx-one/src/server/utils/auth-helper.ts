@@ -83,6 +83,21 @@ export function getEffectiveEmail(req: Request): string | null {
 }
 
 /**
+ * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
+ * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
+ * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is
+ * layered on top via `req.appSession`, never by replacing `req.oidc.user`), so this is just
+ * `getEffectiveEmail`'s non-impersonating branch, unconditionally.
+ *
+ * Use this only where the real actor's identity — not the target's — must be attributed for a
+ * genuinely externally-visible, hard-to-retract action (e.g. weekly-brief mailing-list share,
+ * LFXV2-3093). Most callers want `getEffectiveEmail` instead.
+ */
+export function getRealEmail(req: Request): string | null {
+  return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
+}
+
+/**
  * Gets the effective username for the current request context.
  * During impersonation, returns the target user's username from the impersonation session,
  * or null when the target has no stored username — it never falls back to the impersonator's
@@ -144,6 +159,42 @@ export function isImpersonating(req: Request): boolean {
   const token = req.appSession?.['impersonationToken'];
   const expiresAt = req.appSession?.['impersonationExpiresAt'];
   return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!req.appSession?.['impersonationUser'];
+}
+
+/**
+ * Resolves the REAL (impersonator's own) bearer token, even while impersonating — for the same
+ * narrow class of caller as `getRealEmail` (a write that must be authorized and attributed to the
+ * actual actor, not the impersonation target).
+ *
+ * `req.bearerToken` is swapped to the impersonation token by `auth.middleware.ts` during
+ * impersonation, but `req.oidc.accessToken` is never touched by that swap — it always reflects the
+ * real user's own OIDC session. The catch: `auth.middleware.ts`'s normal refresh-if-expired logic
+ * short-circuits before it runs whenever an impersonation token is active, so `req.oidc.accessToken`
+ * can legitimately be expired by the time this is called on a long-lived impersonation session
+ * (impersonation tokens can live up to ~24h; ordinary access tokens are typically shorter-lived).
+ * This refreshes it itself when needed, mirroring `extractBearerToken`'s own refresh step.
+ *
+ * Returns null when there is no real session token to resolve, or the refresh attempt fails —
+ * callers MUST treat null as "cannot safely attribute this action" and fail closed, never falling
+ * back to the impersonation token.
+ */
+export async function resolveRealAccessToken(req: Request): Promise<string | null> {
+  if (!isImpersonating(req)) {
+    return req.bearerToken ?? null;
+  }
+  const accessToken = req.oidc?.accessToken;
+  if (!accessToken) {
+    return null;
+  }
+  if (!accessToken.isExpired()) {
+    return accessToken.access_token ?? null;
+  }
+  try {
+    const refreshed = await accessToken.refresh();
+    return refreshed?.access_token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
