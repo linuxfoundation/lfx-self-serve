@@ -231,8 +231,8 @@ export class EventDetailDrawerComponent {
     scales: {
       x: {
         // No `reverse` here. This is a category axis, so points render in array order, and the
-        // query already returns DAYS_TO_EVENT descending — the event (0) lands on the right.
-        // Reversing as well would flip it back and run the timeline backwards.
+        // query returns DAYS_TO_EVENT ascending — most negative first, 0 (the event) last, so the
+        // event lands on the right. Reversing as well would flip it back and run time backwards.
         title: { display: true, text: 'Days to event', color: lfxColors.gray[400], font: { size: 10 } },
         grid: { display: false },
         ticks: { color: lfxColors.gray[500], font: { size: 10 }, maxTicksLimit: 8 },
@@ -392,6 +392,7 @@ export class EventDetailDrawerComponent {
   private buildPacingChart(): ChartData<'line'> {
     const points = this.detail()?.pacing.points ?? [];
     const labels = points.map((point) => point.daysToEvent);
+
     return {
       labels,
       datasets: [
