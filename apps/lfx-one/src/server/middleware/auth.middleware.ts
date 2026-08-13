@@ -29,16 +29,21 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public meeting join (`/meetings/:id`, `/meetings/not-found`) — anchored to a single segment so
   // multi-segment paths (authenticated `/meetings/:id/edit`, unknown `/meetings/:id/extra`) fall
   // through to the default `required` auth and reach login before the in-shell catch-all 404. The
-  // reserved single-segment `create` route is excluded via the `(?!create\/?$)` lookahead so it also
-  // classifies `required` — an anonymous `/meetings/create` reaches login rather than SSR-rendering
-  // the create shell as optional-auth. Keeping `required` here means the SSR boundary matches the
-  // Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
-  { pattern: /^\/meetings\/(?!create\/?$)[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+  // reserved single-segment `create` route is excluded via the `(?!create(?:[/;]|$))` lookahead so it
+  // also classifies `required` — an anonymous `/meetings/create` reaches login rather than SSR-rendering
+  // the create shell as optional-auth. The `[/;]` delimiter class also excludes matrix-parameter suffixes
+  // (`/meetings/create;source=link`): Express leaves the `;...` in `req.path` while Angular strips matrix
+  // params and routes the segment as the protected `create`, so both must classify `required` to keep the
+  // SSR boundary aligned with the Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
+  { pattern: /^\/meetings\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
   // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
-  // auth for membership enrichment. No reserved single-segment child (groups has no `create` route),
-  // so no lookahead exclusion is needed here.
+  // auth for membership enrichment. `/groups/create` IS a real writer-gated route (`COMMITTEE_ROUTES`
+  // is mounted at `groups` in `app.routes.ts`), but no `create` lookahead is needed here because that
+  // shell mount carries `canMatch: [authenticatedMatchGuard]`: an anonymous SSR match skips the
+  // authenticated subtree and falls through to the public `groups/:id`, so `create` never reaches the
+  // protected shell. (Meetings has no such canMatch, which is why its matcher must exclude `create`.)
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an

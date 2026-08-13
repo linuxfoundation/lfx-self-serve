@@ -20,6 +20,11 @@ const RENDER_TIMEOUT = 30_000;
 test.describe.configure({ timeout: TEST_TIMEOUT });
 
 test.describe('In-shell catch-all 404 for authenticated unknown route (LFXV2-3095)', () => {
+  // Pin a desktop viewport so the assertion holds across every Playwright project: the shell's left-nav
+  // sidebar is `hidden lg:flex`, so under the mobile-chrome project (Pixel 5, 393px) it is display:none.
+  // A ≥lg width keeps the in-shell sidebar visible regardless of the project's default device viewport.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test('SSR responds with a real HTTP 404 at the requested path', async ({ request }) => {
     const response = await request.get(UNKNOWN_PATH);
     expect(response.status()).toBe(404);

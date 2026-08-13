@@ -99,8 +99,21 @@ describe('authMiddleware route classification', () => {
 
     await middleware(req, res, next);
 
-    // `create` is excluded via `(?!create$)`, so it falls through to the catch-all `required` row and
-    // an unauthenticated SSR GET redirects to login — matching the Angular `writerGuard` boundary.
+    // `create` is excluded via `(?!create(?:[/;]|$))`, so it falls through to the catch-all `required`
+    // row and an unauthenticated SSR GET redirects to login — matching the Angular `writerGuard` boundary.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat /meetings/create with a matrix-parameter suffix as public (lookahead delimiter)', async () => {
+    const req = buildReq({ path: '/meetings/create;source=link' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // Express leaves the `;source=link` matrix suffix in `req.path` while Angular strips it and routes
+    // the segment as the protected `create`. The `[/;]` delimiter in the lookahead excludes this case too,
+    // so an anonymous SSR GET still redirects to login rather than fail-opening to optional auth.
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
