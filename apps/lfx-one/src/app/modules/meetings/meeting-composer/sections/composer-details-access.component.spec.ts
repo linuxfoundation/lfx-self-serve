@@ -52,13 +52,18 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
   });
 
   it('still points at the required error after a blur-only touch', () => {
-    // The transition the paragraph renders on. Nothing bumps `revision` here, which is the whole point.
+    // Primed first on purpose: the read is what caches the computed, and a `touched`-gated version could
+    // only be caught going stale from a cached value — nothing bumps `revision` on `markAsTouched()`.
+    expect(describedBy()).toBe('composer-title-required-error');
+
     formService.form().get('title')?.markAsTouched();
 
     expect(describedBy()).toBe('composer-title-required-error');
   });
 
   it('drops the error once the title is filled', () => {
+    expect(describedBy()).toBe('composer-title-required-error');
+
     formService.form().get('title')?.setValue('Composer meeting');
 
     expect(describedBy()).toBeNull();
@@ -68,6 +73,13 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
     fixture.componentRef.setInput('titleHint', 'Pre-filled for this meeting type — edit freely.');
 
     expect(describedBy()).toBe('composer-title-hint composer-title-required-error');
+  });
+
+  it('lists the prefill hint alone once the prefilled title validates', () => {
+    fixture.componentRef.setInput('titleHint', 'Pre-filled for this meeting type — edit freely.');
+    formService.form().get('title')?.setValue('Composer meeting');
+
+    expect(describedBy()).toBe('composer-title-hint');
   });
 
   it('points at the maxlength error when the YouTube limit is exceeded', () => {

@@ -39,9 +39,8 @@ export class MeetingComposerRailComponent {
   /**
    * Single mode source for layout, locking and the active marker.
    * @description Read from the form service because that is what `isSectionValid` /
-   * `sectionNeedsAttention` read, and because the host's `initialize()` runs from a constructor
-   * subscription that Angular flushes a refresh pass after the context is set — so the two sources
-   * disagree for one intermediate pass on every open. Taking mode from both would render the flat edit
+   * `sectionNeedsAttention` read, and because `composer.context()` is written before `initialize()` runs —
+   * so the two are briefly out of step on every open. Taking mode from both would render the flat edit
    * rows while locking them like create-mode rows, leaving rows that look interactive and do nothing.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;

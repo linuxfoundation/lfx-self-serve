@@ -91,7 +91,10 @@ export class ComposerDetailsAccessComponent {
       // `markAsTouched()` emits on neither `valueChanges` nor `statusChanges`, so this would keep a stale
       // list through exactly the case the errors exist for — tabbing out of an empty title. An id whose
       // element isn't rendered yet is ignored when the accessibility tree resolves the list, so listing it
-      // early costs nothing and the pointer starts resolving the moment the paragraph appears.
+      // early is inert; the cost is that the attribute can name an id no element has yet, which linters
+      // like axe report even though assistive tech doesn't care. Keeping both sides gated would mean
+      // bumping `revision` on blur, and the form service owns that signal for the whole composer — a
+      // per-field blur writing to it is a wider change than the association it would buy.
       const ids = [
         this.titleHint() ? 'composer-title-hint' : null,
         title?.errors?.['required'] ? 'composer-title-required-error' : null,

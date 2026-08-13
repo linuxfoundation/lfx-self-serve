@@ -65,14 +65,13 @@ export class MeetingComposerHostComponent {
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
-   * @description Taken from the form service so the header, footer and rail can never describe different
-   * modes: `initialize()` runs from a subscription in this constructor, which Angular flushes after the
-   * template that opened it, so `composer.context()` leads `formService.mode()` by one refresh pass. The
-   * two agree again before the tick ends — reading both sources wouldn't flash, it would just let an edit
-   * header sit above create-mode locked rows in an intermediate pass. It also means the chrome is the
-   * lagging side, so mode changes are picked up a pass late rather than early; closing that window for
-   * real means deriving the form service's own `mode` from the context instead of writing it in
-   * `initialize()`.
+   * @description Taken from the form service, which is also what the rail and `isSectionValid` read, so
+   * the header, footer and section rows cannot describe different modes. `composer.context()` is the other
+   * candidate and is written first — `initialize()` only runs from the subscription in this constructor —
+   * so the two are briefly out of step on every open; the enforceable part is that nothing reads both.
+   * The form service is the lagging side, and because `initialize()` is the only writer of `mode` and only
+   * runs for a non-null context, it also keeps the previous mode across a close. Fixing that means
+   * deriving `mode` from the context rather than writing it in `initialize()`.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
 
