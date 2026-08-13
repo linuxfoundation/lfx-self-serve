@@ -6,6 +6,8 @@ import { AnalyticsService } from '@services/analytics.service';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
+import { EMAIL_SENDS_ROW_LIMIT } from '@lfx-one/shared/constants';
+
 import type { EmailCtrResponse } from '@lfx-one/shared/interfaces';
 
 import { EmailTabComponent } from './email-tab.component';
@@ -59,6 +61,22 @@ describe('EmailTabComponent', () => {
 
   let fixture: ComponentFixture<EmailTabComponent>;
 
+  async function renderCampaigns(campaigns: ReturnType<typeof campaign>[]): Promise<void> {
+    const body = response(null) as unknown as { emailTypeBreakdown: { campaigns: unknown[] }[] };
+    body.emailTypeBreakdown[0].campaigns = campaigns;
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [EmailTabComponent],
+      providers: [{ provide: AnalyticsService, useValue: { getEmailCtr: vi.fn().mockReturnValue(of(body)) } }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EmailTabComponent);
+    fixture.componentRef.setInput('foundationSlug', 'tlf');
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   async function render(sendDate: string | null): Promise<void> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -75,6 +93,22 @@ describe('EmailTabComponent', () => {
   function rowText(): string {
     return fixture.nativeElement.querySelector('[data-testid="email-campaign-row-0"]')?.textContent ?? '';
   }
+
+  // The query behind this table is unbounded, so a large foundation can return thousands of rows.
+  // Without the cap every one is built during SSR and hydration — the scroll container bounds what
+  // is visible, not what is rendered.
+  it('caps the rendered rows and says so when it truncates', async () => {
+    // Distinct names as well as dates: the track key is type|name|date, so repeating either would
+    // produce duplicate keys and test the tracking rather than the cap.
+    const many = Array.from({ length: EMAIL_SENDS_ROW_LIMIT + 25 }, (_, i) => ({
+      ...campaign(`2026-07-${String((i % 28) + 1).padStart(2, '0')}`),
+      campaignName: `Send ${i}`,
+    }));
+    await renderCampaigns(many);
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="email-campaign-row-"]')).toHaveLength(EMAIL_SENDS_ROW_LIMIT);
+    expect(fixture.nativeElement.textContent).toContain('latest');
+  });
 
   it('formats a valid send date for display', async () => {
     await render('2026-07-14');

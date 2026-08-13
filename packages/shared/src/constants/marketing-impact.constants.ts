@@ -198,3 +198,11 @@ export const PAID_CAMPAIGN_LIMIT = 25;
 
 /** Same contract as PAID_CAMPAIGN_LIMIT, for the per-event email list (ordered by sends). */
 export const EMAIL_CAMPAIGN_LIMIT = 12;
+
+/**
+ * How many email sends the campaign table renders. The query behind it is unbounded, so a large
+ * foundation over a wide period can return thousands of rows — every one of which would be built
+ * during SSR and hydration, not merely scrolled past. The rows are ordered newest-first, so the
+ * cap keeps the most recent sends and the header says when it is truncating.
+ */
+export const EMAIL_SENDS_ROW_LIMIT = 200;

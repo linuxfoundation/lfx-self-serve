@@ -69,7 +69,8 @@
       </div>
 
       @if (hasTopCampaigns()) {
-        <!-- Unbounded row count — scrolls within the card so the page doesn't grow without limit.
+        <!-- Capped at EMAIL_SENDS_ROW_LIMIT and scrolled within the card, so neither the DOM nor
+             the page grows without limit; the header says "latest N sends" when it truncates.
              tabindex="0" so keyboard-only users can focus the region and scroll to the rows below
              the fold; without it the overflow is reachable by pointer only. -->
         <div

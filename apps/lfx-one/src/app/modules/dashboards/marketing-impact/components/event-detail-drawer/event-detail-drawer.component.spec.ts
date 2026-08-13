@@ -341,6 +341,17 @@ describe('EventDetailDrawerComponent', () => {
     expect(text()).not.toContain('Registration revenue');
   });
 
+  // The event page is a general action, not part of either half. It briefly lived inside the
+  // attendance-gated pacing block, which removed it entirely from a sponsorship-bar open.
+  it('keeps the event page link in both focus views', async () => {
+    for (const focus of ['b2c', 'b2b'] as const) {
+      await setup(vi.fn().mockReturnValue(of(detail())));
+      await open('evt-1', 'tlf', focus);
+
+      expect(document.querySelector('[data-testid="event-detail-event-link"]')).toBeTruthy();
+    }
+  });
+
   it('hides the sponsorship-only sections in the attendance view', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 

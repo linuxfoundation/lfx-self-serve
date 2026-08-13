@@ -92,7 +92,7 @@
             type="button"
             role="tab"
             [attr.id]="'mi-events-tab-' + view.id"
-            [attr.aria-controls]="'mi-panel-' + selectedTab()"
+            aria-controls="mi-events-panel"
             (click)="onEventsSplitChange(view.id)"
             [attr.aria-selected]="selectedEventsSplit() === view.id"
             [attr.tabindex]="selectedEventsSplit() === view.id ? 0 : -1"
@@ -139,13 +139,32 @@
           </p>
         </div>
       } @else if (selectedTab() === 'all') {
-        <lfx-overview-tab
-          [foundationSlug]="foundationSlug()"
-          [selectedPeriod]="selectedPeriod()"
-          [foundationName]="foundationName()"
-          [focusProgram]="selectedFocus()"
-          [eventsSplit]="showEventsSplit() ? selectedEventsSplit() : null"
-          data-testid="marketing-impact-overview-tab" />
+        <!--
+          Nested tabpanel for the Events split, following the person-detail drawer's tabs: a stable
+          id the split tabs point at, with aria-labelledby following the selected one. Without it
+          both split tabs aria-control the outer channel panel, which is their own ancestor and is
+          named "All" — so the active split tab has no correctly labelled target.
+          Rendered only when the split is showing; otherwise the channel panel alone is correct.
+        -->
+        @if (showEventsSplit()) {
+          <div role="tabpanel" id="mi-events-panel" [attr.aria-labelledby]="'mi-events-tab-' + selectedEventsSplit()">
+            <lfx-overview-tab
+              [foundationSlug]="foundationSlug()"
+              [selectedPeriod]="selectedPeriod()"
+              [foundationName]="foundationName()"
+              [focusProgram]="selectedFocus()"
+              [eventsSplit]="selectedEventsSplit()"
+              data-testid="marketing-impact-overview-tab" />
+          </div>
+        } @else {
+          <lfx-overview-tab
+            [foundationSlug]="foundationSlug()"
+            [selectedPeriod]="selectedPeriod()"
+            [foundationName]="foundationName()"
+            [focusProgram]="selectedFocus()"
+            [eventsSplit]="null"
+            data-testid="marketing-impact-overview-tab" />
+        }
       } @else if (selectedTab() === 'paid') {
         <lfx-performance-marketing-tab
           [foundationSlug]="foundationSlug()"

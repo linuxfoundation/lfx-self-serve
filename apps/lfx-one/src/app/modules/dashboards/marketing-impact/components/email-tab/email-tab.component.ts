@@ -5,7 +5,7 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { computeMomPct, formatChangePct, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { EMAIL_SENDS_ROW_LIMIT, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type { EmailCtrResponse, EmailTypeRow, MarketingImpactFocusProgram, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
@@ -38,9 +38,12 @@ export class EmailTabComponent {
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
+  /** True when the send list hit the render cap, so the header can say so rather than imply a total. */
+  protected readonly topCampaignsTruncated = computed(() => this.topCampaigns().length >= EMAIL_SENDS_ROW_LIMIT);
   protected readonly topCampaignsCountLabel = computed(() => {
     const count = this.topCampaigns().length;
-    return `${formatNumber(count)} ${count === 1 ? 'send' : 'sends'}`;
+    const noun = count === 1 ? 'send' : 'sends';
+    return this.topCampaignsTruncated() ? `latest ${formatNumber(count)} ${noun}` : `${formatNumber(count)} ${noun}`;
   });
 
   // === Private Initializers ===
@@ -201,6 +204,7 @@ export class EmailTabComponent {
           }
           return b.sends - a.sends;
         })
+        .slice(0, EMAIL_SENDS_ROW_LIMIT)
         .map(
           (c): TopCampaignRow => ({
             name: c.campaignName,
