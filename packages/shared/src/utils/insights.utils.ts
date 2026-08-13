@@ -69,10 +69,10 @@ export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavai
     return 'healthy';
   }
   if (score >= 40) {
-    return 'stable';
+    return 'fair';
   }
   if (score >= 20) {
-    return 'unsteady';
+    return 'concerning';
   }
   return 'critical';
 }

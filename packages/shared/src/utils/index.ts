@@ -46,6 +46,7 @@ export * from './search.utils';
 export * from './email.utils';
 export * from './invitation.utils';
 export * from './lens.utils';
+export * from './map-v1-band-to-v2';
 export * from './crowdfunding.utils';
 export * from './persona.utils';
 export * from './metric-trend.utils';

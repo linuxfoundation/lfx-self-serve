@@ -38,8 +38,8 @@ export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
 export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; bg: string; text: string }> = {
   excellent: { label: 'Excellent', ...HEALTH_SCORE_BADGE.excellent },
   healthy: { label: 'Healthy', ...HEALTH_SCORE_BADGE.healthy },
-  stable: { label: 'Stable', ...HEALTH_SCORE_BADGE.stable },
-  unsteady: { label: 'Unsteady', ...HEALTH_SCORE_BADGE.unsteady },
+  fair: { label: 'Fair', ...HEALTH_SCORE_BADGE.fair },
+  concerning: { label: 'Concerning', ...HEALTH_SCORE_BADGE.concerning },
   critical: { label: 'Critical', ...HEALTH_SCORE_BADGE.critical },
 };
 
