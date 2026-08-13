@@ -60,6 +60,8 @@ export function claStatusLabel(status: ClaStatus): string {
       return 'Needs attention';
     case 'invalidated':
       return 'Invalidated';
+    case 'unknown':
+      return '—';
     case 'superseded':
       return 'Superseded';
   }
@@ -74,6 +76,8 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
       return 'warn';
     case 'invalidated':
       return 'danger';
+    case 'unknown':
+      return 'secondary';
     case 'superseded':
       return 'warn';
   }

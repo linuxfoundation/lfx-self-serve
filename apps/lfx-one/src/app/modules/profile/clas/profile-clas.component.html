@@ -100,12 +100,16 @@ SPDX-License-Identifier: MIT
 
             <td class="px-5 py-3.5">
               <div class="flex flex-col items-start gap-1">
-                <lfx-tag
-                  [value]="claStatusLabel(agreement.status)"
-                  [severity]="claStatusSeverity(agreement.status)"
-                  [icon]="statusIcon(agreement.status)"
-                  [rounded]="true"
-                  [attr.data-testid]="'agreement-status-' + agreement.id" />
+                @if (agreement.status === 'unknown') {
+                  <span class="text-sm text-slate-600" [attr.data-testid]="'agreement-status-' + agreement.id">{{ claStatusLabel('unknown') }}</span>
+                } @else {
+                  <lfx-tag
+                    [value]="claStatusLabel(agreement.status)"
+                    [severity]="claStatusSeverity(agreement.status)"
+                    [icon]="statusIcon(agreement.status)"
+                    [rounded]="true"
+                    [attr.data-testid]="'agreement-status-' + agreement.id" />
+                }
                 @if (statusNote(agreement); as note) {
                   <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + agreement.id">{{ note }}</p>
                 }

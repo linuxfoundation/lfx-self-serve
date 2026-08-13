@@ -98,42 +98,11 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 }
 
 /**
- * Temporary consumer-side status derivation pending EasyCLA publishing an
- * explicit per-row `status` (#1423). Delete this function and read the
- * producer's field directly when that lands — the UI vocabulary and table
- * stay unchanged.
- *
- * not approved            ⇒ invalidated
- * approved and not valid  ⇒ needs_attention  (ECLA coverage miss only)
- * approved and valid      ⇒ valid
- *
- * An absent or null `approved` is treated as not approved. Individual CLAs
- * never derive `needs_attention`: their validity tracks approval one-to-one
- * upstream, and the unreachable approved-but-not-valid combo is pinned to
- * `invalidated` so the amber state cannot leak onto an ICLA.
- */
-export function deriveMyClaStatus(cla: Pick<EasyClaMyCla, 'claType' | 'approved' | 'valid'>): ClaStatus {
-  if (cla.approved !== true) {
-    return 'invalidated';
-  }
-  if (cla.valid === true) {
-    return 'valid';
-  }
-  if (cla.claType === 'icla') {
-    return 'invalidated';
-  }
-  return 'needs_attention';
-}
-
-/**
  * Maps an upstream `my-cla` record to the UI view model.
  *
- * Status is derived from the two flags the endpoint already publishes
- * (`approved`, `valid`) via {@link deriveMyClaStatus}. That helper is
- * scaffolding for #1423 and must not be inlined — adopting the upstream
- * field is a deletion of the helper, not a rewrite of this mapper.
- * `superseded` is not derivable here (the endpoint does not expose the
- * CLA group's current version) and is not produced.
+ * Status and reason are copied from the producer. Do not recompute from
+ * `approved`/`valid`. An ICLA never surfaces `needs_attention` or `unknown`
+ * even if a spurious reason is present on the wire.
  */
 export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
   const isIcla = cla.claType === 'icla';
@@ -142,6 +111,15 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     cla.documentMajorVersion !== undefined
       ? `${cla.documentMajorVersion}${cla.documentMinorVersion !== undefined ? `.${cla.documentMinorVersion}` : ''}`
       : undefined;
+
+  let status: ClaStatus = cla.status as ClaStatus;
+  let statusReason = cla.statusReason;
+  if (isIcla) {
+    statusReason = undefined;
+    if (status === 'needs_attention' || status === 'unknown') {
+      status = cla.approved === true ? 'valid' : 'invalidated';
+    }
+  }
 
   return {
     id: cla.signatureID,
@@ -153,7 +131,8 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     projectLogo: cla.projectLogo || undefined,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
-    status: deriveMyClaStatus(cla),
+    status,
+    statusReason,
     documentVersion,
     pdfAvailable: isIcla && cla.pdfAvailable === true,
   };

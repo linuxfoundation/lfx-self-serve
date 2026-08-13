@@ -22,9 +22,10 @@ import { MyClasService } from '@services/my-clas.service';
 
 /**
  * "My CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
- * from `/v4/my-clas` with a status column (Valid / Needs attention / Invalidated)
- * and a per-row actions menu. Status is derived server-side from the upstream
- * `approved`/`valid` flags until #1423 publishes it on the wire.
+ * from `/v4/my-clas` with a status column (Valid / Needs attention / Invalidated /
+ * unknown as plain-text —) and a per-row actions menu. Status and reason are
+ * copied from the producer; this component does not derive standing from
+ * `approved`/`valid`.
  */
 @Component({
   selector: 'lfx-profile-clas',
@@ -96,19 +97,27 @@ export class ProfileClasComponent {
         return 'fa-light fa-triangle-exclamation';
       case 'invalidated':
         return 'fa-light fa-circle-xmark';
+      case 'unknown':
+        // Exhaustive only — the template must not bind this icon (unknown is plain text).
+        return 'fa-light fa-minus';
       case 'superseded':
         return 'fa-light fa-clock-rotate-left';
     }
   }
 
   /**
-   * Explanatory note beneath the status pill. Empty until #1423 publishes a
-   * cause-specific reason — the slot exists so populating it is a data change.
-   */
-  protected statusNote(agreement: MyClaAgreement): string | undefined {
-    void agreement;
+ * Explanatory note beneath the status pill. Only a completed Approved List
+ * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
+ */
+protected statusNote(agreement: MyClaAgreement): string | undefined {
+  if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
     return undefined;
   }
+  if (agreement.companyName) {
+    return `No longer matches ${agreement.companyName}'s approval criteria.`;
+  }
+  return 'No longer matches the approval criteria.';
+}
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
     event.stopPropagation();
