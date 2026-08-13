@@ -163,6 +163,143 @@ export interface CampaignBriefOutput {
   metaCopy?: MetaBriefCopy;
 }
 
+/**
+ * What `POST /api/campaigns/brief/persist` reports back.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
+ * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * the two want opposite treatment — a disabled flag is the expected steady state and warrants
+ * no UI at all, while a failure means the user's brief is NOT durable and they should be told
+ * before they spend an afternoon on it.
+ *
+ * `created` distinguishes a first save from an update of an existing brief for the same
+ * `event_slug`. It is reported rather than inferred because the client cannot tell: the
+ * find-then-create-or-update decision happens server-side against campaign-service.
+ */
+export interface CampaignBriefPersistResult {
+  enabled: boolean;
+  briefId: string;
+  etag: string | null;
+  created: boolean;
+  /**
+   * Whether the saved brief reached `approved`, the state campaign-service requires before it
+   * will create campaigns or build an audience from it.
+   *
+   * Separate from the save's own success because the two really can differ: campaign-service
+   * writes every brief as `draft` and resets an existing one to `draft` on replace, so approval
+   * is a second call that can fail on its own. When it does, the brief IS durable — which is why
+   * this is a field rather than an error.
+   */
+  approved: boolean;
+  /**
+   * Why the save was REFUSED, when it was. Absent means the save happened.
+   *
+   * `unverified-validator`: this caller owns the brief but holds no trustworthy last-seen
+   * version — its previous write returned no ETag, or that write's approval outcome was
+   * indeterminate. The save is refused rather than sent with a validator this request read
+   * itself, which would bypass the precondition and could overwrite an intervening writer
+   * silently. Distinct from `stale-brief`, where a validator WAS sent and the server rejected it.
+   *
+   * `superseded-after-write`: the PUT committed, but the approval that follows it was refused
+   * with a 412 — the row's version moved in between, so another writer replaced the brief after
+   * this save wrote it. The write is durable but may no longer be what the row HOLDS, so it must
+   * not be confirmed as saved.
+   *
+   * `stale-brief`: the caller named the row and owns it, but another writer changed it since the
+   * caller last saw it, so the replace was refused with a 412 rather than overwriting their work.
+   * Distinct from `unowned-brief-exists` because the remedy differs: this caller may replace the
+   * brief, it just needs to see the newer version first.
+   *
+   * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
+   * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
+   * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
+   * is enough to reach that: the page generates from scratch, the slug matches perfectly, and the
+   * server's find hits a row nobody read.
+   *
+   * `briefId` is deliberately EMPTY on this refusal, and that is a security property rather than
+   * an omission. Returning the blocking row's id would hand an unowned caller the one value the
+   * ownership check asks for: read the id off the refusal, replay it with `etag_fallback`, and
+   * the overwrite this conflict exists to prevent succeeds. The id is withheld at the source --
+   * the ownership check runs before the fallback -- so no caller can offer to "open the blocking
+   * brief" from this response, by design.
+   *
+   * LFXV2-3098 introduced this while persistence was write-only, where it refused EVERY
+   * collision — with no read path, nothing could hand a caller an id at all. LFXV2-3108 adds the
+   * read, so a restored brief now carries its own id and replaces its own row; everything else
+   * still refuses.
+   *
+   * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
+   * and the caller's next step is a CHOICE (open the existing one, or file under a different
+   * event) rather than a retry.
+   */
+  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
+}
+
+/**
+ * The Implementation tab's view of whether the brief behind it is durable.
+ *
+ * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
+ * and is the reason this state exists at all: a persist failure that is swallowed leaves the
+ * user believing their brief is saved when it is not, and this repo has already been bitten by
+ * a graceful degradation that hid a 100% failure rate behind a clean UI.
+ */
+export interface CampaignBriefPersistenceState {
+  status: 'off' | 'saving' | 'saved' | 'error';
+  briefId: string | null;
+  /**
+   * The banner text, or `null` when the state needs none.
+   *
+   * Set on `error`, and also on `saved` when the write landed but the APPROVAL did not — a
+   * durable row that campaign creation and audience building both refuse, because they gate on
+   * `approved`. That case stays `saved` rather than becoming `error`: describing a write that
+   * really did land as failed would be its own falsehood, and the honest report is that the
+   * brief is stored but not yet usable.
+   */
+  message: string | null;
+}
+
+/**
+ * What `GET /api/campaigns/brief` reports back — the read half of brief persistence.
+ *
+ * The outcome is a single `status` rather than the `enabled` + payload pair
+ * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
+ * are "no brief". Collapsing them loses the distinction that matters:
+ *
+ * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
+ *   environment and warrants no UI.
+ * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
+ *   first-time case; the user generates one.
+ * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
+ * - `unreadable` — a row EXISTS for this slug but this build cannot reconstruct a
+ *   `CampaignBriefOutput` from it. Reporting that as `none` would be a lie with consequences:
+ *   the user would generate a replacement, and the save path is find-then-UPDATE, so the
+ *   unreadable brief would be silently overwritten rather than repaired or reported. Kept
+ *   distinct so the UI can say "a saved brief exists but could not be opened" and the id is
+ *   available to whoever investigates.
+ *
+ * `briefId` is populated for `loaded` and `unreadable` alike, and null for the other two.
+ */
+export interface CampaignBriefLoadResult {
+  status: 'off' | 'none' | 'loaded' | 'unreadable';
+  briefId: string | null;
+  brief: CampaignBriefOutput | null;
+  /**
+   * Whether the STORED row is already approved.
+   *
+   * campaign-service creates every brief as `draft` and approval is a second call, so a save
+   * whose approve step failed leaves an approved-looking brief sitting in `draft`. Restoring it
+   * suppresses the next save (the content is already stored), and without this flag the row
+   * would never reach `approved` — while `build-audience` and campaign creation both gate on
+   * `status = 'approved'`. Surfaced so the restore path can re-approve instead of assuming a
+   * stored brief is a finished one.
+   *
+   * `false` whenever the status could not be read, so the fallback is to re-approve rather than
+   * to assume approval.
+   */
+  approved: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------
@@ -485,9 +622,51 @@ export interface CampaignCreateResponse {
   errors: string[];
 }
 
+/**
+ * One platform's outcome as lfx-v2-campaign-service reports it.
+ *
+ * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
+ * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
+ * `platform-result` carries none of them — it knows the platform, whether the create
+ * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
+ * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
+ * them, which reports a successful create as an empty one. A separate, smaller type keeps the
+ * absent fields absent, so nothing can render a number nobody measured.
+ */
+export interface CampaignPlatformResult {
+  platform: string;
+  ok: boolean;
+  /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
+  campaignId?: string;
+  error?: string;
+}
+
+/**
+ * What a finished creation job left behind, normalised across both sources.
+ *
+ * `campaigns` is populated by the vendor-direct path and `platformResults` by the
+ * campaign-service path — never both. Neither is a guarantee of content: the vendor-direct path
+ * calls `completeJob` unconditionally (`campaign-proxy.service.ts`), so a run in which every
+ * platform failed finishes as `done` with an empty `campaigns` and a populated `errors`. Read
+ * `errors` and each result's own flag; do not treat "the job is over" as "a campaign exists".
+ *
+ * Kept as one type so the caller has a single "the job is over, here is what happened" value
+ * rather than a nullable `CampaignCreateResponse` that reads as "nothing happened" on the
+ * campaign-service path.
+ */
+export interface CampaignJobOutcome {
+  campaigns: CampaignCreateResult[];
+  errors: string[];
+  platformResults?: CampaignPlatformResult[];
+}
+
 export interface CampaignJobStatus {
   status: 'running' | 'done' | 'error' | 'not_found';
+  /** Populated by the in-process (vendor-direct) path only. */
   result?: CampaignCreateResponse;
+  /** Populated by the campaign-service path only. See `CampaignPlatformResult` for why the two differ. */
+  platformResults?: CampaignPlatformResult[];
   error?: string;
 }
 

@@ -83,6 +83,26 @@ export function buildCommitteeOrganizationPayload(
 }
 
 /**
+ * True when org form values include the name + https website pair committee-service accepts
+ * on member create (organization_id is CDP-only and stripped by {@link buildCommitteeOrganizationPayload}).
+ */
+export function committeeOrganizationFormComplete(formValue: Pick<CommitteeOrganizationFormValue, 'organization' | 'organization_url'>): boolean {
+  const name = formValue.organization?.trim() ?? '';
+  if (!name) {
+    return false;
+  }
+  const urlValue = formValue.organization_url?.trim() ?? '';
+  if (!urlValue) {
+    return false;
+  }
+  try {
+    return new URL(urlValue).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Formats an invite expiry (RFC3339) into a short display string (e.g. "Jun 20, 2026"), or null when
  * the value is missing or not a parseable date. Guarding the parse keeps a malformed upstream
  * timestamp from surfacing "Invalid Date" in the UI — callers fall back to no-expiry copy on null.

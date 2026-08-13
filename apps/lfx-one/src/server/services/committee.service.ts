@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -10,6 +11,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
@@ -17,6 +19,8 @@ import {
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
+  ApproveCommitteeJoinApplicationRequest,
+  RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
@@ -32,11 +36,12 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { resolveAuditUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -121,6 +126,15 @@ interface CommitteeDocumentQueryResult {
  * Service for handling committee business logic
  */
 export class CommitteeService {
+  /**
+   * Budget for the post-acceptance membership confirmation. `pollEndpoint` probes immediately and
+   * sleeps only between attempts, so an already-propagated tuple costs one round trip and the
+   * worst case adds (attempts - 1) * delay ≈ 2 s. Deliberately shorter than a guarantee would
+   * need: anything slower is absorbed by the committee view rather than by holding this open.
+   */
+  private static readonly membershipConfirmMaxAttempts = 5;
+  private static readonly membershipConfirmDelayMs = 500;
+
   private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
@@ -212,7 +226,7 @@ export class CommitteeService {
       }
     }
 
-    return committees;
+    return committees.map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -246,7 +260,7 @@ export class CommitteeService {
       })
     );
     const committees = await this.accessCheckService.addAccessToResources(req, resources, 'committee');
-    return committees.filter((c) => c.writer === true);
+    return committees.filter((c) => c.writer === true).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -301,7 +315,7 @@ export class CommitteeService {
       });
     }
 
-    return permitted.slice(0, pageSize);
+    return permitted.slice(0, pageSize).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -351,15 +365,26 @@ export class CommitteeService {
     // LFXV2-2914). Compute it the same way the query-service-backed list
     // endpoints (getCommittees/getMyCommittees) do: a direct count against
     // the mailing-list index.
-    const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    const rawCommittee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
 
-    if (!committee) {
+    if (!rawCommittee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
         operation: 'get_committee_by_id',
         service: 'committee_service',
         path: `/committees/${committeeId}`,
       });
     }
+
+    // chat_webhook_url is a bearer credential — strip it immediately after the upstream fetch so
+    // it never flows into the access-check merge, project-metadata enrichment, or the HTTP
+    // response. has_slack_webhook is the only signal any read gets; see the doc comment on
+    // Committee.has_slack_webhook and CommitteeUpdateData.chat_webhook_url.
+    const { chat_webhook_url: chatWebhookUrl, ...committee } = rawCommittee;
 
     // Fetch settings, optional caller membership, access, optional inherited
     // (parent-project) permissions, and optional mailing-list status in parallel.
@@ -377,26 +402,77 @@ export class CommitteeService {
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
+      // Format-checked, not just presence: a value that fails SLACK_INCOMING_WEBHOOK_URL_PATTERN
+      // (e.g. stored by a non-BFF writer, since this repo isn't the only writer of the field)
+      // must not show as "Configured" — shareToSlack re-validates the same pattern at send time,
+      // and a Configured badge over a value that's guaranteed to 409 there is a dead end.
+      //
+      // Base-resource-only, like getSlackWebhookUrlStrict and getCommitteeForSlackShare below —
+      // none of the three read this from `settings`. If LFXV2-3094 lands the field on the
+      // settings resource instead of the base one, this trio silently under-reports rather than
+      // leaking: has_slack_webhook stays false for a genuinely configured committee (Share stays
+      // disabled, the settings card shows "Not configured"), with no error surfaced anywhere.
+      // Deliberately not guessing at a dual-source read for an undecided schema — whichever
+      // resource LFXV2-3094 actually lands on, update all three read sites together then.
+      has_slack_webhook: !!chatWebhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(chatWebhookUrl),
     };
 
+    // Defense-in-depth beyond the base-resource strip above: `settings` is a raw, uncast
+    // GET /committees/:id/settings body spread into `merged` alongside `withAccess` above,
+    // un-stripped — if the upstream schema change (LFXV2-3094) lands chat_webhook_url on the
+    // settings resource rather than the base one (undecided as of this writing), this is what
+    // stops it from leaking here. A no-op today either way, since neither resource carries the
+    // field yet.
     if (!options.includeProjectMetadata) {
-      return merged;
+      return this.stripChatWebhookUrl(merged);
     }
 
     // Enrich with project metadata so the UI can resolve project_uid -> project_slug for navigation.
     const [enriched] = await this.projectService.enrichWithProjectData(req, [merged]);
-    return enriched;
+    return this.stripChatWebhookUrl(enriched);
   }
 
   /**
    * Creates a new committee with optional settings
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
-    // Extract settings fields
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
+    // chat_webhook_url is deliberately absent from CommitteeCreateData — it's update-only (see
+    // CommitteeUpdateData.chat_webhook_url), with its own SLACK_INCOMING_WEBHOOK_URL_PATTERN
+    // check and impersonation guard in updateCommittee, neither of which this method runs. The
+    // type omission alone doesn't stop a raw req.body cast (committee.controller.ts) from
+    // carrying the key at runtime, so strip it explicitly rather than relying on the type system.
+    /* eslint-disable @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const {
+      chat_webhook_url: _chatWebhookUrl,
+      business_email_required,
+      is_audit_enabled,
+      show_meeting_attendees,
+      member_visibility,
+      ...committeeData
+    } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
+    /* eslint-enable @typescript-eslint/no-unused-vars */
 
     // Step 1: Create committee
-    const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+    // <Committee | null>, not <Committee> — matches the established convention at
+    // committee-activity.service.ts's guarded proxyRequest call sites: proxyRequest can return
+    // null for an empty upstream body, and typing the call site itself as nullable is what makes
+    // that reachable through the type system (a bare <Committee> would make the compiler believe
+    // newCommittee is always non-null even though the runtime value can be null).
+    const newCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+
+    // Fail loud, not silently: an empty body on a create response means the committee-service
+    // didn't confirm anything was actually created. Returning a uid-less object here instead would
+    // let the controller respond 201 with committee.uid undefined, and the client's post-create
+    // flow (committee-manage.component.ts) reads that uid immediately to add members — a silent
+    // "success" would be strictly worse than a loud failure, not a safer fallback. This also
+    // narrows newCommittee to non-null for the rest of the method, so nothing below it needs `?.`.
+    if (!newCommittee?.uid) {
+      throw new MicroserviceError('Committee service returned an empty response for the create request', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'create_committee',
+        service: 'committee_service',
+        path: '/committees',
+      });
+    }
 
     // Step 2: Update settings if provided
     if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
@@ -410,7 +486,7 @@ export class CommitteeService {
     }
 
     return {
-      ...newCommittee,
+      ...this.stripChatWebhookUrl(newCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -422,9 +498,74 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
+    // Server-side kill switch, independent of WG_WEEKLY_BRIEF_SLACK_FLAG (the Angular UI's
+    // OpenFeature/GrowthBook flag) — that flag only gates rendering of the settings card, since
+    // the OpenFeature Web SDK it's evaluated through never runs on this server. Without this, any
+    // caller with ordinary project-writer access could configure chat_webhook_url directly against
+    // the API while the UI still hides the card. Checked first, before the impersonation guard
+    // below, so a disabled environment reports the same "not available" outcome regardless of who's
+    // asking.
+    if (data.chat_webhook_url !== undefined && !isServerFeatureEnabled(ServerFeatureFlag.WeeklyBriefSlack)) {
+      throw new ConflictError('Slack webhook sharing is not enabled in this environment', 'FEATURE_DISABLED', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
+    // Scoped to this one field, not the whole route: an impersonator repointing chat_webhook_url
+    // to a channel they control, then leaving, would let a later legitimate share-slack (itself
+    // correctly blocked during impersonation — weekly-brief.route.ts) deliver brief content
+    // somewhere the real committee owner never chose. Requests that don't carry chat_webhook_url
+    // are unaffected — this is not a blanket write-lock on the route. A request that does carry
+    // it is rejected whole, before any write (ETag fetch, core PUT, settings update), so name /
+    // chat_channel / business_email_required / etc. sent *alongside* chat_webhook_url in the same
+    // request are rejected too — resubmit them without the webhook field to save just those.
+    if (data.chat_webhook_url !== undefined && isImpersonating(req)) {
+      logger.warning(req, 'impersonation_readonly', 'Blocked chat_webhook_url write during impersonation', {
+        committee_id: committeeId,
+        impersonator_sub: req.appSession?.['impersonator']?.sub,
+        target_sub: req.appSession?.['impersonationUser']?.sub,
+      });
+      throw new AuthorizationError('Configuring the Slack webhook is not available while impersonating a user', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+    }
+
+    // Read as `unknown` first: the static type says `string | null | undefined`, but this body
+    // arrives as raw JSON (the controller casts req.body), so a direct API caller can send any
+    // JSON value — false, 0, {}, []. A truthiness-only check below would let falsy non-strings
+    // through: they'd skip the pattern test, ride the core PUT, and only surface after the write
+    // via the read-back mismatch (or via upstream unmarshalling once the LFXV2-3094 schema
+    // lands). The check below therefore rejects every value that isn't absent, null, or a
+    // string — before any write happens.
+    const rawChatWebhookUrl = (data as CommitteeUpdateData & { chat_webhook_url?: unknown }).chat_webhook_url;
+
+    // Normalized once, up front: an empty string must behave identically to omission/null
+    // everywhere below it's used (validation skip, the PUT payload, and the read-back
+    // comparison) — otherwise a direct API caller sending '' would skip validation (falsy,
+    // intentionally) but then fail the read-back check with a spurious mismatch against the
+    // `null` getSlackWebhookUrlStrict actually returns for "not configured".
+    const normalizedData: CommitteeUpdateData = { ...data, ...(rawChatWebhookUrl === '' && { chat_webhook_url: null }) };
+
+    if (
+      rawChatWebhookUrl !== undefined &&
+      rawChatWebhookUrl !== null &&
+      (typeof rawChatWebhookUrl !== 'string' || (rawChatWebhookUrl !== '' && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(rawChatWebhookUrl)))
+    ) {
+      throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
     // Extract settings fields — writers/auditors belong to UpdateCommitteeSettingsRequestBody,
     // NOT UpdateCommitteeBaseRequestBody, so they must go through the settings endpoint
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = data;
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = normalizedData;
 
     const hasSettingsUpdate =
       business_email_required !== undefined ||
@@ -435,7 +576,7 @@ export class CommitteeService {
       auditors !== undefined;
     const hasCoreUpdate = Object.keys(committeeData).length > 0;
 
-    let updatedCommittee: Committee;
+    let updatedCommittee: Committee | null;
 
     if (hasCoreUpdate) {
       // Step 1: Fetch committee with ETag
@@ -445,6 +586,35 @@ export class CommitteeService {
         `/committees/${committeeId}`,
         'update_committee'
       );
+
+      // Choosing the Slack destination must require the same authorization as sending to it —
+      // shareToSlack (weekly-brief.service.ts) gates the send on strict project-writer, not
+      // committee-writer. Upstream's own PUT /committees/:uid only enforces committee-writer
+      // (direct grants exist independently of project writer — see getDirectGrantCommittees), so
+      // without this, a committee writer who is not a project writer could point the webhook at a
+      // Slack workspace they control, and a later legitimate project-writer send would deliver
+      // brief content there. Checked here (post-fetch, since currentCommittee.project_uid is
+      // needed) rather than before, to avoid a second upstream round trip only for this field.
+      if (normalizedData.chat_webhook_url !== undefined) {
+        const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+          resource: 'project',
+          // Authorize against the effective post-update project, not the committee's current
+          // one: if this same PUT also moves the committee (committeeData.project_uid lands in
+          // mergedData below), a writer of only the old project could otherwise pair the move
+          // with a webhook they control — and a later legitimate writer of the new project
+          // would send briefs there.
+          id: committeeData.project_uid ?? currentCommittee.project_uid,
+          access: 'writer',
+        });
+        if (!isProjectWriter) {
+          throw new AuthorizationError('Only project writers can configure the Slack webhook', {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+            code: 'NOT_PROJECT_WRITER',
+          });
+        }
+      }
 
       // Step 2: Strip read-only and computed fields, then merge with update data (PUT replaces the entire resource)
       /* eslint-disable @typescript-eslint/no-unused-vars -- intentional destructuring to strip server-computed fields */
@@ -469,7 +639,9 @@ export class CommitteeService {
       };
 
       // Step 3: Update committee with ETag (PUT)
-      updatedCommittee = await this.etagService.updateWithETag<Committee>(
+      // <Committee | null>, not <Committee> — see the matching comment on createCommittee's
+      // proxyRequest call above; updateWithETag forwards to the same proxyRequest under the hood.
+      updatedCommittee = await this.etagService.updateWithETag<Committee | null>(
         req,
         'LFX_V2_SERVICE',
         `/committees/${committeeId}`,
@@ -479,7 +651,7 @@ export class CommitteeService {
       );
     } else {
       // No core fields to update — fetch current committee for the response
-      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
@@ -496,8 +668,91 @@ export class CommitteeService {
       });
     }
 
+    // Fail loud, not silently: an empty body here means the committee-service didn't confirm the
+    // core update (or, on the no-core-update branch, the committee no longer exists), and the
+    // mailing_list fallback below dereferences updatedCommittee unconditionally — same rationale
+    // as createCommittee's identical guard. Deliberately checked *after* the settings update, not
+    // before — but "after" only means the settings write itself isn't skipped; it doesn't mean
+    // this stays quiet about it. On the no-core-update branch, an empty response-shaping GET here
+    // still throws a 502, even though the settings write immediately above already committed
+    // upstream — the caller has no way to learn the settings save succeeded from this response.
+    // That's an accepted, rare-edge-case trade-off (this GET reading empty right after a working
+    // PUT/fetch on the same committee is unlikely — a concurrent delete or a transient upstream
+    // blip), not a designed "don't block the write" guarantee; the write already isn't blocked
+    // either way, only the response is degraded. On the core-update branch, the PUT has already
+    // committed the same way. Narrows updatedCommittee to non-null for the rest of the method.
+    if (!updatedCommittee) {
+      throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
+    // Defensive check, run LAST (after every other write above has already committed): unlike
+    // mailing_list/chat_channel, the upstream committee-service schema does not (yet) declare
+    // chat_webhook_url as of this writing — an unknown key in the core PUT body is silently
+    // dropped by Go's JSON unmarshaling rather than rejected. Confirm via a fresh read whether it
+    // actually persisted rather than trusting a false "saved" response. Deliberately checked
+    // after the core PUT and settings update, not before — this is the one field in the whole
+    // payload that can fail here, and every other field the caller submitted (name, chat_channel,
+    // website, business_email_required, etc.) must still be reported as saved rather than
+    // silently discarded because of it. Remove this check once the upstream schema change lands
+    // (LFXV2-3094).
+    //
+    // Asymmetric today for a clear (chat_webhook_url: null): persistedWebhookUrl reads back null
+    // both when a real clear persisted and when upstream has no such field to persist to in the
+    // first place, so this can't distinguish them — a clear would false-report success on today's
+    // schema-less upstream the same way a set correctly fails loud. Low-impact in practice: the
+    // Remove button (clearing an already-*configured* webhook) can't be reached until
+    // has_slack_webhook is true, which requires a webhook to have actually persisted upstream
+    // (via this check or any other writer) — so that path implies the schema already exists
+    // upstream. The one reachable
+    // case today is typing then deleting on a never-configured committee (the control goes dirty
+    // with an empty value, so saveSettings sends chat_webhook_url: null with no prior set) —
+    // harmless, since nothing was actually persisted before or after either way.
+    if (committeeData.chat_webhook_url !== undefined) {
+      // getSlackWebhookUrlStrict fails closed by design (propagates upstream errors rather than
+      // defaulting to null) — correct for its other caller (shareToSlack, where a transient
+      // outage must not be misread as "no webhook configured"), but wrong here: by this point
+      // the core PUT and settings PUT have both already committed, so a transient failure on
+      // this confirmation-only read must not read to the caller as "the save failed" — everything
+      // requested actually did save, we just couldn't confirm the one field that might not have.
+      // Distinguished from the genuine SLACK_WEBHOOK_NOT_PERSISTED mismatch below with its own
+      // code so the client doesn't conflate "confirmed not persisted" with "couldn't check".
+      let persistedWebhookUrl: string | null;
+      try {
+        persistedWebhookUrl = await this.getSlackWebhookUrlStrict(req, committeeId);
+      } catch (err) {
+        logger.warning(req, 'update_committee', 'Could not confirm chat_webhook_url persistence after an otherwise-successful save', {
+          committee_id: committeeId,
+          err,
+        });
+        throw new ConflictError(
+          'Your other changes were saved, but the Slack webhook status could not be confirmed. Reload to check whether it was saved.',
+          'SLACK_WEBHOOK_UNVERIFIED',
+          {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+          }
+        );
+      }
+      if (persistedWebhookUrl !== committeeData.chat_webhook_url) {
+        throw new ConflictError(
+          'Your other changes were saved, but the Slack webhook could not be stored — this environment does not support it yet.',
+          'SLACK_WEBHOOK_NOT_PERSISTED',
+          {
+            operation: 'update_committee',
+            service: 'committee_service',
+            path: `/committees/${committeeId}`,
+          }
+        );
+      }
+    }
+
     return {
-      ...updatedCommittee,
+      ...this.stripChatWebhookUrl(updatedCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -881,6 +1136,11 @@ export class CommitteeService {
             id: invite.organization?.id?.trim() || null,
             website: invite.organization?.website?.trim() || null,
           };
+          // No confirmMembership here, deliberately. This legacy path already sleeps 3 s before
+          // every attempt waiting on FGA (InviteController.fgaPropagationDelayMs) and can accept
+          // several invites per call, so a per-invite wait would compound to ~11-15 s for the
+          // least benefit — the existing sleeps have usually already covered propagation. Its
+          // tail is covered by the committee view's initial-load retry like any other arrival.
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid, { organization: orgPayload });
         } else {
           await this.acceptCommitteeInvite(req, invite.committee_uid, invite.uid);
@@ -905,8 +1165,24 @@ export class CommitteeService {
    * Accepts a committee invitation on behalf of the invitee. The upstream endpoint is
    * invitee-authenticated (committee-service enforces principal == invitee_email).
    */
-  public async acceptCommitteeInvite(req: Request, committeeId: string, inviteId: string, body?: AcceptCommitteeInviteRequest): Promise<void> {
+  public async acceptCommitteeInvite(
+    req: Request,
+    committeeId: string,
+    inviteId: string,
+    body?: AcceptCommitteeInviteRequest,
+    options: {
+      /** When true, wait briefly for the new membership to become readable before returning.
+       *  Enable only where the caller navigates the user to the committee page on success —
+       *  anywhere else it just delays a success toast. Fails open: the committee view's own
+       *  initial-load retry, not this wait, is what guarantees the user never lands on an error. */
+      confirmMembership?: boolean;
+    } = {}
+  ): Promise<void> {
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/invites/${inviteId}/accept`, 'POST', {}, body ?? {});
+
+    if (options.confirmMembership) {
+      await this.waitForCommitteeMembership(req, committeeId);
+    }
 
     logger.debug(req, 'accept_committee_invite', 'Committee invite accepted successfully', {
       committee_uid: committeeId,
@@ -1101,8 +1377,9 @@ export class CommitteeService {
 
   // ── Join / Leave Methods ────────────────────────────────────────────────────
 
-  public async joinCommittee(req: Request, committeeId: string): Promise<CommitteeMember> {
-    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST');
+  public async joinCommittee(req: Request, committeeId: string, organization?: CommitteeOrganizationReference): Promise<CommitteeMember> {
+    const body = organization ? { organization } : undefined;
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST', {}, body);
   }
 
   public async leaveCommittee(req: Request, committeeId: string): Promise<void> {
@@ -1115,6 +1392,71 @@ export class CommitteeService {
   public async submitApplication(req: Request, committeeId: string, body: CreateCommitteeJoinApplicationRequest): Promise<CommitteeJoinApplication> {
     logger.debug(req, 'submit_committee_application', 'Submitting join application', { committee_uid: committeeId });
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
+  }
+
+  /**
+   * Fetches join applications for a committee from the query index.
+   */
+  public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'get_committee_applications');
+
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
+    const params = {
+      ...queryFilters,
+      type: 'committee_application',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    return fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  public async approveApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: ApproveCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeMember> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'approve_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/approve`,
+      'POST',
+      {},
+      payload
+    );
+  }
+
+  public async rejectApplication(
+    req: Request,
+    committeeId: string,
+    applicationId: string,
+    body: RejectCommitteeJoinApplicationRequest = {}
+  ): Promise<CommitteeJoinApplication> {
+    await this.assertCommitteeApplicationWriter(req, committeeId, 'reject_committee_application');
+
+    const payload = { notify: body.notify ?? true, reviewer_notes: body.reviewer_notes };
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/applications/${applicationId}/reject`,
+      'POST',
+      {},
+      payload
+    );
   }
 
   // ── Committee Documents ────────────────────────────────────────────────────
@@ -1450,6 +1792,136 @@ export class CommitteeService {
   }
 
   /**
+   * Lean single-fetch variant for `shareToSlack`: only `name`, `project_uid`, and the raw webhook
+   * URL — not {@link getCommitteeById}'s settings/membership/access-check enrichment, none of
+   * which `shareToSlack` reads. See {@link getSlackWebhookUrlStrict}'s doc comment for why this
+   * exists as its own method rather than composing the two.
+   *
+   * @internal Cannot be `private` like {@link getSlackWebhookUrlStrict} — `WeeklyBriefService`
+   * must call it — but that also means nothing mechanically stops a future caller from obtaining
+   * the raw credential through it. Only `WeeklyBriefService.shareToSlack` may call this today;
+   * treat any new call site as a review flag, not a routine addition.
+   */
+  public async getCommitteeForSlackShare(req: Request, committeeId: string): Promise<{ name: string; project_uid: string; chat_webhook_url: string | null }> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
+    if (!committee) {
+      throw new ResourceNotFoundError('Committee', committeeId, {
+        operation: 'get_committee_for_slack_share',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+    return { name: committee.name, project_uid: committee.project_uid, chat_webhook_url: committee.chat_webhook_url ?? null };
+  }
+
+  /**
+   * Strict single-committee Slack-webhook fetch, mirroring {@link hasMailingListStrict}'s
+   * fail-closed contract — propagates an upstream failure instead of silently reporting "no
+   * webhook configured". Deliberately bypasses {@link getCommitteeById}, which strips
+   * `chat_webhook_url` from every response it returns. Used by `updateCommittee`'s read-back
+   * check, where only the URL itself is needed. `shareToSlack` uses
+   * {@link getCommitteeForSlackShare} instead — it needs `name`/`project_uid` too, and fetching
+   * those separately via `getCommitteeById` would mean two upstream round trips (and a TOCTOU
+   * window on the webhook value) for one send. Both are internal call sites allowed to see the
+   * raw credential, and only to act on it directly; never expose it via any controller/route.
+   * `private` (unlike {@link getCommitteeForSlackShare}, which a different service must call)
+   * enforces that last sentence mechanically rather than by comment alone — its only caller is
+   * `updateCommittee`, in this same class.
+   */
+  private async getSlackWebhookUrlStrict(req: Request, committeeId: string): Promise<string | null> {
+    const committee = await this.microserviceProxy.proxyRequest<Committee & { chat_webhook_url?: string | null }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET'
+    );
+    return committee?.chat_webhook_url ?? null;
+  }
+
+  /**
+   * Strips the write-only `chat_webhook_url` credential from a committee before it leaves this
+   * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
+   * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
+   * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
+   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
+   * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
+   * its own inline destructure of the base resource — the inline strip keeps the credential out
+   * of the access-check and project-metadata enrichment inputs, while this call is what
+   * guarantees the response itself is clean no matter which resource (base or settings) the field
+   * lands on. A no-op today
+   * (upstream doesn't store the field on either resource yet), but load-bearing the moment the
+   * schema change referenced in `updateCommittee` lands.
+   *
+   * Deliberately not null-tolerant: `proxyRequest` can return `null` for an empty upstream body
+   * (documented at committee-activity.service.ts's four guarded call sites), and both
+   * `createCommittee` and `updateCommittee` feed a raw `proxyRequest`/`updateWithETag` result
+   * through this helper — but each throws its own typed `MicroserviceError` if the result is
+   * null/undefined before this helper ever runs (immediately after the fetch in createCommittee;
+   * in updateCommittee, deliberately after its settings-update step — see that guard's own
+   * comment for why), rather than letting a body-less response silently
+   * become a 201/200 with a uid-less `Committee`. By the time either caller reaches this helper,
+   * the value is guaranteed non-null.
+   */
+  private stripChatWebhookUrl<T extends Committee>(committee: T): T {
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
+    const { chat_webhook_url: _chatWebhookUrl, ...rest } = committee as T & { chat_webhook_url?: string | null };
+    return rest as T;
+  }
+
+  /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
+  private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
+    const committee = await this.getCommitteeById(req, committeeId);
+    if (committee.writer !== true) {
+      throw new AuthorizationError('You do not have permission to manage join applications for this group.', {
+        operation,
+        service: 'committee_service',
+        path: `/committees/${committeeId}/applications`,
+      });
+    }
+  }
+
+  /**
+   * Waits, briefly and best-effort, for the caller's new committee membership to be readable.
+   *
+   * Probes the same read the committee detail page depends on rather than a separate
+   * authorization service: a different service evaluating a correlated decision behind its own
+   * cache can report ready while the page's own read still fails. Membership role populated is a
+   * stronger signal than a bare 200, and it is the right condition *here* because this runs
+   * immediately after a known user accepted a known invite, so the role is guaranteed to arrive.
+   * (The committee view's retry deliberately does not require it — it serves any reader, including
+   * non-members who never get a role.)
+   *
+   * Never throws: `pollEndpoint` swallows a `pollFn` throw and returns false, so acceptance is
+   * reported successful whether the membership showed up, the budget ran out, or the probe failed.
+   */
+  private async waitForCommitteeMembership(req: Request, committeeId: string): Promise<void> {
+    await pollEndpoint({
+      req,
+      operation: 'accept_committee_invite_membership_poll',
+      maxRetries: CommitteeService.membershipConfirmMaxAttempts,
+      retryDelayMs: CommitteeService.membershipConfirmDelayMs,
+      pollFn: async () => {
+        try {
+          const committee = await this.getCommitteeById(req, committeeId, { includeMembership: true });
+          return !!committee?.my_role;
+        } catch (error: any) {
+          // Still propagating — not an error, just not ready yet.
+          const is403 = error?.statusCode === 403 || error?.status === 403;
+          if (is403) return false;
+          throw error;
+        }
+      },
+      metadata: { committee_uid: committeeId },
+    });
+  }
+
+  /**
    * Batch-fetches committee resources by UID from the query service.
    * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
    * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
@@ -1492,7 +1964,7 @@ export class CommitteeService {
     const byUid = new Map<string, Committee>();
     for (const committee of batchResults.flat()) {
       if (committee?.uid) {
-        byUid.set(committee.uid, committee);
+        byUid.set(committee.uid, this.stripChatWebhookUrl(committee));
       }
     }
 

@@ -147,7 +147,13 @@ async function stubEngagementStats(page: Page): Promise<void> {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ active_members: 7, meetings_this_month: 2, computed_at: new Date().toISOString(), source: 'live' }),
+      body: JSON.stringify({
+        active_members: 7,
+        meetings_this_month: 2,
+        computed_at: new Date().toISOString(),
+        source: 'live',
+        coverage: { covered: 1, total: 1 },
+      }),
     })
   );
 }

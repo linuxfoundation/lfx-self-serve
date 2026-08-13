@@ -1,0 +1,93 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-roi-projects-donut">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <h2 class="text-base font-semibold text-gray-900">Leading projects</h2>
+
+    <div class="inline-flex self-start rounded-md border border-gray-200 p-0.5" role="group" aria-label="Project measure">
+      @for (option of measures; track option) {
+        <button
+          type="button"
+          (click)="setMeasure(option)"
+          class="rounded px-3 py-1 text-xs font-medium"
+          [class.bg-blue-50]="option === measure()"
+          [class.text-blue-700]="option === measure()"
+          [class.text-gray-600]="option !== measure()"
+          [class.hover:bg-gray-50]="option !== measure()"
+          [attr.aria-pressed]="option === measure()"
+          [attr.data-testid]="'org-roi-projects-donut-measure-' + option">
+          {{ measureLabels[option] }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-2" data-testid="org-roi-projects-donut-loading">
+      <p-skeleton width="100%" height="280px" />
+    </div>
+  } @else if (forbidden()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-donut-forbidden">
+      <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+      <span>You do not have Org Lens access for this organization.</span>
+    </div>
+  } @else if (failed()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-donut-error">
+      <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
+      <span>The project breakdown couldn't be loaded. Please try again.</span>
+    </div>
+  } @else if (!hasRows()) {
+    <div class="flex items-center gap-2 py-6 text-sm text-gray-600" data-testid="org-roi-projects-donut-empty">
+      <i class="fa-light fa-chart-pie text-gray-400" aria-hidden="true"></i>
+      <span>No project breakdown is available for this organization.</span>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center">
+      @if (slices().length > 0) {
+        <div class="h-[280px] lg:w-1/2" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-projects-donut-chart">
+          <lfx-chart type="doughnut" [data]="chartData()" [options]="chartOptions()" height="100%" />
+        </div>
+      } @else {
+        <!-- Reachable on Net Return for an organization whose every project lost money: there is no
+             positive magnitude to draw, but the figures below still have to be reported. -->
+        <div class="flex items-center gap-2 py-6 text-sm text-gray-600 lg:w-1/2" data-testid="org-roi-projects-donut-no-positive">
+          <i class="fa-light fa-chart-pie text-gray-400" aria-hidden="true"></i>
+          <span>No project has a positive {{ measureLabel() }} to chart.</span>
+        </div>
+      }
+
+      <!-- Real text, not a canvas: the accessible equivalent of the chart as well as its legend. -->
+      <dl class="flex flex-col gap-2 lg:w-1/2" data-testid="org-roi-projects-donut-legend">
+        @for (row of legendRows(); track row.key) {
+          <div class="flex items-baseline justify-between gap-4 text-sm">
+            <dt class="flex items-center gap-2 text-gray-700">
+              <span class="h-2.5 w-2.5 flex-shrink-0 rounded-full" [style.background-color]="row.color" aria-hidden="true"></span>
+              {{ row.label }}
+            </dt>
+            <dd class="font-medium text-gray-900">{{ row.amount }}</dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    @if (negatives().count > 0) {
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-projects-donut-negative-note">
+        <i class="fa-light fa-circle-minus mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span>{{ negativeSummary() }}</span>
+      </p>
+      <ul class="flex flex-col gap-1" data-testid="org-roi-projects-donut-negative-list">
+        @for (row of negatives().rows; track row.key) {
+          <li class="flex items-baseline justify-between gap-4 text-xs text-gray-600">
+            <span>{{ row.label }}</span>
+            <span class="font-medium text-gray-900">{{ row.amount }}</span>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (showsModelledCost()) {
+      <p class="text-xs text-gray-500" data-testid="org-roi-projects-donut-modelled-cost-note">{{ investmentExplanation }}</p>
+    }
+  }
+</section>

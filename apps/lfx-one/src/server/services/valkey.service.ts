@@ -307,6 +307,50 @@ export function buildUserCacheKey(namespace: string, username: string): string |
   return `${keyPrefix()}:${namespace}:${username}`;
 }
 
+/**
+ * Per-committee-member v1-id-mapping bridge cache key (LFXV2-1705); null (fail-closed → skip cache,
+ * still attempt NATS) when the member uid isn't filter-safe, so it can't corrupt the `:`-delimited
+ * key. One entry per v2 uid (no sub-resource) — unlike `buildCommitteeCacheKey`, there's exactly one
+ * mapping value per member, not multiple sub-resources to distinguish. TODO(LFXV2-2973): remove once
+ * the bridge is deleted.
+ */
+export function buildMemberV1MappingCacheKey(memberUid: string): string | null {
+  if (!isFilterSafeIdentifier(memberUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.MEMBER_V1_MAPPING_NAMESPACE}:${memberUid}`;
+}
+
+/**
+ * Per-committee, per-brief-revision weekly-brief action-items cache key (LFXV2-3043); null
+ * (fail-closed) when either identifier isn't filter-safe. Unlike most `build*CacheKey` helpers,
+ * a null key here means the caller (`WeeklyBriefService.getActionItems`) skips extraction
+ * entirely rather than hitting the AI proxy uncached on every read — there is no cache-bypassed
+ * direct-extract fallback for this namespace. `committeeId` is included even though `briefUid`
+ * is already globally unique upstream, because the mock-mode brief fixture (`buildMockBrief`)
+ * hardcodes the same `uid`/`revision` for every committee — without the committee segment, two
+ * committees would collide on one cache entry in mock mode. Revision is part of the key (not a
+ * sub-resource) so a regenerated/re-edited brief naturally misses and re-extracts — there is no
+ * explicit invalidation path either.
+ */
+export function buildWeeklyBriefActionItemsCacheKey(committeeId: string, briefUid: string, revision: number): string | null {
+  if (!isFilterSafeIdentifier(committeeId) || !isFilterSafeIdentifier(briefUid)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE}:${committeeId}:${briefUid}:${revision}`;
+}
+
+/**
+ * Per-caller weekly-brief rating cache key (LFXV2-3042) — one entry per (committee_uid, brief_uid,
+ * revision, username), so a new revision (post-regenerate) never inherits the prior revision's
+ * rating. `committeeUid` is included even though `briefUid` is already globally unique in live
+ * mode: mock mode (the default dev/CI mode) hard-codes the same brief uid and starts every
+ * committee's brief at revision 1 (see `buildMockBrief`), so a committee-less key would let one
+ * committee's rating pre-light an unrelated committee's identical thumbs (PR #1361 review).
+ * Null (fail-closed → skip cache) when the committee uid, brief uid, or username isn't
+ * filter-safe, so none of them can corrupt the `:`-delimited key.
+ */
+export function buildWeeklyBriefRatingCacheKey(committeeUid: string, briefUid: string, revision: number, username: string): string | null {
+  if (!isFilterSafeIdentifier(committeeUid) || !isFilterSafeIdentifier(briefUid) || !isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.WEEKLY_BRIEF_RATING_NAMESPACE}:${committeeUid}:${briefUid}:${revision}:${username}`;
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

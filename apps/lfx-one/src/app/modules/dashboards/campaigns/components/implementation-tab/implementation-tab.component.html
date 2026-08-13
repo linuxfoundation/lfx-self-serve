@@ -1,6 +1,57 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!--
+  Brief persistence status.
+
+  The live region is SEPARATE from the banner and always in the DOM, including the 'off' state.
+  An aria-live element that is inserted with its text already present is not reliably announced —
+  the region has to exist first and then have its CONTENTS change. The earlier version put
+  role="status" on the banners themselves, which @switch destroys and recreates on every
+  transition, so each message arrived as a fresh insertion and screen-reader users could miss
+  both "Saving" and "Saved".
+
+  Polite, not assertive — the save runs in the background and must not interrupt whatever the
+  user is reading in the form below. The error arm still gets role="alert" on the banner: an
+  assertive announcement is the point there, and it is a different region from this one.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
+
+<!-- Nothing renders in the 'off' state — see briefPersistence. -->
+@switch (briefPersistence().status) {
+  @case ('saving') {
+    <div class="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="implementation-brief-saving">
+      <i class="fa-light fa-spinner-third fa-spin mr-1.5" aria-hidden="true"></i>Saving this brief…
+    </div>
+  }
+  @case ('saved') {
+    <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
+      <!--
+        Names the ACTION a recovery needs, rather than promising a reload just works. It does
+        not: the read is keyed on the event slug, and after a reload the page holds no URL to
+        derive one from, so the brief comes back only once the user pastes the event URL again.
+        "It will still be here if you reload" would be the same false assurance the 'error' arm
+        below exists to prevent, pointed the other way.
+      -->
+      <!--
+        Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
+        separate strings and drifted: the banner gained the re-entry instruction while the live
+        region still announced only "Brief saved.", so screen-reader users got the reassurance
+        without the part they cannot recover on their own. One source cannot drift.
+      -->
+      <i class="fa-light fa-circle-check mr-1.5" aria-hidden="true"></i>{{ briefPersistenceAnnouncement() }}
+    </div>
+  }
+  @case ('error') {
+    <div
+      role="alert"
+      class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      data-testid="implementation-brief-save-error">
+      <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+    </div>
+  }
+}
+
 <!-- Form Step -->
 @if (step() === 'form') {
   <div class="flex flex-col gap-6" data-testid="implementation-form-step">
@@ -480,6 +531,101 @@
                     }
                   </ul>
                 </details>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!--
+      Campaign-service reports per-platform outcomes only: which platform, whether the create
+      succeeded, the upstream campaign id, and the failure reason. It does not report ad-group,
+      keyword or ad counts, so this block deliberately shows fewer facts than the block above
+      rather than showing the same facts as zeros.
+    -->
+    <!--
+      Heading and colour are conditional because a FAILED job carries per-platform rows too —
+      that is the only route by which an orphaned campaign id (created upstream, not recorded)
+      reaches the page. An unconditionally green "Campaigns Created" panel would announce an
+      all-failed result as a success.
+    -->
+    @if (platformOutcomes().length > 0) {
+      <div
+        class="rounded-lg border p-5"
+        [class.border-green-200]="anyPlatformCreated()"
+        [class.bg-green-50]="anyPlatformCreated()"
+        [class.border-amber-200]="!anyPlatformCreated()"
+        [class.bg-amber-50]="!anyPlatformCreated()"
+        data-testid="implementation-platform-results">
+        <div class="mb-3 flex items-center gap-2">
+          @if (anyPlatformCreated()) {
+            <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+          } @else {
+            <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+          }
+          <h3 class="text-sm font-semibold text-gray-900">
+            {{ anyPlatformCreated() ? 'Campaigns Created' : 'Campaign Status Unconfirmed' }}
+          </h3>
+        </div>
+        <div class="flex flex-col gap-2">
+          <!--
+            Three states, not two, and the third is UNCONFIRMED rather than "not created".
+            `ok: false` covers an ORPHAN (the upstream paid campaign was created and only the
+            database write failed — `campaignId` is populated on purpose so the id is not lost)
+            and an id-less remainder that mixes genuine rejections, concurrent-dispatch skips and
+            responses whose upstream id was lost. Only the first is safely reportable as an
+            absence, and nothing on the wire distinguishes them. The classification and the
+            reasoning live in `platformOutcomes`.
+          -->
+          @for (pr of platformOutcomes(); track pr.platform) {
+            @let outcome = pr.outcome;
+            <div
+              class="rounded-md border bg-white p-3"
+              [class.border-green-200]="outcome === 'created'"
+              [class.border-amber-200]="outcome !== 'created'"
+              [attr.data-testid]="'implementation-platform-result-' + pr.platform">
+              <div class="flex items-center gap-2">
+                @switch (outcome) {
+                  @case ('created') {
+                    <i class="fa-light fa-circle-check text-green-600" aria-hidden="true"></i>
+                  }
+                  @case ('orphaned') {
+                    <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                  }
+                  @default {
+                    <i class="fa-light fa-circle-question text-amber-600" aria-hidden="true"></i>
+                  }
+                }
+                <p class="text-sm font-medium text-gray-900">
+                  {{ pr.platform }}
+                  <!--
+                    The icon is aria-hidden and the colour is not announced, so without this the
+                    row reads as a bare platform name. `error` is optional on the wire, so it
+                    cannot be relied on to carry the outcome.
+                  -->
+                  <span class="sr-only">
+                    @switch (outcome) {
+                      @case ('created') {
+                        created
+                      }
+                      @case ('orphaned') {
+                        created upstream but not recorded — needs reconciliation
+                      }
+                      @default {
+                        could not be confirmed — check the ad account before creating it again
+                      }
+                    }
+                  </span>
+                </p>
+                @if (pr.campaignId) {
+                  <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
+                }
+              </div>
+              @if (pr.error) {
+                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
+                  {{ pr.error }}
+                </p>
               }
             </div>
           }

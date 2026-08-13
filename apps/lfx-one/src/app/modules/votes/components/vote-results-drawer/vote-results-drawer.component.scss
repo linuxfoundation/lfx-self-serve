@@ -1,6 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Comment cards sit on slate-50 — match the expandable-text collapse fade to the card background.
+.comment-text {
+  --lfx-expandable-fade-color: theme('colors.slate.50');
+}
+
 ::ng-deep {
   .vote-results-drawer {
     .p-drawer-header {

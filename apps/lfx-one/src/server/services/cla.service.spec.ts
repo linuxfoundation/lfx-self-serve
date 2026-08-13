@@ -303,6 +303,70 @@ describe('ClaService.getMyClas', () => {
     expect(calledUrl).toContain('githubUsername=octocat');
   });
 
+  it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserEmails.mockResolvedValueOnce({
+      primary_email: 'alice@x.org',
+      alternate_emails: [
+        { email: 'alice@work.com', verified: true },
+        { email: 'alice@personal.com', verified: true },
+      ],
+    });
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('githubId')).toEqual(['13434323']);
+    expect(params.getAll('githubUsername')).toEqual(['octocat']);
+  });
+
+  it('does not duplicate github keys on the single-email path (no-regression, FR-002)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('email')).toEqual(['alice@x.org']);
+    expect(params.getAll('githubId')).toEqual(['13434323']);
+    expect(params.getAll('githubUsername')).toEqual(['octocat']);
+  });
+
+  it('under impersonation, forwards the TARGET user github keys with the target token (FR-009)', async () => {
+    isImpersonating.mockReturnValue(true);
+    // getEffective* return the *target* identity during impersonation.
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserEmails.mockResolvedValueOnce({
+      primary_email: 'alice@x.org',
+      alternate_emails: [
+        { email: 'alice@work.com', verified: true },
+        { email: 'alice@personal.com', verified: true },
+      ],
+    });
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(imperReq);
+
+    const [, calledUrl, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('githubId')).toContain('13434323');
+    expect(params.getAll('githubUsername')).toContain('octocat');
+    expect(opts.bearerToken).toBe('target-token'); // runs under the target's token, not the impersonator's
+  });
+
   it('maps the upstream clas list and reports matched user ids', async () => {
     getEffectiveUsername.mockReturnValue('alice');
     gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1', 'u-2'], clas: [icla({ signatureID: 's1' }), ecla({ signatureID: 's2' })] });

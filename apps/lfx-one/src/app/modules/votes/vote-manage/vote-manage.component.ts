@@ -7,7 +7,14 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_QUESTION_MIN_LENGTH, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_LABEL,
+  OPEN_VOTE_CONFIRMATION,
+  VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_LABEL,
+  VOTE_QUESTION_MIN_LENGTH,
+  VOTE_TOTAL_STEPS,
+} from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
@@ -18,7 +25,7 @@ import {
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
-import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
+import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -263,6 +270,16 @@ export class VoteManageComponent {
     return new FormControl('', { validators: [trimmedRequired()], nonNullable: true });
   }
 
+  /**
+   * Create a new comment prompt FormGroup with default values
+   * Prompt text is optional but bounded by VOTE_COMMENT_PROMPT_MAX_LENGTH
+   */
+  public createCommentPromptFormGroup(): FormGroup {
+    return new FormGroup({
+      prompt: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+    });
+  }
+
   // Private methods
 
   /** Navigates back to the committee votes tab or the main votes page. */
@@ -405,6 +422,17 @@ export class VoteManageComponent {
       // Ensure at least one empty question group exists
       questionsArray.push(this.createQuestionFormGroup());
     }
+
+    // Rebuild commentPrompts FormArray (Step 2)
+    const commentPromptsArray = form.get('commentPrompts') as FormArray;
+    commentPromptsArray.clear();
+
+    for (const commentPrompt of formValue.commentPrompts) {
+      const commentPromptGroup = new FormGroup({
+        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+      });
+      commentPromptsArray.push(commentPromptGroup);
+    }
   }
 
   // Private initializer functions
@@ -419,6 +447,9 @@ export class VoteManageComponent {
 
       // Step 2: Vote Questions (array of questions)
       questions: new FormArray([this.createQuestionFormGroup()], [Validators.minLength(1)]),
+
+      // Step 2: Comment Questions (array of optional comment prompts)
+      commentPrompts: new FormArray([]),
     });
   }
 
@@ -567,7 +598,7 @@ export class VoteManageComponent {
         // Question validators: trimmedRequired, trimmedMinLength(10)
         // Response type validators: required
         // Options validators: trimmedRequired (via createOptionControl)
-        return questionsArray.controls.every((questionGroup) => {
+        const questionsValid = questionsArray.controls.every((questionGroup) => {
           const qg = questionGroup as FormGroup;
           const questionValid = !!qg.get('question')?.valid;
           const responseTypeValid = !!qg.get('response_type')?.valid;
@@ -576,6 +607,12 @@ export class VoteManageComponent {
           const optionsValid = optionsArray.length >= 2 && optionsArray.controls.every((c) => c.valid);
           return questionValid && responseTypeValid && optionsValid;
         });
+
+        // Comment prompts are optional — an empty array is valid, but any prompt present must respect the max length
+        const commentPromptsArray = form.get('commentPrompts') as FormArray;
+        const commentPromptsValid = commentPromptsArray.controls.every((commentPromptGroup) => !!(commentPromptGroup as FormGroup).get('prompt')?.valid);
+
+        return questionsValid && commentPromptsValid;
       }
       case 3:
         return true; // Review step is always valid if we got here

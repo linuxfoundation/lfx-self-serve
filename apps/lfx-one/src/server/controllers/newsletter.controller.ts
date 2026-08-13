@@ -12,6 +12,7 @@ import {
   GenerateNewsletterRequest,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
+  NewsletterSchedulePayload,
   NewsletterStatus,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -138,8 +139,8 @@ export class NewsletterController {
       const statusParam = req.query['status'] ? String(req.query['status']) : undefined;
       const pageToken = req.query['page_token'] ? String(req.query['page_token']) : undefined;
 
-      if (statusParam && statusParam !== 'draft' && statusParam !== 'sending' && statusParam !== 'sent') {
-        throw ServiceValidationError.forField('status', "status must be 'draft', 'sending', or 'sent'", {
+      if (statusParam && statusParam !== 'draft' && statusParam !== 'sending' && statusParam !== 'scheduled' && statusParam !== 'sent') {
+        throw ServiceValidationError.forField('status', "status must be 'draft', 'sending', 'scheduled', or 'sent'", {
           operation: 'newsletter_list',
           service: 'newsletter_controller',
           path: req.path,
@@ -173,6 +174,7 @@ export class NewsletterController {
       const payload = req.body as CreateNewsletterRequest;
       this.validateCommonPayload(payload, req.path, 'newsletter_create');
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
+      this.validateScheduledAt(payload, req.path, 'newsletter_create');
 
       const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
       logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
@@ -212,6 +214,7 @@ export class NewsletterController {
       const payload = req.body as UpdateNewsletterRequest;
       this.validateCommonPayload(payload, req.path, 'newsletter_update');
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_update');
+      this.validateScheduledAt(payload, req.path, 'newsletter_update');
 
       const newsletter = await this.newsletterService.updateNewsletter(req, projectUid, newsletterUid, version, payload);
       logger.success(req, 'newsletter_update', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
@@ -268,6 +271,60 @@ export class NewsletterController {
   }
 
   /**
+   * POST /api/projects/:projectUid/newsletters/:newsletterUid/schedule
+   *
+   * Arms a saved `scheduled_at` (or an override in the body) at the send
+   * provider. Upstream applies the strict arm-time window (min lead / max
+   * horizon) on top of the lenient save-time check `validateScheduledAt`
+   * already ran — this handler doesn't duplicate that window check, it just
+   * validates shape so a malformed override doesn't reach the proxy.
+   */
+  public async scheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
+      const version = parseIfMatch(req);
+      const payload = req.body as NewsletterSchedulePayload | undefined;
+      const scheduledAtOverride = this.validateScheduleOverride(payload, req.path, 'newsletter_schedule');
+
+      const result = await this.newsletterService.scheduleNewsletter(req, projectUid, newsletterUid, version, scheduledAtOverride);
+      logger.success(req, 'newsletter_schedule', startTime, {
+        newsletter_id: newsletterUid,
+        group_id: result.group_id,
+        scheduled_at: result.scheduled_at,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/:newsletterUid/cancel-schedule
+   *
+   * Reverts an armed newsletter to `draft`, retaining `scheduled_at` so
+   * re-arming doesn't require re-entering the time.
+   */
+  public async cancelScheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_cancel_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
+      const version = parseIfMatch(req);
+      const result = await this.newsletterService.cancelScheduleNewsletter(req, projectUid, newsletterUid, version);
+      logger.success(req, 'newsletter_cancel_schedule', startTime, { newsletter_id: newsletterUid });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics
    */
   public async getAnalytics(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -283,6 +340,28 @@ export class NewsletterController {
         total_opens: analytics.total_opens,
       });
       res.json(analytics);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/:newsletterUid/analytics/recipients
+   */
+  public async getRecipientEngagement(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_recipient_engagement', { project_uid: projectUid, newsletter_id: newsletterUid });
+      const engagement = await this.newsletterService.getRecipientEngagement(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_recipient_engagement', startTime, {
+        newsletter_id: newsletterUid,
+        total_recipients: engagement.total_recipients,
+        complete: engagement.complete,
+      });
+      res.json(engagement);
     } catch (error) {
       next(error);
     }
@@ -510,6 +589,105 @@ export class NewsletterController {
         path,
       });
     }
+  }
+
+  /**
+   * Save-time validation for `scheduled_at` on create/update — lenient,
+   * future-only. Explicit `null` is allowed and means "clear the saved
+   * schedule" (PUT is full-replace upstream, so omitting the field also
+   * clears it — this only rejects a present-but-invalid value). The strict
+   * arm-time window (min lead / max horizon) is enforced upstream at
+   * `/schedule` time, not here.
+   */
+  private validateScheduledAt(payload: { scheduled_at?: string | null }, path: string, operation: string): void {
+    if (payload?.scheduled_at === undefined || payload?.scheduled_at === null) {
+      return;
+    }
+
+    if (typeof payload.scheduled_at !== 'string') {
+      throw ServiceValidationError.forField('scheduled_at', 'scheduled_at must be an RFC3339 timestamp string or null', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+
+    const parsed = new Date(payload.scheduled_at);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw ServiceValidationError.forField('scheduled_at', 'scheduled_at must be a valid timestamp', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+
+    if (parsed.getTime() <= Date.now()) {
+      throw ServiceValidationError.forField('scheduled_at', 'scheduled_at must be in the future', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+  }
+
+  /**
+   * Shape validation for the optional body on `/schedule`. Returns the
+   * override timestamp, or `undefined` when the body is absent (arm the
+   * already-saved `scheduled_at`). Does not enforce the strict arm-time
+   * window — that's upstream's job, and its rejection carries the
+   * discriminating `error` field (`upstreamCode`) the UI branches on.
+   */
+  private validateScheduleOverride(payload: NewsletterSchedulePayload | undefined, path: string, operation: string): string | undefined {
+    // express.json() defaults req.body to {} for an empty body, so "arm the
+    // saved value" (no override) arrives as an object with no scheduled_at
+    // key, not as undefined — both must be treated as "no override" here.
+    // A JSON `null` body also reaches this method as `null`, not undefined —
+    // dereferencing `.scheduled_at` on it throws. Primitive/array bodies
+    // (`5`, `"x"`, `[]`) don't throw but must not silently pass through as
+    // "no override" either, since that arms the saved schedule for a
+    // malformed request instead of rejecting it.
+    if (payload === undefined || payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      if (payload === undefined || payload === null) return undefined;
+      throw ServiceValidationError.forField('scheduled_at', 'Request body must be a JSON object', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+    // Upstream rejects unknown fields on this endpoint. Silently ignoring them here
+    // instead would turn a typo'd key (e.g. "scheduld_at") into an accepted "no
+    // override" body that arms the draft's already-saved schedule rather than the
+    // 400 the caller should get for the malformed request.
+    const unknownKeys = Object.keys(payload).filter((key) => key !== 'scheduled_at');
+    if (unknownKeys.length > 0) {
+      throw ServiceValidationError.forField('scheduled_at', `Unexpected field(s) in request body: ${unknownKeys.join(', ')}`, {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+    if (payload.scheduled_at === undefined || payload.scheduled_at === null) {
+      return undefined;
+    }
+
+    if (typeof payload.scheduled_at !== 'string' || payload.scheduled_at.trim().length === 0) {
+      throw ServiceValidationError.forField('scheduled_at', 'scheduled_at must be a non-empty RFC3339 timestamp string', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+
+    const parsed = new Date(payload.scheduled_at);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw ServiceValidationError.forField('scheduled_at', 'scheduled_at must be a valid timestamp', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+
+    return payload.scheduled_at;
   }
 }
 

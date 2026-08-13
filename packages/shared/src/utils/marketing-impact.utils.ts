@@ -1,10 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
+import { BEHIND_GOAL_PERCENT_THRESHOLD } from '../constants/marketing-impact.constants';
 
-/** Number of past months to show in the Marketing Impact period picker. */
-const MONTH_COUNT = 12;
+import type { MarketingImpactPeriodOption, ResolvedPeriodRange } from '../interfaces/marketing-impact.interface';
 
 /** Returns the default reporting month (previous calendar month, UTC). */
 export function getDefaultMarketingImpactMonth(): string {
@@ -78,9 +77,15 @@ export function computeMomPct(arr: number[] | undefined): number | null {
 // === Period Utilities ===
 
 const PERIOD_PRESETS = ['ytd', 'last-3', 'last-6'] as const;
+/** How many individual months the period picker offers, most recent first. */
+const MONTH_COUNT = 12;
+
 const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-/** Builds grouped period options: presets first, then individual months. */
+/**
+ * Builds the period options: the trailing-range presets followed by the last MONTH_COUNT
+ * individual months, newest first.
+ */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
   const now = new Date();
   const currentYear = now.getUTCFullYear();
@@ -90,6 +95,10 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
     { label: 'Last 6 months', value: 'last-6' },
   ];
 
+  // Months stay in the picker. This control is page-level — Email, Paid, Web, Social and the
+  // roster all read it and all support a YYYY-MM period. Dropping the months to spare the Events
+  // summary its partial metrics would have removed single-month filtering from every one of them;
+  // the summary handles that itself by reporting the scope it actually served.
   const months: MarketingImpactPeriodOption[] = [];
   for (let i = 1; i <= MONTH_COUNT; i++) {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
@@ -101,9 +110,17 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
   return [...presets, ...months];
 }
 
-/** Returns the default period value (previous calendar month as YYYY-MM). */
+/**
+ * Returns the default period value: 'ytd', the widest preset the picker offers.
+ *
+ * A month is deliberately not the default. Month periods re-aggregate from the event-grained
+ * tables and can only supply events/registrations/speakers — attendees, countries, organizations
+ * and sponsorship come back null. Defaulting to a month would therefore leave four of the seven
+ * summary tiles dashed on the landing view. Months remain selectable for the channels that
+ * support them.
+ */
 export function getDefaultMarketingImpactPeriod(): string {
-  return getDefaultMarketingImpactMonth();
+  return 'ytd';
 }
 
 /** Checks whether a period string is a preset identifier. */
@@ -164,4 +181,25 @@ export function resolvePeriodRange(period: string): ResolvedPeriodRange | null {
 function firstOfMonth(year: number, month: number): string {
   const d = new Date(Date.UTC(year, month - 1, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// === Event Roster Helpers ===
+
+/**
+ * Registration progress as a whole percentage, or null when the event carries no real goal.
+ * A goal of 0/absent means "no goal required", which is not the same as 0% attained.
+ */
+export function eventRegistrationPercent(registrations: { actual: number; goal: number }): number | null {
+  if (!registrations.goal || registrations.goal <= 0) return null;
+  return Math.round((registrations.actual / registrations.goal) * 100);
+}
+
+/**
+ * Shared at-risk predicate: an event is at risk when it has a real registration goal it is
+ * materially behind on AND it is pacing low against last year. Both the roster's row flag and
+ * the needs-attention strip read this so the two views can never disagree about what "at risk"
+ * means.
+ */
+export function isEventAtRisk(percent: number | null, compScore: string | null | undefined): boolean {
+  return percent !== null && percent < BEHIND_GOAL_PERCENT_THRESHOLD && compScore === 'low';
 }

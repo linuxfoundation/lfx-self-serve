@@ -4,6 +4,7 @@
 import {
   AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS,
   DETECTION_SOURCE_MAP,
+  LF_STAFF_TEAM_ID,
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
@@ -41,6 +42,7 @@ export class PersonaDetectionService {
   private readonly affiliatedUidsCache = new Map<string, AffiliatedProjectUidsCacheEntry>();
   private readonly personasCache = new Map<string, PersonaApiResponseCacheEntry>();
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
@@ -95,8 +97,12 @@ export class PersonaDetectionService {
     const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
 
-    // isRootWriter is request-scoped (bearer-token dependent) — resolve per-request and merge.
-    const [detections, isRootWriter] = await Promise.all([this.getPersonaDetections(req, username, email, cacheKey), this.checkRootWriter(req)]);
+    // isRootWriter/isLFStaff are request-scoped (bearer-token dependent) — resolve per-request and merge.
+    const [detections, isRootWriter, isLFStaff] = await Promise.all([
+      this.getPersonaDetections(req, username, email, cacheKey),
+      this.checkRootWriter(req),
+      this.checkLFStaff(req),
+    ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
     let personas = detections.personas;
@@ -111,7 +117,7 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
-    return { ...detections, personas, isRootWriter };
+    return { ...detections, personas, isRootWriter, isLFStaff };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {
@@ -129,6 +135,19 @@ export class PersonaDetectionService {
         return false;
       });
     this.rootWriterRequestCache.set(req, promise);
+    return promise;
+  }
+
+  public async checkLFStaff(req: Request): Promise<boolean> {
+    const cached = this.lfStaffRequestCache.get(req);
+    if (cached) return cached;
+
+    // Degrade to false on failure so transient access-check errors don't 500 callers that rely on this as a bypass hint.
+    const promise = this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' }).catch((error) => {
+      logger.warning(req, 'check_lf_staff', 'LF-staff check failed, assuming no bypass', { err: error });
+      return false;
+    });
+    this.lfStaffRequestCache.set(req, promise);
     return promise;
   }
 

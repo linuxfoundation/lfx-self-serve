@@ -16,6 +16,8 @@ import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchM
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
 import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
+import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
+import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 // Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
@@ -41,10 +43,13 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent],
-  // ProfileEditDrawerService is layout-scoped (not root) so its retained profile context is torn
-  // down when the hub is left; the drawer child shares this injector and resolves the same instance.
-  providers: [MessageService, ProfileEditDrawerService],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
+  // is left; each drawer child shares this injector instance via the providers below. MessageService
+  // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from
+  // the root MessageService, so a layout-local instance would shadow it and every toast raised by the
+  // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes.
+  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -61,6 +66,7 @@ export class ProfileLayoutComponent {
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
+  private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -94,8 +100,10 @@ export class ProfileLayoutComponent {
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
 
-  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
-  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
+  // Avatar image URL: prefer the uploaded avatar (auth0 user_metadata.picture) and fall back to
+  // the always-present Auth0 OIDC picture claim, so this rail never shows a placeholder for a user
+  // who simply hasn't uploaded a custom avatar (LFXV2-2628).
+  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || this.userService.user()?.picture || '');
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -159,6 +167,11 @@ export class ProfileLayoutComponent {
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
+        // Clear any stash from the redirect that failed — otherwise it outlives this failed
+        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        if (isPlatformBrowser(this.platformId)) {
+          sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
+        }
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
@@ -175,9 +188,21 @@ export class ProfileLayoutComponent {
     this.editDrawer.open(this.combinedProfile);
   }
 
+  public openVisibilityDrawer(): void {
+    // The drawer fetches its own state; it only needs the username to build the public-profile URL.
+    this.visibilityDrawer.open(this.displayUsername() ?? '');
+  }
+
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
     this.applyOptimisticProfileUpdate(metadata);
+
+    // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
+    // (which read UserService.effectiveAvatarUrl, not this layout's own profileData) reflect it in
+    // the same session without waiting for the next full-page load's post-hydration fetch.
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
   }
 
   /**
@@ -194,9 +219,15 @@ export class ProfileLayoutComponent {
       return;
     }
 
-    // The drawer builds metadata with `key: undefined` for empty fields; those keys are omitted
-    // from the PATCH body, so the backend leaves them unchanged. Drop them here too — otherwise the
-    // optimistic view would clear fields that were never actually persisted as cleared.
+    // A null profile means the GET never loaded; merging would fabricate a non-null profile and flip
+    // the drawer's metadataLoaded true, letting a later save wipe unloaded fields. Refetch instead.
+    if (this.combinedProfile.profile == null) {
+      this.refreshProfile$.next();
+      return;
+    }
+
+    // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
+    // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
 
     const mergedProfile: CombinedProfile = {
@@ -232,32 +263,47 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, form }. Discard if older than the TTL so an abandoned profile-edit
-    // authorization isn't silently replayed by a later, unrelated profile-auth return.
-    let formData: Partial<UserMetadata>;
+    // Stored as one of: { savedAt, userMetadata } (drawer's mapped text-field save),
+    // { savedAt, avatarPending, userMetadata? } (avatar-upload redirect, mapped and optional), or the
+    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending — mapLegacyFormEnvelope below
+    // preserves its original non-clearing semantics). Discard past the TTL so a stale or abandoned
+    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
+    let userMetadata: Partial<UserMetadata> | undefined;
+    let avatarPending = false;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; form?: Partial<UserMetadata> };
-      if (typeof envelope?.savedAt !== 'number' || !envelope.form || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
+      const envelope = JSON.parse(savedState) as {
+        savedAt?: unknown;
+        userMetadata?: Partial<UserMetadata>;
+        form?: Partial<UserMetadata>;
+        avatarPending?: boolean;
+      };
+      if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
-      formData = envelope.form;
+      avatarPending = envelope.avatarPending === true;
+      if (envelope.userMetadata) {
+        userMetadata = envelope.userMetadata;
+      } else if (envelope.form) {
+        userMetadata = this.mapLegacyFormEnvelope(envelope.form);
+      }
     } catch {
       return;
     }
-    const userMetadata: Partial<UserMetadata> = {
-      given_name: formData.given_name || undefined,
-      family_name: formData.family_name || undefined,
-      job_title: formData.job_title || undefined,
-      organization: formData.organization || undefined,
-      country: formData.country || undefined,
-      state_province: formData.state_province || undefined,
-      city: formData.city || undefined,
-      address: formData.address || undefined,
-      postal_code: formData.postal_code || undefined,
-      phone_number: formData.phone_number || undefined,
-      t_shirt_size: formData.t_shirt_size || undefined,
-      bio: formData.bio || undefined,
-    };
+
+    // The selected File can't survive the redirect (sessionStorage can't hold one), so this is the
+    // earliest reliable point to tell the user to re-select their image — a toast shown right before
+    // `window.location.href` in the drawer is wiped by the same-tick navigation before it can be read.
+    if (avatarPending) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Authorization complete',
+        detail: 'Please re-select your image to upload it.',
+      });
+    }
+
+    if (!userMetadata) {
+      return;
+    }
 
     const updateData: ProfileUpdateRequest = {
       user_metadata: userMetadata as UserMetadata,
@@ -283,6 +329,27 @@ export class ProfileLayoutComponent {
         });
       },
     });
+  }
+
+  // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
+  // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
+  // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
+  // Removable once no pre-2933 bundle can still be serving the write path (past the pending-save TTL).
+  private mapLegacyFormEnvelope(form: Partial<UserMetadata>): Partial<UserMetadata> {
+    return {
+      given_name: form.given_name || undefined,
+      family_name: form.family_name || undefined,
+      job_title: form.job_title || undefined,
+      organization: form.organization || undefined,
+      country: form.country || undefined,
+      state_province: form.state_province || undefined,
+      city: form.city || undefined,
+      address: form.address || undefined,
+      postal_code: form.postal_code || undefined,
+      phone_number: form.phone_number || undefined,
+      t_shirt_size: form.t_shirt_size || undefined,
+      bio: form.bio || undefined,
+    };
   }
 
   // Strip the Flow C query params (success/error) while staying on the current tab.

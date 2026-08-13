@@ -9,6 +9,7 @@ import type {
   PaidProjectPerformance,
   RevenueImpactResponse,
 } from './analytics-data.interface';
+import type { EventsOverviewMetric } from './dashboard-metric.interface';
 
 /** Period option for the Marketing Impact date range picker. */
 export interface MarketingImpactPeriodOption {
@@ -30,11 +31,31 @@ export interface MarketingImpactTabOption {
   label: string;
 }
 
-/** Focus program identifiers for the Marketing Impact FOCUS filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
-export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'projectWebsites';
+/** Campaign Type identifiers for the Campaign Impact filter bar. Values map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION via FOCUS_TO_CLASSIFICATION. */
+export type MarketingImpactFocusProgram = 'all' | 'lfCorporate' | 'lfEvents' | 'lfTraining' | 'membership';
 
 /** Tab identifiers for the Marketing Impact section tabs. */
-export type MarketingImpactTab = 'overview' | 'attribution' | 'performance-marketing' | 'email' | 'web-activity' | 'social-accounts' | 'social-listening';
+export type MarketingImpactTab = 'all' | 'web' | 'social' | 'email' | 'paid' | 'social-listening';
+
+/**
+ * Sub-view identifiers for the Events campaign type. Events content divides into the attendance
+ * story (registrations, attendees, speakers, geography) and the sponsorship story (revenue and
+ * tiers). These map onto the detail drawer's existing 'b2c'/'b2b' focus.
+ */
+export type EventsSplitView = 'attendance' | 'sponsorship';
+
+/**
+ * Which half of an event's story the detail drawer shows: 'b2c' is registrations and the campaigns
+ * that drove them, 'b2b' is sponsorship revenue and sponsors by tier. The sibling of
+ * EventsSplitView — the roster maps one onto the other via EVENTS_SPLIT_TO_DRAWER_FOCUS.
+ */
+export type EventDrawerFocus = 'b2c' | 'b2b';
+
+/** Sub-tab option for the Events attendance/sponsorship split. */
+export interface EventsSplitOption {
+  id: EventsSplitView;
+  label: string;
+}
 
 /** Aggregated KPI source data fetched for the Marketing Impact overview tab. */
 export interface OverviewKpiData {
@@ -42,6 +63,87 @@ export interface OverviewKpiData {
   brandReach: BrandReachResponse | null;
   emailCtr: EmailCtrResponse | null;
   attribution: MarketingAttributionResponse | null;
+}
+
+/**
+ * Foundation-wide events summary for the selected period, driving the Events Summary tile
+ * row at the top of the Overview tab. Each metric carries its value plus a YoY change
+ * fraction (0.52 = +52%; null when there is no prior baseline).
+ */
+export interface EventsOverviewSummary {
+  /** The period these figures actually cover — see EventsOverviewSummaryResponse.scope. */
+  scope: 'ytd' | 'month';
+  registrations: EventsOverviewMetric;
+  attendees: EventsOverviewMetric;
+  events: EventsOverviewMetric;
+  speakers: EventsOverviewMetric;
+  organizations: EventsOverviewMetric;
+  countries: EventsOverviewMetric;
+  /** Aggregate sponsorship revenue in dollars for the period. */
+  sponsorship: EventsOverviewMetric;
+}
+
+/** The tileable metric fields of EventsOverviewSummary — everything except the `scope` metadata. */
+export type EventsOverviewMetricKey = Exclude<keyof EventsOverviewSummary, 'scope'>;
+
+/** Severity tone for a needs-attention item. */
+export type AttentionSeverity = 'critical' | 'warning';
+
+/** A single actionable item in the "Needs attention" strip. */
+export interface EventAttentionItem {
+  /** Stable id (the event id) for tracking. */
+  id: string;
+  /** Short severity tag, e.g. "BEHIND GOAL". */
+  tag: string;
+  severity: AttentionSeverity;
+  /** One-line headline, e.g. "Open Source Summit Korea is 29% to its registration goal". */
+  title: string;
+  /** Supporting detail line. */
+  detail: string;
+  /** Deep-link to act on the item (the event page); '' when unavailable. */
+  actionUrl: string;
+}
+
+/** A single actual-vs-goal progress bar in an event roster row. */
+export interface EventRosterBar {
+  /** Formatted actual value (e.g. "206", "$45.2K"). */
+  actual: string;
+  /** Formatted goal value (e.g. "700", "$195K"); shown as the grey target number. */
+  goal: string;
+  /** Fill percentage 0–100; only meaningful when hasGoal is true. */
+  percent: number;
+  /** False when goal is 0/absent — the UI renders no bar (matches PCC's "no goal required"). */
+  hasGoal: boolean;
+  /** Health tone driving the fill color. */
+  tone: 'good' | 'warn' | 'critical' | 'none';
+}
+
+/** Pre-formatted view-model for a single Event Roster table row. */
+export interface EventRosterRowView {
+  eventId: string;
+  eventName: string;
+  /** Display date (e.g. "Aug 11, 2026"). */
+  dateLabel: string;
+  eventUrl: string;
+  country: string;
+  registrations: EventRosterBar;
+  sponsorshipRevenue: EventRosterBar;
+  /** Whether to show the at-risk (⚠) flag — behind goal with a low comparison score. */
+  atRisk: boolean;
+}
+
+/** Pre-formatted view-model for a single Events Summary stat tile. */
+export interface EventsSummaryStat {
+  id: string;
+  label: string;
+  icon: string;
+  iconClass: string;
+  /** Formatted value string, or a dash when the underlying metric is null (no data yet). */
+  value: string;
+  /** Formatted YoY delta (e.g. "▲ 12% YoY"), or null when there is no baseline. */
+  delta: string | null;
+  /** Trend direction for coloring the delta. */
+  deltaTrend: 'up' | 'down' | 'neutral';
 }
 
 /** Pre-formatted KPI card data for the Marketing Impact performance summary. */
@@ -118,10 +220,17 @@ export interface EmailTypeRow {
   ctr: string;
 }
 
-/** View-model row for the top campaigns table. */
+/** View-model row for the email sends table. */
 export interface TopCampaignRow {
   name: string;
   type: string;
+  /**
+   * Formatted send date (e.g. "Jul 14, 2026"), or an em dash when the source row has no date.
+   * Already display-ready — the raw nullable YYYY-MM-DD lives on EmailCampaignPerformance; this
+   * is the view-model, so the template renders it directly and the @for track key uses it to tell
+   * repeated sends of one campaign apart.
+   */
+  sendDate: string;
   sends: string;
   opens: string;
   openRate: string;

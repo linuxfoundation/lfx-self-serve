@@ -1,5 +1,5 @@
 ---
-description: Commit conventions, branch naming, PR format, PR size guidelines, sign-off + GPG signing, and JIRA tracking workflow
+description: Commit conventions, branch naming, PR format, PR size guidelines, sign-off + GPG signing, and ticket tracking workflow (JIRA or GitHub Issues)
 paths:
   - '*'
 ---
@@ -45,14 +45,16 @@ Acceptable `%G?` codes: `G` (good signature) or `U` (good signature, signing key
 
 ## Branch Naming
 
-- Branch names follow commit types followed by the JIRA ticket number
-- Format: `feat/LFXV2-123` or `ci/LFXV2-456`
+- Branch names follow commit types followed by the ticket reference — either a JIRA ticket or a GitHub Issue number
+- JIRA format: `feat/LFXV2-123` or `ci/LFXV2-456`
+- GitHub Issue format: `feat/GH-123` or `ci/GH-456` (the bare issue number from `linuxfoundation/lfx-self-serve`, no repo prefix)
+- Use whichever tracker the work is actually filed in — don't create a JIRA ticket just to satisfy branch naming when a GitHub Issue already tracks the work, and vice versa
 
 ## PR Titles
 
 - PR titles must follow conventional commit format: `type(scope): description`
 - The scope follows the Angular config for conventional commits
-- Do not include the JIRA ticket in the title
+- Do not include the ticket reference (JIRA or GitHub Issue) in the title
 - Everything should be in lowercase
 
 ## PR Size & Focus
@@ -69,11 +71,11 @@ When a PR depends on or relates to work in other repos (e.g., upstream microserv
 - **Related PRs in other repos** — link any PRs that were part of the same feature effort (e.g., a committee-service PR that this frontend PR builds on)
 - **Deployed dependencies** — if the PR requires an upstream change to be deployed first, call that out explicitly so reviewers and mergers know the ordering
 
-## JIRA Tracking
+## Ticket Tracking (JIRA or GitHub Issues)
 
 Before starting any work or commits:
 
-1. **Check if there is a JIRA ticket** — always track work. Do not use discarded or resolved tickets.
-2. **Create JIRA ticket if needed** for untracked work
-3. **Include JIRA ticket in commit message** (e.g., `LFXV2-XXX`)
-4. **Link PR to JIRA ticket** when creating pull requests
+1. **Check if there is a tracking ticket** — always track work, in either the `LFXV2` JIRA project or a GitHub Issue on `linuxfoundation/lfx-self-serve`. Do not use discarded or resolved tickets/issues.
+2. **Create a ticket if needed** for untracked work — JIRA for most work; GitHub Issues for issues filed directly on GitHub (e.g. bug reports, epics tracked on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17)) where a JIRA ticket doesn't already exist. Don't create both for the same piece of work.
+3. **Include the ticket reference in the commit message** — `LFXV2-XXX` for JIRA, or for a GitHub Issue either `GH-XXX` (bare issue number, e.g. `GH-1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-self-serve#1331`) — prefer the fully-qualified path when the ticket isn't in this repo
+4. **Link the PR to the ticket** — JIRA ticket link, or `Closes #XXX` / `Refs #XXX` (or the fully-qualified `org/repo#XXX` form for a ticket in another repo) for a GitHub Issue, in the PR body

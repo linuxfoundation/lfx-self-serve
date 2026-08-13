@@ -10,6 +10,8 @@ const campaignController = new CampaignController();
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
+router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
+router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));

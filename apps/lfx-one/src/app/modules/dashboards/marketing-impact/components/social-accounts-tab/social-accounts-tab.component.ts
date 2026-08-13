@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MONTH_NAMES } from '@lfx-one/shared/constants';
-import { formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { formatChangePct, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
@@ -143,7 +143,7 @@ export class SocialAccountsTabComponent {
           label: 'Engagement Rate',
           icon: 'fa-light fa-heart',
           iconClass: 'bg-amber-100 text-amber-600',
-          value: `${avgEngagement.toFixed(2)}%`,
+          value: `${formatPercent(avgEngagement)}%`,
           momChange: null,
           momTrend: 'neutral' as const,
           momTrendClass: 'text-gray-500',
@@ -182,7 +182,7 @@ export class SocialAccountsTabComponent {
             platform: p.platform,
             followers: formatNumber(p.followers),
             impressions: formatNumber(p.impressions),
-            engagementRate: `${p.engagementRate.toFixed(2)}%`,
+            engagementRate: `${formatPercent(p.engagementRate)}%`,
             posts: formatNumber(p.postsLast30Days),
           })
         );
@@ -245,7 +245,7 @@ export class SocialAccountsTabComponent {
           return {
             month: name,
             impressions: formatNumber(row.impressions),
-            engagementRate: `${row.engagementRate.toFixed(2)}%`,
+            engagementRate: `${formatPercent(row.engagementRate)}%`,
             followers: formatNumber(row.followers),
             newFollowers: formatNumber(row.newFollowers),
             momChange: this.formatMomChange(row.momChangeFollowers),

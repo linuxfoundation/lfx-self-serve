@@ -174,11 +174,10 @@
   <!-- Carousel Container -->
   <div class="relative overflow-hidden">
     <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="ed-evolution-carousel">
-      @for (card of northStarCards(); track card.testId) {
-        <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
-      }
-
-      @for (card of nonNorthStarCards(); track card.testId) {
+      <!-- Rendered in array order, not grouped by category — CAMPAIGN card order in
+           buildEdEvolutionMetrics() is the intended display sequence, and grouping
+           by category here would reorder it (pushing every brand card to the end). -->
+      @for (card of filteredCards(); track card.testId) {
         <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
       }
     </div>
@@ -242,6 +241,12 @@
   [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-revenue-impact-drawer>
 
+<!-- Education Drawer -->
+<lfx-education-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.Education"
+  [data]="educationData()"
+  (visibleChange)="handleDrawerClose()"></lfx-education-drawer>
+
 <!-- Existing Marketing Drawers (accessible from Brand Reach / Engaged Community drawers in future) -->
 <lfx-website-visits-drawer
   [visible]="activeDrawer() === DashboardDrawerType.MarketingWebsiteVisits"
@@ -251,8 +256,5 @@
 
 <lfx-paid-social-reach-drawer
   [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
+  [data]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-paid-social-reach-drawer>
-
-<lfx-social-media-drawer
-  [visible]="activeDrawer() === DashboardDrawerType.MarketingSocialMedia"
-  (visibleChange)="handleDrawerClose()"></lfx-social-media-drawer>

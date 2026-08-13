@@ -2,21 +2,29 @@
 // SPDX-License-Identifier: MIT
 
 import type { ProjectFunding } from '@lfx-one/shared/enums';
-import type { Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Project, QueryServiceResponse, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
-// constructor also builds `NatsService`/`SnowflakeService`/`ETagService` — none of the methods
-// under test here touch them, so they're stubbed to trivial classes to keep construction cheap.
-const { proxyRequest, addAccessToResources, checkAccess } = vi.hoisted(() => ({
+// constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
+// suites below use only the `execute` mock, while the others stay trivial.
+const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
+  execute: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
+  // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
+  CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
+  // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
+  // asserted SQL diverge from what production actually sends.
+  EMAIL_CAMPAIGN_LIMIT: 12,
   EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
+  PAID_CAMPAIGN_LIMIT: 25,
   getYearForRange: vi.fn(),
   HEALTH_METRICS_RANGES: {},
   isHealthMetricsRange: vi.fn(),
@@ -44,9 +52,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project.utils')>(
     '../../../../../packages/shared/src/utils/project.utils'
   );
+  // The real normalizeToUrl, not a stub: the roster and detail reads both depend on it to reject
+  // scheme-less/unsafe warehouse URLs, so a stub would let that regress with tests still green.
+  const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
+    '../../../../../packages/shared/src/utils/url.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
+    normalizeToUrl: urlUtils.normalizeToUrl,
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: vi.fn(),
     resolvePeriodRange: vi.fn(),
@@ -65,7 +79,7 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
-vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({}) } }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -261,5 +275,484 @@ describe('ProjectService — create picker methods', () => {
     for (const params of calls) {
       expect(params['filter_grants'] === 'direct' || typeof params['parent'] === 'string' || typeof params['name'] === 'string').toBe(true);
     }
+  });
+});
+
+describe('ProjectService — Snowflake-backed marketing reads', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  describe('getSocialReach', () => {
+    // Regression guard for the zero-fill bug: this method used to swallow Snowflake failures and
+    // resolve a defaults object, which reached the dashboard as a 200 and rendered "zero spend,
+    // 0.0x ROAS" — indistinguishable from a genuine measurement of zero. The rethrow is the whole
+    // contract the callers' unavailable states depend on, so it needs coverage of its own;
+    // otherwise a later refactor could reinstate the fallback with every test still green.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getSocialReach('tlf', undefined, { start: '2026-01-01', end: '2026-07-01', label: 'test' } as any)).rejects.toBe(failure);
+    });
+  });
+
+  describe('getEventsOverviewSummary', () => {
+    const overviewRow = {
+      PROJECT_ID: 'proj-1',
+      REGISTRATIONS_COUNT: 1200,
+      REGISTRATIONS_CHANGE: 0.52,
+      ATTENDEES_COUNT: 800,
+      ATTENDEES_CHANGE: -0.1,
+      SPEAKERS_COUNT: 60,
+      SPEAKERS_CHANGE: 0,
+      COUNTRIES_COUNT: 30,
+      COUNTRIES_CHANGE: null,
+      COMPANIES_COUNT: 45,
+      COMPANIES_CHANGE: 0.2,
+      EVENT_COUNT: 12,
+    };
+
+    // The two reads resolve independently, so the mock is ordered: overview first, sponsorship second.
+    function mockReads(overview: unknown[], sponsorship: unknown[]): void {
+      execute.mockResolvedValueOnce({ rows: overview }).mockResolvedValueOnce({ rows: sponsorship });
+    }
+
+    it('maps both reads, passing through change fractions and preserving null', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 1500000 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.projectId).toBe('proj-1');
+      expect(result.registrations).toEqual({ value: 1200, changeFraction: 0.52 });
+      expect(result.attendees).toEqual({ value: 800, changeFraction: -0.1 });
+      // Zero is a real measured delta, not "no baseline" — it must survive as 0, not become null.
+      expect(result.speakers).toEqual({ value: 60, changeFraction: 0 });
+      expect(result.countries).toEqual({ value: 30, changeFraction: null });
+      expect(result.organizations).toEqual({ value: 45, changeFraction: 0.2 });
+      expect(result.sponsorship).toEqual({ value: 1500000, changeFraction: null });
+    });
+
+    // Events and Sponsorship have no modeled YoY column; the contract is a value with a null
+    // delta, so the UI renders no change indicator rather than a fabricated 0%.
+    it('reports no YoY delta for events and sponsorship', async () => {
+      mockReads([overviewRow], [{ SPONSORSHIP_REVENUE: 42 }]);
+
+      const result = await service.getEventsOverviewSummary('tlf');
+
+      expect(result.events).toEqual({ value: 12, changeFraction: null });
+      expect(result.sponsorship.changeFraction).toBeNull();
+    });
+
+    it('falls back to zeroed metrics when the foundation has no overview row', async () => {
+      mockReads([], []);
+
+      const result = await service.getEventsOverviewSummary('unknown-slug');
+
+      expect(result.projectId).toBe('');
+      expect(result.registrations).toEqual({ value: 0, changeFraction: null });
+      expect(result.sponsorship).toEqual({ value: 0, changeFraction: null });
+    });
+
+    // Same contract the getSocialReach guard above protects: a Snowflake failure must not be
+    // laundered into a zero-filled 200, which the dashboard would render as measured zeros.
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventsOverviewSummary('tlf')).rejects.toBe(failure);
+    });
+
+    // A month period takes a different code path entirely: it re-aggregates from the event-grained
+    // MARKETING_EVENT_REGISTRATIONS rather than reading the YTD rollups, so none of the coverage
+    // above touches it.
+    describe('month period', () => {
+      const month = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any;
+
+      it('re-aggregates the three event-grained metrics and reports the month scope', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 3, REGISTRATIONS_COUNT: 410, SPEAKERS_COUNT: 12 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.scope).toBe('month');
+        expect(result.events).toEqual({ value: 3, changeFraction: null });
+        expect(result.registrations).toEqual({ value: 410, changeFraction: null });
+        expect(result.speakers).toEqual({ value: 12, changeFraction: null });
+      });
+
+      // These four exist only as pre-aggregated YTD rollups with no monthly grain anywhere in the
+      // Platinum layer. They must come back null — a 0 would read as "measured none this month".
+      it('returns null, not zero, for the metrics with no monthly grain', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 3, REGISTRATIONS_COUNT: 410, SPEAKERS_COUNT: 12 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.attendees).toEqual({ value: null, changeFraction: null });
+        expect(result.countries).toEqual({ value: null, changeFraction: null });
+        expect(result.organizations).toEqual({ value: null, changeFraction: null });
+        expect(result.sponsorship).toEqual({ value: null, changeFraction: null });
+      });
+
+      it('binds the slug and the month boundaries, in that order', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 0, REGISTRATIONS_COUNT: 0, SPEAKERS_COUNT: 0 }] });
+
+        await service.getEventsOverviewSummary('tlf', month);
+
+        expect(execute).toHaveBeenCalledWith(expect.any(String), ['tlf', '2026-03-01', '2026-04-01']);
+      });
+
+      // Regression guard: the aggregate used to read MAX(r.PROJECT_ID) off the joined event rows,
+      // so a month with no events produced MAX() over an empty set — NULL — and emitted
+      // projectId: ''. That is the same sentinel the client reads as "the request failed", so a
+      // genuinely quiet month rendered as an outage. The id now comes from slug_resolve via a
+      // LEFT JOIN and must survive with zero events.
+      it('keeps the resolved project id when the month has no events', async () => {
+        execute.mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'proj-1', EVENT_COUNT: 0, REGISTRATIONS_COUNT: 0, SPEAKERS_COUNT: 0 }] });
+
+        const result = await service.getEventsOverviewSummary('tlf', month);
+
+        expect(result.projectId).toBe('proj-1');
+        expect(result.events).toEqual({ value: 0, changeFraction: null });
+      });
+    });
+  });
+
+  // Same contract the getSocialReach guard above pins: a Snowflake failure must not be laundered
+  // into a zero-filled 200. It reached the email tab as a success, so an outage rendered
+  // "Total Sends 0 · CTR 0.00%" as measurements and no client guard could see the difference.
+  describe('getEmailCtr', () => {
+    // Typed rather than cast: a change to ResolvedPeriodRange should break this at compile time.
+    const EMAIL_CTR_PERIOD: ResolvedPeriodRange = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' };
+
+    it('propagates Snowflake failures rather than resolving zero-filled defaults', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD)).rejects.toBe(failure);
+    });
+  });
+
+  describe('getEventDetail', () => {
+    const eventRow = {
+      EVENT_ID: 'evt-1',
+      EVENT_NAME: 'KubeCon NA',
+      START_DATE: '2026-11-10',
+      EVENT_COUNTRY: 'United States',
+      EVENT_URL: 'https://events.example.org/kubecon',
+      REG_ACTUAL: 900,
+      REG_GOAL: 1000,
+      SPON_GOAL: 1000000,
+      VS_LY: 1.1,
+      COMP_SCORE: 'high',
+      CFP_STATUS: 'Review Complete',
+    };
+
+    // Ordered mock for the first three reads (event, tier, channel attribution). getEventDetail
+    // also awaits getEventPacing, which issues two more — defaulted to empty rather than counted,
+    // so adding a query to that path doesn't break these cases.
+    function mockReads(event: unknown[], tiers: unknown[], channels: unknown[] = []): void {
+      execute
+        .mockResolvedValueOnce({ rows: event })
+        .mockResolvedValueOnce({ rows: tiers })
+        .mockResolvedValueOnce({ rows: channels })
+        .mockResolvedValue({ rows: [] });
+    }
+
+    it('maps the event and its tier breakdown', async () => {
+      mockReads(
+        [eventRow],
+        [
+          { SPONSORSHIP_TIER: 'Diamond', REVENUE: 300000, SPONSOR_COUNT: 2 },
+          { SPONSORSHIP_TIER: 'Gold', REVENUE: 200000, SPONSOR_COUNT: 4 },
+        ]
+      );
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventName).toBe('KubeCon NA');
+      // Sponsorship actual is summed from the tier rows, not read from the event row.
+      expect(result?.sponsorshipRevenue).toEqual({ actual: 500000, goal: 1000000 });
+      expect(result?.sponsorshipTiers).toHaveLength(2);
+    });
+
+    // Both queries are scoped by foundation: the event id alone carries no ownership, so an ED
+    // could otherwise read another foundation's sponsorship revenue by guessing an id.
+    it('binds the foundation slug ahead of the event id in both reads', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      // Identified by content, not call order: getEventDetail also drives the channel and pacing
+      // reads, and a positional assertion would silently pass if a scoped query were reordered.
+      const scoped = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('MARKETING_EVENT_REGISTRATIONS r') || String(sql).includes('SPONSORSHIPS_BY_TIER t')
+      );
+      expect(scoped).toHaveLength(2);
+      for (const [sql, binds] of scoped) {
+        expect(sql).toContain('slug_resolve');
+        expect(binds).toEqual(['tlf', 'evt-1']);
+      }
+    });
+
+    // The campaign enrichment matches on an event-NAME substring, which is not a scope: another
+    // foundation can run a campaign whose name contains the same words, and this feeds an ED-only
+    // response. A non-umbrella caller must therefore carry FOUNDATION_SLUG into both reads.
+    it('scopes the paid and email campaign lookups to a non-umbrella foundation', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        expect(sql).toContain('FOUNDATION_SLUG = ?');
+        expect(binds).toContain('cncf');
+      }
+    });
+
+    // The headline aggregate has no outer GROUP BY, so it returns exactly one row even when the
+    // event has no prediction records — every column NULL. A truthiness check on that row reports
+    // available: true and renders "Current 0 / Predicted 0", which reads as a measured zero rather
+    // than an absent model.
+    it('reports pacing unavailable when the prediction aggregate comes back all-NULL', async () => {
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS')) {
+          return Promise.resolve({ rows: [{ DAYS_LEFT: null, CUR_REGS: null, PRIOR: null, PRED_AVG: null, PRED_LOW: null, PRED_HIGH: null }] });
+        }
+        if (text.includes('MARKETING_EVENT_REGISTRATIONS r') || text.includes('SPONSORSHIPS_BY_TIER t')) {
+          return Promise.resolve({ rows: text.includes('SPONSORSHIPS_BY_TIER t') ? [] : [eventRow] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.pacing.available).toBe(false);
+      expect(result?.pacing.current).toBeNull();
+    });
+
+    // The two pacing reads target different tables and neither is interchangeable: the base
+    // predictions table is event-grained and carries only the FINAL_* totals, while the per-day
+    // curve columns exist solely on _DRILLDOWN. Querying one for the other's columns raises an
+    // invalid-identifier error, which getEventPacing propagates — so the whole drawer fails, not
+    // just pacing. A rebuild collapsed these onto one table once already.
+    it('reads the headline from the predictions table and the curve from the drilldown', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const pacingReads = execute.mock.calls.filter(([sql]) => String(sql).includes('MARKETING_EVENT_REGISTRATION_PREDICTIONS'));
+      const head = pacingReads.find(([sql]) => String(sql).includes('FINAL_CURRENT_CUMULATIVE_REGISTRATIONS'));
+      const curve = pacingReads.find(([sql]) => String(sql).includes('DAYS_TO_EVENT'));
+
+      expect(head).toBeDefined();
+      expect(curve).toBeDefined();
+      // The headline must not come from the drilldown, nor the curve from the base table.
+      expect(String(head![0])).not.toContain('_DRILLDOWN');
+      expect(String(curve![0])).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN');
+    });
+
+    // Name matching cannot separate editions: the year-stripped pattern is there to catch campaigns
+    // that omit the year, and it matches the 2025 edition of a 2026 event just as well. Without a
+    // date bound last year's spend lands on this year's drawer. Nine months rather than twelve so
+    // an annual event's window stops short of the previous edition's own campaign month.
+    it("bounds the campaign match to this edition's run-up window", async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'cncf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql, binds] of campaignReads) {
+        // Month-truncated, because CAMPAIGN_MONTH/PUBLISHED_DATE are month-grained: day-level
+        // bounds off a mid-month event date clip the first lookback month.
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', -9,");
+        expect(sql).toContain("DATE_TRUNC('MONTH', DATEADD('MONTH', 2,");
+        // The event's own start date bounds both ends of the window.
+        expect(binds.slice(-2)).toEqual([eventRow.START_DATE, eventRow.START_DATE]);
+      }
+    });
+
+    // The umbrella foundation deliberately spans every project, so it stays unfiltered — the same
+    // exception buildFoundationFilter makes everywhere else. Asserted so a later "tighten the
+    // scope" change cannot silently blank the umbrella view.
+    it('leaves the umbrella foundation unfiltered on the campaign lookups', async () => {
+      mockReads([eventRow], []);
+
+      await service.getEventDetail('evt-1', 'tlf');
+
+      const campaignReads = execute.mock.calls.filter(
+        ([sql]) => String(sql).includes('PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH') || String(sql).includes('EMAIL_CAMPAIGN_PERFORMANCE')
+      );
+      expect(campaignReads.length).toBeGreaterThan(0);
+      for (const [sql] of campaignReads) {
+        expect(sql).not.toContain('FOUNDATION_SLUG = ?');
+      }
+    });
+
+    // An event outside the caller's foundation is filtered out by the slug_resolve join, so it
+    // is indistinguishable from a nonexistent one — no existence oracle for other foundations.
+    it('returns null when the event is not in the caller’s foundation', async () => {
+      mockReads([], []);
+
+      await expect(service.getEventDetail('evt-1', 'other-foundation')).resolves.toBeNull();
+    });
+
+    // Same contract as the getSocialReach guard above: a real failure must not be laundered into
+    // a legitimate-looking "no data yet" state. Only an unmaterialized table is unavailable.
+    it('propagates a pacing query failure rather than reporting pacing unavailable', async () => {
+      const failure = new Error('SQL compilation error: invalid identifier FOO');
+      execute
+        .mockResolvedValueOnce({ rows: [eventRow] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValue(failure);
+
+      await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+
+    it('reports pacing unavailable when the prediction table is not materialized', async () => {
+      execute
+        .mockResolvedValueOnce({ rows: [eventRow] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValue(new Error("Object 'MARKETING_EVENT_REGISTRATION_PREDICTIONS' does not exist or not authorized."));
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.pacing.available).toBe(false);
+    });
+
+    it('propagates Snowflake failures rather than resolving a partial event', async () => {
+      const failure = new Error('snowflake timeout');
+      execute.mockRejectedValue(failure);
+
+      await expect(service.getEventDetail('evt-1', 'tlf')).rejects.toBe(failure);
+    });
+
+    // The drawer binds eventUrl straight to [href]; a scheme-less warehouse value would resolve
+    // as a relative LFX One path rather than the external event page.
+    it('normalizes a scheme-less event URL instead of passing it through raw', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'events.example.org/kubecon' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('https://events.example.org/kubecon');
+    });
+
+    it('drops an unsafe event URL rather than exposing it', async () => {
+      mockReads([{ ...eventRow, EVENT_URL: 'javascript:alert(1)' }], []);
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result?.eventUrl).toBe('');
+    });
+  });
+
+  // The roster's period handling is easy to get backwards: every month the picker offers has
+  // already ended, so a bare range predicate silently drops every upcoming row and turns
+  // "Including past" into "past only".
+  describe('getEventRoster period scoping', () => {
+    const month = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' } as any;
+
+    it('leaves the upcoming roster unbounded when includePast is false', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', false, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE');
+      expect(sql).not.toContain('EVENT_START_DATE >=');
+      expect(binds).toEqual(['tlf']);
+    });
+
+    // Regression guard: past events from the range are ADDED to the upcoming ones.
+    it('adds past events from the period instead of replacing the upcoming roster', async () => {
+      execute.mockResolvedValue({ rows: [] });
+
+      await service.getEventRoster('tlf', true, month);
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('EVENT_IS_PAST = FALSE OR');
+      expect(binds).toEqual(['tlf', '2026-03-01', '2026-04-01']);
+    });
+  });
+});
+
+describe('ProjectService — paid ads compatibility', () => {
+  const period: ResolvedPeriodRange = {
+    type: 'trailing',
+    startDate: '2026-01-01',
+    endDate: '2026-07-01',
+    label: 'Last 6 months',
+  };
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  it('translates keyword attribution failures without exposing Snowflake details', async () => {
+    const attributionError = new Error('keyword attribution unavailable');
+    execute.mockImplementation((sql: string) => {
+      if (sql.includes('PAID_ADS_KEYWORD_ATTRIBUTION')) {
+        return Promise.reject(attributionError);
+      }
+      return Promise.resolve({ rows: [], metadata: [] });
+    });
+
+    await expect(new ProjectService().getKeywordPerformance('cncf', period)).rejects.toMatchObject({
+      message: 'Keyword attribution data is temporarily unavailable',
+      code: 'KEYWORD_ATTRIBUTION_UNAVAILABLE',
+      statusCode: 503,
+      originalError: attributionError,
+    });
+  });
+
+  it('retries only the missing last-touch conversion column with the legacy query', async () => {
+    execute.mockImplementation((sql: string) => {
+      if (sql.includes('PROJECT_NAME, CAMPAIGN_NAME') && sql.includes('LAST_TOUCH_CONVERSIONS')) {
+        return Promise.reject(new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS'"));
+      }
+      if (sql.includes('PROJECT_NAME, CAMPAIGN_NAME') && sql.includes('SUM(CONV)')) {
+        return Promise.resolve({
+          rows: [
+            {
+              PROJECT_NAME: 'Project',
+              CAMPAIGN_NAME: 'Campaign',
+              FUNNEL_STAGE: 'ToFU',
+              SPEND: 100,
+              REVENUE: 200,
+              ROAS: 2,
+              CONVERSIONS: 3,
+              CONV_RATE: 1.5,
+              CPC: 0.5,
+              SESSIONS: 10,
+              IMPRESSIONS: 1_000,
+              CLICKS: 200,
+            },
+          ],
+          metadata: [],
+        });
+      }
+      return Promise.resolve({ rows: [], metadata: [] });
+    });
+
+    const result = await new ProjectService().getSocialReach('cncf', undefined, period);
+
+    expect(result.projectBreakdown?.[0]).toMatchObject({ conversions: 3, convRate: 1.5 });
+    expect(
+      execute.mock.calls.some(
+        ([sql, , options]) => String(sql).includes('LAST_TOUCH_CONVERSIONS') && options?.expectInvalidIdentifier === 'LAST_TOUCH_CONVERSIONS'
+      )
+    ).toBe(true);
+    expect(execute.mock.calls.some(([sql]) => String(sql).includes('SUM(CONV)'))).toBe(true);
   });
 });

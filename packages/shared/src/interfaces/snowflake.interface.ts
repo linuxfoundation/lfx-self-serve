@@ -32,6 +32,9 @@ export interface SnowflakeQueryOptions {
 
   /** When true, an "object does not exist" error is expected (e.g. a table not yet created) and is not counted toward the circuit breaker; the query still rejects so the caller can degrade gracefully. */
   expectMissingObject?: boolean;
+
+  /** Identifier that may be absent during a coordinated schema rollout. A matching error is not counted toward the circuit breaker; the query still rejects so the caller can retry a legacy query. */
+  expectInvalidIdentifier?: string;
 }
 
 /**

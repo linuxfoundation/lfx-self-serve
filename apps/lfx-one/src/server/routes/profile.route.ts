@@ -1,14 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_SIZE_BYTES } from '@lfx-one/shared/constants';
+import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { ProfileController } from '../controllers/profile.controller';
+import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 
 const profileController = new ProfileController();
+
+/**
+ * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
+ * reaches the global error handler, which only preserves the real statusCode for BaseApiError
+ * instances and would otherwise flatten this into a generic 500.
+ */
+function handlePictureUploadParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
+  if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    next(
+      new MicroserviceError('Image exceeds the maximum upload size', 413, 'PAYLOAD_TOO_LARGE', {
+        operation: 'upload_profile_picture',
+        service: 'profile_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  next(err);
+}
 
 /**
  * Profile routes for authenticated users
@@ -35,6 +56,24 @@ router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req,
 
 // PATCH /api/profile - Update user metadata via NATS (replaces separate user and details endpoints)
 router.patch('/', blockDuringImpersonation, (req, res, next) => profileController.updateUserMetadata(req, res, next));
+
+// POST /api/profile/picture-upload - Upload a profile picture to the object store and persist its
+// URL to user_metadata.picture via NATS. Body is the raw image bytes (not multipart).
+router.post(
+  '/picture-upload',
+  blockDuringImpersonation,
+  express.raw({ type: [...ALLOWED_AVATAR_MIME_TYPES], limit: MAX_AVATAR_SIZE_BYTES }),
+  handlePictureUploadParseError,
+  (req: Request, res: Response, next: NextFunction) => profileController.uploadProfilePicture(req, res, next)
+);
+
+// Public-profile visibility (LFXV2-2629) — master IsPublic flag + section-level `visibility` preference
+
+// GET /api/profile/visibility - Resolve the current user's public-profile visibility
+router.get('/visibility', (req, res, next) => profileController.getVisibility(req, res, next));
+
+// PATCH /api/profile/visibility - Update the current user's public-profile visibility
+router.patch('/visibility', blockDuringImpersonation, (req, res, next) => profileController.updateVisibility(req, res, next));
 
 // Email management routes (backed by auth-service via NATS)
 

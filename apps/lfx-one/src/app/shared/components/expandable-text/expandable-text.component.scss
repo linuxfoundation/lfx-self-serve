@@ -2,11 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 .expandable-content {
+  // Fade-out color for collapsed content. Defaults to white; consumers on tinted
+  // backgrounds override it via `--lfx-expandable-fade-color` (e.g. slate-50 cards).
+  --lfx-expandable-fade: var(--lfx-expandable-fade-color, rgb(255 255 255));
+
   &.collapsed {
     &::after {
       content: '';
       @apply absolute bottom-0 left-0 right-0 h-12 pointer-events-none;
-      background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.5) 40%, rgba(255, 255, 255, 0.9) 70%, rgba(255, 255, 255, 1) 100%);
+      background: linear-gradient(
+        180deg,
+        transparent 0%,
+        color-mix(in srgb, var(--lfx-expandable-fade) 50%, transparent) 40%,
+        color-mix(in srgb, var(--lfx-expandable-fade) 90%, transparent) 70%,
+        var(--lfx-expandable-fade) 100%
+      );
     }
   }
 

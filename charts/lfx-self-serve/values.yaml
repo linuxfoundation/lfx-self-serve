@@ -156,6 +156,19 @@ serviceAccount:
 podAnnotations: {}
 podLabels: {}
 
+# Pod scheduling. All default to empty and render nothing when unset.
+# nodeSelector + tolerations are the pair needed to target a tainted node pool.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# priorityClassName affects preemption order. Leave empty unless the cluster
+# defines priority classes; a nonexistent class blocks scheduling entirely.
+priorityClassName: ""
+
+# Spread replicas across failure domains. Consumed by the deployment template;
+# previously undeclared here.
+topologySpreadConstraints: []
+
 service:
   type: ClusterIP
   port: 80
@@ -335,6 +348,70 @@ environment:
     value:
 
   LFX_V2_SERVICE:
+    value:
+
+  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the sibling
+  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE`. Each one falls back in code to
+  # `LFX_V2_SERVICE`, so leaving it unset routes campaign traffic through the gateway — and
+  # the gateway is where the authorization lives. Heimdall and OpenFGA enforce
+  # `campaign_manager` on the project in front of campaign-service; the service's own token
+  # check is an authentication check, not a project-scoped authorization one, so a base URL
+  # pointing straight at a service instance would let any caller holding a valid token act on
+  # a project it has no grant for, by knowing a job id.
+  #
+  # Omitting them here is not the enforcement, though — `templates/deployment.yaml` emits every
+  # entry in this map, so an override adds the variable without touching the chart. All three
+  # are rejected at render time by `lfx-self-serve.environment.gatewayOnlyValidate`; a
+  # deployment that genuinely needs a direct address drops one from that list in a reviewed
+  # chart commit. None of this is needed for the cutover flag below, a separate variable.
+
+  # Campaign-service cutover, one endpoint at a time (LFXV2-3070). Serves
+  # GET /api/campaigns/jobs/:jobId from lfx-v2-campaign-service instead of the in-process job
+  # map, which only answers correctly when the poll lands on the pod that started the job.
+  #
+  # ON for "true", "1", "yes" or "on", trimmed and case-insensitive. Everything else is OFF,
+  # including empty, "0", "false", and any misspelling — so a rollback is this value alone:
+  # no code change, no build, no image promotion. Note that "yes" and "on" DO enable it; this
+  # is not a `== "true"` comparison, and setting one of them expecting to be ignored would
+  # route production traffic. Default-deny is the deliberate half: `flase` is invisible in a
+  # values.yaml diff, so an unrecognised value fails towards the path known to work.
+  #
+  # It is NOT a live switch. This is a container environment variable, so changing it edits the
+  # pod template and takes effect only as pods are replaced; with the default replica count and
+  # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
+  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
+  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
+  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # "rollback is one value" line onto a future flag whose two paths could both claim the same
+  # request — that one needs a no-overlap rollout or a shared runtime configuration source.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
+    value:
+
+  # Persist the generated campaign brief to campaign-service instead of holding it only in the
+  # browser tab. Same accepted values and same default-deny as the flag above.
+  #
+  # This one has NO id-shape backstop. It is no longer write-only: the flag now also gates the
+  # brief READ-BACK (`GET /api/campaigns/brief` and the Planning tab's restore offer), so the
+  # earlier "nothing reads them yet" no longer holds and neither does the safety argument built
+  # on it.
+  #
+  # What a mixed rollout actually costs, stated plainly. Requests are not sticky to a pod, so
+  # during a RollingUpdate one user's lookup can land flag-on and their next save flag-off, or
+  # the reverse:
+  #
+  #   - a lookup on a flag-off pod answers `off`, so a stored brief is not offered and the user
+  #     regenerates. Their save then lands on a flag-on pod, finds the row, and is refused as
+  #     `unowned-brief-exists` — a confusing but SAFE outcome; nothing is overwritten.
+  #   - a restore on a flag-on pod followed by a save on a flag-off pod is a no-op save. The
+  #     stored brief is untouched.
+  #
+  # Both directions are recoverable and neither loses stored content, which is why this is a
+  # rollout caveat rather than a blocker. It is still worse than the write-only version, so:
+  # prefer a no-overlap rollout (scale to one replica, or `maxSurge: 0` with `maxUnavailable: 1`)
+  # when flipping this flag, and expect transient `unowned-brief-exists` refusals if you do not.
+  #
+  # Turning it off again leaves the saved briefs in place; they simply stop being offered.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
     value:
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).

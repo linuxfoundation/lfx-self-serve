@@ -36,6 +36,25 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
 
+  /**
+   * Domain + schema-version segment for the per-committee-member v1-id-mapping bridge cache
+   * (LFXV2-1705). TODO(LFXV2-2973): remove this namespace once the model carries v2 keys directly
+   * (LFXV2-2968) and the bridge is deleted.
+   */
+  MEMBER_V1_MAPPING_NAMESPACE: 'member-v1-mapping:v1',
+
+  /**
+   * Domain + schema-version segment for the per-caller weekly-brief rating cache (LFXV2-3042).
+   * This is the live dedup/upsert store only (current vote per brief_uid+revision+username) —
+   * not a system of record. The durable analytics signal is the structured `rating_recorded`/
+   * `rating_cleared` log events `weekly-brief.service.ts` emits alongside every write, which
+   * flow through the existing Pino → CloudWatch pipeline.
+   */
+  WEEKLY_BRIEF_RATING_NAMESPACE: 'weekly-brief-rating:v1',
+
+  /** Domain + schema-version segment for the per-brief-revision AI-extracted weekly-brief action-items cache (LFXV2-3043). Keyed by brief uid + revision, so a regenerated/re-edited brief naturally misses and re-extracts — no explicit invalidation needed. */
+  WEEKLY_BRIEF_ACTION_ITEMS_NAMESPACE: 'weekly-brief-action-items:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -45,14 +64,29 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-committee Snowflake-backed engagement cache (1 hour, matching the Org Lens TTL). */
   COMMITTEE_ENGAGEMENT_TTL_SECONDS: 3600,
 
+  /** Short TTL for a genuinely empty (data_available: false) engagement-rows result — a committee the model doesn't cover yet. Much shorter than `COMMITTEE_ENGAGEMENT_TTL_SECONDS` so "no data yet" can't outlive the committee's dbt sync by up to an hour, while still absorbing repeated page loads in the interim. */
+  COMMITTEE_ENGAGEMENT_DEGRADE_TTL_SECONDS: 120,
+
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
 
   /** Freshness window for the Groups dashboard engagement-stats cache — absorbs repeated dashboard refreshes. */
   GROUPS_ENGAGEMENT_TTL_SECONDS: 60,
 
+  /** Freshness window for a successfully-resolved member v1-id mapping (7 days) — these mappings are stable (a person's legacy identity doesn't change), so a long TTL avoids re-hitting NATS for every request. TODO(LFXV2-2973): remove once the bridge is deleted. */
+  MEMBER_V1_MAPPING_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Short negative-cache TTL (1 hour) for a member confirmed to have no v1 mapping — long enough that a large roster of genuinely-unmapped members doesn't hammer NATS on every request, short enough that a mapping added later (e.g. after a backfill) shows up within the hour. Only ever written for a *confirmed* "no mapping" NATS response, never for an indeterminate one (a timed-out or budget-cut-off lookup) — see `v1-mapping-batch.helper.ts`'s `confirmedUnresolved` distinction. TODO(LFXV2-2973): remove once the bridge is deleted. */
+  MEMBER_V1_MAPPING_DEGRADE_TTL_SECONDS: 3600,
+
+  /** Freshness window for the per-brief-revision weekly-brief action-items cache — one brief window's worth (7 days), matching the brief's own weekly cadence. */
+  WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 7 * 24 * 60 * 60,
+
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,
+
+  /** Freshness window for a caller's weekly-brief rating (90 days) — long enough to outlive a brief revision's realistic on-screen lifetime; not indefinite, since Valkey here is a dedup cache, not the durable analytics record (see `WEEKLY_BRIEF_RATING_NAMESPACE`). */
+  WEEKLY_BRIEF_RATING_TTL_SECONDS: 90 * 24 * 60 * 60,
 
   /** TTL for a session whose `cookie.maxAge` is present but already non-positive (already past absolute expiry) — expires it out of Valkey immediately instead of handing it the multi-day fallback above. */
   SESSION_EXPIRED_TTL_SECONDS: 1,

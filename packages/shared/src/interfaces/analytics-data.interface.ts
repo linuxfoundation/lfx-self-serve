@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ProjectTableRow } from './dashboard-metric.interface';
+import type { ProjectTableRow, TrainingCertificationSummaryResponse } from './dashboard-metric.interface';
 
 /** Performance rating for paid project campaigns. */
 export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'EMERGING';
@@ -2645,6 +2645,25 @@ export interface MarketingSplitByPriority {
 }
 
 // ============================================
+// Education (ED Marketing Overview)
+// ============================================
+
+/**
+ * One education category row in the Education drawer breakdown.
+ * Revenue is nullable rather than 0 because edX carries no revenue column in
+ * COURSE_PURCHASES — a 0 would read as "earned nothing" instead of "not tracked".
+ */
+export interface EducationCategoryRow {
+  label: string;
+  enrollments: number;
+  revenue: number | null;
+  /** Share of total enrollments, 0-100; 0 when there are no enrollments at all */
+  enrollmentSharePct: number;
+  /** Pre-rounded share label (e.g. "60%") so the template does not call toFixed() per render */
+  enrollmentShareLabel: string;
+}
+
+// ============================================
 // Social Reach (Marketing Dashboard)
 // ============================================
 
@@ -2692,6 +2711,28 @@ export interface PaidCampaignPerformance {
 }
 
 /** Project-level paid performance breakdown. */
+/** Paid campaign row with display strings precomputed for the template. */
+export interface PaidCampaignPerformanceView extends PaidCampaignPerformance {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+}
+
+/**
+ * Paid project row with display strings, expansion state and severity precomputed.
+ * Angular templates must not call functions, so the drawer derives all of this in a
+ * computed signal — including `expanded`, so the template never calls Set.has().
+ */
+export interface PaidProjectBreakdownView extends PaidProjectBreakdown {
+  formattedSpend: string;
+  formattedRevenue: string;
+  formattedConversions: string;
+  severity: 'danger' | 'warn' | 'success' | 'secondary';
+  hasCampaigns: boolean;
+  expanded: boolean;
+  campaignRows: PaidCampaignPerformanceView[];
+}
+
 export interface PaidProjectBreakdown {
   projectName: string;
   funnelStage: string;
@@ -2849,6 +2890,13 @@ export interface EmailCtrCampaignGroup {
 export interface EmailCampaignPerformance {
   campaignName: string;
   emailType: string;
+  /**
+   * Day-level send date. The breakdown groups by PUBLISHED_DATE so a campaign sent more than once
+   * lists each send separately — without this field those rows are indistinguishable, both to a
+   * reader and to an @for track expression.
+   * Null when the warehouse row carries no publish date.
+   */
+  sendDate: string | null;
   sends: number;
   opens: number;
   clicks: number;
@@ -3308,6 +3356,45 @@ export interface RevenueImpactAttributionChannelView extends RevenueImpactAttrib
 }
 
 /**
+ * Marketing-attribution channel row with its display strings precomputed.
+ * Angular templates must not call formatting functions, so the drawer builds
+ * these in a computed signal and the template only reads them.
+ */
+export interface MarketingAttributionChannelView extends MarketingAttributionChannel {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+  formattedRevPerSession: string;
+  /** Project drill-down rows for this channel, already formatted. */
+  projects: MarketingAttributionProjectView[];
+}
+
+/** Project drill-down row under a channel, with display strings precomputed. */
+export interface MarketingAttributionProjectView extends MarketingAttributionProject {
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+}
+
+/** Attribution totals with display strings precomputed alongside the raw numbers. */
+export interface MarketingAttributionTotalsView {
+  sessions: number;
+  linearRevenue: number;
+  firstTouchRevenue: number;
+  lastTouchRevenue: number;
+  timeDecayRevenue: number;
+  formattedSessions: string;
+  formattedFirstTouchRevenue: string;
+  formattedLastTouchRevenue: string;
+  formattedLinearRevenue: string;
+  formattedTimeDecayRevenue: string;
+}
+
+/**
  * API response for Revenue Impact (Marketing Attribution) metric
  * Pipeline, revenue, attribution models, engagement channels, paid media
  */
@@ -3409,10 +3496,47 @@ export interface EdEvolutionData {
   eventGrowth: EventGrowthResponse;
   brandReach: BrandReachResponse;
   brandHealth: BrandHealthResponse;
-  revenueImpact: RevenueImpactResponse;
+  /**
+   * Attribution card data. undefined means "request failed", not "zero revenue".
+   *
+   * Declared required-but-undefinable (not `revenueImpact?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * $0 attributed revenue is a legitimate measurement, so the card cannot fall back to a
+   * zero-filled response on error — that would report a failed query as a factual "this
+   * foundation won nothing". The card renders an explicit unavailable state instead.
+   */
+  revenueImpact: RevenueImpactResponse | undefined;
   emailCtr: EmailCtrResponse;
-  paidCampaign: SocialReachResponse;
+  /**
+   * Paid Media card data. undefined means "request failed", not "zero spend".
+   *
+   * Same contract as revenueImpact above: zero spend, zero impressions and 0.0x ROAS are
+   * all legitimate measurements, so a zero-filled error fallback would be indistinguishable
+   * from real data.
+   */
+  paidCampaign: SocialReachResponse | undefined;
   attribution?: MarketingAttributionResponse;
+  /**
+   * Training & certification summary reused from the Health Metrics endpoint.
+   * Declared required-but-undefinable (not `education?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * undefined means "request failed" and suppresses the Education card. The caller maps
+   * the analytics service's all-zeros error fallback (identified by an empty projectId)
+   * to undefined, so a failed request cannot be mistaken for a foundation that genuinely
+   * has no enrollments.
+   */
+  education: TrainingCertificationSummaryResponse | undefined;
+  /**
+   * True only while the initial request is in flight, before any response or error.
+   *
+   * Distinguishes "not answered yet" from "answered with a failure". Both leave
+   * revenueImpact and paidCampaign undefined, but only the latter may be reported to
+   * the user as unavailable — announcing a failure during loading claims a request
+   * failed before it has.
+   */
+  pending?: boolean;
 }
 
 // ============================================
@@ -3421,7 +3545,7 @@ export interface EdEvolutionData {
 
 /**
  * Row from ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_KEYWORD_PERFORMANCE (daily grain).
- * One row per keyword/search-term per day.
+ * Traffic metrics only; authoritative conversions come from keyword attribution.
  */
 export interface KeywordPerformanceRow {
   RECORD_TYPE: 'keyword' | 'search_term';
@@ -3432,11 +3556,8 @@ export interface KeywordPerformanceRow {
   CLICKS: number;
   SPEND: number;
   IMPRESSIONS: number;
-  CONVERSIONS: number;
-  CONVERSIONS_VALUE: number;
   CTR: number;
   CPC: number;
-  CONVERSION_RATE: number;
 }
 
 /**
@@ -3479,7 +3600,7 @@ export interface SearchTermSummary {
   impressions: number;
   ctr: number;
   cpc: number;
-  conversions: number;
+  conversions: number | null;
 }
 
 /** API response for the keyword performance endpoint. */

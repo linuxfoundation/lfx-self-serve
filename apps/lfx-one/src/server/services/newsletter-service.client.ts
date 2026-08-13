@@ -7,12 +7,15 @@ import {
   CreateNewsletterRequest,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
+  NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -122,6 +125,52 @@ export class NewsletterServiceClient {
     );
   }
 
+  /**
+   * Arm a saved (or overridden) `scheduled_at` at the send provider. Same
+   * shape as `sendNewsletter` — 202 with status 'sending', settling to
+   * 'scheduled' via the upstream sweep — and the same extended timeout since
+   * arming can trigger the same per-recipient resolution path.
+   */
+  public async scheduleNewsletter(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    ifMatchVersion: number,
+    scheduledAt: string | undefined
+  ): Promise<NewsletterScheduleResult> {
+    return this.microserviceProxy.proxyRequest<NewsletterScheduleResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/schedule`,
+      'POST',
+      undefined,
+      scheduledAt ? { scheduled_at: scheduledAt } : {},
+      { 'If-Match': `"${ifMatchVersion}"` },
+      { timeoutMs: NEWSLETTER_SEND_TIMEOUT_MS }
+    );
+  }
+
+  /**
+   * Revert an armed newsletter to 'draft'. Upstream retains `scheduled_at` so
+   * re-arming doesn't require re-entering the time.
+   */
+  public async cancelScheduleNewsletter(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    ifMatchVersion: number
+  ): Promise<NewsletterCancelScheduleResult> {
+    return this.microserviceProxy.proxyRequest<NewsletterCancelScheduleResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/cancel-schedule`,
+      'POST',
+      undefined,
+      {},
+      { 'If-Match': `"${ifMatchVersion}"` }
+    );
+  }
+
   public async recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {
     return this.microserviceProxy.proxyRequest<NewsletterRecipientCount>(
       req,
@@ -160,6 +209,21 @@ export class NewsletterServiceClient {
       req,
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletters/${newsletterUid}/analytics`,
+      'GET'
+    );
+  }
+
+  /**
+   * Per-recipient engagement: who the newsletter went to, delivery outcome,
+   * and every recorded open. PII-gated upstream (requires the `auditor`
+   * relation, fail-closed) — stricter than getAnalytics's `viewer` gate, so
+   * this call can 403 for a user who can see the aggregate analytics.
+   */
+  public async getRecipientEngagement(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterRecipientEngagementResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRecipientEngagementResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/analytics/recipients`,
       'GET'
     );
   }

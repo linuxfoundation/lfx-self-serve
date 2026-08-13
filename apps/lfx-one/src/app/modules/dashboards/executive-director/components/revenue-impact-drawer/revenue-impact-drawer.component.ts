@@ -2,32 +2,43 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
-import { monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { formatCurrency, monthLabelOrdinal, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   EventRegistrationAttributionChannelView,
+  MarketingAttributionChannelView,
+  MarketingAttributionProject,
+  MarketingAttributionResponse,
+  MarketingAttributionTotalsView,
   MarketingKeyInsight,
   MarketingRecommendedAction,
-  RevenueImpactAttributionChannelView,
-  RevenueImpactChannelLegendView,
-  RevenueImpactProjectBreakdownView,
   RevenueImpactResponse,
 } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-revenue-impact-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, ChartComponent, DecimalPipe, DrawerModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, SkeletonModule, TagComponent],
   templateUrl: './revenue-impact-drawer.component.html',
 })
 export class RevenueImpactDrawerComponent {
+  // === Services ===
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly projectContextService = inject(ProjectContextService);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -45,63 +56,6 @@ export class RevenueImpactDrawerComponent {
     projectBreakdown: [],
     eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
   });
-
-  // === Static Config ===
-  private static readonly channelBgClass: Record<string, string> = {
-    google_ads: 'bg-blue-500',
-    facebook_ads: 'bg-blue-700',
-    microsoft_ads: 'bg-emerald-600',
-    linkedin_ads: 'bg-gray-700',
-    reddit_ads: 'bg-red-500',
-    twitter_ads: 'bg-gray-500',
-  };
-  private static readonly channelBgFallback = 'bg-gray-400';
-
-  protected readonly paidMediaTrendChartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top',
-        align: 'end',
-        labels: { color: lfxColors.gray[700], font: { size: 11 }, boxWidth: 12, boxHeight: 12, padding: 12 },
-      },
-      tooltip: {
-        ...DASHBOARD_TOOLTIP_CONFIG,
-        callbacks: {
-          label: (ctx) => ` ${ctx.dataset.label ?? ''}: $${Number(ctx.parsed.y ?? 0).toLocaleString()}`,
-        },
-      },
-    },
-    scales: {
-      x: {
-        display: true,
-        grid: { display: false },
-        border: { display: true, color: lfxColors.gray[300] },
-        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
-      },
-      y: {
-        type: 'linear',
-        position: 'left',
-        display: true,
-        grid: { color: lfxColors.gray[200], lineWidth: 1 },
-        border: { display: false },
-        title: { display: true, text: 'Dollars ($)', color: lfxColors.gray[500], font: { size: 11 } },
-        ticks: {
-          color: lfxColors.gray[500],
-          font: { size: 11 },
-          callback: (value) => {
-            const n = Number(value);
-            if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-            if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-            return `$${n.toLocaleString()}`;
-          },
-        },
-      },
-    },
-  };
 
   protected readonly eventAttrChartOptions: ChartOptions<'bar'> = {
     responsive: true,
@@ -153,18 +107,70 @@ export class RevenueImpactDrawerComponent {
   protected readonly eventAttrSortBy = signal<'revenue' | 'sessions' | 'visitors'>('revenue');
 
   // === Computed Signals ===
-  protected readonly paidMediaTrendChartData: Signal<ChartData<'bar'>> = this.initPaidMediaTrendChartData();
   protected readonly eventAttrChartData: Signal<ChartData<'bar'>> = this.initEventAttrChartData();
-  protected readonly projectBreakdownLegend: Signal<RevenueImpactChannelLegendView[]> = this.initProjectBreakdownLegend();
-  protected readonly sortedProjectBreakdown: Signal<RevenueImpactProjectBreakdownView[]> = this.initSortedProjectBreakdown();
   protected readonly sortedEventAttrChannels: Signal<EventRegistrationAttributionChannelView[]> = this.initSortedEventAttrChannels();
-  protected readonly attributionChannelsView: Signal<RevenueImpactAttributionChannelView[]> = computed(() =>
-    this.data().attributionChannels.map((c) => ({
+  // === Marketing Attribution (multi-touch models + revenue by channel) ===
+  // Fetched here rather than passed in: this comes from the marketing-attribution
+  // endpoint, not the revenueImpact payload the rest of this drawer binds to.
+  /** False while the attribution fetch is in flight — lets the sections below tell
+   *  "still loading" apart from "resolved with no channels". */
+  protected readonly attributionResolved = signal(false);
+  protected readonly attributionData: Signal<MarketingAttributionResponse> = this.initAttributionData();
+  protected readonly expandedChannels = signal<Set<string>>(new Set());
+
+  protected readonly attributionProjectsByChannel: Signal<Map<string, MarketingAttributionProject[]>> = computed(() => {
+    const grouped = new Map<string, MarketingAttributionProject[]>();
+    for (const p of this.attributionData().projects) {
+      const list = grouped.get(p.channel) ?? [];
+      list.push(p);
+      grouped.set(p.channel, list);
+    }
+    return grouped;
+  });
+
+  protected readonly attributionTotals: Signal<MarketingAttributionTotalsView> = computed(() => {
+    const channels = this.attributionData().channels;
+    const sessions = channels.reduce((s, c) => s + c.sessions, 0);
+    const linearRevenue = channels.reduce((s, c) => s + c.linearRevenue, 0);
+    const firstTouchRevenue = channels.reduce((s, c) => s + c.firstTouchRevenue, 0);
+    const lastTouchRevenue = channels.reduce((s, c) => s + c.lastTouchRevenue, 0);
+    const timeDecayRevenue = channels.reduce((s, c) => s + c.timeDecayRevenue, 0);
+    return {
+      sessions,
+      linearRevenue,
+      firstTouchRevenue,
+      lastTouchRevenue,
+      timeDecayRevenue,
+      formattedSessions: RevenueImpactDrawerComponent.compact(sessions),
+      formattedFirstTouchRevenue: formatCurrency(firstTouchRevenue),
+      formattedLastTouchRevenue: formatCurrency(lastTouchRevenue),
+      formattedLinearRevenue: formatCurrency(linearRevenue),
+      formattedTimeDecayRevenue: formatCurrency(timeDecayRevenue),
+    };
+  });
+
+  /** Channel rows with every display string precomputed — templates only read fields. */
+  protected readonly attributionChannelRows: Signal<MarketingAttributionChannelView[]> = computed(() => {
+    const byChannel = this.attributionProjectsByChannel();
+    return this.attributionData().channels.map((c) => ({
       ...c,
-      label: RevenueImpactDrawerComponent.formatChannelLabel(c.channel),
-      formattedPercentage: c.percentage.toFixed(1),
-    }))
-  );
+      formattedSessions: RevenueImpactDrawerComponent.compact(c.sessions),
+      formattedFirstTouchRevenue: formatCurrency(c.firstTouchRevenue),
+      formattedLastTouchRevenue: formatCurrency(c.lastTouchRevenue),
+      formattedLinearRevenue: formatCurrency(c.linearRevenue),
+      formattedTimeDecayRevenue: formatCurrency(c.timeDecayRevenue),
+      formattedRevPerSession: c.sessions > 0 ? `$${(c.linearRevenue / c.sessions).toFixed(2)}` : '—',
+      projects: (byChannel.get(c.channel) ?? []).map((pr) => ({
+        ...pr,
+        formattedSessions: RevenueImpactDrawerComponent.compact(pr.sessions),
+        formattedFirstTouchRevenue: formatCurrency(pr.firstTouchRevenue),
+        formattedLastTouchRevenue: formatCurrency(pr.lastTouchRevenue),
+        formattedLinearRevenue: formatCurrency(pr.linearRevenue),
+        formattedTimeDecayRevenue: formatCurrency(pr.timeDecayRevenue),
+      })),
+    }));
+  });
+
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   private readonly split: Signal<MarketingSplitByPriority> = computed(() => splitByPriority(this.recommendedActions(), this.keyInsights()));
@@ -177,53 +183,56 @@ export class RevenueImpactDrawerComponent {
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
+  protected toggleChannel(channel: string): void {
+    const current = this.expandedChannels();
+    const next = new Set(current);
+    if (next.has(channel)) {
+      next.delete(channel);
+    } else {
+      next.add(channel);
+    }
+    this.expandedChannels.set(next);
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }
 
-  private initProjectBreakdownLegend(): Signal<RevenueImpactChannelLegendView[]> {
-    return computed(() => {
-      const channelTotals = new Map<string, number>();
-      for (const r of this.data().projectBreakdown) {
-        for (const [channel, impressions] of Object.entries(r.channelImpressions)) {
-          channelTotals.set(channel, (channelTotals.get(channel) ?? 0) + (impressions ?? 0));
-        }
-      }
-      return Array.from(channelTotals.keys())
-        .sort((a, b) => (channelTotals.get(b) ?? 0) - (channelTotals.get(a) ?? 0))
-        .map((channel) => ({
-          channel,
-          label: RevenueImpactDrawerComponent.formatChannelLabel(channel),
-          bgClass: RevenueImpactDrawerComponent.bgClassFor(channel),
-        }));
-    });
+  /** Compact number for dense table cells — 1.2K / 3.4M. */
+  private static compact(value: number): string {
+    if (value >= 999_950) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    // Locale pinned for SSR: an unpinned toLocaleString renders different separators
+    // server-side vs client-side and trips hydration text mismatches.
+    return value.toLocaleString('en-US');
   }
 
-  private initSortedProjectBreakdown(): Signal<RevenueImpactProjectBreakdownView[]> {
-    return computed(() => {
-      const legend = this.projectBreakdownLegend();
-      return [...this.data().projectBreakdown]
-        .sort((a, b) => b.totalImpressions - a.totalImpressions)
-        .map((project) => {
-          const segments = legend
-            .map(({ channel, label, bgClass }) => {
-              const impressions = project.channelImpressions[channel] ?? 0;
-              const sharePercent = project.totalImpressions > 0 ? (impressions / project.totalImpressions) * 100 : 0;
-              return {
-                channel,
-                bgClass,
-                sharePercent,
-                title: `${label}: ${RevenueImpactDrawerComponent.formatImpressionsShort(impressions)}`,
-              };
+  private initAttributionData(): Signal<MarketingAttributionResponse> {
+    const defaultValue: MarketingAttributionResponse = { channels: [], projects: [] };
+
+    const visible$ = toObservable(this.visible);
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || 'tlf'));
+
+    return toSignal(
+      combineLatest([visible$, foundation$]).pipe(
+        filter(([isVisible, slug]) => isVisible && !!slug),
+        map(([, slug]) => slug),
+        tap(() => this.attributionResolved.set(false)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getMarketingAttribution(foundationSlug, undefined, 'last-6').pipe(
+            tap(() => this.attributionResolved.set(true)),
+            // Resolve on error too: the sections below distinguish "still loading" from
+            // "resolved but empty", and a failed fetch is the latter — leaving it false
+            // would pin the drawer in a skeleton state forever.
+            catchError(() => {
+              this.attributionResolved.set(true);
+              return of(defaultValue);
             })
-            .filter((s) => s.sharePercent > 0);
-          return {
-            ...project,
-            formattedTotalImpressions: RevenueImpactDrawerComponent.formatImpressionsShort(project.totalImpressions),
-            segments,
-          };
-        });
-    });
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
   }
 
   private initSortedEventAttrChannels(): Signal<EventRegistrationAttributionChannelView[]> {
@@ -393,32 +402,6 @@ export class RevenueImpactDrawerComponent {
     });
   }
 
-  private initPaidMediaTrendChartData(): Signal<ChartData<'bar'>> {
-    return computed(() => {
-      const trend = this.data().paidMedia.monthlyTrend;
-      const labels = trend.map((r) => RevenueImpactDrawerComponent.formatYearMonthLabel(r.month));
-      return {
-        labels,
-        datasets: [
-          {
-            type: 'bar',
-            label: 'Spend',
-            data: trend.map((r) => r.spend),
-            backgroundColor: lfxColors.blue[500],
-            borderRadius: 4,
-          },
-          {
-            type: 'bar',
-            label: 'Revenue',
-            data: trend.map((r) => r.revenue),
-            backgroundColor: lfxColors.emerald[600],
-            borderRadius: 4,
-          },
-        ],
-      };
-    });
-  }
-
   private initEventAttrChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const rows = this.data().eventRegistrationAttribution.monthlyTrend;
@@ -479,16 +462,6 @@ export class RevenueImpactDrawerComponent {
       .split('_')
       .map((word) => (word === 'ads' ? 'Ads' : word.charAt(0).toUpperCase() + word.slice(1)))
       .join(' ');
-  }
-
-  private static formatImpressionsShort(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-    return n.toLocaleString();
-  }
-
-  private static bgClassFor(channel: string): string {
-    return RevenueImpactDrawerComponent.channelBgClass[channel] ?? RevenueImpactDrawerComponent.channelBgFallback;
   }
 
   private static formatYearMonthLabel(yearMonth: string): string {

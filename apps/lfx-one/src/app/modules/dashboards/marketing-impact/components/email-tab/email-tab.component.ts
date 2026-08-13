@@ -3,9 +3,9 @@
 
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { computeMomPct, formatChangePct, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatIsoDateLabel, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
-import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
+import { EMAIL_SENDS_ROW_LIMIT, FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import type { EmailCtrResponse, EmailTypeRow, MarketingImpactFocusProgram, PerformanceSummaryKpi, TopCampaignRow } from '@lfx-one/shared/interfaces';
@@ -30,6 +30,8 @@ export class EmailTabComponent {
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
+  /** True when the request failed, so the tab can say so instead of rendering zeros. */
+  protected readonly failed = signal(false);
 
   // === Computed Signals ===
   protected readonly emailData: Signal<EmailCtrResponse | null> = this.initEmailData();
@@ -38,6 +40,19 @@ export class EmailTabComponent {
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
+  /**
+   * How many sends the response carried, before the render cap. Compared against the cap rather
+   * than against the rendered length: the rendered list can never exceed the cap, so a source of
+   * exactly EMAIL_SENDS_ROW_LIMIT would otherwise be labelled "latest N" despite being complete.
+   */
+  private readonly sendSourceCount = computed(() => this.emailData()?.emailTypeBreakdown?.flatMap((et) => et.campaigns ?? []).length ?? 0);
+  /** True only when rows were actually omitted, so the header claims truncation only when it happened. */
+  protected readonly topCampaignsTruncated = computed(() => this.sendSourceCount() > EMAIL_SENDS_ROW_LIMIT);
+  protected readonly topCampaignsCountLabel = computed(() => {
+    const count = this.topCampaigns().length;
+    const noun = count === 1 ? 'send' : 'sends';
+    return this.topCampaignsTruncated() ? `latest ${formatNumber(count)} ${noun}` : `${formatNumber(count)} ${noun}`;
+  });
 
   // === Private Initializers ===
   private initEmailData(): Signal<EmailCtrResponse | null> {
@@ -53,10 +68,16 @@ export class EmailTabComponent {
             return of(null);
           }
           this.loading.set(true);
+          this.failed.set(false);
           const classification = FOCUS_TO_CLASSIFICATION[focus];
+          // Caught here rather than in the service: a failure must render "couldn't load" rather
+          // than the zero-filled KPIs it used to resolve, which read as measurements.
           return this.analyticsService.getEmailCtr(slug, classification, period || undefined).pipe(
             finalize(() => this.loading.set(false)),
-            catchError(() => of(null))
+            catchError(() => {
+              this.failed.set(true);
+              return of(null);
+            })
           );
         })
       ),
@@ -144,7 +165,7 @@ export class EmailTabComponent {
           label: 'Click-Through Rate',
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
-          value: `${(data.currentCtr ?? 0).toFixed(2)}%`,
+          value: `${formatPercent(data.currentCtr ?? 0, 2)}%`,
           momChange: formatChangePct(changePct, 'MoM'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),
@@ -168,8 +189,8 @@ export class EmailTabComponent {
           campaignCount: et.campaignCount,
           sends: formatNumber(et.totalSends),
           opens: formatNumber(et.totalOpens),
-          openRate: `${et.openRate.toFixed(1)}%`,
-          ctr: `${et.ctr.toFixed(2)}%`,
+          openRate: `${formatPercent(et.openRate)}%`,
+          ctr: `${formatPercent(et.ctr, 2)}%`,
         })
       );
     });
@@ -180,18 +201,35 @@ export class EmailTabComponent {
       const data = this.emailData();
       if (!data?.emailTypeBreakdown?.length) return [];
 
+      // Sends in the selected period, newest first, capped at EMAIL_SENDS_ROW_LIMIT — the query
+      // behind this is unbounded, so an uncapped list builds every row during SSR and hydration.
+      // The cap is a render bound, not a ranking: the header says "latest N sends" when it bites.
+      // Undated rows sort last so they can't head the table.
       const allCampaigns = data.emailTypeBreakdown.flatMap((et) => et.campaigns ?? []);
       return allCampaigns
-        .sort((a, b) => b.sends - a.sends)
-        .slice(0, 5)
+        .sort((a, b) => {
+          if (a.sendDate !== b.sendDate) {
+            if (!a.sendDate) return 1;
+            if (!b.sendDate) return -1;
+            // Codepoint comparison, not localeCompare: these are opaque YYYY-MM-DD identifiers,
+            // and a locale-sensitive collation could order them differently on the server than in
+            // the browser — which would make the SSR-rendered list reshuffle on hydration.
+            if (b.sendDate < a.sendDate) return -1;
+            if (b.sendDate > a.sendDate) return 1;
+            return 0;
+          }
+          return b.sends - a.sends;
+        })
+        .slice(0, EMAIL_SENDS_ROW_LIMIT)
         .map(
           (c): TopCampaignRow => ({
             name: c.campaignName,
             type: c.emailType,
+            sendDate: c.sendDate ? formatIsoDateLabel(c.sendDate) : '—',
             sends: formatNumber(c.sends),
             opens: formatNumber(c.opens),
-            openRate: `${c.openRate.toFixed(1)}%`,
-            ctr: `${c.ctr.toFixed(2)}%`,
+            openRate: `${formatPercent(c.openRate)}%`,
+            ctr: `${formatPercent(c.ctr, 2)}%`,
           })
         );
     });

@@ -304,10 +304,17 @@ export class ClaService {
    */
   private identityQuery(identity: ResolvedClaIdentity): URLSearchParams {
     const params = new URLSearchParams();
+
     if (identity.lfUsername) params.set('lfUsername', identity.lfUsername);
-    for (const email of identity.emails) params.append('email', email);
-    for (const githubId of identity.githubIds) params.append('githubId', githubId);
-    for (const githubUsername of identity.githubUsernames) params.append('githubUsername', githubUsername);
+    for (const email of identity.emails) {
+      params.append('email', email);
+    }
+    for (const githubId of identity.githubIds) {
+      params.append('githubId', githubId);
+    }
+    for (const githubUsername of identity.githubUsernames) {
+      params.append('githubUsername', githubUsername);
+    }
     return params;
   }
 }

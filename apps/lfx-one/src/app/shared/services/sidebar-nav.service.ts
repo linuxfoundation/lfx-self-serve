@@ -12,6 +12,7 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
+  ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -46,6 +47,8 @@ export class SidebarNavService {
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS agents marketplace; hides the project-lens nav entry when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
+  private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
 
   private readonly activeLens = this.lensService.activeLens;
 
@@ -71,10 +74,19 @@ export class SidebarNavService {
         return this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.orgLensItems : this.visibleMeLensItems();
+        return this.isOrgLensEnabled() ? this.visibleOrgLensItems() : this.visibleMeLensItems();
       default:
         return this.visibleMeLensItems();
     }
+  });
+
+  private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
+    if (!this.isOrgLensRoiEnabled()) return this.orgLensItems;
+    const projectsIndex = this.orgLensItems.findIndex((item) => item.routerLink === '/org/projects');
+    // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
+    if (projectsIndex === -1) return [...this.orgLensItems, this.orgRoiNavItem];
+    const afterProjects = projectsIndex + 1;
+    return [...this.orgLensItems.slice(0, afterProjects), this.orgRoiNavItem, ...this.orgLensItems.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched).
@@ -310,7 +322,7 @@ export class SidebarNavService {
       });
     }
 
-    if (this.personaService.currentPersona() === 'executive-director') {
+    if (this.personaService.canViewExecutiveDashboards()) {
       const metricsItems: SidebarMenuItem[] = [
         {
           label: 'Health Metrics',
@@ -341,24 +353,30 @@ export class SidebarNavService {
         items: metricsItems,
       });
 
+      const marketingItems: SidebarMenuItem[] = [
+        {
+          label: 'Campaign Impact',
+          icon: 'fa-light fa-bullhorn',
+          routerLink: '/foundation/marketing-impact',
+          testId: 'sidebar-marketing-impact',
+        },
+      ];
+
+      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Campaign Impact but not Campaigns.
+      if (this.personaService.currentPersona() === 'executive-director') {
+        marketingItems.push({
+          label: 'Campaigns',
+          icon: 'fa-light fa-megaphone',
+          routerLink: '/foundation/campaigns',
+          testId: 'sidebar-marketing-campaigns',
+        });
+      }
+
       items.push({
         label: 'Marketing',
         isSection: true,
         expanded: true,
-        items: [
-          {
-            label: 'Marketing Impact',
-            icon: 'fa-light fa-bullhorn',
-            routerLink: '/foundation/marketing-impact',
-            testId: 'sidebar-marketing-impact',
-          },
-          {
-            label: 'Campaigns',
-            icon: 'fa-light fa-megaphone',
-            routerLink: '/foundation/campaigns',
-            testId: 'sidebar-marketing-campaigns',
-          },
-        ],
+        items: marketingItems,
       });
     }
 
@@ -441,6 +459,13 @@ export class SidebarNavService {
     ],
   };
 
+  private readonly orgRoiNavItem: SidebarMenuItem = {
+    label: 'ROI Metrics',
+    icon: 'fa-light fa-chart-mixed-up-circle-dollar',
+    routerLink: '/org/roi',
+    testId: 'sidebar-org-roi',
+  };
+
   private readonly orgLensItems: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
@@ -457,8 +482,8 @@ export class SidebarNavService {
       icon: 'fa-light fa-folder',
       routerLink: '/org/projects',
     },
-    // INFO: Future Epic implementation — ROI and Governance pages are hidden until
-    // built. Restore as top-level items or a section when re-enabled.
+    // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
+    // top-level item or a section when re-enabled.
     {
       label: 'Organization Engagement',
       isSection: true,
@@ -485,9 +510,7 @@ export class SidebarNavService {
           routerLink: '/org/training',
         },
         { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
-        // INFO: Future Epic implementation — the Groups page is hidden until the org
-        // groups feature is built. Restore the entry below to re-enable it.
-        // { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
+        { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
       ],
     },
     // Org admin — divider only (no section label); Profile sits under it.

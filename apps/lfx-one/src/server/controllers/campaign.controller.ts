@@ -5,6 +5,8 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignPlatform,
@@ -19,8 +21,10 @@ import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
+import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -31,6 +35,7 @@ const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
+  private readonly campaignServiceClient = new CampaignServiceClient();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
   private readonly redditMetricsService = new RedditMetricsService();
@@ -249,12 +254,237 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'campaign_job_status', { jobId });
+    // First endpoint of the campaign-service cutover. The flag selects the SOURCE; the two
+    // sources do NOT speak the same shape, so `CampaignServiceClient` adapts one onto the
+    // other (see `adaptJobPollResponse` — the status vocabularies differ, and campaign-service
+    // reports per-platform results rather than the vendor-direct path's `CampaignCreateResponse`).
+    // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
+    // in-process path and `platformResults` on the campaign-service path.
+    //
+    // The flag is necessary but NOT sufficient to route: creation is not cut over, so
+    // `createCampaign` above still mints `job_<epoch>_<rand>` into the in-process map, and
+    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id` — it would answer
+    // 400 for every one of them. Flag-only routing would therefore break all polling the moment
+    // the flag went on, which is the failure the flag exists to fix. `isCampaignServiceJobId`
+    // adds the second condition, and it needs no separate flag of its own: a `job_` id can only
+    // have come from this process and a UUID can only have come from campaign-service, so ids
+    // minted either side of the create cutover keep resolving against the store that holds them.
+    // Rollback stays an env change (plus the pod rollout that applies it) rather than a deploy.
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs) && isCampaignServiceJobId(jobId);
+    const startTime = logger.startOperation(req, 'campaign_job_status', { jobId, source: viaCampaignService ? 'campaign_service' : 'in_process' });
 
     try {
-      const status = await this.proxyService.getJobStatus(req, jobId);
-      logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status });
+      // No try/catch fallback to the in-process map when the proxied call fails. The
+      // in-process map does not hold this job unless this same pod created it, so a
+      // fallback would answer "not found" for a job that campaign-service knows is
+      // running — turning a transient outage into a spurious terminal state the client
+      // stops polling on. Letting the error through keeps the failure visible and the
+      // flag is the way back.
+      const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
+      logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Persist the generated brief so it outlives the browser tab.
+   *
+   * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
+   * the whole Planning pass has to be redone. This writes it to campaign-service, which is also
+   * what later phases need — campaign creation, metrics and status writes are all nested under
+   * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
+   *
+   * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
+   * an error for the cutover to be dark — that is the default in every environment until it is
+   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * training whoever sees it to ignore the one signal that matters.
+   *
+   * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
+   * handoff to the Implementation tab works perfectly well without persistence; this repo has
+   * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
+   * UI. A user who is not told keeps working on a brief they believe is saved.
+   */
+  public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field is present rather than omitted so the response satisfies
+      // CampaignBriefPersistResult on both arms, and the client needs exactly one branch.
+      // `enabled: false` is the whole signal; the remaining values are the empty ones the
+      // client already ignores when it is false, not placeholders standing in for a real save.
+      res.json({ enabled: false, briefId: '', etag: null, created: false, approved: false });
+      return;
+    }
+
+    // The foundation the user has selected, from the same `?project=<slug>` the page itself is
+    // scoped by. NOT defaulted: `/foundation/campaigns` is reachable by an ED of any foundation,
+    // and campaign-service files briefs per project, so falling back to a constant would put one
+    // foundation's work in another's table. An unresolved context is a bug worth surfacing here
+    // rather than a reason to guess.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const brief = req.body as CampaignBriefOutput;
+    if (!brief || typeof brief !== 'object') {
+      next(ServiceValidationError.forField('brief', 'brief is required', { operation: 'campaign_persist_brief', service: 'campaign_controller' }));
+      return;
+    }
+
+    // The cast above is a compile-time claim about untrusted JSON, so the shapes the server path
+    // actually DEREFERENCES have to be checked at runtime. `deriveEventSlug` calls `.trim()` on
+    // `eventDetails.slug`, which throws a TypeError on a number or an object — turning malformed
+    // input into a 500 instead of the controlled 400 sitting right below it — and
+    // `selectedPlatforms` is forwarded to campaign-service as `platforms`, where a non-array
+    // becomes an upstream contract violation rather than a local one.
+    //
+    // Deliberately narrow: this validates the two fields whose types this request path relies on,
+    // not the whole brief. The rest is stored opaquely in `Any` columns that nothing validates on
+    // either side, so checking them here would claim a guarantee the system does not make — and
+    // `fromBriefResponse` already treats every one of them as untrusted when reading back.
+    const eventDetails: unknown = (brief as { eventDetails?: unknown }).eventDetails;
+    if (eventDetails !== undefined && eventDetails !== null && typeof eventDetails !== 'object') {
+      next(
+        ServiceValidationError.forField('eventDetails', 'eventDetails must be an object', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawSlug: unknown = (eventDetails as { slug?: unknown } | null | undefined)?.slug;
+    if (rawSlug !== undefined && rawSlug !== null && typeof rawSlug !== 'string') {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'eventDetails.slug must be a string', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawPlatforms: unknown = (brief as { selectedPlatforms?: unknown }).selectedPlatforms;
+    if (rawPlatforms !== undefined && rawPlatforms !== null && !Array.isArray(rawPlatforms)) {
+      next(
+        ServiceValidationError.forField('selectedPlatforms', 'selectedPlatforms must be an array', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Checked here rather than left to campaign-service because its 400 names `event_slug`, a
+    // field the user never typed. The slug is derived from the event page URL, so an empty one
+    // means the URL had no usable last path segment — which is what the message should say.
+    const eventSlug = deriveEventSlug(brief);
+    if (eventSlug === null) {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'the brief has no event slug; check the event page URL', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug, projectSlug });
+
+    try {
+      // The brief id the CLIENT holds, when this session has established ownership of that row —
+      // either by loading the brief or by having created it on an earlier save. Absent on a first
+      // save of a brief nobody has seen, which is the ordinary case and must CREATE. It is the
+      // caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can
+      // replace a stored brief the user never saw, which a reload or a second tab reaches.
+      const knownBriefId = typeof req.query['brief_id'] === 'string' && req.query['brief_id'].trim() !== '' ? req.query['brief_id'] : null;
+      // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
+      // anything, and the id without the ETag is the ceremonial-header case this fixes.
+      const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
+      // Only meaningful without an etag: it says the absence is deliberate (the user was shown a
+      // stale-brief warning and proceeded) rather than "the write returned no validator".
+      const allowEtagFallback = req.query['etag_fallback'] === '1';
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag, allowEtagFallback);
+      logger.success(req, 'campaign_persist_brief', startTime, {
+        eventSlug,
+        projectSlug,
+        briefId: result.briefId,
+        created: result.created,
+        approved: result.approved,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read back the brief saved for an event slug — the other half of `persistBrief`.
+   *
+   * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
+   * while the write is dark would find nothing and look broken, and a write enabled while the
+   * read is dark is what shipped in the previous phase — briefs going into Postgres that nothing
+   * ever brings back. One flag makes "the cutover is on" a single, checkable fact.
+   *
+   * The slug arrives as a query parameter because there is nothing else to key on: the page has
+   * only the event URL the user pasted, and the slug derived from it is what `persistBrief`
+   * filed the brief under.
+   */
+  public async loadBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // `approved: false` is not a claim about any stored row -- with the flag off nothing was
+      // read. It is the safe default the field documents: never assert approval that was not
+      // observed.
+      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
+      return;
+    }
+
+    // Rejected rather than passed through: `find-brief` declares MinLength(1) on `event_slug`,
+    // so an empty one is a 400 from campaign-service naming a field the user never typed — the
+    // same reason `persistBrief` checks its own slug before sending.
+    // Trimmed to TEST for emptiness, never to rewrite the key — mirroring `deriveEventSlug`,
+    // which does exactly the same and stores the ORIGINAL slug. Querying with a trimmed key
+    // while the write stored an untrimmed one makes a padded slug unreadable: find-brief misses
+    // and the caller is told `none` for a brief that exists, which the next save then PUTs over.
+    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'] : '';
+    if (eventSlug.trim().length === 0) {
+      next(
+        ServiceValidationError.forField('event_slug', 'event_slug is required', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for exactly the reason `persistBrief` refuses: `/foundation/campaigns`
+    // is reachable by an ED of any foundation, and a constant here would read TLF's brief table on
+    // their behalf — offering to restore another foundation's brief, or finding nothing and letting
+    // the next save silently replace the one that does exist.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
+      // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
+      // a stored brief exists and this build cannot open it, and nothing else would record it.
+      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });
+      res.json(result);
     } catch (error) {
       next(error);
     }

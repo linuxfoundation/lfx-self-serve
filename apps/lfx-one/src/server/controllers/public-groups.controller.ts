@@ -1,22 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES } from '@lfx-one/shared/constants';
+import { CHAIR_ROLES, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
+  Committee,
   CommitteeMember,
   GroupsIOMailingList,
   PublicGroupContext,
   PublicGroupDetail,
+  PublicGroupDirectoryResponse,
   PublicGroupLinks,
   PublicGroupMeeting,
   PublicGroupMember,
+  PublicGroupSummary,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils';
+import { buildCommitteeCadenceSummary, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
@@ -47,25 +50,43 @@ export class PublicGroupsController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
-      const committee = await this.committeeService.getCommitteeById(req, id);
+      let committeeUid = id;
+      if (!UUID_REGEX.test(id)) {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee',
+          tags: `sso_group_name:${id.toLowerCase()}`,
+          page_size: 1,
+        });
+        if (resources.length === 0) {
+          throw new ResourceNotFoundError('Group', id, {
+            operation: 'get_public_group_by_id',
+            service: 'public_groups_controller',
+            path: `/groups/${id}`,
+          });
+        }
+        committeeUid = resources[0].data.uid;
+        logger.debug(req, 'get_public_group_by_id', 'Resolved group slug to UID', { slug: id, group_uid: committeeUid });
+      }
+
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid);
 
       if (!committee.public) {
         throw new AuthorizationError('This group is private', {
           operation: 'get_public_group_by_id',
           service: 'public_groups_controller',
-          path: `/committees/${id}`,
+          path: `/committees/${committeeUid}`,
           code: 'GROUP_PRIVATE',
         });
       }
 
       const [members, project, meetingsResponse, mailingListsResponse] = await Promise.all([
-        this.committeeService.getCommitteeMembers(req, id),
+        this.committeeService.getCommitteeMembers(req, committeeUid),
         this.projectService.getProjectById(req, committee.project_uid, false),
-        this.meetingService.getMeetings(req, { tags: `committee_uid:${id}` }, 'v1_meeting', false),
+        this.meetingService.getMeetings(req, { tags: `committee_uid:${committeeUid}` }, 'v1_meeting', false),
         this.microserviceProxy
           .proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'groupsio_mailing_list',
-            tags: `committee_uid:${id}`,
+            tags: `committee_uid:${committeeUid}`,
           })
           .catch(() => ({ resources: [] })),
       ]);
@@ -129,7 +150,7 @@ export class PublicGroupsController {
       const links: PublicGroupLinks = {
         website: committee.website,
         mailing_list: mailingListLink,
-        calendar: committee.calendar?.public ? `/public/api/committees/${id}/calendar.ics` : undefined,
+        calendar: committee.calendar?.public ? `/public/api/committees/${committeeUid}/calendar.ics` : undefined,
       };
 
       const publicMeetings = meetingsResponse.data.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
@@ -138,6 +159,7 @@ export class PublicGroupsController {
       const detail: PublicGroupDetail = {
         uid: committee.uid,
         name: committee.name,
+        sso_group_name: committee.sso_group_name || undefined,
         description: committee.description ?? undefined,
         category: committee.category,
         join_mode: committee.join_mode,
@@ -149,6 +171,8 @@ export class PublicGroupsController {
         cadence: cadence !== 'No recurring meetings scheduled' ? cadence : undefined,
         calendar_url: links.calendar ?? undefined,
         member_visibility: visibility,
+        // Passthrough of committee-service's ExternalSource[] contract (committee-service PR #175).
+        external_sources: committee.external_sources,
       };
 
       const isAuthenticated = req.oidc?.isAuthenticated();
@@ -165,13 +189,13 @@ export class PublicGroupsController {
             detail.my_role = callerMembership.role?.name || 'Member';
           }
         } catch {
-          logger.debug(req, 'get_public_group_by_id', 'Failed to resolve caller membership', { group_uid: id });
+          logger.debug(req, 'get_public_group_by_id', 'Failed to resolve caller membership', { group_uid: committeeUid });
         }
         req.bearerToken = m2mToken;
       }
 
       logger.success(req, 'get_public_group_by_id', startTime, {
-        group_uid: id,
+        group_uid: committeeUid,
         group_name: committee.name,
         chairs_count: chairs.length,
         meetings_count: upcomingMeetings.length,
@@ -181,5 +205,203 @@ export class PublicGroupsController {
     } catch (error) {
       return next(error);
     }
+  }
+
+  public async getPublicGroupsByFoundation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { identifier } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_groups_by_foundation', { identifier });
+
+    try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      const foundationUid = await this.resolveProjectIdentifier(req, identifier);
+      const [foundation, childUids] = await Promise.all([
+        this.projectService.getProjectById(req, foundationUid, false),
+        this.projectService.getFoundationProjectUids(req, foundationUid),
+      ]);
+
+      const allCommittees = await this.fetchPublicCommitteesForProjects(req, childUids);
+      const projects = await this.resolveContextProjects(req, allCommittees);
+
+      const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
+
+      const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+
+      logger.success(req, 'get_public_groups_by_foundation', startTime, {
+        foundation_uid: foundationUid,
+        groups_count: groups.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  public async getPublicGroupsByProject(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { identifier } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_groups_by_project', { identifier });
+
+    try {
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      const projectUid = await this.resolveProjectIdentifier(req, identifier);
+      const project = await this.projectService.getProjectById(req, projectUid, false);
+
+      let parentFoundation = null;
+      if (project.parent_uid) {
+        try {
+          const candidate = await this.projectService.getProjectById(req, project.parent_uid, false);
+          // ROOT is an administrative pseudo-project — treat its children as top-level foundations
+          if (candidate?.slug !== 'ROOT') {
+            parentFoundation = candidate;
+          }
+        } catch (error) {
+          logger.warning(req, 'get_public_groups_by_project', 'Parent foundation lookup failed, treating project as top-level', {
+            project_uid: projectUid,
+            parent_uid: project.parent_uid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
+      const publicCommittees = committees.filter((c) => c.public);
+
+      const groups = publicCommittees
+        .map((c) => this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+
+      const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+
+      logger.success(req, 'get_public_groups_by_project', startTime, {
+        project_uid: projectUid,
+        groups_count: groups.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  private async resolveProjectIdentifier(req: Request, identifier: string): Promise<string> {
+    // UUID v4 pattern — treat as UID directly
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+      return identifier;
+    }
+    const result = await this.projectService.getProjectIdBySlug(req, identifier);
+    if (!result.exists || !result.uid) {
+      throw new ResourceNotFoundError('Project', identifier, {
+        operation: 'resolve_project_identifier',
+        service: 'public_groups_controller',
+        path: `/projects/${identifier}`,
+      });
+    }
+    return result.uid;
+  }
+
+  private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
+    const BATCH_SIZE = 10;
+    const seen = new Set<string>();
+    const result: Committee[] = [];
+    let successCount = 0;
+    let lastError: unknown;
+    for (let i = 0; i < projectUids.length; i += BATCH_SIZE) {
+      const batch = projectUids.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map((uid) =>
+          this.committeeService
+            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true })
+            .then((committees) => {
+              successCount++;
+              return committees;
+            })
+            .catch((error) => {
+              lastError = error;
+              logger.warning(req, 'fetch_public_committees_for_projects', 'getCommittees failed for project, skipping', {
+                project_uid: uid,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return [] as Committee[];
+            })
+        )
+      );
+      for (const committees of batchResults) {
+        for (const c of committees) {
+          if (c.public && !seen.has(c.uid)) {
+            seen.add(c.uid);
+            result.push(c);
+          }
+        }
+      }
+    }
+    // If every call failed, the upstream is down — propagate rather than returning an empty directory
+    if (successCount === 0 && projectUids.length > 0) {
+      throw lastError;
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  }
+
+  private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
+    const uids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
+    const BATCH_SIZE = 10;
+    const map = new Map<string, any>();
+    for (let i = 0; i < uids.length; i += BATCH_SIZE) {
+      const batch = uids.slice(i, i + BATCH_SIZE);
+      const projects = await Promise.all(
+        batch.map((uid) =>
+          this.projectService.getProjectById(req, uid, false).catch((error) => {
+            logger.warning(req, 'resolve_context_projects', 'getProjectById failed for project, context will be incomplete', {
+              project_uid: uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          })
+        )
+      );
+      for (let j = 0; j < batch.length; j++) {
+        map.set(batch[j], projects[j]);
+      }
+    }
+    return map;
+  }
+
+  private buildGroupSummary(committee: Committee, projectMap: Map<string, any>, foundation: any, project: any): PublicGroupSummary {
+    const proj = project ?? projectMap.get(committee.project_uid) ?? null;
+    const isFoundationScope = !proj || proj.uid === foundation?.uid;
+
+    const context: PublicGroupContext = {
+      scope: isFoundationScope ? 'foundation' : 'project',
+      foundation_uid: foundation?.uid ?? committee.project_uid,
+      foundation_name: foundation?.name ?? '',
+      foundation_slug: foundation?.slug ?? '',
+      foundation_logo_url: foundation?.logo_url ?? undefined,
+      ...(!isFoundationScope &&
+        proj && {
+          project_uid: proj.uid,
+          project_name: proj.name,
+          project_slug: proj.slug,
+          project_logo_url: proj.logo_url ?? undefined,
+        }),
+    };
+
+    return {
+      uid: committee.uid,
+      name: committee.name,
+      display_name: committee.display_name,
+      description: committee.description ?? undefined,
+      category: committee.category,
+      behavioral_class: getGroupBehavioralClass(committee.category),
+      context,
+      join_mode: committee.join_mode,
+      total_members: committee.total_members,
+      website: committee.website,
+      has_public_calendar: committee.calendar?.public ?? false,
+    };
   }
 }
