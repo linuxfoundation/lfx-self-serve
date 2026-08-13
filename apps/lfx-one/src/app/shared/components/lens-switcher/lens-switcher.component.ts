@@ -54,6 +54,7 @@ export class LensSwitcherComponent {
   // Hybrid personas merge the 'project' button with the 'foundation' lens state — both map to 'project' for highlighting.
   protected readonly activeLensId = this.lensService.displayActiveLens;
   protected readonly user = this.userService.user;
+  protected readonly avatarUrl = this.userService.effectiveAvatarUrl;
   protected readonly insightsUrl = buildInsightsUrl();
   protected readonly crowdfundingUrl = environment.urls.crowdfunding;
   protected readonly mentorshipUrl = environment.urls.mentorship;

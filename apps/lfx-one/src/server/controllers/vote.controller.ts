@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommentResponseInput, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
-import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { CommentResponseInput, CreatePollCommentPrompt, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
+import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -121,11 +121,21 @@ export class VoteController {
       project_uid: voteData?.project_uid,
       name: voteData?.name,
       end_time: voteData?.end_time,
-      body_size: JSON.stringify(req.body).length,
+      // Null-safe: express.json() leaves req.body undefined for non-JSON requests, and
+      // JSON.stringify(undefined).length would throw before validateRequestBody can return a 400.
+      body_size: JSON.stringify(req.body)?.length ?? 0,
     });
 
     try {
-      const vote = await this.voteService.createVote(req, voteData);
+      const validationContext = { operation: 'create_vote', service: 'vote_controller' } as const;
+
+      if (!validateRequestBody(voteData, req, next, validationContext)) {
+        return;
+      }
+
+      const validatedCommentPrompts = this.validateCommentPrompts(voteData.poll_comment_prompts, validationContext);
+
+      const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts });
 
       logger.success(req, 'create_vote', startTime, {
         uid: vote.uid,
@@ -147,20 +157,25 @@ export class VoteController {
     const voteData: UpdateVoteRequest = req.body;
     const startTime = logger.startOperation(req, 'update_vote', {
       vote_uid: uid,
-      body_size: JSON.stringify(req.body).length,
+      // Null-safe: express.json() leaves req.body undefined for non-JSON requests, and
+      // JSON.stringify(undefined).length would throw before validateRequestBody can return a 400.
+      body_size: JSON.stringify(req.body)?.length ?? 0,
     });
 
     try {
-      if (
-        !validateUidParameter(uid, req, next, {
-          operation: 'update_vote',
-          service: 'vote_controller',
-        })
-      ) {
+      const validationContext = { operation: 'update_vote', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
         return;
       }
 
-      const vote = await this.voteService.updateVote(req, uid, voteData);
+      if (!validateRequestBody(voteData, req, next, validationContext)) {
+        return;
+      }
+
+      const validatedCommentPrompts = this.validateCommentPrompts(voteData.poll_comment_prompts, validationContext);
+
+      const vote = await this.voteService.updateVote(req, uid, { ...voteData, poll_comment_prompts: validatedCommentPrompts });
 
       logger.success(req, 'update_vote', startTime, {
         vote_uid: uid,
@@ -229,8 +244,8 @@ export class VoteController {
 
       logger.success(req, 'get_vote_results', startTime, {
         vote_uid: uid,
-        num_poll_results: results.poll_results?.length ?? 0,
-        num_votes_cast: results.num_votes_cast,
+        num_poll_results: results?.poll_results?.length ?? 0,
+        num_votes_cast: results?.num_votes_cast,
       });
 
       res.json(results);
@@ -440,5 +455,53 @@ export class VoteController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Validates poll_comment_prompts shape and caps, then rebuilds each entry from validated fields only.
+   *  Throws ServiceValidationError (unlike the validate* helpers, which call next() and return false) —
+   *  callers must invoke this inside the handler's try block so the catch routes it to next(). Same
+   *  throw-inside-try idiom as analytics.controller.ts. */
+  private validateCommentPrompts(
+    prompts: CreatePollCommentPrompt[] | undefined,
+    validationContext: { operation: string; service: string }
+  ): CreatePollCommentPrompt[] | undefined {
+    if (prompts === undefined) {
+      return undefined;
+    }
+
+    if (!Array.isArray(prompts)) {
+      throw ServiceValidationError.forField('poll_comment_prompts', 'poll_comment_prompts must be an array', validationContext);
+    }
+
+    if (prompts.length > VOTE_COMMENT_PROMPT_MAX_COUNT) {
+      throw ServiceValidationError.forField(
+        'poll_comment_prompts',
+        `poll_comment_prompts must contain ${VOTE_COMMENT_PROMPT_MAX_COUNT} or fewer prompts`,
+        validationContext
+      );
+    }
+
+    for (const [index, entry] of prompts.entries()) {
+      if (!entry || typeof entry !== 'object') {
+        throw ServiceValidationError.forField(`poll_comment_prompts[${index}]`, 'Each comment prompt must be a non-null object', validationContext);
+      }
+
+      if (typeof entry.prompt !== 'string' || entry.prompt.trim().length === 0) {
+        throw ServiceValidationError.forField(`poll_comment_prompts[${index}].prompt`, 'prompt is required and must be non-blank', validationContext);
+      }
+
+      // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
+      if (codePointLength(entry.prompt) > VOTE_COMMENT_PROMPT_MAX_LENGTH) {
+        throw ServiceValidationError.forField(
+          `poll_comment_prompts[${index}].prompt`,
+          `prompt must be ${VOTE_COMMENT_PROMPT_MAX_LENGTH} characters or fewer`,
+          validationContext
+        );
+      }
+    }
+
+    // Rebuild from the validated fields only, so unexpected extra properties never cross the BFF boundary.
+    // Trim to match the client mapper (mapCommentPromptsToApiFormat) so direct API callers cannot store padded text.
+    return prompts.map((entry) => ({ prompt: entry.prompt.trim() }));
   }
 }
