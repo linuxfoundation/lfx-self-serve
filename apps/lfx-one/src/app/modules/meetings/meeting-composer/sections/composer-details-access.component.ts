@@ -43,8 +43,9 @@ export class ComposerDetailsAccessComponent {
   protected readonly youtubeAmberThreshold = YOUTUBE_MEETING_TITLE_WARNING_LENGTH;
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
-  private readonly selectedMeetingType: Signal<string | null> = this.initSelectedMeetingType();
   protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
+
+  private readonly hydratedMeetingType: Signal<MeetingType | null> = this.initHydratedMeetingType();
 
   private initTitleLength(): Signal<number> {
     return toSignal(
@@ -62,17 +63,10 @@ export class ComposerDetailsAccessComponent {
     );
   }
 
-  private initSelectedMeetingType(): Signal<string | null> {
-    return toSignal(
-      toObservable(this.form).pipe(
-        switchMap((form) => {
-          const control = form.get('meeting_type');
-          if (!control) return of(null);
-          return control.valueChanges.pipe(startWith(control.value as string | null));
-        })
-      ),
-      { initialValue: null }
-    );
+  // Reads the control once per form instance rather than tracking valueChanges: the retained option has
+  // to stay the *hydrated* type, or switching away from it would drop it from the list permanently.
+  private initHydratedMeetingType(): Signal<MeetingType | null> {
+    return computed(() => (this.form().get('meeting_type')?.value as MeetingType | null) ?? null);
   }
 
   private initMeetingTypeOptions(): Signal<CardSelectorOption<MeetingType>[]> {
@@ -83,9 +77,9 @@ export class ComposerDetailsAccessComponent {
 
       // Editing a meeting whose type this persona can't create would otherwise drop the stored value
       // out of the list, rendering the select as an empty placeholder over a populated control.
-      const selected = this.selectedMeetingType();
+      const hydrated = this.hydratedMeetingType();
 
-      return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === selected);
+      return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydrated);
     });
   }
 }

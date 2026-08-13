@@ -1,0 +1,124 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { TestBed } from '@angular/core/testing';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
+import type { Meeting } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
+import { MeetingService } from '@services/meeting.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
+import { of, Subject } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MeetingComposerFormService } from './meeting-composer-form.service';
+
+/**
+ * Covers the submit pipeline's generation guard — the composer host outlives every open, so a save
+ * that resolves after a close+reopen must neither emit (the host would toast and close the new open)
+ * nor warn when there was nothing queued to attach.
+ */
+describe('MeetingComposerFormService — submit generation guard', () => {
+  let service: MeetingComposerFormService;
+  let createMeeting: ReturnType<typeof vi.fn>;
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+
+  const REGISTRANT = { meeting_id: '', email: 'guest@example.com', first_name: 'Guest', last_name: 'One' };
+
+  beforeEach(() => {
+    createMeeting = vi.fn();
+    addMeetingRegistrants = vi.fn().mockReturnValue(of([{ added: 1, failed: 0 }]));
+    messageAdd = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createMeeting,
+            updateMeeting: vi.fn(),
+            addMeetingRegistrants,
+            updateMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            deleteMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            createMeetingAttachment: vi.fn(),
+            deleteMeetingAttachment: vi.fn(),
+            uploadMeetingFile: vi.fn(),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+  });
+
+  it('does not emit when the composer reopened while the save was in flight', () => {
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    expect(emissions).toEqual([]);
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Partially saved' }));
+  });
+
+  it('stays silent about partial saves when nothing was queued to attach', () => {
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+
+    service.submit().subscribe();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('does not count already-saved links as pending attachment work', () => {
+    const links = service.form().get('important_links') as FormArray;
+    links.push(
+      new FormGroup({
+        title: new FormControl('Charter'),
+        url: new FormControl('https://example.com'),
+        uid: new FormControl('link-1'),
+      })
+    );
+
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+
+    service.submit().subscribe();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('emits the saved meeting so the composer closes when the create response carries no id', () => {
+    createMeeting.mockReturnValue(of({} as Meeting));
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(emissions).toHaveLength(1);
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Partially saved' }));
+  });
+});

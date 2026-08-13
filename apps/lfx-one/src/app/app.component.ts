@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
@@ -17,6 +17,7 @@ import { AccountContextService } from './shared/services/account-context.service
 import { DataDogRumService } from './shared/services/datadog-rum.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { IntercomService } from './shared/services/intercom.service';
+import { PersonaService } from './shared/services/persona.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
@@ -44,9 +45,15 @@ export class AppComponent {
   private readonly dataDogRumService = inject(DataDogRumService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly intercomService = inject(IntercomService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
   protected readonly meetingComposer = inject(MeetingComposerService);
-  // Only users who can write can open the composer, so nobody else should pay for its chunk.
-  protected readonly canPrefetchComposer = inject(ProjectContextService).canWrite;
+  // Mirrors writerGuard's cheap paths so the composer chunk is prefetched for the personas that
+  // actually open it. Meeting-coordinator and committee-writer grants aren't known this early, so
+  // those users fall back to the `when` trigger and download the chunk on click.
+  protected readonly canPrefetchComposer = computed(
+    () => this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director'
+  );
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
@@ -209,7 +216,6 @@ export class AppComponent {
 
     const router = inject(Router);
     const location = inject(Location);
-    const projectContextService = inject(ProjectContextService);
     const destroyRef = inject(DestroyRef);
 
     router.events
@@ -240,7 +246,7 @@ export class AppComponent {
         if (Object.keys(snapshot.params).length > 0) return;
         if (!kind) return;
 
-        const context = kind === 'foundation' ? projectContextService.selectedFoundation() : projectContextService.selectedProject();
+        const context = kind === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
         if (!context?.slug) return;
 
         parsed.queryParams['project'] = context.slug;

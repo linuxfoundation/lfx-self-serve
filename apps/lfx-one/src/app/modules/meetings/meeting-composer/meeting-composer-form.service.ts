@@ -189,13 +189,8 @@ export class MeetingComposerFormService {
     const form = this.form();
 
     switch (section) {
-      case 'details-access': {
-        // A stored type with no matching option (legacy `None`, or a type this persona can't create)
-        // renders as the placeholder, so accepting it would gate on a field that looks empty.
-        const meetingType = form.get('meeting_type')?.value;
-
-        return !!(form.get('title')?.value && form.get('title')?.valid && MEETING_TYPE_OPTIONS.some((option) => option.value === meetingType));
-      }
+      case 'details-access':
+        return !!(form.get('title')?.value && form.get('title')?.valid && form.get('meeting_type')?.value);
 
       case 'date-schedule':
         return !!(
@@ -236,8 +231,9 @@ export class MeetingComposerFormService {
 
   /**
    * Saves the meeting plus its pending attachment and registrant operations.
-   * Emits the created meeting in create mode, `null` in edit mode, and completes without
-   * emitting when the request fails (the error toast is raised here).
+   * Emits the created meeting in create mode and `null` in edit mode. Completes without emitting when
+   * the request fails (the error toast is raised here) or when the save outlived its open — callers
+   * rely on that silence to skip their success toast and their close of a composer they no longer own.
    */
   public submit(): Observable<Meeting | null> {
     const generation = this.generation;
@@ -299,14 +295,16 @@ export class MeetingComposerFormService {
           attachments: this.processAttachmentOperations(meetingId),
           registrants: this.processRegistrantOperations(meetingId),
         }).pipe(
-          map((results) => {
-            // The composer can move on while these requests are in flight; reporting then would clear the
-            // new open's deletion queue and label the warning with the wrong mode.
-            if (generation === this.generation) {
-              this.reportDependentResults(results.attachments, results.registrants, wasEditMode);
+          switchMap((results) => {
+            // The composer can move on while these requests are in flight. Reporting then would clear the
+            // new open's deletion queue, and emitting would close that open with a toast for the old meeting.
+            if (generation !== this.generation) {
+              return EMPTY;
             }
 
-            return meeting;
+            this.reportDependentResults(results.attachments, results.registrants, wasEditMode);
+
+            return of(meeting);
           })
         );
       }),
@@ -626,7 +624,9 @@ export class MeetingComposerFormService {
     form.patchValue({
       title: meeting.title,
       description: meeting.description,
-      meeting_type: meeting.meeting_type || 'None',
+      // Blank rather than a sentinel when the stored type isn't selectable (legacy `None`), so the
+      // required validator fires and the field shows its own error instead of silently blocking save.
+      meeting_type: MEETING_TYPE_OPTIONS.some((option) => option.value === meeting.meeting_type) ? meeting.meeting_type : '',
       startDate: startDate,
       startTime: startTime,
       duration: meeting.duration || DEFAULT_DURATION,
@@ -909,12 +909,13 @@ export class MeetingComposerFormService {
   /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
   private hasPendingDependentWork(): boolean {
     const registrants = this.registrantUpdates();
-    const importantLinks = this.form().get('important_links') as FormArray;
+    const importantLinks = (this.form().get('important_links') as FormArray).value as ImportantLinkFormValue[];
 
     return (
       this.pendingAttachments.some((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file) ||
       this.pendingAttachmentDeletions().length > 0 ||
-      importantLinks.length > 0 ||
+      // Same predicate as `saveLinkAttachments`: links with a uid already exist upstream.
+      importantLinks.some((link) => link.title && link.url && !link.uid) ||
       registrants.toAdd.length > 0 ||
       registrants.toUpdate.length > 0 ||
       registrants.toDelete.length > 0

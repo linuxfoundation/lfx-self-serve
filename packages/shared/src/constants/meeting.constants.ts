@@ -230,55 +230,55 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
  */
 export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
   {
-    label: MEETING_TYPE_CONFIGS['board'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].label,
     value: MeetingType.BOARD,
     info: {
-      icon: MEETING_TYPE_CONFIGS['board'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].icon,
       description: 'Governance meetings for project direction, funding, and strategic decisions',
       color: lfxColors.red[500],
     },
   },
   {
-    label: MEETING_TYPE_CONFIGS['maintainers'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].label,
     value: MeetingType.MAINTAINERS,
     info: {
-      icon: MEETING_TYPE_CONFIGS['maintainers'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].icon,
       description: 'Regular sync meetings for core maintainers to discuss project health',
       color: lfxColors.blue[500],
     },
   },
   {
-    label: MEETING_TYPE_CONFIGS['marketing'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].label,
     value: MeetingType.MARKETING,
     info: {
-      icon: MEETING_TYPE_CONFIGS['marketing'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].icon,
       description: 'Community growth, outreach, and marketing strategy meetings',
       color: lfxColors.emerald[500],
     },
   },
   {
-    label: MEETING_TYPE_CONFIGS['technical'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].label,
     value: MeetingType.TECHNICAL,
     info: {
-      icon: MEETING_TYPE_CONFIGS['technical'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].icon,
       description: 'Technical discussions, architecture decisions, and development planning',
       color: lfxColors.violet[500],
     },
   },
   {
-    label: MEETING_TYPE_CONFIGS['legal'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].label,
     value: MeetingType.LEGAL,
     info: {
-      icon: MEETING_TYPE_CONFIGS['legal'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].icon,
       description: 'Legal compliance, licensing, and policy discussions',
       color: lfxColors.amber[500],
     },
   },
   {
-    label: MEETING_TYPE_CONFIGS['other'].label,
+    label: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].label,
     value: MeetingType.OTHER,
     info: {
-      icon: MEETING_TYPE_CONFIGS['other'].icon,
+      icon: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].icon,
       description: "General project meetings that don't fit other categories",
       color: lfxColors.gray[500],
     },
