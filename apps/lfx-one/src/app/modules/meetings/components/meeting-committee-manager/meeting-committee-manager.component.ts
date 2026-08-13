@@ -58,6 +58,9 @@ export class MeetingCommitteeManagerComponent {
   private membersFetchFailed = false;
   private selectionApplied = false;
 
+  /** Mirrors `membersFetchFailed` for the template — a blocked emission has to be visible, not silent. */
+  public readonly membersFetchError = signal(false);
+
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
 
@@ -209,6 +212,7 @@ export class MeetingCommitteeManagerComponent {
         switchMap((committeeIds) => {
           this.membersResolved = false;
           this.membersFetchFailed = false;
+          this.membersFetchError.set(false);
 
           if (!committeeIds || committeeIds.length === 0) {
             this.membersResolved = this.selectionApplied;
@@ -228,6 +232,7 @@ export class MeetingCommitteeManagerComponent {
               catchError((error) => {
                 console.error(`Failed to load members for committee ${id}:`, error);
                 this.membersFetchFailed = true;
+                this.membersFetchError.set(true);
                 return of([]);
               })
             );

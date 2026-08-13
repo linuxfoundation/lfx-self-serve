@@ -99,6 +99,16 @@ describe('ComposerGuestsComponent — committee member reconciliation', () => {
     expect(formService.guests()[0].uid).toBe('registrant-1');
   });
 
+  it('keeps a hand-removed saved guest deleted even while they stay in a selected group', () => {
+    formService.setGuests([savedGroupGuest]);
+
+    component['onRemoveGuest'](savedGroupGuest);
+    reconcile([member]);
+
+    expect(formService.guests()).toHaveLength(1);
+    expect(formService.guests()[0].state).toBe('deleted');
+  });
+
   it('leaves direct guests untouched', () => {
     formService.setGuests([{ ...savedGroupGuest, type: 'direct' }]);
 

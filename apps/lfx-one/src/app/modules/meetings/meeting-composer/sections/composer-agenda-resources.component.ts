@@ -2,18 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, signal, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   ALLOWED_FILE_TYPES,
+  MAX_CUSTOM_DURATION,
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
   MEETING_DURATION_CHIP_OPTIONS,
+  MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { GenerateAgendaRequest, MeetingAttachment, MeetingLinkDialogResult, MeetingTemplate, PendingAttachment } from '@lfx-one/shared/interfaces';
@@ -45,6 +48,7 @@ export class ComposerAgendaResourcesComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
@@ -153,8 +157,7 @@ export class ComposerAgendaResourcesComponent {
             this.onCancelAiHelper();
             this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
           },
-          error: (error: unknown) => {
-            console.error('Failed to generate agenda:', error);
+          error: () => {
             this.messageService.add({ severity: 'error', summary: 'Generation failed', detail: 'Could not generate an agenda. Please try again.' });
           },
         }),
@@ -213,7 +216,7 @@ export class ComposerAgendaResourcesComponent {
       dismissableMask: true,
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingLinkDialogResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingLinkDialogResult | undefined) => {
       if (result) {
         this.appendLink(result);
       }
@@ -249,25 +252,51 @@ export class ComposerAgendaResourcesComponent {
   /**
    * Applies a template's or AI draft's estimated duration to the schedule controls.
    * @description Estimates outside the chip values go to `customDuration` rather than being clamped.
-   * The form service owns that control's min/max validators, so an out-of-range estimate blocks submit
-   * and shows its error in Date & Schedule instead of being silently swallowed — hence the toast,
-   * since the duration the organizer picked has just been overwritten in a section they can't see.
+   * An estimate outside the allowed range is dropped rather than written: the form service's min/max
+   * validators would block submit from a section the organizer can't see. The toast fires either way
+   * because the duration they picked has just been overwritten — or deliberately left alone.
    */
   private applyEstimatedDuration(estimatedDuration: number): void {
+    if (!Number.isFinite(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Duration left unchanged',
+        detail: `The suggested duration is outside the allowed ${MIN_CUSTOM_DURATION}–${MAX_CUSTOM_DURATION} minute range. Set it yourself in Date & Schedule.`,
+      });
+      return;
+    }
+
     const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
     const customDuration = this.form().get('customDuration');
+    const durationControl = this.form().get('duration');
 
-    this.form()
-      .get('duration')
-      ?.setValue(isChipValue ? estimatedDuration : 'custom');
+    if (this.effectiveDuration() === estimatedDuration) {
+      return;
+    }
+
+    durationControl?.setValue(isChipValue ? estimatedDuration : 'custom');
     customDuration?.setValue(isChipValue ? null : estimatedDuration);
-    customDuration?.markAsTouched();
+
+    if (!isChipValue) {
+      customDuration?.markAsTouched();
+    }
 
     this.messageService.add({
       severity: 'info',
       summary: 'Duration updated',
       detail: `Meeting duration set to ${estimatedDuration} minutes. Change it in Date & Schedule if that's not right.`,
     });
+  }
+
+  /** Minutes the form currently resolves to, whichever of the two duration controls holds it. */
+  private effectiveDuration(): number | null {
+    const duration = this.form().get('duration')?.value as number | 'custom' | null;
+
+    if (duration === 'custom') {
+      return (this.form().get('customDuration')?.value as number | null) ?? null;
+    }
+
+    return duration ?? null;
   }
 
   private validateFile(file: File, queued: PendingAttachment[]): string | null {
