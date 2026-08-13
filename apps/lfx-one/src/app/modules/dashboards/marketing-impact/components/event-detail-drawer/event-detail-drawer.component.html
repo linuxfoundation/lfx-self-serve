@@ -158,11 +158,12 @@
                 <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricCount) : '—' }}</span>
                 <span class="text-xs text-gray-400">
                   Predicted
-                  <!-- Suppressed when the interval collapses onto the prediction: a "(473–473)"
-                       range is not a forecast, it is the current count repeated, and printing it
-                       as an interval implies a confidence the model did not express. -->
-                  @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null && d.pacing.predictedLow !== d.pacing.predictedHigh) {
-                    <span class="text-gray-400">({{ d.pacing.predictedLow | metricCount }}–{{ d.pacing.predictedHigh | metricCount }})</span>
+                  <!-- Null when the interval collapses once rounded: a "(473–473)" range is not a
+                       forecast, it is the current count repeated, and printing it as an interval
+                       implies a confidence the model did not express. The computed hands over the
+                       rounded pair so these are the same numbers the gate compared. -->
+                  @if (predictedRange(); as range) {
+                    <span class="text-gray-400">({{ range.low | metricCount }}–{{ range.high | metricCount }})</span>
                   }
                 </span>
               </div>

@@ -634,6 +634,28 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       expect(result!.hasPriorYear).toBe(false);
     });
 
+    // A null prior-year total means "no prior edition" OR "the pacing read degraded", and the two
+    // are not the same claim. Deriving the flag from the total alone made an unmaterialized table
+    // report every event as a first-timer, which five consumers then assert — "no prior year",
+    // "No pace signal", a dropped Last year series and "No prior event data". With no measurement
+    // to prefer, the row flag is the better answer: wrong on some rows, but a statement about the
+    // event rather than about the pipeline.
+    it('falls back to the row flag when the pacing read is unavailable', async () => {
+      execute.mockImplementation((sql: string) => {
+        // No pacing head row, so getEventPacing returns its unavailable block (priorYear: null).
+        if (String(sql).includes('MARKETING_EVENT_REGISTRATIONS r')) {
+          return Promise.resolve({ rows: [{ ...eventRow, CREATED_LAST_YEAR: true }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getEventDetail('evt-1', 'tlf');
+
+      expect(result).not.toBeNull();
+      expect(result!.pacing.available).toBe(false);
+      expect(result!.hasPriorYear).toBe(true);
+    });
+
     // The table holds duplicate (event, type, day) rows — 1,669 such groups, two rows carrying the
     // same values under different _KEYs. Summing them straight doubled that day alone: Open Source
     // Summit EU 2026 jumped 1,244 -> 2,488 on one day, drawing a vertical needle mid-curve. Each

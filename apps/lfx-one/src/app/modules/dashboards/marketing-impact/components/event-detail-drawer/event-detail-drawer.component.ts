@@ -201,12 +201,33 @@ export class EventDetailDrawerComponent {
     return Math.min(100, Math.round((d.sponsorshipRevenue.actual / d.sponsorshipRevenue.goal) * 100));
   });
 
-  // Whether we have a daily curve to plot (needs the drilldown prediction data).
+  // Whether we have a daily curve to plot (needs the per-day prediction rows).
   protected readonly hasPacingChart = computed(() => (this.detail()?.pacing.points.length ?? 0) > 0);
+
+  /**
+   * The predicted range as the reader will see it, or null when it is not worth printing.
+   *
+   * Rounded here rather than compared raw: both ends render through `metricCount`, which rounds,
+   * so a 472.6–473.2 interval passes a `low !== high` test and then prints "(473–473)" — the very
+   * non-forecast that suppressing it was meant to hide. The model emits fractional counts, so
+   * sub-unit intervals are the expected shape rather than an edge case.
+   *
+   * Returns the rounded pair rather than a boolean so the template binds these exact numbers.
+   * A boolean would leave the template re-reading the raw nulls, which neither narrows for the
+   * type-checker nor guarantees it renders what the gate actually compared.
+   */
+  protected readonly predictedRange = computed<{ low: number; high: number } | null>(() => {
+    const pacing = this.detail()?.pacing;
+    if (!pacing || pacing.predictedLow === null || pacing.predictedHigh === null) return null;
+    const low = Math.round(pacing.predictedLow);
+    const high = Math.round(pacing.predictedHigh);
+    return low === high ? null : { low, high };
+  });
 
   // Registration-pacing line chart over days-to-event: the predicted average with its low/high
   // band, plus the current-year actuals and — when the event has a prior edition — last year's
-  // curve. The actuals come from the _DRILLDOWN table's per-day cumulative columns.
+  // curve. The actuals come from MARKETING_EVENT_REGISTRATION_PREDICTIONS' per-day cumulative
+  // columns, which hold the measured count for every day at or before today.
   protected readonly pacingChartData: Signal<ChartData<'line'>> = computed(() => this.buildPacingChart());
 
   protected readonly pacingChartOptions: ChartOptions<'line'> = {

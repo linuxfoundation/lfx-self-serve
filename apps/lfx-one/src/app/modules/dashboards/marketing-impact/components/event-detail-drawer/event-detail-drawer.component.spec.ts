@@ -352,6 +352,63 @@ describe('EventDetailDrawerComponent', () => {
     }
   });
 
+  // The range is suppressed at the precision the reader sees, not at raw-float precision. Both
+  // ends render through metricCount, which rounds, so 472.6–473.2 passes a `low !== high` test
+  // and then prints "(473–473)" — exactly the non-forecast the suppression exists to hide. The
+  // model emits fractional counts, so sub-unit intervals are the expected shape here.
+  it('hides a predicted range that collapses once rounded for display', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 473,
+              predictedLow: 472.6,
+              predictedHigh: 473.2,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('Predicted');
+    expect(text).not.toContain('473–473');
+  });
+
+  // The mirror: a range wider than one whole registration is a real forecast and must survive.
+  it('shows a predicted range that stays distinct after rounding', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          detail({
+            pacing: {
+              available: true,
+              daysLeft: 30,
+              current: 473,
+              priorYear: null,
+              predictedAvg: 500,
+              predictedLow: 450,
+              predictedHigh: 550,
+              points: [],
+            },
+          })
+        )
+      )
+    );
+    await open('evt-1', 'tlf', 'b2c');
+
+    const text = document.querySelector('[data-testid="event-detail-pacing"]')?.textContent ?? '';
+    expect(text).toContain('450');
+    expect(text).toContain('550');
+  });
+
   it('hides the sponsorship-only sections in the attendance view', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 

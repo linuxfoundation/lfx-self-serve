@@ -5433,7 +5433,16 @@ export class ProjectService {
       // Trusting the flag rendered "no prior year" next to an "Ahead of last year" badge reading
       // COMP_SCORE — two cards contradicting each other from one row. The pacing read already
       // computes this total, so the whole drawer now answers the question from one measured fact.
-      hasPriorYear: (pacing.priorYear ?? 0) > 0,
+      //
+      // Only while that measurement exists, though. `pacing.priorYear` is null both for an event
+      // with no prior edition AND for one whose pacing read degraded — an unmaterialized table
+      // makes every event look like a first-timer, and five consumers then assert it: the card
+      // prints "no prior year", the badge drops to "No pace signal", the Last year series
+      // disappears and the chart states "No prior event data". That is a claim about the event's
+      // history sourced from a pipeline outage, which is the defect class this branch exists to
+      // fix. When pacing is unavailable there is no measurement to prefer, so the row flag —
+      // wrong on some rows, but an actual statement about the event — is the better answer.
+      hasPriorYear: pacing.available ? (pacing.priorYear ?? 0) > 0 : row.CREATED_LAST_YEAR === true,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
       sponsorshipTiers: tierResult.rows.map((t) => ({
@@ -7923,10 +7932,10 @@ export class ProjectService {
   }
 
   /**
-   * Get the per-event registration-pacing summary + daily curve from the prediction models
-   * (MARKETING_EVENT_REGISTRATION_PREDICTIONS + _DRILLDOWN). These are mirrored from PCC and may
-   * not exist yet; any failure (missing table, no rows) resolves to an unavailable pacing block
-   * so the drawer degrades to its placeholder + PCC link rather than erroring.
+   * Get the per-event registration-pacing summary + daily curve from
+   * MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is day-grained and carries both. It is
+   * mirrored from PCC and may not exist yet; any failure (missing table, no rows) resolves to an
+   * unavailable pacing block so the drawer degrades to its placeholder rather than erroring.
    */
   private async getEventPacing(eventId: string): Promise<EventPacing> {
     const unavailable: EventPacing = {
