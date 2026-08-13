@@ -1,0 +1,201 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="composer-agenda-resources">
+  <div class="flex flex-col gap-1">
+    <h2 class="text-base font-semibold text-gray-900">Agenda &amp; resources</h2>
+    <p class="text-sm text-gray-500">Share agenda, documents, and reference materials so participants come prepared.</p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between gap-3">
+      <label for="composer-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
+      <div class="flex items-center gap-2">
+        <lfx-button
+          label="Templates"
+          icon="fa-light fa-list"
+          size="small"
+          [text]="true"
+          (onClick)="onToggleTemplates()"
+          data-testid="composer-agenda-templates-toggle" />
+        <lfx-button
+          label="Help me write"
+          icon="fa-light fa-wand-magic-sparkles"
+          size="small"
+          [text]="true"
+          (onClick)="onToggleAiHelper()"
+          data-testid="composer-agenda-ai-toggle" />
+      </div>
+    </div>
+
+    @if (meetingType()) {
+      <lfx-agenda-template-selector
+        [meetingType]="meetingType()!"
+        [visible]="showTemplates()"
+        (templateSelected)="onApplyTemplate($event)"
+        (closeSelector)="onCloseTemplates()" />
+    }
+
+    @if (showAiHelper()) {
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4" data-testid="composer-agenda-ai-panel">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">AI agenda generator</h3>
+          <p class="text-xs text-gray-500">Tell me the goal and I'll draft a structured agenda.</p>
+        </div>
+
+        <lfx-textarea
+          [form]="form()"
+          control="aiPrompt"
+          id="composer-agenda-ai-prompt"
+          placeholder="e.g. Review Q3 roadmap progress and agree on the release date"
+          styleClass="w-full"
+          [rows]="3"
+          data-testid="composer-agenda-ai-prompt" />
+
+        <div class="flex justify-end gap-2">
+          <lfx-button
+            label="Cancel"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="onCancelAiHelper()"
+            data-testid="composer-agenda-ai-cancel" />
+          <lfx-button
+            [label]="isGeneratingAgenda() ? 'Generating…' : 'Generate agenda'"
+            size="small"
+            severity="info"
+            [loading]="isGeneratingAgenda()"
+            [disabled]="isGeneratingAgenda()"
+            (onClick)="onGenerateAgenda()"
+            data-testid="composer-agenda-ai-generate" />
+        </div>
+      </div>
+    }
+
+    <lfx-textarea
+      [form]="form()"
+      control="description"
+      id="composer-agenda"
+      placeholder="Enter meeting agenda and key discussion points"
+      styleClass="w-full min-h-48"
+      [rows]="8"
+      [maxlength]="agendaMaxLength"
+      data-testid="composer-agenda-textarea" />
+    <p class="self-end text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
+  </div>
+
+  <div class="border-t border-gray-200"></div>
+
+  <div class="flex flex-col gap-3">
+    <label class="text-sm font-medium text-gray-900">Documents</label>
+
+    <lfx-file-upload
+      [multiple]="true"
+      [accept]="acceptString"
+      [maxFileSize]="maxFileSizeBytes"
+      [customUpload]="true"
+      [showUploadButton]="false"
+      [showCancelButton]="false"
+      chooseLabel="Click to upload files or drag and drop"
+      dataTest="composer-agenda-file-upload"
+      (onSelect)="onFileSelect($event)" />
+    <p class="text-xs text-gray-500">{{ acceptedTypesDisplay }} · Max {{ maxFileSizeMb }}MB each</p>
+
+    @if (pendingAttachments().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="composer-agenda-pending-attachments">
+        @for (attachment of pendingAttachments(); track attachment.id) {
+          <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+            <div class="flex min-w-0 items-center gap-2">
+              <i class="fa-light fa-file-lines flex-shrink-0 text-gray-500"></i>
+              <span class="truncate text-sm text-gray-700" [title]="attachment.fileName">{{ attachment.fileName }}</span>
+              <span class="flex-shrink-0 text-xs text-gray-400">{{ fileSize(attachment.fileSize) }}</span>
+            </div>
+            <button
+              type="button"
+              class="flex-shrink-0 text-gray-400 transition-colors hover:text-red-500"
+              [attr.aria-label]="'Remove ' + attachment.fileName"
+              (click)="onRemoveAttachment(attachment.id)"
+              [attr.data-testid]="'composer-agenda-remove-attachment-' + attachment.id">
+              <i class="fa-light fa-xmark"></i>
+            </button>
+          </div>
+        }
+      </div>
+    }
+
+    @if (savedFileAttachments().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="composer-agenda-saved-attachments">
+        @for (attachment of savedFileAttachments(); track attachment.uid) {
+          <div
+            class="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+            [ngClass]="pendingDeletionSet().has(attachment.uid) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'">
+            <div class="flex min-w-0 items-center gap-2">
+              <i class="fa-light fa-file-lines flex-shrink-0" [ngClass]="pendingDeletionSet().has(attachment.uid) ? 'text-red-400' : 'text-gray-500'"></i>
+              <span
+                class="truncate text-sm"
+                [ngClass]="pendingDeletionSet().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'"
+                [title]="attachment.name">
+                {{ attachment.name }}
+              </span>
+            </div>
+            @if (pendingDeletionSet().has(attachment.uid)) {
+              <button
+                type="button"
+                class="flex-shrink-0 text-xs text-blue-500 transition-colors hover:text-blue-700"
+                (click)="formService.undoDeleteAttachment(attachment.uid)"
+                [attr.data-testid]="'composer-agenda-undo-delete-' + attachment.uid">
+                Undo
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="flex-shrink-0 text-gray-400 transition-colors hover:text-red-500"
+                [attr.aria-label]="'Remove ' + attachment.name"
+                (click)="formService.deleteAttachment(attachment.uid)"
+                [attr.data-testid]="'composer-agenda-delete-' + attachment.uid">
+                <i class="fa-light fa-trash"></i>
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="border-t border-gray-200"></div>
+
+  <div class="flex flex-col gap-3">
+    <div class="flex items-center justify-between gap-3">
+      <label class="text-sm font-medium text-gray-900">Links</label>
+      <lfx-button label="Add link" icon="fa-light fa-plus" size="small" [text]="true" (onClick)="onAddLink()" data-testid="composer-agenda-add-link" />
+    </div>
+
+    @if (linkControls().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="composer-agenda-links">
+        @for (link of linkControls(); track link.get('id')?.value; let index = $index) {
+          @if (!pendingDeletionSet().has(link.get('uid')?.value)) {
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+              <div class="flex min-w-0 items-center gap-2">
+                <i class="fa-light fa-link flex-shrink-0 text-gray-500"></i>
+                <div class="flex min-w-0 flex-col">
+                  <span class="truncate text-sm text-gray-700" [title]="link.get('title')?.value">{{ link.get('title')?.value }}</span>
+                  <span class="truncate text-xs text-gray-400" [title]="link.get('url')?.value">{{ link.get('url')?.value }}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="flex-shrink-0 text-gray-400 transition-colors hover:text-red-500"
+                [attr.aria-label]="'Remove ' + link.get('title')?.value"
+                (click)="onRemoveLink(index)"
+                [attr.data-testid]="'composer-agenda-remove-link-' + index">
+                <i class="fa-light fa-xmark"></i>
+              </button>
+            </div>
+          }
+        }
+      </div>
+    } @else {
+      <p class="text-sm text-gray-500" data-testid="composer-agenda-links-empty">No links added yet.</p>
+    }
+  </div>
+</div>

@@ -1,0 +1,32 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="composer-add-link-dialog">
+  <div class="flex flex-col gap-2">
+    <label for="composer-link-title" class="text-sm font-medium text-gray-900">Title</label>
+    <lfx-input-text [form]="form" control="title" id="composer-link-title" placeholder="Design doc" dataTest="composer-link-title-input" styleClass="w-full" />
+    @if (form.controls.title.touched && form.controls.title.invalid) {
+      <p class="text-xs text-red-600" data-testid="composer-link-title-error">A title is required.</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="composer-link-url" class="text-sm font-medium text-gray-900">URL</label>
+    <lfx-input-text
+      [form]="form"
+      control="url"
+      id="composer-link-url"
+      type="url"
+      placeholder="https://example.com/doc"
+      dataTest="composer-link-url-input"
+      styleClass="w-full" />
+    @if (form.controls.url.touched && form.controls.url.invalid) {
+      <p class="text-xs text-red-600" data-testid="composer-link-url-error">Enter a full URL starting with https://</p>
+    }
+  </div>
+
+  <div class="flex justify-end gap-2">
+    <lfx-button size="small" label="Cancel" severity="secondary" [outlined]="true" (click)="onCancel()" data-testid="composer-link-cancel" />
+    <lfx-button size="small" label="Add link" severity="info" [disabled]="!form.valid" (click)="onSubmit()" data-testid="composer-link-submit" />
+  </div>
+</div>
