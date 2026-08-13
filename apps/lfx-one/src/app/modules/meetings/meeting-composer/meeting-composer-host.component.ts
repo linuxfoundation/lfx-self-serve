@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
+import type { MeetingComposerSection } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, pairwise } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
+import { MeetingComposerPreviewComponent } from './meeting-composer-preview.component';
+import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
 import { MeetingComposerService } from './meeting-composer.service';
 import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
@@ -23,14 +24,15 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
  * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
- * opening the composer never unmounts the page underneath. The section rail and live preview land in
- * LFXV2-3240; until then the sections are driven by the footer navigation.
+ * opening the composer never unmounts the page underneath. Sections are reachable from both the rail
+ * and the footer navigation; the live preview is create-mode only.
  */
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
-    NgClass,
     DrawerModule,
+    MeetingComposerRailComponent,
+    MeetingComposerPreviewComponent,
     ButtonComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
@@ -87,10 +89,6 @@ export class MeetingComposerHostComponent {
     if (!visible) {
       this.composer.close();
     }
-  }
-
-  protected onSectionChange(section: MeetingComposerSectionId): void {
-    this.composer.setSection(section);
   }
 
   protected onNext(): void {

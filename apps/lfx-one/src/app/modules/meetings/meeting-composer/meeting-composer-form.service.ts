@@ -393,6 +393,11 @@ export class MeetingComposerFormService {
 
   // Private initializer functions
 
+  /** Recurrence the current form state would submit — for read-only summaries such as the preview. */
+  public recurrencePayload(): MeetingRecurrence | null {
+    return this.buildRecurrencePayload(this.form().getRawValue());
+  }
+
   private createMeetingFormGroup(): FormGroup {
     const defaultDateTime = getDefaultStartDateTime();
 
