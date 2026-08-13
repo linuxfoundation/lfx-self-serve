@@ -513,7 +513,7 @@ export class CampaignsComponent {
    * not model would be silently replaced by the narrower shape on the way back out. A restore
    * that quietly rewrites the thing it restored is the one outcome this path must not have.
    */
-  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
+  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false, restoredApproved = false): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
@@ -533,9 +533,12 @@ export class CampaignsComponent {
         status: 'off',
         briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
         message: null,
-        // `off` never gates the create on approval (that is the legacy path's state too), so this
-        // is false-as-not-applicable rather than a claim the restored brief is unapproved.
-        approved: false,
+        // The RESTORED brief's own approval, carried through the restore output. campaign-service
+        // refuses a create from an unapproved brief, so filing one as create-ready here would
+        // enable a button whose request cannot succeed — the same defect the save path guards,
+        // one restore apart. Only this branch is reachable with a restored brief, so the default
+        // of false never reaches a genuinely-approved one.
+        approved: restoredApproved,
       });
       return;
     }
@@ -556,7 +559,7 @@ export class CampaignsComponent {
     this.selectedEmailTab.set('implementation');
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -615,7 +618,7 @@ export class CampaignsComponent {
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
-    this.onProceedToImplementation(brief, true);
+    this.onProceedToImplementation(brief, true, approved);
   }
 
   /**

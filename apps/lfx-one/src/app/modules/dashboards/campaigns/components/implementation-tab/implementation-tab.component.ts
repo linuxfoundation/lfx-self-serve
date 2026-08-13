@@ -304,6 +304,13 @@ export class ImplementationTabComponent implements OnInit {
     // would break the first time the copy is edited.
     if (persistence.status === 'saved' && !persistence.approved) return false;
 
+    // A RESTORED brief arrives as `off` carrying its own id, and Planning deliberately lets an
+    // unapproved one be restored (the banner says to get it approved). `off` also covers the
+    // cutover-dark case, where there is no brief id and none is needed — so the id is again what
+    // separates them: an id present here means a restored brief, and an unapproved one cannot
+    // create.
+    if (persistence.status === 'off' && persistence.briefId !== null && !persistence.approved) return false;
+
     return true;
   });
 

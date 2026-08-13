@@ -159,6 +159,27 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(false);
   });
 
+  /**
+   * A RESTORED brief arrives as `off` with its own id, and Planning deliberately allows restoring
+   * an unapproved one. campaign-service still refuses to create from it, so the id — not the
+   * status — is what separates a restored brief from the cutover-dark case below.
+   */
+  it('blocks submit for a restored brief that was never approved', async () => {
+    makeOtherwiseValid();
+
+    setPersistence({ status: 'off', briefId: 'brief-restored-1', message: null, approved: false });
+
+    expect(canSubmit()).toBe(false);
+  });
+
+  it('allows submit for a restored brief that IS approved', async () => {
+    makeOtherwiseValid();
+
+    setPersistence({ status: 'off', briefId: 'brief-restored-1', message: null, approved: true });
+
+    expect(canSubmit()).toBe(true);
+  });
+
   it('does not block submit when persistence is off', async () => {
     // The cutover-dark case. `briefId` is null here too, so a guard written as "block on a null
     // brief id" would disable the button permanently — for a path that needs no brief id at all.

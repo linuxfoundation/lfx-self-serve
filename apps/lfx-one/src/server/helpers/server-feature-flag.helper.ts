@@ -109,14 +109,23 @@ export enum ServerFeatureFlag {
    * that project is unconfigured: campaign-service reads credentials from its own connection
    * tables, never from this application's GADS_ / LINKEDIN_ environment variables.
    *
-   * There is no system-account fallback — a review round claimed one exists, and the code says
-   * otherwise: `credsSource.resolve` (campaign-service `internal/dispatch/creds.go:159`) returns
-   * `notCreated("no <provider> connection configured for project <slug>")` the moment the repo
-   * answers `ErrNotFound`. Nothing substitutes an LF-owned account.
+   * There IS a system-account fallback, and it is narrower than it sounds. `credsSource.resolve`
+   * (campaign-service `internal/dispatch/creds.go`) falls back to the reserved system scope
+   * (`model.SystemProjectID`) when the project has **no connection of its own** — so a create can
+   * dispatch on the LF-owned ad account rather than failing. Three qualifications that matter
+   * before relying on it:
    *
-   * So the connection must exist PER PROJECT SLUG before this goes on, created with
-   * `POST /projects/{slug}/connection-{provider}`. Otherwise every dispatch fails on a missing
-   * connection, per-campaign rather than at startup.
+   *   - ONLY a genuine absence falls back. Any other failure — an unusable row, a decrypt error —
+   *     means the project HAS a connection needing attention, and running its campaign on the LF
+   *     account would spend LF money on a request the project believed was its own.
+   *   - It is an AD-ACCOUNT fallback. HubSpot is deliberately excluded, because falling back there
+   *     would write one tenant's contacts into the LF's own portal.
+   *   - Spend lands on the LF account. Fine for an LF-run campaign; not what a foundation
+   *     expects for theirs.
+   *
+   * So per-project connections are still the thing to provision before turning this on — created
+   * with `POST /projects/{slug}/connection-{provider}` — and the fallback is a safety net for the
+   * LF's own campaigns, not a substitute for them.
    */
   CampaignServiceCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE',
 
