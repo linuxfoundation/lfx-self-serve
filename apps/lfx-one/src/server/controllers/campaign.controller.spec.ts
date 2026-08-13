@@ -375,6 +375,10 @@ describe('CampaignController.createCampaign cutover', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Explicit rather than relying on an unstubbed mock returning undefined. The controller now
+    // reads this flag directly (for the `?project=` validation), so leaving it unset would make
+    // every test in this block depend on a falsy default rather than a stated condition.
+    isServerFeatureEnabled.mockReturnValue(true);
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
@@ -413,28 +417,6 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
   });
 
-  /**
-   * The demand-gen-only Google case, which is the reachable one: `buildGoogleAdsConfig` returns
-   * null (it builds SEARCH config, and no Search campaign was selected), so google-ads would
-   * otherwise travel with no `googleAdsConfig`.
-   *
-   * That is not a harmless no-op upstream. `unmarshalPlatformConfig` in campaign-service returns
-   * nil for an absent key — "no per-platform config supplied; zero value is fine" — so the
-   * dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
-   * headlines. Nothing upstream refuses it, so it has to be refused here.
-   */
-  it('refuses a create when a selected platform has no config, without calling either path', async () => {
-    const demandGenOnly = { platforms: ['google-ads'], campaignTypes: ['demand-gen'], budgetUsd: 5000 };
-
-    await controller.createCampaign(buildReq(demandGenOnly, { project: 'tlf', brief_id: 'b-1' }), res, next);
-
-    // Neither path runs: not campaign-service (nothing to dispatch) and NOT the legacy path,
-    // which would create the campaigns for real while the user is told creation was refused.
-    expect(createCampaigns).not.toHaveBeenCalled();
-    expect(legacyCreate).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
-  });
-
   it('allows a create when the same platform IS configured', async () => {
     // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
     // config. Without this, the test above would pass on a controller that refused everything.
@@ -447,16 +429,37 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: '9f1c2d3e-0000-4000-8000-000000000002' });
   });
 
-  it('refuses only the unconfigured platform in a mixed selection, rather than dispatching a partial create', async () => {
-    // A silent partial success is the same class of bug the cutover exists to prevent: the user
-    // asked for Google and LinkedIn, and would get LinkedIn only, with nothing saying so.
-    const mixed = { platforms: ['google-ads', 'linkedin-ads'], campaignTypes: ['demand-gen'], linkedInConfig: { budgetUsd: 100 } };
+  /**
+   * A missing `?project=` is a client 400, matching `getJobStatus` and every other validation in
+   * this controller.
+   *
+   * Left to fall through it produced "this campaign could not be created because its brief has not
+   * been saved yet" — wrong (the brief may well be saved) and TERMINAL, so it also blocked the
+   * legacy fall-through.
+   */
+  it('rejects a create with no project slug once the cutover is on', async () => {
+    isServerFeatureEnabled.mockReturnValue(true);
 
-    await controller.createCampaign(buildReq(mixed, { project: 'tlf', brief_id: 'b-1' }), res, next);
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(legacyCreate).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('does not require a project slug while the cutover is dark', async () => {
+    // The legacy path neither reads nor needs the param, so requiring it there would be the same
+    // category error as putting the unconfigured-platform guard in the controller was.
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
   });
 
   it('passes the project slug and brief id from the query, not the body', async () => {
@@ -533,20 +536,36 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['budget']).toBe(600);
   });
 
-  it('builds no googleAdsConfig when only demand-gen is selected, and refuses rather than dispatching', async () => {
+  it('omits googleAdsConfig when only demand-gen is selected', async () => {
     // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
-    // request as Search.
-    //
-    // Previously this asserted the envelope omitted `googleAdsConfig` — true, but it let the
-    // create proceed with `google-ads` still in `platforms`, which is the bug. campaign-service
-    // reads the absent key as a ZERO VALUE and calls Google Ads with budget 0 and no headlines,
-    // so "omitted from the envelope" was never the safe outcome it looked like. The refusal is
-    // what makes the omission safe, so that is what this pins.
+    // request as Search. The REFUSAL that makes this omission safe lives in `createCampaigns`
+    // (see its spec) — deliberately not here, so it is gated by the cutover flags.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(createCampaigns).not.toHaveBeenCalled();
-    expect(legacyCreate).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('google-ads') });
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+  });
+
+  /**
+   * The regression guard for a bug I shipped and had to back out.
+   *
+   * The unconfigured-platform refusal was briefly in the controller, ABOVE the `createCampaigns`
+   * call, where it ran unconditionally. That broke demand-gen-only Google creation with every flag
+   * OFF — a case the legacy path has always supported, because its `includeGoogle` gates on
+   * platform membership alone and Google's inputs live on the request root, not in a config
+   * object. The guard tests for a campaign-service envelope key, so applying it to the legacy path
+   * was a category error.
+   */
+  it('still runs the legacy path for a demand-gen-only Google create when the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_dg_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_dg_1' });
   });
 
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {

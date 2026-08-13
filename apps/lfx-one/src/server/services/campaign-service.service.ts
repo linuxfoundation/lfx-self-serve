@@ -30,14 +30,6 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * `job-poll-response` as lfx-v2-campaign-service publishes it (`design/brief.go`).
- *
- * Declared here rather than in `@lfx-one/shared` on purpose: it is the WIRE shape of another
- * service, not a type this application exchanges between its own tiers. Putting it in the
- * shared package would invite a component to import it, and then a contract change upstream
- * would reach the browser instead of stopping at the adapter below.
- */
-/**
  * The 202 body from `POST /projects/{slug}/briefs/{brief_id}/campaigns`.
  *
  * Declared locally rather than in `@lfx-one/shared` for the same reason as its siblings below:
@@ -49,6 +41,14 @@ interface CampaignServiceJobCreateResponse {
   status?: string;
 }
 
+/**
+ * `job-poll-response` as lfx-v2-campaign-service publishes it (`design/brief.go`).
+ *
+ * Declared here rather than in `@lfx-one/shared` on purpose: it is the WIRE shape of another
+ * service, not a type this application exchanges between its own tiers. Putting it in the
+ * shared package would invite a component to import it, and then a contract change upstream
+ * would reach the browser instead of stopping at the adapter below.
+ */
 interface CampaignServiceJobPollResponse {
   job_id: string;
   status: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';
@@ -70,85 +70,6 @@ interface CampaignServiceJobPollResponse {
  * `unknown`-ish here rather than mirrored from `CampaignBriefOutput`, because the adapter below
  * is the only thing that decides their shape and pinning them would make a UI-side field rename
  * look like a service contract change.
- */
-interface CampaignServiceBriefInput {
-  program_type: string;
-  event_slug: string;
-  url?: string;
-  platforms?: string[];
-  event_details?: Record<string, unknown>;
-  copy?: Record<string, unknown>;
-  keywords?: unknown;
-  targeting?: Record<string, unknown>;
-}
-
-/**
- * `brief` as campaign-service returns it in the response BODY.
- *
- * No `etag` field, deliberately: the design maps it to the `ETag` HTTP header on every brief
- * response, so Goa leaves it out of the generated body struct. Declaring it here would compile
- * and read `undefined` forever. `readEtag` takes it off the headers instead.
- *
- * The four content fields are declared here as well as on the input above, because the read
- * path needs them: `Brief` inherits `event_details`, `copy`, `keywords` and `targeting` from
- * `BriefData` via `Reference`, so a find returns everything a save wrote. They stay `unknown`-ish
- * for the same reason as on the input — the service validates none of them, so a value coming
- * back is not evidence of its shape and the adapter has to check rather than trust.
- */
-interface CampaignServiceBrief {
-  id: string;
-  project_id: string;
-  program_type: string;
-  event_slug: string;
-  status: string;
-  version: number;
-  // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
-  // these come back on the find whether or not this phase renders them. Declared for the create
-  // reconciliation, which has to tell THIS request's row from another writer's — not because the
-  // write path reads them.
-  url?: string;
-  platforms?: string[];
-  event_details?: unknown;
-  copy?: unknown;
-  keywords?: unknown;
-  targeting?: unknown;
-}
-
-/**
- * The wrapper both `create-brief` and `update-brief` require around the payload.
- *
- * The body is `{"brief": {…}}`, NOT the brief object itself. Goa builds the request body from
- * the payload attributes that are not mapped to the path, headers or query, and the design
- * declares `Attribute("brief", BriefInput)` without a `Body("brief")` override — so the
- * attribute name survives into the wire format. Posting a bare brief object produces a 400 on
- * every required field at once, which reads like a mapping bug rather than a missing wrapper.
- */
-interface CampaignServiceBriefEnvelope {
-  brief: CampaignServiceBriefInput;
-}
-
-/**
- * The canonical slug for The Linux Foundation's own project row.
- *
- * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
- * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
- * project or slug segment", LF-scoped by construction. That is wrong: the route carries
- * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
- * foundation reaches the page with their own foundation selected. Anything that WRITES must
- * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
- *
- * The job poll keeps the constant because it is currently unreachable with a real id:
- * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
- * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
- * both the create and the poll in the same change, at which point this constant goes away.
- *
- * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
- * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
- * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
- * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
- * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
- * written under `tlf` is invisible to a poll made under the project's uid. Resolving the slug
- * to a uid here would look more canonical and find nothing.
  */
 interface CampaignServiceBriefInput {
   program_type: string;
@@ -235,6 +156,31 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * is an addition here plus a branch at the call site, and a rollback is the flag alone —
  * rather than an edit tangled through the vendor code that has to be reverted by hand.
  */
+/**
+ * Does the envelope carry the config this platform needs to dispatch?
+ *
+ * The mapping is the dispatcher's, not ours: each `<platform>Dispatcher.Dispatch` in
+ * campaign-service reads exactly one envelope key, and `unmarshalPlatformConfig` treats an absent
+ * key as a zero value rather than an error — which is why the check has to happen on this side.
+ *
+ * An UNKNOWN platform returns true, deliberately. This function's job is to catch a platform we
+ * failed to configure, not to police the platform list; `createCampaigns` and campaign-service both
+ * reject unsupported platforms, and answering false here would turn a new platform's rollout into a
+ * mysterious local refusal. The upstream `CampaignCreateInput` already allows `twitter-ads`,
+ * `microsoft-ads` and `hubspot`, none of which this UI builds a config for yet.
+ */
+function hasPlatformConfig(platform: string, envelope: Record<string, unknown>): boolean {
+  const requiredKey: Record<string, string> = {
+    'google-ads': 'googleAdsConfig',
+    'linkedin-ads': 'linkedInConfig',
+    'reddit-ads': 'redditConfig',
+    'meta-ads': 'metaConfig',
+  };
+  const key = requiredKey[platform];
+  if (key === undefined) return true;
+  return envelope[key] !== undefined;
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -570,6 +516,35 @@ export class CampaignServiceClient {
     }
     if (platforms.length === 0) {
       return { enabled: true, jobId: null, error: 'Select at least one platform before creating campaigns.' };
+    }
+
+    // A selected platform with no config in the envelope is refused, rather than dispatched.
+    //
+    // Not a cosmetic omission upstream: `unmarshalPlatformConfig` in campaign-service returns nil
+    // for an absent key — "no per-platform config supplied; zero value is fine" — so the
+    // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
+    // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
+    //
+    // The reachable case is google-ads with Demand Gen only and no Search, where
+    // `buildGoogleAdsConfig` correctly returns null because it builds SEARCH config.
+    //
+    // This check belongs HERE and not in the controller. It tests for a campaign-service envelope
+    // key, so it must only apply once the cutover is on — the legacy path needs no
+    // `googleAdsConfig` at all (its `includeGoogle` gates on platform membership alone) and
+    // creates demand-gen campaigns perfectly well. An earlier revision put it in the controller
+    // above this call, where it ran with the flags OFF and broke that legacy capability.
+    //
+    // Refusing the whole create rather than filtering the platform out: a silent partial success
+    // is the same class of bug this cutover exists to prevent — the user asked for Google, would
+    // get no Google, and nothing would say so. Returning `enabled: true` with an error also blocks
+    // the controller's legacy fall-through, so a refusal cannot become a duplicate create.
+    const unconfigured = platforms.filter((p) => !hasPlatformConfig(p, config));
+    if (unconfigured.length > 0) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: `No configuration was built for: ${unconfigured.join(', ')}. Check the campaign types selected for each platform.`,
+      };
     }
 
     const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;

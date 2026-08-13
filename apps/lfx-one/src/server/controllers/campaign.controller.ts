@@ -255,31 +255,37 @@ export class CampaignController {
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
       const configEnvelope = this.createConfigEnvelope(body);
 
-      // A platform selected but left unconfigured is REFUSED here, before dispatch.
+      // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
+      // being left to `createCampaigns`.
       //
-      // This used to be a comment claiming the caller refused it. No caller did. The real
-      // behaviour was worse than a gap: `unmarshalPlatformConfig` in campaign-service returns nil
-      // for an absent key ("no per-platform config supplied; zero value is fine"), so the
-      // dispatcher proceeded with a ZERO-VALUE config and called Google Ads with budget 0, no
-      // headlines and no keywords. Nothing upstream refuses it — I checked the dispatcher rather
-      // than assuming.
+      // Left to fall through, a missing slug produced "this campaign could not be created because
+      // its brief has not been saved yet" — which is wrong (the brief may be saved; the caller
+      // just omitted the param) and, worse, is a TERMINAL refusal that blocks legacy fall-through,
+      // so with the cutover dark a missing slug failed a create the legacy path could have served.
+      // A missing query param is a client 400.
       //
-      // The reachable case is google-ads with Demand Gen only and no Search: `buildGoogleAdsConfig`
-      // correctly returns null (it builds Search config), and the platform then travelled alone.
-      //
-      // Refusing the WHOLE create rather than filtering the platform out, because a silent
-      // partial success is the same class of bug this cutover exists to prevent — the user asked
-      // for Google, would get no Google, and nothing would say so. This returns through the
-      // existing `enabled: true, jobId: null, error` branch, which already blocks the legacy
-      // fall-through, so a refusal cannot become a duplicate create on the old path.
-      const unconfigured = platforms.filter((p) => !this.hasPlatformConfig(p, configEnvelope));
-      if (unconfigured.length > 0) {
-        const detail = `No configuration was built for: ${unconfigured.join(', ')}. Check the campaign types selected for each platform.`;
-        logger.warning(req, 'campaign_create', 'Refusing a create with unconfigured platforms', { platforms, unconfigured });
-        res.json({ jobId: '', error: detail });
+      // Only when the cutover is on: with the flags off the legacy path neither reads nor needs
+      // these params, so requiring them there would be the same category error as the
+      // unconfigured-platform guard was.
+      if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) && projectSlug === '') {
+        next(
+          ServiceValidationError.forField('project', 'creating through campaign-service requires the project the brief was saved under', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
         return;
       }
 
+      // The unconfigured-platform refusal lives INSIDE `createCampaigns`, deliberately, so that it
+      // is gated by the cutover flags along with everything else there.
+      //
+      // It was here for one revision, above this call, and that was a regression: the guard tests
+      // for a CAMPAIGN-SERVICE envelope key, but sitting here it ran unconditionally and refused
+      // demand-gen-only Google creates even with every flag OFF — a case the legacy path has
+      // always supported, because `includeGoogle` gates on platform membership alone and Google's
+      // inputs live on the request root rather than in a config object. Gating the legacy path on
+      // a concept it does not have is a category error.
       const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope);
 
       if (viaService.enabled && viaService.jobId !== null) {
@@ -924,30 +930,6 @@ export class CampaignController {
    * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
    * absent config as "not selected", and a null one as a malformed selection.
    */
-  /**
-   * Does the envelope carry the config this platform needs to dispatch?
-   *
-   * The mapping is the dispatcher's, not ours: each `<platform>Dispatcher.Dispatch` reads exactly
-   * one envelope key, and `unmarshalPlatformConfig` treats an absent key as a zero value rather
-   * than an error — which is why the check has to happen on this side.
-   *
-   * An UNKNOWN platform returns true, deliberately. This method's job is to catch a platform we
-   * failed to configure, not to police the platform list; `createCampaigns` and campaign-service
-   * both reject unsupported platforms, and answering false here would turn a new platform's
-   * rollout into a mysterious local refusal.
-   */
-  private hasPlatformConfig(platform: string, envelope: Record<string, unknown>): boolean {
-    const requiredKey: Record<string, string> = {
-      'google-ads': 'googleAdsConfig',
-      'linkedin-ads': 'linkedInConfig',
-      'reddit-ads': 'redditConfig',
-      'meta-ads': 'metaConfig',
-    };
-    const key = requiredKey[platform];
-    if (key === undefined) return true;
-    return envelope[key] !== undefined;
-  }
-
   private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
