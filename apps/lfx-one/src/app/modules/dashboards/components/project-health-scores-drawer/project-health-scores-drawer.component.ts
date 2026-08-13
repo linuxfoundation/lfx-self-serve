@@ -135,7 +135,7 @@ export class ProjectHealthScoresDrawerComponent {
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
   // Maps v1 band names (stable/unsteady) from the API response to v2 names (fair/concerning) for display.
-  private readonly mappedData = computed(() => mapV1DistributionToV2(this.data()) as unknown as FoundationHealthScoreDistributionResponse);
+  private readonly mappedData = computed(() => mapV1DistributionToV2(this.data()) as unknown as Record<HealthStatusFilterValue, number>);
 
   // True while the parent's foundation health-score distribution request is in flight.
   // Gates only the parts of the drawer that depend on `data` (summary + chart). The header

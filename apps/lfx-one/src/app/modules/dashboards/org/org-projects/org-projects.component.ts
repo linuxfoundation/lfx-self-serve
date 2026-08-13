@@ -50,6 +50,7 @@ import type {
 import { buildInsightsUrl, downloadCsv } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
+import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
@@ -82,6 +83,7 @@ import { PersonaService } from '@shared/services/persona.service';
     InputTextComponent,
     MenuComponent,
     MultiSelectComponent,
+    PopoverModule,
     RouterLink,
     SelectComponent,
     SkeletonModule,
