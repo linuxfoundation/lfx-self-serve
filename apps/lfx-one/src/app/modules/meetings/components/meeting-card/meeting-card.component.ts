@@ -140,7 +140,7 @@ export class MeetingCardComponent implements OnInit {
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public drawerGuestCount: WritableSignal<number> = signal(0);
-  private readonly registeredInSession: WritableSignal<boolean> = signal(false);
+  private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -180,7 +180,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
-  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.registeredInSession());
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -275,7 +275,7 @@ export class MeetingCardComponent implements OnInit {
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.registeredInSession.set(false));
+      .subscribe(() => this.optimisticInvited.set(false));
   }
 
   public ngOnInit(): void {
@@ -341,7 +341,7 @@ export class MeetingCardComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
-        this.registeredInSession.set(true);
+        this.optimisticInvited.set(true);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }

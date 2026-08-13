@@ -517,15 +517,8 @@ export class PublicMeetingController {
     });
 
     try {
-      // Validate the meeting ID is provided
-      if (!meetingId) {
-        const validationError = ServiceValidationError.forField('meeting_id', 'Meeting ID is required', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      if (!this.validateMeetingId(meetingId, 'register_for_public_meeting', req, next)) {
+        return;
       }
 
       if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
@@ -618,7 +611,6 @@ export class PublicMeetingController {
 
   /**
    * Returns an AuthorizationError if the meeting is non-public or restricted, or null if valid.
-   * Both the authenticated and anonymous registration paths enforce the same constraints.
    */
   private checkMeetingIsPublicAndNotRestricted(req: Request, meeting: Pick<Meeting, 'visibility' | 'restricted'>): AuthorizationError | null {
     if (meeting.visibility !== MeetingVisibility.PUBLIC) {

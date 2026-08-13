@@ -299,12 +299,13 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
     });
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
-    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    const [, , path, method, , body, headers] = proxyRequest.mock.calls[0];
     expect(path).toBe('/itx/meetings/mtg-1/registrants/self');
     expect(method).toBe('POST');
     expect(body).toMatchObject({ first_name: 'Alice', last_name: 'Liddell' });
     expect(body).not.toHaveProperty('email');
     expect(body).not.toHaveProperty('username');
+    expect(headers).toEqual({ 'X-Sync': 'true' });
     expect(result).toEqual(registrant);
   });
 
