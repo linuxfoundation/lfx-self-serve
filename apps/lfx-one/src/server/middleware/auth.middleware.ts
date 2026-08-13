@@ -124,16 +124,22 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
     auth: config.defaultAuth,
   };
 
-  // Fail-closed classification for malformed input on a raw `/api`-prefixed path. Still `required` auth,
-  // but preserves `type: 'api'` + `tokenRequired` so a malformed/encoded API request returns a JSON 401
-  // (not an HTML login redirect that XHR/fetch clients can't follow) and still triggers bearer-token
-  // extraction. Mirrors the `/api` catch-all row in DEFAULT_ROUTE_CONFIG.
+  // Fail-closed classification for malformed input on an API-prefixed path (`/api` or `/public/api`).
+  // Still `required` auth, but preserves `type: 'api'` + `tokenRequired` so a malformed/encoded API
+  // request returns a JSON 401 (not an HTML login redirect that XHR/fetch clients can't follow) and still
+  // triggers bearer-token extraction. Mirrors the `/api` catch-all row in DEFAULT_ROUTE_CONFIG; the
+  // `/public/api` prefix (normally `auth: 'optional'`) also fails closed to `required` here, since a
+  // malformed/undecodable path can't be trusted to be the anonymous public route it appears to be.
   const apiFallback: RouteAuthConfig = {
     pattern: '/api',
     type: 'api',
     auth: 'required',
     tokenRequired: true,
   };
+
+  // Any API-prefixed path — the raw `/api` mount and the `/public/api` mount both serve JSON, so a
+  // malformed request to either must fail closed to the JSON 401 shape rather than an SSR redirect.
+  const isApiPath = path.startsWith('/api') || path.startsWith('/public/api');
 
   // Decode percent-encoding per segment before matching so the SSR auth boundary matches Angular's
   // route matching, which splits the path on literal `/` first and only then decodes each segment
@@ -161,7 +167,7 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
     // Decoding failed (malformed escape like `%ZZ`, or an encoded separator `%2F` that would shift
     // segment boundaries). Fail closed — but keep API-prefixed paths classified as `api` so they get a
     // JSON 401 with bearer extraction rather than an SSR login redirect.
-    return path.startsWith('/api') ? apiFallback : fallback;
+    return isApiPath ? apiFallback : fallback;
   }
 
   for (const routeConfig of config.routes) {

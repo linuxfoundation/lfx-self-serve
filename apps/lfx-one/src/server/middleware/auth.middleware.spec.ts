@@ -172,6 +172,22 @@ describe('authMiddleware route classification', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
   });
 
+  it('returns a 401 (not a login redirect) for a malformed /public/api path so XHR clients get JSON', async () => {
+    const req = buildReq({ path: '/public/api/foo/%ZZ' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // `/public/api` normally allows anonymous (optional auth), but an undecodable path can't be trusted to
+    // be that public route. It fails closed to the API classification (`type: 'api'`, `required`,
+    // `tokenRequired`), so an unauthenticated request returns a JSON 401 via `next(AuthenticationError)`
+    // rather than an HTML login redirect a fetch/XHR client can't follow.
+    expect(res.oidc.login).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
+  });
+
   it('does not treat a nested /groups/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
     const req = buildReq({ path: '/groups/abc123/edit' });
     const res = buildRes();
