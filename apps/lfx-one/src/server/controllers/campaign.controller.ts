@@ -163,10 +163,10 @@ export class CampaignController {
     // message, for a caller whose only mistake was a misspelling.
     //
     // Derived from the shared `CAMPAIGN_DELIVERY_TYPES`, and so is the MESSAGE below — the sibling
-    // `platform` check already interpolates its own Set for exactly this reason. The service now
-    // derives from the same constant too, so this is the single source of truth; a hardcoded tail
-    // in the error string would have been the last copy left to drift, and the one a reader trusts
-    // most because it is what the API actually says.
+    // `platform` check already interpolates its own Set for exactly this reason. An error string
+    // is the copy a reader trusts most, because it is what the API actually says, so a hardcoded
+    // tail there outlives every other duplicate. The two `Unsupported deliveryType` messages in
+    // `campaign-proxy.service.ts` are interpolated from the same constant for the same reason.
     const supportedDeliveryTypes = new Set<string>(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
     if (body.deliveryType !== undefined && !supportedDeliveryTypes.has(body.deliveryType)) {
       _next(

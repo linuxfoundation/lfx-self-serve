@@ -22,11 +22,23 @@ vi.mock('../helpers/url-validation', () => ({
   fetchSafeUrl: vi.fn(async () => ({ html: '<html><body></body></html>', ok: true, status: 200 })),
 }));
 
+import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { CampaignProxyService } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
+
+/**
+ * Derived from the same constant the service interpolates, so adding a delivery type updates this
+ * expectation with the code instead of failing on a hand-written list — a second literal here
+ * would be the drift this message was just changed to prevent.
+ *
+ * Asserted by EQUALITY rather than `.includes('deliveryType')`: the substring is satisfied by the
+ * word alone, so it passed whether the list rendered correctly, empty, or as `[object Object]` —
+ * it could not fail for the thing under test.
+ */
+const expectedUnsupportedMessage = `Unsupported deliveryType. Supported: ${CAMPAIGN_DELIVERY_TYPES.map((d) => d.id).join(', ')}.`;
 
 /**
  * The email brief must not generate ad copy — and `platforms` being absent CANNOT carry that,
@@ -199,7 +211,7 @@ describe('CampaignProxyService email delivery type', () => {
       }>
     );
 
-    expect(events.some((e) => e.type === 'error' && String(e.data).includes('deliveryType'))).toBe(true);
+    expect(events.some((e) => e.type === 'error' && String(e.data) === expectedUnsupportedMessage)).toBe(true);
     expect(generatedAdCopy()).toBe(false);
     expect(generatedKeywords()).toBe(false);
   });
@@ -213,7 +225,7 @@ describe('CampaignProxyService email delivery type', () => {
       ) as AsyncGenerator<{ type: string; data: unknown }>
     );
 
-    expect(events.some((e) => e.type === 'error' && String(e.data).includes('deliveryType'))).toBe(true);
+    expect(events.some((e) => e.type === 'error' && String(e.data) === expectedUnsupportedMessage)).toBe(true);
     expect(generatedAdCopy()).toBe(false);
   });
 
