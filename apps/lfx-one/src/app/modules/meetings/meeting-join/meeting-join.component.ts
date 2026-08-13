@@ -288,6 +288,7 @@ export class MeetingJoinComponent implements OnInit {
   protected hasAttendanceData = computed(() => this.isPastMeeting() && this.participantCount() > 0);
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
+  public effectivelyInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -372,6 +373,7 @@ export class MeetingJoinComponent implements OnInit {
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
+    this.effectivelyInvited = computed(() => this.isInvited() || this.optimisticInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canToggleRsvpView = this.initializeCanToggleRsvpView();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
