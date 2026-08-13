@@ -20,6 +20,17 @@
 
     <!-- Mobile account actions -->
     <div class="ml-auto flex items-center gap-2">
+      <!-- Create quick-link — opens the same artifact-type popover as the desktop rail. -->
+      @if (createPermissionService.canShowCreateButton()) {
+        <button
+          type="button"
+          (click)="toggleCreateMenu($event)"
+          data-testid="create-rail-button-mobile"
+          aria-label="Create new artifact"
+          class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+          <i class="fa-light fa-plus text-sm"></i>
+        </button>
+      }
       <a
         routerLink="/docs"
         data-testid="lens-mobile-docs"
@@ -70,8 +81,8 @@
     </button>
 
     <!-- Create quick-link — opens a menu of creatable artifact types; only shown when the user can create at least one somewhere.
-         Desktop rail only by design (this @else branch): the popover is positioned against the vertical rail, so the mobile
-         horizontal strip has no equivalent yet. Mobile affordance is deferred to a follow-up (see PR description). -->
+         The mobile strip has its own trigger for the same #createMenu popover (hoisted below, outside this @else branch,
+         so it's reachable from both triggers). -->
     @if (createPermissionService.canShowCreateButton()) {
       <button
         type="button"
@@ -205,32 +216,6 @@
     </div>
   </div>
 
-  <!-- Create Popover — pick an artifact type, then a dialog resolves the project/foundation -->
-  <p-popover #createMenu appendTo="body" [styleClass]="bannerOffset() ? 'w-72 lfx-create-popover lfx-create-popover-banner-offset' : 'w-72 lfx-create-popover'">
-    <ng-template #content>
-      @let creatables = creatableArtifacts();
-      <div class="py-1" data-testid="create-menu">
-        @for (artifact of creatables; track artifact.type; let i = $index) {
-          <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
-          @if (i > 0 && artifact.group !== creatables[i - 1].group) {
-            <div role="separator" class="my-1 border-t border-gray-100"></div>
-          }
-          <button
-            type="button"
-            (click)="openCreateDialog(artifact)"
-            [attr.data-testid]="'create-menu-option-' + artifact.type"
-            class="group flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
-            <i [class]="artifact.icon + ' fa-fw text-base text-gray-400 mt-0.5'"></i>
-            <span class="flex flex-col min-w-0">
-              <span class="text-sm font-medium text-gray-900">{{ artifact.label }}</span>
-              <span class="text-xs text-gray-500">{{ artifact.description }}</span>
-            </span>
-          </button>
-        }
-      </div>
-    </ng-template>
-  </p-popover>
-
   <!-- LFX Apps Popover -->
   <p-popover #appsMenu appendTo="body" styleClass="w-72 lfx-apps-popover">
     <ng-template #content>
@@ -335,3 +320,31 @@
   <!-- Changelog Drawer -->
   <lfx-changelog-drawer [(visible)]="changelogDrawerVisible" />
 }
+
+<!-- Create Popover — pick an artifact type, then a dialog resolves the project/foundation.
+     Hoisted outside the mobile/desktop @if/@else split: both the mobile strip's and the desktop
+     rail's Create buttons toggle this same #createMenu instance. -->
+<p-popover #createMenu appendTo="body" [styleClass]="bannerOffset() ? 'w-72 lfx-create-popover lfx-create-popover-banner-offset' : 'w-72 lfx-create-popover'">
+  <ng-template #content>
+    @let creatables = creatableArtifacts();
+    <div class="py-1" data-testid="create-menu">
+      @for (artifact of creatables; track artifact.type; let i = $index) {
+        <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
+        @if (i > 0 && artifact.group !== creatables[i - 1].group) {
+          <div role="separator" class="my-1 border-t border-gray-100"></div>
+        }
+        <button
+          type="button"
+          (click)="openCreateDialog(artifact)"
+          [attr.data-testid]="'create-menu-option-' + artifact.type"
+          class="group flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
+          <i [class]="artifact.icon + ' fa-fw text-base text-gray-400 mt-0.5'"></i>
+          <span class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900">{{ artifact.label }}</span>
+            <span class="text-xs text-gray-500">{{ artifact.description }}</span>
+          </span>
+        </button>
+      }
+    </div>
+  </ng-template>
+</p-popover>
