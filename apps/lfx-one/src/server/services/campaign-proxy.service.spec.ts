@@ -130,6 +130,38 @@ describe('CampaignProxyService email delivery type', () => {
   });
 
   /**
+   * A caller CAN send `{deliveryType: 'email', platforms: ['linkedin-ads']}` — the types allow it
+   * and this server does not own the client. The LinkedIn strategy branch keys on the platform
+   * list alone, so without an explicit email check it would spend an AI call generating a
+   * targeting strategy for a brief that has no ad channels.
+   */
+  it('does not generate a LinkedIn strategy for an email brief that names linkedin-ads', async () => {
+    await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email', platforms: ['linkedin-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+    expect(aiCalls.some((p) => p.includes('LinkedIn Ads strategist'))).toBe(false);
+    expect(generatedAdCopy()).toBe(false);
+  });
+
+  it('still generates a LinkedIn strategy for a paid brief naming linkedin-ads', async () => {
+    await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['linkedin-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+    expect(aiCalls.some((p) => p.includes('LinkedIn Ads strategist'))).toBe(true);
+  });
+
+  /**
    * Refine re-runs the ad-copy generator, which composes its prompt from per-platform sections
    * and ends with "Keys: <joined>". With no platforms that asks the model for an object with no
    * keys — a broken call, not a cheap one — so an email refine is refused rather than answered.

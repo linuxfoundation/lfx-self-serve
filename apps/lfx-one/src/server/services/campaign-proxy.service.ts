@@ -787,7 +787,12 @@ export class CampaignProxyService {
       }
     }
 
-    if (selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+    // `!isEmail` is not redundant with the platform check. Today's client never sends
+    // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
+    // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
+    // accepted by the type and would otherwise spend an AI call on a LinkedIn targeting strategy
+    // for a brief that has no ad channels.
+    if (!isEmail && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
