@@ -1243,7 +1243,10 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(withBrief?.textContent).toMatch(/ready\.\s+Staging an email/);
   });
 
-  const byTestId = (testid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
+  // `fixture.nativeElement` is typed `any`, so without the cast the annotation below would be
+  // ASSERTED rather than checked — `.style.display` would still compile if it were wrong.
+  // Matches the sibling helper and the pre-existing call sites in this file.
+  const byTestId = (testid: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testid}"]`);
 
   /**
    * The planner's rendered HOST ELEMENT, scoped to its delivery container.
