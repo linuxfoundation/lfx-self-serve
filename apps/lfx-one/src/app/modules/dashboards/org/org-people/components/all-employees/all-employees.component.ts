@@ -161,17 +161,13 @@ export class AllEmployeesComponent {
   // Exposed to the template so per-row @let blocks can build the composite (account, person) detail-cache key without reaching into private services.
   protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
-  // Lowercased email -> 'admin' | 'viewer' | 'invited' for the currently selected org. Empty until the
-  // shared cache hydrates (either from this tab's ensureLoaded below, or pushed in by the Access tab).
-  private readonly accessByEmail = this.accessState.accessByEmailFor(this.currentAccountId);
-
   public constructor() {
-    // Hydrate the shared Org Lens access cache for every org we see (including the initial one) so the
-    // access cell can render badges without each row triggering its own fetch. The service dedups concurrent
-    // calls and short-circuits cache hits, so this is cheap on re-visits. Per-fetch `catchError` keeps the
-    // outer stream alive on a transient backend failure — the Access tab still has its own error banner +
-    // retry CTA, so silent EMPTY here just means badges stay empty until the user visits Access or switches
-    // orgs and the next fetch succeeds.
+    // Warm the shared Org Lens access cache for every org we see (including the initial one), so the
+    // Access tab opens against a hydrated cache. This tab no longer reads it — badges now come from the
+    // roster's own `accessBadge` — but the prefetch is kept because it is what makes that tab instant.
+    // The service dedups concurrent calls and short-circuits cache hits, so it is cheap on re-visits.
+    // Per-fetch `catchError` keeps the outer stream alive on a transient backend failure; the Access tab
+    // has its own error banner + retry CTA, so a silent EMPTY here only costs the prefetch.
     this.orgUid$
       .pipe(
         switchMap((uid) => this.accessState.ensureLoaded(uid).pipe(catchError(() => EMPTY))),
@@ -281,20 +277,14 @@ export class AllEmployeesComponent {
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
-    const byEmail = this.accessByEmail();
-    // The live directory endpoint already merges access-only principals into `rows` server-side, so there is
-    // no client-side synthetic UNION here. The access cache is still joined per row to render the badge cell.
+    // The live directory endpoint merges access principals into `rows` server-side and stamps the badge
+    // on each one, so there is neither a client-side synthetic UNION nor an address join here.
     return this.response().rows.map<OrgAllEmployeeRowVm>((row) => ({
       ...row,
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
       avatarKey: row.avatarUrl ? `${row.personKey}::${row.avatarUrl}` : '',
-      // Join on every address the row was merged from, not just the preferred one. The Access side is
-      // keyed by email, but a person's access can be granted under a different address than the one the
-      // roster displays — that mismatch is exactly what the server-side identity merge folds together, so
-      // joining on the preferred address alone would drop the badge for the merged rows. Rows with no
-      // address can't be joined and render `—`.
-      access: AllEmployeesComponent.resolveAccessBadge(row, byEmail),
+      access: AllEmployeesComponent.resolveAccessBadge(row),
       // Live-only people (no `snowflake` source) carry a synthetic `live-` personKey with no stored Snowflake
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
@@ -472,17 +462,14 @@ export class AllEmployeesComponent {
   }
 
   /**
-   * Resolve the access badge for a row, preferring the server's answer.
-   *
-   * The server knows exactly which access principal it merged into each person, so `accessBadge` is
-   * unambiguous. Joining by address cannot be: two people can share one, and the merge deliberately
-   * keeps them as separate rows, so an address-based lookup can attribute one person's role to the
-   * other. The join remains only for rows the server attributed no access to — including payloads
-   * cached before `accessBadge` existed.
+   * The access badge comes solely from the server, which knows which principal it merged into each
+   * person. There is deliberately no address-based fallback: two people can share an address while
+   * the merge keeps them as separate rows, so a lookup by address would give one person's role to
+   * the other. Every principal is attributed to exactly one row (an unmatched one becomes its own),
+   * so a fallback could never add a badge the server omitted — only a wrong one.
    */
-  private static resolveAccessBadge(row: OrgAllEmployeeRow, byEmail: ReadonlyMap<string, OrgAccessBadgeState>): OrgAccessBadgeState | null {
-    if (row.accessBadge) return row.accessBadge;
-    return row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null;
+  private static resolveAccessBadge(row: OrgAllEmployeeRow): OrgAccessBadgeState | null {
+    return row.accessBadge ?? null;
   }
 
   private static computeInitials(name: string): string {
