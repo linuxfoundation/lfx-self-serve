@@ -119,6 +119,15 @@ export type CampaignSSEEventType =
 export interface CampaignBriefRequest {
   url: string;
   platforms?: CampaignPlatform[];
+  /**
+   * Which delivery channel the brief is for. Absent means `paid-marketing`.
+   *
+   * Explicit rather than inferred from `platforms` being absent. That inference does not work:
+   * the generator treats an absent platform list as the paid DEFAULT (`['google-ads']`), so
+   * "no platforms" and "the caller did not say" are the same value on the wire and cannot mean
+   * two different things. This field is what distinguishes them.
+   */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -647,6 +656,8 @@ export interface CampaignBriefRefineRequest {
   feedback: string;
   eventDetails?: CampaignEventDetails | null;
   platforms?: CampaignPlatform[];
+  /** See `CampaignBriefRequest.deliveryType`. Refine re-runs the same generators. */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
 }
 

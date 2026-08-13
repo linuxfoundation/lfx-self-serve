@@ -98,24 +98,30 @@
       [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
       data-testid="campaigns-email-planning-panel">
       <!--
-            KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
+            LFXV2-3201 settled the question this comment used to pose: ONE planner, moded by
+            `deliveryType`, rather than two components. The two types share the expensive halves —
+            the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
+            stream. What differs is more than the "one card and one validity rule" this comment
+            used to claim, and the paragraph below already listed more than that — the two
+            contradicted each other.
 
-            Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
-            platform to proceed (`canGenerate` requires `selectedPlatforms().size > 0`, and the set
-            defaults to `google-ads`), and generates RSA copy, Demand Gen copy, ad keywords and a
-            LinkedIn targeting strategy. None of that is email — no template, subject, sender or
-            preview text — and `onEmailProceedToImplementation` stores a brief the Implement panel
-            reads only for EXISTENCE. The payload is never consumed.
+            Brief save/restore is NOT shared: email skips the saved-brief lookup entirely, because
+            persistence is keyed on (foundation, event) with no delivery type, so the row it would
+            find is a PAID brief. Email persistence and email refinement do not exist yet.
 
-            It ships this way deliberately: this PR replaces a "coming soon" placeholder, and the
-            email brief shape is a feature, not a review fix. It needs a delivery-type mode on the
-            planner (or a separate component), a different `canGenerate` gate, and a generation
-            request that carries email fields instead of `platforms` — plus a decision about
-            whether the two delivery types should share a component at all. LFXV2-3201 owns that
-            decision; LFXV2-3197 (merged) supplies the template picker the Implement half needs.
+            In email mode the planner drops the Ad Channels and Budget cards, hides Refine / Edit /
+            Copy All, refuses a refine outright, skips the saved-brief lookup, drops the
+            ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
+            server skips ad-copy and keyword generation rather than falling back to its paid
+            default — omitting `platforms` alone does not achieve that, because the generator
+            reads an absent list as `['google-ads']`.
 
-            Until then the Plan tab is honest about the event URL and scrape, which the two types
-            genuinely do share, and misleading about everything below it.
+            STILL OPEN: an email brief generates NO copy at all today — the scrape, event details
+            and HubSpot UTM are what it comes back with, and Refine is refused with a message
+            saying so. Subject, preview text and sender arrive with the `email-copy` endpoint
+            under LFXV2-3198, together with the template picker the Implement panel needs. Until
+            then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
+            does not read the payload.
           -->
       <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
@@ -135,13 +141,20 @@
               [data-testid="campaigns-email-planning-tab"] [data-testid="planning-url-input"]
               [data-testid="campaigns-planning-tab"]       [data-testid="planning-url-input"]
 
-            Namespacing the planner's own ids per instance would be the stronger fix, but it
-            changes a component both delivery types share and belongs with LFXV2-3201, which
-            revisits whether they should share it at all.
+            Namespacing the planner's own ids per instance would be the stronger fix. It stays
+            unfixed: LFXV2-3201 confirmed the two types SHARE this component, so per-instance ids
+            would have to come from an input threaded through every `data-testid` in the planner
+            — a wider change than the host-scoped selectors above, which already work.
+
+            The ids that double are the ones BOTH instances render. Ids inside a paid-only card
+            (the Ad Channels and Budget sections) render in the paid instance only — but scope
+            those selectors under the host anyway rather than relying on that, since which cards
+            each mode renders is exactly the thing this ticket changes.
           -->
       @for (program of [selectedProgramType()]; track program) {
         <lfx-planning-tab
           [programTypeConfig]="activeProgramTypeConfig()"
+          deliveryType="email"
           (proceedToImplementation)="onEmailProceedToImplementation($event)"
           data-testid="campaigns-email-planning-tab" />
       }

@@ -796,3 +796,68 @@ describe('CampaignController.searchHubSpotEmails', () => {
     expect(next).toHaveBeenCalledWith(failure);
   });
 });
+
+/**
+ * The email refusal has to happen HERE, not only in the service.
+ *
+ * An email brief has no generated copy and no keywords, so the paid-only field checks in
+ * `refineBrief` fire first and answer "currentCopy is required" — true, but it names a field the
+ * caller cannot supply and hides the real reason. The service refuses email refines too, and that
+ * guard stays (it is not the only caller), but only this path is reached over HTTP.
+ */
+describe('CampaignController.refineBrief email refusal', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('says refining email is unsupported rather than "currentCopy is required"', async () => {
+    // The shape an email brief really produces: no structured copy, no keywords.
+    const body = { deliveryType: 'email', feedback: 'shorter subject', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    // Through the error middleware as a ServiceValidationError, like every sibling check in this
+    // method — not a manual `res.status().json()`, which would skip the standard error shape and
+    // the centralized log line (backend-checklist §8).
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'deliveryType', message: 'refining email copy is not supported yet', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it('rejects a MISSPELLED deliveryType instead of blaming currentCopy', async () => {
+    // The gap an exact `=== 'email'` match leaves: `'emial'` falls past it into the paid-only
+    // checks and produces "currentCopy is required" — the same misleading message the email guard
+    // exists to prevent, for a caller whose only mistake was a typo.
+    const body = { deliveryType: 'emial', feedback: 'shorter', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it('still validates currentCopy for a PAID refine', async () => {
+    // The contrast: without it the guard above could swallow every refine, email or not.
+    const body = { feedback: 'punchier', currentCopy: null, currentKeywords: [] };
+
+    await controller.refineBrief(buildReq(body), res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+  });
+});

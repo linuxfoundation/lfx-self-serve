@@ -16,7 +16,7 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
-import { VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -144,6 +144,49 @@ export class CampaignController {
     if (body.feedback.trim().length > MAX_FEEDBACK_LENGTH) {
       _next(
         ServiceValidationError.forField('feedback', `feedback must be ${MAX_FEEDBACK_LENGTH} characters or fewer`, {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Both delivery-type checks run BEFORE the paid-only field checks below, deliberately. An
+    // email brief has no generated copy and no keywords — `structuredCopy` is null and
+    // `currentKeywords` is empty — so those checks fire first and answer "currentCopy is
+    // required": true, but useless, because it names a field the caller cannot supply and hides
+    // the actual reason.
+    //
+    // VALIDATED first, not just matched. An exact `=== 'email'` test lets a typo through:
+    // `'emial'` falls past it into those same paid-only checks and produces the same misleading
+    // message, for a caller whose only mistake was a misspelling.
+    //
+    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES` rather than a fourth hardcoded list — the
+    // service already keeps its own copy, and a third one here would be the one that drifts.
+    const supportedDeliveryTypes = new Set<string>(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
+    if (body.deliveryType !== undefined && !supportedDeliveryTypes.has(body.deliveryType)) {
+      _next(
+        ServiceValidationError.forField('deliveryType', 'deliveryType must be one of: paid-marketing, email', {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // The service refuses email refines too — that guard stays, since this controller is not its
+    // only caller — but only this path is reached over HTTP, so only this one decides what the
+    // user reads.
+    if (body.deliveryType === 'email') {
+      // `ServiceValidationError`, not a manual `res.status().json()` — the sibling checks below
+      // all use it, and `docs/reviews/backend-checklist.md` §8 forbids the manual form. Going
+      // around the error middleware would have skipped the standard error shape and its
+      // centralized log line, so the one refusal a caller is most likely to hit would have been
+      // the one the logs never recorded.
+      _next(
+        ServiceValidationError.forField('deliveryType', 'refining email copy is not supported yet', {
           operation: 'campaign_refine_brief',
           service: 'campaign_controller',
           path: req.path,
