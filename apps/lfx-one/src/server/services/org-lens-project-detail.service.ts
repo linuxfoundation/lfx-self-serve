@@ -502,7 +502,15 @@ export class OrgLensProjectDetailService {
     if (range === 'all') {
       const [heroRow, trendRows, axis] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrendLifetime(slug), this.fetchLifetimeAxis(slug)]);
       if (!heroRow) return null;
-      block = { trend: this.buildTrendSeries(this.buildTrendLifetimeByAccount(trendRows)), periods: axis.map((bucket) => bucket.label) };
+      block = {
+        trend: this.buildTrendSeries(
+          this.buildTrendLifetimeByAccount(
+            trendRows,
+            axis.map((bucket) => bucket.index)
+          )
+        ),
+        periods: axis.map((bucket) => bucket.label),
+      };
     } else {
       const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug)]);
       if (!heroRow) return null;
@@ -925,7 +933,10 @@ export class OrgLensProjectDetailService {
         return `${year}`;
       case 'multi_year': {
         const endDate = this.parseUtcDate(end);
-        const endYear = endDate === null ? year : endDate.getUTCFullYear();
+        // A missing end date must not collapse to a bare `YYYY`: that is indistinguishable from a
+        // yearly bucket and understates the span. Mark the end as unknown so the gap is visible.
+        if (endDate === null) return `${year}\u2013?`;
+        const endYear = endDate.getUTCFullYear();
         return endYear > year ? `${year}\u2013${endYear}` : `${year}`;
       }
       default:
@@ -1320,21 +1331,34 @@ export class OrgLensProjectDetailService {
   }
 
   /**
-   * Group the lifetime-bucketed trend rows into per-org series (combined oldest → newest by bucket).
-   * The read model is dense per (account, bucket) over the project's shared axis and already ordered
-   * by bucket index, so each series lands aligned 1:1 with the emitted `periods[]`.
+   * Group the lifetime-bucketed trend rows into per-org series over the project's shared bucket axis.
+   * Values are placed BY bucket index and the axis is zero-filled, rather than pushed in row order,
+   * so every series is exactly `axis.length` long and stays positionally aligned with the emitted
+   * `periods[]` labels even if the read model ever returns a sparse row set (a backfill gap would
+   * otherwise shift a series against the axis and silently mislabel every one of its points). This
+   * mirrors how the card sparklines densify over their axis in `denseSeries`.
    */
-  private buildTrendLifetimeByAccount(rows: TrendLifetimeRow[]): Map<string, TrendSeries> {
-    const byAccount = new Map<string, TrendSeries>();
+  private buildTrendLifetimeByAccount(rows: TrendLifetimeRow[], axis: number[]): Map<string, TrendSeries> {
+    const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byBucket: Map<number, number> }>();
     for (const row of rows) {
       const accountId = row.ACCOUNT_ID;
-      if (!accountId) continue;
-      let series = byAccount.get(accountId);
-      if (!series) {
-        series = { accountId, orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', combined: [] };
-        byAccount.set(accountId, series);
+      if (!accountId || row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
+      let entry = scoresByAccount.get(accountId);
+      if (!entry) {
+        entry = { orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', byBucket: new Map() };
+        scoresByAccount.set(accountId, entry);
       }
-      series.combined.push(this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+      entry.byBucket.set(this.num(row.BUCKET_INDEX), this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+    }
+
+    const byAccount = new Map<string, TrendSeries>();
+    for (const [accountId, entry] of scoresByAccount) {
+      byAccount.set(accountId, {
+        accountId,
+        orgName: entry.orgName,
+        orgLogoUrl: entry.orgLogoUrl,
+        combined: axis.map((bucketIndex) => entry.byBucket.get(bucketIndex) ?? 0),
+      });
     }
     return byAccount;
   }
@@ -1818,9 +1842,16 @@ export class OrgLensProjectDetailService {
     return Array.isArray((value as OrgLensTrendBlock).trend);
   }
 
+  /**
+   * Whether a cached `all` block carries the adaptive-bucket axis, i.e. was written by this version.
+   * Pre-deploy entries have no `periods` at all, so the presence of the array is what rejects them.
+   * An EMPTY array is accepted on purpose: a project with no rows in the bucket spine legitimately
+   * caches `periods: []`, and requiring a non-empty axis would reject that entry on every read and
+   * re-query Snowflake for the life of the TTL.
+   */
   private static hasAdaptivePeriods(value: unknown): boolean {
     const periods = (value as { periods?: unknown }).periods;
-    return Array.isArray(periods) && periods.length > 0 && periods.every((label) => typeof label === 'string');
+    return Array.isArray(periods) && periods.every((label) => typeof label === 'string');
   }
 
   private static isLeaderboardPage(value: unknown): value is OrgLensLeaderboardPage {
