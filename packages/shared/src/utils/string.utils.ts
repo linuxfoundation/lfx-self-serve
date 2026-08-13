@@ -160,3 +160,29 @@ export function splitDisplayName(name: string | null): [string | null, string | 
   }
   return [parts[0], parts.slice(1).join(' ')];
 }
+
+/** Uppercases the first character only (unlike `toTitleCase`, the rest of the string is untouched). */
+export function capitalizeFirst(str: string): string {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Strips markdown syntax for plain-text contexts (e.g. a mailto: body). Images are dropped,
+ * links collapse to their label, emphasis/code/heading markers are removed, list and
+ * blockquote markers are flattened, and 3+ consecutive newlines collapse to two.
+ */
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/!\[.*?\]\(.*?\)/g, '')
+    .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/`{1,3}[^`]*`{1,3}/g, '')
+    .replace(/^[\s]*[-*+]\s+/gm, '- ')
+    .replace(/^[\s]*\d+\.\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
