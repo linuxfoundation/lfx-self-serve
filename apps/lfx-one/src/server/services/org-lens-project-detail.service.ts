@@ -473,7 +473,10 @@ export class OrgLensProjectDetailService {
         ecosystem: isNonLf || !viewing ? null : (this.mapBand(viewing.LEVEL_ECOSYSTEM) ?? 'silent'),
       },
       // Only the all-time axis is variable/bucketed; 1y/2y stay client-derived (periods omitted).
-      ...(sparkData.periods ? { periods: sparkData.periods } : {}),
+      // Tested against undefined rather than truthiness on purpose: an all-time project with an empty
+      // bucket spine yields `[]`, which must still be emitted, or the cache validator would reject the
+      // very block that was just written and re-query Snowflake on every request.
+      ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
     if (key !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
