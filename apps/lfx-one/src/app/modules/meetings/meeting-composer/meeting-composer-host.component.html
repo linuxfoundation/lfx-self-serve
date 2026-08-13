@@ -62,9 +62,9 @@
   <ng-template #header>
     <div class="flex min-w-0 flex-col" data-testid="meeting-composer-header">
       <span class="truncate text-lg font-semibold text-gray-900">
-        {{ composer.isEditMode() ? 'Edit meeting' : 'Create meeting' }}
+        {{ isEditMode() ? 'Edit meeting' : 'Create meeting' }}
       </span>
-      @if (composer.isEditMode() && formService.meeting(); as meeting) {
+      @if (isEditMode() && formService.meeting(); as meeting) {
         <span class="truncate text-sm text-gray-500">{{ meeting.title }}</span>
       }
     </div>
@@ -78,7 +78,7 @@
       <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
         <lfx-meeting-composer-rail />
 
-        @if (!composer.isEditMode()) {
+        @if (!isEditMode()) {
           <lfx-meeting-composer-preview />
         }
       </div>
@@ -108,7 +108,7 @@
              Sticky because it is the only section navigation at this width. -->
         <div class="sticky top-0 z-10 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 lg:hidden" data-testid="meeting-composer-compact-progress">
           <div class="flex items-center gap-2">
-            @if (!composer.isEditMode()) {
+            @if (!isEditMode()) {
               <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
             }
             <span class="truncate text-sm font-semibold text-gray-900">{{ activeSectionLabel() }}</span>
@@ -150,11 +150,11 @@
       <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="meeting-composer-cancel" (onClick)="composer.close()" />
 
       <div class="flex items-center gap-2">
-        @if (!composer.isEditMode() && activeIndex() > 0) {
+        @if (!isEditMode() && activeIndex() > 0) {
           <lfx-button label="Back" severity="secondary" [outlined]="true" size="small" data-testid="meeting-composer-back" (onClick)="onBack()" />
         }
 
-        @if (composer.isEditMode()) {
+        @if (isEditMode()) {
           <lfx-button
             label="Save changes"
             size="small"

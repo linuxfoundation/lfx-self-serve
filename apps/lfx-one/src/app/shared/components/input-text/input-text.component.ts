@@ -29,7 +29,7 @@ export class InputTextComponent {
   public readonly = input<boolean>(false);
   public maxlength = input<number>();
   /** Id of the element describing this input (e.g. its error message) — wired to `aria-describedby`. */
-  public describedBy = input<string>();
+  public describedBy = input<string | null>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
   public invalid = input<boolean>(false);
 }

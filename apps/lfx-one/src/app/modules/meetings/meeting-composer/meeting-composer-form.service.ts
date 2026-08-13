@@ -139,8 +139,8 @@ export class MeetingComposerFormService {
    * @description FormGroup state is not reactive, so template computeds that depend on section validity —
    * or on a control's `pristine` flag — must read this signal to re-evaluate. `validateForSubmit()` needs
    * the explicit bump because `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor
-   * `statusChanges`; the only other writer that marks — `setDuration()` — orders its mark before a
-   * `setValue` that does emit.
+   * `statusChanges`, and it writes no values of its own. The only other writer that marks —
+   * `setDuration()` — needs no bump: its own `setValue` calls provide one.
    */
   public readonly revision = signal<number>(0);
 
@@ -474,9 +474,9 @@ export class MeetingComposerFormService {
     const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === minutes);
     const form = this.form();
 
-    // The mark goes first so the `setValue` below is what bumps `revision`: marks emit on neither
-    // `valueChanges` nor `statusChanges`, and the range error is gated on `touched`, so marking last
-    // would leave the error unrendered until some unrelated edit happened to bump the revision.
+    // The mark sits with the writes rather than after them purely for reading order: it needs no
+    // `revision` bump of its own, since the `setValue` calls below bump it in the same synchronous task
+    // and change detection reads `touched` only once that task has finished.
     if (!isChipValue) {
       form.get('customDuration')?.markAsTouched();
     }

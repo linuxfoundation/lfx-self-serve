@@ -63,6 +63,15 @@ export class MeetingComposerHostComponent {
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
   protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
 
+  /**
+   * Single mode source for the chrome, matching what the rail reads.
+   * @description Taken from the form service rather than the composer service: this host is
+   * `@defer`-mounted and `initialize()` runs from a subscription in the constructor, so the composer
+   * context can say `edit` for a paint before the form service agrees. Reading both sources would put
+   * the edit header and Save button above a create-mode stepper with locked rows.
+   */
+  protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
+
   protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
   protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
   protected readonly canProceed: Signal<boolean> = computed(() => {

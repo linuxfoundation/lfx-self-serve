@@ -39,12 +39,12 @@ export class MeetingComposerRailComponent {
   /**
    * Single mode source for layout, locking and the active marker.
    * @description Read from the form service rather than the composer service because that is what
-   * `isSectionValid` / `sectionNeedsAttention` read. The host is `@defer`-mounted and `initialize()` runs
-   * off an effect, so on the first edit-mode open the two can disagree for a paint: taking mode from
-   * both would render the flat edit rows while locking them like create-mode rows, leaving rows that
-   * look interactive and do nothing.
+   * `isSectionValid` / `sectionNeedsAttention` read. The host is `@defer`-mounted and calls `initialize()`
+   * from a context subscription in its constructor, so on the first edit-mode open the two can disagree
+   * for a paint: taking mode from both would render the flat edit rows while locking them like create-mode
+   * rows, leaving rows that look interactive and do nothing.
    */
-  protected readonly isEditMode: Signal<boolean> = computed(() => this.formService.isEditMode());
+  protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
 
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
   // Both layouts can be in the DOM at once, so their test ids have to differ.
