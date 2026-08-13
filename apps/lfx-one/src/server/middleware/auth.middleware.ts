@@ -117,11 +117,22 @@ const DEFAULT_CONFIG: AuthConfig = {
  * Classifies a route based on the request path and route configuration
  */
 function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
-  // Default fallback — also the fail-closed classification for malformed input below.
+  // Default fallback — also the fail-closed classification for malformed non-API input below.
   const fallback: RouteAuthConfig = {
     pattern: '/',
     type: config.defaultType,
     auth: config.defaultAuth,
+  };
+
+  // Fail-closed classification for malformed input on a raw `/api`-prefixed path. Still `required` auth,
+  // but preserves `type: 'api'` + `tokenRequired` so a malformed/encoded API request returns a JSON 401
+  // (not an HTML login redirect that XHR/fetch clients can't follow) and still triggers bearer-token
+  // extraction. Mirrors the `/api` catch-all row in DEFAULT_ROUTE_CONFIG.
+  const apiFallback: RouteAuthConfig = {
+    pattern: '/api',
+    type: 'api',
+    auth: 'required',
+    tokenRequired: true,
   };
 
   // Decode percent-encoding per segment before matching so the SSR auth boundary matches Angular's
@@ -147,7 +158,10 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
       })
       .join('/');
   } catch {
-    return fallback;
+    // Decoding failed (malformed escape like `%ZZ`, or an encoded separator `%2F` that would shift
+    // segment boundaries). Fail closed — but keep API-prefixed paths classified as `api` so they get a
+    // JSON 401 with bearer extraction rather than an SSR login redirect.
+    return path.startsWith('/api') ? apiFallback : fallback;
   }
 
   for (const routeConfig of config.routes) {

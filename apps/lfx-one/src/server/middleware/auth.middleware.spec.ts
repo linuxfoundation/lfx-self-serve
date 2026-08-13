@@ -156,6 +156,22 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('returns a 401 (not a login redirect) for a malformed /api path so XHR clients get JSON', async () => {
+    const req = buildReq({ path: '/api/foo/%ZZ' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // Decoding fails on the malformed escape, but a raw `/api`-prefixed path fails closed to the API
+    // classification (`type: 'api'`, `required`, `tokenRequired`) rather than the SSR fallback. An
+    // unauthenticated API route returns a 401 via `next(AuthenticationError)` — never an HTML login
+    // redirect that a fetch/XHR client can't follow.
+    expect(res.oidc.login).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
+  });
+
   it('does not treat a nested /groups/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
     const req = buildReq({ path: '/groups/abc123/edit' });
     const res = buildRes();
