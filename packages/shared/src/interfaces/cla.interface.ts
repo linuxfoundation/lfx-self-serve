@@ -20,7 +20,9 @@ export type ClaKind = 'ICLA' | 'ECLA';
  */
 export type ClaStatus = 'valid' | 'needs_attention' | 'invalidated' | 'unknown' | 'superseded';
 
-/** A single signed CLA shown in the CLAs list. */
+export type ClaStatusReason = 'not_on_approval_list' | 'unknown';
+
+/** A single signed CLA shown in the My CLAs list. */
 export interface MyClaAgreement {
   /** EasyCLA signatureID — also the key for the PDF-URL endpoint. */
   id: string;
@@ -45,12 +47,7 @@ export interface MyClaAgreement {
   /** ISO date the agreement was signed. */
   signedOn: string;
   status: ClaStatus;
-  /**
-   * Why the standing is not `valid`. Copied from the producer.
-   * Omitted on valid rows and every ICLA. `#1372 (Request approval)` gates on
-   * `not_on_approval_list`; do not parse the note copy.
-   */
-  statusReason?: 'not_on_approval_list' | 'unknown';
+  statusReason?: ClaStatusReason;
   /** Signed document version, when exposed upstream (display only). */
   documentVersion?: string;
   /** True only for ICLA — ECLAs have no signed PDF and never offer download. */

@@ -41,12 +41,32 @@ const req = {} as unknown as Request;
 
 /** Minimal ICLA record from `/v4/my-clas`. */
 function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-icla', claType: 'icla', approved: true, valid: true, status: 'valid', pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
+  return {
+    signatureID: 's-icla',
+    claType: 'icla',
+    approved: true,
+    valid: true,
+    status: 'valid',
+    pdfAvailable: true,
+    claGroupID: 'cg-1',
+    signedOn: '2022-01-01',
+    ...overrides,
+  };
 }
 
 /** Minimal valid ECLA record from `/v4/my-clas`. */
 function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-ecla', claType: 'ecla', approved: true, valid: true, status: 'valid', companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
+  return {
+    signatureID: 's-ecla',
+    claType: 'ecla',
+    approved: true,
+    valid: true,
+    status: 'valid',
+    companyName: 'Acme',
+    claGroupID: 'cg-2',
+    signedOn: '2022-02-02',
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -159,9 +179,7 @@ describe('toMyClaAgreement', () => {
     expect(toMyClaAgreement(ecla({ status: 'valid' })).status).toBe('valid');
     expect(toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false })).status).toBe('invalidated');
 
-    const listMiss = toMyClaAgreement(
-      ecla({ status: 'needs_attention', statusReason: 'not_on_approval_list', approved: true, valid: false })
-    );
+    const listMiss = toMyClaAgreement(ecla({ status: 'needs_attention', statusReason: 'not_on_approval_list', approved: true, valid: false }));
     expect(listMiss.status).toBe('needs_attention');
     expect(listMiss.statusReason).toBe('not_on_approval_list');
 
