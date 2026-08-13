@@ -57,7 +57,7 @@ export function buildLensAwareInsightsUrl(
 /**
  * Classifies an LFX Insights project health score (0–100) into a band, matching the Insights
  * primary project Health Score component (`health-score.vue`): `>= 80` Excellent, `>= 60` Healthy,
- * `>= 40` Stable, `>= 20` Unsteady, else Critical. The `unavailable` state (no score) is handled by
+ * `>= 40` Fair, `>= 20` Concerning, else Critical. The `unavailable` state (no score) is handled by
  * callers, so this returns only the five scored bands and is the single source both the Org Lens
  * Projects table and the project-detail hero classify through (they must never disagree).
  */
