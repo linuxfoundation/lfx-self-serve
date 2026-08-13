@@ -1623,6 +1623,26 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('Demand Gen');
   });
 
+  it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
+    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
+    // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
+    // LinkedIn-only create arrives carrying `demand-gen`, and refusing on the type alone gave a
+    // Google error for a request Google was never part of.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000c' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['search', 'demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000c');
+  });
+
   it('still creates a search-only google campaign', async () => {
     // The contrast: without it the test above would pass on a client that refused every Google
     // create outright.

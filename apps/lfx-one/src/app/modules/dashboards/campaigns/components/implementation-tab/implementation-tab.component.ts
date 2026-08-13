@@ -249,6 +249,21 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+
+    // Blocked while a brief save is in flight, because the create needs the id that save produces.
+    //
+    // The parent sets `briefId: null` for the duration of a save, so submitting during that window
+    // sent an empty `brief_id` — which the cutover refuses TERMINALLY, with no fall-through to the
+    // legacy path. The user would see "brief has not been saved yet" for a brief that was being
+    // saved as they clicked. Disabling for the moment it takes is the honest reading; the button
+    // re-enables on its own when the save lands.
+    //
+    // `status === 'saving'` only, deliberately — not "briefId is null". A brief that was never
+    // saved at all is a different case, handled by the create path's own refusal, and blocking on
+    // a null id would disable the button permanently whenever the cutover is dark (where no brief
+    // id is ever produced and the legacy path needs none).
+    if (this.briefPersistence().status === 'saving') return false;
+
     return true;
   });
 

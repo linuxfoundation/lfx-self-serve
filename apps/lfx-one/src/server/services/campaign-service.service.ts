@@ -573,7 +573,14 @@ export class CampaignServiceClient {
     //
     // The second is the dangerous one: it looks like success. Refusing keeps the user on a path
     // that can actually serve the request until the service grows Demand Gen support.
-    if (campaignTypes?.includes('demand-gen')) {
+    // Gated on google-ads being SELECTED, not on `campaignTypes` alone.
+    //
+    // `campaignTypes` is a Google concept but the Implementation tab sends it unconditionally:
+    // `includeDemandGen` defaults to true in the form and nothing clears it when Google is
+    // deselected, so a LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type
+    // alone rejected creates that have no Google campaign in them at all — a Google error on a
+    // request Google was never part of.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen')) {
       return {
         enabled: true,
         jobId: null,
