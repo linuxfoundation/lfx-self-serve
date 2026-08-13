@@ -683,6 +683,15 @@ export class PlanningTabComponent implements OnInit {
     const feedback = this.refineFeedback().trim();
     if (!feedback) return;
 
+    // Checked BEFORE the `currentCopy` guard below, which would otherwise swallow this case.
+    // An email brief generates no copy, so `structuredCopy` is null and that guard returns
+    // silently — leaving a user who reached Refine (via a restored paid brief, or any future
+    // caller) pressing Regenerate and watching nothing happen. Says why instead.
+    if (this.isEmail()) {
+      this.errorMessage.set('Refining email copy is not supported yet.');
+      return;
+    }
+
     const currentCopy = this.structuredCopy();
     if (!currentCopy) return;
 

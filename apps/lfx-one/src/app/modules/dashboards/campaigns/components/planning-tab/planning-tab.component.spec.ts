@@ -795,6 +795,11 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // channels do not apply. `toBeUndefined` alone would pass on an explicit `platforms: undefined`,
     // so assert the key is not present at all.
     expect('platforms' in request).toBe(false);
+    // The discriminator is the half that actually works. Omitting `platforms` alone does NOT stop
+    // ad generation — the server reads an absent list as the paid default — so without this
+    // assertion, deleting `deliveryType` from the request would leave this test green while
+    // restoring the exact AI spend the test is named for.
+    expect(request.deliveryType).toBe('email');
   });
 
   it('sends platforms in the generation request in paid mode', async () => {
@@ -812,7 +817,15 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * nothing gates the refine panel on delivery type. Fixing only `generate` would have left the
    * ad copy to come back on the first refine, which is the "fixed at one layer only" shape.
    */
-  it('omits platforms from the refine request in email mode', async () => {
+  /**
+   * The Refine button is hidden in email mode, but `submitRefine` must still refuse rather than
+   * rely on that. The `currentCopy` guard would otherwise SWALLOW the case — an email brief
+   * generates no copy, so `structuredCopy` is null and the method returned silently, leaving
+   * anyone who reached Refine (a restored paid brief, a future caller) pressing Regenerate and
+   * watching nothing happen. Asserted with copy present so the refusal, not the guard, is what
+   * this pins.
+   */
+  it('refuses an email refine with a message instead of silently doing nothing', async () => {
     const refineBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
 
@@ -820,16 +833,16 @@ describe('PlanningTabComponent delivery-type mode', () => {
     const component = fixture.componentInstance as unknown as {
       structuredCopy: { set(v: Record<string, unknown>): void };
       refineFeedback: { set(v: string): void };
+      errorMessage(): string | null;
       submitRefine(): void;
     };
-    // Both are preconditions submitRefine returns early on.
     component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
     component.refineFeedback.set('Make the subject shorter');
     component.submitRefine();
     await fixture.whenStable();
 
-    expect(refineBrief).toHaveBeenCalledTimes(1);
-    expect('platforms' in refineBrief.mock.calls[0][0]).toBe(false);
+    expect(refineBrief).not.toHaveBeenCalled();
+    expect(component.errorMessage()).toBe('Refining email copy is not supported yet.');
   });
 
   it('sends platforms in the refine request in paid mode', async () => {

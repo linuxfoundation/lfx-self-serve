@@ -11,6 +11,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignDeliveryType,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
@@ -497,6 +498,7 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
 
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<CampaignDeliveryType> = new Set<CampaignDeliveryType>(['paid-marketing', 'email']);
 
 // ---------------------------------------------------------------------------
 // Background job management
@@ -610,6 +612,16 @@ export class CampaignProxyService {
 
     if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
+    // Rejected rather than defaulted, unlike the fields above whose fallbacks are harmless.
+    // Bodies are cast rather than parsed at the controller, so a typo like "emial" would fall
+    // through `=== 'email'` as paid marketing and silently launch ad-copy and keyword generation
+    // — a request that MEANT to suppress that spend causing it instead. Failing loudly is the
+    // only reading that cannot cost money.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: paid-marketing, email.` };
       return;
     }
 
@@ -832,6 +844,14 @@ export class CampaignProxyService {
 
     if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
+    // Same rejection as the generate path. Lower stakes here — an unrecognised value falls to the
+    // paid branch and refines, which is what this endpoint did before the field existed — but a
+    // caller who misspells the type should be told, not quietly given the other behaviour.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: paid-marketing, email.` };
       return;
     }
 

@@ -130,6 +130,41 @@ describe('CampaignProxyService email delivery type', () => {
   });
 
   /**
+   * The dangerous direction of a bad value: a typo falls through `=== 'email'` as paid marketing,
+   * so a request that MEANT to suppress ad generation would cause it instead. Rejected rather
+   * than defaulted, matching how the adjacent `platforms` and `programType` fields behave.
+   */
+  it('rejects an unrecognised deliveryType instead of treating it as paid', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'emial' as 'email' },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    expect(events.some((e) => e.type === 'error' && String(e.data).includes('deliveryType'))).toBe(true);
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(false);
+  });
+
+  it('rejects an unrecognised deliveryType on refine', async () => {
+    const events = await drain(
+      service.streamRefinedBrief(
+        req,
+        { currentCopy: { google_search: {} }, currentKeywords: [], feedback: 'shorter', deliveryType: 'emial' as 'email' },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(events.some((e) => e.type === 'error' && String(e.data).includes('deliveryType'))).toBe(true);
+    expect(generatedAdCopy()).toBe(false);
+  });
+
+  /**
    * A caller CAN send `{deliveryType: 'email', platforms: ['linkedin-ads']}` — the types allow it
    * and this server does not own the client. The LinkedIn strategy branch keys on the platform
    * list alone, so without an explicit email check it would spend an AI call generating a
