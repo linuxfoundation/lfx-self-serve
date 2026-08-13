@@ -15,6 +15,7 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerPreviewComponent } from './meeting-composer-preview.component';
 import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
 import { MeetingComposerService } from './meeting-composer.service';
+import { QuickCreateDialogComponent } from './quick-create-dialog.component';
 import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
@@ -39,6 +40,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerPlatformFeaturesComponent,
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
+    QuickCreateDialogComponent,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],

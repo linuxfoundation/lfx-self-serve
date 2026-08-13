@@ -54,6 +54,10 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly form = input.required<FormGroup>();
+  /** Quick create labels its own columns and has no room for the section heading. */
+  public readonly showHeading = input(true);
+  /** Early join is an advanced setting the quick create dialog leaves at its default. */
+  public readonly showEarlyJoin = input(true);
 
   protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
   protected readonly earlyJoinOptions = EARLY_JOIN_CHIP_OPTIONS;

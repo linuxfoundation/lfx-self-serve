@@ -8,7 +8,7 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { CommitteeMember, ManualGuestDialogResult, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials, generateTempId } from '@lfx-one/shared/utils';
+import { avatarInitials } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -108,58 +108,8 @@ export class ComposerGuestsComponent {
     );
   }
 
-  /**
-   * Reconciles the guest list against the members of the currently selected groups.
-   * @description Members already invited keep their saved state so they aren't deleted and re-created,
-   * members that dropped out of every selected group are queued for deletion, and the rest are added.
-   */
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {
-    const memberByEmail = new Map<string, CommitteeMember>();
-    members.forEach((member) => {
-      if (member.email) {
-        memberByEmail.set(member.email.toLowerCase(), member);
-      }
-    });
-
-    const suppressed = this.formService.suppressedGuestEmails();
-
-    this.formService.updateGuests((current) => {
-      const reconciled = current.reduce<MeetingRegistrantWithState[]>((kept, guest) => {
-        if (guest.type !== 'committee') {
-          kept.push(guest);
-          return kept;
-        }
-
-        const email = guest.email?.toLowerCase() ?? '';
-        if (memberByEmail.has(email)) {
-          memberByEmail.delete(email);
-          // Reconciliation has to be idempotent: a guest queued for deletion because they left every
-          // selected group is restored when they turn up in one again. A guest the organizer removed by
-          // hand is suppressed, so their deletion survives re-emission.
-          const restore = guest.state === 'deleted' && !suppressed.has(email);
-          kept.push(restore ? { ...guest, state: 'existing' } : guest);
-          return kept;
-        }
-
-        if (guest.state !== 'new') {
-          kept.push({ ...guest, state: 'deleted' });
-        }
-
-        return kept;
-      }, []);
-
-      const invited = new Set(reconciled.filter((guest) => guest.state !== 'deleted').map((guest) => guest.email?.toLowerCase() ?? ''));
-
-      // Whatever is left in the map is a member nobody has invited or explicitly removed yet.
-      const additions = Array.from(memberByEmail.values())
-        .filter((member) => {
-          const email = member.email?.toLowerCase() ?? '';
-          return !invited.has(email) && !suppressed.has(email);
-        })
-        .map((member) => this.toGroupGuest(member));
-
-      return [...reconciled, ...additions];
-    });
+    this.formService.syncCommitteeMembers(members);
   }
 
   private openManualDialog(prefill: Record<string, unknown> | null): void {
@@ -188,7 +138,7 @@ export class ComposerGuestsComponent {
     }
 
     const guest: MeetingRegistrantWithState = {
-      ...this.baseGuest(),
+      ...this.formService.newGuestDefaults(),
       email,
       first_name: (formValue['first_name'] as string | null) ?? '',
       last_name: (formValue['last_name'] as string | null) ?? '',
@@ -199,50 +149,5 @@ export class ComposerGuestsComponent {
     };
 
     this.formService.updateGuests((current) => [guest, ...current]);
-  }
-
-  private toGroupGuest(member: CommitteeMember): MeetingRegistrantWithState {
-    return {
-      ...this.baseGuest(),
-      email: member.email,
-      first_name: member.first_name,
-      last_name: member.last_name,
-      job_title: member.job_title || null,
-      org_name: member.organization?.name || null,
-      username: member.username || null,
-      linkedin_profile: member.linkedin_profile || null,
-      type: 'committee',
-      committee_uid: member.committee_uid,
-      committee_name: member.committee_name,
-      committee_role: member.role?.name || null,
-      committee_voting_status: member.voting?.status || null,
-    };
-  }
-
-  /** Fields shared by every locally-added guest; `created_at` / `updated_at` are stamped upstream. */
-  private baseGuest(): MeetingRegistrantWithState {
-    return {
-      uid: '',
-      meeting_id: this.formService.meetingId() ?? '',
-      occurrence_id: null,
-      email: '',
-      first_name: '',
-      last_name: '',
-      job_title: null,
-      org_name: null,
-      host: false,
-      org_is_member: false,
-      org_is_project_member: false,
-      avatar_url: null,
-      username: null,
-      linkedin_profile: null,
-      created_at: '',
-      updated_at: '',
-      type: 'direct',
-      invite_accepted: null,
-      attended: null,
-      state: 'new',
-      tempId: generateTempId(),
-    };
   }
 }

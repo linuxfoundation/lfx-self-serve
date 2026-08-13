@@ -31,14 +31,26 @@
               </lfx-button>
             }
             @if (activeLens() !== 'me' && canWriteMeetings()) {
-              <lfx-button
-                icon="fa-light fa-calendar"
-                severity="info"
-                [attr.data-testid]="'meeting-create-button'"
-                label="Create Meeting"
-                size="small"
-                (onClick)="onCreateMeeting()">
-              </lfx-button>
+              <div class="flex items-center gap-1">
+                <lfx-button
+                  icon="fa-light fa-calendar"
+                  severity="info"
+                  [attr.data-testid]="'meeting-create-button'"
+                  label="Create Meeting"
+                  size="small"
+                  (onClick)="onCreateMeeting()">
+                </lfx-button>
+                <lfx-button
+                  icon="fa-light fa-chevron-down"
+                  severity="info"
+                  [outlined]="true"
+                  size="small"
+                  ariaLabel="More create options"
+                  [attr.data-testid]="'meeting-create-options-button'"
+                  (onClick)="createMenu.toggle($event)">
+                </lfx-button>
+                <lfx-menu #createMenu [model]="createMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+              </div>
             }
           </div>
         </div>

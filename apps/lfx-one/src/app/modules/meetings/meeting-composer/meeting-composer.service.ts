@@ -32,6 +32,7 @@ export class MeetingComposerService {
 
   public readonly isOpen = computed(() => this._context() !== null);
   public readonly isEditMode = computed(() => this._context()?.mode === 'edit');
+  public readonly isQuickCreate = computed(() => this._context()?.variant === 'quick');
 
   public open(context: MeetingComposerContext): void {
     const section = context.section ?? FIRST_SECTION;
