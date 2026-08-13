@@ -258,11 +258,18 @@ export class ImplementationTabComponent implements OnInit {
     // saved as they clicked. Disabling for the moment it takes is the honest reading; the button
     // re-enables on its own when the save lands.
     //
-    // `status === 'saving'` only, deliberately — not "briefId is null". A brief that was never
-    // saved at all is a different case, handled by the create path's own refusal, and blocking on
-    // a null id would disable the button permanently whenever the cutover is dark (where no brief
-    // id is ever produced and the legacy path needs none).
-    if (this.briefPersistence().status === 'saving') return false;
+    // Blocked in `error` too, and that one matters more than it looks. A conflict outcome
+    // (`stale-brief`, `unverified-validator`, `superseded-after-write`) still carries a
+    // `briefId` — the id of the STORED row, which by definition is not the brief on screen. A
+    // create from there would launch paid campaigns off someone else's version while the user
+    // reads their own unsaved copy. The id being present is exactly what makes it dangerous.
+    //
+    // `status`-based, deliberately — not "briefId is null". A brief that was never saved is a
+    // different case, handled by the create path's own refusal, and blocking on a null id would
+    // disable the button permanently whenever the cutover is dark (no brief id is ever produced
+    // there, and the legacy path needs none). `off` and `saved` both proceed.
+    const persistence = this.briefPersistence().status;
+    if (persistence === 'saving' || persistence === 'error') return false;
 
     return true;
   });

@@ -101,8 +101,16 @@ export enum ServerFeatureFlag {
    *
    * What it does NOT survive is a create that lands flag-on while the ad-platform connection for
    * that project is unconfigured: campaign-service reads credentials from its own connection
-   * tables, never from this application's GADS_ / LINKEDIN_ environment variables. Provision the connection
-   * per project slug before turning this on, or every dispatch fails on a missing connection.
+   * tables, never from this application's GADS_ / LINKEDIN_ environment variables.
+   *
+   * There is no system-account fallback — a review round claimed one exists, and the code says
+   * otherwise: `credsSource.resolve` (campaign-service `internal/dispatch/creds.go:159`) returns
+   * `notCreated("no <provider> connection configured for project <slug>")` the moment the repo
+   * answers `ErrNotFound`. Nothing substitutes an LF-owned account.
+   *
+   * So the connection must exist PER PROJECT SLUG before this goes on, created with
+   * `POST /projects/{slug}/connection-{provider}`. Otherwise every dispatch fails on a missing
+   * connection, per-campaign rather than at startup.
    */
   CampaignServiceCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE',
 

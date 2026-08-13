@@ -88,6 +88,20 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(true);
   });
 
+  /**
+   * A conflict outcome carries the STORED row's `briefId`, which by definition is not the brief on
+   * screen — the save was refused precisely because the two disagree. Creating from it would
+   * launch paid campaigns off someone else's version while the user reads their own unsaved copy.
+   * The id being present is what makes it dangerous, so a null-id guard would not catch it.
+   */
+  it('blocks submit when a save conflicted, even though it carries a brief id', async () => {
+    makeOtherwiseValid();
+
+    setPersistence({ status: 'error', briefId: 'brief-stored-1', message: 'This brief changed elsewhere.' });
+
+    expect(canSubmit()).toBe(false);
+  });
+
   it('does not block submit when persistence is off', async () => {
     // The cutover-dark case. `briefId` is null here too, so a guard written as "block on a null
     // brief id" would disable the button permanently — for a path that needs no brief id at all.

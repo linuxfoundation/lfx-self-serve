@@ -429,17 +429,26 @@ environment:
   # through the new system while the poll route still assumes legacy `job_...` ids would strand
   # the job: it exists and is spending, and nothing can report on it.
   #
-  # That id-shape distinction is what makes an overlapping rollout safe: campaign-service mints
-  # UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-  # owns that job regardless of which pod serves it. A flag-on pod creating and a flag-off pod
-  # polling still works.
+  # That id-shape distinction is what lets both eras of job id resolve during an overlapping
+  # rollout: campaign-service mints UUID job ids and the legacy path mints `job_...`, so a poll is
+  # answered by whichever system owns that job.
+  #
+  # It is NOT unconditionally safe, and the ORDER is the whole of the safety. The check only runs
+  # on a pod that has JOBS on. If all three flags flip in one RollingUpdate, a flag-on pod mints a
+  # UUID job while a not-yet-updated pod routes that UUID to its in-process map and answers
+  # terminal `not_found` — a campaign that is running and spending, reported as lost.
+  #
+  #   Enable:   JOBS -> confirm every pod has it -> BRIEFS -> CREATE
+  #   Roll back: CREATE off first -> let outstanding UUID jobs drain -> then JOBS
   #
   # OPERATIONAL PRECONDITION, and it is not optional: campaign-service reads ad-platform
   # credentials from its OWN connection tables, never from this application's GADS_ / LINKEDIN_
-  # environment variables. Those values do not reach it. Install the system account with the
-  # service binary's `bootstrap-system-account` subcommand BEFORE turning this on, or every
-  # dispatch fails on a missing connection — and the failure surfaces per-campaign, not at
-  # startup, so nothing warns you at deploy time.
+  # environment variables. Those values do not reach it, and there is no system-account fallback —
+  # `credsSource.resolve` returns "no <provider> connection configured for project <slug>" when the
+  # project has no row. Create the connection for each project slug BEFORE turning this on, with
+  # `POST /projects/{slug}/connection-{provider}` (it is singleton per provider, so a second POST
+  # 409s). Otherwise every dispatch fails on a missing connection — and the failure surfaces
+  # per-campaign, not at startup, so nothing warns you at deploy time.
   LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
     value:
 
