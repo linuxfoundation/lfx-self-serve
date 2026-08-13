@@ -32,5 +32,8 @@ test.describe('Public profile — missing profile 404 (LFXV2-3095)', () => {
     await expect(page).toHaveURL(/\/u\/__lfx-nonexistent-e2e-user__$/);
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('public-profile-not-found-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // The "Powered by LFX" branding topbar must stay on the not-found view — guards against a regression
+    // that drops the header while still rendering the not-found card.
+    await expect(page.getByTestId('public-profile-topbar')).toBeVisible();
   });
 });
