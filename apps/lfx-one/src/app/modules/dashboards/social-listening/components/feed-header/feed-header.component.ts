@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, model } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, model, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -20,7 +21,9 @@ const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
 /**
  * Social Listening feed header (LFXV2-3016): Feed/Analytics tabs on the left (via
  * `lfx-card-tabs-bar`), sub-project / platform / period selects and the search input on the
- * right. The Filters button + badge are intentionally absent — LFXV2-3017 adds them.
+ * right. LFXV2-3017 adds the Filters button: icon + active-filter count badge, toggles the
+ * filters panel via the `filtersVisible` model, and arms the page's lazy option fetches early
+ * (`filtersPrefetch` on hover/focus) so the round-trip hides behind the intent→click gap.
  *
  * State lives in the page container and round-trips through query params; this component only
  * two-way-binds it via `model()`. The `lfx-select` / `lfx-input-text` wrappers are form-bound,
@@ -29,7 +32,7 @@ const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
  */
 @Component({
   selector: 'lfx-feed-header',
-  imports: [ReactiveFormsModule, CardTabsBarComponent, SelectComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CardTabsBarComponent, SelectComponent, InputTextComponent],
   templateUrl: './feed-header.component.html',
   styleUrl: './feed-header.component.scss',
 })
@@ -46,6 +49,11 @@ export class FeedHeaderComponent {
   public readonly projectOptions = model.required<SocialListeningOption[]>();
   public readonly platformOptions = model.required<SocialListeningOption[]>();
   public readonly optionsLoading = model<boolean>(false);
+
+  // === Filters panel trigger (LFXV2-3017) ===
+  public readonly filtersVisible = model(false);
+  public readonly activeFilterCount = input(0);
+  public readonly filtersPrefetch = output<void>();
 
   // Neutral defaults — the model→form effects below populate the real values at construction
   // (required models can't be read in field initializers).
@@ -91,5 +99,9 @@ export class FeedHeaderComponent {
     if (tabId === 'feed' || tabId === 'analytics') {
       this.activeTab.set(tabId);
     }
+  }
+
+  protected toggleFilters(): void {
+    this.filtersVisible.update((visible) => !visible);
   }
 }

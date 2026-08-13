@@ -22,6 +22,8 @@
     [loading]="loading()"
     [emptyMessage]="emptyMessage()"
     [emptyFilterMessage]="emptyFilterMessage()"
+    [attr.aria-label]="ariaLabel()"
+    [inputId]="inputId()"
     (onFilter)="filterChange.emit($event.filter ?? '')"
     (onPanelShow)="onPanelShow()"
     class="w-full">
@@ -52,7 +54,11 @@
         }
       </ng-template>
     }
-    @if (optionSubLabel() || optionImage()) {
+    @if (itemTemplate()) {
+      <ng-template let-option #item>
+        <ng-container *ngTemplateOutlet="itemTemplate()!; context: { $implicit: option }"></ng-container>
+      </ng-template>
+    } @else if (optionSubLabel() || optionImage()) {
       <ng-template let-option pTemplate="item">
         <div class="flex items-center gap-2">
           @if (optionImage(); as imgKey) {

@@ -58,5 +58,22 @@
         styleClass="w-56"
         data-testid="feed-header-search" />
     }
+
+    <!-- Filters trigger (feed tab only) — hover/focus arms the page's lazy option fetches -->
+    @if (!isAnalyticsTab()) {
+      <lfx-button
+        icon="fa-light fa-sliders"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Filters"
+        [ariaPressed]="filtersVisible()"
+        [badge]="activeFilterCount() > 0 ? activeFilterCount().toString() : undefined"
+        badgeSeverity="info"
+        (onClick)="toggleFilters()"
+        (onFocus)="filtersPrefetch.emit()"
+        (mouseenter)="filtersPrefetch.emit()"
+        data-testid="social-listening-filters-button" />
+    }
   </div>
 </lfx-card-tabs-bar>

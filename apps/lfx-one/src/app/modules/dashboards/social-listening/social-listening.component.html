@@ -15,18 +15,60 @@
       data-testid="social-listening-no-foundation" />
   } @else {
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="social-listening-card">
-      <lfx-feed-header
-        [(activeTab)]="activeTab"
-        [(selectedPeriod)]="selectedPeriod"
-        [(selectedProject)]="selectedProject"
-        [(selectedPlatform)]="selectedPlatform"
-        [(searchInput)]="searchInput"
-        [projectOptions]="subProjectOptions()"
-        [platformOptions]="platformOptions()"
-        [optionsLoading]="optionsLoading()" />
+      <!-- Positioning context for the filters panel dropdown (ports PCC's relative wrapper) -->
+      <div class="relative z-20">
+        <lfx-feed-header
+          [(activeTab)]="activeTab"
+          [(selectedPeriod)]="selectedPeriod"
+          [(selectedProject)]="selectedProject"
+          [(selectedPlatform)]="selectedPlatform"
+          [(searchInput)]="searchInput"
+          [(filtersVisible)]="filtersOpen"
+          [activeFilterCount]="activeFilterCount()"
+          [projectOptions]="subProjectOptions()"
+          [platformOptions]="platformOptions()"
+          [optionsLoading]="optionsLoading()"
+          (filtersPrefetch)="prefetchFilterOptions()" />
+
+        @if (filtersOpen() && activeTab() === 'feed') {
+          <lfx-filters-panel
+            [(visible)]="filtersOpen"
+            [(selectedSentiment)]="selectedSentiment"
+            [(selectedRelevance)]="selectedRelevance"
+            [(selectedLanguage)]="selectedLanguage"
+            [(selectedHasTitle)]="selectedHasTitle"
+            [(selectedKeywords)]="selectedKeywords"
+            [(selectedTags)]="selectedTags"
+            [(selectedAuthors)]="selectedAuthors"
+            [languageOptions]="languageOptions()"
+            [languagesLoading]="languagesLoading()"
+            [availableKeywords]="availableKeywords()"
+            [keywordsLoading]="keywordsLoading()"
+            [availableTags]="availableTags()"
+            [tagsLoading]="tagsLoading()"
+            [availableAuthors]="availableAuthors()"
+            [authorsLoading]="authorsLoading()"
+            [activeFilterCount]="activeFilterCount()"
+            (filtersCleared)="clearAllFilters()" />
+        }
+      </div>
 
       <div class="flex flex-col gap-4 px-5 py-5">
         @if (activeTab() === 'feed') {
+          <!-- Active-filter summary: one pill per active dimension — click a pill to remove that filter -->
+          @if (activeFilterPills().length > 0) {
+            <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
+              <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
+              <button
+                type="button"
+                class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                data-testid="social-listening-filter-pills-clear-all"
+                (click)="clearAllFilters()">
+                Clear all
+              </button>
+            </div>
+          }
+
           @if (error(); as errorMessage) {
             <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
           }
