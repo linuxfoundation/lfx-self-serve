@@ -132,7 +132,9 @@ export class BrandKitFormComponent implements OnDestroy {
     link.href = url;
     link.download = `${current.project || 'brand-kit'}-brand-kit-v${current.version || 1}.md`;
     link.click();
-    URL.revokeObjectURL(url);
+    // Defer revocation — some browsers start the blob: download asynchronously,
+    // so a synchronous revoke can abort it.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   // === Private methods ===

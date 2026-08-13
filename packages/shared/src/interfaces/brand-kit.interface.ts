@@ -96,7 +96,7 @@ export interface BrandKitGenerateResponse {
   ownerToken: string;
 }
 
-/** Request query/body for `POST /api/mktg-agents/brand-kit/result`. */
+/** Request body for `POST /api/mktg-agents/brand-kit/result` — the token travels in the body (never the query string) so it stays out of access logs. */
 export interface BrandKitResultRequest {
   /** Guild session id returned by generate. */
   sessionId: string;

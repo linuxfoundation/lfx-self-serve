@@ -6,8 +6,8 @@ import { extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateB
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
-import { logger } from './logger.service';
 import { GuildService } from './guild.service';
+import { logger } from './logger.service';
 
 /**
  * Brand Kit generation flow — agent invocation WITHOUT persistence (the
