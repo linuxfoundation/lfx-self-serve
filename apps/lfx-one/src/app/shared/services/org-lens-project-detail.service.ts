@@ -50,9 +50,9 @@ export class OrgLensProjectDetailService {
     return this.blockGet<OrgLensInfluenceBlock>(`${this.baseUrl(orgUid, projectSlug)}/influence`, { orgName, range });
   }
 
-  /** B6 — Influence Trend series. */
-  public getTrendBlock(orgUid: string, orgName: string, projectSlug: string): Observable<OrgLensTrendBlock | null> {
-    return this.blockGet<OrgLensTrendBlock>(`${this.baseUrl(orgUid, projectSlug)}/trend`, { orgName });
+  /** B6 — Influence Trend series. Range-scoped: `all` returns the adaptive lifetime-bucketed series + `periods[]`. */
+  public getTrendBlock(orgUid: string, orgName: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Observable<OrgLensTrendBlock | null> {
+    return this.blockGet<OrgLensTrendBlock>(`${this.baseUrl(orgUid, projectSlug)}/trend`, { orgName, range });
   }
 
   /** B7 — Technical leaderboard board: one server-paged, server-searched page for the active metric. */
