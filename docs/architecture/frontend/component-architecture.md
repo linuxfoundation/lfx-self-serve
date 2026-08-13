@@ -22,7 +22,7 @@ apps/lfx-one/src/app/modules/
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
 │   ├── meetings-dashboard/     # Main meetings route component
-│   ├── meeting-manage/         # Meeting create/edit
+│   ├── meeting-composer/       # Meeting create/edit composer (drawer over the current page)
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components

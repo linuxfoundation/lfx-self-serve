@@ -1,13 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, type Signal, untracked } from '@angular/core';
+import { NgClass } from '@angular/common';
+import { Component, computed, inject, type Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerSection, MeetingComposerSectionId, RegistrantPendingChanges } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { filter, pairwise } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
@@ -26,6 +29,7 @@ import { MeetingComposerService } from './meeting-composer.service';
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
+    NgClass,
     DrawerModule,
     ButtonComponent,
     MeetingTypeSelectionComponent,
@@ -59,19 +63,24 @@ export class MeetingComposerHostComponent {
   });
 
   public constructor() {
-    effect(() => {
-      const context = this.composer.context();
-      if (!context) return;
-      untracked(() => this.formService.initialize(context));
-    });
+    toObservable(this.composer.context)
+      .pipe(
+        filter((context) => !!context),
+        takeUntilDestroyed()
+      )
+      .subscribe((context) => this.formService.initialize(context));
 
     // Losing write access while the composer is open would make submit fail upstream; close it instead
-    // of evicting the user from the page underneath.
-    effect(() => {
-      const canWrite = this.projectContextService.canWrite();
-      if (canWrite || !untracked(() => this.composer.isOpen())) return;
-      untracked(() => this.composer.close());
-    });
+    // of evicting the user from the page underneath. Only a true -> false transition counts: `canWrite`
+    // starts false and reports false while the project grants request is unresolved, so reacting to any
+    // false would close a composer opened from a deep link before write access ever resolved.
+    toObservable(this.projectContextService.canWrite)
+      .pipe(
+        pairwise(),
+        filter(([hadWriteAccess, canWrite]) => hadWriteAccess && !canWrite && this.composer.isOpen()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.composer.close());
   }
 
   protected onVisibleChange(visible: boolean): void {
@@ -102,12 +111,18 @@ export class MeetingComposerHostComponent {
     this.formService.registrantUpdates.set(updates);
   }
 
+  /** Jumps to whichever section currently owns the title field. */
+  protected onGoToTitleSection(): void {
+    this.composer.setSection('date-schedule');
+  }
+
   protected onSubmit(): void {
-    if (!this.formService.validateForSubmit()) {
+    if (this.formService.submitting() || !this.formService.validateForSubmit()) {
       return;
     }
 
     const wasEditMode = this.formService.isEditMode();
+    const generation = this.formService.openGeneration;
 
     this.formService.submit().subscribe(() => {
       this.messageService.add({
@@ -115,7 +130,12 @@ export class MeetingComposerHostComponent {
         summary: 'Success',
         detail: wasEditMode ? 'Meeting updated successfully' : 'Meeting created successfully',
       });
-      this.composer.close();
+
+      // The composer may have been closed and reopened against a different meeting while the save was
+      // in flight; closing it then would discard whatever the user has since started.
+      if (this.formService.openGeneration === generation) {
+        this.composer.close();
+      }
     });
   }
 }

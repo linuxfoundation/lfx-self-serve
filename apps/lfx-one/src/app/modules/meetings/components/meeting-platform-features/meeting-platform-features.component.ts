@@ -15,7 +15,6 @@ import {
   EMAIL_REMINDER_FEATURE,
   EMAIL_REMINDER_TOOLTIP,
   MAX_EMAIL_REMINDER_HOURS,
-  MEETING_DETAILS_STEP,
   MEETING_FEATURES,
   MEETING_PLATFORMS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -31,9 +30,8 @@ import { map, of, startWith, switchMap } from 'rxjs';
 export class MeetingPlatformFeaturesComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   public readonly form = input.required<FormGroup>();
-  public readonly goToStep = output<number>();
+  public readonly goToStep = output<void>();
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
-  public readonly meetingDetailsStep = MEETING_DETAILS_STEP;
   public readonly titleLength = toSignal(
     toObservable(this.form).pipe(
       switchMap((f) => {

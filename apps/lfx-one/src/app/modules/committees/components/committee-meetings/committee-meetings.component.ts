@@ -196,7 +196,7 @@ export class CommitteeMeetingsComponent {
             deny();
             return;
           }
-          this.composer.open({ mode: 'create', committeeUid: committee.uid });
+          this.composer.open({ mode: 'create', committeeUid: committee.uid, projectUid: fresh.project_uid });
         },
         error: () => deny(),
       });
