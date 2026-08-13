@@ -297,12 +297,26 @@ export class ImplementationTabComponent implements OnInit {
   // === Private State ===
   private jobSubscription: Subscription | null = null;
 
+  /**
+   * True while the constructor effect is rebuilding the form from the brief and the draft.
+   *
+   * A plain field rather than a signal on purpose: nothing renders from it and nothing should
+   * react to it — it exists only to tell `valueChanges` that the write it just saw came from
+   * this component, not from the user.
+   */
+  private seeding = false;
+
   // === Lifecycle ===
 
   public constructor() {
     effect(() => {
       const brief = this.briefData();
       if (!brief) return;
+      // Everything between here and the emit below is the component REBUILDING itself, not the
+      // user editing. `valueChanges` cannot tell those apart, so the flag does: without it the
+      // seed's own patchValue emits a brief-shaped snapshot that overwrites the very draft this
+      // mount is about to restore, and the user's edits die on the NEXT tab leave.
+      this.seeding = true;
       this.populateFromBrief(brief);
       // AFTER seeding from the brief, so a carried-over draft wins over the generated copy —
       // that is the whole point. Inside the same effect rather than a second one because the two
@@ -316,13 +330,22 @@ export class ImplementationTabComponent implements OnInit {
       // NG0103 (infinite change detection) and takes the whole page down with it, which is how
       // this was found.
       untracked(() => this.applyDraft());
+      this.seeding = false;
+      // Emit ONCE, after the form has settled into whatever this mount should show — the draft
+      // if one applied, the brief's copy otherwise. This is what keeps the parent's copy equal
+      // to the form at rest, so a tab leave with no typing in between preserves rather than
+      // reverts (the defect this line exists to close).
+      this.emitDraft();
     });
 
     // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
     // types); it does NOT cover the platform signals, which is deliberate — see the draft
     // interface for why this snapshot is scoped to the fields a user types rather than everything
     // the component holds.
-    this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.emitDraft());
+    this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
   }
 
   public ngOnInit(): void {

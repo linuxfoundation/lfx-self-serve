@@ -1391,6 +1391,40 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().implementationDraft()).toBeNull();
   });
 
+  it('survives a SECOND tab leave with no typing in between', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input = headlineInput();
+    input!.value = 'Typed once';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // First round trip.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(headlineInput()?.value).toBe('Typed once');
+
+    // SECOND round trip, typing nothing. The remount re-seeded the parent from the brief and
+    // applyDraft restored silently, so without a re-emit the parent now holds the BRIEF copy
+    // while the form shows the edit — and this leave overwrites the edit with it.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(headlineInput()?.value).toBe('Typed once');
+  });
+
   it('does not replay one event edits onto a different brief', async () => {
     // The guard that makes the draft safe to hold un-keyed on the parent. Without it, generating
     // a brief for event B and opening Implement would restore event A's copy over it.

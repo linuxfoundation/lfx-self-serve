@@ -506,6 +506,15 @@ export class CampaignsComponent {
    * that quietly rewrites the thing it restored is the one outcome this path must not have.
    */
   protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
+    // BEFORE `briefOutput`, not after. Setting the brief first lets the child's effect run with
+    // the stale draft still in place — it seeds from the new brief and then immediately restores
+    // the old edits over it, which is the outcome this clear exists to prevent.
+    // The draft belongs to the brief it was typed against, and the next line replaces that brief.
+    // The child's `eventSlug` guard cannot cover this: a user can return to Planning, refine,
+    // and proceed again for the SAME event, so the slugs match and stale edits would silently
+    // overwrite the copy just generated. Ordinary Implement/Insights tab switches do not come
+    // through here, so they keep the draft — which is the whole point of holding it.
+    this.implementationDraft.set(null);
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
