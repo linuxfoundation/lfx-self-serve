@@ -139,7 +139,8 @@ export class MeetingComposerFormService {
    * @description FormGroup state is not reactive, so template computeds that depend on section validity —
    * or on a control's `pristine` flag — must read this signal to re-evaluate. `validateForSubmit()` needs
    * the explicit bump because `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor
-   * `statusChanges`; every other writer here pairs its marks with a `setValue` that does emit.
+   * `statusChanges`; the only other writer that marks — `setDuration()` — orders its mark before a
+   * `setValue` that does emit.
    */
   public readonly revision = signal<number>(0);
 
@@ -308,8 +309,9 @@ export class MeetingComposerFormService {
   /**
    * Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer.
    * @description Edit mode only: `meetingId` is also set by a successful create, and re-fetching there
-   * would hydrate a create form from the meeting it just saved. Guests are re-fetched only if their own
-   * request failed too — the two calls are independent, and one can fail while the other succeeds.
+   * would hydrate a create form from the meeting it just saved. The two fetches are independent, so a
+   * guest list that arrived fine isn't thrown away here; a guests-only failure has no retry of its own,
+   * since the only caller is the meeting-level error state.
    */
   public retryLoadMeeting(): void {
     const meetingUid = this.meetingId();
@@ -472,12 +474,15 @@ export class MeetingComposerFormService {
     const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === minutes);
     const form = this.form();
 
-    form.get('duration')?.setValue(isChipValue ? minutes : 'custom');
-    form.get('customDuration')?.setValue(isChipValue ? null : minutes);
-
+    // The mark goes first so the `setValue` below is what bumps `revision`: marks emit on neither
+    // `valueChanges` nor `statusChanges`, and the range error is gated on `touched`, so marking last
+    // would leave the error unrendered until some unrelated edit happened to bump the revision.
     if (!isChipValue) {
       form.get('customDuration')?.markAsTouched();
     }
+
+    form.get('duration')?.setValue(isChipValue ? minutes : 'custom');
+    form.get('customDuration')?.setValue(isChipValue ? null : minutes);
   }
 
   /**

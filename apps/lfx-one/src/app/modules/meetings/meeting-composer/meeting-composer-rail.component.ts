@@ -36,12 +36,22 @@ export class MeetingComposerRailComponent {
 
   private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
 
+  /**
+   * Single mode source for layout, locking and the active marker.
+   * @description Read from the form service rather than the composer service because that is what
+   * `isSectionValid` / `sectionNeedsAttention` read. The host is `@defer`-mounted and `initialize()` runs
+   * off an effect, so on the first edit-mode open the two can disagree for a paint: taking mode from
+   * both would render the flat edit rows while locking them like create-mode rows, leaving rows that
+   * look interactive and do nothing.
+   */
+  protected readonly isEditMode: Signal<boolean> = computed(() => this.formService.isEditMode());
+
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
   // Both layouts can be in the DOM at once, so their test ids have to differ.
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
   // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
   // isn't there — matching what the desktop edit rows already do.
-  protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.composer.isEditMode() ? 'true' : 'step'));
+  protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.isEditMode() ? 'true' : 'step'));
 
   public constructor() {
     // The chip row is wider than a phone, so a section reached from the footer would otherwise
@@ -75,9 +85,7 @@ export class MeetingComposerRailComponent {
       const sections = this.sections;
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
-      // Read from the form service, the same source `sectionNeedsAttention` uses — two sources for one
-      // fact would flip the visited gate if they ever disagreed mid-tick.
-      const isEditMode = this.formService.isEditMode();
+      const isEditMode = this.isEditMode();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
       const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
@@ -91,7 +99,9 @@ export class MeetingComposerRailComponent {
         return {
           section,
           active,
-          complete: isComplete(section) && !active,
+          // A locked row can't claim to be done even when its own controls validate — a check inside the
+          // greyed circle would contradict the "Complete earlier sections first" text right beside it.
+          complete: isComplete(section) && !active && !locked,
           locked,
           // Shared with the compact badge in the host, so the two can't disagree about what needs fixing.
           needsAttention: this.formService.sectionNeedsAttention(section, visited),

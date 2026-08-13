@@ -41,6 +41,13 @@ export class ComposerDetailsAccessComponent {
   public readonly form = input.required<FormGroup>();
   /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
   public readonly showHeading = input(true);
+  /**
+   * Hint text for a title that was written by something other than the organizer.
+   * @description Passed in rather than derived here because only quick create prefills from the meeting
+   * type. It renders directly under the input and is wired through `aria-describedby`, so the hint is
+   * reachable from the field it is about instead of sitting at the bottom of the column.
+   */
+  public readonly titleHint = input<string | null>(null);
 
   protected readonly visibilityOptions = MEETING_VISIBILITY_OPTIONS;
   protected readonly joinRestrictionOptions = MEETING_JOIN_RESTRICTION_OPTIONS;

@@ -58,6 +58,13 @@ export class ComposerDateScheduleComponent implements OnInit {
   public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
+  /**
+   * Hint text for a duration that was written by something other than the organizer.
+   * @description Passed in rather than derived here because only quick create prefills from the meeting
+   * type. It renders directly under the chips and is wired through `aria-describedby` on their group, so
+   * the hint is reachable from the control it is about rather than from the far end of the column.
+   */
+  public readonly durationHint = input<string | null>(null);
 
   protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
   protected readonly earlyJoinOptions = EARLY_JOIN_CHIP_OPTIONS;
