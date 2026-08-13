@@ -65,10 +65,14 @@ export class MeetingComposerHostComponent {
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
-   * @description Taken from the form service rather than the composer service: this host is
-   * `@defer`-mounted and `initialize()` runs from a subscription in the constructor, so the composer
-   * context can say `edit` for a paint before the form service agrees. Reading both sources would put
-   * the edit header and Save button above a create-mode stepper with locked rows.
+   * @description Taken from the form service so the header, footer and rail can never describe different
+   * modes: `initialize()` runs from a subscription in this constructor, which Angular flushes after the
+   * template that opened it, so `composer.context()` leads `formService.mode()` by one refresh pass. The
+   * two agree again before the tick ends — reading both sources wouldn't flash, it would just let an edit
+   * header sit above create-mode locked rows in an intermediate pass. It also means the chrome is the
+   * lagging side, so mode changes are picked up a pass late rather than early; closing that window for
+   * real means deriving the form service's own `mode` from the context instead of writing it in
+   * `initialize()`.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
 
