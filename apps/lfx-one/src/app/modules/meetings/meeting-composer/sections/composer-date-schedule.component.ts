@@ -54,7 +54,7 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create labels its own columns and has no room for the section heading. */
+  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
   public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);

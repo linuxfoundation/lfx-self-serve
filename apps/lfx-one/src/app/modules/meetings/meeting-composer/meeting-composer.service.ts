@@ -30,6 +30,15 @@ export class MeetingComposerService {
   private readonly _visitedSections = signal<ReadonlySet<MeetingComposerSectionId>>(new Set([FIRST_SECTION]));
   public readonly visitedSections = this._visitedSections.asReadonly();
 
+  /**
+   * Increments once per successful save.
+   * @description Saving no longer navigates, so the page underneath the composer would otherwise keep
+   * showing a list that predates the meeting the toast just announced. Surfaces that render meetings
+   * refresh off this rather than off `isOpen`, which also fires on a cancelled open.
+   */
+  private readonly _saveCount = signal(0);
+  public readonly saveCount = this._saveCount.asReadonly();
+
   public readonly isOpen = computed(() => this._context() !== null);
   public readonly isEditMode = computed(() => this._context()?.mode === 'edit');
   public readonly isQuickCreate = computed(() => this._context()?.variant === 'quick');
@@ -45,6 +54,10 @@ export class MeetingComposerService {
     this._context.set(null);
     this._activeSection.set(FIRST_SECTION);
     this._visitedSections.set(new Set([FIRST_SECTION]));
+  }
+
+  public notifySaved(): void {
+    this._saveCount.update((count) => count + 1);
   }
 
   public setSection(section: MeetingComposerSectionId): void {

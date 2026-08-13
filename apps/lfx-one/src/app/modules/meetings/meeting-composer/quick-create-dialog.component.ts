@@ -6,7 +6,7 @@ import { Component, computed, inject, output, signal, type Signal } from '@angul
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { DEFAULT_DURATION, MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
+import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { DialogModule } from 'primeng/dialog';
@@ -100,8 +100,10 @@ export class QuickCreateDialogComponent {
 
   /**
    * Seeds title, agenda and duration from the meeting type's first template.
-   * @description Only untouched fields are written — switching type after typing a title must not discard
-   * it — so duration is seeded only while it still holds the form default.
+   * @description Guarded on `pristine` rather than on emptiness: switching type after editing a field must
+   * keep the edit, and an emptiness check would treat a prefill from the previous type as free to
+   * overwrite — leaving a Board meeting carrying the Technical template's title. Durations off the chip
+   * scale are skipped, since seeding one would drop this surface into the custom-minutes input.
    */
   private applyTypeTemplate(meetingType: MeetingType | null): void {
     const template = meetingType ? this.firstTemplate(meetingType) : null;
@@ -114,20 +116,27 @@ export class QuickCreateDialogComponent {
     const form = this.formService.form();
     const title = form.get('title');
     const description = form.get('description');
+    const duration = form.get('duration');
+    let prefilled = false;
 
-    if (!(title?.value as string | null)?.trim()) {
-      title?.setValue(template.title);
+    if (title?.pristine) {
+      title.setValue(template.title);
+      prefilled = true;
     }
 
-    if (!(description?.value as string | null)?.trim()) {
-      description?.setValue(template.content);
+    if (description?.pristine) {
+      description.setValue(template.content);
+      prefilled = true;
     }
 
-    if (this.formService.effectiveDuration() === DEFAULT_DURATION) {
+    if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
       this.formService.setDuration(template.estimatedDuration);
+      prefilled = true;
     }
 
-    this.prefilledType.set(meetingType);
+    // The hints below the fields claim a prefill happened, so they must not show when every field was
+    // already the organizer's own.
+    this.prefilledType.set(prefilled ? meetingType : null);
   }
 
   private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {

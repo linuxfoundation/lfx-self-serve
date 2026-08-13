@@ -13,24 +13,28 @@
       <div class="flex min-w-0 flex-1 flex-col gap-1">
         <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
         <span class="break-words text-xs text-gray-600">{{ message.detail }}</span>
-        <div class="mt-1 flex items-center gap-3">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-            data-testid="meeting-composer-toast-edit"
-            (click)="onEditCreatedMeeting(message.data)">
-            <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
-            <span>Edit meeting</span>
-          </button>
-          <a
-            [routerLink]="message.data.meetingUrl"
-            class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-            data-testid="meeting-composer-toast-details"
-            (click)="onDismissToast()">
-            <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
-            <span>Meeting details</span>
-          </a>
-        </div>
+        <!-- `toastKey` is exported, so a message could reach this template without the data the actions need -->
+        @if (message.data; as toastData) {
+          <div class="mt-1 flex items-center gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              data-testid="meeting-composer-toast-edit"
+              (click)="onEditCreatedMeeting(toastData)">
+              <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
+              <span>Edit meeting</span>
+            </button>
+            <a
+              [routerLink]="toastData.meetingUrl"
+              [queryParams]="toastData.meetingQueryParams"
+              class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              data-testid="meeting-composer-toast-details"
+              (click)="onDismissToast()">
+              <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+              <span>View meeting</span>
+            </a>
+          </div>
+        }
       </div>
     </div>
   </ng-template>
@@ -56,7 +60,7 @@
   </ng-template>
 
   <div class="flex h-full min-h-0 gap-6">
-    <!-- Rail and preview are desktop-only; below `lg` the composer is one column navigated from the footer (LFXV2-3243) -->
+    <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (LFXV2-3243) -->
     <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
       <lfx-meeting-composer-rail />
 
@@ -69,10 +73,13 @@
       <p class="text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
     } @else {
       <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto">
-        <!-- Stands in for the hidden rail: where you are, what's done, and what still needs fixing -->
-        <div class="flex flex-col gap-2 border-b border-gray-200 pb-3 lg:hidden" data-testid="meeting-composer-compact-progress">
+        <!-- Stands in for the hidden rail: where you are, what's done, and what still needs fixing.
+             Sticky because it is the only section navigation at this width. -->
+        <div class="sticky top-0 z-10 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 lg:hidden" data-testid="meeting-composer-compact-progress">
           <div class="flex items-center gap-2">
-            <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
+            @if (!composer.isEditMode()) {
+              <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
+            }
             <span class="truncate text-sm font-semibold text-gray-900">{{ activeSectionLabel() }}</span>
 
             @if (hasAttention()) {

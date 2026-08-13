@@ -12,13 +12,14 @@
         type="button"
         class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         [ngClass]="{
-          'border-blue-600 bg-blue-600 text-white': row.active,
+          'border-blue-700 bg-blue-700 text-white': row.active,
           'border-blue-200 bg-white text-blue-700': !row.active && row.complete,
           'border-gray-200 bg-white text-gray-600': !row.active && !row.complete,
           'cursor-not-allowed opacity-50': row.locked,
         }"
-        [disabled]="row.locked"
-        [attr.aria-current]="row.active ? 'step' : null"
+        [attr.aria-disabled]="row.locked ? 'true' : null"
+        [attr.aria-current]="row.active ? activeChipAriaCurrent() : null"
+        [attr.data-active-chip]="row.active ? 'true' : null"
         [attr.data-testid]="testIdPrefix() + '-' + row.section.id"
         (click)="onSelect(row)">
         @if (row.complete) {
@@ -30,6 +31,9 @@
         @if (row.needsAttention) {
           <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="testIdPrefix() + '-attention-' + row.section.id"></span>
           <span class="sr-only">Required fields still missing</span>
+        }
+        @if (row.locked) {
+          <span class="sr-only">Complete earlier sections first</span>
         }
       </button>
     } @else if (composer.isEditMode()) {

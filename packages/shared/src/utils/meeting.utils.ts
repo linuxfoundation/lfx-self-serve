@@ -5,7 +5,9 @@ import { HttpParams } from '@angular/common/http';
 
 import {
   CANCELLED_COLOR,
+  MAINTAINER_MEETING_TYPES,
   MEETING_ORGANIZER_SKIP_IDENTIFIERS,
+  MEETING_TYPE_OPTIONS,
   MEETING_TYPE_COLORS,
   PAST_MEETING_CALENDAR_COLOR,
   PAST_SURVEY_CALENDAR_COLOR,
@@ -16,11 +18,12 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
-import { RecurrenceType } from '../enums';
+import { MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
 import {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
+  CardSelectorOption,
   CustomRecurrencePattern,
   Meeting,
   MeetingHostCandidate,
@@ -34,6 +37,7 @@ import {
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  PersonaType,
   PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
@@ -1249,4 +1253,19 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
     return rankDelta;
   }
   return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+}
+
+/**
+ * Meeting types the given persona may pick when creating a meeting.
+ * @description Shared by every create surface — the composer's type select and the dashboard's Quick
+ * start menu — so a persona can't reach a type through one entry point that the other hides.
+ * `hydratedMeetingType` is the type already stored on the meeting being edited: it stays selectable
+ * even when the persona couldn't have created it, or editing would silently drop it.
+ */
+export function getSelectableMeetingTypeOptions(persona: PersonaType, hydratedMeetingType: MeetingType | null = null): CardSelectorOption<MeetingType>[] {
+  if (persona !== 'maintainer') {
+    return MEETING_TYPE_OPTIONS;
+  }
+
+  return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydratedMeetingType);
 }

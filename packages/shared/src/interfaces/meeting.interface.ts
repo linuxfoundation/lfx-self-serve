@@ -1463,8 +1463,10 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 export interface MeetingComposerToastData {
   meetingUid: string;
   meetingTitle: string;
-  /** Router link to the meeting's details page. */
+  /** Router link to the meeting's public join page. */
   meetingUrl: string;
+  /** Query params that page needs — the access password, for a private or restricted meeting. */
+  meetingQueryParams: Record<string, string>;
 }
 
 /** Dialog data for the composer's manual guest entry dialog. */

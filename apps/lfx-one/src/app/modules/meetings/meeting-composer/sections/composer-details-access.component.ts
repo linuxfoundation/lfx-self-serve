@@ -10,15 +10,14 @@ import { RadioButtonComponent } from '@components/radio-button/radio-button.comp
 import { SelectComponent } from '@components/select/select.component';
 import {
   lfxColors,
-  MAINTAINER_MEETING_TYPES,
   MEETING_JOIN_RESTRICTION_OPTIONS,
-  MEETING_TYPE_OPTIONS,
   MEETING_VISIBILITY_OPTIONS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
   YOUTUBE_MEETING_TITLE_WARNING_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption } from '@lfx-one/shared/interfaces';
+import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 import { map, of, startWith, switchMap } from 'rxjs';
 
@@ -40,7 +39,7 @@ export class ComposerDetailsAccessComponent {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create labels its own columns and has no room for the section heading. */
+  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
   public readonly showHeading = input(true);
 
   protected readonly visibilityOptions = MEETING_VISIBILITY_OPTIONS;
@@ -80,10 +79,7 @@ export class ComposerDetailsAccessComponent {
       const hydrated = this.hydratedMeetingType();
       // Editing a meeting whose type this persona can't create would otherwise drop the stored value
       // out of the list, rendering the select as an empty placeholder over a populated control.
-      const available =
-        this.personaService.currentPersona() === 'maintainer'
-          ? MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydrated)
-          : MEETING_TYPE_OPTIONS;
+      const available = getSelectableMeetingTypeOptions(this.personaService.currentPersona(), hydrated);
 
       if (!hydrated || available.some((option) => option.value === hydrated)) {
         return available;
