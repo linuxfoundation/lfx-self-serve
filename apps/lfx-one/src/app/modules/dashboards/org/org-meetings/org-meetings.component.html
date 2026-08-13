@@ -38,10 +38,7 @@
       </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select a company via Impersonate to view meeting insights."
-      data-testid="org-meetings-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view meeting insights." data-testid="org-meetings-no-company-empty-state" />
   } @else if (!hasAnalyticsId()) {
     <!-- A company is selected but its analytics id never resolved, so no section can load. Say so
          rather than leaving three skeletons on screen forever. -->

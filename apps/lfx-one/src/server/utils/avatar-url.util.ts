@@ -37,10 +37,28 @@ export function getAvatarCdnPrefix(): string | null {
   if (!cdnPrefix) {
     return null;
   }
-  if (!/^https?:\/\//i.test(cdnPrefix)) {
+  // Trim before validating and returning — new URL() trims ASCII whitespace internally, so an
+  // untrimmed value with leading/trailing spaces would pass validation while the raw string
+  // (with the spaces still in it) got returned and interpolated into a malformed URL downstream.
+  const trimmedCdnPrefix = cdnPrefix.trim();
+  // New URL() (rather than a `^https?:\/\//` regex) also rejects a scheme-only value like
+  // "https://" — that string starts with the required prefix but has no hostname, and a regex
+  // check alone would let it through and silently produce a malformed "https:/avatars/..." URL
+  // after the trailing-slash trim below.
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedCdnPrefix);
+  } catch {
     throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
   }
-  return cdnPrefix.replace(/\/+$/, '');
+  // A query or fragment also can't survive buildAvatarUrl's plain string concatenation: appending
+  // "/avatars/<key>" after "?token=x" lands the avatar path inside the query string instead of the
+  // path, and after "#frag" it's hidden in the fragment — either way the resulting URL doesn't
+  // point at the object it claims to.
+  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || parsed.search || parsed.hash) {
+    throw new Error(`CDN_URL_PREFIX must be an absolute http(s) URL, got: "${cdnPrefix}"`);
+  }
+  return trimmedCdnPrefix.replace(/\/+$/, '');
 }
 
 /**

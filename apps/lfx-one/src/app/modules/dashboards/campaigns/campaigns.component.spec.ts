@@ -54,6 +54,11 @@ describe('CampaignsComponent brief persistence', () => {
     return (fixture.componentInstance as unknown as { briefPersistence(): CampaignBriefPersistenceState }).briefPersistence();
   }
 
+  /** Whether a save is running — deliberately NOT derivable from `state()`; see the tests below. */
+  function inFlight(): boolean {
+    return (fixture.componentInstance as unknown as { briefSaveInFlight(): boolean }).briefSaveInFlight();
+  }
+
   /**
    * `selectorForm` is protected; a program switch is the real path that discards a brief. The
    * value matters: `resetToPlanning` runs only when the control CHANGES, so switching twice to
@@ -152,7 +157,7 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null });
+    expect(state()).toEqual({ status: 'saved', briefId: 'brief-9', message: null, approved: true });
   });
 
   it('renders nothing when the cutover is dark', async () => {
@@ -202,7 +207,7 @@ describe('CampaignsComponent brief persistence', () => {
     late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
     await fixture.whenStable();
 
-    expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+    expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     expect(tab()).toBe('planning');
   });
 
@@ -305,7 +310,7 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
 
       // Not 'saved' with tlf's id: that id names a row in tlf's table, and CNCF is selected now.
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     it('drops a save that resolves after the foundation changed', async () => {
@@ -319,7 +324,7 @@ describe('CampaignsComponent brief persistence', () => {
       late.next({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true });
       await fixture.whenStable();
 
-      expect(state()).toEqual({ status: 'off', briefId: null, message: null });
+      expect(state()).toEqual({ status: 'off', briefId: null, message: null, approved: false });
     });
 
     /**
@@ -1033,6 +1038,80 @@ describe('CampaignsComponent brief persistence', () => {
     // about work the user already abandoned.
     expect(state().status).toBe('off');
   });
+
+  /**
+   * `briefSaveInFlight` exists because the BANNER state cannot answer "is a save running".
+   *
+   * The first save of a session shows no banner — the persistence flag lives on the server and is
+   * unknown until the response lands, so `briefPersistence` stays `off` throughout. The
+   * Implementation tab needs the difference: a create issued in that window carries an empty
+   * brief id and is terminally refused with the cutover on.
+   */
+  it('reports a save as in flight even while the banner still reads off', async () => {
+    const pending = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(pending);
+
+    proceed();
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+    // The banner is deliberately silent for this first save; that is exactly why the separate
+    // signal is needed rather than reading the status.
+    expect(state().status).toBe('off');
+  });
+
+  /**
+   * Two saves queued: the flag must stay true across the seam between them.
+   *
+   * Saves serialise on `persistChain` and each appends its own clear. With a boolean, both
+   * `set(true)` calls ran synchronously at enqueue time while A's clear landed between A finishing
+   * and B starting — so the flag went false with a save still pending, and Create re-enabled in
+   * exactly the window the guard exists to close. Counting is what closes it.
+   */
+  it('keeps the in-flight flag set while a second save is still queued', async () => {
+    const first = new Subject<CampaignBriefPersistResult>();
+    const second = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    // Two saves for DIFFERENT events, no program switch: switching discards the brief, so that
+    // save is dropped rather than queued and its clear never runs — which is a different case.
+    proceed();
+    proceed(otherBrief);
+    await fixture.whenStable();
+
+    // A resolves; B is still outstanding.
+    first.next({ enabled: true, briefId: 'brief-a', etag: 'W/"1"', created: true, approved: true });
+    first.complete();
+    // Drain generously: A's chain link has several `.then` steps before B's request is issued.
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(true);
+
+    second.next({ enabled: true, briefId: 'brief-b', etag: 'W/"1"', created: true, approved: true });
+    second.complete();
+    for (let i = 0; i < 6; i++) await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
+  });
+
+  it('clears the in-flight flag when a save FAILS, not only when it succeeds', async () => {
+    // The stuck-forever case. Clearing it in the success arm alone would leave Create disabled
+    // for the rest of the session after one failed save.
+    const failing = new Subject<CampaignBriefPersistResult>();
+    persistBrief.mockReturnValue(failing);
+
+    proceed();
+    await fixture.whenStable();
+    expect(inFlight()).toBe(true);
+
+    failing.error(new Error('500'));
+    await fixture.whenStable();
+    // A second drain: the clear is chained AFTER the terminal catch, so it settles one
+    // microtask-turn later than the banner write does.
+    await fixture.whenStable();
+
+    expect(inFlight()).toBe(false);
+  });
 });
 
 describe('CampaignsComponent — email delivery channel', () => {
@@ -1241,6 +1320,159 @@ describe('CampaignsComponent — email delivery channel', () => {
     // than none: the next person copies it believing the separation is protected. Asserting the
     // separator POSITIVELY does bind.
     expect(withBrief?.textContent).toMatch(/ready\.\s+Staging an email/);
+  });
+
+  // `fixture.nativeElement` is typed `any`, so without the cast the annotation below would be
+  // ASSERTED rather than checked — `.style.display` would still compile if it were wrong.
+  // Matches the sibling helper and the pre-existing call sites in this file.
+  const byTestId = (testid: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testid}"]`);
+
+  /**
+   * The planner's rendered HOST ELEMENT, scoped to its delivery container.
+   *
+   * Two earlier revisions of this helper were wrong in ways that made these tests pass against
+   * the pre-fix template, and both are worth recording because each looks correct:
+   *
+   * 1. It queried the whole fixture. Both delivery containers are always mounted, so an
+   *    unscoped search for `campaigns-planning-tab` also reaches the EMAIL planner — and when
+   *    the paid one was destroyed, the query silently returned the email one, so `before` and
+   *    `after` matched for a planner that had never been at risk. Hence the container scope.
+   * 2. It used `debugElement.query`, which walks Angular's LOGICAL tree and still resolves a
+   *    debug node for a component whose element has left the rendered DOM. Verified with a
+   *    probe: the panel was gone from `querySelector` while the instance comparison still
+   *    passed. `querySelector` is the only view that forgets a destroyed node, so it is the
+   *    one that can bind.
+   *
+   * Comparing the host ELEMENT rather than the panel's display is aimed at a hole the panel
+   * assertion alone leaves open: a change that kept the wrapper mounted while recreating
+   * `lfx-planning-tab` inside it would reintroduce the state loss this PR fixes, and a display
+   * check could not see it.
+   *
+   * **Honest limit, and it survived two reviewers arguing the opposite — so it is stated as an
+   * OBSERVATION, not a mechanism.** These tests are revert-verified against the shape the bug
+   * actually had (the panel back inside the `@switch`), and each side fails only its own test.
+   * They are NOT verified against the narrower wrapper-kept/planner-recreated shape.
+   *
+   * Substituting `@if (selectedTab() === 'planning')` on `lfx-planning-tab` — both wrapping the
+   * `@for` and nested inside it — leaves the suite green. An instrumented probe at the hidden
+   * assertion printed `tab=insights` with the planner element still present, so the element was
+   * genuinely not removed at the point the test looks. Do not infer a general rule about `@if`
+   * timing from that: the sibling `still mounts the fetch-on-init tabs lazily` test proves one
+   * `detectChanges()` DOES remove `@switch`-gated panels in the same pass. Why this particular
+   * substitution behaves differently is unresolved, which is exactly why it is recorded as
+   * something seen rather than something explained.
+   *
+   * Pinning that case properly needs a test at the planner's own level, not this one.
+   */
+  const plannerElement = (container: 'campaigns-paid-marketing' | 'campaigns-email', testid: string): HTMLElement | null =>
+    // querySelector, NOT debugElement.query: the rendered DOM is the only view that forgets a
+    // destroyed node. Scoped to the container because both are always mounted.
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${container}"] [data-testid="${testid}"]`) ?? null;
+
+  /**
+   * LFXV2-3202: leaving the Plan tab must not DESTROY the planner.
+   *
+   * `PlanningTabComponent` owns its state locally — the generated brief, the edited RSA copy, the
+   * resolved HubSpot UTM, the keyword list — and none of it is lifted to this component. A
+   * structural `@switch` therefore threw all of it away the moment the user looked at another
+   * tab, and a brief is a slow, non-deterministic AI generation: it cannot be reproduced by
+   * re-running it. The panel is now visibility-toggled instead, the same treatment the two
+   * delivery-type containers already had for the same reason.
+   *
+   * Asserted on the DOM rather than the tab signal, because the tab signal was never the bug —
+   * it changed correctly both before and after this fix.
+   */
+  it('keeps the paid planner mounted when the user moves to another tab', () => {
+    const before = plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab');
+    expect(before).not.toBeNull();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+
+    // Still RENDERED while hidden, and the SAME node — hidden rather than swapped for a fresh
+    // one, which would have taken every signal it owned with it.
+    const whileHidden = plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab');
+    expect(whileHidden).not.toBeNull();
+    expect(whileHidden).toBe(before);
+    expect(byTestId('campaigns-planning-panel')?.style.display).toBe('none');
+
+    internals().selectTab('planning', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(plannerElement('campaigns-paid-marketing', 'campaigns-planning-tab')).toBe(before);
+    expect(byTestId('campaigns-planning-panel')?.style.display).not.toBe('none');
+  });
+
+  it('keeps the email planner mounted when the user moves to another tab', () => {
+    selectEmail();
+    const before = plannerElement('campaigns-email', 'campaigns-email-planning-tab');
+    expect(before).not.toBeNull();
+
+    internals().selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    expect(plannerElement('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
+    expect(byTestId('campaigns-email-planning-panel')?.style.display).toBe('none');
+
+    // The return leg, which the paid test above also covers. Without it, a binding typo that
+    // hid the email panel PERMANENTLY once left would still pass.
+    internals().selectTab('planning', 'email');
+    fixture.detectChanges();
+
+    expect(plannerElement('campaigns-email', 'campaigns-email-planning-tab')).toBe(before);
+    expect(byTestId('campaigns-email-planning-panel')?.style.display).not.toBe('none');
+  });
+
+  it('still mounts the fetch-on-init tabs lazily', () => {
+    // The counterpart constraint, and the reason only Planning was hoisted out of the @switch.
+    // Implementation, Insights and Optimization all fetch in `ngOnInit` — metrics reads and
+    // LinkedIn account lookups — so mounting them eagerly would issue network calls for tabs the
+    // user may never open, on every page load. Hoisting all four would trade one bug for a cost
+    // regression, so this pins that they are still swapped rather than merely hidden.
+    //
+    // Asserted on the PANEL ids: `campaigns-insights-tab` is carried by both the nav button and
+    // the panel's component, so it cannot distinguish "mounted" from "there is a button for it".
+    //
+    // Implementation is named explicitly because it is the costliest of the three to mount
+    // eagerly — its own ngOnInit resolves ad-account lists — and it was the one an earlier
+    // revision of this test left unasserted.
+    expect(byTestId('campaigns-implementation-panel')).toBeNull();
+    expect(byTestId('campaigns-insights-panel')).toBeNull();
+    expect(byTestId('campaigns-optimization-panel')).toBeNull();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(byTestId('campaigns-insights-panel')).not.toBeNull();
+    // Swapped, not stacked: the previous panel is gone from the DOM rather than hidden.
+    expect(byTestId('campaigns-optimization-panel')).toBeNull();
+    expect(byTestId('campaigns-implementation-panel')).toBeNull();
+
+    // And still REACHABLE. Asserting only that the lazy panels are absent leaves the other
+    // direction unpinned: a typo'd `@case ('implementation')` would make the tab permanently
+    // blank while every absence assertion above stayed green.
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(byTestId('campaigns-implementation-panel')).not.toBeNull();
+    expect(byTestId('campaigns-insights-panel')).toBeNull();
+  });
+
+  it('still mounts the EMAIL non-planning panels lazily', () => {
+    // The email container is where this is most likely to be "tidied" away, because its
+    // remaining panels are cheap static placeholders today rather than fetch-on-init
+    // components. They stay in the @switch so both containers keep the same structure, and
+    // so the paid side's carve-out is not re-litigated one container over.
+    selectEmail();
+
+    expect(byTestId('campaigns-email-implementation-panel')).toBeNull();
+    expect(byTestId('campaigns-email-insights-panel')).toBeNull();
+
+    internals().selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    expect(byTestId('campaigns-email-implementation-panel')).not.toBeNull();
+    expect(byTestId('campaigns-email-insights-panel')).toBeNull();
   });
 
   it('does not let one delivery type receive the other approved brief', () => {

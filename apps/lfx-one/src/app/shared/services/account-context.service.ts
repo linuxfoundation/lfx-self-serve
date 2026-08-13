@@ -67,12 +67,20 @@ export class AccountContextService {
 
   /**
    * Whether the caller may see the org-selector / Org Lens surfaces: a direct writer or auditor
-   * grant, or at least one persona-seeded account. Single source of truth shared by the sidebar
-   * selector visibility gate and the Org Overview no-access gate so the two cannot drift apart.
-   * Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   * grant, at least one persona-seeded account, or the LF staff grant. Single source of truth shared
+   * by the sidebar selector visibility gate and the Org Overview no-access gate so the two cannot
+   * drift apart. Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   *
+   * Staff qualify on the grant alone, with no accounts of their own. That is the whole
+   * point: their list starts empty and is filled by search, so gating visibility on a non-empty list
+   * would hide the only control that can populate it.
    */
   public readonly hasOrgSelectorAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.writerSet().size > 0 || this.orgRoleGrantsService.auditorSet().size > 0 || this.availableAccounts().length > 0
+    () =>
+      this.orgRoleGrantsService.writerSet().size > 0 ||
+      this.orgRoleGrantsService.auditorSet().size > 0 ||
+      this.availableAccounts().length > 0 ||
+      this.orgRoleGrantsService.isStaff()
   );
 
   public constructor() {

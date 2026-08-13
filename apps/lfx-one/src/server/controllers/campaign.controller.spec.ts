@@ -9,9 +9,13 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
+const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
+  createCampaigns: vi.fn(),
+  legacyCreate: vi.fn(),
+  svcGetJobStatus: vi.fn(),
+  legacyGetJobStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -26,6 +30,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
+      public createCampaigns = createCampaigns;
+      public getJobStatus = svcGetJobStatus;
     },
   };
 });
@@ -33,7 +39,12 @@ vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/server-feature-flag.helper')>();
   return { ...actual, isServerFeatureEnabled };
 });
-vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: class {} }));
+vi.mock('../services/campaign-proxy.service', () => ({
+  CampaignProxyService: class {
+    public createCampaign = legacyCreate;
+    public getJobStatus = legacyGetJobStatus;
+  },
+}));
 vi.mock('../services/campaign-metrics.service', () => ({
   CampaignMetricsService: class {},
   LinkedInMetricsService: class {},
@@ -351,5 +362,365 @@ describe('CampaignController.loadBrief', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The layer boundary that matters for the creation cutover: whether the legacy path — which has
+ * REAL side effects on the ad platforms — runs, and under exactly which conditions. Everything
+ * about what campaign-service is sent is the service spec's business.
+ */
+describe('CampaignController.createCampaign cutover', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const body = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 }, hsToken: 'hs-1' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Explicit rather than relying on an unstubbed mock returning undefined. The controller now
+    // reads this flag directly (for the `?project=` validation), so leaving it unset would make
+    // every test in this block depend on a falsy default rather than a stated condition.
+    isServerFeatureEnabled.mockReturnValue(true);
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('falls through to the legacy path when the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_123_abc' });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_123_abc' });
+  });
+
+  it('does NOT run the legacy path once campaign-service accepts the job', async () => {
+    // The property worth pinning: both paths create real campaigns on real ad platforms, so a
+    // fall-through after an accepted 202 would double-create and spend twice.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000001', error: null });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '9f1c2d3e-0000-4000-8000-000000000001' });
+  });
+
+  it('does NOT fall back when campaign-service refuses the create', async () => {
+    // Enabled-but-refused is the dangerous case. Falling through would create the campaigns
+    // anyway while the user is told creation failed — a worse outcome than any error message,
+    // because the spend is real and nobody is looking for it.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: null, error: 'Campaign creation could not be started. Please try again.' });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
+  });
+
+  it('allows a create when the same platform IS configured', async () => {
+    // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
+    // config. Without this, the test above would pass on a controller that refused everything.
+    const withSearch = { platforms: ['google-ads'], campaignTypes: ['search'], budgetUsd: 5000, headlines: ['a'], descriptions: ['b'] };
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000002', error: null });
+
+    await controller.createCampaign(buildReq(withSearch, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: '9f1c2d3e-0000-4000-8000-000000000002' });
+  });
+
+  /**
+   * A missing `?project=` is a client 400, matching `getJobStatus` and every other validation in
+   * this controller.
+   *
+   * Left to fall through it produced "this campaign could not be created because its brief has not
+   * been saved yet" — wrong (the brief may well be saved) and TERMINAL, so it also blocked the
+   * legacy fall-through.
+   */
+  it('rejects a create with no project slug once the cutover is on', async () => {
+    isServerFeatureEnabled.mockReturnValue(true);
+
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('does not require a project slug when CREATE is on but a prerequisite is off', async () => {
+    // The guard must match `createCampaigns`, which gates on all three flags. Checking CREATE
+    // alone 400'd a request the legacy path serves fine: with JOBS off the cutover is dark,
+    // `createCampaigns` reports disabled, and the create falls through — needing no slug.
+    isServerFeatureEnabled.mockImplementation((flag: string) => !String(flag).includes('JOBS'));
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_partial_1' });
+
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not require a project slug while the cutover is dark', async () => {
+    // The legacy path neither reads nor needs the param, so requiring it there would be the same
+    // category error as putting the unconfigured-platform guard in the controller was.
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(body, { brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the project slug and brief id from the query, not the body', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(body, { project: 'cncf', brief_id: 'b-9' }), res, next);
+
+    // Slug, NOT a UUID: campaign-service stamps it into the campaign name and keys the dispatch
+    // connection lookup on it, so a UUID here fails twice over.
+    expect(createCampaigns).toHaveBeenCalledWith(
+      expect.anything(),
+      'b-9',
+      'cncf',
+      ['linkedin-ads'],
+      // `linkedInConfig` is adapted, not forwarded: the account override is stripped and the
+      // runtime targeting catalogue is added. Asserted loosely here because the exact catalogue
+      // comes from config on disk; the adapter has its own dedicated test above.
+      { hsToken: 'hs-1', linkedInConfig: expect.objectContaining({ budgetUsd: 100 }) },
+      // The options object carries `campaignTypes` for the Demand Gen refusal. Asserted rather
+      // than loosened to `expect.anything()`, so dropping the argument fails here too.
+      { campaignTypes: undefined }
+    );
+  });
+
+  it('omits absent per-platform configs rather than sending them as null', async () => {
+    // The dispatcher reads an absent config as "not selected" and a null one as a malformed
+    // selection, so the difference is not cosmetic.
+    //
+    // The selection is now reddit + linkedin rather than reddit alone. A platform with NO config
+    // no longer reaches this call at all — it is refused before dispatch, because campaign-service
+    // reads an absent config key as a zero value and would have dispatched it with empty fields.
+    // So the property this test exists for is checked on the platform that IS configured: the
+    // envelope carries `linkedInConfig` and does not invent a null `redditConfig` beside it.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const body = { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 } };
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalledWith(
+      expect.anything(),
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      // `objectContaining`: `linkedInConfig` is ADAPTED, not forwarded — the runtime targeting
+      // catalogue is added from config on disk. The adapter has its own test above; what this one
+      // pins is the absence of an invented `redditConfig`.
+      { linkedInConfig: expect.objectContaining({ budgetUsd: 100 }) },
+      { campaignTypes: undefined }
+    );
+    // The property this test exists for: no INVENTED null config for a platform not selected.
+    // `linkedInConfig` is present and adapted (see the LinkedIn adapter test above).
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
+  });
+
+  const googleBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['google-ads'],
+    campaignTypes: ['search'],
+    budgetUsd: 1000,
+    searchBudgetPct: 60,
+    headlines: ['H1'],
+    descriptions: ['D1'],
+    keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'high', notes: 'n' }],
+    ...overrides,
+  });
+
+  const envelopeFor = (mock: typeof createCampaigns): Record<string, unknown> => mock.mock.calls[0][4] as Record<string, unknown>;
+
+  it('sends googleAdsConfig so the campaign has a budget and servable keywords', async () => {
+    // Without this the dispatcher creates a campaign with a zero budget and an ad group with no
+    // criteria, which per the service's own contract "can never serve".
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 1000,
+      headlines: ['H1'],
+      descriptions: ['D1'],
+      // `text`, not `term`, and an upper-case enum: the service's keyword shape.
+      keywords: [{ text: 'kubernetes', matchType: 'EXACT' }],
+    });
+  });
+
+  it('funds Google with the SEARCH share when demand-gen is also selected', async () => {
+    // The dispatcher composes a "Search Campaign" and creates exactly one Search campaign, so the
+    // combined budget would spend the demand-gen half on Search.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['search', 'demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['budget']).toBe(600);
+  });
+
+  /**
+   * The legacy LinkedIn object cannot be forwarded unchanged, and both halves fail the dispatch:
+   *
+   *   - `adAccountId` is REJECTED on mismatch (`linkedin.go:143`, "cross-account campaigns are not
+   *     allowed"), and the legacy request carries this app's account, not the project connection's.
+   *   - the dispatcher builds its runtime config from `targetingProfiles` (plural catalogue) and
+   *     `employerExclusions` (`linkedin.go:135`); the legacy request carries neither, so an
+   *     ordinary profile selection fails with "not found in runtime config".
+   */
+  it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const linkedInBody = {
+      platforms: ['linkedin-ads'],
+      linkedInConfig: { budgetUsd: 100, adAccountId: '507654321', targetingProfile: { id: 'cloud-native' } },
+    };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('adAccountId');
+    expect(sent).toHaveProperty('targetingProfiles');
+    expect(sent).toHaveProperty('employerExclusions');
+    // The user's SELECTION survives — it is what the catalogue is resolved against, not a
+    // duplicate of it.
+    expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
+    expect(sent['budgetUsd']).toBe(100);
+  });
+
+  it('omits googleAdsConfig when only demand-gen is selected', async () => {
+    // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
+    // request as Search. The REFUSAL that makes this omission safe lives in `createCampaigns`
+    // (see its spec) — deliberately not here, so it is gated by the cutover flags.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+  });
+
+  /**
+   * The regression guard for a bug I shipped and had to back out.
+   *
+   * The unconfigured-platform refusal was briefly in the controller, ABOVE the `createCampaigns`
+   * call, where it ran unconditionally. That broke demand-gen-only Google creation with every flag
+   * OFF — a case the legacy path has always supported, because its `includeGoogle` gates on
+   * platform membership alone and Google's inputs live on the request root, not in a config
+   * object. The guard tests for a campaign-service envelope key, so applying it to the legacy path
+   * was a category error.
+   */
+  it('still runs the legacy path for a demand-gen-only Google create when the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_dg_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_dg_1' });
+  });
+
+  it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
+    // Passing metaConfig through unchanged leaves `budget` at zero, and the Meta client rejects
+    // every such dispatch with "invalid budget: must be a positive number".
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const metaConfig = { budgetUsd: 250, lifetimeBudget: false, geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }] };
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(250);
+    expect(sent).not.toHaveProperty('budgetUsd');
+    expect(sent['geoTargets']).toEqual(['US']);
+  });
+});
+
+/**
+ * The poll's routing decision, which the service spec cannot see.
+ *
+ * Safety-critical: a UUID job polled without its project slug answers `not_found` from `GetJob`'s
+ * exact-match join, and `not_found` is TERMINAL for the poller — so a campaign that is running and
+ * spending gets reported as lost. The controller refuses rather than guessing a slug, and that
+ * refusal had no controller-level test until now (raised by @dealako).
+ */
+describe('CampaignController.getJobStatus routing', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const UUID_JOB = '9f1c2d3e-0000-4000-8000-000000000001';
+  const LEGACY_JOB = 'job_1699999999_ab12cd';
+
+  function jobReq(jobId: string, query: Record<string, unknown>): Request {
+    return { params: { jobId }, query, path: `/api/campaigns/jobs/${jobId}` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(true);
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses a UUID job poll with no project slug rather than guessing one', async () => {
+    await controller.getJobStatus(jobReq(UUID_JOB, {}), res, next);
+
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('forwards the trimmed slug to campaign-service for a UUID job', async () => {
+    svcGetJobStatus.mockResolvedValue({ status: 'running' });
+
+    await controller.getJobStatus(jobReq(UUID_JOB, { project: '  cncf  ' }), res, next);
+
+    expect(svcGetJobStatus).toHaveBeenCalledWith(expect.anything(), UUID_JOB, 'cncf');
+    expect(legacyGetJobStatus).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'running' });
+  });
+
+  it('routes a legacy job_ id to the in-process map and needs no slug', async () => {
+    // The id shape, not the flag, is what keeps both eras of job id resolvable during rollout.
+    legacyGetJobStatus.mockResolvedValue({ status: 'done' });
+
+    await controller.getJobStatus(jobReq(LEGACY_JOB, {}), res, next);
+
+    expect(legacyGetJobStatus).toHaveBeenCalledTimes(1);
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'done' });
+  });
+
+  it('routes a UUID job to the in-process map when the JOBS flag is off', async () => {
+    // Pins the flag half of the predicate. Without it the tests above would pass on a controller
+    // that routed on id shape alone, which would break rollback.
+    isServerFeatureEnabled.mockReturnValue(false);
+    legacyGetJobStatus.mockResolvedValue({ status: 'done' });
+
+    await controller.getJobStatus(jobReq(UUID_JOB, {}), res, next);
+
+    expect(legacyGetJobStatus).toHaveBeenCalledTimes(1);
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
   });
 });
