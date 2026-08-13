@@ -6,7 +6,9 @@
   <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div class="flex flex-col gap-0.5">
       <h3 class="text-base font-semibold text-gray-900">Events</h3>
-      <p class="text-xs text-gray-500">Registrations and sponsorship vs goal · click an event to open it</p>
+      <!-- Names what the split actually shows: the combined copy claimed sponsorship was present
+           in the attendance view and registrations in the sponsorship view, each after hiding it. -->
+      <p class="text-xs text-gray-500">{{ subtitle() }} · click an event to open it</p>
     </div>
     <div class="flex items-center gap-3">
       <div class="relative">

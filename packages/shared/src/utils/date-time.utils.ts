@@ -600,11 +600,16 @@ export function formatFutureRelativeTime(date: Date): string {
  * the raw string makes bad warehouse data visible instead of plausible.
  */
 export function formatIsoDateLabel(iso: string): string {
+  // Shape-checked first: splitting alone accepts trailing junk, so "2026-07-14-extra" would parse
+  // to a valid-looking date and pass every check below.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
   const [year, month, day] = iso.split('-').map(Number);
   if (!year || !month || !day) return iso;
   if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
   const parsed = new Date(Date.UTC(year, month - 1, day));
-  if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+  // The year is round-tripped alongside month and day because Date.UTC remaps years 0–99 into the
+  // 1900s: 0001-01-01 would otherwise render as "Jan 1, 1901".
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
   return parsed.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',

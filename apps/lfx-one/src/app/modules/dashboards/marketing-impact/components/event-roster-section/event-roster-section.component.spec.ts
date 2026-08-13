@@ -288,6 +288,20 @@ describe('EventRosterSectionComponent', () => {
 
     // A row click carries the split through to the drawer, so the sponsorship view opens the
     // revenue story rather than the b2c default.
+    // The subtitle names the columns on screen. Left combined, the attendance view claimed
+    // sponsorship was present right after hiding it, and vice versa.
+    it('describes only the columns the split renders', async () => {
+      await render([row({ eventId: 'evt-1' })], 'tlf', 'attendance');
+      expect(text()).toContain('Registrations vs goal');
+      expect(text()).not.toContain('sponsorship vs goal');
+
+      await render([row({ eventId: 'evt-1' })], 'tlf', 'sponsorship');
+      expect(text()).toContain('Sponsorship revenue vs goal');
+
+      await render([row({ eventId: 'evt-1' })], 'tlf', null);
+      expect(text()).toContain('Registrations and sponsorship vs goal');
+    });
+
     it('opens the drawer on the story matching the split', async () => {
       await render([row({ eventId: 'evt-1' })], 'tlf', 'sponsorship');
 

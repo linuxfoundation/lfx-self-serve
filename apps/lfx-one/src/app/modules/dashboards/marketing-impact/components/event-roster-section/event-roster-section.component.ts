@@ -63,6 +63,17 @@ export class EventRosterSectionComponent {
     return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
   /** Registrations column — hidden in the sponsorship view. */
+  /** Card subtitle, naming only the columns the current split renders. */
+  protected readonly subtitle = computed(() => {
+    switch (this.eventsSplit()) {
+      case 'attendance':
+        return 'Registrations vs goal';
+      case 'sponsorship':
+        return 'Sponsorship revenue vs goal';
+      default:
+        return 'Registrations and sponsorship vs goal';
+    }
+  });
   protected readonly showRegistrations = computed(() => this.eventsSplit() !== 'sponsorship');
   /** Sponsorship revenue column — hidden in the attendance view. */
   protected readonly showSponsorship = computed(() => this.eventsSplit() !== 'attendance');

@@ -115,8 +115,9 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
  *
  * A month is deliberately not the default. Month periods re-aggregate from the event-grained
  * tables and can only supply events/registrations/speakers — attendees, countries, organizations
- * and sponsorship come back null — so defaulting to one dashed four of the seven summary tiles on
- * the landing view. Months remain selectable for the channels that support them.
+ * and sponsorship come back null. Defaulting to a month would therefore leave four of the seven
+ * summary tiles dashed on the landing view. Months remain selectable for the channels that
+ * support them.
  */
 export function getDefaultMarketingImpactPeriod(): string {
   return 'ytd';
