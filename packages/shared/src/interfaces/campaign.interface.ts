@@ -8,22 +8,17 @@
 export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
 
 /**
- * The email channel's platform id, kept OUT of `CampaignPlatform` on purpose.
+ * Any platform a campaign can dispatch to — the paid ad channels plus the email channel.
  *
- * Upstream this is just another `platform` value (`docs/api-catalog.md` records the enum as
- * `"hubspot"`, and `campaigns` is unique on `(brief_id, platform)`), so the two look
- * interchangeable from the wire. They are not interchangeable HERE, because `CampaignPlatform` is
- * not only a type — its members are enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad
- * Channels picker (`planning-tab.component.ts:96`). Widening the union invites `hubspot` into that
- * list, where a paid brief could select it.
- *
- * Separate types keep the distinction the delivery-type work established: email is not an ad
- * channel, it is a different delivery type that happens to dispatch through one.
+ * `'hubspot'` is spelled out here rather than added to `CampaignPlatform`. Upstream the two are
+ * interchangeable (`docs/api-catalog.md` records the platform enum as `"hubspot"`, and `campaigns`
+ * is unique on `(brief_id, platform)`), but here they are not: `CampaignPlatform`'s members are
+ * enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad Channels picker
+ * (`planning-tab.component.ts:96`). Widening that union would offer HubSpot as an ad channel a
+ * paid brief could select — email is not an ad channel, it is a different delivery type that
+ * happens to dispatch through one.
  */
-export type CampaignEmailPlatform = 'hubspot';
-
-/** Any platform a campaign can dispatch to — paid ad channels plus the email channel. */
-export type CampaignAnyPlatform = CampaignPlatform | CampaignEmailPlatform;
+export type CampaignAnyPlatform = CampaignPlatform | 'hubspot';
 
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 

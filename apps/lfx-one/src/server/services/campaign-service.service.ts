@@ -1388,10 +1388,14 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
   // Narrowed to `CampaignPlatform`, NOT `CampaignAnyPlatform`, deliberately: this feeds the PAID
   // planner's channel selection, and `hubspot` is not one of its channels. That means a stored
   // email brief's `hubspot` is filtered out here and — because of the guard below — would read as
-  // UNREADABLE rather than as an email brief. Latent today, since email skips brief restore
-  // entirely (`planning-tab.component.ts:309`); it becomes reachable the moment email persistence
-  // lands, which is LFXV2-3224's problem to solve deliberately rather than this ticket's to
-  // paper over. Restoring an email brief needs a different shape, not a wider filter.
+  // UNREADABLE rather than as an email brief.
+  //
+  // No client sends such a brief TODAY (the email planner omits `platforms`), but that is a client
+  // guarantee and this is a server reading whatever campaign-service stored, so it does not bound
+  // what can arrive — the same reasoning `campaign-proxy.service.ts` applies to its own inputs.
+  // The case is deferred rather than dismissed: restoring an email brief needs a different shape,
+  // not a wider filter here, and widening this one would hand `hubspot` to a paid channel picker
+  // that has no such channel. That is LFXV2-3224's to solve deliberately.
   const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
 
   // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —

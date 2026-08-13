@@ -689,9 +689,13 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * Absence must stay absence. Upstream, an ABSENT `utmCampaign` means "derive one from the
-   * deterministic email name" — so forwarding `''` does not select that default, it hands the
-   * service an empty override. Asserting the key is missing, not that it is falsy.
+   * Canonicalization, not a correctness guard: `utm.Resolve` trims and falls through to the
+   * name-derived slug on empty, so `''` and absent resolve the same upstream. Pinned anyway
+   * because the envelope should carry only fields that mean something — an empty string reads as
+   * a deliberate override to anyone inspecting the wire.
+   *
+   * Asserts the key is MISSING rather than falsy: `toBeFalsy()` would pass on `''`, which is the
+   * exact value this omits.
    */
   it('omits a blank utmCampaign rather than sending an empty override', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
@@ -727,6 +731,49 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
   });
 
+  /**
+   * `CampaignCreateRequest` is a compile-time assertion over `req.body`, and this route has no
+   * runtime validator — so a caller CAN send a number. Before the typeof checks, `.trim()` threw a
+   * TypeError and the request 500'd instead of taking the controlled refusal.
+   *
+   * `next` is asserted unused: an unhandled throw here surfaces through the catch as a 500, so a
+   * test that only checked the envelope would pass while the request errored.
+   */
+  it.each([
+    ['a numeric sourceEmailId', { sourceEmailId: 123 }],
+    ['a null sourceEmailId', { sourceEmailId: null }],
+    ['an object sourceEmailId', { sourceEmailId: {} }],
+  ])('refuses %s without throwing', async (_label, hubspotConfig) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig } as unknown as Record<string, unknown>, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('drops a non-string utmCampaign rather than throwing on it', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: 42 } } as unknown as Record<string, unknown>, {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
+  });
+
   it('omits hubspotConfig entirely when the request carries none', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
@@ -734,6 +781,63 @@ describe('CampaignController.createCampaign cutover', () => {
     await controller.createCampaign(buildReq(googleBody({}), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  /**
+   * The path this ticket actually ships — the envelope tests above all run with the cutover DARK
+   * (they assert on the ARGUMENT handed to a mocked `createCampaigns` that reports `enabled:
+   * false`), so without this one nothing proves an email create succeeds when the cutover is on.
+   */
+  it('returns the campaign-service job id for an email create when the cutover is on', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'a3f1c2d4-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'a3f1c2d4-0000-4000-8000-00000000000e' });
+  });
+
+  /**
+   * The dark-cutover refusal, and the reason `hasPlatformConfig` cannot cover it: that guard lives
+   * inside `createCampaigns` and is gated by the same flags, so with the cutover off it never
+   * runs. Widening `platforms` to `CampaignAnyPlatform` is what made this reachable at all —
+   * `platforms: ['hubspot']` used to be a type error at every caller.
+   *
+   * The legacy path would NOT have failed loudly: it has no `includeHubspot` arm, so it records
+   * "Unsupported platform(s)" in an errors array and completes with an empty promise list — a job
+   * that finishes, after the inline 45s wait, having created nothing.
+   *
+   * Asserts `legacyCreate` was never called, not merely that an error came back: reaching that
+   * path at all is the defect.
+   */
+  it('refuses an email create instead of falling through to the legacy path', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('cutover') });
+  });
+
+  it('still runs the legacy path for a paid create when the cutover is dark', async () => {
+    // The contrast. Without it the refusal above would pass on a controller that refused every
+    // dark-cutover create, not just the email ones.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody({}), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_1' });
   });
 });
 
