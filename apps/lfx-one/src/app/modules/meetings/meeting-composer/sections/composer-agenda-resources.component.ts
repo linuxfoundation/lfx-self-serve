@@ -1,0 +1,285 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { NgClass } from '@angular/common';
+import { Component, computed, inject, input, signal, type Signal } from '@angular/core';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
+import { FileUploadComponent } from '@components/file-upload/file-upload.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import {
+  ALLOWED_FILE_TYPES,
+  MAX_FILE_SIZE_BYTES,
+  MAX_FILE_SIZE_MB,
+  MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_WARNING_LENGTH,
+  MEETING_DURATION_CHIP_OPTIONS,
+} from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
+import type { GenerateAgendaRequest, MeetingAttachment, MeetingLinkDialogResult, MeetingTemplate, PendingAttachment } from '@lfx-one/shared/interfaces';
+import { formatFileSize, generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { finalize, take, tap } from 'rxjs';
+
+import { AgendaTemplateSelectorComponent } from '../../components/agenda-template-selector/agenda-template-selector.component';
+import { AddLinkDialogComponent } from '../add-link-dialog/add-link-dialog.component';
+import { MeetingComposerFormService } from '../meeting-composer-form.service';
+
+/**
+ * Agenda & Resources section of the meeting composer (LFXV2-3239).
+ * @description Attachments and links are read straight off the form controls rather than mirrored into
+ * local signals: the host's `@switch` destroys this component on every section change, so any local
+ * copy of the queue would be lost.
+ */
+@Component({
+  selector: 'lfx-composer-agenda-resources',
+  imports: [NgClass, ButtonComponent, FileUploadComponent, TextareaComponent, AgendaTemplateSelectorComponent],
+  templateUrl: './composer-agenda-resources.component.html',
+})
+export class ComposerAgendaResourcesComponent {
+  private readonly meetingService = inject(MeetingService);
+  private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly dialogService = inject(DialogService);
+  protected readonly formService = inject(MeetingComposerFormService);
+
+  public readonly form = input.required<FormGroup>();
+
+  protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
+  protected readonly maxFileSizeMb = MAX_FILE_SIZE_MB;
+  protected readonly acceptString = generateAcceptString();
+  protected readonly acceptedTypesDisplay = getAcceptedFileTypesDisplay();
+
+  protected readonly showTemplates = signal(false);
+  protected readonly showAiHelper = signal(false);
+  protected readonly isGeneratingAgenda = signal(false);
+
+  protected readonly meetingType: Signal<MeetingType | null> = computed(() => {
+    this.formService.revision();
+    return (this.form().get('meeting_type')?.value as MeetingType | null) || null;
+  });
+  protected readonly agendaLength: Signal<number> = computed(() => {
+    this.formService.revision();
+    return (this.form().get('description')?.value as string | null)?.length ?? 0;
+  });
+  protected readonly agendaCounterClass: Signal<string> = computed(() => {
+    const length = this.agendaLength();
+
+    if (length >= MEETING_AGENDA_MAX_LENGTH) {
+      return 'text-red-600';
+    }
+
+    return length >= MEETING_AGENDA_WARNING_LENGTH ? 'text-amber-600' : 'text-gray-500';
+  });
+  protected readonly pendingAttachments: Signal<PendingAttachment[]> = computed(() => {
+    this.formService.revision();
+    return (this.form().get('attachments')?.value as PendingAttachment[] | null) ?? [];
+  });
+  protected readonly savedFileAttachments: Signal<MeetingAttachment[]> = computed(() =>
+    this.formService.attachments().filter((attachment) => attachment.type === 'file')
+  );
+  protected readonly pendingDeletionSet: Signal<Set<string>> = computed(() => new Set(this.formService.pendingAttachmentDeletions()));
+  protected readonly linkControls: Signal<FormGroup[]> = computed(() => {
+    this.formService.revision();
+    return this.linksArray().controls as FormGroup[];
+  });
+
+  protected fileSize(bytes: number): string {
+    return formatFileSize(bytes);
+  }
+
+  protected onToggleTemplates(): void {
+    if (!this.meetingType()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Pick a meeting type',
+        detail: 'Templates are grouped by meeting type — choose one in Details & Access first.',
+      });
+      return;
+    }
+
+    this.showAiHelper.set(false);
+    this.showTemplates.update((visible) => !visible);
+  }
+
+  protected onToggleAiHelper(): void {
+    this.showTemplates.set(false);
+    this.showAiHelper.update((visible) => !visible);
+  }
+
+  protected onCloseTemplates(): void {
+    this.showTemplates.set(false);
+  }
+
+  protected onCancelAiHelper(): void {
+    this.showAiHelper.set(false);
+    this.form().get('aiPrompt')?.setValue('');
+  }
+
+  protected onApplyTemplate(template: MeetingTemplate): void {
+    this.form().get('description')?.setValue(template.content);
+    this.applyEstimatedDuration(template.estimatedDuration);
+    this.showTemplates.set(false);
+  }
+
+  protected onGenerateAgenda(): void {
+    const form = this.form();
+    const context = form.get('aiPrompt')?.value as string | null;
+    const title = form.get('title')?.value as string | null;
+    const meetingType = this.meetingType();
+    const project = this.projectContextService.activeContext();
+
+    if (!project || !title || !meetingType || !context) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Missing information',
+        detail: 'Add the meeting title and type, and describe the goal, before generating an agenda.',
+      });
+      return;
+    }
+
+    const request: GenerateAgendaRequest = { meetingType, title, projectName: project.name, context, maxCharacters: MEETING_AGENDA_MAX_LENGTH };
+
+    this.isGeneratingAgenda.set(true);
+    this.meetingService
+      .generateAgenda(request)
+      .pipe(
+        take(1),
+        tap({
+          next: (response) => {
+            this.form().get('description')?.setValue(response.agenda);
+            this.applyEstimatedDuration(response.estimatedDuration);
+            this.onCancelAiHelper();
+            this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
+          },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Generation failed', detail: 'Could not generate an agenda. Please try again.' });
+          },
+        }),
+        finalize(() => this.isGeneratingAgenda.set(false))
+      )
+      .subscribe();
+  }
+
+  protected onFileSelect(event: { files?: File[]; currentFiles?: File[] }): void {
+    const files = event.files ?? event.currentFiles ?? [];
+    if (files.length === 0) {
+      return;
+    }
+
+    const accepted = files.reduce<PendingAttachment[]>((kept, file) => {
+      const error = this.validateFile(file, [...this.pendingAttachments(), ...kept]);
+
+      if (error) {
+        this.messageService.add({ severity: 'error', summary: 'File not added', detail: error, life: 5000 });
+        return kept;
+      }
+
+      kept.push({
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        file,
+        fileSize: file.size,
+        mimeType: file.type,
+        uploading: false,
+        uploaded: false,
+      });
+
+      return kept;
+    }, []);
+
+    if (accepted.length > 0) {
+      this.form()
+        .get('attachments')
+        ?.setValue([...this.pendingAttachments(), ...accepted]);
+    }
+  }
+
+  protected onRemoveAttachment(id: string): void {
+    this.form()
+      .get('attachments')
+      ?.setValue(this.pendingAttachments().filter((attachment) => attachment.id !== id));
+  }
+
+  protected onAddLink(): void {
+    const dialogRef = this.dialogService.open(AddLinkDialogComponent, {
+      header: 'Add link',
+      width: 'min(520px, 94vw)',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingLinkDialogResult | undefined) => {
+      if (result) {
+        this.appendLink(result);
+      }
+    });
+  }
+
+  protected onRemoveLink(index: number): void {
+    const uid = this.linksArray().at(index)?.get('uid')?.value as string | null;
+
+    // The link already exists upstream, so removing the row has to be reported as a deletion on save.
+    if (uid) {
+      this.formService.deleteLinkAttachment(uid);
+    }
+
+    this.linksArray().removeAt(index);
+  }
+
+  private appendLink(link: MeetingLinkDialogResult): void {
+    this.linksArray().push(
+      new FormGroup({
+        id: new FormControl(crypto.randomUUID()),
+        title: new FormControl(link.title),
+        url: new FormControl(link.url),
+        uid: new FormControl<string | null>(null),
+      })
+    );
+  }
+
+  private linksArray(): FormArray {
+    return this.form().get('important_links') as FormArray;
+  }
+
+  /**
+   * Applies a template's or AI draft's estimated duration to the schedule controls.
+   * @description Out-of-range estimates are written to `customDuration` rather than clamped, so the
+   * control's own min/max validators surface the problem instead of silently swallowing it.
+   */
+  private applyEstimatedDuration(estimatedDuration: number): void {
+    const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
+
+    this.form()
+      .get('duration')
+      ?.setValue(isChipValue ? estimatedDuration : 'custom');
+    this.form()
+      .get('customDuration')
+      ?.setValue(isChipValue ? null : estimatedDuration);
+  }
+
+  private validateFile(file: File, queued: PendingAttachment[]): string | null {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return `"${file.name}" is larger than ${MAX_FILE_SIZE_MB}MB.`;
+    }
+
+    if (!isFileTypeAllowed(file.type, file.name, ALLOWED_FILE_TYPES)) {
+      return `"${getMimeTypeDisplayName(file.type, file.name)}" files aren't supported. Allowed: ${this.acceptedTypesDisplay}.`;
+    }
+
+    if (queued.some((attachment) => attachment.fileName === file.name && !attachment.uploadError)) {
+      return `"${file.name}" has already been added.`;
+    }
+
+    if (file.name.includes('..') || file.name.startsWith('.')) {
+      return `"${file.name}" is not a valid filename.`;
+    }
+
+    return null;
+  }
+}

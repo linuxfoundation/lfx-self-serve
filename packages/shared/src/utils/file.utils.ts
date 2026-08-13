@@ -71,6 +71,26 @@ export function generateAcceptString(): string {
 }
 
 /**
+ * Format a byte count as a short human-readable size
+ * @param bytes Size in bytes
+ * @returns Size rounded to one decimal place, in the largest unit that keeps it above 1
+ * @example
+ * // Returns: "1.4 MB"
+ * formatFileSize(1_468_006);
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unitIndex;
+
+  return `${unitIndex === 0 ? value : Number(value.toFixed(1))} ${units[unitIndex]}`;
+}
+
+/**
  * Generate user-friendly display string of accepted file types
  * @returns Human-readable string of accepted file types
  * @example

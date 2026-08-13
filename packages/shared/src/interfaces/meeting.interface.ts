@@ -1856,3 +1856,9 @@ export interface ManualGuestDialogData {
 export interface ManualGuestDialogResult {
   guest: Record<string, unknown>;
 }
+
+/** What the composer's add-link dialog returns on submit; `undefined` when dismissed. */
+export interface MeetingLinkDialogResult {
+  title: string;
+  url: string;
+}

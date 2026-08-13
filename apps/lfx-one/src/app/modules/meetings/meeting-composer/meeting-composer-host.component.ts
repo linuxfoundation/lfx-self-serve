@@ -5,17 +5,16 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
+import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, pairwise } from 'rxjs';
 
-import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
+import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
 import { ComposerGuestsComponent } from './sections/composer-guests.component';
@@ -33,12 +32,11 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     NgClass,
     DrawerModule,
     ButtonComponent,
-    TextareaComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
     ComposerPlatformFeaturesComponent,
     ComposerGuestsComponent,
-    MeetingResourcesSummaryComponent,
+    ComposerAgendaResourcesComponent,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
@@ -51,7 +49,6 @@ export class MeetingComposerHostComponent {
   protected readonly formService = inject(MeetingComposerFormService);
 
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
-  protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
 
   protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
   protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
@@ -63,19 +60,6 @@ export class MeetingComposerHostComponent {
   protected readonly canSubmit: Signal<boolean> = computed(() => {
     this.formService.revision();
     return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
-  });
-  protected readonly agendaLength: Signal<number> = computed(() => {
-    this.formService.revision();
-    return (this.formService.form().get('description')?.value as string | null)?.length ?? 0;
-  });
-  protected readonly agendaCounterClass: Signal<string> = computed(() => {
-    const length = this.agendaLength();
-
-    if (length >= MEETING_AGENDA_MAX_LENGTH) {
-      return 'text-red-600';
-    }
-
-    return length >= MEETING_AGENDA_WARNING_LENGTH ? 'text-amber-600' : 'text-gray-500';
   });
 
   public constructor() {
