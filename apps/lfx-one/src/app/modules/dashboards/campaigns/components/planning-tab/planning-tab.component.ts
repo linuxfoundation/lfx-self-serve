@@ -61,7 +61,7 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string }>();
+  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string; approved: boolean }>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
@@ -147,6 +147,16 @@ export class PlanningTabComponent implements OnInit {
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
+
+  /**
+   * Whether that stored brief is APPROVED, carried alongside its id.
+   *
+   * The restore emits it because campaign-service refuses a create from an unapproved brief
+   * (`internal/service/brief.go:439`). Without it the parent files a restored brief as
+   * create-ready and the Implementation tab enables Create for a request that cannot succeed —
+   * the same defect the save path already guards, one restore apart.
+   */
+  private savedBriefApproved = false;
 
   private readonly slugInput$ = new Subject<string>();
 
@@ -276,6 +286,7 @@ export class PlanningTabComponent implements OnInit {
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefApproved = false;
       this.savedBriefWarning.set(null);
     });
   }
@@ -383,6 +394,7 @@ export class PlanningTabComponent implements OnInit {
         this.currentSlug = slug;
         this.savedBrief.set(null);
         this.savedBriefId = null;
+        this.savedBriefApproved = false;
         this.savedBriefWarning.set(null);
       }
       this.slugInput$.next(slug);
@@ -408,7 +420,7 @@ export class PlanningTabComponent implements OnInit {
     // Both, or neither. A restore without its id would reach the parent as an unowned save and
     // be refused — a worse outcome than not offering the button, so the guard covers the pair.
     if (brief !== null && this.savedBriefId !== null) {
-      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId });
+      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId, approved: this.savedBriefApproved });
     }
   }
 
@@ -769,6 +781,7 @@ export class PlanningTabComponent implements OnInit {
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefApproved = false;
       this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
       return;
     }
@@ -778,6 +791,7 @@ export class PlanningTabComponent implements OnInit {
     // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
+    this.savedBriefApproved = result.status === 'loaded' && result.approved;
 
     this.savedBriefWarning.set(this.warningFor(result));
   }
