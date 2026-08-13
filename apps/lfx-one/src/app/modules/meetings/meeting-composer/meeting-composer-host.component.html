@@ -28,8 +28,8 @@
         <button
           type="button"
           class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium"
-          [class]="section.id === composer.activeSection() ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
-          [attr.aria-current]="section.id === composer.activeSection()"
+          [ngClass]="section.id === composer.activeSection() ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
+          [attr.aria-current]="section.id === composer.activeSection() ? 'true' : null"
           [attr.data-testid]="'meeting-composer-section-' + section.id"
           (click)="onSectionChange(section.id)">
           <i [class]="section.icon" aria-hidden="true"></i>
@@ -50,7 +50,7 @@
             <lfx-meeting-details [form]="formService.form()" />
           }
           @case ('platform-features') {
-            <lfx-meeting-platform-features [form]="formService.form()" />
+            <lfx-meeting-platform-features [form]="formService.form()" (goToStep)="onGoToTitleSection()" />
           }
           @case ('guests') {
             @if (formService.meetingId(); as meetingUid) {

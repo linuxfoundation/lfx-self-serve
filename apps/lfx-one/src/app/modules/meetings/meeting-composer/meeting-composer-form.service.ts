@@ -53,7 +53,25 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { toZonedTime } from 'date-fns-tz';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, concat, EMPTY, finalize, forkJoin, from, map, mergeMap, Observable, of, Subscription, switchMap, take, toArray } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  concat,
+  EMPTY,
+  finalize,
+  forkJoin,
+  from,
+  map,
+  mergeMap,
+  Observable,
+  of,
+  Subject,
+  Subscription,
+  switchMap,
+  take,
+  takeUntil,
+  toArray,
+} from 'rxjs';
 
 /**
  * Form state and persistence for the meeting composer (LFXV2-3234).
@@ -90,6 +108,13 @@ export class MeetingComposerFormService {
   public readonly originalStartTime = signal<string | null>(null);
 
   /**
+   * Project the composer was opened against, when the entry point knew it.
+   * @description Preferred over `ProjectContextService.activeContextUid()`, which resolves
+   * asynchronously and can still be empty when the composer opens from a deep link.
+   */
+  private readonly contextProjectUid = signal<string | null>(null);
+
+  /**
    * Bumped on every form value/status change. FormGroup validity is not reactive, so template
    * computeds that depend on section validity must read this signal to re-evaluate.
    */
@@ -102,6 +127,28 @@ export class MeetingComposerFormService {
 
   private formSubscriptions = new Subscription();
 
+  /**
+   * Emits on every `initialize()`, cancelling work started by the previous open.
+   * @description The host is mounted for the app's lifetime, so `takeUntilDestroyed` alone would let a
+   * slow load from a closed composer resolve into the next one's form.
+   */
+  private readonly reset$ = new Subject<void>();
+
+  /** Incremented on every `initialize()` so callers can detect a submit that outlived its open. */
+  private generation = 0;
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.formSubscriptions.unsubscribe();
+      this.reset$.next();
+      this.reset$.complete();
+    });
+  }
+
+  public get openGeneration(): number {
+    return this.generation;
+  }
+
   private get pendingAttachments(): PendingAttachment[] {
     return this.form().get('attachments')?.value || [];
   }
@@ -110,6 +157,8 @@ export class MeetingComposerFormService {
   public initialize(context: MeetingComposerContext): void {
     this.formSubscriptions.unsubscribe();
     this.formSubscriptions = new Subscription();
+    this.reset$.next();
+    this.generation++;
 
     this.mode.set(context.mode);
     this.meetingId.set(context.meetingUid ?? null);
@@ -120,13 +169,16 @@ export class MeetingComposerFormService {
     this.deletingAttachmentId.set(null);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
     this.committeeContext.set(null);
+    this.contextProjectUid.set(context.projectUid ?? null);
     this.submitting.set(false);
     this.loading.set(false);
     this.form.set(this.createMeetingFormGroup());
     this.revision.set(0);
     this.wireFormSubscriptions();
 
-    if (context.committeeUid) {
+    // Create only: the group context pre-fills and locks the committees field. In edit mode the saved
+    // meeting owns that field, and locking it to a single committee would drop the others on save.
+    if (context.mode === 'create' && context.committeeUid) {
       this.loadCommitteeContext(context.committeeUid);
     }
 
@@ -140,10 +192,14 @@ export class MeetingComposerFormService {
 
     switch (section) {
       case 'details-access':
-        return !!form.get('title')?.value && !!form.get('meeting_type')?.value && !!form.get('title')?.valid;
+        return !!form.get('meeting_type')?.value;
 
+      // `title` is checked here because that is where the field currently renders; LFXV2-3235 moves it
+      // into Details & Access. Gating a section on a control the user cannot see would deadlock Next.
       case 'date-schedule':
         return !!(
+          form.get('title')?.value &&
+          form.get('title')?.valid &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&
@@ -205,7 +261,17 @@ export class MeetingComposerFormService {
 
     return save$.pipe(
       switchMap((meeting) => {
-        const meetingId = meeting?.id ?? existingMeetingId!;
+        const meetingId = meeting?.id ?? existingMeetingId;
+        if (!meetingId) {
+          // Create succeeded but returned no id — attachments and registrants have nothing to attach to.
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Partially saved',
+            detail: 'The meeting was saved, but guests and resources could not be attached. Open the meeting to add them.',
+          });
+          return of(meeting);
+        }
+
         this.meetingId.set(meetingId);
 
         return forkJoin({
@@ -367,6 +433,7 @@ export class MeetingComposerFormService {
     })
       .pipe(
         finalize(() => this.loading.set(false)),
+        takeUntil(this.reset$),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
@@ -397,6 +464,7 @@ export class MeetingComposerFormService {
           return of(null);
         }),
         take(1),
+        takeUntil(this.reset$),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((committee) => {
@@ -418,7 +486,7 @@ export class MeetingComposerFormService {
     const recurrenceObject = this.buildRecurrencePayload(formValue);
 
     return {
-      project_uid: this.meeting()?.project_uid || this.projectContextService.activeContextUid(),
+      project_uid: this.meeting()?.project_uid || this.contextProjectUid() || this.projectContextService.activeContextUid(),
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,

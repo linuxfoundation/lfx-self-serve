@@ -2,6 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 <p-toast />
 
-<lfx-meeting-composer-host />
+<!-- Deferred so the composer and its form pipeline stay out of the initial bundle -->
+@defer (when meetingComposer.isOpen()) {
+  <lfx-meeting-composer-host />
+}
 
 <router-outlet />

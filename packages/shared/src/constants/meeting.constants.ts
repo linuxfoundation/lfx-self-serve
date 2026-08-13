@@ -242,22 +242,8 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
 // ============================================================================
 
 /**
- * Step titles for the meeting creation/edit stepper
- * @description Array of human-readable titles for each step in the meeting form
- */
-export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Links', 'Invite Guests'];
-
-/**
- * Total number of steps in the meeting form
- * @description Must match the length of MEETING_STEP_TITLES array
- * @example 5 steps: Meeting Type → Details → Platform → Resources → Guests
- */
-export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
-
-/**
  * Sections of the meeting composer, in rail order.
- * @description `required` drives both the create-mode forward-navigation lock and the rail's
- * completion marker: required sections complete on validity, optional ones on visit.
+ * @description `required` marks the sections that must be valid before the meeting can be saved.
  */
 export const MEETING_COMPOSER_SECTIONS = [
   { id: 'details-access', label: 'Details & Access', icon: 'fa-light fa-circle-info', required: true },
@@ -266,12 +252,6 @@ export const MEETING_COMPOSER_SECTIONS = [
   { id: 'guests', label: 'Guests', icon: 'fa-light fa-users', required: false },
   { id: 'agenda-resources', label: 'Agenda & Resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
-
-/**
- * PrimeNG stepper panel value for the Meeting Details step (1-based)
- * @description Used when navigating back to Meeting Details from a later step
- */
-export const MEETING_DETAILS_STEP = 2;
 
 /**
  * Default meeting duration in minutes
@@ -390,12 +370,6 @@ export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
  * @description How often recurring meetings repeat (1 = every occurrence)
  */
 export const DEFAULT_REPEAT_INTERVAL = 1;
-
-/**
- * Scroll offset in pixels for stepper navigation
- * @description Distance to offset when auto-scrolling to stepper component
- */
-export const STEPPER_SCROLL_OFFSET = 50;
 
 // ============================================================================
 // Time Calculation Constants

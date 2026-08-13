@@ -11,6 +11,7 @@ import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
 import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
+import { MeetingComposerService } from './modules/meetings/meeting-composer/meeting-composer.service';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
@@ -43,6 +44,7 @@ export class AppComponent {
   private readonly dataDogRumService = inject(DataDogRumService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly intercomService = inject(IntercomService);
+  protected readonly meetingComposer = inject(MeetingComposerService);
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');

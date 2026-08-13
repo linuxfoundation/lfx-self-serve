@@ -9,12 +9,12 @@ import { MeetingComposerService } from './meeting-composer.service';
 /**
  * Keeps `/meetings/create` and `/meetings/:id/edit` deep-linkable (LFXV2-3234).
  * @description Renders nothing: it opens the composer, then replaces the URL with the meetings
- * dashboard so the composer sits over a real page. Composer state lives in a root service, so it
+ * list so the composer sits over a real page. Composer state lives in a root service, so it
  * survives this component being destroyed by the redirect.
  */
 @Component({
   selector: 'lfx-meeting-composer-route',
-  template: '',
+  templateUrl: './meeting-composer-route.component.html',
 })
 export class MeetingComposerRouteComponent {
   private readonly route = inject(ActivatedRoute);
@@ -22,15 +22,22 @@ export class MeetingComposerRouteComponent {
   private readonly composer = inject(MeetingComposerService);
 
   public constructor() {
-    const meetingUid = this.route.snapshot.paramMap.get('id');
-    const committeeUid = this.route.snapshot.queryParamMap.get('committee_uid');
+    const snapshot = this.route.snapshot;
+    const meetingUid = snapshot.paramMap.get('id');
 
     this.composer.open({
       mode: meetingUid ? 'edit' : 'create',
       meetingUid: meetingUid ?? undefined,
-      committeeUid: committeeUid ?? undefined,
+      committeeUid: snapshot.queryParamMap.get('committee_uid') ?? undefined,
     });
 
-    void this.router.navigate(['/meetings'], { replaceUrl: true });
+    // Redirect within the same lens prefix and keep the query params. A bare `/meetings` would drop
+    // both the lens segment and `?project=`, leaving the project context to resolve from the persisted
+    // cookie — the composer would then save against a different project than the one writerGuard
+    // authorised. `create` contributes one URL segment, `:id/edit` two.
+    const segments = this.route.pathFromRoot.flatMap((route) => route.snapshot.url.map((segment) => segment.path));
+    const listSegments = segments.slice(0, meetingUid ? -2 : -1);
+
+    void this.router.navigate(['/', ...listSegments], { queryParams: snapshot.queryParams, replaceUrl: true });
   }
 }

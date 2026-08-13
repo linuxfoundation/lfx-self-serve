@@ -261,7 +261,7 @@ export class MeetingCardComponent implements OnInit {
     this.composer.open({
       mode: 'edit',
       meetingUid: this.meeting().id,
-      committeeUid: this.meeting().committees?.[0]?.uid,
+      projectUid: this.meeting().project_uid,
     });
   }
 

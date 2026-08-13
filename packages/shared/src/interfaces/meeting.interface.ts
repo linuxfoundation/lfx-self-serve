@@ -1397,6 +1397,11 @@ export interface MeetingComposerContext {
   meetingUid?: string;
   /** Group/committee the meeting is scoped to; pre-fills and locks the committees field. */
   committeeUid?: string;
+  /**
+   * Project the meeting belongs to, when the entry point knows it.
+   * @description Takes precedence over the ambient project context, which resolves asynchronously.
+   */
+  projectUid?: string;
   /** Section to land on; defaults to the first section. */
   section?: MeetingComposerSectionId;
 }
