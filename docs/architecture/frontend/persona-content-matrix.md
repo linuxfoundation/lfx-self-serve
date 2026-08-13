@@ -72,27 +72,27 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 Available to `board-member`, `executive-director`, and root writers.
 
-| Sidebar item / section     | Route                          | Visible to                                                             |
-| -------------------------- | ------------------------------ | ---------------------------------------------------------------------- |
-| Dashboard                  | `/foundation/overview`         | All foundation users                                                   |
-| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true                  |
-| Meetings                   | `/foundation/meetings`         | All foundation users                                                   |
-| Events                     | `/foundation/events`           | All foundation users                                                   |
-| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                   |
-| Committees                 | `/foundation/groups`           | All foundation users                                                   |
-| Documents                  | `/foundation/documents`        | All foundation users                                                   |
-| **Governance** section     |                                |                                                                        |
-| → Votes                    | `/foundation/votes`            | All foundation users                                                   |
-| → Surveys                  | `/foundation/surveys`          | All foundation users                                                   |
-| → Permissions              | `/foundation/settings`         | All foundation users                                                   |
-| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`                         |
-| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                  |
-| **Metrics** section        |                                | `executive-director` only                                              |
-| → Health Metrics           | `/foundation/health-metrics`   | `executive-director`                                                   |
-| → Social Listening         | _(PCC external link)_          | `executive-director` — **only when** `selectedFoundationSfid()` is set |
-| **Marketing** section      |                                | `executive-director` only                                              |
-| → Marketing Impact         | `/foundation/marketing-impact` | `executive-director`                                                   |
-| → Campaigns                | `/foundation/campaigns`        | `executive-director`                                                   |
+| Sidebar item / section     | Route                          | Visible to                                            |
+| -------------------------- | ------------------------------ | ----------------------------------------------------- |
+| Dashboard                  | `/foundation/overview`         | All foundation users                                  |
+| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true |
+| Meetings                   | `/foundation/meetings`         | All foundation users                                  |
+| Events                     | `/foundation/events`           | All foundation users                                  |
+| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                  |
+| Committees                 | `/foundation/groups`           | All foundation users                                  |
+| Documents                  | `/foundation/documents`        | All foundation users                                  |
+| **Governance** section     |                                |                                                       |
+| → Votes                    | `/foundation/votes`            | All foundation users                                  |
+| → Surveys                  | `/foundation/surveys`          | All foundation users                                  |
+| → Permissions              | `/foundation/settings`         | All foundation users                                  |
+| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`        |
+| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                 |
+| **Metrics** section        |                                | `executive-director` only                             |
+| → Health Metrics           | `/foundation/health-metrics`   | `executive-director`                                  |
+| → Social Listening         | `/foundation/social-listening` | `executive-director`                                  |
+| **Marketing** section      |                                | `executive-director` only                             |
+| → Marketing Impact         | `/foundation/marketing-impact` | `executive-director`                                  |
+| → Campaigns                | `/foundation/campaigns`        | `executive-director`                                  |
 
 ### Foundation lens by persona summary
 
