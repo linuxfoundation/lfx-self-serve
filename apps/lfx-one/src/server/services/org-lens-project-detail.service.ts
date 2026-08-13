@@ -472,11 +472,8 @@ export class OrgLensProjectDetailService {
         technical: viewing ? (this.mapBand(viewing.LEVEL_TECHNICAL) ?? 'silent') : null,
         ecosystem: isNonLf || !viewing ? null : (this.mapBand(viewing.LEVEL_ECOSYSTEM) ?? 'silent'),
       },
-      // Only the all-time axis is variable/bucketed; 1y/2y stay client-derived (periods omitted).
-      // The requirement this states: an all-time project with an empty bucket spine yields `[]`, and
-      // that MUST still be emitted, or `hasAdaptivePeriods` would reject the block just written. An
-      // empty array is truthy, so a truthiness test behaves identically here; the explicit undefined
-      // check just makes the intent legible without relying on the reader recalling that.
+      // Only the all-time axis is variable/bucketed; 1y/2y omit `periods` and derive labels client-side.
+      // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
     if (key !== null) {
@@ -1853,6 +1850,12 @@ export class OrgLensProjectDetailService {
    * An EMPTY array is accepted on purpose: a project with no rows in the bucket spine legitimately
    * caches `periods: []`, and requiring a non-empty axis would reject that entry on every read and
    * re-query Snowflake for the life of the TTL.
+   *
+   * Deliberately not gated any tighter. An entry written before the series builder placed values by
+   * bucket index still passes, so a misaligned series could be served until the 1h TTL rotates. A
+   * cache-key bump would close that window at deploy time, but it would force a cold read for every
+   * project, and the largest ones exceed the query timeout on a cold read (LFXV2-3231) — a certain
+   * outage traded against a misalignment that requires a sparse row set no project currently has.
    */
   private static hasAdaptivePeriods(value: unknown): boolean {
     const periods = (value as { periods?: unknown }).periods;

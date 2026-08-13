@@ -108,7 +108,7 @@ export const PD_TIME_RANGE_OPTIONS: { id: OrgLensLeaderboardTimeRange; label: st
  * on it (`PD_ALL_TIME_WINDOW - 12` is meaningless). It exists only so a residual `slice(-months)`
  * over an all-time series is a no-op and returns the payload whole.
  */
-export const PD_ALL_TIME_WINDOW = Number.MAX_SAFE_INTEGER;
+const PD_ALL_TIME_WINDOW = Number.MAX_SAFE_INTEGER;
 
 /**
  * Trailing monthly window per range for the recent-monthly representation. `1y`/`2y` slice the
