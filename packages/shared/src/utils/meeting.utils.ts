@@ -1265,7 +1265,7 @@ export function sanitizeMeetingCommittees(committees: ReadonlyArray<MeetingCommi
     return [];
   }
 
-  return committees.filter((committee): committee is MeetingCommittee => Boolean(committee?.uid));
+  return committees.filter((committee): committee is MeetingCommittee => Boolean(committee?.uid?.trim()));
 }
 
 /**
@@ -1277,5 +1277,5 @@ export function sanitizeMeetingCommitteeUids(uids: ReadonlyArray<string | null |
     return [];
   }
 
-  return uids.filter((uid): uid is string => typeof uid === 'string' && uid.length > 0);
+  return uids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0);
 }

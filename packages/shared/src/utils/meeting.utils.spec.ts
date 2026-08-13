@@ -1109,7 +1109,7 @@ describe('sanitizeMeetingCommittees', () => {
 
   it('drops null entries, blank uids, and keeps valid committees', () => {
     const valid: MeetingCommittee = { uid: 'group-1', name: 'TSC' };
-    const result = sanitizeMeetingCommittees([null, { uid: null as unknown as string }, { uid: '' }, valid, undefined]);
+    const result = sanitizeMeetingCommittees([null, { uid: null as unknown as string }, { uid: '' }, { uid: '   ' }, valid, undefined]);
 
     expect(result).toEqual([valid]);
   });
@@ -1123,6 +1123,6 @@ describe('sanitizeMeetingCommitteeUids', () => {
   });
 
   it('drops null, undefined, and blank uids', () => {
-    expect(sanitizeMeetingCommitteeUids([null, undefined, '', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
+    expect(sanitizeMeetingCommitteeUids([null, undefined, '', '   ', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
   });
 });
