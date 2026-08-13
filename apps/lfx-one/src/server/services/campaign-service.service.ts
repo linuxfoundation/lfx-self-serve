@@ -1,11 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import type { CampaignJobStatus, CampaignPlatformResult } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import type {
+  ApiResponse,
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
+  CampaignEventDetails,
+  CampaignGoal,
+  CampaignJobStatus,
+  CampaignKeyword,
+  CampaignPlatform,
+  CampaignPlatformResult,
+  CampaignProgramType,
+  LinkedInBriefCopy,
+  LinkedInCreativeVariant,
+  MetaAdVariant,
+  RedditAdVariant,
+  MetaBriefCopy,
+  RedditBriefCopy,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -29,16 +48,88 @@ interface CampaignServiceJobPollResponse {
 }
 
 /**
+ * `brief-input` as lfx-v2-campaign-service accepts it (`design/brief.go`), and `brief` as it
+ * returns it. Local for the same reason as `CampaignServiceJobPollResponse` above.
+ *
+ * Four fields are `Any` in the Goa design — `event_details`, `copy`, `keywords`, `targeting` —
+ * so the service stores whatever JSON it is handed and validates none of it. They are typed
+ * `unknown`-ish here rather than mirrored from `CampaignBriefOutput`, because the adapter below
+ * is the only thing that decides their shape and pinning them would make a UI-side field rename
+ * look like a service contract change.
+ */
+interface CampaignServiceBriefInput {
+  program_type: string;
+  event_slug: string;
+  url?: string;
+  platforms?: string[];
+  event_details?: Record<string, unknown>;
+  copy?: Record<string, unknown>;
+  keywords?: unknown;
+  targeting?: Record<string, unknown>;
+}
+
+/**
+ * `brief` as campaign-service returns it in the response BODY.
+ *
+ * No `etag` field, deliberately: the design maps it to the `ETag` HTTP header on every brief
+ * response, so Goa leaves it out of the generated body struct. Declaring it here would compile
+ * and read `undefined` forever. `readEtag` takes it off the headers instead.
+ *
+ * The four content fields are declared here as well as on the input above, because the read
+ * path needs them: `Brief` inherits `event_details`, `copy`, `keywords` and `targeting` from
+ * `BriefData` via `Reference`, so a find returns everything a save wrote. They stay `unknown`-ish
+ * for the same reason as on the input — the service validates none of them, so a value coming
+ * back is not evidence of its shape and the adapter has to check rather than trust.
+ */
+interface CampaignServiceBrief {
+  id: string;
+  project_id: string;
+  program_type: string;
+  event_slug: string;
+  status: string;
+  version: number;
+  // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
+  // these come back on the find whether or not this phase renders them. Declared for the create
+  // reconciliation, which has to tell THIS request's row from another writer's — not because the
+  // write path reads them.
+  url?: string;
+  platforms?: string[];
+  event_details?: unknown;
+  copy?: unknown;
+  keywords?: unknown;
+  targeting?: unknown;
+}
+
+/**
+ * The wrapper both `create-brief` and `update-brief` require around the payload.
+ *
+ * The body is `{"brief": {…}}`, NOT the brief object itself. Goa builds the request body from
+ * the payload attributes that are not mapped to the path, headers or query, and the design
+ * declares `Attribute("brief", BriefInput)` without a `Body("brief")` override — so the
+ * attribute name survives into the wire format. Posting a bare brief object produces a 400 on
+ * every required field at once, which reads like a mapping bug rather than a missing wrapper.
+ */
+interface CampaignServiceBriefEnvelope {
+  brief: CampaignServiceBriefInput;
+}
+
+/**
  * The canonical slug for The Linux Foundation's own project row.
  *
- * `/foundation/campaigns` is a fixed route with no project or slug segment — it is
- * LF-scoped by construction, gated by `executiveDirectorGuard` rather than by a per-project
- * permission. lfx-v2-campaign-service, by contrast, is `/projects/{projectId}/…` scoped
- * throughout and authorises on `campaign_manager` for that project. Bridging the two means
- * one fixed slug, and this is it. Not 'the-linux-foundation' — 'tlf' is the canonical form;
- * the longer spelling resolves to nothing.
+ * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
+ * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
+ * project or slug segment", LF-scoped by construction. That is wrong: the route carries
+ * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
+ * foundation reaches the page with their own foundation selected. Anything that WRITES must
+ * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
  *
- * This value goes on the wire AS THE SLUG, deliberately un-resolved. campaign-service's
+ * The job poll keeps the constant because it is currently unreachable with a real id:
+ * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
+ * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
+ * both the create and the poll in the same change, at which point this constant goes away.
+ *
+ * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
+ * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
  * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
  * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
  * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
@@ -78,6 +169,23 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  */
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
+
+  /**
+   * Bounds on the lost-write reconciliation: how many times it reads, how long it waits between
+   * attempts, and the WALL-CLOCK budget the whole loop may spend.
+   *
+   * Instance members rather than module constants: CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
+   * `@lfx-one/shared`, and these are neither shared nor meaningful outside this client.
+   *
+   * The wall-clock bound is the one that actually holds. An earlier revision counted only the
+   * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
+   * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
+   * GETs plus the delays is ~92s of a session's save queue blocked before the original failure
+   * even surfaces — and these saves are serialised, so the next Proceed waits behind it.
+   */
+  private readonly reconcileReadAttempts = 3;
+  private readonly reconcileReadDelayMs = 1000;
+  private readonly reconcileReadBudgetMs = 5000;
 
   public constructor(microserviceProxy?: MicroserviceProxyService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
@@ -130,6 +238,1093 @@ export class CampaignServiceClient {
       throw error;
     }
   }
+
+  /**
+   * Save the generated brief, creating it the first time and replacing it thereafter.
+   *
+   * campaign-service has no upsert, so this is find-then-create-or-update, and the find is not
+   * an optimisation — it is how the second save of an event reaches `update-brief` at all.
+   * `create-brief` cannot produce a duplicate: migration 000003 puts a partial unique index on
+   * `(project_id, event_slug) WHERE status <> 'archived'`, and `CreateBrief` maps that violation
+   * to `ErrConflict` -> 409. Without the find, every save after the first would simply 409. The
+   * 404 arm is the documented happy path, not an error: `design/brief.go:302` calls it "the
+   * ordinary first-time-generation case".
+   *
+   * The 404 is gated on campaign-service's own typed body for the same reason `getJobStatus`
+   * gates its own, and the consequence here is worse. A gateway 404 — the campaign-service route
+   * absent or misrouted, the single most likely first-deploy failure — read as "no brief yet"
+   * would send this to `create-brief` on every save, and the moment the route came up the user
+   * would have one brief row per attempt.
+   *
+   * There is no retry on `PreconditionFailed`. A 412 means another writer replaced this brief
+   * between the find and the PUT; re-reading and overwriting would silently discard their work.
+   * The user is told instead — see the caller.
+   *
+   * A 409 from `create-brief` is NOT retried as a replace either, for a reason that is easy to
+   * get backwards. Two saves of the same event can both find 404 and both POST; the one that
+   * collides is whichever POST landed second, and that is not the one that STARTED second. A
+   * retry would make the collision's loser the final writer unconditionally, so a slow earlier
+   * save would overwrite a newer brief that had already succeeded — after the UI had shown the
+   * user "Brief saved." Nothing on this side of the connection can order the two. The conflict
+   * is reported instead, and the concurrency it comes from is removed where it is actually
+   * knowable: `campaigns.component.ts` runs a session's saves strictly one at a time, so the
+   * second save finds the first one's brief and takes the replace path — which it is entitled
+   * to, because the first save recorded the created id and the second sends it back as proof of
+   * ownership. Without that hand-back the guard below would refuse a user re-proceeding on their
+   * own brief.
+   *
+   * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
+   * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
+   * `projectQueryParamGuard` seeds the context from `?project=`), while campaign-service scopes
+   * and authorises every brief on its project. Hard-coding `tlf` would either 403 a CNCF ED or —
+   * for an LF staffer who also holds TLF access — file their CNCF work in TLF's brief table,
+   * where the partial unique index on `(project_id, event_slug)` then collides it with unrelated
+   * TLF work for the same event.
+   */
+  public async saveBrief(
+    req: Request,
+    brief: CampaignBriefOutput,
+    eventSlug: string,
+    projectSlug: string,
+    knownBriefId: string | null = null,
+    knownEtag: string | null = null,
+    allowEtagFallback = false
+  ): Promise<CampaignBriefPersistResult> {
+    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
+    const existing = await this.findBrief(req, basePath, eventSlug);
+
+    // A row exists that the caller cannot prove it owns: REFUSE rather than replace.
+    //
+    // This is the guard for LFXV2-3200. Without it the update branch below is reachable by a
+    // caller that never saw the stored brief, and it overwrites content the user was never
+    // shown. Two routes lead there and only one involves a slug mismatch:
+    //
+    // `knownBriefId` defaults to null, and there are two ways a caller comes to hold one.
+    //
+    // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
+    // successful save returns, so the second Proceed of a session sends it and takes the ordinary
+    // replace path. An earlier version of this comment said the parameter "is always null in this
+    // phase" — that was true when it was written and my own later change to record the created id
+    // falsified it, which is exactly the kind of claim a comment should not make about the
+    // future.
+    //
+    // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
+    // learn the id of a brief it did not write, so those callers arrive with null and are refused.
+    // LFXV2-3108 adds the read that closes that half.
+    //
+    //   1. The lookup's slug (last path segment of the pasted URL) and the save's slug
+    //      (`brief.eventDetails.slug`, from the scrape) diverge, so the Restore offer never
+    //      appears, the user regenerates, and THIS find hits the row the offer missed.
+    //   2. No divergence at all — a reload, or a second tab. The page holds no brief id
+    //      because nothing loaded one, the slugs match perfectly, and the save still replaces
+    //      a brief whose contents the caller never read.
+    //
+    // Route 2 is why normalising the two slug derivations is not the fix: it would close route
+    // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
+    // "the user is editing the brief they are looking at" from "a fresh session happens to
+    // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
+    // from `loadBrief`, so it exists only when the brief on screen came out of storage.
+    if (existing !== null && knownBriefId !== existing.brief.id) {
+      // The id is deliberately WITHHELD on this refusal. Returning it told a caller the id of a
+      // brief it was just told it does not own — and `etag_fallback` then let it replay that id
+      // as proof of ownership, overwriting content it had never opened. Omit the id and the
+      // replay has nothing to replay.
+      //
+      // Nothing needs it: the UI renders only the message for this conflict, never the id, and a
+      // caller that legitimately owns the brief already holds its id from the save that created
+      // or loaded it.
+      return {
+        enabled: true,
+        briefId: '',
+        etag: null,
+        created: false,
+        approved: false,
+        conflict: 'unowned-brief-exists',
+      };
+    }
+
+    if (existing === null) {
+      let created;
+      try {
+        created = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+          req,
+          'LFX_V2_CAMPAIGN_SERVICE',
+          basePath,
+          'POST',
+          undefined,
+          envelope
+        );
+      } catch (error) {
+        // An INDETERMINATE create is the one failure this phase cannot walk away from. If the
+        // POST committed but its response was lost — a timeout, a reset, a gateway 5xx — the
+        // caller never learns the id, and with no read path every later save finds that row with
+        // no id to name it and is refused as `unowned-brief-exists`. The user's work is stranded
+        // behind a row they created seconds earlier.
+        //
+        // campaign-service declares no idempotency key on the brief endpoints, so the only
+        // reconciliation available is to look again.
+        const reconciled = await this.reconcileLostCreate(req, basePath, eventSlug, envelope, error);
+        if (reconciled === null) {
+          throw error;
+        }
+        created = reconciled;
+      }
+      return this.approveBrief(req, basePath, created, true);
+    }
+
+    return this.replaceBrief(req, basePath, envelope, existing, knownEtag, allowEtagFallback, eventSlug);
+  }
+
+  /**
+   * Read back the brief saved for this event slug.
+   *
+   * The inverse of `saveBrief`, and it reuses the same find so the two agree on what "no brief"
+   * means — including the 404 gating. A gateway 404 read as "none" would be worse here than a
+   * thrown error: the page would silently offer a blank Planning tab for an event that already
+   * has an approved brief, and the first save after that is an UPDATE that replaces it.
+   *
+   * `unreadable` rather than `none` when the row cannot be mapped back, for the same reason. The
+   * three outcomes are the caller's to render; see `CampaignBriefLoadResult`.
+   *
+   * `projectSlug` is the selected foundation, and it has to be the SAME one `saveBrief` filed
+   * under or the two halves of persistence disagree about which brief belongs to this event.
+   * A constant here would be worse than on the write side: reading TLF's table for a CNCF ED
+   * either finds nothing — a blank Planning tab for an event that already has an approved brief,
+   * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
+   * another foundation's work into theirs.
+   */
+  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
+    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const found = await this.findBrief(req, basePath, eventSlug);
+
+    if (found === null) {
+      return { status: 'none', briefId: null, brief: null, approved: false };
+    }
+
+    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
+    //
+    // The reason for dropping it: this read hands its result to a component that may sit on it
+    // for minutes before the user restores anything, so a carried validator would usually be
+    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
+    //
+    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
+    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
+    // than rejected — last-write-wins between two people editing the same brief, where a
+    // carried validator would have produced a 412 and a chance to reconcile.
+    //
+    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
+    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
+    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
+    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
+    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
+    const brief = fromBriefResponse(found.brief);
+    // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
+    // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
+    // restoring it suppresses the save that would otherwise retry. Any other or unreadable value
+    // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
+    // is the one answer that silently strands the brief.
+    const approved = found.brief.status === 'approved';
+    return brief === null
+      ? { status: 'unreadable', briefId: found.brief.id, brief: null, approved }
+      : { status: 'loaded', briefId: found.brief.id, brief, approved };
+  }
+
+  /**
+   * After an ambiguous create failure, find out whether the POST actually committed.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the create did not happen
+   * or the row cannot be claimed — in which case the caller rethrows the original error, which is
+   * the honest outcome for a save whose fate is unknown.
+   *
+   * Two conditions have to hold before adopting a row, and both matter:
+   *
+   * - `version === 1`. A higher version means the row has been written more than once, so it is
+   *   not the untouched product of this POST, and adopting it would hand this session ownership
+   *   of edits it never made.
+   * - the stored payload matches what this request sent. Without it, a row another writer created
+   *   in the same window would be adopted, and the next save would replace THEIR brief under this
+   *   caller's id — the precise overwrite the ownership guard exists to prevent.
+   *
+   * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
+   * the accurate answer. Only genuinely indeterminate failures reach the lookup.
+   */
+  private async reconcileLostCreate(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    envelope: CampaignServiceBriefEnvelope,
+    error: unknown
+  ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // version === 1: the row must be the untouched product of THIS POST. A higher version carries
+    // edits this request never made, so adopting it would claim someone else's work.
+    return this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, (version) => version === 1);
+  }
+
+  /**
+   * After an ambiguous write failure, find out whether it actually committed.
+   *
+   * Shared by the create and replace paths, which differ only in what version the row may carry.
+   * A create must find version 1 — anything higher is not its own row. A replace has no such
+   * bound: it does not know what version its PUT produced, and the payload comparison is what
+   * establishes the row is the one it wrote.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the write did not happen
+   * or the row cannot be claimed, in which case the caller rethrows the original error.
+   */
+  private async reconcileLostWrite(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    envelope: CampaignServiceBriefEnvelope,
+    error: unknown,
+    versionIsAcceptable: (version: number) => boolean
+  ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+    if (definitelyRejected) {
+      return null;
+    }
+
+    // Read more than once, with a delay between attempts, because a single immediate GET does not
+    // settle an ambiguous POST. Aborting our local fetch does not stop campaign-service: the
+    // request may still be in flight upstream, so the first read can legitimately 404 and the
+    // commit land a moment later. Returning on that 404 would leave the caller without the id and
+    // every later save refused as unowned — the exact stranding this function exists to prevent,
+    // just moved to a narrower window.
+    //
+    // BOUNDED by attempts AND by wall clock. This runs inside a request that has already spent
+    // part of its own budget on the POST that failed, and each read here carries the client's own
+    // 30s timeout that this layer cannot shorten — so counting only the sleeps, as an earlier
+    // revision did, understated the worst case by an order of magnitude. Two extra reads a second
+    // apart cover a commit that lands just after the abort; a read that hangs instead consumes
+    // the budget and stops the loop rather than being followed by two more.
+    let found: ApiResponse<CampaignServiceBrief> | null = null;
+    const startedAt = Date.now();
+    for (let attempt = 0; attempt < this.reconcileReadAttempts; attempt++) {
+      if (attempt > 0) {
+        // Checked BEFORE the sleep and again AFTER it. Before, because a read that hung for the
+        // client's full 30s has already outlived any window a late commit was going to land in.
+        // After, because the sleep itself can carry the loop past the budget: an attempt passing
+        // the first check at 4.5s would otherwise wake at 5.5s and still launch a fresh 30s read,
+        // which is exactly the amplification the budget exists to stop.
+        if (Date.now() - startedAt >= this.reconcileReadBudgetMs) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.reconcileReadDelayMs));
+        if (Date.now() - startedAt >= this.reconcileReadBudgetMs) {
+          break;
+        }
+      }
+      try {
+        const read = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+          event_slug: eventSlug,
+        });
+        found = read ?? null;
+        // A successful read is not the same as a settled write, and this is where create and
+        // replace differ. A create has no row until it commits, so any 200 answers the question.
+        // A REPLACE always has a row: the first read can return 200 carrying the PRE-PUT payload
+        // while the timed-out write is still in flight, and breaking there rethrows the timeout
+        // moments before the PUT lands — leaving the client holding a stale ETag for a row that
+        // did change.
+        //
+        // So stop only once the row LOOKS LIKE this request's write. If it never does, the loop
+        // runs out of attempts or budget and the original error is reported, which is the same
+        // honest answer as before.
+        if (read?.data !== undefined && versionIsAcceptable(read.data.version) && storedBriefMatches(read.data, envelope.brief)) {
+          break;
+        }
+      } catch (readError) {
+        // A 404 is "not there YET" on this path, not "not there": the write may still be in
+        // flight upstream. Any other read failure says nothing at all. Both are worth another
+        // look while attempts remain; when they run out, report the ORIGINAL failure rather than
+        // one describing the recovery attempt.
+        void readError;
+      }
+    }
+    if (found === null) {
+      return null;
+    }
+    if (found.data === undefined || !versionIsAcceptable(found.data.version) || !storedBriefMatches(found.data, envelope.brief)) {
+      return null;
+    }
+    // "write", not "create": this helper now serves the replace path too, and labelling a
+    // recovered PUT as a create points production diagnostics at the wrong operation.
+    logger.warning(req, 'campaign_persist_brief_reconciled', 'a write whose response was lost had in fact committed', {
+      briefId: found.data.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return found;
+  }
+
+  /**
+   * Replace an existing brief and approve the result.
+   *
+   * `update-brief` declares `PreconditionRequired` (428) for a missing `If-Match`, and the
+   * version number is NOT a substitute: the design says the ETag "mirrors" the version, which
+   * fixes the correspondence but not the serialisation — quoting, weak-validator prefix and
+   * all. Synthesising one would be a guess that either 428s or, worse, matches the wrong
+   * revision. Fail loudly instead.
+   */
+  private async replaceBrief(
+    req: Request,
+    basePath: string,
+    envelope: CampaignServiceBriefEnvelope,
+    existing: { brief: CampaignServiceBrief; etag: string | null },
+    knownEtag: string | null,
+    allowEtagFallback: boolean,
+    eventSlug: string
+  ): Promise<CampaignBriefPersistResult> {
+    if (existing.etag === null) {
+      throw new Error(`campaign-service returned brief ${existing.brief.id} with no ETag; cannot safely replace it`);
+    }
+
+    // The caller's LAST-SEEN validator when it has one, and only the freshly-read one as a
+    // fallback. Using the find's ETag unconditionally made this header ceremonial: that find runs
+    // inside this very save, so its validator always matches and the 412 can never fire. It looks
+    // like optimistic concurrency and provides none — if another writer updated the row after
+    // this tab last saw it, the PUT would re-fetch THEIR validator and silently overwrite their
+    // content.
+    //
+    // The fallback is now conditional, and the earlier reasoning for making it unconditional was
+    // wrong: it said refusing a validator-less save "would be worse than a race it cannot yet
+    // detect", which is true for one of the two reasons a validator can be missing and false for
+    // the other.
+    //
+    // `allowEtagFallback` — the caller was shown a stale-brief warning and proceeded. It has no
+    // validator BY CHOICE, and taking the freshly read one is exactly what proceeding means.
+    //
+    // Without it, the absence is UNKNOWN: the write returned no ETag, or its approval outcome was
+    // indeterminate. Nobody was warned and nothing was decided, so substituting a validator this
+    // request read itself would bypass the precondition silently and could overwrite an
+    // intervening writer with no conflict ever shown. Refuse instead — the caller can retry, and
+    // a retry that is refused again is visible, which a silent overwrite is not.
+    if (knownEtag === null && !allowEtagFallback) {
+      return { enabled: true, briefId: existing.brief.id, etag: null, created: false, approved: false, conflict: 'unverified-validator' };
+    }
+    const validator = knownEtag ?? existing.etag;
+
+    let updated;
+    try {
+      updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodeURIComponent(existing.brief.id)}`,
+        'PUT',
+        undefined,
+        envelope,
+        { 'If-Match': validator }
+      );
+    } catch (error) {
+      // A 412 is the validator doing its job: this caller owns the brief but another writer moved
+      // it since the caller last saw it. Reported as a conflict rather than an error because the
+      // save was REFUSED, not failed — nothing was overwritten, which is the outcome the header
+      // exists to produce. It is a distinct value from `unowned-brief-exists` because the remedy
+      // differs: this caller may replace the brief once it has seen the newer version.
+      //
+      // Only when the caller supplied its own validator. With the fallback, the ETag came from
+      // the find inside this same save, so a 412 means something changed in the microseconds
+      // between the two calls — indistinguishable to the user from an ordinary failure, and not
+      // a stale-view story worth telling.
+      if (knownEtag !== null && error instanceof MicroserviceError && error.statusCode === 412) {
+        return { enabled: true, briefId: existing.brief.id, etag: null, created: false, approved: false, conflict: 'stale-brief' };
+      }
+
+      // A non-412 failure is not necessarily a failed WRITE. A timeout, a reset, or a gateway 5xx
+      // can all follow a replacement that committed — the same ambiguity the create path
+      // reconciles and the approval path reasons about, and this one was left rethrowing.
+      //
+      // The cost of getting it wrong is worse here than on create, because it is silent: the
+      // client is told the brief "could not be saved" while the new payload is durable, keeps its
+      // now-stale ETag, and the next attempt is deterministically refused as `stale-brief`. The
+      // user sees a failure, retries, and is told someone else changed their brief — when the
+      // someone else was them.
+      // Any version: unlike a create, a replace does not know which version its PUT produced.
+      // The payload comparison is what establishes the row is the one this request wrote.
+      // NEWER than the version the find observed, not merely "any version". A save whose content
+      // is unchanged — re-proceeding without editing — looks identical before and after the PUT,
+      // so a payload match alone accepts the PRE-PUT row as proof the write landed. The code then
+      // approves that old version while the real PUT may still commit afterwards and reset it to
+      // `draft`, having already reported `approved: true`.
+      //
+      // A committed replace always bumps the version, so `> existing.brief.version` is what
+      // actually distinguishes "the write landed" from "the row never changed".
+      const reconciled = await this.reconcileLostWrite(req, basePath, eventSlug, envelope, error, (version) => version > existing.brief.version);
+      if (reconciled === null) {
+        throw error;
+      }
+      updated = reconciled;
+    }
+    return this.approveBrief(req, basePath, updated, false);
+  }
+
+  /**
+   * Move the brief just written from `draft` to `approved`, and report the result of the save.
+   *
+   * campaign-service creates every brief as `draft`, and `replaceBriefQuery` deliberately resets
+   * an existing one to `draft` on every PUT — its comment says why: "a modified brief cannot
+   * silently retain status='approved' (which would let changed ad inputs be treated as approved
+   * and dispatched without re-review)". So a save on its own always leaves the row unapproved.
+   *
+   * That is not a durable record of what happened. This save is triggered by the user reviewing
+   * the generated brief and choosing to proceed to Implementation — an approval, in the product's
+   * own terms — and downstream campaign-service refuses to act on anything else: `create-campaigns`
+   * and `build-audience` both gate on `status = 'approved'` at a specific version. Leaving the row
+   * in `draft` would mean Phase 3 could not create a campaign from the very brief the user
+   * approved. Approving immediately after the write is also exactly the case the repo's warning
+   * permits: the content being approved is the content just sent, not a stale snapshot.
+   *
+   * `If-Match` is the validator from the write, which is why this takes the whole response rather
+   * than an id: `approve-brief` declares `PreconditionRequired` for a missing one, and every write
+   * response carries the fresh ETag in its header. A write that answered without one cannot be
+   * approved — reported as `approved: false` rather than guessed at, for the same reason
+   * `saveBrief` refuses to synthesise an `If-Match` above.
+   *
+   * A failed approval is NOT a failed save, and is not reported as one. The brief is durable at
+   * this point; telling the user it could not be saved would be false, and would push them to
+   * regenerate a brief that is sitting in the database. It is surfaced instead as `approved:
+   * false` on the result plus a warning log, and Phase 3 — which has to re-check approval at a
+   * version anyway, since anyone may have edited the brief in between — can re-approve.
+   */
+  private async approveBrief(
+    req: Request,
+    basePath: string,
+    written: ApiResponse<CampaignServiceBrief>,
+    created: boolean
+  ): Promise<CampaignBriefPersistResult> {
+    const briefId = written.data.id;
+    const writeEtag = readEtag(written);
+    const saved = { enabled: true as const, briefId, created };
+
+    if (writeEtag === null) {
+      logger.warning(req, 'campaign_persist_brief_approve', 'campaign-service returned no ETag for the written brief; leaving it in draft', {
+        briefId,
+      });
+      return { ...saved, etag: null, approved: false };
+    }
+
+    try {
+      const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodeURIComponent(briefId)}/approve`,
+        'POST',
+        undefined,
+        undefined,
+        { 'If-Match': writeEtag }
+      );
+      return { ...saved, etag: readEtag(approved), approved: true };
+    } catch (error) {
+      // Whether the write's ETag is still the current one depends on whether the approval
+      // definitely did NOT happen, and only a 4xx says that. A 4xx is a refusal: something that
+      // understood the request declined it, so no version was bumped and `writeEtag` still
+      // describes the brief in the database.
+      //
+      // 412 is the exception, and it is the exception for the opposite reason to the 5xx below.
+      // The approval carries `If-Match: writeEtag`, so a 412 is the server saying that validator
+      // does NOT match what it holds — the brief moved between the write and the approval. The
+      // approval did not commit, but `writeEtag` is still known-stale, which is the one thing a
+      // returned validator must never be.
+      //
+      // Everything else is indeterminate, and reporting `writeEtag` for it would be a guess
+      // dressed as a fact. A local timeout (surfaced as 408, see below), a connection reset, or
+      // a 5xx from the gateway can all follow a commit whose response was lost —
+      // `approve-brief` does `version = version + 1`,
+      // so if it did commit, the validator being returned here is one version stale. Report no
+      // validator at all rather than a wrong one; `null` already means "none available" on this
+      // result (see the no-ETag branch above), and the read path re-reads the ETag from the
+      // server before every write, so nothing downstream is left without one.
+      // 408 is EXCLUDED even though it is a 4xx. `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` (`api-client.service.ts:122` and `:306`), so a
+      // 408 here is our own deadline firing, not campaign-service refusing anything — the
+      // request may well have committed upstream with its response lost, which is precisely the
+      // indeterminate case this branch exists to keep out of `writeEtag`. A 408 that genuinely
+      // came from the gateway is indistinguishable at this boundary and means the same thing:
+      // the request may or may not have been processed.
+      // A TYPED 404 means campaign-service itself says the row is gone — deleted or archived
+      // between the write and the approval — not that a gateway lost the request. Left in
+      // `definitelyRejected` it returned the write ETag with no conflict, so the component
+      // rendered "Brief saved." for a brief that no longer exists.
+      //
+      // It joins 412 as `superseded-after-write` rather than getting its own value: to the user
+      // the situation is the same one that message already describes — the write landed, and what
+      // is stored now may not be theirs. The distinction between "someone replaced it" and
+      // "someone removed it" changes nothing they can act on.
+      const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      const definitelyRejected =
+        error instanceof MicroserviceError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode !== 412 &&
+        error.statusCode !== 408 &&
+        !removedAfterWrite;
+      logger.warning(
+        req,
+        'campaign_persist_brief_approve',
+        definitelyRejected ? 'brief was saved but the approval was rejected' : 'brief was saved but the approval outcome is unknown',
+        { briefId, error: error instanceof Error ? error.message : String(error) }
+      );
+      // `approved: false` in BOTH cases, and it is not a claim that the brief is in draft — it is
+      // the absence of a confirmation. It only ever costs a re-approval, which Phase 3 has to be
+      // able to do regardless: it re-checks approval at a version, since anyone may have edited
+      // the brief in between.
+      // A 412 is reported as a CONFLICT, not merely as an unapproved save. Same premise as the
+      // validator reasoning above, followed through to what it means for the user: the brief
+      // moved between the write and the approval, so another writer replaced it after this save
+      // committed. The write is durable, but the row may no longer HOLD it — and the component
+      // renders any non-conflict result as "Brief saved.", which would confirm durability for
+      // content that is no longer there. That is the one thing this banner must never say.
+      //
+      // Distinct from `stale-brief`, which is a refusal BEFORE anything was written. Here the
+      // write did land, so the honest message is that it may have been overwritten since rather
+      // than that it was not saved.
+      const supersededAfterWrite = (error instanceof MicroserviceError && error.statusCode === 412) || removedAfterWrite;
+      return {
+        ...saved,
+        etag: definitelyRejected ? writeEtag : null,
+        approved: false,
+        ...(supersededAfterWrite ? { conflict: 'superseded-after-write' as const } : {}),
+      };
+    }
+  }
+
+  /**
+   * The saved brief for this event slug and its ETag, or `null` when there is none.
+   *
+   * `proxyRequestWithResponse`, not `proxyRequest`, and that is the whole point of this helper:
+   * the ETag is NOT in the JSON body. Every brief response in the design maps it to the HTTP
+   * header instead — `Response(StatusOK, func() { Header("etag:ETag") })` — so Goa omits it from
+   * the generated response body struct (`gen/http/.../server/types.go`,
+   * `FindBriefResponseBody` has no ETag field). Reading `data.etag` yields `undefined` every
+   * time, which would make the second save of any event throw on the guard above rather than
+   * issue its PUT.
+   */
+  private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<{ brief: CampaignServiceBrief; etag: string | null } | null> {
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
+        event_slug: eventSlug,
+      });
+      return { brief: response.data, etag: readEtag(response) };
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Whether a stored brief is the one this request sent.
+ *
+ * Compares the WHOLE payload, opaque blobs included. Two rounds of review narrowed this: first
+ * only `program_type` and `event_slug`, then `url` and `platforms` as well. Both times I excluded
+ * the four `Any` fields on the reasoning that the service round-trips them without interpreting,
+ * so key order and whitespace might not survive and a mismatch would reject a row that really is
+ * ours — stranding the user, which this reconciliation exists to prevent.
+ *
+ * That reasoning was wrong, and checkably so: the columns are `JSONB`
+ * (`000002_create_brief_campaign_tables.up.sql`), which normalises key order and strips
+ * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialised text — is
+ * therefore stable across the round trip, and the hazard I kept citing does not exist.
+ *
+ * It matters because the first-class columns alone do not discriminate: two briefs for the same
+ * event normally share program, slug, url AND platform selection, differing only in the generated
+ * copy. Without the blobs, a lost create could adopt another writer's row, approve it, and report
+ * this caller's unsaved content as saved.
+ */
+function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceBriefInput): boolean {
+  const storedPlatforms = stored.platforms ?? [];
+  const sentPlatforms = sent.platforms ?? [];
+  const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
+  return (
+    stored.program_type === sent.program_type &&
+    stored.event_slug === sent.event_slug &&
+    (stored.url ?? '') === (sent.url ?? '') &&
+    samePlatforms &&
+    deepEqual(stored.event_details, sent.event_details) &&
+    deepEqual(stored.copy, sent.copy) &&
+    deepEqual(stored.keywords, sent.keywords) &&
+    deepEqual(stored.targeting, sent.targeting)
+  );
+}
+
+/**
+ * Structural equality over parsed JSON values.
+ *
+ * Key ORDER is deliberately ignored — that is the whole point, since it is the property the
+ * round trip does not preserve and the reason a text comparison would be wrong. Arrays stay
+ * order-SENSITIVE: a reordered platform or keyword list is a different payload, not the same one
+ * written differently.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  // `null` and `undefined` both mean "absent" here: `toBriefInput` omits a field the UI left
+  // empty, and the service stores SQL NULL for it, so the two sides spell the same absence
+  // differently on a row that really is ours.
+  if (a === null || a === undefined || b === null || b === undefined) {
+    return (a ?? null) === (b ?? null);
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (typeof a !== 'object' || typeof b !== 'object') {
+    return false;
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  // The UNION of keys, not a length match. `toBriefInput` builds fields like `url` and
+  // `event_details` as `undefined` when the brief omits them; `JSON.stringify` drops those keys
+  // on the way out, so the stored row comes back with FEWER keys than the in-memory payload. A
+  // length check therefore rejects this request's own write and strands the row the
+  // reconciliation exists to recover.
+  //
+  // Comparing the union defers to the null/undefined rule above, which already treats an absent
+  // key and an explicit undefined as the same absence.
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  return [...keys].every((k) => deepEqual(ao[k], bo[k]));
+}
+
+/**
+ * The `ETag` response header, or `null` when the response carried none.
+ *
+ * Lower-case key without a fallback: `api-client.service.ts` builds this map with
+ * `Object.fromEntries(response.headers.entries())` over a fetch `Headers`, and the Fetch
+ * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
+ * would be unreachable code that implies the casing is uncertain.
+ */
+function readEtag(response: ApiResponse<unknown>): string | null {
+  const etag = response.headers['etag'];
+  return typeof etag === 'string' && etag.length > 0 ? etag : null;
+}
+
+/**
+ * The event slug to file this brief under, or `null` when the brief carries none.
+ *
+ * `find-brief` and `BriefInput` both declare `MinLength(1)` on `event_slug`, and the Planning
+ * tab can reach here with an empty one: when the scrape produced no `eventDetails`, it
+ * synthesises them and derives the slug from the pasted URL's last path segment, which is `''`
+ * for a bare origin or an unparseable string. Posting that is a 400 whose message names a field
+ * the user never filled in. Catching it here lets the caller say what actually went wrong.
+ *
+ * Trimming DETECTS an empty slug; it deliberately does not rewrite the value sent upstream. The
+ * slug is the lookup key for every later find, so normalising it here and not in whatever writes
+ * the next one would make the two disagree.
+ */
+export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
+  const slug = brief.eventDetails?.slug ?? '';
+  return slug.trim().length > 0 ? slug : null;
+}
+
+/**
+ * Map the UI's brief onto `brief-input`.
+ *
+ * `event_details`, `copy`, `keywords` and `targeting` are `Any` in the design — the service
+ * stores them opaquely — so this is the only place their shape is decided, and it is chosen to
+ * round-trip: everything the Implementation tab reads off `CampaignBriefOutput` must survive a
+ * save and a reload.
+ *
+ * `targeting` carries the campaign-level planning fields — goal, budget, the HubSpot UTM and the
+ * Drive folder. `BriefInput` has no first-class home for them, and dropping them would make a
+ * reloaded brief quietly less complete than the one the user approved. They are grouped under
+ * `targeting` because it is the only opaque slot whose meaning ("how this campaign is aimed and
+ * paid for") they fit; if the design later grows real fields for them, this is the one function
+ * that moves.
+ */
+function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignServiceBriefInput {
+  return {
+    // `CampaignProgramType` is `events | education`; the service's enum is
+    // `events | education | membership`. Every UI value is accepted as-is and `membership` is
+    // simply unreachable from here. The default matches the Planning tab's own default.
+    program_type: brief.programType ?? 'events',
+    event_slug: eventSlug,
+    url: brief.eventDetails?.registrationUrl || undefined,
+    platforms: brief.selectedPlatforms,
+    event_details: brief.eventDetails ? { ...brief.eventDetails } : undefined,
+    copy: {
+      structured: brief.structuredCopy,
+      linkedIn: brief.linkedInCopy ?? null,
+      reddit: brief.redditCopy ?? null,
+      meta: brief.metaCopy ?? null,
+    },
+    keywords: brief.keywords,
+    targeting: {
+      campaignGoal: brief.campaignGoal,
+      totalBudget: brief.totalBudget,
+      hsUtm: brief.hsUtm,
+      driveFolderUrl: brief.driveFolderUrl,
+    },
+  };
+}
+
+/**
+ * Rebuild the UI's brief from a stored one — the exact inverse of `toBriefInput`.
+ *
+ * Returns `null` for a row this build cannot represent, which the caller reports as
+ * `unreadable`. Everything here is defensive because the four fields it reads are `Any`
+ * upstream: the service validated none of them on the way in, so a value coming back is not
+ * evidence of its shape. It may also have been written by an OLDER build of this file.
+ *
+ * The line between "coerce" and "give up" is drawn at what the Implementation tab requires.
+ * `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
+ * without a usable one is genuinely unopenable — that is the only `null` this returns for a
+ * brief that came from this UI. A missing keyword list, on the other hand, costs the user a
+ * section, not the brief, so it degrades to `[]`.
+ *
+ * The other `null` is `program_type`: the service's enum has `membership`, `CampaignProgramType`
+ * does not, and the whole page is built around the two it has. Silently rendering a membership
+ * brief as an events one would show the wrong labels, the wrong URL help and the wrong goal
+ * list for a brief someone else's client wrote. Unreachable from here today — `toBriefInput`
+ * can only ever send `events` or `education` — which is exactly why it must not be assumed.
+ */
+export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOutput | null {
+  // The top-level `event_slug` participates in the identity check, not only in constructing the
+  // result below. It is the REQUIRED, authoritative key — the one this row was retrieved by — so
+  // a blob carrying neither name nor slug is still identifiable when the column has one. Checking
+  // the blob alone reported `{ event_slug: 'event-a', event_details: { city: 'Paris' } }` as
+  // unreadable, discarding a brief the Implementation tab could name perfectly well.
+  const eventDetails = asEventDetails(found.event_details, asText(found.event_slug));
+  if (eventDetails === null) {
+    return null;
+  }
+
+  // The top-level `url` wins over the one inside the opaque `event_details` blob, mirroring the
+  // write: `toBriefInput` sends `url: brief.eventDetails?.registrationUrl`, so the first-class
+  // field is the one campaign-service is guaranteed to hold. `event_details` is opaque JSON the
+  // service stores without interpreting, so a brief written by any other client may carry the
+  // destination ONLY in `url` — reading just the blob would drop the registration URL from an
+  // otherwise valid brief, and the Implementation tab would restore a campaign pointing nowhere.
+  const registrationUrl = asText(found.url) || eventDetails.registrationUrl;
+
+  // Same precedence for the slug, and here the first-class field is not merely guaranteed —
+  // it is the REQUIRED key this brief was found by (`Brief` declares event_slug required;
+  // find-brief matches on it). The copy inside the opaque `event_details` blob is whatever
+  // the writing client happened to nest there, so a brief written by anything other than
+  // this adapter may carry the authoritative slug ONLY at the top level. Preferring the blob
+  // would rebuild a brief whose slug disagrees with the key it was just retrieved with.
+  const eventSlug = asText(found.event_slug) || eventDetails.slug;
+
+  if (found.program_type !== 'events' && found.program_type !== 'education') {
+    return null;
+  }
+
+  const copy = asRecord(found.copy) ?? {};
+  const targeting = asRecord(found.targeting) ?? {};
+
+  // Narrowed against the union rather than passed through: an unknown platform id reaches a
+  // template that indexes icon and label maps by it, and renders blank rather than erroring.
+  const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
+
+  // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —
+  // not a brief with no platforms. `populateFromBrief` applies the selection only when it is
+  // non-empty (`if (brief.selectedPlatforms?.length)`), so an empty array leaves its default of
+  // `google-ads` standing: a Reddit-only brief would restore as a Google Ads campaign, with the
+  // user's real choice silently replaced by one they never made. Reporting it unreadable puts
+  // that in front of them instead.
+  //
+  // Only when platforms were STORED. A brief that genuinely lists none is a different case and
+  // stays readable — nothing is being contradicted, and the default is then the ordinary one.
+  if ((found.platforms ?? []).length > 0 && selectedPlatforms.length === 0) {
+    return null;
+  }
+
+  return {
+    eventDetails: { ...eventDetails, slug: eventSlug, registrationUrl },
+    programType: found.program_type as CampaignProgramType,
+    selectedPlatforms,
+    structuredCopy: asStructuredCopy(copy['structured']),
+    // Each platform requires exactly the string fields ITS variant interface declares, because
+    // those are the ones consumers dereference without checking:
+    //   LinkedIn — `variant.introText.length` (implementation-tab.component.html:338)
+    //   Meta     — `v.primaryText.trim()` and `v.headline.trim()` (…component.ts:238)
+    // Requiring only the shared `headline` was not enough, and a per-platform list that is not
+    // the interface's own field set is a claim that goes stale the moment a field is added.
+    linkedInCopy: asVariantCopy<LinkedInBriefCopy>(copy['linkedIn'], LINKEDIN_VARIANT_FIELDS),
+    redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], REDDIT_VARIANT_FIELDS),
+    metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], META_VARIANT_FIELDS),
+    keywords: asKeywords(found.keywords),
+    campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
+    totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
+    hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
+    driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
+  };
+}
+
+/** A plain JSON object, or `null` for anything else — arrays and `null` included. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asTextList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+/**
+ * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.
+ *
+ * Every field is coerced rather than required, because `CampaignEventDetails` is what the SCRAPE
+ * produced and the scrape is best-effort — a brief saved from a page with no listed speakers has
+ * an empty `speakers`, and a brief saved by an older build may not have `formatNotes` at all.
+ * Rejecting those would report a perfectly good brief as unreadable.
+ *
+ * The one thing that IS required is a name or a slug. With neither, the object carries no
+ * identity: the Implementation tab's campaign names are built from them, and the reload would
+ * present an unnamed event the user cannot recognise as theirs.
+ */
+function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDetails | null {
+  const details = asRecord(value);
+  if (details === null) {
+    return null;
+  }
+
+  const name = asText(details['name']);
+  const slug = asText(details['slug']);
+  // The top-level slug counts as identity: it is the required column this row was found by, so a
+  // blob with neither name nor slug is unidentifiable only when that column is empty too.
+  if (name.trim().length === 0 && slug.trim().length === 0 && topLevelSlug.trim().length === 0) {
+    return null;
+  }
+
+  return {
+    name,
+    slug,
+    dates: asText(details['dates']),
+    city: asText(details['city']),
+    countryCode: asText(details['countryCode']),
+    audience: asText(details['audience']),
+    themes: asTextList(details['themes']),
+    registrationUrl: asText(details['registrationUrl']),
+    speakers: asTextList(details['speakers']),
+    formatNotes: asText(details['formatNotes']),
+  };
+}
+
+/**
+ * One of the three per-platform copy blocks, or `undefined` when it is absent or unusable.
+ *
+ * `variants` is the discriminator: all three types have one, every consumer iterates it, and a
+ * block without it would reach a template that does `@for (v of copy.variants)`. Their INNER
+ * shape is mostly not validated — restating the generator's schema here would put it in a second
+ * place — but every ARRAY field is coerced, because those are not merely rendered. An earlier
+ * version of this comment claimed a missing field is "a blank line rather than a crash"; that
+ * holds for text, and does not hold for a field a consumer calls `.map()` or `.length` on.
+ * `populateFromBrief` assigns `recommendedGeoTargets` straight into a signal whose type says
+ * `LinkedInGeoTarget[]`, and `canSubmit` then maps over it — so a stored block without that key
+ * throws on Restore rather than showing a gap.
+ *
+ * Coercing to `[]` rather than rejecting the block: an absent array is a brief saved before that
+ * field existed, which is ordinary, and an empty list renders as "none selected" — the truthful
+ * answer. Rejecting would turn a readable brief into `unreadable` over a field the user may not
+ * even use.
+ *
+ * `undefined` and not `null`: all three are optional on `CampaignBriefOutput`, and absent is
+ * exactly what a brief generated for a different platform set looks like.
+ */
+/**
+ * Keep only the ELEMENTS whose type the consumers actually dereference.
+ *
+ * Checking that a field is an array is not enough to make it safe to cast. These blocks come out
+ * of campaign-service's opaque `Any` columns, which nothing validates on the way in, so an older
+ * or hand-edited row can hold `[null]` as easily as objects — and the Implementation tab
+ * dereferences elements directly (`v.primaryText.trim()` at implementation-tab.component.ts:238,
+ * `g.urn` at :243), so one bad element crashes Restore rather than degrading it.
+ *
+ * The element type differs BY FIELD and getting that backwards is its own bug: `variants` and
+ * `recommendedGeoTargets` hold objects, while the other seven recommendation fields are
+ * `string[]`. Filtering the string fields for objects would silently empty every restored
+ * keyword, skill and subreddit — a worse outcome than the crash, because it looks like success.
+ *
+ * Bad elements are DROPPED rather than failing the whole block: one unusable element carries no
+ * recoverable content while the rest of the brief still does, and an empty array is what an
+ * absent field already produces and what the consumers already handle
+ * (`variants().length === 0` disables submit).
+ */
+/**
+ * The snake_case per-platform blocks the Implementation tab actually restores from.
+ *
+ * This is the path this app's OWN round-trip takes, and it was the one left unhardened. Planning's
+ * Proceed emits `structuredCopy` and never sets `metaCopy`/`redditCopy`, and
+ * `populateFromBrief` reads `structuredCopy['meta_ads']` FIRST and only falls back to the
+ * camelCase blocks — so every element guard added to `asVariantCopy` sat on a branch that this
+ * app's own briefs never reach.
+ *
+ * The dereferences are the same shape as the camelCase side, on differently-named fields:
+ * `v.primary_text` (implementation-tab.component.ts:578) on Meta variants, and Reddit variants
+ * cast straight into a typed signal the template then reads. A `null` element throws.
+ *
+ * Unknown keys are preserved untouched: this blob is opaque and another client may store blocks
+ * this build does not render, so dropping them would lose content the next writer still owns.
+ */
+function asStructuredCopy(value: unknown): Record<string, unknown> | null {
+  const structured = asRecord(value);
+  if (structured === null) {
+    return null;
+  }
+  const cleaned: Record<string, unknown> = { ...structured };
+  for (const [key, required] of STRUCTURED_VARIANT_BLOCKS) {
+    const block = asRecord(cleaned[key]);
+    if (block === null) {
+      continue;
+    }
+    cleaned[key] = { ...block, variants: objectElementsWith(block['variants'], required) };
+  }
+  for (const [key, fields] of STRUCTURED_STRING_LISTS) {
+    const block = asRecord(cleaned[key]);
+    if (block === null) {
+      continue;
+    }
+    const coerced: Record<string, unknown> = { ...block };
+    for (const field of fields) {
+      if (field in coerced) {
+        coerced[field] = stringElements(coerced[field]);
+      }
+    }
+    cleaned[key] = coerced;
+  }
+  return cleaned;
+}
+
+/**
+ * Which snake_case block carries variants, and the fields its consumer dereferences.
+ *
+ * `google_search` is absent deliberately: it has no variants array, only `headlines` and
+ * `descriptions`, which are string lists handled below.
+ */
+const STRUCTURED_VARIANT_BLOCKS: readonly (readonly [string, readonly string[]])[] = [
+  ['meta_ads', ['primary_text', 'headline']],
+  ['reddit_promoted', ['headline']],
+];
+
+/**
+ * The string-list fields inside structured blocks, by block.
+ *
+ * `google_search.headlines` reaches a `for...of` in `populateFromBrief`
+ * (implementation-tab.component.ts:527), so a stored `42` throws "is not iterable" rather than
+ * degrading — a different failure from the variant case, and one the variant filter does not
+ * touch. The others are cast straight into typed signals the template iterates.
+ */
+const STRUCTURED_STRING_LISTS: readonly (readonly [string, readonly string[]])[] = [
+  ['google_search', ['headlines', 'descriptions']],
+  ['meta_ads', ['recommended_geos']],
+  ['reddit_promoted', ['recommended_subreddits', 'recommended_interests', 'recommended_keywords', 'recommended_geos']],
+];
+
+/**
+ * The required string fields of each platform's variant interface.
+ *
+ * Typed as `(keyof X)[]` so adding a required string to the interface without adding it here is a
+ * COMPILE error rather than a crash on someone's Restore — the failure mode the first version of
+ * this filter had, where object-ness alone let `{}` through and `v.primaryText.trim()` threw.
+ */
+const LINKEDIN_VARIANT_FIELDS: readonly (keyof LinkedInCreativeVariant)[] = ['introText', 'headline'];
+const REDDIT_VARIANT_FIELDS: readonly (keyof RedditAdVariant)[] = ['headline'];
+const META_VARIANT_FIELDS: readonly (keyof MetaAdVariant)[] = ['primaryText', 'headline'];
+
+function objectElements(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((el): el is Record<string, unknown> => asRecord(el) !== null) : [];
+}
+
+/**
+ * Object elements that actually carry the string fields the consumers dereference.
+ *
+ * Object-ness alone is not enough, which the first version of this filter got wrong: a stored
+ * `{}` is a plain object, survives `objectElements`, and is then cast to `MetaAdVariant` — where
+ * `canSubmit` calls `v.primaryText.trim()` (implementation-tab.component.ts:238) and throws. The
+ * same holds for a geo target with no `urn` (`:243`).
+ *
+ * Requiring the fields the consumer READS is the check that matches the hazard. An element
+ * missing them cannot be rendered or submitted, so dropping it loses nothing recoverable.
+ */
+function objectElementsWith(value: unknown, required: readonly string[]): Record<string, unknown>[] {
+  return objectElements(value).filter((el) => required.every((k) => typeof el[k] === 'string'));
+}
+
+function stringElements(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((el): el is string => typeof el === 'string') : [];
+}
+
+function asVariantCopy<T>(value: unknown, variantRequiredFields: readonly string[]): T | undefined {
+  const block = asRecord(value);
+  if (block === null || !Array.isArray(block['variants'])) {
+    return undefined;
+  }
+  const coerced: Record<string, unknown> = { ...block };
+  // `variants` is NOT in VARIANT_COPY_ARRAY_FIELDS — that list is the RECOMMENDATION fields — so
+  // it is filtered explicitly here. It is also the field the crash reports named.
+  // Which fields are required depends on the PLATFORM, because the dereferences do. `canSubmit`
+  // reads `v.primaryText.trim()` on Meta variants (implementation-tab.component.ts:238), so a
+  // Meta variant carrying only `headline` still throws — requiring the shared field alone was not
+  // enough, and reasoning that such a variant "has nothing to submit anyway" missed that the
+  // dereference happens BEFORE any such judgement.
+  coerced['variants'] = objectElementsWith(coerced['variants'], variantRequiredFields);
+  for (const key of VARIANT_COPY_ARRAY_FIELDS) {
+    coerced[key] = key === 'recommendedGeoTargets' ? objectElementsWith(coerced[key], ['urn']) : stringElements(coerced[key]);
+  }
+  return coerced as T;
+}
+
+/**
+ * The array-valued fields across the three per-platform copy blocks.
+ *
+ * Listed rather than derived, because the type system cannot enumerate keys of an interface at
+ * runtime — but the list must be COMPLETE, and the first version of it was not: it named four
+ * fields and missed `recommendedGeos`, `recommendedGroups`, `recommendedJobFunctions` and
+ * `recommendedSkills`, each of which is a `string[]` a consumer iterates. A partial list here
+ * is worse than none, because it reads as exhaustive.
+ *
+ * Kept honest by `TestVariantCopyArrayFieldsCoversEveryArrayField`-style coverage in the spec,
+ * which asserts every one of these coerces — add a field to either brief-copy interface and the
+ * grep that finds `recommended*: string[]` should find it here too. Grouped by owning platform
+ * so a new field lands beside its siblings; a key absent from a given platform's block is simply
+ * coerced to `[]` there and never read.
+ */
+const VARIANT_COPY_ARRAY_FIELDS = [
+  // LinkedIn (`LinkedInBriefCopy`)
+  'recommendedGeoTargets',
+  'recommendedJobFunctions',
+  'recommendedSkills',
+  'recommendedGroups',
+  // Reddit (`RedditBriefCopy`)
+  'recommendedSubreddits',
+  'recommendedInterests',
+  'recommendedKeywords',
+  'recommendedGeos',
+] as const;
+
+/**
+ * The keyword table, dropping entries that carry no term.
+ *
+ * `matchType` and `intentLevel` fall back to their broadest values rather than dropping the row:
+ * they drive a filter chip and a sort, so a wrong one costs ordering, while a dropped keyword
+ * costs the user research they already paid for.
+ */
+function asKeywords(value: unknown): CampaignKeyword[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce<CampaignKeyword[]>((keywords, entry) => {
+    const record = asRecord(entry);
+    const term = asText(record?.['term']);
+    if (record === null || term.trim().length === 0) {
+      return keywords;
+    }
+
+    const matchType = record['matchType'];
+    const intentLevel = record['intentLevel'];
+    keywords.push({
+      term,
+      matchType: matchType === 'Exact' || matchType === 'Phrase' ? matchType : 'Broad',
+      intentLevel: intentLevel === 'High' || intentLevel === 'Low' ? intentLevel : 'Medium',
+      notes: asText(record['notes']),
+    });
+    return keywords;
+  }, []);
 }
 
 /**
