@@ -11,11 +11,9 @@ import {
   DEFAULT_EMAIL_REMINDER_HOURS,
   DEFAULT_EMAIL_REMINDER_MINUTES,
   DEFAULT_MEETING_TOOL,
-  DEFAULT_MEETING_TYPE,
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
-  MEETING_TYPE_OPTIONS,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -310,10 +308,15 @@ export class MeetingComposerFormService {
       }),
       catchError((error: unknown) => {
         console.error('Error saving meeting:', error);
+        // A stale failure still gets reported, but worded so the user doesn't read it as their current
+        // draft failing and hit Save again — that would duplicate the meeting.
+        const isStale = generation !== this.generation;
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: `Failed to ${wasEditMode ? 'update' : 'create'} meeting. Please try again.`,
+          detail: isStale
+            ? `An earlier meeting could not be ${wasEditMode ? 'updated' : 'created'}. Your current draft is unaffected.`
+            : `Failed to ${wasEditMode ? 'update' : 'create'} meeting. Please try again.`,
         });
         return EMPTY;
       }),
@@ -520,7 +523,7 @@ export class MeetingComposerFormService {
       start_time: startDateTime,
       duration: duration,
       timezone: formValue.timezone,
-      meeting_type: formValue.meeting_type || DEFAULT_MEETING_TYPE,
+      meeting_type: formValue.meeting_type,
       early_join_time_minutes: this.parseEarlyJoinTime(formValue.early_join_time_minutes),
       visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
@@ -624,9 +627,11 @@ export class MeetingComposerFormService {
     form.patchValue({
       title: meeting.title,
       description: meeting.description,
-      // Blank rather than a sentinel when the stored type isn't selectable (legacy `None`), so the
-      // required validator fires and the field shows its own error instead of silently blocking save.
-      meeting_type: MEETING_TYPE_OPTIONS.some((option) => option.value === meeting.meeting_type) ? meeting.meeting_type : '',
+      // Blank the legacy `None` sentinel so the required validator fires and the field shows its own
+      // error instead of silently blocking save. Any other stored value is kept verbatim — upstream
+      // types this field as a free-form string, so blanking on "not in our option list" would let the
+      // composer silently re-classify a meeting whose category it merely doesn't recognize.
+      meeting_type: meeting.meeting_type === MeetingType.NONE ? '' : meeting.meeting_type,
       startDate: startDate,
       startTime: startTime,
       duration: meeting.duration || DEFAULT_DURATION,
@@ -807,29 +812,29 @@ export class MeetingComposerFormService {
   }
 
   private processAttachmentOperations(meetingId: string): Observable<MeetingAttachmentOperationResults | null> {
-    const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
-    const hasPendingUploads = this.pendingAttachments.length > 0;
-    const importantLinksArray = this.form().get('important_links') as FormArray;
-    const hasPendingLinks = importantLinksArray.length > 0;
+    // Snapshot every collection up front. These steps run between HTTP round-trips, and `initialize()`
+    // swaps in a fresh FormGroup — re-reading per step would upload a later open's files and links
+    // against this meeting's id, and would silently drop this open's own queue.
+    const attachmentIdsToDelete = this.pendingAttachmentDeletions();
+    const attachmentsToUpload = this.unsavedAttachments();
+    const linksToSave = this.unsavedLinks();
 
-    if (!hasPendingDeletions && !hasPendingUploads && !hasPendingLinks) {
+    if (attachmentIdsToDelete.length === 0 && attachmentsToUpload.length === 0 && linksToSave.length === 0) {
       return of(null);
     }
 
     // Deletions before uploads before links, so a removed link isn't re-created in the same pass.
-    return this.deletePendingAttachments(meetingId).pipe(
+    return this.deletePendingAttachments(meetingId, attachmentIdsToDelete).pipe(
       switchMap((deletions) =>
-        this.savePendingAttachments(meetingId).pipe(
-          switchMap((uploads) => this.saveLinkAttachments(meetingId).pipe(map((links) => ({ deletions, uploads, links }))))
+        this.savePendingAttachments(meetingId, attachmentsToUpload).pipe(
+          switchMap((uploads) => this.saveLinkAttachments(meetingId, linksToSave).pipe(map((links) => ({ deletions, uploads, links }))))
         )
       ),
       take(1)
     );
   }
 
-  private deletePendingAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['deletions']> {
-    const attachmentIdsToDelete = this.pendingAttachmentDeletions();
-
+  private deletePendingAttachments(meetingId: string, attachmentIdsToDelete: string[]): Observable<MeetingAttachmentOperationResults['deletions']> {
     if (attachmentIdsToDelete.length === 0) {
       return of({ successes: 0, failures: [] });
     }
@@ -850,11 +855,7 @@ export class MeetingComposerFormService {
     );
   }
 
-  private savePendingAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['uploads']> {
-    const attachmentsToSave = this.pendingAttachments.filter(
-      (attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file
-    );
-
+  private savePendingAttachments(meetingId: string, attachmentsToSave: PendingAttachment[]): Observable<MeetingAttachmentOperationResults['uploads']> {
     if (attachmentsToSave.length === 0) {
       return of({ successes: [], failures: [] });
     }
@@ -881,11 +882,23 @@ export class MeetingComposerFormService {
     );
   }
 
-  private saveLinkAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['links']> {
-    const importantLinksArray = this.form().get('important_links') as FormArray;
-    // Links that already carry a uid exist upstream and must not be recreated.
-    const linksToSave = (importantLinksArray.value as ImportantLinkFormValue[]).filter((link) => link.title && link.url && !link.uid);
+  /** Files picked in this open that haven't been uploaded yet. */
+  private unsavedAttachments(): PendingAttachment[] {
+    return this.pendingAttachments.filter((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file);
+  }
 
+  /** Links that still need creating upstream — a uid means the link already exists there. */
+  private unsavedLinks(): ImportantLinkFormValue[] {
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+
+    return (importantLinksArray.value as ImportantLinkFormValue[]).filter((link) => link.title && link.url && !link.uid);
+  }
+
+  private hasUnsavedLinks(): boolean {
+    return this.unsavedLinks().length > 0;
+  }
+
+  private saveLinkAttachments(meetingId: string, linksToSave: ImportantLinkFormValue[]): Observable<MeetingAttachmentOperationResults['links']> {
     if (linksToSave.length === 0) {
       return of({ successes: [], failures: [] });
     }
@@ -909,13 +922,11 @@ export class MeetingComposerFormService {
   /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
   private hasPendingDependentWork(): boolean {
     const registrants = this.registrantUpdates();
-    const importantLinks = (this.form().get('important_links') as FormArray).value as ImportantLinkFormValue[];
 
     return (
       this.pendingAttachments.some((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file) ||
       this.pendingAttachmentDeletions().length > 0 ||
-      // Same predicate as `saveLinkAttachments`: links with a uid already exist upstream.
-      importantLinks.some((link) => link.title && link.url && !link.uid) ||
+      this.hasUnsavedLinks() ||
       registrants.toAdd.length > 0 ||
       registrants.toUpdate.length > 0 ||
       registrants.toDelete.length > 0
