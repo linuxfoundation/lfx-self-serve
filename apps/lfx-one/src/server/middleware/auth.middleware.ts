@@ -27,12 +27,15 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },
 
   // Public meeting join (`/meetings/:id`, `/meetings/not-found`) — anchored to a single segment so
-  // deeper paths (authenticated `/meetings/create|:id/edit` and unknown `/meetings/:id/extra`) fall
-  // through to the default `required` auth and reach login before the in-shell catch-all 404.
+  // multi-segment paths (authenticated `/meetings/:id/edit`, unknown `/meetings/:id/extra`) fall
+  // through to the default `required` auth and reach login before the in-shell catch-all 404. The
+  // reserved single-segment `create` still matches here; anonymously it resolves as a public `:id`
+  // (a bogus meeting → its own not-found), so it never renders the authenticated shell.
   { pattern: /^\/meetings\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
-  // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so deeper
-  // paths don't fail-open onto the in-shell catch-all; anonymous access with optional auth for enrichment.
+  // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
+  // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
+  // auth for membership enrichment.
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
