@@ -710,10 +710,6 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
-   * The server refuses an email refine, so offering the button would walk the user into a
-   * guaranteed error. Asserted on the review step, which is the only place it renders.
-   */
-  /**
    * Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row this
    * would find is a PAID brief — restoring it under Email would put RSA headlines and a keyword
    * list into an email plan. The email host also binds no `restoreSavedBriefRequested` handler,
@@ -752,6 +748,10 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(loadBrief).toHaveBeenCalled();
   });
 
+  /**
+   * The server refuses an email refine, so offering the button would walk the user into a
+   * guaranteed error. Asserted on the review step, which is the only place it renders.
+   */
   it('does not offer Refine Brief in email mode', async () => {
     await build('email');
     (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
@@ -883,11 +883,6 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(generateBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
   });
 
-  /**
-   * Refine is the second request that carries `platforms`, and it is reachable in email mode —
-   * nothing gates the refine panel on delivery type. Fixing only `generate` would have left the
-   * ad copy to come back on the first refine, which is the "fixed at one layer only" shape.
-   */
   /**
    * The Refine button is hidden in email mode, but `submitRefine` must still refuse rather than
    * rely on that. The `currentCopy` guard would otherwise SWALLOW the case — an email brief
