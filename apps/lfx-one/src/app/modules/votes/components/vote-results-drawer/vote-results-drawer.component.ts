@@ -418,12 +418,12 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". */
+  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. */
   private initMyResponse(): Signal<MyVoteResponse | null> {
     return toSignal(
-      combineLatest([this.voteId$, toObservable(this.audience)]).pipe(
-        switchMap(([id, audience]) => {
-          if (!id || audience !== 'voter') {
+      combineLatest([this.voteId$, toObservable(this.audience), toObservable(this.visible)]).pipe(
+        switchMap(([id, audience, visible]) => {
+          if (!id || audience !== 'voter' || !visible) {
             this.myResponseLoading.set(false);
             this.myResponseError.set(false);
             return of(null);

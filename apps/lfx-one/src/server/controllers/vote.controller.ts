@@ -501,6 +501,7 @@ export class VoteController {
     }
 
     // Rebuild from the validated fields only, so unexpected extra properties never cross the BFF boundary.
-    return prompts.map((entry) => ({ prompt: entry.prompt }));
+    // Trim to match the client mapper (mapCommentPromptsToApiFormat) so direct API callers cannot store padded text.
+    return prompts.map((entry) => ({ prompt: entry.prompt.trim() }));
   }
 }
