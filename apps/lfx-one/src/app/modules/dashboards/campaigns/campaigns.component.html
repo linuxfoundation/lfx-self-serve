@@ -77,10 +77,18 @@
       }
     </div>
 
-    @switch (selectedEmailTab()) {
-      @case ('planning') {
-        <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
-          <!--
+    <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
+         the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
+         structural @switch destroyed an in-progress brief on every trip to another tab. The other
+         email panels stay in the lazy @switch — the Implement panel reads `emailBriefOutput()`,
+         which the parent holds. -->
+    <div
+      role="tabpanel"
+      id="email-panel-planning"
+      aria-labelledby="email-tab-planning"
+      [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-email-planning-panel">
+      <!--
             KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
 
             Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
@@ -100,9 +108,9 @@
             Until then the Plan tab is honest about the event URL and scrape, which the two types
             genuinely do share, and misleading about everything below it.
           -->
-          <!-- Keyed on the program type for the same reason the paid side is: the component
+      <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
-          <!--
+      <!--
             TWO planning-tab instances are in the DOM at once, because both delivery containers are
             visibility-toggled rather than swapped with `@if` (destroying either would wipe an
             in-progress brief). The planner emits FIXED internal test ids — `planning-url-input`,
@@ -118,14 +126,15 @@
             changes a component both delivery types share and belongs with LFXV2-3201, which
             revisits whether they should share it at all.
           -->
-          @for (program of [selectedProgramType()]; track program) {
-            <lfx-planning-tab
-              [programTypeConfig]="activeProgramTypeConfig()"
-              (proceedToImplementation)="onEmailProceedToImplementation($event)"
-              data-testid="campaigns-email-planning-tab" />
-          }
-        </div>
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          (proceedToImplementation)="onEmailProceedToImplementation($event)"
+          data-testid="campaigns-email-planning-tab" />
       }
+    </div>
+
+    @switch (selectedEmailTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
           <!--
@@ -218,21 +227,39 @@
     </div>
 
     <!-- Tab Content -->
-    @switch (selectedTab()) {
-      @case ('planning') {
-        <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
-          <!-- Keyed on the program type so a program change (Events <-> Education)
-               recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
-               state locally and does not reset on input change, so without a fresh
-               instance a stale Events brief could show under Education. -->
-          @for (program of [selectedProgramType()]; track program) {
-            <lfx-planning-tab
-              [programTypeConfig]="activeProgramTypeConfig()"
-              (proceedToImplementation)="onProceedToImplementation($event)"
-              data-testid="campaigns-planning-tab" />
-          }
-        </div>
+
+    <!-- Planning stays MOUNTED and visibility-toggled, for the same reason the delivery-type
+         containers above are: PlanningTabComponent owns its brief/URL/copy/refinement state
+         locally, so a structural @switch destroyed an in-progress brief every time the user
+         looked at another tab (LFXV2-3202). A brief is a slow, non-deterministic AI generation,
+         not a keystroke — losing it costs minutes and cannot be reproduced exactly.
+         The reasoning was already applied one level up and simply not carried down to the tabs.
+
+         Only Planning is hoisted out of the @switch, deliberately. Implementation, Insights and
+         Optimization all fetch in ngOnInit — metrics reads and LinkedIn account lookups — so
+         mounting them eagerly would issue network calls for tabs the user may never open, on
+         every page load. They keep the lazy @switch below and lose nothing by it: Implementation
+         is driven by its `briefData` input, which the parent holds, and the other two re-fetch
+         what they display. -->
+    <div
+      role="tabpanel"
+      id="panel-planning"
+      aria-labelledby="tab-planning"
+      [style.display]="selectedTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-planning-panel">
+      <!-- Keyed on the program type so a program change (Events <-> Education)
+           recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
+           state locally and does not reset on input change, so without a fresh
+           instance a stale Events brief could show under Education. -->
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          (proceedToImplementation)="onProceedToImplementation($event)"
+          data-testid="campaigns-planning-tab" />
       }
+    </div>
+
+    @switch (selectedTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
           <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />

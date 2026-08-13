@@ -224,6 +224,73 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(withBrief?.textContent).toMatch(/ready\.\s+Staging an email/);
   });
 
+  /**
+   * LFXV2-3202: leaving the Plan tab must not DESTROY the planner.
+   *
+   * `PlanningTabComponent` owns ~20 signals locally — the generated brief, the edited RSA copy,
+   * the resolved HubSpot UTM, the keyword list — and none of it is lifted to this component. A
+   * structural `@switch` therefore threw all of it away the moment the user looked at another
+   * tab, and a brief is a slow, non-deterministic AI generation: it cannot be reproduced by
+   * re-running it. The panel is now visibility-toggled instead, the same treatment the two
+   * delivery-type containers already had for the same reason.
+   *
+   * Asserted on the DOM rather than the tab signal, because the tab signal was never the bug —
+   * it changed correctly both before and after this fix.
+   */
+  const planningHost = (testid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
+
+  it('keeps the paid planner mounted when the user moves to another tab', () => {
+    const before = planningHost('campaigns-planning-tab');
+    expect(before).not.toBeNull();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+
+    const after = planningHost('campaigns-planning-tab');
+    // The SAME element instance, not merely a present one: a re-created component would satisfy
+    // a null check while still having lost every signal it held.
+    expect(after).toBe(before);
+    expect(planningHost('campaigns-planning-panel')?.style.display).toBe('none');
+
+    internals().selectTab('planning', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(planningHost('campaigns-planning-tab')).toBe(before);
+    expect(planningHost('campaigns-planning-panel')?.style.display).toBe('');
+  });
+
+  it('keeps the email planner mounted when the user moves to another tab', () => {
+    selectEmail();
+    const before = planningHost('campaigns-email-planning-tab');
+    expect(before).not.toBeNull();
+
+    internals().selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    expect(planningHost('campaigns-email-planning-tab')).toBe(before);
+    expect(planningHost('campaigns-email-planning-panel')?.style.display).toBe('none');
+  });
+
+  it('still mounts the fetch-on-init tabs lazily', () => {
+    // The counterpart constraint, and the reason only Planning was hoisted out of the @switch.
+    // Implementation, Insights and Optimization all fetch in `ngOnInit` — metrics reads and
+    // LinkedIn account lookups — so mounting them eagerly would issue network calls for tabs the
+    // user may never open, on every page load. Hoisting all four would trade one bug for a cost
+    // regression, so this pins that they are still swapped rather than merely hidden.
+    //
+    // Asserted on the PANEL ids: `campaigns-insights-tab` is carried by both the nav button and
+    // the panel's component, so it cannot distinguish "mounted" from "there is a button for it".
+    expect(planningHost('campaigns-insights-panel')).toBeNull();
+    expect(planningHost('campaigns-optimization-panel')).toBeNull();
+
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+
+    expect(planningHost('campaigns-insights-panel')).not.toBeNull();
+    // Swapped, not stacked: the previous panel is gone from the DOM rather than hidden.
+    expect(planningHost('campaigns-optimization-panel')).toBeNull();
+  });
+
   it('does not let one delivery type receive the other approved brief', () => {
     internals().onProceedToImplementation(exampleBrief);
     expect(internals().briefOutput()).toEqual(exampleBrief);
