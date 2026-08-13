@@ -7,6 +7,24 @@
 
 export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
 
+/**
+ * The email channel's platform id, kept OUT of `CampaignPlatform` on purpose.
+ *
+ * Upstream this is just another `platform` value (`docs/api-catalog.md` records the enum as
+ * `"hubspot"`, and `campaigns` is unique on `(brief_id, platform)`), so the two look
+ * interchangeable from the wire. They are not interchangeable HERE, because `CampaignPlatform` is
+ * not only a type — its members are enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad
+ * Channels picker (`planning-tab.component.ts:96`). Widening the union invites `hubspot` into that
+ * list, where a paid brief could select it.
+ *
+ * Separate types keep the distinction the delivery-type work established: email is not an ad
+ * channel, it is a different delivery type that happens to dispatch through one.
+ */
+export type CampaignEmailPlatform = 'hubspot';
+
+/** Any platform a campaign can dispatch to — paid ad channels plus the email channel. */
+export type CampaignAnyPlatform = CampaignPlatform | CampaignEmailPlatform;
+
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 
 export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
@@ -665,6 +683,31 @@ export interface CampaignBriefRefineRequest {
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
 
+/**
+ * The email channel's per-platform config, typed to what campaign-service's `hubspotConfig`
+ * actually reads (`internal/dispatch/hubspot.go:47-56`) rather than to the legacy request shape
+ * the ad platforms carry.
+ *
+ * Deliberately just these two fields. The rest of what the HubSpot dispatcher needs — the send
+ * list, its suppressions — is NOT config: it resolves the brief's BUILT audience by `brief.ID`
+ * (`hubspot.go:293`), so passing an audience here would be a second, divergent source of truth
+ * for something the service already owns.
+ */
+export interface HubSpotCampaignCreateRequest {
+  /**
+   * The HubSpot marketing-email id to clone. REQUIRED upstream — there is no default template,
+   * and `hubspot.go:281-283` refuses the dispatch when it is blank. Sourced from the template
+   * picker that `searchHubSpotEmails` feeds.
+   */
+  sourceEmailId: string;
+  /**
+   * Optional override for the `utm_campaign` applied to the email's links. When unset the service
+   * derives one from the deterministic email name, so links stay attributable either way — set it
+   * only to roll several briefs' emails up to one campaign in reporting.
+   */
+  utmCampaign?: string;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -686,10 +729,17 @@ export interface CampaignCreateRequest {
   geoTargets: string[];
   project?: string;
   driveFolderUrl?: string;
-  platforms?: CampaignPlatform[];
+  /**
+   * Widened to `CampaignAnyPlatform` — this is the ONE request where the email channel is a legal
+   * platform, because it is the only one that dispatches. The planning/refine requests keep the
+   * narrow `CampaignPlatform[]`: those drive ad-copy and keyword generation, which email does not
+   * use, so accepting `hubspot` there would type-check a request the generators cannot serve.
+   */
+  platforms?: CampaignAnyPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+  hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 
 /**

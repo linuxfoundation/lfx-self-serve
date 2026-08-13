@@ -1036,6 +1036,9 @@ export class CampaignController {
     const metaConfig = this.buildMetaConfig(body);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
+    const hubspotConfig = this.buildHubSpotConfig(body);
+    if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
+
     return envelope;
   }
 
@@ -1158,5 +1161,30 @@ export class CampaignController {
 
     const { budgetUsd, ...rest } = body.metaConfig;
     return { ...rest, budget: budgetUsd };
+  }
+
+  /**
+   * The email channel's config.
+   *
+   * A BLANK `sourceEmailId` returns null — i.e. UNCONFIGURED — rather than an object carrying an
+   * empty string. Upstream requires it (`hubspot.go:281-283` refuses a blank one), so both paths
+   * end in a refusal; the difference is where. Null makes `hasPlatformConfig` refuse locally with
+   * "No configuration was built for: hubspot", naming the actual problem. Sending `''` instead
+   * spends a round trip to learn the same thing, and the job is created before it fails.
+   *
+   * Trimmed because a whitespace-only id is the same non-answer as an absent one: upstream
+   * `strings.TrimSpace`s it before the check, so `' '` would pass a truthiness test here and be
+   * refused there — the precise split this guard exists to avoid.
+   *
+   * `utmCampaign` is only forwarded when non-blank. It is optional upstream, where ABSENT means
+   * "derive one from the email name" — so forwarding `''` would not select that default, it would
+   * hand the service an empty override. Absence has to stay absence.
+   */
+  private buildHubSpotConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    const sourceEmailId = body?.hubspotConfig?.sourceEmailId?.trim();
+    if (!sourceEmailId) return null;
+
+    const utmCampaign = body.hubspotConfig?.utmCampaign?.trim();
+    return utmCampaign ? { sourceEmailId, utmCampaign } : { sourceEmailId };
   }
 }

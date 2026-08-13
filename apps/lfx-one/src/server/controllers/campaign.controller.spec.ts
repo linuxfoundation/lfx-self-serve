@@ -653,6 +653,88 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent).not.toHaveProperty('budgetUsd');
     expect(sent['geoTargets']).toEqual(['US']);
   });
+
+  /**
+   * LFXV2-3256. The envelope key and field names are a CONTRACT with
+   * `internal/dispatch/hubspot.go:47-56` — the dispatcher reads `hubspotConfig.sourceEmailId`, and
+   * `unmarshalPlatformConfig` treats a missing key as a zero value rather than an error. A typo on
+   * either side therefore produces a silent zero-value dispatch, not a type error, which is why
+   * these assert the exact strings.
+   */
+  it('builds the hubspot envelope key the email dispatcher reads', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent).toEqual({ sourceEmailId: 'email-123' });
+  });
+
+  it('forwards utmCampaign only when it is set', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: 'kubecon-eu' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1', utmCampaign: 'kubecon-eu' });
+  });
+
+  /**
+   * Absence must stay absence. Upstream, an ABSENT `utmCampaign` means "derive one from the
+   * deterministic email name" — so forwarding `''` does not select that default, it hands the
+   * service an empty override. Asserting the key is missing, not that it is falsy.
+   */
+  it('omits a blank utmCampaign rather than sending an empty override', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('utmCampaign');
+    expect(sent['sourceEmailId']).toBe('e-1');
+  });
+
+  /**
+   * A blank id must read as UNCONFIGURED, so `hasPlatformConfig` refuses locally and names the
+   * problem. Upstream trims before its own emptiness check, so a whitespace-only id would pass a
+   * truthiness test here and be refused there — the split this guard exists to prevent.
+   *
+   * Asserts the key is ABSENT, not that it holds `''`: only absence reaches the refusal.
+   */
+  it.each([
+    ['whitespace only', '   '],
+    ['empty string', ''],
+  ])('treats a %s sourceEmailId as unconfigured rather than sending it', async (_label, sourceEmailId) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId } }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('omits hubspotConfig entirely when the request carries none', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({}), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
 });
 
 /**
