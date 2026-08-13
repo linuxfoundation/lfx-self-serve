@@ -658,6 +658,45 @@ export const MEETING_DURATION_OPTIONS = [
   { label: 'Custom...', value: 'custom' },
 ];
 
+/** Character limit for the meeting agenda (`description`) */
+export const MEETING_AGENDA_MAX_LENGTH = 2000;
+
+/** Agenda length at which the character counter turns amber */
+export const MEETING_AGENDA_WARNING_LENGTH = 1800;
+
+/** Lower bound for the custom meeting duration, in minutes */
+export const MIN_CUSTOM_DURATION = 5;
+
+/** Upper bound for the custom meeting duration, in minutes */
+export const MAX_CUSTOM_DURATION = 480;
+
+/**
+ * Duration chips for the meeting composer's Date & Schedule section
+ * @description Same `duration` control as MEETING_DURATION_OPTIONS, with chip-length labels and a
+ * 45-minute step the dropdown never offered. Values must stay assignable to that control.
+ */
+export const MEETING_DURATION_CHIP_OPTIONS = [
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '45 min', value: 45 },
+  { label: '1 hour', value: 60 },
+  { label: '90 min', value: 90 },
+  { label: '2 hours', value: 120 },
+  { label: 'Custom', value: 'custom' },
+];
+
+/**
+ * Early-join chips for the meeting composer's Date & Schedule section
+ * @description Every value sits inside [MIN_EARLY_JOIN_TIME, MAX_EARLY_JOIN_TIME], so picking a chip
+ * can never put the control in an invalid state.
+ */
+export const EARLY_JOIN_CHIP_OPTIONS = [
+  { label: '10 min', value: 10 },
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 hour', value: 60 },
+];
+
 // ============================================================================
 // Template Re-exports
 // ============================================================================
