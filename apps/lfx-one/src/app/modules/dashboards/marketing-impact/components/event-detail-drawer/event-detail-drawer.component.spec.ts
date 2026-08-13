@@ -4,6 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { PAID_CAMPAIGN_LIMIT } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -35,6 +36,8 @@ describe('EventDetailDrawerComponent', () => {
       { tier: 'Gold', revenue: 200000, sponsorCount: 4 },
     ],
     channels: [],
+    paidCampaigns: [],
+    emailCampaigns: [],
     pacing: { available: false, daysLeft: null, current: null, priorYear: null, predictedAvg: null, predictedLow: null, predictedHigh: null, points: [] },
     ...overrides,
   });
@@ -147,6 +150,68 @@ describe('EventDetailDrawerComponent', () => {
 
   // The roster's bars already expose progressbar semantics; the drawer shows the same metrics
   // and must not be the one place AT can't read completion.
+  // The breakdowns only ever rendered against empty arrays, so the totals, the truncation labels
+  // and the collapse toggle could all regress while this suite stayed green.
+  describe('paid and email breakdowns', () => {
+    const paid = (name: string, spend: number, conversions: number) => ({
+      name,
+      platform: 'Google Ads',
+      spend,
+      conversions,
+      clicks: 100,
+      impressions: 1000,
+      cpa: conversions > 0 ? spend / conversions : null,
+    });
+
+    it('sums spend and conversions across the campaigns it received', async () => {
+      await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paid('A', 6000, 3), paid('B', 4000, 1)] }))));
+      await open('evt-1');
+
+      // $10K total, and a blended CPA of 10000/4 = $2.5K — derived, not read off any single row.
+      expect(text()).toContain('$10K');
+      expect(text()).toContain('$2.5K');
+    });
+
+    // The cap is the reason the label exists: below it the header states a plain count, at it the
+    // header must say the summary covers only the rows shown.
+    it('labels a capped list as a top-N view rather than a complete count', async () => {
+      const many = Array.from({ length: PAID_CAMPAIGN_LIMIT }, (_, i) => paid(`C${i}`, 100, 1));
+      await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: many }))));
+      await open('evt-1');
+
+      expect(text()).toContain('by spend');
+    });
+
+    it('states a plain campaign count when nothing was truncated', async () => {
+      await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paid('A', 100, 1), paid('B', 50, 1)] }))));
+      await open('evt-1');
+
+      expect(text()).toContain('2 campaigns');
+      expect(text()).not.toContain('by spend');
+    });
+
+    // Rates are recomputed from the summed counts, not averaged across campaigns — averaging would
+    // weight a 50-send email the same as a 50,000-send one.
+    it('recomputes email open rate from the summed counts', async () => {
+      await setup(
+        vi.fn().mockReturnValue(
+          of(
+            detail({
+              emailCampaigns: [
+                { name: 'Big', sends: 10000, opens: 5000, clicks: 100, openRate: 50, ctr: 1 },
+                { name: 'Small', sends: 100, opens: 10, clicks: 1, openRate: 10, ctr: 1 },
+              ],
+            })
+          )
+        )
+      );
+      await open('evt-1');
+
+      // 5010/10100 = 49.6%, not the 30% a naive average of 50 and 10 would give.
+      expect(text()).toContain('49.6%');
+    });
+  });
+
   it('exposes the registration goal bar to assistive technology', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 

@@ -14,12 +14,12 @@ import type {
   CampaignDeliveryType,
   CampaignProgramType,
   CampaignTab,
+  CampaignTabOption,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip } from 'rxjs';
 
-import { ButtonComponent } from '../../../shared/components/button/button.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
@@ -28,15 +28,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 
 @Component({
   selector: 'lfx-campaigns',
-  imports: [
-    ReactiveFormsModule,
-    SelectComponent,
-    ButtonComponent,
-    PlanningTabComponent,
-    ImplementationTabComponent,
-    MonitoringTabComponent,
-    OptimizationTabComponent,
-  ],
+  imports: [ReactiveFormsModule, SelectComponent, PlanningTabComponent, ImplementationTabComponent, MonitoringTabComponent, OptimizationTabComponent],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
 })
@@ -71,7 +63,17 @@ export class CampaignsComponent {
    */
   private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
 
+  /** The Paid Marketing side's current tab. Email keeps its own — see the delivery-type effect. */
   protected readonly selectedTab = signal<CampaignTab>('planning');
+
+  /**
+   * The Email side's current tab.
+   *
+   * Typed to exclude 'optimization' rather than merely documenting that it is never set: the
+   * exclusion is the whole reason this signal exists separately, so the compiler should be the
+   * thing that enforces it. `selectTab` narrows before assigning.
+   */
+  protected readonly selectedEmailTab = signal<Exclude<CampaignTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
@@ -303,8 +305,49 @@ export class CampaignsComponent {
    */
   private readonly briefPersistenceEnabled = signal(false);
 
+  /**
+   * The Email side's approved brief. Separate from `briefOutput` for the same reason the tab
+   * signals are separate: both containers stay mounted, so one shared signal would let a brief
+   * approved under Paid Marketing appear in Email's Implement tab after a round-trip.
+   */
+  protected readonly emailBriefOutput = signal<CampaignBriefOutput | null>(null);
+
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
+
+  /**
+   * Whether the Email delivery type is the one on screen.
+   *
+   * One computed rather than repeated `=== 'email'` comparisons, and the template is the
+   * reason: the two container bindings are INVERSIONS of each other, which is where a mistake
+   * would hide. `isEmail()` / `!isEmail()` reads as the opposition it is.
+   */
+  protected readonly isEmail = computed(() => this.selectedDeliveryType() === 'email');
+
+  /**
+   * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
+   *
+   * That distinction is the whole point. Both containers stay MOUNTED, so a list keyed on
+   * `isEmail()` would describe *the page* rather than *this container*: while Paid Marketing is
+   * showing, the hidden Email tablist would render the unfiltered four — including the Optimize
+   * button this channel must never offer — and the keyboard handler's bounds would disagree
+   * with the DOM it indexes into. A per-container constant cannot drift with ambient state.
+   *
+   * Email drops **Optimize** because the tab has no meaning here, not because it is unbuilt.
+   * Optimize drives keyword and status actions, and `HubSpotDispatcher` implements no
+   * `StatusToggler`: campaign create STAGES a draft that a human reviews and sends, so nothing
+   * is running to pause. A Pause/Resume would be answered `ErrToggleUnsupported` → 400, over
+   * keyword and metrics data that is not this channel's to begin with.
+   *
+   * Monitor stays, but as a pending panel rather than the paid Monitor component.
+   * campaign-service CAN read HubSpot email metrics (`HubSpotDispatcher.ReadMetrics`,
+   * LFXV2-3058) — this application has no route to it, so there is nothing to render yet.
+   * Stated at both layers deliberately: an earlier version of this comment reasoned from the
+   * backend capability straight to a frontend guarantee, and that missing step is exactly what
+   * made reusing `MonitoringTabComponent` here look safe. It is not — that component's
+   * `PlatformType` is `'google' | 'linkedin' | 'reddit' | 'meta'`.
+   */
+  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
 
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
@@ -352,15 +395,19 @@ export class CampaignsComponent {
       this.resetToPlanning();
     });
 
-    // Mirror the delivery-type control into the signal. Preserve ALL in-progress
-    // Paid Marketing state across an Email round-trip: Email is a "coming soon"
-    // placeholder, and the paid-marketing container stays mounted (hidden via an inline
-    // [style.display] binding, which wins the cascade over the `flex` utility that
-    // otherwise overrides [hidden]), so we must NOT touch briefOutput OR selectedTab.
-    // Resetting selectedTab here would swap the inner @switch and destroy the
+    // Mirror the delivery-type control into the signal. Preserve ALL in-progress state on BOTH
+    // sides of an Email <-> Paid Marketing round-trip: each container stays mounted (hidden via
+    // an inline [style.display] binding, which wins the cascade over the `flex` utility that
+    // otherwise overrides [hidden]), so we must NOT touch briefOutput OR either selectedTab.
+    // Resetting a tab here would swap that side's inner @switch and destroy the
     // currently-mounted tab component (e.g. ImplementationTabComponent with its own
-    // form/budget/creation state); leaving it alone means returning to Paid Marketing
-    // restores the same tab and its state.
+    // form/budget/creation state); leaving both alone means returning to either delivery type
+    // restores the tab it was on, with its state.
+    //
+    // The two sides keep SEPARATE tab signals rather than sharing one, because their tab sets
+    // differ: Email has no Optimize (see emailTabs). A shared signal would leave the page on
+    // a tab this side does not render after a switch away from Optimize — a blank panel with a
+    // tablist that agrees with nothing.
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
@@ -369,35 +416,63 @@ export class CampaignsComponent {
     });
   }
 
-  protected selectTab(tab: CampaignTab): void {
+  /**
+   * Set the current tab on the container that OWNS the tablist, named explicitly by the caller.
+   *
+   * Not inferred from `selectedDeliveryType()`. Both containers are mounted, so the hidden one's
+   * buttons still dispatch — and a handler that routes by ambient state writes the hidden
+   * tablist's click into the VISIBLE side's signal. `display:none` keeps that out of reach of an
+   * ordinary pointer or Tab press, but not of a programmatic `.click()`, which is exactly what
+   * an E2E locator resolving a duplicated testid performs.
+   */
+  protected selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void {
+    if (owner === 'email') {
+      // Narrowed, never cast: `selectedEmailTab` excludes 'optimization' by type, and the only
+      // way to arrive here with it is a caller iterating the wrong list — the very bug the
+      // exclusion exists to catch, so it must not be asserted away.
+      if (tab !== 'optimization') {
+        this.selectedEmailTab.set(tab);
+      }
+      return;
+    }
     this.selectedTab.set(tab);
   }
 
-  protected onTabKeydown(event: KeyboardEvent, currentIndex: number): void {
+  /**
+   * Roving-tabindex keyboard navigation over one tablist.
+   *
+   * The owner is passed in for the same reason `selectTab` takes it, plus one specific to this
+   * handler: `currentIndex` comes from the firing tablist's `@for`, and the DOM focus lookup
+   * below indexes that same tablist's children. If the bounding list came from ambient state
+   * instead, those three would be indexing into collections of different lengths — the email
+   * tablist passing index 2 against a four-length list would select Optimize and focus nothing.
+   */
+  protected onTabKeydown(event: KeyboardEvent, currentIndex: number, owner: CampaignDeliveryType): void {
+    const tabs = owner === 'email' ? this.emailTabs : this.tabs;
     let newIndex: number | null = null;
 
     if (event.key === 'ArrowRight') {
-      newIndex = (currentIndex + 1) % this.tabs.length;
+      newIndex = (currentIndex + 1) % tabs.length;
     } else if (event.key === 'ArrowLeft') {
-      newIndex = (currentIndex - 1 + this.tabs.length) % this.tabs.length;
+      newIndex = (currentIndex - 1 + tabs.length) % tabs.length;
     } else if (event.key === 'Home') {
       newIndex = 0;
     } else if (event.key === 'End') {
-      newIndex = this.tabs.length - 1;
+      newIndex = tabs.length - 1;
     }
 
     if (newIndex !== null) {
       event.preventDefault();
-      this.selectTab(this.tabs[newIndex].id);
+      this.selectTab(tabs[newIndex].id, owner);
       if (isPlatformBrowser(this.platformId)) {
-        const target = (event.target as HTMLElement).parentElement?.children[newIndex] as HTMLElement | undefined;
+        // `event.target` is typed `EventTarget | null`, and the cast asserted it away. Selecting
+        // the tab is the part that matters; moving focus is the enhancement, so a synthetic or
+        // retargeted event must not take the whole handler down with it.
+        const source = event.target instanceof HTMLElement ? event.target : null;
+        const target = source?.parentElement?.children[newIndex] as HTMLElement | undefined;
         target?.focus();
       }
     }
-  }
-
-  protected switchToPaidMarketing(): void {
-    this.selectorForm.controls.deliveryType.setValue('paid-marketing');
   }
 
   /**
@@ -439,6 +514,19 @@ export class CampaignsComponent {
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
+  /**
+   * The Email side's handoff, deliberately NOT routed through `onProceedToImplementation`.
+   *
+   * It sets the email tab and the email brief, which are separate signals — see the
+   * delivery-type effect. It also does not persist: brief persistence is keyed on
+   * `(foundation, event)` and the email channel's brief shape is still LFXV2-3201's to settle,
+   * so saving one now would file a paid-shaped row under an email brief's key.
+   */
+  protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
+    this.emailBriefOutput.set(brief);
+    this.selectedEmailTab.set('implementation');
+  }
+
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
@@ -818,6 +906,15 @@ export class CampaignsComponent {
     return `${projectSlug}\n${eventSlug}`;
   }
 
+  /**
+   * Discard both sides' briefs and return both to Plan.
+   *
+   * BOTH, not just the visible one. A program switch changes the brief context for every
+   * delivery type — the URL scrape and the generated copy are program-specific — and the two
+   * containers stay mounted, so resetting only the side on screen leaves an Events brief sitting
+   * under Education on the other, waiting to be handed to Implement the next time the user
+   * switches delivery type.
+   */
   private resetToPlanning(): void {
     // Before clearing, so an in-flight save for the brief being discarded cannot write its
     // outcome back over the reset state.
@@ -835,5 +932,7 @@ export class CampaignsComponent {
     // re-filing after a discard. The clear was defending against a hazard the key shape and the
     // generation counter already cover.
     this.selectedTab.set('planning');
+    this.emailBriefOutput.set(null);
+    this.selectedEmailTab.set('planning');
   }
 }

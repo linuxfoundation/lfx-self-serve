@@ -44,7 +44,8 @@
         [label]="name()"
         shape="circle"
         [style]="{ width: '34px', height: '34px' }"
-        styleClass="bg-gray-100 text-gray-600"></lfx-avatar>
+        styleClass="bg-gray-100 text-gray-600"
+        (onImageError)="handleAvatarError()"></lfx-avatar>
       <div class="flex flex-col gap-0.5 leading-tight">
         <span class="whitespace-nowrap text-[17px] font-bold text-gray-900">{{ name() }}</span>
         @if (headline()) {

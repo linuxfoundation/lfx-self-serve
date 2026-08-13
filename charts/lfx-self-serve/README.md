@@ -119,6 +119,13 @@ environment:
 | `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
 | `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
 | `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
+
+`tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
 
 ### Environment Variables
 
