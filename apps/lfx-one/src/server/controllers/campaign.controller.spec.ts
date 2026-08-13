@@ -493,7 +493,10 @@ describe('CampaignController.createCampaign cutover', () => {
       'b-9',
       'cncf',
       ['linkedin-ads'],
-      { hsToken: 'hs-1', linkedInConfig: { budgetUsd: 100 } },
+      // `linkedInConfig` is adapted, not forwarded: the account override is stripped and the
+      // runtime targeting catalogue is added. Asserted loosely here because the exact catalogue
+      // comes from config on disk; the adapter has its own dedicated test above.
+      { hsToken: 'hs-1', linkedInConfig: expect.objectContaining({ budgetUsd: 100 }) },
       // The options object carries `campaignTypes` for the Demand Gen refusal. Asserted rather
       // than loosened to `expect.anything()`, so dropping the argument fails here too.
       { campaignTypes: undefined }
@@ -520,11 +523,14 @@ describe('CampaignController.createCampaign cutover', () => {
       'b-1',
       'tlf',
       ['linkedin-ads'],
-      { linkedInConfig: { budgetUsd: 100 } },
-      {
-        campaignTypes: undefined,
-      }
+      // `objectContaining`: `linkedInConfig` is ADAPTED, not forwarded — the runtime targeting
+      // catalogue is added from config on disk. The adapter has its own test above; what this one
+      // pins is the absence of an invented `redditConfig`.
+      { linkedInConfig: expect.objectContaining({ budgetUsd: 100 }) },
+      { campaignTypes: undefined }
     );
+    // The property this test exists for: no INVENTED null config for a platform not selected.
+    // `linkedInConfig` is present and adapted (see the LinkedIn adapter test above).
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
   });
 
@@ -567,6 +573,35 @@ describe('CampaignController.createCampaign cutover', () => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['search', 'demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['budget']).toBe(600);
+  });
+
+  /**
+   * The legacy LinkedIn object cannot be forwarded unchanged, and both halves fail the dispatch:
+   *
+   *   - `adAccountId` is REJECTED on mismatch (`linkedin.go:143`, "cross-account campaigns are not
+   *     allowed"), and the legacy request carries this app's account, not the project connection's.
+   *   - the dispatcher builds its runtime config from `targetingProfiles` (plural catalogue) and
+   *     `employerExclusions` (`linkedin.go:135`); the legacy request carries neither, so an
+   *     ordinary profile selection fails with "not found in runtime config".
+   */
+  it('strips the legacy ad account and adds the runtime targeting catalogue for LinkedIn', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const linkedInBody = {
+      platforms: ['linkedin-ads'],
+      linkedInConfig: { budgetUsd: 100, adAccountId: '507654321', targetingProfile: { id: 'cloud-native' } },
+    };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['linkedInConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('adAccountId');
+    expect(sent).toHaveProperty('targetingProfiles');
+    expect(sent).toHaveProperty('employerExclusions');
+    // The user's SELECTION survives — it is what the catalogue is resolved against, not a
+    // duplicate of it.
+    expect(sent['targetingProfile']).toEqual({ id: 'cloud-native' });
+    expect(sent['budgetUsd']).toBe(100);
   });
 
   it('omits googleAdsConfig when only demand-gen is selected', async () => {

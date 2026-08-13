@@ -950,7 +950,8 @@ export class CampaignController {
     const googleAdsConfig = this.buildGoogleAdsConfig(body);
     if (googleAdsConfig) envelope['googleAdsConfig'] = googleAdsConfig;
 
-    if (body?.linkedInConfig) envelope['linkedInConfig'] = body.linkedInConfig;
+    const linkedInConfig = this.buildLinkedInConfig(body);
+    if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
     const metaConfig = this.buildMetaConfig(body);
@@ -1016,6 +1017,42 @@ export class CampaignController {
       // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
       // dispatcher has no field for.
       keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+    };
+  }
+
+  /**
+   * LinkedIn's config, translated from `linkedInConfig` on the legacy request.
+   *
+   * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
+   * adapter exists at all:
+   *
+   * 1. `adAccountId` is REJECTED on mismatch, not ignored. campaign-service resolves the account
+   *    from its own connection row, and honours a caller override only when it matches exactly —
+   *    `linkedin.go:143` returns "cross-account campaigns are not allowed" otherwise. The legacy
+   *    request carries this application's `LINKEDIN_AD_ACCOUNT_ID`, which has no reason to equal
+   *    the project's connection. Stripped: letting the connection decide is the whole point of
+   *    the cutover, and an override that matches adds nothing.
+   *
+   * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
+   *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
+   *    request carries `targetingProfile` (SINGULAR — the one the user picked) and no exclusions,
+   *    so without this the client fails with "profile not found in runtime config" for the
+   *    ordinary `cloud-native` and `mcp` selections. Both come from `getLinkedInConfig()`, which
+   *    is the same source the legacy path reads.
+   *
+   * The singular `targetingProfile` still travels: it is the user's SELECTION, and the catalogue
+   * is what that selection is resolved against. They are not duplicates of each other.
+   */
+  private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.linkedInConfig) return null;
+
+    const { adAccountId: _adAccountId, ...rest } = body.linkedInConfig;
+    const runtime = getLinkedInConfig();
+
+    return {
+      ...rest,
+      targetingProfiles: runtime.targetingProfiles,
+      employerExclusions: runtime.employerExclusions,
     };
   }
 
