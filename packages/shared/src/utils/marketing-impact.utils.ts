@@ -77,6 +77,9 @@ export function computeMomPct(arr: number[] | undefined): number | null {
 // === Period Utilities ===
 
 const PERIOD_PRESETS = ['ytd', 'last-3', 'last-6'] as const;
+/** How many individual months the period picker offers, most recent first. */
+const MONTH_COUNT = 12;
+
 const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /**
@@ -85,12 +88,27 @@ const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
  * month period keep resolving instead of failing closed.
  */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
-  const currentYear = new Date().getUTCFullYear();
-  return [
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const presets: MarketingImpactPeriodOption[] = [
     { label: `Year to Date (${currentYear})`, value: 'ytd' },
     { label: 'Last 3 months', value: 'last-3' },
     { label: 'Last 6 months', value: 'last-6' },
   ];
+
+  // Months stay in the picker. This control is page-level — Email, Paid, Web, Social and the
+  // roster all read it and all support a YYYY-MM period. Dropping the months to spare the Events
+  // summary its partial metrics would have removed single-month filtering from every one of them;
+  // the summary handles that itself by reporting the scope it actually served.
+  const months: MarketingImpactPeriodOption[] = [];
+  for (let i = 1; i <= MONTH_COUNT; i++) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    months.push({ label, value });
+  }
+
+  return [...presets, ...months];
 }
 
 /**
@@ -99,9 +117,7 @@ export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption
  * A month is deliberately not the default. Month periods re-aggregate from the event-grained
  * tables and can only supply events/registrations/speakers — attendees, countries, organizations
  * and sponsorship come back null — so defaulting to one dashed four of the seven summary tiles on
- * the landing view. Months are no longer in the picker at all (see
- * buildMarketingImpactPeriodOptions), though resolvePeriodRange still accepts a YYYY-MM value so
- * existing deep links keep working.
+ * the landing view. Months remain selectable for the channels that support them.
  */
 export function getDefaultMarketingImpactPeriod(): string {
   return 'ytd';
