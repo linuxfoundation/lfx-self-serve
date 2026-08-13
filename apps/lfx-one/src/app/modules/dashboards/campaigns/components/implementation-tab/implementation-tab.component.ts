@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -22,6 +22,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
+  CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
@@ -82,6 +83,28 @@ export class ImplementationTabComponent implements OnInit {
   public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null });
 
   /**
+   * Edits carried over from a previous mount, or `null` on a first visit (LFXV2-3229).
+   *
+   * This component sits inside a structural `@switch`, so every trip to another tab destroys it
+   * and everything it holds. Keeping it mounted the way LFXV2-3202 keeps the planner mounted is
+   * the wrong fix here — `ngOnInit` resolves ad-account lists, so an eager mount would issue that
+   * request on every page load for a tab the user may never open. The parent holds the edits
+   * instead, and this component is still free to be destroyed.
+   */
+  public readonly draft = input<CampaignImplementationDraft | null>(null);
+
+  /**
+   * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
+   * the tab is destroyed.
+   *
+   * Emitting on every change rather than on destroy is deliberate: `ngOnDestroy` runs during the
+   * same change-detection pass that removes the component, and a parent signal written there
+   * would be a write-after-read in the pass that is already rendering. Emitting as the user types
+   * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
+   */
+  public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
    * Text for the always-present live region in the template.
    *
    * Kept separate from the visible banners because the announcement and the banner have
@@ -127,7 +150,10 @@ export class ImplementationTabComponent implements OnInit {
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
     budgetUsd: [500, [Validators.required, Validators.min(1)]],
-    searchBudgetPct: [CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct],
+    // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
+    // control type was the literal `70` — which is wrong for a slider the user drags, and made
+    // any other value a type error to patch in (LFXV2-3229).
+    searchBudgetPct: [CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct as number],
     startDate: ['', [Validators.required]],
     endDate: ['', [Validators.required]],
     includeSearch: [true],
@@ -278,7 +304,25 @@ export class ImplementationTabComponent implements OnInit {
       const brief = this.briefData();
       if (!brief) return;
       this.populateFromBrief(brief);
+      // AFTER seeding from the brief, so a carried-over draft wins over the generated copy —
+      // that is the whole point. Inside the same effect rather than a second one because the two
+      // must not race: a separate effect could apply the draft first and have the brief overwrite
+      // it, which is exactly the bug being fixed.
+      //
+      // UNTRACKED, and this is load-bearing rather than an optimisation. The draft is restore
+      // state read once per mount, not a reactive dependency: tracking it closes a loop —
+      // valueChanges emits -> the parent's signal updates -> this input changes -> the effect
+      // re-runs -> it patches the form -> valueChanges emits again. Angular catches that as
+      // NG0103 (infinite change detection) and takes the whole page down with it, which is how
+      // this was found.
+      untracked(() => this.applyDraft());
     });
+
+    // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
+    // types); it does NOT cover the platform signals, which is deliberate — see the draft
+    // interface for why this snapshot is scoped to the fields a user types rather than everything
+    // the component holds.
+    this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.emitDraft());
   }
 
   public ngOnInit(): void {
@@ -508,6 +552,69 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Methods ===
+  /**
+   * Replay edits carried over from a previous mount, over the values just seeded from the brief.
+   *
+   * Guarded on the event slug. A draft belongs to the brief it was typed against, and replaying
+   * event A's copy onto event B's freshly generated brief would silently overwrite it — the same
+   * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
+   * the draft is ignored and the brief's own copy stands.
+   */
+  private applyDraft(): void {
+    const draft = this.draft();
+    if (!draft) return;
+
+    const currentSlug = this.campaignForm.controls.eventSlug.value ?? '';
+    if (draft.eventSlug !== currentSlug) return;
+
+    // `emitEvent: false` throughout: this is a restore, not a user edit. Letting it emit would
+    // re-enter `emitDraft` and write the draft back over itself while it is being applied.
+    this.campaignForm.patchValue(
+      {
+        budgetUsd: draft.budgetUsd,
+        searchBudgetPct: draft.searchBudgetPct,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        includeSearch: draft.includeSearch,
+        includeDemandGen: draft.includeDemandGen,
+      },
+      { emitEvent: false }
+    );
+
+    this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline);
+    this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription);
+  }
+
+  /**
+   * Rebuild one copy FormArray from a list, preserving the validators the field carries.
+   *
+   * Shared by the draft restore and the brief seed so the two cannot drift — an earlier revision
+   * of the seed inlined this twice, which is how a validator ends up on one array and not the
+   * other.
+   */
+  private replaceCopyArray(target: FormArray, values: string[], maxLength: number): void {
+    target.clear({ emitEvent: false });
+    for (const value of values) {
+      target.push(this.fb.control(value, [Validators.required, Validators.maxLength(maxLength)]), { emitEvent: false });
+    }
+  }
+
+  /** Snapshot the user-editable fields for the parent to hold across this component's teardown. */
+  private emitDraft(): void {
+    const form = this.campaignForm.getRawValue();
+    this.draftChange.emit({
+      headlines: (form.headlines as string[]) ?? [],
+      descriptions: (form.descriptions as string[]) ?? [],
+      budgetUsd: form.budgetUsd ?? 0,
+      searchBudgetPct: form.searchBudgetPct ?? CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
+      startDate: form.startDate ?? '',
+      endDate: form.endDate ?? '',
+      includeSearch: form.includeSearch ?? false,
+      includeDemandGen: form.includeDemandGen ?? false,
+      eventSlug: form.eventSlug ?? '',
+    });
+  }
+
   private populateFromBrief(brief: CampaignBriefOutput): void {
     this.step.set('form');
     this.creationProgress.set([]);
@@ -534,17 +641,8 @@ export class ImplementationTabComponent implements OnInit {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
 
-      const headlinesArr = this.campaignForm.controls.headlines as FormArray;
-      headlinesArr.clear();
-      for (const h of headlines) {
-        headlinesArr.push(this.fb.control(h, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)]));
-      }
-
-      const descriptionsArr = this.campaignForm.controls.descriptions as FormArray;
-      descriptionsArr.clear();
-      for (const d of descriptions) {
-        descriptionsArr.push(this.fb.control(d, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)]));
-      }
+      this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline);
+      this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription);
     }
 
     if (brief.linkedInCopy) {

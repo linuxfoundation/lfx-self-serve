@@ -10,6 +10,7 @@ import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignImplementationDraft,
   CampaignBriefPersistResult,
   CampaignDeliveryType,
   CampaignProgramType,
@@ -78,6 +79,23 @@ export class CampaignsComponent {
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
+
+  /**
+   * The Implementation tab's in-progress edits, held here so a tab switch cannot discard them
+   * (LFXV2-3229).
+   *
+   * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves ad-account lists in
+   * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 mounts the planner would issue that
+   * request on every page load for a tab many users never open. Holding its edits up here is the
+   * cheaper half of that trade: the component is still destroyed, but the user's typing is not.
+   *
+   * NOT keyed by `(project, event)` like `knownBriefIds`, and the asymmetry is deliberate. A brief
+   * id names a row that outlives the page, so replaying the wrong one corrupts durable state. A
+   * draft is scratch: the worst a stale one can do is show the wrong copy, and the child already
+   * refuses to apply a draft whose `eventSlug` does not match the brief on screen. A key here
+   * would be machinery guarding against a hazard that is already closed one level down.
+   */
+  protected readonly implementationDraft = signal<CampaignImplementationDraft | null>(null);
 
   /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
@@ -931,6 +949,12 @@ export class CampaignsComponent {
     // inherit an id, and `ownershipGeneration` (bumped just above) already stops a late response
     // re-filing after a discard. The clear was defending against a hazard the key shape and the
     // generation counter already cover.
+    // Cleared, unlike ownership above. The distinction is what each thing REFERS to: ownership
+    // names a row that outlives this page, so dropping it strands durable state. A draft is the
+    // edits to the brief being discarded — keeping it would replay the old copy over whatever is
+    // generated next. The child's `eventSlug` guard would catch a DIFFERENT event, but not the
+    // same event re-generated, which is exactly what Start Over does.
+    this.implementationDraft.set(null);
     this.selectedTab.set('planning');
     this.emailBriefOutput.set(null);
     this.selectedEmailTab.set('planning');

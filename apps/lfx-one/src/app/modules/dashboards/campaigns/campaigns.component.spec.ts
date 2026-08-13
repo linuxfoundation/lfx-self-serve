@@ -9,6 +9,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
+  CampaignImplementationDraft,
   CampaignDeliveryType,
   CampaignProgramType,
   CampaignTab,
@@ -1057,6 +1058,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     onTabKeydown(event: KeyboardEvent, index: number, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
+    implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
+    resetToPlanning(): void;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -1255,5 +1258,104 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Still the paid brief: a shared signal here would show an email brief under Paid
     // Marketing's Implement tab after a round-trip.
     expect(internals().briefOutput()).toEqual(exampleBrief);
+  });
+});
+
+/**
+ * LFXV2-3229: leaving the Implement tab must not discard what the user typed.
+ *
+ * `ImplementationTabComponent` stays inside the lazy `@switch` — it resolves ad-account lists in
+ * `ngOnInit`, so mounting it eagerly the way LFXV2-3202 mounts the planner would issue that
+ * request on every page load for a tab many users never open. The component is therefore still
+ * destroyed on a tab switch; what changed is that its edits now live on the parent.
+ *
+ * Driven through the real DOM rather than by poking the child, because the destruction IS the
+ * mechanism under test — a test that kept one child instance alive would prove nothing.
+ */
+describe('CampaignsComponent — Implementation edits survive a tab switch', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+
+  interface Internals {
+    selectedTab: WritableSignal<CampaignTab>;
+    briefOutput: WritableSignal<CampaignBriefOutput | null>;
+    implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
+    selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
+    onProceedToImplementation(brief: CampaignBriefOutput): void;
+  }
+  const internals = (): Internals => fixture.componentInstance as unknown as Internals;
+
+  const briefFor = (slug: string): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon', slug, countryCode: 'US', registrationUrl: 'https://example.com' },
+      totalBudget: 500,
+      selectedPlatforms: ['google-ads'],
+      structuredCopy: { google_search: { headlines: ['Generated A', 'Generated B'], descriptions: ['Generated desc'] } },
+    }) as unknown as CampaignBriefOutput;
+
+  /** The first headline input inside the Implement panel, which is what a user actually types in. */
+  const headlineInput = (): HTMLInputElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-headline-0"]');
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    fixture.detectChanges();
+  });
+
+  it('carries a typed headline back after a trip to another tab', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input = headlineInput();
+    expect(input).not.toBeNull();
+
+    // Type over the generated copy, the way a marketer would.
+    input!.value = 'Hand-edited headline';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The parent must already hold it — the child is about to be destroyed.
+    expect(internals().implementationDraft()?.headlines?.[0]).toBe('Hand-edited headline');
+
+    // Leave and come back. This DESTROYS the component; that is the point.
+    internals().selectTab('insights', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-implementation-panel"]')).toBeNull();
+
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(headlineInput()?.value).toBe('Hand-edited headline');
+  });
+
+  it('does not replay one event edits onto a different brief', async () => {
+    // The guard that makes the draft safe to hold un-keyed on the parent. Without it, generating
+    // a brief for event B and opening Implement would restore event A's copy over it.
+    internals().implementationDraft.set({
+      headlines: ['Copy for event A'],
+      descriptions: [],
+      budgetUsd: 999,
+      searchBudgetPct: 10,
+      startDate: '2026-01-01',
+      endDate: '2026-02-01',
+      includeSearch: true,
+      includeDemandGen: false,
+      eventSlug: 'event-a',
+    });
+
+    internals().onProceedToImplementation(briefFor('event-b'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Event B's own generated copy stands.
+    expect(headlineInput()?.value).toBe('Generated A');
   });
 });

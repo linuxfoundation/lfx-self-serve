@@ -244,6 +244,44 @@ export interface CampaignBriefPersistResult {
  * user believing their brief is saved when it is not, and this repo has already been bitten by
  * a graceful degradation that hid a 100% failure rate behind a clean UI.
  */
+/**
+ * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
+ *
+ * `ImplementationTabComponent` lives inside a structural `@switch`, so leaving the tab destroys
+ * it and everything it owns locally. LFXV2-3202 fixed that for the Plan tab by keeping the
+ * planner mounted, but the same treatment is wrong here: this component fetches ad-account lists
+ * in `ngOnInit`, so mounting it eagerly would issue that request on every page load for a tab the
+ * user may never open. Lifting the edits out instead keeps the component cheap to destroy while
+ * the user's typing survives (LFXV2-3229).
+ *
+ * Deliberately a SNAPSHOT of user-editable fields only, not the whole component state. Anything
+ * re-derivable from the brief (event name, slug, registration URL) or from a fetch (results,
+ * progress, account lists) is left to re-derive — restoring those would be restoring a cache, and
+ * a stale one. What cannot be recovered is what the user typed.
+ *
+ * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
+ * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
+ * field, and replaying that over a freshly generated brief would erase it.
+ */
+export interface CampaignImplementationDraft {
+  /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
+  headlines: string[];
+  descriptions: string[];
+  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  budgetUsd: number;
+  searchBudgetPct: number;
+  startDate: string;
+  endDate: string;
+  includeSearch: boolean;
+  includeDemandGen: boolean;
+  /**
+   * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
+   * Without it, generating a brief for event B and opening Implement would restore event A's
+   * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
+   */
+  eventSlug: string;
+}
+
 export interface CampaignBriefPersistenceState {
   status: 'off' | 'saving' | 'saved' | 'error';
   briefId: string | null;
