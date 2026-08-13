@@ -9,6 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
+  lfxColors,
   MAINTAINER_MEETING_TYPES,
   MEETING_JOIN_RESTRICTION_OPTIONS,
   MEETING_TYPE_OPTIONS,
@@ -74,15 +75,33 @@ export class ComposerDetailsAccessComponent {
 
   private initMeetingTypeOptions(): Signal<CardSelectorOption<MeetingType>[]> {
     return computed(() => {
-      if (this.personaService.currentPersona() !== 'maintainer') {
-        return MEETING_TYPE_OPTIONS;
-      }
-
+      const hydrated = this.hydratedMeetingType();
       // Editing a meeting whose type this persona can't create would otherwise drop the stored value
       // out of the list, rendering the select as an empty placeholder over a populated control.
-      const hydrated = this.hydratedMeetingType();
+      const available =
+        this.personaService.currentPersona() === 'maintainer'
+          ? MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydrated)
+          : MEETING_TYPE_OPTIONS;
 
-      return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydrated);
+      if (!hydrated || available.some((option) => option.value === hydrated)) {
+        return available;
+      }
+
+      // Upstream types this field as a free-form string, so a stored type we don't have a card for is
+      // possible. Synthesize an entry rather than leave the select looking empty over a valid control.
+      return [...available, this.buildUnknownMeetingTypeOption(hydrated)];
     });
+  }
+
+  private buildUnknownMeetingTypeOption(meetingType: MeetingType): CardSelectorOption<MeetingType> {
+    return {
+      label: meetingType,
+      value: meetingType,
+      info: {
+        icon: 'fa-light fa-calendar',
+        description: 'Existing meeting type',
+        color: lfxColors.gray[500],
+      },
+    };
   }
 }
