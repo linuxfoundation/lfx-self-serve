@@ -10,7 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { Auth0Identity, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import { Auth0Identity, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse, type ClaStatus } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, ResolvedClaIdentity } from '../types/cla.types';
@@ -98,12 +98,42 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 }
 
 /**
+ * Temporary consumer-side status derivation pending EasyCLA publishing an
+ * explicit per-row `status` (#1423). Delete this function and read the
+ * producer's field directly when that lands — the UI vocabulary and table
+ * stay unchanged.
+ *
+ * not approved            ⇒ invalidated
+ * approved and not valid  ⇒ needs_attention  (ECLA coverage miss only)
+ * approved and valid      ⇒ valid
+ *
+ * An absent or null `approved` is treated as not approved. Individual CLAs
+ * never derive `needs_attention`: their validity tracks approval one-to-one
+ * upstream, and the unreachable approved-but-not-valid combo is pinned to
+ * `invalidated` so the amber state cannot leak onto an ICLA.
+ */
+export function deriveMyClaStatus(cla: Pick<EasyClaMyCla, 'claType' | 'approved' | 'valid'>): ClaStatus {
+  if (cla.approved !== true) {
+    return 'invalidated';
+  }
+  if (cla.valid === true) {
+    return 'valid';
+  }
+  if (cla.claType === 'icla') {
+    return 'invalidated';
+  }
+  return 'needs_attention';
+}
+
+/**
  * Maps an upstream `my-cla` record to the UI view model.
  *
- * Validity is authoritative from upstream (`valid`, computed against the *current*
- * CCLA approval lists), so SS does not recompute it: `valid` ⇒ 'valid', otherwise
- * 'inactive'. The 'superseded' label is not derivable here — the endpoint does not
- * expose the CLA group's current version — so it is not produced in M1.
+ * Status is derived from the two flags the endpoint already publishes
+ * (`approved`, `valid`) via {@link deriveMyClaStatus}. That helper is
+ * scaffolding for #1423 and must not be inlined — adopting the upstream
+ * field is a deletion of the helper, not a rewrite of this mapper.
+ * `superseded` is not derivable here (the endpoint does not expose the
+ * CLA group's current version) and is not produced.
  */
 export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
   const isIcla = cla.claType === 'icla';
@@ -123,7 +153,7 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     projectLogo: cla.projectLogo || undefined,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
-    status: cla.valid ? 'valid' : 'inactive',
+    status: deriveMyClaStatus(cla),
     documentVersion,
     pdfAvailable: isIcla && cla.pdfAvailable === true,
   };
@@ -219,9 +249,7 @@ export class ClaService {
     const identity = await this.resolveIdentity(req);
     const list = await this.fetchMyClas(req, identity);
 
-    // Show only currently-valid CLAs: the endpoint returns invalid rows too (valid=false) by
-    // design (#1158, docs/MY_CLAS_API.md); the consumer drops them (valid !== true, per FR-002).
-    const agreements = (list.clas ?? []).filter((cla) => cla.valid === true).map(toMyClaAgreement);
+    const agreements = (list.clas ?? []).map(toMyClaAgreement);
 
     if (list.skippedIdentities?.length) {
       // Identities EasyCLA could not verify as owned — the natural telemetry signal

@@ -103,15 +103,17 @@ describe('claKindSeverity', () => {
 describe('claStatusLabel', () => {
   it('maps each status to its label', () => {
     expect(claStatusLabel('valid')).toBe('Valid');
+    expect(claStatusLabel('needs_attention')).toBe('Needs attention');
+    expect(claStatusLabel('invalidated')).toBe('Invalidated');
     expect(claStatusLabel('superseded')).toBe('Superseded');
-    expect(claStatusLabel('inactive')).toBe('No longer valid');
   });
 });
 
 describe('claStatusSeverity', () => {
-  it('maps each status to a badge severity', () => {
+  it('maps each status to a tag severity', () => {
     expect(claStatusSeverity('valid')).toBe('success');
+    expect(claStatusSeverity('needs_attention')).toBe('warn');
+    expect(claStatusSeverity('invalidated')).toBe('danger');
     expect(claStatusSeverity('superseded')).toBe('warn');
-    expect(claStatusSeverity('inactive')).toBe('secondary');
   });
 });

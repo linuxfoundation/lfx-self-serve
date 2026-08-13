@@ -5,29 +5,41 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import type { MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
-import { downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
-import { MessageService } from 'primeng/api';
+import type { ClaStatus, MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
+import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
+import { MenuItem, MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TableComponent } from '@components/table/table.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { MyClasService } from '@services/my-clas.service';
 
 /**
- * Read-only "CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs
- * (ICLA + ECLA) from `/v4/my-clas` in a single table (Project / Type / Signed / Document) per
- * the approved M1 mockup — no status column, because the BFF filters to valid-only so every row
- * is valid. Agreements are resolved server-side from the session identity; ICLA PDFs download via
- * short-lived URLs (no new tab).
+ * "My CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
+ * from `/v4/my-clas` with a status column (Valid / Needs attention / Invalidated)
+ * and a per-row actions menu. Status is derived server-side from the upstream
+ * `approved`/`valid` flags until #1423 publishes it on the wire.
  */
 @Component({
   selector: 'lfx-profile-clas',
-  imports: [DatePipe, RouterLink, BadgeComponent, ButtonComponent, EmptyStateComponent, MessageComponent, TableComponent, ToastModule],
+  imports: [
+    DatePipe,
+    RouterLink,
+    BadgeComponent,
+    ButtonComponent,
+    EmptyStateComponent,
+    MenuComponent,
+    MessageComponent,
+    TableComponent,
+    TagComponent,
+    ToastModule,
+  ],
   providers: [MessageService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -67,13 +79,65 @@ export class ProfileClasComponent {
   protected readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
 
+  protected readonly claStatusLabel = claStatusLabel;
+  protected readonly claStatusSeverity = claStatusSeverity;
+
   protected retry(): void {
     this.refresh$.next();
   }
 
+  /** Per-state leading icon for the status pill. Exhaustive against ClaStatus. */
+  protected statusIcon(status: ClaStatus): string {
+    switch (status) {
+      case 'valid':
+        return 'fa-light fa-circle-check';
+      case 'needs_attention':
+        return 'fa-light fa-triangle-exclamation';
+      case 'invalidated':
+        return 'fa-light fa-circle-xmark';
+      case 'superseded':
+        return 'fa-light fa-clock-rotate-left';
+    }
+  }
+
+  /**
+   * Explanatory note beneath the status pill. Empty until #1423 publishes a
+   * cause-specific reason — the slot exists so populating it is a data change.
+   */
+  protected statusNote(agreement: MyClaAgreement): string | undefined {
+    void agreement;
+    return undefined;
+  }
+
+  protected rowMenuItems(agreement: MyClaAgreement): MenuItem[] {
+    if (agreement.pdfAvailable) {
+      return [
+        {
+          label: 'Download PDF',
+          icon: 'fa-light fa-download',
+          command: () => this.onDownload(agreement),
+        },
+      ];
+    }
+    if (agreement.kind === 'ECLA') {
+      return [
+        {
+          label: 'Covered by Corporate CLA (CCLA)',
+          disabled: true,
+        },
+      ];
+    }
+    return [];
+  }
+
+  protected toggleRowMenu(event: Event, menu: MenuComponent): void {
+    event.stopPropagation();
+    menu.toggle(event);
+  }
+
   /**
    * Resolves the ICLA's short-lived PDF URL and triggers a file download (no new tab).
-   * Origin-tab spinner stays on while the presigned URL resolves; see #1228.
+   * Origin-tab spinner stays on the ⋮ trigger while the presigned URL resolves; see #1228.
    * Filename includes project/CLA-group name so multi-project downloads don't collide.
    */
   protected onDownload(agreement: MyClaAgreement): void {

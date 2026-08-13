@@ -41,12 +41,12 @@ const req = {} as unknown as Request;
 
 /** Minimal ICLA record from `/v4/my-clas`. */
 function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-icla', claType: 'icla', valid: true, pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
+  return { signatureID: 's-icla', claType: 'icla', approved: true, valid: true, pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
 }
 
 /** Minimal valid ECLA record from `/v4/my-clas`. */
 function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-ecla', claType: 'ecla', valid: true, companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
+  return { signatureID: 's-ecla', claType: 'ecla', approved: true, valid: true, companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
 }
 
 beforeEach(() => {
@@ -153,8 +153,32 @@ describe('toMyClaAgreement', () => {
     expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1' });
   });
 
-  it('maps an invalidated record to status inactive', () => {
-    expect(toMyClaAgreement(icla({ valid: false })).status).toBe('inactive');
+  it('derives status from the approved/valid truth table', () => {
+    expect(toMyClaAgreement(icla({ approved: true, valid: true })).status).toBe('valid');
+    expect(toMyClaAgreement(icla({ approved: false, valid: false })).status).toBe('invalidated');
+    expect(toMyClaAgreement(ecla({ approved: true, valid: true })).status).toBe('valid');
+    expect(toMyClaAgreement(ecla({ approved: true, valid: false })).status).toBe('needs_attention');
+    expect(toMyClaAgreement(ecla({ approved: false, valid: false })).status).toBe('invalidated');
+  });
+
+  it('never derives needs_attention for an ICLA, including the unreachable approved-but-not-valid combo', () => {
+    const iclaInputs = [
+      icla({ approved: true, valid: true }),
+      icla({ approved: false, valid: false }),
+      icla({ approved: true, valid: false }),
+      icla({ approved: undefined, valid: false }),
+      icla({ approved: null as unknown as boolean, valid: false }),
+    ];
+    for (const row of iclaInputs) {
+      expect(toMyClaAgreement(row).status, `ICLA approved=${String(row.approved)} valid=${String(row.valid)}`).not.toBe('needs_attention');
+    }
+  });
+
+  it('derives invalidated when approved is absent or null, not via a deserialisation default', () => {
+    expect(toMyClaAgreement(icla({ approved: undefined, valid: false })).status).toBe('invalidated');
+    expect(toMyClaAgreement(icla({ approved: null as unknown as boolean, valid: false })).status).toBe('invalidated');
+    expect(toMyClaAgreement(ecla({ approved: undefined, valid: false })).status).toBe('invalidated');
+    expect(toMyClaAgreement(ecla({ approved: null as unknown as boolean, valid: false })).status).toBe('invalidated');
   });
 
   it('maps an ECLA with company name and no pdf', () => {
@@ -387,19 +411,21 @@ describe('ClaService.getMyClas', () => {
     expect(result.identity).toMatchObject({ matchedUserIds: 0, unmatched: true });
   });
 
-  it('filters out invalid CLAs (valid !== true) — surfaces only currently-valid ICLAs/ECLAs', async () => {
+  it('returns every row upstream sent, in order, including needs-attention and invalidated', async () => {
     getEffectiveUsername.mockReturnValue('alice');
-    // The endpoint returns invalid rows too (valid=false) by design (#1158, docs/MY_CLAS_API.md);
-    // the consumer drops them, so a valid record is kept and invalid ICLA/ECLA rows are removed.
     gatewayFetch.mockResolvedValueOnce({
       userIds: ['u-1'],
-      clas: [icla({ signatureID: 'ok' }), icla({ signatureID: 'gone-icla', valid: false }), ecla({ signatureID: 'gone-ecla', valid: false })],
+      clas: [
+        icla({ signatureID: 'valid-icla', approved: true, valid: true }),
+        ecla({ signatureID: 'needs-attn', approved: true, valid: false }),
+        icla({ signatureID: 'invalidated-icla', approved: false, valid: false }),
+      ],
     });
 
     const result = await new ClaService().getMyClas(req);
 
-    expect(result.agreements.map((a) => a.id)).toEqual(['ok']);
-    expect(result.agreements.every((a) => a.status === 'valid')).toBe(true);
+    expect(result.agreements.map((a) => a.id)).toEqual(['valid-icla', 'needs-attn', 'invalidated-icla']);
+    expect(result.agreements.map((a) => a.status)).toEqual(['valid', 'needs_attention', 'invalidated']);
   });
 
   it('authorizes with the target token during impersonation (not the impersonator apiGatewayToken)', async () => {

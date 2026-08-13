@@ -6,7 +6,7 @@
 // an Angular component-test harness.
 
 import { PROFILE_TABS } from '../constants/profile.constants';
-import { BadgeSeverity } from '../interfaces/components.interface';
+import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
 import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 
@@ -51,26 +51,30 @@ export function claKindSeverity(kind: MyClaAgreement['kind']): BadgeSeverity {
   return kind === 'ICLA' ? 'info' : 'secondary';
 }
 
-/** Human-readable status label (research R6). */
+/** Human-readable status label. Exhaustive — a new ClaStatus member fails the build. */
 export function claStatusLabel(status: ClaStatus): string {
   switch (status) {
     case 'valid':
       return 'Valid';
+    case 'needs_attention':
+      return 'Needs attention';
+    case 'invalidated':
+      return 'Invalidated';
     case 'superseded':
       return 'Superseded';
-    default:
-      return 'No longer valid';
   }
 }
 
-/** Badge severity for the status pill. */
-export function claStatusSeverity(status: ClaStatus): BadgeSeverity {
+/** Tag severity for the status pill. Exhaustive — a new ClaStatus member fails the build. */
+export function claStatusSeverity(status: ClaStatus): TagSeverity {
   switch (status) {
     case 'valid':
       return 'success';
+    case 'needs_attention':
+      return 'warn';
+    case 'invalidated':
+      return 'danger';
     case 'superseded':
       return 'warn';
-    default:
-      return 'secondary';
   }
 }

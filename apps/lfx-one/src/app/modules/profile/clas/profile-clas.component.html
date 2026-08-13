@@ -49,8 +49,9 @@ SPDX-License-Identifier: MIT
           <tr class="border-b border-slate-100 bg-slate-50">
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Project</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Type</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Signed</th>
-            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Document</th>
+            <th class="w-14 px-5 py-3"></th>
           </tr>
         </ng-template>
 
@@ -98,23 +99,35 @@ SPDX-License-Identifier: MIT
             </td>
 
             <td class="px-5 py-3.5">
-              <span class="text-sm text-slate-600">{{ agreement.signedOn ? (agreement.signedOn | date: 'mediumDate' : 'UTC') : '—' }}</span>
+              <div class="flex flex-col items-start gap-1">
+                <lfx-tag
+                  [value]="claStatusLabel(agreement.status)"
+                  [severity]="claStatusSeverity(agreement.status)"
+                  [icon]="statusIcon(agreement.status)"
+                  [rounded]="true"
+                  [attr.data-testid]="'agreement-status-' + agreement.id" />
+                @if (statusNote(agreement); as note) {
+                  <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + agreement.id">{{ note }}</p>
+                }
+              </div>
             </td>
 
             <td class="px-5 py-3.5">
-              @if (agreement.pdfAvailable) {
-                <lfx-button
-                  label="Download PDF"
-                  icon="fa-light fa-download"
-                  size="small"
-                  [text]="true"
-                  [loading]="downloadingId() === agreement.id"
-                  (onClick)="onDownload(agreement)" />
-              } @else if (agreement.kind === 'ECLA') {
-                <span class="text-xs text-slate-400">Covered by Corporate CLA (CCLA)</span>
-              } @else {
-                <span class="text-xs text-slate-400">PDF unavailable</span>
-              }
+              <span class="text-sm text-slate-600">{{ agreement.signedOn ? (agreement.signedOn | date: 'mediumDate' : 'UTC') : '—' }}</span>
+            </td>
+
+            <td class="relative px-5 py-3.5 text-right">
+              <lfx-menu #rowMenu [model]="rowMenuItems(agreement)" [popup]="true" appendTo="body"></lfx-menu>
+              <lfx-button
+                [icon]="downloadingId() === agreement.id ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                [disabled]="downloadingId() === agreement.id"
+                [ariaLabel]="'Actions for ' + (agreement.projectName || agreement.claGroupName)"
+                (onClick)="toggleRowMenu($event, rowMenu)"
+                [attr.data-testid]="'agreement-row-actions-' + agreement.id" />
             </td>
           </tr>
         </ng-template>
