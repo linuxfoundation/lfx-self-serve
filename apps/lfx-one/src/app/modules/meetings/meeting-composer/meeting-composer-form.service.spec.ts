@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
-import type { Meeting } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -141,5 +141,66 @@ describe('MeetingComposerFormService — submit generation guard', () => {
     expect(emissions).toHaveLength(1);
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Partially saved' }));
+  });
+
+  it('stamps guests queued before the meeting existed with the created meeting id', () => {
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    service.submit().subscribe();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [expect.objectContaining({ meeting_id: 'meeting-1' })]);
+  });
+});
+
+/**
+ * Covers the guest list the Guests section renders from. It lives here rather than in the section
+ * because the composer host destroys the section on every section change.
+ */
+describe('MeetingComposerFormService — guest list', () => {
+  let service: MeetingComposerFormService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+  });
+
+  it('derives the pending registrant changes from the guest list', () => {
+    service.setGuests([
+      { email: 'new@example.com', state: 'new' } as MeetingRegistrantWithState,
+      { uid: 'guest-2', email: 'gone@example.com', state: 'deleted' } as MeetingRegistrantWithState,
+      { uid: 'guest-3', email: 'kept@example.com', state: 'existing' } as MeetingRegistrantWithState,
+    ]);
+
+    expect(service.registrantUpdates()).toEqual({
+      toAdd: [{ meeting_id: '', email: 'new@example.com' }],
+      toUpdate: [],
+      toDelete: ['guest-2'],
+    });
+  });
+
+  it('clears the guest list on reopen', () => {
+    service.setGuests([{ email: 'new@example.com', state: 'new' } as MeetingRegistrantWithState]);
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.guests()).toEqual([]);
+    expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
   });
 });

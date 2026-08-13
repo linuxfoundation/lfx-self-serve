@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, input, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
@@ -16,11 +16,13 @@ import {
   EMAIL_REMINDER_FEATURE,
   EMAIL_REMINDER_TOOLTIP,
   MAX_EMAIL_REMINDER_HOURS,
-  MEETING_FEATURES,
+  MEETING_FEATURE_BY_KEY,
   MEETING_PLATFORMS,
+  MIN_EMAIL_REMINDER_HOURS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
+import { EMPTY, switchMap } from 'rxjs';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
@@ -35,8 +37,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
   imports: [ReactiveFormsModule, CheckboxComponent, FeatureToggleComponent, InputNumberComponent, SelectButtonComponent, SelectComponent, TooltipModule],
   templateUrl: './composer-platform-features.component.html',
 })
-export class ComposerPlatformFeaturesComponent implements OnInit {
-  private readonly destroyRef = inject(DestroyRef);
+export class ComposerPlatformFeaturesComponent {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
@@ -47,10 +48,13 @@ export class ComposerPlatformFeaturesComponent implements OnInit {
   protected readonly emailReminderFeature = EMAIL_REMINDER_FEATURE;
   protected readonly emailReminderTooltip = EMAIL_REMINDER_TOOLTIP;
 
-  protected readonly recordingFeature = MEETING_FEATURES.find((feature) => feature.key === 'recording_enabled')!;
-  protected readonly aiSummaryFeature = MEETING_FEATURES.find((feature) => feature.key === 'zoom_ai_enabled')!;
-  protected readonly transcriptFeature = MEETING_FEATURES.find((feature) => feature.key === 'transcript_enabled')!;
-  protected readonly youtubeFeature = MEETING_FEATURES.find((feature) => feature.key === 'youtube_upload_enabled')!;
+  protected readonly minReminderHours = MIN_EMAIL_REMINDER_HOURS;
+  protected readonly maxReminderHours = MAX_EMAIL_REMINDER_HOURS;
+
+  protected readonly recordingFeature = MEETING_FEATURE_BY_KEY.recording_enabled;
+  protected readonly aiSummaryFeature = MEETING_FEATURE_BY_KEY.zoom_ai_enabled;
+  protected readonly transcriptFeature = MEETING_FEATURE_BY_KEY.transcript_enabled;
+  protected readonly youtubeFeature = MEETING_FEATURE_BY_KEY.youtube_upload_enabled;
 
   // Unavailable platforms stay listed but disabled, so the roadmap is visible without being pickable.
   protected readonly platformChipOptions = MEETING_PLATFORMS.map((platform) => ({
@@ -60,39 +64,33 @@ export class ComposerPlatformFeaturesComponent implements OnInit {
   }));
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
+  protected readonly platformError: Signal<boolean> = this.initPlatformError();
 
-  public ngOnInit(): void {
+  public constructor() {
+    // Every subscription is bridged through `form` so it re-binds when `initialize()` swaps the
+    // FormGroup on a reopen — binding to the group present at construction would go stale.
+    const form$ = toObservable(this.form);
+
     // Transcripts and YouTube upload both consume the recording, so they follow it on and off.
-    this.form()
-      .get('recording_enabled')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((recordingEnabled: boolean) => {
-        ['transcript_enabled', 'youtube_upload_enabled'].forEach((controlName) => {
-          const control = this.form().get(controlName);
+    form$
+      .pipe(
+        switchMap((form) => form.get('recording_enabled')?.valueChanges ?? EMPTY),
+        takeUntilDestroyed()
+      )
+      .subscribe((recordingEnabled: boolean) => this.syncRecordingDependentControls(recordingEnabled));
 
-          if (!control) {
-            return;
-          }
-
-          if (recordingEnabled) {
-            control.enable();
-          } else {
-            control.setValue(false);
-            control.disable();
-          }
-
-          control.updateValueAndValidity();
-        });
-      });
-
-    this.form()
-      .get('auto_email_reminder_enabled')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+    form$
+      .pipe(
+        switchMap((form) => form.get('auto_email_reminder_enabled')?.valueChanges ?? EMPTY),
+        takeUntilDestroyed()
+      )
       .subscribe((reminderEnabled: boolean) => this.syncReminderTimingControls(reminderEnabled));
 
-    this.form()
-      .get('reminderHours')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+    form$
+      .pipe(
+        switchMap((form) => form.get('reminderHours')?.valueChanges ?? EMPTY),
+        takeUntilDestroyed()
+      )
       .subscribe((hours) => this.syncReminderMinutesControl(Number(hours)));
   }
 
@@ -101,6 +99,32 @@ export class ComposerPlatformFeaturesComponent implements OnInit {
       // `revision` bumps on every value change; a plain control read would not be reactive.
       this.formService.revision();
       return (this.form().get('title')?.value as string | null)?.length ?? 0;
+    });
+  }
+
+  private initPlatformError(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+      const control = this.form().get('platform');
+      return !!control?.errors?.['required'] && control.touched;
+    });
+  }
+
+  private syncRecordingDependentControls(recordingEnabled: boolean): void {
+    [this.transcriptFeature.key, this.youtubeFeature.key].forEach((controlName) => {
+      const control = this.form().get(controlName);
+
+      if (!control) {
+        return;
+      }
+
+      if (recordingEnabled) {
+        control.enable();
+        return;
+      }
+
+      control.setValue(false);
+      control.disable();
     });
   }
 
