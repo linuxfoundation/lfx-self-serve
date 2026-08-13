@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { StaticProvider } from '@angular/core';
+
 import { AuthContext } from './auth.interface';
 import { RuntimeConfig } from './runtime-config.interface';
 
@@ -22,4 +24,11 @@ export interface ServerRequestContext {
    * so `server.ts` rewrites the response status to 404 without changing the URL.
    */
   notFound?: boolean;
+
+  /**
+   * Static providers threaded into the Angular render (base href, `REQUEST`). Present only
+   * on the server-side producer in `server.ts`; typing it here binds that literal to this
+   * contract so a field rename fails the build instead of silently reading `undefined`.
+   */
+  providers?: StaticProvider[];
 }

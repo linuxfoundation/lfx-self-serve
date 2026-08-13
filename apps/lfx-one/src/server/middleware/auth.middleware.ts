@@ -29,13 +29,16 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public meeting join (`/meetings/:id`, `/meetings/not-found`) — anchored to a single segment so
   // multi-segment paths (authenticated `/meetings/:id/edit`, unknown `/meetings/:id/extra`) fall
   // through to the default `required` auth and reach login before the in-shell catch-all 404. The
-  // reserved single-segment `create` still matches here; anonymously it resolves as a public `:id`
-  // (a bogus meeting → its own not-found), so it never renders the authenticated shell.
-  { pattern: /^\/meetings\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+  // reserved single-segment `create` route is excluded via the `(?!create\/?$)` lookahead so it also
+  // classifies `required` — an anonymous `/meetings/create` reaches login rather than SSR-rendering
+  // the create shell as optional-auth. Keeping `required` here means the SSR boundary matches the
+  // Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
+  { pattern: /^\/meetings\/(?!create\/?$)[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
   // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
-  // auth for membership enrichment.
+  // auth for membership enrichment. No reserved single-segment child (groups has no `create` route),
+  // so no lookahead exclusion is needed here.
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an

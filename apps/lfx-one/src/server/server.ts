@@ -4,7 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
+import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -481,7 +481,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
   // Mutable per-request context — a not-found view sets `notFound` during SSR (via REQUEST_CONTEXT,
   // the same object reference) so we emit a real 404 at the originally-requested path (no redirect).
-  const renderContext = {
+  const renderContext: ServerRequestContext = {
     auth,
     runtimeConfig,
     notFound: false,

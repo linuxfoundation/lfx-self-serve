@@ -92,6 +92,18 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('does not treat the reserved /meetings/create segment as public (lookahead exclusion)', async () => {
+    const req = buildReq({ path: '/meetings/create' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // `create` is excluded via `(?!create$)`, so it falls through to the catch-all `required` row and
+    // an unauthenticated SSR GET redirects to login — matching the Angular `writerGuard` boundary.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('does not treat a nested /groups/<id>/<sub> path as public (anchored regex, no fail-open)', async () => {
     const req = buildReq({ path: '/groups/abc123/edit' });
     const res = buildRes();
