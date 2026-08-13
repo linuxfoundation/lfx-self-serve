@@ -156,71 +156,6 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
 ];
 
 /**
- * Selectable meeting types, in composer order.
- * @description Drives the Details & Access type dropdown; `MeetingType.NONE` is deliberately absent
- * because it is not a user-selectable value.
- */
-export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
-  {
-    label: 'Board',
-    value: MeetingType.BOARD,
-    info: {
-      icon: 'fa-light fa-square-check',
-      description: 'Governance meetings for project direction, funding, and strategic decisions',
-      color: lfxColors.violet[500],
-    },
-  },
-  {
-    label: 'Maintainers',
-    value: MeetingType.MAINTAINERS,
-    info: {
-      icon: 'fa-light fa-award',
-      description: 'Regular sync meetings for core maintainers to discuss project health',
-      color: lfxColors.blue[500],
-    },
-  },
-  {
-    label: 'Marketing',
-    value: MeetingType.MARKETING,
-    info: {
-      icon: 'fa-light fa-arrow-pointer',
-      description: 'Community growth, outreach, and marketing strategy meetings',
-      color: lfxColors.emerald[500],
-    },
-  },
-  {
-    label: 'Technical',
-    value: MeetingType.TECHNICAL,
-    info: {
-      icon: 'fa-light fa-code-simple',
-      description: 'Technical discussions, architecture decisions, and development planning',
-      color: lfxColors.violet[500],
-    },
-  },
-  {
-    label: 'Legal',
-    value: MeetingType.LEGAL,
-    info: {
-      icon: 'fa-light fa-shield',
-      description: 'Legal compliance, licensing, and policy discussions',
-      color: lfxColors.amber[500],
-    },
-  },
-  {
-    label: 'Other',
-    value: MeetingType.OTHER,
-    info: {
-      icon: 'fa-light fa-bars',
-      description: "General project meetings that don't fit other categories",
-      color: lfxColors.gray[500],
-    },
-  },
-];
-
-/** Meeting types a maintainer may create. */
-export const MAINTAINER_MEETING_TYPES: MeetingType[] = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
-
-/**
  * Meeting type color mappings
  * @description Maps meeting types to their associated colors, icons, and styling for UI display
  */
@@ -286,6 +221,72 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     tagStyleClass: 'tag-meeting-other',
   },
 };
+
+/**
+ * Selectable meeting types, in composer order.
+ * @description Drives the Details & Access type dropdown. Label and icon come from
+ * `MEETING_TYPE_CONFIGS` so the dropdown never disagrees with the tag rendered on meeting cards;
+ * `MeetingType.NONE` is deliberately absent because it is not a user-selectable value.
+ */
+export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
+  {
+    label: MEETING_TYPE_CONFIGS['board'].label,
+    value: MeetingType.BOARD,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['board'].icon,
+      description: 'Governance meetings for project direction, funding, and strategic decisions',
+      color: lfxColors.red[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS['maintainers'].label,
+    value: MeetingType.MAINTAINERS,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['maintainers'].icon,
+      description: 'Regular sync meetings for core maintainers to discuss project health',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS['marketing'].label,
+    value: MeetingType.MARKETING,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['marketing'].icon,
+      description: 'Community growth, outreach, and marketing strategy meetings',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS['technical'].label,
+    value: MeetingType.TECHNICAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['technical'].icon,
+      description: 'Technical discussions, architecture decisions, and development planning',
+      color: lfxColors.violet[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS['legal'].label,
+    value: MeetingType.LEGAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['legal'].icon,
+      description: 'Legal compliance, licensing, and policy discussions',
+      color: lfxColors.amber[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS['other'].label,
+    value: MeetingType.OTHER,
+    info: {
+      icon: MEETING_TYPE_CONFIGS['other'].icon,
+      description: "General project meetings that don't fit other categories",
+      color: lfxColors.gray[500],
+    },
+  },
+];
+
+/** Meeting types a maintainer may create. */
+export const MAINTAINER_MEETING_TYPES: readonly MeetingType[] = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
 
 /**
  * Default meeting type configuration
@@ -354,6 +355,12 @@ export const YOUTUBE_TITLE_DATE_SUFFIX_LENGTH = 13;
  * A title exceeding this limit will cause an invalidTitle error on upload.
  */
 export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTUBE_TITLE_DATE_SUFFIX_LENGTH;
+
+/**
+ * Title length at which the composer's YouTube counter turns amber
+ * @description Warns while the title is still valid, so the user can trim it before hitting the limit.
+ */
+export const YOUTUBE_MEETING_TITLE_WARNING_LENGTH = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
 
 /**
  * Default early join time in minutes

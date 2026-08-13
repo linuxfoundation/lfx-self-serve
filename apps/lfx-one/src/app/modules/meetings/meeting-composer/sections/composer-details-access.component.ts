@@ -14,6 +14,7 @@ import {
   MEETING_TYPE_OPTIONS,
   MEETING_VISIBILITY_OPTIONS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
+  YOUTUBE_MEETING_TITLE_WARNING_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption } from '@lfx-one/shared/interfaces';
@@ -39,15 +40,11 @@ export class ComposerDetailsAccessComponent {
   protected readonly visibilityOptions = MEETING_VISIBILITY_OPTIONS;
   protected readonly joinRestrictionOptions = MEETING_JOIN_RESTRICTION_OPTIONS;
   protected readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
-  protected readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
-
-  protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = computed(() =>
-    this.personaService.currentPersona() === 'maintainer'
-      ? MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value))
-      : MEETING_TYPE_OPTIONS
-  );
+  protected readonly youtubeAmberThreshold = YOUTUBE_MEETING_TITLE_WARNING_LENGTH;
 
   protected readonly titleLength: Signal<number> = this.initTitleLength();
+  private readonly selectedMeetingType: Signal<string | null> = this.initSelectedMeetingType();
+  protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
 
   private initTitleLength(): Signal<number> {
     return toSignal(
@@ -63,5 +60,32 @@ export class ComposerDetailsAccessComponent {
       ),
       { initialValue: 0 }
     );
+  }
+
+  private initSelectedMeetingType(): Signal<string | null> {
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((form) => {
+          const control = form.get('meeting_type');
+          if (!control) return of(null);
+          return control.valueChanges.pipe(startWith(control.value as string | null));
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initMeetingTypeOptions(): Signal<CardSelectorOption<MeetingType>[]> {
+    return computed(() => {
+      if (this.personaService.currentPersona() !== 'maintainer') {
+        return MEETING_TYPE_OPTIONS;
+      }
+
+      // Editing a meeting whose type this persona can't create would otherwise drop the stored value
+      // out of the list, rendering the select as an empty placeholder over a populated control.
+      const selected = this.selectedMeetingType();
+
+      return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === selected);
+    });
   }
 }
