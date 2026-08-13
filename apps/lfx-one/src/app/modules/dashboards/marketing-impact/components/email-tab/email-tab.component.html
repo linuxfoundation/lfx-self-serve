@@ -107,7 +107,13 @@
         </div>
       } @else {
         <div class="flex items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8" data-testid="email-campaigns-empty">
-          <p class="text-sm text-gray-500">No email sends in this period.</p>
+          <!--
+            Neutral wording on purpose: initEmailData catches request failures to null, so this
+            branch also renders during an analytics outage. "No email sends in this period" would
+            report a measured zero for data that never loaded — the same conflation the
+            getSocialReach regression guards exist to prevent.
+          -->
+          <p class="text-sm text-gray-500">No email sends to show.</p>
         </div>
       }
     </div>

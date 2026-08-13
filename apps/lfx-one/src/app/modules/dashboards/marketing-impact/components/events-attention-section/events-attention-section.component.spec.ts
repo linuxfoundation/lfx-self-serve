@@ -116,6 +116,29 @@ describe('EventsAttentionSectionComponent', () => {
       expect(text()).not.toContain('A is 40%');
     });
 
+    // showAll is per-list view state, so it must not survive a foundation change — otherwise the
+    // next foundation opens expanded instead of at the documented two-item default.
+    it('collapses again when the foundation changes', async () => {
+      const four = [
+        row({ eventId: 'a', eventName: 'A', registrations: { actual: 400, goal: 1000 } }),
+        row({ eventId: 'b', eventName: 'B', registrations: { actual: 50, goal: 1000 } }),
+        row({ eventId: 'c', eventName: 'C', registrations: { actual: 200, goal: 1000 } }),
+        row({ eventId: 'd', eventName: 'D', registrations: { actual: 300, goal: 1000 } }),
+      ];
+      await render(four, 'tlf');
+
+      (fixture.nativeElement.querySelector('[data-testid="events-attention-toggle"]') as HTMLElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(items()).toHaveLength(3);
+
+      fixture.componentRef.setInput('foundationSlug', 'cncf');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(items()).toHaveLength(2);
+    });
+
     // The collapse is only half the behaviour: without exercising the toggle, a dead click
     // handler or a third row that never appears would both pass the test above.
     it('reveals the third ranked event on expand and collapses again', async () => {

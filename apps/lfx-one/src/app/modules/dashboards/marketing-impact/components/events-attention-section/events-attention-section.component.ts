@@ -63,6 +63,10 @@ export class EventsAttentionSectionComponent {
     return toSignal(
       slug$.pipe(
         switchMap((slug) => {
+          // Collapse on every foundation change: showAll is a per-list view state, so carrying it
+          // across meant the next foundation opened expanded instead of at the documented
+          // two-item default.
+          this.showAll.set(false);
           if (!slug) {
             this.loading.set(false);
             return of({ projectId: '', events: [] });

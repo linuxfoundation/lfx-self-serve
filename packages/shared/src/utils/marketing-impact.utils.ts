@@ -83,9 +83,8 @@ const MONTH_COUNT = 12;
 const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /**
- * Builds the period options: trailing-range presets only. Individual months were removed from the
- * picker — resolvePeriodRange still accepts a YYYY-MM value so existing deep links and any stored
- * month period keep resolving instead of failing closed.
+ * Builds the period options: the trailing-range presets followed by the last MONTH_COUNT
+ * individual months, newest first.
  */
 export function buildMarketingImpactPeriodOptions(): MarketingImpactPeriodOption[] {
   const now = new Date();
