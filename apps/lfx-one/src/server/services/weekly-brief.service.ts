@@ -752,8 +752,10 @@ export class WeeklyBriefService {
 
     // The newsletter draft is created and sent under the REAL caller's own bearer token
     // (LFXV2-3093), restored to the impersonated/effective token in the finally below
-    // regardless of outcome — matching the save/mutate/restore convention this codebase
-    // already uses for M2M tokens (e.g. meeting.controller.ts's getMyMeetingRegistrants).
+    // regardless of outcome — the same save/mutate/restore shape this codebase already uses
+    // for M2M tokens (e.g. meeting.controller.ts's getMyMeetingRegistrants), but with
+    // try/finally rather than that precedent's linear post-call restore, so the token is
+    // restored even if one of the awaited calls below throws, not just on the happy path.
     // isProjectWriter (checked above, also against the real identity) is the newsletter
     // service's actual authorization boundary; the sender's display name resolves from
     // this token's JWT principal too (see NewsletterServiceClient#sendNewsletter's doc

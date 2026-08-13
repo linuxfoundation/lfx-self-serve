@@ -1402,6 +1402,31 @@ describe('WeeklyBriefService', () => {
       expect(req.bearerToken).toBe('imp-token');
     });
 
+    it('impersonating: restores the impersonation token even when checkSingleAccessStrict THROWS (not just returns false) — proving the finally, not just a linear post-call restore, is what closes this window', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq();
+      const outage = new MicroserviceError('Access-check service unavailable', 503, 'ACCESS_CHECK_UNAVAILABLE', {});
+      checkSingleAccessStrictMock.mockRejectedValueOnce(outage);
+
+      await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toBe(outage);
+
+      expect(createNewsletterMock).not.toHaveBeenCalled();
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
+    it('impersonating: restores the impersonation token even when createNewsletter itself THROWS, before any send is attempted', async () => {
+      mockShareableBrief();
+      const req = buildImpersonatingReq();
+      const createFailure = new MicroserviceError('Bad request', 400, 'INVALID_REQUEST', {});
+      createNewsletterMock.mockRejectedValueOnce(createFailure);
+
+      await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toBe(createFailure);
+
+      expect(sendNewsletterMock).not.toHaveBeenCalled();
+      expect(deleteNewsletterMock).not.toHaveBeenCalled();
+      expect(req.bearerToken).toBe('imp-token');
+    });
+
     it('impersonating: fails closed with an AuthenticationError — never falls back to the impersonation token — when the real access token cannot be resolved', async () => {
       mockShareableBrief();
       const req = buildImpersonatingReq({ realTokenExpired: true, refreshFails: true });
