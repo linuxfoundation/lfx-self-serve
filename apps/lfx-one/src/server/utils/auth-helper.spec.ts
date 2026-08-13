@@ -102,8 +102,24 @@ describe('resolveRealAccessToken', () => {
 
   // Separate fixture from buildReq: these tests need `bearerToken` and `oidc.accessToken`
   // (isExpired/refresh), which the getEffective*/getRealEmail fixture above has no use for.
-  function buildTokenReq(opts: { impersonating?: boolean; bearerToken?: string; accessToken?: FakeAccessToken }): Request {
-    const appSession = opts.impersonating ? { impersonationToken: 'imp-token', impersonationExpiresAt: Date.now() + 60_000, impersonationUser: {} } : {};
+  // `impersonationSessionExpired` models the race window this function must not fail open on:
+  // an impersonation token still stored in the session (so req.bearerToken was set from it by
+  // auth.middleware.ts earlier in the request), but impersonationExpiresAt has since elapsed —
+  // i.e. isImpersonating(req) would now report false even though req.bearerToken is stale.
+  function buildTokenReq(opts: {
+    impersonating?: boolean;
+    impersonationSessionExpired?: boolean;
+    bearerToken?: string;
+    accessToken?: FakeAccessToken;
+  }): Request {
+    const appSession =
+      opts.impersonating || opts.impersonationSessionExpired
+        ? {
+            impersonationToken: 'imp-token',
+            impersonationExpiresAt: opts.impersonationSessionExpired ? Date.now() - 1000 : Date.now() + 60_000,
+            impersonationUser: {},
+          }
+        : {};
     return {
       appSession,
       bearerToken: opts.bearerToken,
@@ -157,6 +173,26 @@ describe('resolveRealAccessToken', () => {
   it('returns null (fails closed) when impersonating and there is no real session access token at all', async () => {
     const req = buildTokenReq({ impersonating: true, bearerToken: 'imp-token', accessToken: undefined });
     await expect(resolveRealAccessToken(req)).resolves.toBeNull();
+  });
+
+  it('does NOT fail open to the stale impersonation token when impersonationExpiresAt elapses mid-request (LFXV2-3093 race window) — resolves the real token instead', async () => {
+    // req.bearerToken is still the impersonation token here (set once by auth.middleware.ts
+    // earlier in the request) even though the session's impersonationExpiresAt has now passed —
+    // isImpersonating(req) would report false in this state, but the stored impersonationToken
+    // is still present, so this must NOT trust req.bearerToken as the real token.
+    const req = buildTokenReq({
+      impersonationSessionExpired: true,
+      bearerToken: 'imp-token',
+      accessToken: { access_token: 'real-token', isExpired: () => false, refresh: async () => undefined },
+    });
+    await expect(resolveRealAccessToken(req)).resolves.toBe('real-token');
+  });
+
+  it('fails closed (never the stale impersonation token) in the same expired-session race window when the real token cannot be resolved', async () => {
+    const req = buildTokenReq({ impersonationSessionExpired: true, bearerToken: 'imp-token', accessToken: undefined });
+    const result = await resolveRealAccessToken(req);
+    expect(result).not.toBe('imp-token');
+    expect(result).toBeNull();
   });
 });
 

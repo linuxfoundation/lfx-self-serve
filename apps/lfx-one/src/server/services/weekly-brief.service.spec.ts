@@ -1340,6 +1340,11 @@ describe('WeeklyBriefService', () => {
       mockShareableBrief();
       const req = buildImpersonatingReq();
 
+      let tokenDuringCommitteeFetch: string | undefined;
+      getCommitteeByIdMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringCommitteeFetch = r.bearerToken;
+        return { uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' };
+      });
       let tokenDuringAuthCheck: string | undefined;
       checkSingleAccessStrictMock.mockImplementationOnce(async (r: Request) => {
         tokenDuringAuthCheck = r.bearerToken;
@@ -1367,8 +1372,10 @@ describe('WeeklyBriefService', () => {
       expect(tokenDuringAuthCheck).toBe('real-staff-token');
       expect(tokenDuringCreate).toBe('real-staff-token');
       expect(tokenDuringSend).toBe('real-staff-token');
-      // hasMailingListStrict is a precondition READ — stays on the effective/target identity
-      // (the impersonation token), not the real one, same as every other read in this method.
+      // getCommitteeById and hasMailingListStrict are precondition READS — stay on the
+      // effective/target identity (the impersonation token), not the real one, same as every
+      // other read in this method (brief fetch included, via mockShareableBrief's proxyRequest).
+      expect(tokenDuringCommitteeFetch).toBe('imp-token');
       expect(tokenDuringMailingListCheck).toBe('imp-token');
       expect(createNewsletterMock).toHaveBeenCalledWith(req, 'project-1', expect.objectContaining({ ed_reply_email: 'staff@example.com' }));
       // Restored to the impersonation token once the write finishes, regardless of outcome.
@@ -1442,10 +1449,20 @@ describe('WeeklyBriefService', () => {
       const req = buildImpersonatingReq();
       const rejection = new MicroserviceError('Bad request', 400, 'INVALID_REQUEST', {});
       sendNewsletterMock.mockRejectedValueOnce(rejection);
+      // `req` is a mutable object the finally-restore mutates back to 'imp-token' before this
+      // test's own assertions run — a bare `toHaveBeenCalledWith(req, ...)` check would pass
+      // regardless of what token was live AT delete-call time, since it inspects the (by-then
+      // restored) object, not a snapshot. Capture the token synchronously inside the mock instead,
+      // the same way the auth-check/create/send captures above do.
+      let tokenDuringDelete: string | undefined;
+      deleteNewsletterMock.mockImplementationOnce(async (r: Request) => {
+        tokenDuringDelete = r.bearerToken;
+      });
 
       await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toBe(rejection);
 
       expect(deleteNewsletterMock).toHaveBeenCalledWith(req, 'project-1', 'newsletter-1');
+      expect(tokenDuringDelete).toBe('real-staff-token');
       expect(req.bearerToken).toBe('imp-token');
     });
 

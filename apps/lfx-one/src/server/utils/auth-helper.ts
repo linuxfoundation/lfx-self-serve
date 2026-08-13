@@ -177,9 +177,21 @@ export function isImpersonating(req: Request): boolean {
  * Returns null when there is no real session token to resolve, or the refresh attempt fails —
  * callers MUST treat null as "cannot safely attribute this action" and fail closed, never falling
  * back to the impersonation token.
+ *
+ * Deliberately NOT gated on `isImpersonating(req)` — that's a live, time-gated check re-evaluated
+ * on every call, but `req.bearerToken` was set ONCE by `extractBearerToken` at the START of the
+ * request. If impersonation was active when the middleware ran (setting `req.bearerToken` to the
+ * impersonation token) but `impersonationExpiresAt` elapses before this runs later in the same
+ * request — plausible for a caller like `shareBrief`, which awaits several upstream calls first —
+ * `isImpersonating(req)` flips to false while `req.bearerToken` is still the STALE impersonation
+ * token. Gating on it here would return that impersonation token as if it were the real one,
+ * reintroducing the exact LFXV2-3093 misattribution in a narrow race window. Gated instead on the
+ * mere presence of a stored impersonation token — a time-independent signal that `req.bearerToken`
+ * might not be the real token, regardless of whether that token has since expired.
  */
 export async function resolveRealAccessToken(req: Request): Promise<string | null> {
-  if (!isImpersonating(req)) {
+  const hadImpersonationToken = typeof req.appSession?.['impersonationToken'] === 'string' && !!req.appSession['impersonationToken'];
+  if (!hadImpersonationToken) {
     return req.bearerToken ?? null;
   }
   const accessToken = req.oidc?.accessToken;
