@@ -337,6 +337,8 @@ describe('EventDetailDrawerComponent', () => {
     // puts the two stories back side by side, which is what the split exists to separate.
     expect(text()).not.toContain('Registrations');
     expect(text()).toContain('Sponsorship revenue');
+    // Mirror of the above: the sponsorship view keeps the card, without the registration column.
+    expect(text()).not.toContain('Registration revenue');
   });
 
   it('hides the sponsorship-only sections in the attendance view', async () => {
@@ -345,9 +347,11 @@ describe('EventDetailDrawerComponent', () => {
     await open('evt-1', 'tlf', 'b2c');
 
     expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeTruthy();
-    expect(document.querySelector('[data-testid="event-detail-revenue"]')).toBeNull();
     expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeNull();
     expect(text()).toContain('Registrations');
+    // The Revenue card serves both halves, so it stays — but only the registration column.
+    expect(document.querySelector('[data-testid="event-detail-revenue"]')).toBeTruthy();
+    expect(text()).toContain('Registration revenue');
     expect(text()).not.toContain('Sponsorship revenue');
   });
 

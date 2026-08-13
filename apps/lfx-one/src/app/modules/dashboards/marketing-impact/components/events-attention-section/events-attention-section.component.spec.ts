@@ -115,6 +115,38 @@ describe('EventsAttentionSectionComponent', () => {
       // not merely collapsed, which is why expanding below must not surface it.
       expect(text()).not.toContain('A is 40%');
     });
+
+    // The collapse is only half the behaviour: without exercising the toggle, a dead click
+    // handler or a third row that never appears would both pass the test above.
+    it('reveals the third ranked event on expand and collapses again', async () => {
+      await render(
+        [
+          row({ eventId: 'a', eventName: 'A', registrations: { actual: 400, goal: 1000 } }),
+          row({ eventId: 'b', eventName: 'B', registrations: { actual: 50, goal: 1000 } }),
+          row({ eventId: 'c', eventName: 'C', registrations: { actual: 200, goal: 1000 } }),
+          row({ eventId: 'd', eventName: 'D', registrations: { actual: 300, goal: 1000 } }),
+        ],
+        'tlf'
+      );
+
+      const toggle = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="events-attention-toggle"]');
+      expect(toggle()).toBeTruthy();
+
+      toggle().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(items().map((el) => el.getAttribute('data-testid'))).toEqual(['events-attention-item-b', 'events-attention-item-c', 'events-attention-item-d']);
+      // Still capped at MAX_ATTENTION_ITEMS — expanding reveals the ranked remainder, not the
+      // events the ranking already excluded.
+      expect(text()).not.toContain('A is 40%');
+
+      toggle().click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(items().map((el) => el.getAttribute('data-testid'))).toEqual(['events-attention-item-b', 'events-attention-item-c']);
+    });
   });
 
   describe('severity', () => {
