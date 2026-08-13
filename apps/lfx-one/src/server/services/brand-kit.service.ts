@@ -87,20 +87,21 @@ export class BrandKitService {
    * the next poll retries the write.
    */
   private async persistEnvelope(req: Request, envelope: BrandKitEnvelope): Promise<BrandKitPersistReceipt | null> {
+    const documentBytes = Buffer.from(envelope.document_markdown, 'utf8');
+
+    // Size gate (defense in depth — also checked byte-accurately by the
+    // shared validator via TextEncoder before the envelope got here). Checked
+    // before the operation starts so the log timeline stays balanced.
+    if (documentBytes.length > BRAND_KIT_MAX_DOCUMENT_BYTES) {
+      logger.warning(req, 'brand_kit_persist', 'Document exceeds the 20 MB object size cap — not persisted', {
+        project: envelope.project,
+        bytes: documentBytes.length,
+      });
+      return null;
+    }
+
     const startTime = logger.startOperation(req, 'brand_kit_persist', { project: envelope.project, version: envelope.version });
     try {
-      const documentBytes = Buffer.from(envelope.document_markdown, 'utf8');
-
-      // Size gate (defense in depth — also checked byte-accurately by the
-      // shared validator via TextEncoder before the envelope got here).
-      if (documentBytes.length > BRAND_KIT_MAX_DOCUMENT_BYTES) {
-        logger.warning(req, 'brand_kit_persist', 'Document exceeds the 20 MB object size cap — not persisted', {
-          project: envelope.project,
-          bytes: documentBytes.length,
-        });
-        return null;
-      }
-
       // Key derived from validated fields only — the sha was recomputed against
       // the document bytes in findAuthoritativeEnvelope before selection.
       const key = buildBrandKitObjectKey(envelope.project, envelope.content_sha256);
