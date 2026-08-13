@@ -23,8 +23,8 @@ import { ComposerDetailsAccessComponent } from './sections/composer-details-acce
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
  * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
- * opening the composer never unmounts the page underneath. The section rail and live preview land in LFXV2-3240; until then the sections
- * are driven by the footer navigation.
+ * opening the composer never unmounts the page underneath. The section rail and live preview land in
+ * LFXV2-3240; until then the sections are driven by the footer navigation.
  */
 @Component({
   selector: 'lfx-meeting-composer-host',
@@ -122,8 +122,9 @@ export class MeetingComposerHostComponent {
     }
 
     const wasEditMode = this.formService.isEditMode();
-    const generation = this.formService.openGeneration;
 
+    // `submit()` completes without emitting when the save outlived its open, so reaching here always
+    // means the current open is the one that was saved.
     this.formService.submit().subscribe(() => {
       this.messageService.add({
         severity: 'success',
@@ -131,11 +132,7 @@ export class MeetingComposerHostComponent {
         detail: wasEditMode ? 'Meeting updated successfully' : 'Meeting created successfully',
       });
 
-      // The composer may have been closed and reopened against a different meeting while the save was
-      // in flight; closing it then would discard whatever the user has since started.
-      if (this.formService.openGeneration === generation) {
-        this.composer.close();
-      }
+      this.composer.close();
     });
   }
 }

@@ -45,6 +45,8 @@ export class AppComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly intercomService = inject(IntercomService);
   protected readonly meetingComposer = inject(MeetingComposerService);
+  // Only users who can write can open the composer, so nobody else should pay for its chunk.
+  protected readonly canPrefetchComposer = inject(ProjectContextService).canWrite;
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
