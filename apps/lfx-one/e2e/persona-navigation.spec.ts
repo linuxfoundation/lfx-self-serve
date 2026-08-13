@@ -193,16 +193,40 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
 
 /**
  * Every social-listening endpoint is Snowflake-backed, so the page is stubbed empty — the
- * assertions are about the guard letting an ED through, not about feed content.
+ * assertions are about the guard letting an ED through, not about feed content. Bodies must
+ * match the per-endpoint wire contract: option/analytics-list endpoints return arrays (the
+ * page calls .map() on them, so an object body would throw in its computed signals), while
+ * feed/count/overview return objects.
  */
 async function stubSocialListeningApi(page: Page): Promise<void> {
-  await page.route('**/api/social-listening/**', (route) =>
-    route.fulfill({
+  await page.route('**/api/social-listening/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body: unknown;
+    if (path.endsWith('/mentions-feed')) {
+      body = { mentions: [], computedAt: null };
+    } else if (path.endsWith('/mentions-count')) {
+      body = { total: 0 };
+    } else if (path.endsWith('/analytics-overview')) {
+      body = {
+        TOTAL_MENTIONS: 0,
+        TOTAL_MENTIONS_CHANGE_PCT: null,
+        CHILD_PROJECTS_COUNT: 0,
+        POSITIVE_SENTIMENT_PERCENT: 0,
+        NEGATIVE_SENTIMENT_PERCENT: 0,
+        POSITIVE_SENTIMENT_CHANGE_PCT: null,
+        NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+      };
+    } else {
+      // mentions-projects/-platforms/-languages/-keywords/-tags/-authors plus the analytics
+      // list endpoints (over-time, platform/sentiment distribution, top-projects) — all arrays.
+      body = [];
+    }
+    return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ mentions: [], computedAt: null, total: 0, options: [], data: [] }),
-    })
-  );
+      body: JSON.stringify(body),
+    });
+  });
 }
 
 /**
