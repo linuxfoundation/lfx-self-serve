@@ -226,12 +226,31 @@ export class OrgProjectDetailComponent {
   protected readonly technicalCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     const periods = this.influenceState().data?.periods ?? null;
-    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods));
+    const trimStart = this.lifetimeTrimStart();
+    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods, trimStart));
   });
   protected readonly ecosystemCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
     const periods = this.influenceState().data?.periods ?? null;
-    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods));
+    const trimStart = this.lifetimeTrimStart();
+    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods, trimStart));
+  });
+  /**
+   * First all-time bucket worth plotting on the influence cards. The lifetime spine can start well
+   * before a project's first real activity, leaving empty leading buckets. Every card shares this one
+   * index rather than trimming to its own first value, so the cards keep a common axis and stay
+   * comparable with each other; a bucket is dropped only when no metric shows activity for either the
+   * org or the project. Always 0 for 1y/2y, where the requested window is plotted in full.
+   */
+  private readonly lifetimeTrimStart = computed(() => {
+    const data = this.influenceState().data;
+    if (!data?.periods?.length) return 0;
+    const cards = [...(data.technical ?? []), ...(data.ecosystem ?? [])];
+    const width = cards.reduce((max, card) => Math.max(max, card.sparkline.length), 0);
+    for (let i = 0; i < width; i++) {
+      if (cards.some((card) => (card.sparkline[i] ?? 0) > 0 || (card.projectSparkline[i] ?? 0) > 0)) return i;
+    }
+    return 0;
   });
   // Live VM for the open drawer card, re-derived from the current (range-scoped) cards so the drawer
   // hero stat/caption track the ?range= toggle instead of a stale open-time snapshot.
@@ -904,17 +923,18 @@ export class OrgProjectDetailComponent {
     colorHex: string,
     group: 'technical' | 'ecosystem',
     months: number,
-    periods: string[] | null
+    periods: string[] | null,
+    trimStart: number
   ): InfluenceCardVm {
     const variant = this.chartVariantFor(card.key);
     const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
     // "All time" (periods present): the payload already carries the adaptive-bucket axis, so render
-    // the series as-is against the server-emitted labels. 1y/2y: slice the trailing months and derive
-    // the fixed month labels client-side (unchanged).
+    // the series against the server-emitted labels, dropping the empty leading buckets the whole block
+    // shares. 1y/2y: slice the trailing months and derive the fixed month labels client-side.
     const useBuckets = periods !== null && periods.length > 0;
-    const sparkline = useBuckets ? card.sparkline : card.sparkline.slice(-months);
-    const projectSparkline = useBuckets ? card.projectSparkline : card.projectSparkline.slice(-months);
-    const labels = useBuckets ? periods.slice(-sparkline.length) : this.monthLabels.slice(-sparkline.length);
+    const sparkline = useBuckets ? card.sparkline.slice(trimStart) : card.sparkline.slice(-months);
+    const projectSparkline = useBuckets ? card.projectSparkline.slice(trimStart) : card.projectSparkline.slice(-months);
+    const labels = useBuckets ? periods.slice(-card.sparkline.length).slice(trimStart) : this.monthLabels.slice(-sparkline.length);
     return {
       key: card.key,
       title: card.label,
