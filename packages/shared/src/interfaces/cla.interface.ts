@@ -12,11 +12,13 @@ export type ClaKind = 'ICLA' | 'ECLA';
  * - `valid`           — currently valid per EasyCLA's computed `valid` flag.
  * - `needs_attention` — approved, but no longer covered (ECLA only; ICLA never produces this).
  * - `invalidated`     — the stored signature-approval flag is false or absent.
+ * - `unknown`         — coverage could not be evaluated (ECLA only; ICLA never produces this).
+ *                       Rendered as plain-text "—", not a fourth named pill.
  * - `superseded`      — reserved: an older document version than the CLA group's current.
  *                       Not produced today (the my-clas endpoint does not expose the
  *                       current version); kept for forward compatibility. Do not render it.
  */
-export type ClaStatus = 'valid' | 'needs_attention' | 'invalidated' | 'superseded';
+export type ClaStatus = 'valid' | 'needs_attention' | 'invalidated' | 'unknown' | 'superseded';
 
 /** A single signed CLA shown in the CLAs list. */
 export interface MyClaAgreement {
@@ -43,6 +45,12 @@ export interface MyClaAgreement {
   /** ISO date the agreement was signed. */
   signedOn: string;
   status: ClaStatus;
+  /**
+   * Why the standing is not `valid`. Copied from the producer.
+   * Omitted on valid rows and every ICLA. `#1372 (Request approval)` gates on
+   * `not_on_approval_list`; do not parse the note copy.
+   */
+  statusReason?: 'not_on_approval_list' | 'unknown';
   /** Signed document version, when exposed upstream (display only). */
   documentVersion?: string;
   /** True only for ICLA — ECLAs have no signed PDF and never offer download. */

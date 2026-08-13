@@ -85,14 +85,60 @@ describe('ProfileClasComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-inv"]')).toBeTruthy();
   });
 
-  it('does not render an explanatory note for any status', async () => {
+  it('shows the mockup sentence only for a completed Approved List miss', async () => {
     await render([
+      agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', statusReason: 'not_on_approval_list', pdfAvailable: false, companyName: 'Acme' }),
       agreement({ id: 's-valid', status: 'valid' }),
-      agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', pdfAvailable: false }),
       agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false }),
+      agreement({ id: 's-icla', kind: 'ICLA', status: 'valid', statusReason: 'not_on_approval_list' }),
     ]);
 
-    expect(fixture.nativeElement.querySelector('[data-testid^="agreement-status-note-"]')).toBeNull();
+    const note = fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-attn"]') as HTMLElement | null;
+    expect(note?.textContent?.trim()).toBe("No longer matches Acme's approval criteria.");
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-valid"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-icla"]')).toBeNull();
+  });
+
+  it('omits the possessive when a list-miss row has no company name', async () => {
+    await render([
+      agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', statusReason: 'not_on_approval_list', pdfAvailable: false }),
+    ]);
+
+    const note = fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-attn"]') as HTMLElement | null;
+    expect(note?.textContent?.trim()).toBe('No longer matches the approval criteria.');
+  });
+
+  it('renders unknown as plain-text em dash, not a tag and not the list-miss sentence', async () => {
+    await render([
+      agreement({ id: 's-unknown', kind: 'ECLA', status: 'unknown', statusReason: 'unknown', pdfAvailable: false, companyName: 'Acme' }),
+      agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', statusReason: 'not_on_approval_list', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    const unknown = fixture.nativeElement.querySelector('[data-testid="agreement-status-s-unknown"]') as HTMLElement | null;
+    expect(unknown?.textContent?.trim()).toBe('—');
+    expect(unknown?.tagName.toLowerCase()).not.toBe('lfx-tag');
+    expect(fixture.debugElement.query(By.css('[data-testid="agreement-status-s-unknown"]'))?.componentInstance).not.toBeInstanceOf(TagComponent);
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-unknown"]')).toBeNull();
+
+    expect(statusTag('s-attn').value()).toBe('Needs attention');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-attn"]')?.textContent?.trim()).toBe(
+      "No longer matches Acme's approval criteria."
+    );
+  });
+
+  it('never renders Needs attention or an em dash on an ICLA', async () => {
+    await render([
+      agreement({ id: 's-icla', kind: 'ICLA', status: 'valid', pdfAvailable: true }),
+      agreement({ id: 's-inv', kind: 'ICLA', status: 'invalidated', pdfAvailable: true }),
+    ]);
+
+    expect(statusTag('s-icla').value()).toBe('Valid');
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent).not.toContain('Needs attention');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent?.trim()).not.toBe('—');
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-icla"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
   });
 
   it('lists Project, Type, Status, Signed, then an unlabelled actions column, with no Document column', async () => {

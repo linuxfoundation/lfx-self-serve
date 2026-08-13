@@ -41,12 +41,12 @@ const req = {} as unknown as Request;
 
 /** Minimal ICLA record from `/v4/my-clas`. */
 function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-icla', claType: 'icla', approved: true, valid: true, pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
+  return { signatureID: 's-icla', claType: 'icla', approved: true, valid: true, status: 'valid', pdfAvailable: true, claGroupID: 'cg-1', signedOn: '2022-01-01', ...overrides };
 }
 
 /** Minimal valid ECLA record from `/v4/my-clas`. */
 function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
-  return { signatureID: 's-ecla', claType: 'ecla', approved: true, valid: true, companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
+  return { signatureID: 's-ecla', claType: 'ecla', approved: true, valid: true, status: 'valid', companyName: 'Acme', claGroupID: 'cg-2', signedOn: '2022-02-02', ...overrides };
 }
 
 beforeEach(() => {
@@ -153,32 +153,32 @@ describe('toMyClaAgreement', () => {
     expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1' });
   });
 
-  it('derives status from the approved/valid truth table', () => {
-    expect(toMyClaAgreement(icla({ approved: true, valid: true })).status).toBe('valid');
-    expect(toMyClaAgreement(icla({ approved: false, valid: false })).status).toBe('invalidated');
-    expect(toMyClaAgreement(ecla({ approved: true, valid: true })).status).toBe('valid');
-    expect(toMyClaAgreement(ecla({ approved: true, valid: false })).status).toBe('needs_attention');
-    expect(toMyClaAgreement(ecla({ approved: false, valid: false })).status).toBe('invalidated');
+  it('copies status and statusReason from the producer', () => {
+    expect(toMyClaAgreement(icla({ status: 'valid' })).status).toBe('valid');
+    expect(toMyClaAgreement(icla({ status: 'invalidated', approved: false, valid: false })).status).toBe('invalidated');
+    expect(toMyClaAgreement(ecla({ status: 'valid' })).status).toBe('valid');
+    expect(toMyClaAgreement(ecla({ status: 'invalidated', approved: false, valid: false })).status).toBe('invalidated');
+
+    const listMiss = toMyClaAgreement(
+      ecla({ status: 'needs_attention', statusReason: 'not_on_approval_list', approved: true, valid: false })
+    );
+    expect(listMiss.status).toBe('needs_attention');
+    expect(listMiss.statusReason).toBe('not_on_approval_list');
+
+    const unknown = toMyClaAgreement(ecla({ status: 'unknown', statusReason: 'unknown', approved: true, valid: false }));
+    expect(unknown.status).toBe('unknown');
+    expect(unknown.statusReason).toBe('unknown');
   });
 
-  it('never derives needs_attention for an ICLA, including the unreachable approved-but-not-valid combo', () => {
-    const iclaInputs = [
-      icla({ approved: true, valid: true }),
-      icla({ approved: false, valid: false }),
-      icla({ approved: true, valid: false }),
-      icla({ approved: undefined, valid: false }),
-      icla({ approved: null as unknown as boolean, valid: false }),
-    ];
-    for (const row of iclaInputs) {
-      expect(toMyClaAgreement(row).status, `ICLA approved=${String(row.approved)} valid=${String(row.valid)}`).not.toBe('needs_attention');
-    }
-  });
+  it('never maps an ICLA to needs_attention, even if a spurious reason is present', () => {
+    const spurious = toMyClaAgreement(icla({ status: 'needs_attention', statusReason: 'not_on_approval_list' }));
+    expect(spurious.status).not.toBe('needs_attention');
+    expect(spurious.statusReason).toBeUndefined();
 
-  it('derives invalidated when approved is absent or null, not via a deserialisation default', () => {
-    expect(toMyClaAgreement(icla({ approved: undefined, valid: false })).status).toBe('invalidated');
-    expect(toMyClaAgreement(icla({ approved: null as unknown as boolean, valid: false })).status).toBe('invalidated');
-    expect(toMyClaAgreement(ecla({ approved: undefined, valid: false })).status).toBe('invalidated');
-    expect(toMyClaAgreement(ecla({ approved: null as unknown as boolean, valid: false })).status).toBe('invalidated');
+    const unknown = toMyClaAgreement(icla({ status: 'unknown', statusReason: 'unknown', approved: false, valid: false }));
+    expect(unknown.status).not.toBe('unknown');
+    expect(unknown.status).not.toBe('needs_attention');
+    expect(unknown.statusReason).toBeUndefined();
   });
 
   it('maps an ECLA with company name and no pdf', () => {
@@ -416,9 +416,15 @@ describe('ClaService.getMyClas', () => {
     gatewayFetch.mockResolvedValueOnce({
       userIds: ['u-1'],
       clas: [
-        icla({ signatureID: 'valid-icla', approved: true, valid: true }),
-        ecla({ signatureID: 'needs-attn', approved: true, valid: false }),
-        icla({ signatureID: 'invalidated-icla', approved: false, valid: false }),
+        icla({ signatureID: 'valid-icla', approved: true, valid: true, status: 'valid' }),
+        ecla({
+          signatureID: 'needs-attn',
+          approved: true,
+          valid: false,
+          status: 'needs_attention',
+          statusReason: 'not_on_approval_list',
+        }),
+        icla({ signatureID: 'invalidated-icla', approved: false, valid: false, status: 'invalidated' }),
       ],
     });
 

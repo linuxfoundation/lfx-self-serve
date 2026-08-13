@@ -105,6 +105,7 @@ describe('claStatusLabel', () => {
     expect(claStatusLabel('valid')).toBe('Valid');
     expect(claStatusLabel('needs_attention')).toBe('Needs attention');
     expect(claStatusLabel('invalidated')).toBe('Invalidated');
+    expect(claStatusLabel('unknown')).toBe('—');
     expect(claStatusLabel('superseded')).toBe('Superseded');
   });
 });
@@ -114,6 +115,7 @@ describe('claStatusSeverity', () => {
     expect(claStatusSeverity('valid')).toBe('success');
     expect(claStatusSeverity('needs_attention')).toBe('warn');
     expect(claStatusSeverity('invalidated')).toBe('danger');
+    expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');
   });
 });
