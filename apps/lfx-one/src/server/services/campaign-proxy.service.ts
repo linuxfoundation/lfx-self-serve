@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import type {
   BulkKeywordActionRequest,
@@ -11,7 +11,6 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
-  CampaignDeliveryType,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
@@ -498,7 +497,12 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
 
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
-const SUPPORTED_DELIVERY_TYPES: ReadonlySet<CampaignDeliveryType> = new Set<CampaignDeliveryType>(['paid-marketing', 'email']);
+// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// constants to live in `@lfx-one/shared`, and the controller already validates against this one —
+// a duplicate here would let a newly-added delivery type be accepted by the controller and
+// rejected by this service, which is the worst version of the drift: it type-checks, and the two
+// halves disagree only at runtime.
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
 
 // ---------------------------------------------------------------------------
 // Background job management
