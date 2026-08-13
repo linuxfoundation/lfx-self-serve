@@ -389,7 +389,9 @@ test.describe('Org Project Detail — all-time range', () => {
     await page.getByTestId('project-detail-tab-pd-leaderboards').click();
     const trendBody = (await (await trendAll).json()) as { periods?: string[]; trend?: { combined?: unknown[] }[] };
     expect(Array.isArray(trendBody.periods)).toBe(true);
-    expect(trendBody.periods!.length).toBe(influenceBody.periods!.length);
+    // Same labels, not merely the same count: the influence cards and the trend must share one
+    // lifetime axis, and equal-length-but-different calendars would still break that contract.
+    expect(trendBody.periods).toEqual(influenceBody.periods);
     expect(Array.isArray(trendBody.trend)).toBe(true);
     expect(trendBody.trend!.length).toBeGreaterThan(0);
     for (const series of trendBody.trend!) {
