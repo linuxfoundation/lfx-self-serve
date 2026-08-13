@@ -6,6 +6,7 @@ import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   CommitteeServiceOrgSeat,
   KeyContactEmployee,
+  OrgAccessBadgeState,
   OrgAccessUser,
   OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
@@ -80,6 +81,11 @@ export function resolveMergeKey(record: { lfUsername?: string | null; email?: st
   if (username) return `identity:${username}`;
   const email = (record.email ?? '').trim().toLowerCase();
   return email ? `email:${email}` : null;
+}
+
+/** The badge a principal renders as: their role once accepted, `invited` while the invite is outstanding. */
+function badgeOf(user: OrgAccessUser): OrgAccessBadgeState {
+  return user.isPending ? 'invited' : user.role;
 }
 
 function isFoundationOption(value: unknown): boolean {
@@ -250,6 +256,7 @@ export class OrgPeopleDirectoryService {
         if (existing) {
           this.addSource(existing, 'access');
           this.addEmail(existing, email);
+          existing.accessBadge = badgeOf(user);
           const [firstName, lastName] = splitDisplayName(user.name);
           this.fill(existing, { firstName, lastName, title: user.jobTitle, avatarUrl: user.avatarUrl });
         } else {
@@ -320,7 +327,9 @@ export class OrgPeopleDirectoryService {
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRow {
     const [firstName, lastName] = splitDisplayName(user.name);
-    return this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access', key, user.username);
+    const row = this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access', key, user.username);
+    row.accessBadge = badgeOf(user);
+    return row;
   }
 
   /**

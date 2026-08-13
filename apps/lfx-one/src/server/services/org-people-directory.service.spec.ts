@@ -236,6 +236,73 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
   });
 });
 
+describe('OrgPeopleDirectoryService.merge — access badge is server-attributed', () => {
+  it('stamps the merged principal\u2019s badge on the row', async () => {
+    getAllEmployees.mockResolvedValue(
+      baseResponse([
+        storedRow({
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'dqualls@contractor.linuxfoundation.org',
+          emails: ['dqualls@contractor.linuxfoundation.org'],
+        }),
+      ])
+    );
+    getAccessPrincipals.mockResolvedValue([accessUser()]);
+
+    const { rows } = await run();
+
+    expect(rows[0].accessBadge).toBe('admin');
+  });
+
+  it('marks a pending principal as invited rather than by role', async () => {
+    getAccessPrincipals.mockResolvedValue([accessUser({ username: null, inviteStatus: 'pending', isPending: true })]);
+
+    const { rows } = await run();
+
+    expect(rows[0].accessBadge).toBe('invited');
+  });
+
+  it('leaves the badge unset on a person the merge attributed no access to', async () => {
+    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+
+    const { rows } = await run();
+
+    expect(rows[0].accessBadge).toBeUndefined();
+  });
+
+  it('does not stamp one person\u2019s badge onto another who shares an address', async () => {
+    // Two distinct identities, one shared address. Only the person the access principal actually
+    // resolves to may carry the badge — an address-based join could not tell them apart.
+    getAllEmployees.mockResolvedValue(
+      baseResponse([
+        storedRow({
+          personKey: 'p-dano',
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'shared@linuxfoundation.org',
+          emails: ['shared@linuxfoundation.org'],
+        }),
+        storedRow({
+          personKey: 'p-jim',
+          lfUsername: 'jzemlin',
+          name: 'Jim Zemlin',
+          email: 'shared@linuxfoundation.org',
+          emails: ['shared@linuxfoundation.org'],
+        }),
+      ])
+    );
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'shared@linuxfoundation.org', username: 'jzemlin', name: 'Jim Zemlin' })]);
+
+    const { rows } = await run();
+
+    const dano = rows.find((r) => r.lfUsername === 'dqualls');
+    const jim = rows.find((r) => r.lfUsername === 'jzemlin');
+    expect(jim?.accessBadge).toBe('admin');
+    expect(dano?.accessBadge).toBeUndefined();
+  });
+});
+
 describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   it('does not merge two different people who share an address', async () => {
     // The Snowflake address→member index links dqualls@linuxfoundation.org to Jim Zemlin's member

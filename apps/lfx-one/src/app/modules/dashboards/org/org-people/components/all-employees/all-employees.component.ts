@@ -472,26 +472,17 @@ export class AllEmployeesComponent {
   }
 
   /**
-   * Resolve the access badge for a row.
+   * Resolve the access badge for a row, preferring the server's answer.
    *
-   * The access roster is keyed by email, but a person's access can be granted under a different
-   * address than the roster displays — the server's identity merge folds those together, so joining
-   * on the displayed address alone drops the badge for merged rows.
-   *
-   * Secondary addresses are only consulted when the server actually attributed access to this row
-   * (`sources` contains `access`). Two different people can legitimately share an address — the
-   * server keeps them as separate rows precisely because their identities differ — so matching any
-   * address unconditionally would let one person's badge appear on the other's row. Rows without an
-   * access source keep the original displayed-address-only join.
+   * The server knows exactly which access principal it merged into each person, so `accessBadge` is
+   * unambiguous. Joining by address cannot be: two people can share one, and the merge deliberately
+   * keeps them as separate rows, so an address-based lookup can attribute one person's role to the
+   * other. The join remains only for rows the server attributed no access to — including payloads
+   * cached before `accessBadge` existed.
    */
   private static resolveAccessBadge(row: OrgAllEmployeeRow, byEmail: ReadonlyMap<string, OrgAccessBadgeState>): OrgAccessBadgeState | null {
-    const candidates = row.sources.includes('access') ? [row.email, ...(row.emails ?? [])] : [row.email];
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      const badge = byEmail.get(candidate.toLowerCase());
-      if (badge) return badge;
-    }
-    return null;
+    if (row.accessBadge) return row.accessBadge;
+    return row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null;
   }
 
   private static computeInitials(name: string): string {

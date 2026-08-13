@@ -70,6 +70,13 @@ export interface OrgAllEmployeeRow {
   emails: string[];
   /** Diagnostic: the merge keys that collapsed into this row (e.g. `identity:mcderk`). Lets a reviewer explain a merge without re-deriving it. */
   mergedFrom?: string[];
+  /**
+   * Org Lens access badge for the principal the merge actually attributed to this person, or `null`
+   * when none was. Authoritative: the client's own address-based join cannot tell two people who
+   * share an address apart, so it would attribute one person's role to the other. Absent on payloads
+   * cached before this field existed, which fall back to that join.
+   */
+  accessBadge?: OrgAccessBadgeState | null;
   /** Avatar/photo URL (CDP user photo or org-logo fallback); `null` when absent. The UI falls back to initials. */
   avatarUrl: string | null;
   /** Which upstream(s) contributed this person. Stored-only rows are `['snowflake']`; `?live` rows may carry several. */
