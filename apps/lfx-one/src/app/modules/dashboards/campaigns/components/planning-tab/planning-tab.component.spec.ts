@@ -651,7 +651,14 @@ describe('PlanningTabComponent delivery-type mode', () => {
     fixture.detectChanges();
   }
 
-  /** Deselect every ad platform, which the paid default pre-populates with google-ads. */
+  /**
+   * Deselect every ad platform, which the paid default pre-populates with google-ads.
+   *
+   * Writes the signal rather than clicking, because in email mode the Ad Channels card is not
+   * rendered and there IS no click path. That is the point: the email assertion below is that
+   * `canGenerate` does not consult the platform set at all, so it must hold for a set the UI
+   * cannot produce. The paid case is the one where a user reaches this state by clicking.
+   */
   function clearPlatforms(): void {
     (fixture.componentInstance as unknown as { selectedPlatforms: { set(v: Set<string>): void } }).selectedPlatforms.set(new Set());
     fixture.detectChanges();
@@ -700,6 +707,24 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // exactly the pre-3201 behaviour rather than silently switching a live tab to email.
     await build();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
+  });
+
+  /**
+   * The server refuses an email refine, so offering the button would walk the user into a
+   * guaranteed error. Asserted on the review step, which is the only place it renders.
+   */
+  it('does not offer Refine Brief in email mode', async () => {
+    await build('email');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-refine-brief-btn"]')).toBeNull();
+  });
+
+  it('offers Refine Brief in paid mode', async () => {
+    await build('paid-marketing');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
   });
 
   it('hides the Budget & Assets card in email mode', async () => {

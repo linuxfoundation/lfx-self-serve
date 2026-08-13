@@ -957,14 +957,22 @@
           (onClick)="onProceedToImplementation()"
           ariaLabel="Proceed to implement with this brief"
           data-testid="planning-proceed-btn" />
-        <lfx-button
-          label="Refine Brief"
-          icon="fa-light fa-wand-magic-sparkles"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="enterRefineMode()"
-          ariaLabel="Provide feedback to regenerate the brief"
-          data-testid="planning-refine-brief-btn" />
+        <!--
+          Hidden for email: the server refuses an email refine (there is no email copy to refine
+          until the `email-copy` endpoint lands, LFXV2-3198), so offering the button would walk
+          the user into a guaranteed error. The server refusal stays as the backstop rather than
+          this being the only guard — a client-only check would be undone by the next caller.
+        -->
+        @if (!isEmail()) {
+          <lfx-button
+            label="Refine Brief"
+            icon="fa-light fa-wand-magic-sparkles"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="enterRefineMode()"
+            ariaLabel="Provide feedback to regenerate the brief"
+            data-testid="planning-refine-brief-btn" />
+        }
         <lfx-button
           label="Edit Brief"
           icon="fa-light fa-pen-to-square"
