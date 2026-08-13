@@ -48,10 +48,15 @@ export class QuickCreateDialogComponent {
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
 
-  // Tracked per hint rather than per template, so the agenda hint can't claim a suggestion over an agenda
-  // the organizer wrote themselves just because the title next to it was seeded.
-  protected readonly prefilledDetails = signal(false);
-  protected readonly prefilledAgenda = signal(false);
+  // What the type's template wrote, tracked per hint so the agenda hint can't claim a suggestion just
+  // because the title next to it was seeded.
+  private readonly seededDetails = signal(false);
+  private readonly seededAgenda = signal(false);
+
+  // Derived rather than snapshotted: a hint has to go quiet the moment the organizer rewrites the field,
+  // and that happens without any type change to recompute it on.
+  protected readonly prefilledDetails: Signal<boolean> = this.initPrefilledDetails();
+  protected readonly prefilledAgenda: Signal<boolean> = this.initPrefilledAgenda();
 
   protected readonly agendaLength: Signal<number> = computed(() => {
     this.formService.revision();
@@ -111,8 +116,8 @@ export class QuickCreateDialogComponent {
     const template = meetingType ? this.firstTemplate(meetingType) : null;
 
     if (!template) {
-      this.prefilledDetails.set(false);
-      this.prefilledAgenda.set(false);
+      this.seededDetails.set(false);
+      this.seededAgenda.set(false);
       return;
     }
 
@@ -120,24 +125,43 @@ export class QuickCreateDialogComponent {
     const title = form.get('title');
     const description = form.get('description');
     const duration = form.get('duration');
-    let prefilledDetails = false;
+    let seededDetails = false;
 
     if (title?.pristine) {
       title.setValue(template.title);
-      prefilledDetails = true;
+      seededDetails = true;
     }
 
     if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
       this.formService.setDuration(template.estimatedDuration);
-      prefilledDetails = true;
+      seededDetails = true;
     }
 
     if (description?.pristine) {
       description.setValue(template.content);
     }
 
-    this.prefilledDetails.set(prefilledDetails);
-    this.prefilledAgenda.set(!!description?.pristine);
+    this.seededDetails.set(seededDetails);
+    this.seededAgenda.set(!!description?.pristine);
+  }
+
+  private initPrefilledDetails(): Signal<boolean> {
+    return computed(() => {
+      // `revision` is what makes control state reactive here.
+      this.formService.revision();
+
+      const form = this.formService.form();
+
+      return this.seededDetails() && (!!form.get('title')?.pristine || !!form.get('duration')?.pristine);
+    });
+  }
+
+  private initPrefilledAgenda(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+
+      return this.seededAgenda() && !!this.formService.form().get('description')?.pristine;
+    });
   }
 
   private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {

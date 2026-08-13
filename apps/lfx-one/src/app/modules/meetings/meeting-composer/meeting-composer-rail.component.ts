@@ -48,15 +48,13 @@ export class MeetingComposerRailComponent {
     // highlight a chip scrolled off-screen. `afterRenderEffect` so the chip carrying the marker is the
     // freshly active one, and because it never runs during SSR.
     afterRenderEffect({
-      read: () => {
+      earlyRead: () => {
         this.composer.activeSection();
 
-        if (!this.compact()) {
-          return;
-        }
-
-        this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+        return this.compact() ? this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]') : null;
       },
+      // Scrolling mutates the DOM, so it belongs in the write phase rather than either read phase.
+      write: (chip) => chip()?.scrollIntoView({ block: 'nearest', inline: 'center' }),
     });
   }
 
@@ -77,6 +75,9 @@ export class MeetingComposerRailComponent {
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
       const isEditMode = this.composer.isEditMode();
+      // Edit mode starts on an empty form and hydrates from the fetch, so until the meeting lands every
+      // required section reads invalid — flagging that would blame the organizer for a load in progress.
+      const hydrated = !isEditMode || !!this.formService.meeting();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
       const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
@@ -94,7 +95,7 @@ export class MeetingComposerRailComponent {
           locked: !isEditMode && blockedByEarlier && !active,
           // Edit mode has no visited gate: every section is reachable from the start, so an invalid one the
           // organizer hasn't opened yet is the case where the dot is the only clue Save is blocked on it.
-          needsAttention: section.required && (isEditMode || visited.has(section.id)) && !valid,
+          needsAttention: hydrated && section.required && (isEditMode || visited.has(section.id)) && !valid,
           lineBelowComplete: isComplete(section),
           isLast: index === sections.length - 1,
         };

@@ -16,14 +16,21 @@
         <!-- `MEETING_COMPOSER_TOAST_KEY` is exported, so a message could reach this template without the data the actions need -->
         @if (message.data; as toastData) {
           <div class="mt-1 flex items-center gap-3">
+            <!-- `aria-disabled` rather than `disabled`, matching the rail: the toast auto-dismisses, so an
+                 unreachable control here would leave a screen-reader user no way to hear why it did nothing.
+                 `onEditCreatedMeeting` is the real guard. -->
             <button
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 hover:underline disabled:text-gray-400 disabled:no-underline"
-              [disabled]="!canEditFromToast()"
+              class="inline-flex items-center gap-1 text-xs font-medium"
+              [ngClass]="canEditFromToast() ? 'text-blue-700 hover:text-blue-800 hover:underline' : 'cursor-not-allowed text-gray-500'"
+              [attr.aria-disabled]="canEditFromToast() ? null : 'true'"
               data-testid="meeting-composer-toast-edit"
               (click)="onEditCreatedMeeting(toastData)">
               <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
               <span>Edit meeting</span>
+              @if (!canEditFromToast()) {
+                <span class="sr-only">Close the open composer first</span>
+              }
             </button>
             <a
               [routerLink]="toastData.meetingUrl"
