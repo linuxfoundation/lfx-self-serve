@@ -465,7 +465,21 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
 
 function isAllEmployeesRaw(value: unknown): boolean {
   const v = value as { rowsRaw?: unknown; statsRaw?: unknown; foundationRaw?: unknown } | null;
-  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.statsRaw) && Array.isArray(v.foundationRaw);
+  return (
+    !!v &&
+    Array.isArray(v.rowsRaw) &&
+    Array.isArray(v.statsRaw) &&
+    Array.isArray(v.foundationRaw) &&
+    // Every row must carry LF_USERNAME, so entries cached before it was selected are rejected as a miss
+    // rather than replayed. A replayed row maps to a null username, which silently returns the people
+    // directory to email-only matching for the rest of the TTL. The value may legitimately be null, so
+    // this checks presence, not truthiness.
+    v.rowsRaw.every((row) => {
+      if (!row || typeof row !== 'object' || !('LF_USERNAME' in row)) return false;
+      const username = (row as { LF_USERNAME: unknown }).LF_USERNAME;
+      return username === null || typeof username === 'string';
+    })
+  );
 }
 
 function isEmployeeDetailRaw(value: unknown): boolean {

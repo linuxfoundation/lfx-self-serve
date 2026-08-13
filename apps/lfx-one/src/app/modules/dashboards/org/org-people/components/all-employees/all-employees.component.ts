@@ -288,9 +288,12 @@ export class AllEmployeesComponent {
       initials: AllEmployeesComponent.computeInitials(row.name),
       avatarColorClass: AllEmployeesComponent.computeAvatarColorClass(row.personKey),
       avatarKey: row.avatarUrl ? `${row.personKey}::${row.avatarUrl}` : '',
-      // Join on lowercased email — the canonical identity key on the Access side (OrgAccessUser.email is
-      // always present, server-lowercased). Rows without an email can't be joined and render `—`.
-      access: row.email ? (byEmail.get(row.email.toLowerCase()) ?? null) : null,
+      // Join on every address the row was merged from, not just the preferred one. The Access side is
+      // keyed by email, but a person's access can be granted under a different address than the one the
+      // roster displays — that mismatch is exactly what the server-side identity merge folds together, so
+      // joining on the preferred address alone would drop the badge for the merged rows. Rows with no
+      // address can't be joined and render `—`.
+      access: AllEmployeesComponent.resolveAccessBadge(row, byEmail),
       // Live-only people (no `snowflake` source) carry a synthetic `live-` personKey with no stored Snowflake
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
@@ -465,6 +468,29 @@ export class AllEmployeesComponent {
       default:
         return 0;
     }
+  }
+
+  /**
+   * Resolve the access badge for a row.
+   *
+   * The access roster is keyed by email, but a person's access can be granted under a different
+   * address than the roster displays — the server's identity merge folds those together, so joining
+   * on the displayed address alone drops the badge for merged rows.
+   *
+   * Secondary addresses are only consulted when the server actually attributed access to this row
+   * (`sources` contains `access`). Two different people can legitimately share an address — the
+   * server keeps them as separate rows precisely because their identities differ — so matching any
+   * address unconditionally would let one person's badge appear on the other's row. Rows without an
+   * access source keep the original displayed-address-only join.
+   */
+  private static resolveAccessBadge(row: OrgAllEmployeeRow, byEmail: ReadonlyMap<string, OrgAccessBadgeState>): OrgAccessBadgeState | null {
+    const candidates = row.sources.includes('access') ? [row.email, ...(row.emails ?? [])] : [row.email];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const badge = byEmail.get(candidate.toLowerCase());
+      if (badge) return badge;
+    }
+    return null;
   }
 
   private static computeInitials(name: string): string {

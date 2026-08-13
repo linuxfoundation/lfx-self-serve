@@ -33,6 +33,10 @@ function isAccessUser(value: unknown): boolean {
   return (
     isObject(value) &&
     typeof u.email === 'string' &&
+    // Required so an entry cached before `username` existed is rejected as a miss. Replaying one would
+    // silently drop every principal back to email-only matching in the people directory merge, for the
+    // whole TTL — a correctness regression that would look like the cache working.
+    (u.username === null || typeof u.username === 'string') &&
     typeof u.name === 'string' &&
     typeof u.initials === 'string' &&
     (u.avatarUrl === null || typeof u.avatarUrl === 'string') &&

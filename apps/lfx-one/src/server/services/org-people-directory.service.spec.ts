@@ -176,7 +176,20 @@ describe('resolveMergeKey', () => {
 describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
   it('merges an access principal into the stored row on username, not address (the Dano case)', async () => {
     getAllEmployees.mockResolvedValue(
-      baseResponse([storedRow({ personKey: '0032M00003ZzRIsQAN', lfid: '0032M00003ZzRIsQAN', lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@contractor.linuxfoundation.org', emails: ['dqualls@contractor.linuxfoundation.org'], seatsCount: 3, boardSeatsCount: 0, committeeSeatsCount: 3, eventsCount: 6 })])
+      baseResponse([
+        storedRow({
+          personKey: '0032M00003ZzRIsQAN',
+          lfid: '0032M00003ZzRIsQAN',
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'dqualls@contractor.linuxfoundation.org',
+          emails: ['dqualls@contractor.linuxfoundation.org'],
+          seatsCount: 3,
+          boardSeatsCount: 0,
+          committeeSeatsCount: 3,
+          eventsCount: 6,
+        }),
+      ])
     );
     getAccessPrincipals.mockResolvedValue([accessUser()]);
 
@@ -198,8 +211,13 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
   });
 
   it('collapses a person arriving from three sources into one row (the Christopher Robinson case)', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow({ lfUsername: 'crob', name: 'Christopher Robinson', email: 'crob@intel.com', emails: ['crob@intel.com'] })]));
-    fetchAllOrgSeats.mockResolvedValue([seat({ email: 'christopher.robinson@intel.com', username: 'crob' }), seat({ uid: 'seat-2', email: 'christopher.robinson@linuxfoundation.org', username: 'crob', committee_category: 'Board' })]);
+    getAllEmployees.mockResolvedValue(
+      baseResponse([storedRow({ lfUsername: 'crob', name: 'Christopher Robinson', email: 'crob@intel.com', emails: ['crob@intel.com'] })])
+    );
+    fetchAllOrgSeats.mockResolvedValue([
+      seat({ email: 'christopher.robinson@intel.com', username: 'crob' }),
+      seat({ uid: 'seat-2', email: 'christopher.robinson@linuxfoundation.org', username: 'crob', committee_category: 'Board' }),
+    ]);
 
     const { rows } = await run();
 
@@ -224,8 +242,20 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
     // record. Two distinct usernames must never collapse, whatever their addresses say.
     getAllEmployees.mockResolvedValue(
       baseResponse([
-        storedRow({ personKey: 'p-dano', lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] }),
-        storedRow({ personKey: 'p-jim', lfUsername: 'jzemlin', name: 'Jim Zemlin', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] }),
+        storedRow({
+          personKey: 'p-dano',
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'dqualls@linuxfoundation.org',
+          emails: ['dqualls@linuxfoundation.org'],
+        }),
+        storedRow({
+          personKey: 'p-jim',
+          lfUsername: 'jzemlin',
+          name: 'Jim Zemlin',
+          email: 'dqualls@linuxfoundation.org',
+          emails: ['dqualls@linuxfoundation.org'],
+        }),
       ])
     );
 
@@ -236,7 +266,9 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   });
 
   it('does not merge an access principal into a person with a different username', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow({ lfUsername: 'nickcoai', name: 'Nick Cooper', email: 'nickc@openai.com', emails: ['nickc@openai.com'] })]));
+    getAllEmployees.mockResolvedValue(
+      baseResponse([storedRow({ lfUsername: 'nickcoai', name: 'Nick Cooper', email: 'nickc@openai.com', emails: ['nickc@openai.com'] })])
+    );
     getAccessPrincipals.mockResolvedValue([accessUser({ email: 'kmcdermott@linuxfoundation.org', username: 'mcderk', name: 'Kieran McDermott' })]);
 
     const { rows } = await run();
@@ -259,7 +291,10 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
   });
 
   it('a live-only row still accumulates its own live seat counts', async () => {
-    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'someone@example.com' }), seat({ uid: 'seat-2', username: null, email: 'someone@example.com' })]);
+    fetchAllOrgSeats.mockResolvedValue([
+      seat({ username: null, email: 'someone@example.com' }),
+      seat({ uid: 'seat-2', username: null, email: 'someone@example.com' }),
+    ]);
 
     const { rows } = await run();
 
@@ -279,7 +314,9 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
   });
 
   it('a pending invite is not merged into a person, even when the address matches', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] })]));
+    getAllEmployees.mockResolvedValue(
+      baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] })])
+    );
     getAccessPrincipals.mockResolvedValue([accessUser({ username: null, inviteStatus: 'pending', isPending: true })]);
 
     const { rows } = await run();
