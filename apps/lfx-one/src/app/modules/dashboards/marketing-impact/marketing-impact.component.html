@@ -114,13 +114,17 @@
       hide the channel tablist above, so there is no `mi-tab-*` button to label this region —
       a bare role="tabpanel" would then point aria-labelledby at a missing id and leave the panel
       with no accessible name. In that state it is a plain region labelled by the campaign type.
+
+      When the Events split is showing, both tabs control this one panel, so the label names both
+      — otherwise assistive tech reaches "Event Sponsorship" and lands on a panel called only
+      "All", with nothing saying which half it is reading.
     -->
     <div
       class="flex flex-col gap-6"
       [attr.role]="isComingSoon() ? 'region' : 'tabpanel'"
       [attr.id]="isComingSoon() ? null : 'mi-panel-' + selectedTab()"
       [attr.aria-label]="isComingSoon() ? selectedFocusLabel() + ' — coming soon' : null"
-      [attr.aria-labelledby]="isComingSoon() ? null : 'mi-tab-' + selectedTab()">
+      [attr.aria-labelledby]="isComingSoon() ? null : panelLabelledBy()">
       @if (isComingSoon()) {
         <!-- Coming soon — only the Events campaign type has content built today -->
         <div

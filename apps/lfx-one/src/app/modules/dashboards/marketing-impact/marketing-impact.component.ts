@@ -95,6 +95,16 @@ export class MarketingImpactComponent {
   /** Display label of the selected Campaign Type, used in the coming-soon copy. */
   protected readonly selectedFocusLabel = computed(() => this.focusOptions.find((o) => o.id === this.selectedFocus())?.label ?? '');
 
+  /**
+   * ids that name the shared tabpanel. The channel tab always names it; when the Events split is
+   * showing, its selected tab is appended so the panel is announced as (for example)
+   * "All Event Sponsorship" rather than just "All" — both tabs control this one panel.
+   */
+  protected readonly panelLabelledBy = computed(() => {
+    const channel = `mi-tab-${this.selectedTab()}`;
+    return this.showEventsSplit() ? `${channel} mi-events-tab-${this.selectedEventsSplit()}` : channel;
+  });
+
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
     if (this.focusOptions.some((o) => o.id === focusId)) {
