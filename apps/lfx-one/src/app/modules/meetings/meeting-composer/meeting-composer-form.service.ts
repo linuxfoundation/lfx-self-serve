@@ -34,6 +34,7 @@ import {
   MeetingRecurrence,
   MeetingRegistrant,
   MeetingRegistrantOperationResult,
+  MeetingRegistrantWithState,
   PendingAttachment,
   RegistrantPendingChanges,
   UpdateMeetingRequest,
@@ -103,6 +104,18 @@ export class MeetingComposerFormService {
 
   public readonly registrantUpdates = signal<RegistrantPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });
 
+  /**
+   * Working guest list for the open composer, including rows queued for deletion.
+   * @description Owned here rather than by the Guests section because the host's `@switch` destroys the
+   * section on every section change — section-local state would silently drop pending guests.
+   */
+  public readonly guests = signal<MeetingRegistrantWithState[]>([]);
+  public readonly guestsLoading = signal<boolean>(false);
+  public readonly guestsLoadFailed = signal<boolean>(false);
+
+  /** Emails of unsaved guests the organizer removed, so a group re-emission can't resurrect them. */
+  public readonly suppressedGuestEmails = signal<Set<string>>(new Set());
+
   public readonly committeeContext = signal<Committee | null>(null);
   public readonly originalStartTime = signal<string | null>(null);
 
@@ -164,6 +177,10 @@ export class MeetingComposerFormService {
     this.pendingAttachmentDeletions.set([]);
     this.deletingAttachmentId.set(null);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
+    this.guests.set([]);
+    this.guestsLoading.set(false);
+    this.guestsLoadFailed.set(false);
+    this.suppressedGuestEmails.set(new Set());
     this.committeeContext.set(null);
     this.contextProjectUid.set(context.projectUid ?? null);
     this.submitting.set(false);
@@ -180,7 +197,37 @@ export class MeetingComposerFormService {
 
     if (context.mode === 'edit' && context.meetingUid) {
       this.loadMeeting(context.meetingUid);
+      this.loadGuests(context.meetingUid);
     }
+  }
+
+  /**
+   * Replaces the guest list and re-derives the pending registrant changes from it.
+   * @description Single write path, so `registrantUpdates` can never drift from `guests`.
+   */
+  public setGuests(next: MeetingRegistrantWithState[]): void {
+    this.guests.set(next);
+
+    const meetingUid = this.meetingId() ?? '';
+
+    this.registrantUpdates.set({
+      toAdd: next.filter((guest) => guest.state === 'new').map((guest) => this.meetingService.stripMetadata(meetingUid, guest)),
+      toUpdate: next.filter((guest) => guest.state === 'modified').map((guest) => ({ uid: guest.uid, changes: this.meetingService.getChangedFields(guest) })),
+      toDelete: next.filter((guest) => guest.state === 'deleted').map((guest) => guest.uid),
+    } satisfies RegistrantPendingChanges);
+  }
+
+  public updateGuests(reducer: (current: MeetingRegistrantWithState[]) => MeetingRegistrantWithState[]): void {
+    this.setGuests(reducer(this.guests()));
+  }
+
+  /** Records an unsaved guest's email so group reconciliation treats the removal as intentional. */
+  public suppressGuestEmail(email: string | null | undefined): void {
+    if (!email) {
+      return;
+    }
+
+    this.suppressedGuestEmails.update((current) => new Set(current).add(email.toLowerCase()));
   }
 
   public isSectionValid(section: MeetingComposerSectionId): boolean {
@@ -484,6 +531,31 @@ export class MeetingComposerFormService {
             detail: 'Meeting not found or you do not have permission to access it',
           });
         },
+      });
+  }
+
+  /** Loads the saved guests for an edit-mode open, tagging each row as already persisted. */
+  private loadGuests(meetingUid: string): void {
+    this.guestsLoading.set(true);
+    this.guestsLoadFailed.set(false);
+
+    this.meetingService
+      .getMeetingRegistrants(meetingUid, false)
+      .pipe(
+        take(1),
+        catchError((error: unknown) => {
+          console.error('Error getting meeting guests:', error);
+          this.guestsLoadFailed.set(true);
+          return of([] as MeetingRegistrant[]);
+        }),
+        finalize(() => this.guestsLoading.set(false)),
+        takeUntil(this.reset$),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((loaded) => {
+        // Guests added while the fetch was in flight keep their place ahead of the saved rows.
+        const pending = this.guests().filter((guest) => guest.state === 'new');
+        this.setGuests([...pending, ...loaded.map((registrant) => ({ ...registrant, state: 'existing' as const, originalData: { ...registrant } }))]);
       });
   }
 

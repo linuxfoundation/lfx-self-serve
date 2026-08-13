@@ -57,11 +57,11 @@ export const MEETING_PLATFORMS = [
 ];
 
 /**
- * Available meeting features that can be enabled/disabled
+ * Available meeting features that can be enabled/disabled, keyed by the form control they drive
  * @description Feature toggles for recording, transcripts, AI features, etc.
  */
-export const MEETING_FEATURES = [
-  {
+export const MEETING_FEATURE_BY_KEY = {
+  recording_enabled: {
     key: 'recording_enabled',
     icon: 'fa-light fa-video',
     title: 'Enable Recording',
@@ -69,7 +69,7 @@ export const MEETING_FEATURES = [
     recommended: true,
     color: lfxColors.blue[500],
   },
-  {
+  zoom_ai_enabled: {
     key: 'zoom_ai_enabled',
     icon: 'fa-light fa-microchip-ai',
     title: 'AI Meeting Summary',
@@ -77,7 +77,7 @@ export const MEETING_FEATURES = [
     recommended: true,
     color: lfxColors.emerald[500],
   },
-  {
+  transcript_enabled: {
     key: 'transcript_enabled',
     icon: 'fa-light fa-file-lines',
     title: 'Generate Transcripts',
@@ -85,7 +85,7 @@ export const MEETING_FEATURES = [
     recommended: false,
     color: lfxColors.violet[500],
   },
-  {
+  youtube_upload_enabled: {
     key: 'youtube_upload_enabled',
     icon: 'fa-light fa-upload',
     title: 'YouTube Auto-upload',
@@ -93,7 +93,7 @@ export const MEETING_FEATURES = [
     recommended: false,
     color: lfxColors.red[500],
   },
-];
+};
 
 /**
  * Artifact visibility control options

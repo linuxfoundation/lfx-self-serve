@@ -1405,3 +1405,14 @@ export interface MeetingComposerContext {
   /** Section to land on; defaults to the first section. */
   section?: MeetingComposerSectionId;
 }
+
+/** Dialog data for the composer's manual guest entry dialog. */
+export interface ManualGuestDialogData {
+  /** Values carried over from the search field, when the directory result was incomplete. */
+  prefill?: Record<string, unknown> | null;
+}
+
+/** What the manual guest dialog returns on submit; `undefined` when dismissed. */
+export interface ManualGuestDialogResult {
+  guest: Record<string, unknown>;
+}

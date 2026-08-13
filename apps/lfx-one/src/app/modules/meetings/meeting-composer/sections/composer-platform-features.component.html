@@ -9,18 +9,18 @@
 
   <!-- Platform -->
   <div class="flex flex-col gap-2">
-    <span class="text-sm font-medium text-gray-900"> Platform <span class="text-red-500">*</span> </span>
-    <div data-testid="composer-platform-chips">
-      <lfx-select-button
-        [form]="form()"
-        control="platform"
-        [options]="platformChipOptions"
-        optionDisabled="disabled"
-        [unselectable]="false"
-        [required]="true" />
+    <span id="composer-platform-label" class="text-sm font-medium text-gray-900"> Platform <span class="text-red-500" aria-hidden="true">*</span> </span>
+    <div
+      role="group"
+      aria-labelledby="composer-platform-label"
+      aria-required="true"
+      [attr.aria-describedby]="platformError() ? 'composer-platform-required-error' : null"
+      data-testid="composer-platform-chips">
+      <!-- `unselectable` stays at its default: clicking the selected chip must not clear a required field -->
+      <lfx-select-button [form]="form()" control="platform" [options]="platformChipOptions" [required]="true" />
     </div>
-    @if (form().get('platform')?.errors?.['required'] && form().get('platform')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-platform-required-error">Please select a meeting platform</p>
+    @if (platformError()) {
+      <p id="composer-platform-required-error" class="text-sm text-red-600" data-testid="composer-platform-required-error">Please select a meeting platform</p>
     }
   </div>
 
@@ -130,16 +130,17 @@
             <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
           </div>
           <span class="text-sm text-gray-900">before the meeting starts</span>
-          <i
-            class="fa-light fa-info-circle cursor-help text-gray-400"
-            tabindex="0"
-            role="img"
+          <button
+            type="button"
+            class="cursor-help text-gray-400"
             [attr.aria-label]="emailReminderTooltip"
             [pTooltip]="emailReminderTooltip"
             tooltipEvent="both"
             tooltipPosition="right"
             tooltipStyleClass="text-xs max-w-xs"
-            data-testid="composer-reminder-tooltip"></i>
+            data-testid="composer-reminder-tooltip">
+            <i class="fa-light fa-info-circle" aria-hidden="true"></i>
+          </button>
         </div>
         @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
           <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
@@ -148,10 +149,14 @@
           <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
         }
         @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
-          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">Reminder must be at least 2 hours before the meeting starts</p>
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">
+            Reminder must be at least {{ minReminderHours }} hours before the meeting starts
+          </p>
         }
         @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
-          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">Reminder cannot be more than 24 hours before the meeting starts</p>
+          <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">
+            Reminder cannot be more than {{ maxReminderHours }} hours before the meeting starts
+          </p>
         }
         @if (
           (form().get('reminderMinutes')?.errors?.['required'] ||
