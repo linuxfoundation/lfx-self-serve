@@ -53,8 +53,9 @@ export class MeetingComposerRailComponent {
 
         return this.compact() ? this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]') : null;
       },
-      // Scrolling mutates the DOM, so it belongs in the write phase rather than either read phase.
-      write: (chip) => chip()?.scrollIntoView({ block: 'nearest', inline: 'center' }),
+      // `scrollIntoView` reads layout before it scrolls, so it is a mixed read/write rather than the pure
+      // write the `write` phase promises.
+      mixedReadWrite: (chip) => chip()?.scrollIntoView({ block: 'nearest', inline: 'center' }),
     });
   }
 
@@ -75,15 +76,11 @@ export class MeetingComposerRailComponent {
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
       const isEditMode = this.composer.isEditMode();
-      // Edit mode starts on an empty form and hydrates from the fetch, so until the meeting lands every
-      // required section reads invalid — flagging that would blame the organizer for a load in progress.
-      const hydrated = !isEditMode || !!this.formService.meeting();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
       const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
       return sections.map((section, index) => {
         const active = section.id === activeSection;
-        const valid = validById.get(section.id) ?? false;
         const blockedByEarlier = sections.slice(0, index).some((earlier) => earlier.required && !validById.get(earlier.id));
 
         return {
@@ -93,9 +90,8 @@ export class MeetingComposerRailComponent {
           // The organizer can be standing on a section an out-of-section validator has just invalidated
           // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
           locked: !isEditMode && blockedByEarlier && !active,
-          // Edit mode has no visited gate: every section is reachable from the start, so an invalid one the
-          // organizer hasn't opened yet is the case where the dot is the only clue Save is blocked on it.
-          needsAttention: hydrated && section.required && (isEditMode || visited.has(section.id)) && !valid,
+          // Shared with the compact badge in the host, so the two can't disagree about what needs fixing.
+          needsAttention: this.formService.sectionNeedsAttention(section, visited),
           lineBelowComplete: isComplete(section),
           isLast: index === sections.length - 1,
         };
