@@ -43,6 +43,8 @@
       </div>
     }
 
+    <!-- `aria-describedby` on the input reaches these, so they are read on the next focus of the field
+         rather than when they appear — no composer error message is in a live region yet. -->
     @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
       <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
     }

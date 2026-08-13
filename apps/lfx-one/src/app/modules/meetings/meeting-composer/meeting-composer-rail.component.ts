@@ -38,10 +38,10 @@ export class MeetingComposerRailComponent {
 
   /**
    * Single mode source for layout, locking and the active marker.
-   * @description Read from the form service because that is what `isSectionValid` /
-   * `sectionNeedsAttention` read, and because `composer.context()` is written before `initialize()` runs —
-   * so the two are briefly out of step on every open. Taking mode from both would render the flat edit
-   * rows while locking them like create-mode rows, leaving rows that look interactive and do nothing.
+   * @description Read from the form service because that is what `sectionNeedsAttention` reads — the other
+   * mode-dependent input to a row — and because `composer.context()` is written before `initialize()` runs,
+   * so a context-derived reader would lead this one by a flush. Taking mode from both would render the flat
+   * edit rows while locking them like create-mode rows, leaving rows that look interactive and do nothing.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
 

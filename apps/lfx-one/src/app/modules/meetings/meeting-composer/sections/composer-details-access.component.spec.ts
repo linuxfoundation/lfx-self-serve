@@ -83,6 +83,8 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
   });
 
   it('points at the maxlength error when the YouTube limit is exceeded', () => {
+    expect(describedBy()).toBe('composer-title-required-error');
+
     formService.form().get('youtube_upload_enabled')?.setValue(true);
     formService
       .form()
