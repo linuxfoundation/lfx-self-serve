@@ -124,9 +124,23 @@ describe('authMiddleware route classification', () => {
 
     await middleware(req, res, next);
 
-    // Express leaves `req.path` percent-encoded, so classification decodes it once (`%63reate` → `create`)
-    // to match Angular's decoded routing. The `create` lookahead then fires and the anonymous SSR GET
-    // redirects to login instead of fail-opening to optional auth.
+    // Express leaves `req.path` percent-encoded, so classification decodes each segment (`%63reate` →
+    // `create`) to match Angular's decoded routing. The `create` lookahead then fires and the anonymous
+    // SSR GET redirects to login instead of fail-opening to optional auth.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed for an encoded path separator (/u%2Fsomeone) instead of fail-opening to public', async () => {
+    const req = buildReq({ path: '/u%2Fsomeone' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // Per-segment decoding: `%2F` decodes to `/` within a single segment, which would shift boundaries
+    // and match the public `/u/:username` regex. Angular keeps `/u%2Fsomeone` as one segment and falls
+    // through to the protected catch-all, so classification fails closed to `required` — an anonymous SSR
+    // GET redirects to login rather than fail-opening onto the public profile route.
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 

@@ -124,14 +124,28 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
     auth: config.defaultAuth,
   };
 
-  // Decode percent-encoding once before matching so the SSR auth boundary matches Angular's decoded
-  // route matching (`/meetings/%63reate` → `/meetings/create`, so the `create` lookahead still fires).
-  // Express/Node leave `req.path` percent-encoded, so classifying the raw path would let an encoded
-  // segment fail-open to optional auth while Angular decodes it to the protected route. A single decode
-  // mirrors Angular's single decode; a malformed escape (`%ZZ`) throws and fails closed to `required`.
+  // Decode percent-encoding per segment before matching so the SSR auth boundary matches Angular's
+  // route matching, which splits the path on literal `/` first and only then decodes each segment
+  // (`/meetings/%63reate` → `/meetings/create`, so the `create` lookahead still fires). Express/Node
+  // leave `req.path` percent-encoded, so classifying the raw path would let an encoded segment fail-open
+  // to optional auth while Angular decodes it to the protected route. Decoding the whole path at once is
+  // NOT equivalent: it would turn an encoded separator (`%2F`) into a real `/` and shift segment
+  // boundaries — `/u%2Fsomeone` would become the two-segment public `/u/someone` here while Angular keeps
+  // it as one segment and falls through to the protected in-shell catch-all, reintroducing an anonymous
+  // fail-open. So a decoded segment that reintroduces `/` fails closed to `required`, as does a malformed
+  // escape (`%ZZ`), which throws in decodeURIComponent.
   let decodedPath: string;
   try {
-    decodedPath = decodeURIComponent(path);
+    decodedPath = path
+      .split('/')
+      .map((segment) => {
+        const decodedSegment = decodeURIComponent(segment);
+        if (decodedSegment.includes('/')) {
+          throw new Error('encoded path separator');
+        }
+        return decodedSegment;
+      })
+      .join('/');
   } catch {
     return fallback;
   }
