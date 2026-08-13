@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { COMMITTEE_LABEL, EDITABLE_GUEST_FIELDS, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { CommitteeMember, ManualGuestDialogResult, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { avatarInitials, generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -137,7 +137,7 @@ export class ComposerGuestsComponent {
           // selected group is restored when they turn up in one again. A guest the organizer removed by
           // hand is suppressed, so their deletion survives re-emission.
           const restore = guest.state === 'deleted' && !suppressed.has(email);
-          kept.push(restore ? { ...guest, state: this.restoredState(guest) } : guest);
+          kept.push(restore ? { ...guest, state: 'existing' } : guest);
           return kept;
         }
 
@@ -160,23 +160,6 @@ export class ComposerGuestsComponent {
 
       return [...reconciled, ...additions];
     });
-  }
-
-  /**
-   * State a restored guest goes back to.
-   * @description Restoring a guest the organizer had edited must not throw those edits away, so the
-   * saved snapshot decides between `modified` and `existing` rather than the state being hard-coded.
-   */
-  private restoredState(guest: MeetingRegistrantWithState): MeetingRegistrantWithState['state'] {
-    const original = guest.originalData;
-
-    if (!original) {
-      return 'existing';
-    }
-
-    const edited = EDITABLE_GUEST_FIELDS.some((field) => (guest[field] ?? null) !== (original[field] ?? null));
-
-    return edited ? 'modified' : 'existing';
   }
 
   private openManualDialog(prefill: Record<string, unknown> | null): void {

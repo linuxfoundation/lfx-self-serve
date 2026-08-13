@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, untracked, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
@@ -47,7 +47,8 @@ export class MeetingCommitteeManagerComponent {
 
   /**
    * Emission gate for `committeeMembersChange`, kept as plain fields so reading them in the emit
-   * pipeline's `filter` doesn't make them reactive dependencies of it.
+   * pipeline's `filter` doesn't make them reactive dependencies of it (`membersFetchError` is a signal
+   * because the template needs it, so the same `filter` reads it inside `untracked`).
    * @description Consumers reconcile their guest list against every emission, so an emission that
    * isn't a truthful picture of the selected groups' membership would queue saved guests for
    * deletion. `membersResolved` only flips once a fetch settles; an empty selection counts as settled
@@ -56,10 +57,9 @@ export class MeetingCommitteeManagerComponent {
    * ask" are indistinguishable in the result but opposite in consequence.
    */
   private membersResolved = false;
-  private membersFetchFailed = false;
   private selectionApplied = false;
 
-  /** Mirrors `membersFetchFailed` for the template — a blocked emission has to be visible, not silent. */
+  /** Whether the last member fetch failed — blocks emission, and the template says so rather than failing silently. */
   public readonly membersFetchError = signal(false);
 
   // Committee options loaded from API
@@ -134,7 +134,7 @@ export class MeetingCommitteeManagerComponent {
     // Emit committee members whenever they change
     toObservable(this.filteredCommitteeMembers)
       .pipe(
-        filter(() => this.membersResolved && !this.membersFetchFailed),
+        filter(() => this.membersResolved && !untracked(this.membersFetchError)),
         takeUntilDestroyed()
       )
       .subscribe((members) => this.committeeMembersChange.emit(members));
@@ -249,7 +249,6 @@ export class MeetingCommitteeManagerComponent {
       toObservable(this.selectedCommitteeIds).pipe(
         switchMap((committeeIds) => {
           this.membersResolved = false;
-          this.membersFetchFailed = false;
           this.membersFetchError.set(false);
 
           if (!committeeIds || committeeIds.length === 0) {
@@ -269,7 +268,6 @@ export class MeetingCommitteeManagerComponent {
               ),
               catchError((error) => {
                 console.error(`Failed to load members for committee ${id}:`, error);
-                this.membersFetchFailed = true;
                 this.membersFetchError.set(true);
                 return of([]);
               })
