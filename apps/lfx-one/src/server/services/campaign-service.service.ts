@@ -460,15 +460,26 @@ export class CampaignServiceClient {
     platforms: string[],
     config: Record<string, unknown>
   ): Promise<CampaignServiceCreateResult> {
-    // BRIEFS is a PREREQUISITE, not an independent switch, and treating it as one is the
-    // difference between a dark cutover and a broken page. Creation posts to
-    // `/briefs/{id}/campaigns`, so it needs a brief campaign-service has actually stored — and
-    // only the BRIEFS flag stores one. With CREATE on and BRIEFS off there is never a brief id,
-    // so every request would take the refusal below; that answers `enabled: true`, which the
-    // controller is required NOT to fall through on, and creation stops working altogether
-    // rather than quietly staying on the legacy path. Reporting the prerequisite as
-    // `enabled: false` keeps a half-set flag pair equivalent to "cutover off".
-    const enabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs);
+    // CREATE has TWO prerequisites, and neither is an independent switch. Treating them as
+    // independent is the difference between a dark cutover and a broken page, because a
+    // half-set pair answers `enabled: true` — the one result the controller may NOT fall
+    // through on — so creation stops working rather than quietly staying on the legacy path.
+    //
+    // BRIEFS, because creation posts to `/briefs/{id}/campaigns` and only that flag stores a
+    // brief to post against; without it there is never a brief id and every request takes the
+    // refusal below.
+    //
+    // JOBS, because creation mints a UUID job id and only that flag routes UUIDs to
+    // campaign-service. With JOBS off the poll takes the in-process branch, which holds no such
+    // job, so the user is told the campaign is lost while it is in fact running and spending —
+    // strictly worse than not cutting over. There is no id-shape backstop in that direction:
+    // the shape check tells a UUID from a `job_...` id, it cannot conjure the flag.
+    //
+    // Reporting either as `enabled: false` keeps a partial flag set equivalent to "cutover off".
+    const enabled =
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
     if (!enabled) {
       return { enabled: false, jobId: null, error: null };
     }

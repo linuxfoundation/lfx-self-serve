@@ -1423,12 +1423,27 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
+  it('is dark when CREATE is on but its JOBS prerequisite is off', async () => {
+    // Creation mints a UUID job id, and only the JOBS flag routes UUIDs to campaign-service.
+    // With JOBS off the poll takes the in-process branch, which holds no such job — the user is
+    // told the campaign is lost while it is running and spending. Strictly worse than not
+    // cutting over, and the id-shape backstop cannot help: it tells a UUID from a `job_...` id,
+    // it cannot conjure the flag.
+    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS');
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
   it('is dark when CREATE is on but its BRIEFS prerequisite is off', async () => {
     // Not merely "one flag of two": creation posts to /briefs/{id}/campaigns, and only BRIEFS
     // stores a brief to post against. Reporting `enabled: true` here would refuse every request
     // on a branch the controller must NOT fall through, so creation would stop working rather
     // than staying quietly on the legacy path.
-    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] === 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE');
+    // Only BRIEFS off, so this fails for the brief-id reason and not incidentally via JOBS.
+    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS');
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
 
