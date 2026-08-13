@@ -22,8 +22,8 @@ import { ComposerDetailsAccessComponent } from './sections/composer-details-acce
 
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
- * @description Mounted once in `app.component.html`, so opening the composer never unmounts the
- * page underneath. The section rail and live preview land in LFXV2-3240; until then the sections
+ * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
+ * opening the composer never unmounts the page underneath. The section rail and live preview land in LFXV2-3240; until then the sections
  * are driven by the footer navigation.
  */
 @Component({

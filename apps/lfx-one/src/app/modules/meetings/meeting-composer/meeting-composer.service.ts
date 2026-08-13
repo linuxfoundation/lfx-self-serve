@@ -9,8 +9,8 @@ const FIRST_SECTION: MeetingComposerSectionId = MEETING_COMPOSER_SECTIONS[0].id;
 
 /**
  * Cross-page open state for the meeting composer (LFXV2-3234).
- * @description Any entry point can call `open()`; the globally mounted
- * `MeetingComposerHostComponent` renders the drawer, so the composer survives navigation.
+ * @description Any entry point can call `open()`; `MeetingComposerHostComponent` — deferred in
+ * `app.component.html` until the first open — renders the drawer, so the composer survives navigation.
  */
 @Injectable({
   providedIn: 'root',

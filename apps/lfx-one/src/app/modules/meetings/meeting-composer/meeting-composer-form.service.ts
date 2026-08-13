@@ -110,7 +110,8 @@ export class MeetingComposerFormService {
   /**
    * Project the composer was opened against, when the entry point knew it.
    * @description Preferred over `ProjectContextService.activeContextUid()`, which resolves
-   * asynchronously and can still be empty when the composer opens from a deep link.
+   * asynchronously. Deep links carry a project slug rather than a uid, so those opens still fall back
+   * to the ambient context.
    */
   private readonly contextProjectUid = signal<string | null>(null);
 
@@ -129,8 +130,8 @@ export class MeetingComposerFormService {
 
   /**
    * Emits on every `initialize()`, cancelling work started by the previous open.
-   * @description The host is mounted for the app's lifetime, so `takeUntilDestroyed` alone would let a
-   * slow load from a closed composer resolve into the next one's form.
+   * @description The host outlives each open, so `takeUntilDestroyed` alone would let a slow load from a
+   * closed composer resolve into the next one's form.
    */
   private readonly reset$ = new Subject<void>();
 
@@ -237,6 +238,7 @@ export class MeetingComposerFormService {
    * emitting when the request fails (the error toast is raised here).
    */
   public submit(): Observable<Meeting | null> {
+    const generation = this.generation;
     const meetingData = this.prepareMeetingData();
 
     if (!meetingData.project_uid) {
@@ -257,14 +259,25 @@ export class MeetingComposerFormService {
 
     return save$.pipe(
       switchMap((meeting) => {
+        // The save can only be cancelled upstream, so it keeps running after a close+reopen. Everything
+        // below reads and writes live composer state, which by now belongs to a different meeting.
+        if (generation !== this.generation) {
+          return of(meeting);
+        }
+
         const meetingId = meeting?.id ?? existingMeetingId;
         if (!meetingId) {
-          // Create succeeded but returned no id — attachments and registrants have nothing to attach to.
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Partially saved',
-            detail: 'The meeting was saved, but guests and resources could not be attached. Open the meeting to add them.',
-          });
+          // Create succeeded but returned no id, so pending attachments and registrants have nothing to
+          // attach to. Completing without emitting keeps the composer open with the queue intact.
+          if (this.hasPendingDependentWork()) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Partially saved',
+              detail: 'The meeting was saved, but guests and resources could not be attached. Reopen the meeting to add them.',
+            });
+            return EMPTY;
+          }
+
           return of(meeting);
         }
 
@@ -289,7 +302,11 @@ export class MeetingComposerFormService {
         });
         return EMPTY;
       }),
-      finalize(() => this.submitting.set(false)),
+      finalize(() => {
+        if (generation === this.generation) {
+          this.submitting.set(false);
+        }
+      }),
       take(1)
     );
   }
@@ -305,6 +322,19 @@ export class MeetingComposerFormService {
   /** A link removed from the form still has an attachment upstream; queue it for deletion on save. */
   public deleteLinkAttachment(attachmentId: string): void {
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
+  }
+
+  /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
+  private hasPendingDependentWork(): boolean {
+    const registrants = this.registrantUpdates();
+
+    return (
+      this.pendingAttachments.length > 0 ||
+      this.pendingAttachmentDeletions().length > 0 ||
+      registrants.toAdd.length > 0 ||
+      registrants.toUpdate.length > 0 ||
+      registrants.toDelete.length > 0
+    );
   }
 
   // Private initializer functions

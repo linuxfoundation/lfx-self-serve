@@ -3,7 +3,7 @@
 <p-toast />
 
 <!-- Deferred so the composer and its form pipeline stay out of the initial bundle -->
-@defer (when meetingComposer.isOpen()) {
+@defer (when meetingComposer.isOpen(); prefetch on idle) {
   <lfx-meeting-composer-host />
 }
 

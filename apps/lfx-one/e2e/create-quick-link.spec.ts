@@ -199,7 +199,7 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     // the alignment didn't happen, so it must NOT match. `/meetings/create` opens the composer drawer
     // and replaces itself with the list URL, keeping the lens prefix and `?project=`.
     await expect(page).toHaveURL(/\/(foundation|project)\/meetings\?.*project=/, { timeout: 15_000 });
-    await expect(page.getByTestId('meeting-composer-drawer')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: 15_000 });
     // The regex above matches `project=` with an empty value too — assert the param actually
     // carries a usable slug, since an empty one is exactly what a mis-resolved target would produce.
     const project = new URL(page.url()).searchParams.get('project');
