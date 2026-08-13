@@ -198,6 +198,24 @@
         </div>
       }
 
+      <!--
+        Outside the focus gates: the event page is a general action, not part of either
+        story. Inside the attendance block it disappeared when the drawer was opened from
+        the sponsorship bar — a regression `keeps the event page link in both focus views`
+        exists to catch, so this placement is load-bearing rather than incidental.
+      -->
+      @if (d.eventUrl) {
+        <a
+          [href]="d.eventUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex w-fit items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
+          data-testid="event-detail-event-link">
+          <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          View event page
+        </a>
+      }
+
       <!-- Revenue detail -->
       <!-- Revenue is the sponsorship story — hidden in the attendance view. -->
       <!--
