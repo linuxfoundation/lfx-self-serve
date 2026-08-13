@@ -444,25 +444,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * After an ambiguous create failure, find out whether the POST actually committed.
-   *
-   * Returns the row when it is provably THIS request's, and `null` when the create did not happen
-   * or the row cannot be claimed — in which case the caller rethrows the original error, which is
-   * the honest outcome for a save whose fate is unknown.
-   *
-   * Two conditions have to hold before adopting a row, and both matter:
-   *
-   * - `version === 1`. A higher version means the row has been written more than once, so it is
-   *   not the untouched product of this POST, and adopting it would hand this session ownership
-   *   of edits it never made.
-   * - the stored payload matches what this request sent. Without it, a row another writer created
-   *   in the same window would be adopted, and the next save would replace THEIR brief under this
-   *   caller's id — the precise overwrite the ownership guard exists to prevent.
-   *
-   * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
-   * the accurate answer. Only genuinely indeterminate failures reach the lookup.
-   */
-  /**
    * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
    *
    * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
@@ -507,10 +488,15 @@ export class CampaignServiceClient {
       // Rows without an id are DROPPED, not mapped to `id: ''`. This is the value the staging
       // config's required `sourceEmailId` takes, so an id-less row is a choice the user cannot
       // make — rendering it would offer a template that fails on submit.
+      // The WIRE count, taken BEFORE the id filter below. Truncation is a property of what
+      // campaign-service sent, not of what survived our filtering: a genuinely capped 500 carrying
+      // one id-less row filters to 499, and `499 >= 500` would report a truncated listing as
+      // complete — the precise falsehood this flag exists to prevent.
+      const wireCount = (response.data?.emails ?? []).length;
       const emails = (response.data?.emails ?? []).filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
       // Derived here because the wire cannot express it: a capped 500 and a complete 500 are the
       // same bytes. Only an EMPTY query is capped, so a filtered search is never flagged.
-      return { enabled: true, emails, error: null, possiblyTruncated: query === '' && emails.length >= UNFILTERED_EMAIL_CAP };
+      return { enabled: true, emails, error: null, possiblyTruncated: query === '' && wireCount >= UNFILTERED_EMAIL_CAP };
     } catch (error) {
       // A missing connection is not a failure of this request: campaign-service answers its own
       // typed 404 — "no HubSpot connection configured for this project" — which is exactly the
@@ -537,6 +523,25 @@ export class CampaignServiceClient {
     }
   }
 
+  /**
+   * After an ambiguous create failure, find out whether the POST actually committed.
+   *
+   * Returns the row when it is provably THIS request's, and `null` when the create did not happen
+   * or the row cannot be claimed — in which case the caller rethrows the original error, which is
+   * the honest outcome for a save whose fate is unknown.
+   *
+   * Two conditions have to hold before adopting a row, and both matter:
+   *
+   * - `version === 1`. A higher version means the row has been written more than once, so it is
+   *   not the untouched product of this POST, and adopting it would hand this session ownership
+   *   of edits it never made.
+   * - the stored payload matches what this request sent. Without it, a row another writer created
+   *   in the same window would be adopted, and the next save would replace THEIR brief under this
+   *   caller's id — the precise overwrite the ownership guard exists to prevent.
+   *
+   * A 4xx is never reconciled: it is a refusal, so nothing committed and the original error is
+   * the accurate answer. Only genuinely indeterminate failures reach the lookup.
+   */
   private async reconcileLostCreate(
     req: Request,
     basePath: string,

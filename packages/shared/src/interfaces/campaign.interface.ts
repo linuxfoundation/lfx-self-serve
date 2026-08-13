@@ -1019,7 +1019,7 @@ export interface RedditMonitorResponse {
 }
 
 // ---------------------------------------------------------------------------
-// HubSpot UTM
+// HubSpot Email Templates
 // ---------------------------------------------------------------------------
 
 /**
@@ -1091,6 +1091,10 @@ export interface HubSpotEmailSearchResult {
    * list as everything.
    */
   possiblyTruncated: boolean;
+  // ---------------------------------------------------------------------------
+  // HubSpot UTM
+  // ---------------------------------------------------------------------------
+
   /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
   error: string | null;
 }

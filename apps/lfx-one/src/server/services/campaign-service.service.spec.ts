@@ -1490,6 +1490,24 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     expect(filtered.possiblyTruncated).toBe(false);
   });
 
+  /**
+   * Truncation is a property of what campaign-service SENT, not of what survived our id filter.
+   *
+   * A genuinely capped 500 carrying one id-less row filters to 499 rows, and a post-filter
+   * comparison (`499 >= 500`) reports a truncated listing as complete — the precise falsehood the
+   * flag exists to prevent, and the case that makes it worth reading the wire count.
+   */
+  it('flags a capped screen even when a row is dropped for having no id', async () => {
+    const wire = Array.from({ length: 500 }, (_, i) => ({ id: String(i) }));
+    wire[0] = { id: '' } as (typeof wire)[number];
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: wire } });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.emails).toHaveLength(499);
+    expect(result.possiblyTruncated).toBe(true);
+  });
+
   it('drops a row with no id rather than offering an unselectable template', async () => {
     // `id` is what `hubspotConfig.sourceEmailId` takes, and that field is required — so a row
     // without one is a choice the user cannot make. Rendering it would offer a template that
