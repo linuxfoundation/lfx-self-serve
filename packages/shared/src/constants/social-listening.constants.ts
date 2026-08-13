@@ -18,29 +18,30 @@ import type {
   ScopeState,
   SocialListeningOption,
 } from '../interfaces/social-listening.interface';
+import { lfxColors } from './colors.constants';
 
 // ---------------------------------------------------------------------------
 // Display config
 // ---------------------------------------------------------------------------
 
 export const MENTION_PLATFORM_CONFIG: Record<MentionPlatform, MentionPlatformConfigEntry> = {
-  twitter: { icon: 'fa-brands fa-x-twitter', label: 'Twitter / X', colorClass: 'text-gray-900' },
-  bluesky: { icon: 'fa-brands fa-bluesky', label: 'Bluesky', colorClass: 'text-sky-500' },
-  reddit: { icon: 'fa-brands fa-reddit', label: 'Reddit', colorClass: 'text-orange-600' },
-  youtube: { icon: 'fa-brands fa-youtube', label: 'YouTube', colorClass: 'text-red-600' },
-  facebook: { icon: 'fa-brands fa-facebook', label: 'Facebook', colorClass: 'text-blue-600' },
-  hackernews: { icon: 'fa-brands fa-hacker-news', label: 'Hacker News', colorClass: 'text-orange-500' },
-  dev: { icon: 'fa-brands fa-dev', label: 'DEV', colorClass: 'text-gray-900' },
-  podcasts: { icon: 'fa-light fa-podcast', label: 'Podcasts', colorClass: 'text-purple-600' },
-  github: { icon: 'fa-brands fa-github', label: 'GitHub', colorClass: 'text-gray-700' },
-  linkedin: { icon: 'fa-brands fa-linkedin', label: 'LinkedIn', colorClass: 'text-blue-700' },
-  other: { icon: 'fa-light fa-globe', label: 'Other', colorClass: 'text-gray-500' },
+  twitter: { icon: 'fa-brands fa-x-twitter', label: 'Twitter / X', colorClass: 'text-gray-900', barClass: 'bg-gray-900' },
+  bluesky: { icon: 'fa-brands fa-bluesky', label: 'Bluesky', colorClass: 'text-sky-500', barClass: 'bg-sky-500' },
+  reddit: { icon: 'fa-brands fa-reddit', label: 'Reddit', colorClass: 'text-orange-600', barClass: 'bg-orange-600' },
+  youtube: { icon: 'fa-brands fa-youtube', label: 'YouTube', colorClass: 'text-red-600', barClass: 'bg-red-600' },
+  facebook: { icon: 'fa-brands fa-facebook', label: 'Facebook', colorClass: 'text-blue-600', barClass: 'bg-blue-600' },
+  hackernews: { icon: 'fa-brands fa-hacker-news', label: 'Hacker News', colorClass: 'text-orange-500', barClass: 'bg-orange-500' },
+  dev: { icon: 'fa-brands fa-dev', label: 'DEV', colorClass: 'text-gray-900', barClass: 'bg-gray-900' },
+  podcasts: { icon: 'fa-light fa-podcast', label: 'Podcasts', colorClass: 'text-purple-600', barClass: 'bg-purple-600' },
+  github: { icon: 'fa-brands fa-github', label: 'GitHub', colorClass: 'text-gray-700', barClass: 'bg-gray-700' },
+  linkedin: { icon: 'fa-brands fa-linkedin', label: 'LinkedIn', colorClass: 'text-blue-700', barClass: 'bg-blue-700' },
+  other: { icon: 'fa-light fa-globe', label: 'Other', colorClass: 'text-gray-500', barClass: 'bg-gray-500' },
 };
 
 export const MENTION_SENTIMENT_CONFIG: Record<MentionSentiment, MentionSentimentConfigEntry> = {
-  positive: { icon: 'fa-light fa-face-smile', label: 'Positive', severity: 'success' },
-  neutral: { icon: 'fa-light fa-face-meh', label: 'Neutral', severity: 'secondary' },
-  negative: { icon: 'fa-light fa-thumbs-down', label: 'Negative', severity: 'danger' },
+  positive: { icon: 'fa-light fa-face-smile', label: 'Positive', severity: 'success', barClass: 'bg-emerald-500' },
+  neutral: { icon: 'fa-light fa-face-meh', label: 'Neutral', severity: 'secondary', barClass: 'bg-amber-400' },
+  negative: { icon: 'fa-light fa-thumbs-down', label: 'Negative', severity: 'danger', barClass: 'bg-red-500' },
 };
 
 export const MENTION_RELEVANCE_CONFIG: Record<MentionRelevance, MentionRelevanceConfigEntry> = {
@@ -90,6 +91,31 @@ export const MENTION_IDS_MAX_VALUES = 500;
 
 /** Row cap for the `mentions-tags` endpoint — serves both the tag filter dropdown and the analytics top-tags panel. */
 export const MENTION_TOP_TAGS_LIMIT = 10;
+
+/** Row cap for the analytics platform-distribution panel (client-side slice; the endpoint returns all platforms). */
+export const ANALYTICS_TOP_PLATFORMS_LIMIT = 5;
+
+/** Row cap requested for the analytics top-projects panel (mirrors the server's `TOP_PROJECTS_LIMIT` default). */
+export const ANALYTICS_TOP_PROJECTS_LIMIT = 5;
+
+/**
+ * Series colors for the analytics charts (LFXV2-3018) — `lfxColors` scales only (styling rule).
+ * Index 0 is reserved for the "Total" line on Mentions Over Time; per-project and per-tag
+ * series cycle from index 1. 500 shades first, then 300s so foundations with more than
+ * five child projects still get distinguishable lines.
+ */
+export const SOCIAL_LISTENING_CHART_PALETTE: string[] = [
+  lfxColors.gray[900],
+  lfxColors.blue[500],
+  lfxColors.emerald[500],
+  lfxColors.amber[500],
+  lfxColors.red[500],
+  lfxColors.violet[500],
+  lfxColors.blue[300],
+  lfxColors.emerald[300],
+  lfxColors.amber[300],
+  lfxColors.violet[300],
+];
 
 /** Interval for refreshing relative timestamps ("2h ago") on rendered mention cards. */
 export const MENTION_TIME_TICK_INTERVAL_MS = 60_000;

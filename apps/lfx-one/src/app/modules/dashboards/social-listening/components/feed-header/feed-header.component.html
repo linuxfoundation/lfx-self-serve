@@ -75,5 +75,19 @@
         (mouseenter)="filtersPrefetch.emit()"
         data-testid="social-listening-filters-button" />
     }
+
+    <!-- Export trigger (analytics tab only) — the page increments the analytics component's exportNonce -->
+    @if (isAnalyticsTab()) {
+      <lfx-button
+        icon="fa-light fa-arrow-down-to-bracket"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Export analytics as PNG"
+        [loading]="exporting()"
+        [disabled]="exporting()"
+        (onClick)="exportAnalytics.emit()"
+        data-testid="social-listening-analytics-export" />
+    }
   </div>
 </lfx-card-tabs-bar>
