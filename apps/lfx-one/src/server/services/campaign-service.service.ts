@@ -8,6 +8,8 @@ import type {
   CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  HubSpotEmailSearchResult,
+  HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
   CampaignJobStatus,
@@ -177,6 +179,48 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
   const key = requiredKey[platform];
   if (key === undefined) return false;
   return envelope[key] !== undefined;
+}
+
+/** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
+interface CampaignServiceMarketingEmail {
+  id?: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updated_at?: string;
+}
+
+/**
+ * The number of emails campaign-service returns for an UNFILTERED listing.
+ *
+ * Mirrors `hubspot.maxUnfilteredEmails` in campaign-service. Duplicated rather than fetched
+ * because the wire result carries no pagination field at all — a capped 500 and a complete 500
+ * are byte-identical — so the only way a caller can flag truncation is to know the cap.
+ *
+ * KNOWN GAP (LFXV2-3255): the two services deploy independently, so this constant can drift from
+ * the one it mirrors, in EITHER direction. A raised cap under-reports (a 600-email portal
+ * returning 600 is not flagged, failing toward silence); a LOWERED cap over-reports the opposite
+ * way, calling a genuinely capped list complete — which is the false absence this flag exists to
+ * prevent. The real fix is upstream returning explicit truncation metadata, so a consumer reads
+ * the fact instead of re-deriving it. Not a live defect: the constants agree today.
+ */
+const UNFILTERED_EMAIL_CAP = 500;
+
+/**
+ * One wire email onto the shared interface.
+ *
+ * Only `id` is guaranteed by the service's design, so everything else is optional here rather
+ * than defaulted to `''` — an empty string would render as a nameless row that looks like data,
+ * where an absent field lets the template show what it actually knows.
+ */
+function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarketingEmail {
+  return {
+    id: email.id ?? '',
+    name: email.name,
+    subject: email.subject,
+    state: email.state,
+    updatedAt: email.updated_at,
+  };
 }
 
 /**
@@ -647,6 +691,104 @@ export class CampaignServiceClient {
         enabled: true,
         jobId: null,
         error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
+      };
+    }
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
+   *
+   * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
+   * REQUIRED with no default, and staging clones a template, so a user who cannot choose one
+   * cannot stage anything.
+   *
+   * A SEARCH rather than a dropdown, deliberately. campaign-service caps an unfiltered listing at
+   * 500 and the wire result has no pagination field, so a portal with more would show a truncated
+   * list indistinguishable from a complete one — the exact shape of falsehood a picker must not
+   * have. `possiblyTruncated` below is how the caller can tell.
+   *
+   * `q` does NOT reach HubSpot. Its list endpoint cannot be queried by name or subject, so
+   * campaign-service walks every page and matches in-process. Do not describe this as server-side
+   * search: the service's own design warns that reading it that way invites optimising the walk
+   * away, reintroducing the false absence the cap exists to prevent.
+   *
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
+   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
+   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
+   * filtered search either sees every page or fails; it never quietly returns a subset. That is
+   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
+   * case where a partial result is returned as if complete.
+   *
+   * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
+   * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
+   * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
+   */
+  public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
+    if (projectSlug === '') {
+      // Refused rather than defaulted, for the reason `loadBrief` refuses: `/projects//…` is a
+      // DIFFERENT route that 404s at the gateway, and a gateway 404 is not the service saying
+      // "no such project".
+      return { enabled: true, emails: [], error: 'A HubSpot template search requires the project it is scoped to.', possiblyTruncated: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/emails`;
+    try {
+      // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
+      // method, query, data)` — passing them sixth would send them as a body, which a GET
+      // discards, and the search would silently return the unfiltered list.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<{ emails?: CampaignServiceMarketingEmail[] }>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'GET',
+        query === '' ? undefined : { q: query }
+      );
+      // Rows without an id are DROPPED, not mapped to `id: ''`. This is the value the staging
+      // config's required `sourceEmailId` takes, so an id-less row is a choice the user cannot
+      // make — rendering it would offer a template that fails on submit.
+      // A 200 with no `emails` ARRAY is malformed, not an empty portal, and the difference is the
+      // whole point of this component. `?? []` reported it as `enabled: true` with zero templates
+      // — indistinguishable from a portal that genuinely has none, which is the false absence this
+      // search exists to avoid. campaign-service draws the same line one layer up: `SearchEmails`
+      // treats a nil results array as a decode error precisely because a genuinely empty portal
+      // returns `[]`, not nothing. Thrown so the catch below reports a read failure.
+      const wire = response.data?.emails;
+      if (!Array.isArray(wire)) {
+        throw new Error('campaign-service returned a 2xx with no emails array');
+      }
+
+      // The WIRE count, taken BEFORE the id filter below. Truncation is a property of what
+      // campaign-service sent, not of what survived our filtering: a genuinely capped 500 carrying
+      // one id-less row filters to 499, and `499 >= 500` would report a truncated listing as
+      // complete — the precise falsehood this flag exists to prevent.
+      const wireCount = wire.length;
+      const emails = wire.filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
+      // Derived here because the wire cannot express it: a capped 500 and a complete 500 are the
+      // same bytes. Only an EMPTY query is capped, so a filtered search is never flagged.
+      return { enabled: true, emails, error: null, possiblyTruncated: query === '' && wireCount >= UNFILTERED_EMAIL_CAP };
+    } catch (error) {
+      // A missing connection is not a failure of this request: campaign-service answers its own
+      // typed 404 — "no HubSpot connection configured for this project" — which is exactly the
+      // state the picker should render as "connect HubSpot".
+      //
+      // The BODY is checked, not just the status, and that is the same distinction `findBrief`
+      // draws: a gateway 404 is not the service's 404. `/projects//connection-hubspot/emails`
+      // with an empty slug, a routing change, or an ingress miss all produce a bare 404 too, and
+      // reporting those as "no connection" would tell the user to connect something that is
+      // already connected while hiding a real outage.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return { enabled: false, emails: [], error: null, possiblyTruncated: false };
+      }
+      logger.warning(req, 'hubspot_email_search', 'campaign-service refused the HubSpot template search', {
+        projectSlug,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        enabled: true,
+        emails: [],
+        error: 'HubSpot templates could not be loaded. Try again, or check the HubSpot connection.',
+        possiblyTruncated: false,
       };
     }
   }
