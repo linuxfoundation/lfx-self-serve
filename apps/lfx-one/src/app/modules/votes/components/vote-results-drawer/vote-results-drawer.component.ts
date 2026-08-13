@@ -83,6 +83,8 @@ export class VoteResultsDrawerComponent {
   protected readonly voteResultsError = signal<boolean>(false);
   /** Distinguishes "my-response request in flight" from "my-response loaded with no row"; without this, a non-participant deep-linking a closed vote would briefly route to State C instead of access-denied. */
   protected readonly myResponseLoading = signal<boolean>(false);
+  /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into access-denied. */
+  protected readonly myResponseError = signal<boolean>(false);
   /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
 
@@ -317,15 +319,31 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  /** Newest-first within each prompt — pagination slices the already-sorted list, so page 1 always shows the most recent comments. */
+  /** Prompts come from the vote detail (poll_comment_prompts), not the results payload — the
+   *  results endpoint only reports prompts that have responses, which hid the Comments section
+   *  entirely on zero-response votes. Responses left-join in by prompt_id when present, sorted
+   *  newest-first (pagination slices the already-sorted list, so page 1 always shows the most
+   *  recent comments). If the detail fetch supplied no prompts (e.g. it failed and the list-vote
+   *  fallback lacks them), degrade to the results payload's prompts that have responses. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
-      const results = this.voteResults();
-      if (!results?.comment_results?.length) {
-        return [];
+      const commentResults = this.voteResults()?.comment_results ?? [];
+      const detailPrompts = this.vote()?.poll_comment_prompts;
+
+      if (!detailPrompts?.length) {
+        return commentResults.flatMap((cr) => (cr.responses.length > 0 ? [{ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }] : []));
       }
 
-      return results.comment_results.filter((cr) => cr.responses.length > 0).map((cr) => ({ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }));
+      const resultsByPromptId = new Map(commentResults.map((cr) => [cr.prompt.prompt_id, cr]));
+
+      return detailPrompts.map((prompt) => {
+        const result = resultsByPromptId.get(prompt.prompt_id);
+        return {
+          prompt,
+          responses: sortCommentResponsesByRecency(result?.responses ?? []),
+          total_responses: result?.total_responses,
+        };
+      });
     });
   }
 
@@ -403,11 +421,17 @@ export class VoteResultsDrawerComponent {
         switchMap(([id, audience]) => {
           if (!id || audience !== 'voter') {
             this.myResponseLoading.set(false);
+            this.myResponseError.set(false);
             return of(null);
           }
           this.myResponseLoading.set(true);
+          this.myResponseError.set(false);
           return this.voteService.getMyVoteResponse(id).pipe(
-            catchError(() => of(null)),
+            // The service maps 404 to null; anything reaching this catch is a real failure — surface an error state instead of access-denied.
+            catchError(() => {
+              this.myResponseError.set(true);
+              return of(null);
+            }),
             finalize(() => this.myResponseLoading.set(false))
           );
         })
@@ -425,7 +449,8 @@ export class VoteResultsDrawerComponent {
       const isVoter = this.audience() === 'voter';
       // Access-denied: voter_removed wins; voter with loaded-null row is a non-participant deep-link.
       if (my?.voter_removed) return 'access_denied';
-      if (isVoter && !this.myResponseLoading() && !my) return 'access_denied';
+      // A failed my-response call (non-404) must not collapse into access-denied — the template shows the error state instead.
+      if (isVoter && !this.myResponseLoading() && !this.myResponseError() && !my) return 'access_denied';
       const closed = v.status === PollStatus.ENDED;
       const decoratedResponseStatus = this.listVote()?.response_status ?? v.response_status;
       const submitted = my?.vote_status === 'responded' || decoratedResponseStatus === VoteResponseStatus.RESPONDED;

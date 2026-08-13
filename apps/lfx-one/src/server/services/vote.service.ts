@@ -246,17 +246,21 @@ export class VoteService {
     // responses at the most recent N to keep the payload linear in prompt count rather than
     // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
     // reported via total_responses so the UI can disclose truncation.
-    for (const commentResult of results.comment_results ?? []) {
-      commentResult.total_responses = commentResult.responses.length;
-      if (commentResult.responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT) {
-        commentResult.responses = sortCommentResponsesByRecency(commentResult.responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT);
-      }
+    for (const commentResult of results?.comment_results ?? []) {
+      // Normalize to an array before touching length — this loop is the single aggregation point for
+      // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
+      const responses = commentResult.responses ?? [];
+      commentResult.total_responses = responses.length;
+      commentResult.responses =
+        responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
+          ? sortCommentResponsesByRecency(responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT)
+          : responses;
     }
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
-      num_poll_results: results.poll_results?.length ?? 0,
-      num_votes_cast: results.num_votes_cast,
+      num_poll_results: results?.poll_results?.length ?? 0,
+      num_votes_cast: results?.num_votes_cast,
     });
 
     return results;

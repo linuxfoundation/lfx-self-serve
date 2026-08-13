@@ -157,6 +157,19 @@ export class VoteManageComponent {
       return;
     }
 
+    // Draft save skips the step-2 form gate, so over-length comment prompts must be caught here.
+    const commentPromptsArray = this.form().get('commentPrompts') as FormArray;
+    const invalidPromptGroups = commentPromptsArray.controls.filter((commentPromptGroup) => !(commentPromptGroup as FormGroup).get('prompt')?.valid);
+    if (invalidPromptGroups.length > 0) {
+      invalidPromptGroups.forEach((commentPromptGroup) => (commentPromptGroup as FormGroup).get('prompt')?.markAsTouched());
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Cannot save draft',
+        detail: `Comment questions must be ${VOTE_COMMENT_PROMPT_MAX_LENGTH} characters or fewer before saving as a draft.`,
+      });
+      return;
+    }
+
     const projectUid = this.vote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       this.messageService.add({
