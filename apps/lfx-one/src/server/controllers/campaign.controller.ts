@@ -339,11 +339,13 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route: creation is not cut over, so
-    // `createCampaign` above still mints `job_<epoch>_<rand>` into the in-process map, and
-    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id` — it would answer
+    // The flag is necessary but NOT sufficient to route. With CREATE off — still the default —
+    // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
+    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment
-    // the flag went on, which is the failure the flag exists to fix. `isCampaignServiceJobId`
+    // the JOBS flag went on, which is the failure the flag exists to fix. With CREATE on, both id
+    // shapes are in flight at once — which is the case the id check really serves.
+    // `isCampaignServiceJobId`
     // adds the second condition, and it needs no separate flag of its own: a `job_` id can only
     // have come from this process and a UUID can only have come from campaign-service, so ids
     // minted either side of the create cutover keep resolving against the store that holds them.

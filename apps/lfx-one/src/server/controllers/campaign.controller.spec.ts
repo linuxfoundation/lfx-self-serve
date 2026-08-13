@@ -9,11 +9,13 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, createCampaigns, legacyCreate, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
+const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
   createCampaigns: vi.fn(),
   legacyCreate: vi.fn(),
+  svcGetJobStatus: vi.fn(),
+  legacyGetJobStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -29,6 +31,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
       public createCampaigns = createCampaigns;
+      public getJobStatus = svcGetJobStatus;
     },
   };
 });
@@ -39,6 +42,7 @@ vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
 vi.mock('../services/campaign-proxy.service', () => ({
   CampaignProxyService: class {
     public createCampaign = legacyCreate;
+    public getJobStatus = legacyGetJobStatus;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -610,5 +614,78 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budget']).toBe(250);
     expect(sent).not.toHaveProperty('budgetUsd');
     expect(sent['geoTargets']).toEqual(['US']);
+  });
+});
+
+/**
+ * The poll's routing decision, which the service spec cannot see.
+ *
+ * Safety-critical: a UUID job polled without its project slug answers `not_found` from `GetJob`'s
+ * exact-match join, and `not_found` is TERMINAL for the poller — so a campaign that is running and
+ * spending gets reported as lost. The controller refuses rather than guessing a slug, and that
+ * refusal had no controller-level test until now (raised by @dealako).
+ */
+describe('CampaignController.getJobStatus routing', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  const UUID_JOB = '9f1c2d3e-0000-4000-8000-000000000001';
+  const LEGACY_JOB = 'job_1699999999_ab12cd';
+
+  function jobReq(jobId: string, query: Record<string, unknown>): Request {
+    return { params: { jobId }, query, path: `/api/campaigns/jobs/${jobId}` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(true);
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses a UUID job poll with no project slug rather than guessing one', async () => {
+    await controller.getJobStatus(jobReq(UUID_JOB, {}), res, next);
+
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('forwards the trimmed slug to campaign-service for a UUID job', async () => {
+    svcGetJobStatus.mockResolvedValue({ status: 'running' });
+
+    await controller.getJobStatus(jobReq(UUID_JOB, { project: '  cncf  ' }), res, next);
+
+    expect(svcGetJobStatus).toHaveBeenCalledWith(expect.anything(), UUID_JOB, 'cncf');
+    expect(legacyGetJobStatus).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'running' });
+  });
+
+  it('routes a legacy job_ id to the in-process map and needs no slug', async () => {
+    // The id shape, not the flag, is what keeps both eras of job id resolvable during rollout.
+    legacyGetJobStatus.mockResolvedValue({ status: 'done' });
+
+    await controller.getJobStatus(jobReq(LEGACY_JOB, {}), res, next);
+
+    expect(legacyGetJobStatus).toHaveBeenCalledTimes(1);
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'done' });
+  });
+
+  it('routes a UUID job to the in-process map when the JOBS flag is off', async () => {
+    // Pins the flag half of the predicate. Without it the tests above would pass on a controller
+    // that routed on id shape alone, which would break rollback.
+    isServerFeatureEnabled.mockReturnValue(false);
+    legacyGetJobStatus.mockResolvedValue({ status: 'done' });
+
+    await controller.getJobStatus(jobReq(UUID_JOB, {}), res, next);
+
+    expect(legacyGetJobStatus).toHaveBeenCalledTimes(1);
+    expect(svcGetJobStatus).not.toHaveBeenCalled();
   });
 });

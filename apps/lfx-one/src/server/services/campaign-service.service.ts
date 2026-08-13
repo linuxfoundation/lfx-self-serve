@@ -148,15 +148,6 @@ export function isCampaignServiceJobId(jobId: string): boolean {
 }
 
 /**
- * Client for lfx-v2-campaign-service.
- *
- * Separate from `campaign-proxy.service.ts` on purpose: that file talks to the VENDOR APIs
- * (Google Ads, Meta Graph, LinkedIn, Reddit, HubSpot) with credentials held in this tier,
- * and it is what the cutover retires. Keeping the two apart means each endpoint's migration
- * is an addition here plus a branch at the call site, and a rollback is the flag alone —
- * rather than an edit tangled through the vendor code that has to be reverted by hand.
- */
-/**
  * Does the envelope carry the config this platform needs to dispatch?
  *
  * The mapping is the dispatcher's, not ours: each `<platform>Dispatcher.Dispatch` in
@@ -188,6 +179,15 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
   return envelope[key] !== undefined;
 }
 
+/**
+ * Client for lfx-v2-campaign-service.
+ *
+ * Separate from `campaign-proxy.service.ts` on purpose: that file talks to the VENDOR APIs
+ * (Google Ads, Meta Graph, LinkedIn, Reddit, HubSpot) with credentials held in this tier,
+ * and it is what the cutover retires. Keeping the two apart means each endpoint's migration
+ * is an addition here plus a branch at the call site, and a rollback is the flag alone —
+ * rather than an edit tangled through the vendor code that has to be reverted by hand.
+ */
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
