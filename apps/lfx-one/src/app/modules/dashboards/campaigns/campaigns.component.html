@@ -47,13 +47,19 @@
     <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
          change when the OTHER container becomes active.
 
-         `aria-controls` is set only on the SELECTED tab, deliberately. The panels live inside an
-         @switch, so exactly one is in the DOM at a time; setting it on every tab would point
-         assistive technology at element ids that do not exist. ARIA 1.2 makes aria-controls
-         optional on a tab for this reason, and a dangling reference is worse than an absent
-         attribute — a screen reader following it lands nowhere. marketing-impact.component.html
-         sets it unconditionally over a single @switch-rendered panel and therefore does have
-         dangling ids on its inactive tabs; that is a bug there rather than a pattern to copy. -->
+         `aria-controls` is set only on the SELECTED tab, deliberately. The NON-PLANNING panels
+         live inside an @switch, so at most one of them is in the DOM at a time; setting the
+         attribute on every tab would point assistive technology at element ids that do not
+         exist. ARIA 1.2 makes aria-controls optional on a tab for this reason, and a dangling
+         reference is worse than an absent attribute — a screen reader following it lands
+         nowhere. marketing-impact.component.html sets it unconditionally over a single
+         @switch-rendered panel and therefore does have dangling ids on its inactive tabs; that
+         is a bug there rather than a pattern to copy.
+
+         Since LFXV2-3202 the planning panel is the exception: it is always in the DOM, so its
+         id is always resolvable and the condition is not load-bearing for that one tab. The
+         binding stays uniform across the tablist anyway — a per-tab special case would be more
+         code to say the same thing, and the lazy panels still need it. -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
       @for (tab of emailTabs; track tab.id; let i = $index) {
         <button
@@ -77,10 +83,21 @@
       }
     </div>
 
-    @switch (selectedEmailTab()) {
-      @case ('planning') {
-        <div role="tabpanel" id="email-panel-planning" aria-labelledby="email-tab-planning" data-testid="campaigns-email-planning-panel">
-          <!--
+    <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
+         the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
+         structural @switch destroyed an in-progress brief on every trip to another tab.
+
+         The other email panels stay in the lazy @switch, but NOT for the paid side's reason —
+         they are static placeholders with no component, no ngOnInit and no local state, so
+         eager-mounting them would cost nothing. They stay switched so both containers keep the
+         same structure and the paid side's carve-out is not re-litigated one container over. -->
+    <div
+      role="tabpanel"
+      id="email-panel-planning"
+      aria-labelledby="email-tab-planning"
+      [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-email-planning-panel">
+      <!--
             KNOWN GAP, tracked as LFXV2-3201: this mounts the PAID planner unchanged.
 
             Under a tab labelled Email the user is shown an "Ad Channels" card, must select an ad
@@ -100,14 +117,18 @@
             Until then the Plan tab is honest about the event URL and scrape, which the two types
             genuinely do share, and misleading about everything below it.
           -->
-          <!-- Keyed on the program type for the same reason the paid side is: the component
+      <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
-          <!--
+      <!--
             TWO planning-tab instances are in the DOM at once, because both delivery containers are
             visibility-toggled rather than swapped with `@if` (destroying either would wipe an
-            in-progress brief). The planner emits FIXED internal test ids — `planning-url-input`,
-            `planning-generate-btn`, `planning-platform-<id>` — so each of those now resolves to
-            two elements, one of them hidden.
+            in-progress brief). Since LFXV2-3202 that is true REGARDLESS of the selected tab as
+            well as the selected delivery type — the planners no longer leave the DOM when the
+            user is on Implement or Insights — so the scoping requirement below is unconditional
+            rather than "only when both sides happen to be on Plan". The planner emits FIXED
+            internal test ids — `planning-url-input`, `planning-generate-btn`,
+            `planning-platform-<id>` — so each of those always resolves to two elements, one of
+            them hidden.
 
             Any selector on a bare `planning-*` id MUST therefore be scoped under its host:
 
@@ -118,14 +139,15 @@
             changes a component both delivery types share and belongs with LFXV2-3201, which
             revisits whether they should share it at all.
           -->
-          @for (program of [selectedProgramType()]; track program) {
-            <lfx-planning-tab
-              [programTypeConfig]="activeProgramTypeConfig()"
-              (proceedToImplementation)="onEmailProceedToImplementation($event)"
-              data-testid="campaigns-email-planning-tab" />
-          }
-        </div>
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          (proceedToImplementation)="onEmailProceedToImplementation($event)"
+          data-testid="campaigns-email-planning-tab" />
       }
+    </div>
+
+    @switch (selectedEmailTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
           <!--
@@ -218,22 +240,51 @@
     </div>
 
     <!-- Tab Content -->
-    @switch (selectedTab()) {
-      @case ('planning') {
-        <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
-          <!-- Keyed on the program type so a program change (Events <-> Education)
-               recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
-               state locally and does not reset on input change, so without a fresh
-               instance a stale Events brief could show under Education. -->
-          @for (program of [selectedProgramType()]; track program) {
-            <lfx-planning-tab
-              [programTypeConfig]="activeProgramTypeConfig()"
-              (proceedToImplementation)="onProceedToImplementation($event)"
-              (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
-              data-testid="campaigns-planning-tab" />
-          }
-        </div>
+
+    <!-- Planning stays MOUNTED and visibility-toggled, for the same reason the delivery-type
+         containers above are: PlanningTabComponent owns its brief/URL/copy/refinement state
+         locally, so a structural @switch destroyed an in-progress brief every time the user
+         looked at another tab (LFXV2-3202). A brief is a slow, non-deterministic AI generation,
+         not a keystroke — losing it costs minutes and cannot be reproduced exactly.
+         The reasoning was already applied one level up and simply not carried down to the tabs.
+
+         Only Planning is hoisted out of the @switch, deliberately. Implementation, Insights and
+         Optimization all fetch in ngOnInit — ad-account lookups on all three, plus metrics reads
+         on Insights and Optimization — so mounting them eagerly would issue network calls for
+         tabs the user may never open, on every page load. They keep the lazy @switch below.
+
+         That is a TRADE, not a free win, and the cost belongs here rather than implied:
+         Implementation also holds local state, including hand-edited headline and description
+         FormArrays, and a tab switch still discards it — the component is destroyed, and on
+         remount a constructor `effect` re-derives the form from `briefData`, so typed edits do
+         not survive. Insights and Optimization re-fetch what they display, so those two
+         genuinely lose nothing.
+
+         Planning is hoisted and Implementation is not because the two losses are not comparable:
+         a brief is a slow, non-deterministic AI generation that cannot be reproduced, while
+         Implementation's fields are re-derived from that brief immediately. If the edit loss
+         proves to matter, the fix is to lift Implementation's form state up to this component
+         rather than to mount it eagerly — that keeps the network cost off page load. -->
+    <div
+      role="tabpanel"
+      id="panel-planning"
+      aria-labelledby="tab-planning"
+      [style.display]="selectedTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-planning-panel">
+      <!-- Keyed on the program type so a program change (Events <-> Education)
+           recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
+           state locally and does not reset on input change, so without a fresh
+           instance a stale Events brief could show under Education. -->
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          (proceedToImplementation)="onProceedToImplementation($event)"
+          (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
+          data-testid="campaigns-planning-tab" />
       }
+    </div>
+
+    @switch (selectedTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
           <!-- `briefSaveInFlight` is separate from `briefPersistence` on purpose: the banner state
