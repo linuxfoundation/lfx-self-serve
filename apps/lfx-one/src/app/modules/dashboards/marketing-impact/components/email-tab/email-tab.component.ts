@@ -36,6 +36,8 @@ export class EmailTabComponent {
   protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
   protected readonly emailTypeRows: Signal<EmailTypeRow[]> = this.initEmailTypeRows();
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
+  /** True once a response has landed. Null covers both the loading state and a failed request. */
+  protected readonly hasLoaded = computed(() => this.emailData() !== null);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
   /**
@@ -157,7 +159,7 @@ export class EmailTabComponent {
           label: 'Click-Through Rate',
           icon: 'fa-light fa-arrow-pointer',
           iconClass: 'bg-violet-100 text-violet-600',
-          value: `${formatPercent(data.currentCtr ?? 0)}%`,
+          value: `${formatPercent(data.currentCtr ?? 0, 2)}%`,
           momChange: formatChangePct(changePct, 'MoM'),
           momTrend: trendDirection(changePct),
           momTrendClass: trendColorClass(changePct),
@@ -181,8 +183,8 @@ export class EmailTabComponent {
           campaignCount: et.campaignCount,
           sends: formatNumber(et.totalSends),
           opens: formatNumber(et.totalOpens),
-          openRate: `${et.openRate.toFixed(1)}%`,
-          ctr: `${formatPercent(et.ctr)}%`,
+          openRate: `${formatPercent(et.openRate)}%`,
+          ctr: `${formatPercent(et.ctr, 2)}%`,
         })
       );
     });
@@ -220,8 +222,8 @@ export class EmailTabComponent {
             sendDate: c.sendDate ? formatIsoDateLabel(c.sendDate) : '—',
             sends: formatNumber(c.sends),
             opens: formatNumber(c.opens),
-            openRate: `${c.openRate.toFixed(1)}%`,
-            ctr: `${formatPercent(c.ctr)}%`,
+            openRate: `${formatPercent(c.openRate)}%`,
+            ctr: `${formatPercent(c.ctr, 2)}%`,
           })
         );
     });

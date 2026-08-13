@@ -139,10 +139,6 @@ export class EventsSummarySectionComponent {
   });
 
   protected readonly summary: Signal<EventsOverviewSummary | null> = this.initSummary();
-  /**
-   * Heading scope read from the response, not the picker: a trailing preset is served the YTD
-   * rollup, so titling it "Last 3 months" would name a range the numbers do not cover.
-   */
   protected readonly stats: Signal<EventsSummaryStat[]> = this.initStats();
   // Sized to the visible tiles so the placeholder count matches what resolves — otherwise the
   // split views flash seven skeletons and settle to four.

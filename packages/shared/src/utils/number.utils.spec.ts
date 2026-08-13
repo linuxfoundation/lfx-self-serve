@@ -6,6 +6,25 @@ import { describe, expect, it } from 'vitest';
 import { formatCompactRounded, formatCurrency, formatPercent } from './number.utils';
 
 describe('formatPercent', () => {
+  // Paid CTR and conversion rate live below 1% routinely, and the server keeps two decimals for
+  // them on purpose. One decimal erases a measured 0.04% into "0.0" — a real value reported as a
+  // zero, which is the failure this suite exists to prevent elsewhere.
+  it('keeps two decimals when asked, for rates that live below one percent', () => {
+    expect(formatPercent(0.04, 2)).toBe('0.04');
+    expect(formatPercent(0.12, 2)).toBe('0.12');
+    expect(formatPercent(0.35, 2)).toBe('0.35');
+  });
+
+  it('still defaults to one decimal', () => {
+    expect(formatPercent(0.04)).toBe('0.0');
+    expect(formatPercent(94.919659091)).toBe('94.9');
+  });
+
+  it('normalizes negative zero at any precision', () => {
+    expect(formatPercent(-0.001)).toBe('0.0');
+    expect(formatPercent(-0.0001, 2)).toBe('0.00');
+  });
+
   it('rounds a raw Snowflake float to a single decimal place', () => {
     // The bug this exists to fix: NRR arrived as 94.919659091 and rendered verbatim.
     expect(formatPercent(94.919659091)).toBe('94.9');

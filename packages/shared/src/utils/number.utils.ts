@@ -48,11 +48,14 @@ export function formatValueLost(value: number): string {
  * - Handles NaN and Infinity gracefully
  * - Normalizes negative zero so "-0.0%" never renders
  * - Returns the number only; callers add the "%" suffix
+ * - `digits` defaults to 1. Pass 2 for rates that live below 1% — paid CTR and conversion rate
+ *   are routinely 0.04%, which one decimal erases to "0.0" and misreports as a measured zero.
+ *   The server keeps two decimals for those fields precisely so the UI can show them.
  */
-export function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) return '0.0';
-  const rounded = Number(value.toFixed(1));
-  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(1);
+export function formatPercent(value: number, digits = 1): string {
+  if (!Number.isFinite(value)) return (0).toFixed(digits);
+  const rounded = Number(value.toFixed(digits));
+  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(digits);
 }
 
 /** Centralized compact formatter — thresholds, scales, and rounding in one place.

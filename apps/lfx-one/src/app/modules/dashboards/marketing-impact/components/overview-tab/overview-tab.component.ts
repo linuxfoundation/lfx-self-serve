@@ -32,13 +32,6 @@ export class OverviewTabComponent {
   public readonly eventsSplit = input<EventsSplitView | null>(null);
 
   // === Computed Signals ===
-  /**
-   * The events sections always render. They serve both the All view (unsplit,
-   * eventsSplit=null, consolidating across campaign types) and the Events view (split,
-   * eventsSplit='attendance'|'sponsorship'). There is no third case: the focus programs
-   * with no content (COMING_SOON_FOCUS_PROGRAMS) are gated by the parent's coming-soon
-   * branch and never reach this component.
-   */
   /** Attendance sections render unless sponsorship is explicitly selected. */
   protected readonly showAttendance = computed(() => this.eventsSplit() !== 'sponsorship');
 }

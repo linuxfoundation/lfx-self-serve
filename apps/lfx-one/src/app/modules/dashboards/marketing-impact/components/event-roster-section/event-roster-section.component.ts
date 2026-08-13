@@ -62,7 +62,6 @@ export class EventRosterSectionComponent {
     // must not claim a period the user never selected.
     return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
-  /** Registrations column — hidden in the sponsorship view. */
   /** Card subtitle, naming only the columns the current split renders. */
   protected readonly subtitle = computed(() => {
     switch (this.eventsSplit()) {

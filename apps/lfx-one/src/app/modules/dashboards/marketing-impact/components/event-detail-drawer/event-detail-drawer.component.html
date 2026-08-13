@@ -210,40 +210,39 @@
         revenue from the attendance view and showed it in the sponsorship view — backwards on both
         counts.
       -->
-      @if (showRegistrations() || showSponsorship()) {
-        <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
-          <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
-          <div class="flex flex-col gap-4 sm:flex-row">
-            @if (showRegistrations()) {
-              <div class="flex flex-1 flex-col gap-1">
-                <span class="text-sm text-gray-500">Registration revenue</span>
-                @if (d.registrationRevenue.actual !== null) {
-                  <span class="text-xl font-semibold text-gray-900">{{ d.registrationRevenue.actual | metricMoney }}</span>
-                } @else {
-                  <span class="text-xl font-semibold text-gray-300">—</span>
+      <!-- Renders for either focus; each revenue column is gated on its own half below. -->
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 p-4" data-testid="event-detail-revenue">
+        <h3 class="text-sm font-semibold text-gray-900">Revenue</h3>
+        <div class="flex flex-col gap-4 sm:flex-row">
+          @if (showRegistrations()) {
+            <div class="flex flex-1 flex-col gap-1">
+              <span class="text-sm text-gray-500">Registration revenue</span>
+              @if (d.registrationRevenue.actual !== null) {
+                <span class="text-xl font-semibold text-gray-900">{{ d.registrationRevenue.actual | metricMoney }}</span>
+              } @else {
+                <span class="text-xl font-semibold text-gray-300">—</span>
+              }
+              @if (d.registrationRevenue.goal > 0) {
+                <span class="text-xs text-gray-400">Goal {{ d.registrationRevenue.goal | metricMoney }}</span>
+              }
+            </div>
+          }
+          @if (showSponsorship()) {
+            <div class="flex flex-1 flex-col gap-1">
+              <span class="text-sm text-gray-500">Sponsorship revenue</span>
+              <span class="text-xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
+              <div class="flex items-center gap-2">
+                @if (d.sponsorshipRevenue.goal > 0) {
+                  <span class="text-xs text-gray-400">Goal {{ d.sponsorshipRevenue.goal | metricMoney }}</span>
                 }
-                @if (d.registrationRevenue.goal > 0) {
-                  <span class="text-xs text-gray-400">Goal {{ d.registrationRevenue.goal | metricMoney }}</span>
+                @if (sponProgress() !== null) {
+                  <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
                 }
               </div>
-            }
-            @if (showSponsorship()) {
-              <div class="flex flex-1 flex-col gap-1">
-                <span class="text-sm text-gray-500">Sponsorship revenue</span>
-                <span class="text-xl font-semibold text-gray-900">{{ d.sponsorshipRevenue.actual | metricMoney }}</span>
-                <div class="flex items-center gap-2">
-                  @if (d.sponsorshipRevenue.goal > 0) {
-                    <span class="text-xs text-gray-400">Goal {{ d.sponsorshipRevenue.goal | metricMoney }}</span>
-                  }
-                  @if (sponProgress() !== null) {
-                    <span class="text-xs font-medium text-gray-500">{{ sponProgress() }}%</span>
-                  }
-                </div>
-              </div>
-            }
-          </div>
+            </div>
+          }
         </div>
-      }
+      </div>
 
       <!-- Sponsorship by tier -->
       @if (showSponsorship() && d.sponsorshipTiers.length) {

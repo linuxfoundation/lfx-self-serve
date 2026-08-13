@@ -54,10 +54,16 @@
     <div class="flex flex-col gap-3" data-testid="event-roster-skeleton">
       @for (i of skeletons; track i) {
         <div class="flex items-center gap-4">
+          <!-- Same column set as the loaded rows: the split hides one metric column, so an
+               unconditional four-block skeleton reflows horizontally when data lands. -->
           <div class="h-4 w-20 animate-pulse rounded bg-gray-200"></div>
-          <div class="h-4 w-48 animate-pulse rounded bg-gray-100"></div>
           <div class="h-4 flex-1 animate-pulse rounded bg-gray-100"></div>
-          <div class="h-4 flex-1 animate-pulse rounded bg-gray-100"></div>
+          @if (showRegistrations()) {
+            <div class="h-4 w-52 animate-pulse rounded bg-gray-100"></div>
+          }
+          @if (showSponsorship()) {
+            <div class="h-4 w-52 animate-pulse rounded bg-gray-100"></div>
+          }
         </div>
       }
     </div>
