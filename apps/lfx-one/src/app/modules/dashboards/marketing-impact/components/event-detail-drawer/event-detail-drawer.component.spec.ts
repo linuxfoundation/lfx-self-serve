@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EventDetailDrawerComponent } from './event-detail-drawer.component';
 
-import type { EventDetailResponse } from '@lfx-one/shared/interfaces';
+import type { EventDetailResponse, EventDrawerFocus } from '@lfx-one/shared/interfaces';
 
 describe('EventDetailDrawerComponent', () => {
   const detail = (overrides: Partial<EventDetailResponse> = {}): EventDetailResponse => ({
@@ -59,10 +59,15 @@ describe('EventDetailDrawerComponent', () => {
     fixture = TestBed.createComponent(EventDetailDrawerComponent);
   }
 
-  /** Mirrors the parent: two separate signal writes per open, eventId first. */
-  async function open(eventId: string, slug = 'tlf'): Promise<void> {
+  /**
+   * Mirrors the parent: two separate signal writes per open, eventId first. `focus` selects which
+   * half of the story renders — 'b2c' (the default) shows registrations and campaigns, 'b2b' shows
+   * sponsorship, so a sponsorship assertion has to open the drawer the way the sponsorship bar does.
+   */
+  async function open(eventId: string, slug = 'tlf', focus: EventDrawerFocus = 'b2c'): Promise<void> {
     fixture.componentRef.setInput('eventId', eventId);
     fixture.componentRef.setInput('foundationSlug', slug);
+    fixture.componentRef.setInput('focus', focus);
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -266,16 +271,105 @@ describe('EventDetailDrawerComponent', () => {
   it('renders the sponsorship tier breakdown', async () => {
     await setup(vi.fn().mockReturnValue(of(detail())));
 
-    await open('evt-1');
+    await open('evt-1', 'tlf', 'b2b');
 
     expect(document.querySelector('[data-testid="event-detail-tier-Diamond"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="event-detail-tier-Gold"]')).toBeTruthy();
   });
 
+  const paidRow = (name: string, spend: number, conversions: number) => ({
+    name,
+    platform: 'Google Ads',
+    spend,
+    conversions,
+    clicks: 100,
+    impressions: 1000,
+    cpa: conversions > 0 ? spend / conversions : null,
+  });
+  const emailRow = (name: string, sends: number) => ({ name, sends, opens: sends / 2, clicks: 10, openRate: 50, ctr: 2 });
+
+  // The focus input is the whole point of opening from a specific roster bar: clicking
+  // registrations must not land the user in the sponsorship story, and vice versa. Asserted in
+  // both directions so a later default change cannot quietly collapse the two views into one.
+  it('hides the sponsorship story in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1', 'tlf', 'b2c');
+
+    // The tier table carries the sponsor names, so its absence is what proves the story is hidden.
+    expect(document.querySelector('[data-testid="event-detail-tier-Diamond"]')).toBeNull();
+  });
+
+  // document, not fixture.nativeElement: the drawer renders into an overlay outside the fixture
+  // host, so a fixture-scoped query returns null regardless and the assertion passes vacuously.
+  it('hides the paid and email breakdowns in the sponsorship view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paidRow('A', 100, 1)], emailCampaigns: [emailRow('E', 500)] }))));
+
+    await open('evt-1', 'tlf', 'b2b');
+
+    expect(document.querySelector('[data-testid="event-detail-paid-summary"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-email-summary"]')).toBeNull();
+  });
+
+  it('shows the paid and email breakdowns in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail({ paidCampaigns: [paidRow('A', 100, 1)], emailCampaigns: [emailRow('E', 500)] }))));
+
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-paid-summary"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-email-summary"]')).toBeTruthy();
+  });
+
+  // Every section has to follow the focus, not just the breakdowns: pacing and registration
+  // sources are attendance, revenue and tiers are sponsorship. Leaving any of them ungated means
+  // a sponsorship-bar click still lands the reader in the attendance story.
+  // document, not fixture.nativeElement: the drawer renders into an overlay outside the fixture's
+  // host, so a fixture-scoped query returns null for everything and the assertion passes vacuously.
+  it('hides the attendance-only sections in the sponsorship view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1', 'tlf', 'b2b');
+
+    expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-detail-channels"]')).toBeNull();
+    // The headline cards follow the focus too — a sponsorship view showing a Registrations card
+    // puts the two stories back side by side, which is what the split exists to separate.
+    expect(text()).not.toContain('Registrations');
+    expect(text()).toContain('Sponsorship revenue');
+    // Mirror of the above: the sponsorship view keeps the card, without the registration column.
+    expect(text()).not.toContain('Registration revenue');
+  });
+
+  // The event page is a general action, not part of either half. It briefly lived inside the
+  // attendance-gated pacing block, which removed it entirely from a sponsorship-bar open.
+  it('keeps the event page link in both focus views', async () => {
+    for (const focus of ['b2c', 'b2b'] as const) {
+      await setup(vi.fn().mockReturnValue(of(detail())));
+      await open('evt-1', 'tlf', focus);
+
+      expect(document.querySelector('[data-testid="event-detail-event-link"]')).toBeTruthy();
+    }
+  });
+
+  it('hides the sponsorship-only sections in the attendance view', async () => {
+    await setup(vi.fn().mockReturnValue(of(detail())));
+
+    await open('evt-1', 'tlf', 'b2c');
+
+    expect(document.querySelector('[data-testid="event-detail-pacing"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="event-detail-tiers"]')).toBeNull();
+    expect(text()).toContain('Registrations');
+    // The Revenue card serves both halves, so it stays — but only the registration column.
+    expect(document.querySelector('[data-testid="event-detail-revenue"]')).toBeTruthy();
+    expect(text()).toContain('Registration revenue');
+    expect(text()).not.toContain('Sponsorship revenue');
+  });
+
   it('labels an unnamed tier rather than rendering a blank row', async () => {
     await setup(vi.fn().mockReturnValue(of(detail({ sponsorshipTiers: [{ tier: '', revenue: 1000, sponsorCount: 1 }] }))));
 
-    await open('evt-1');
+    await open('evt-1', 'tlf', 'b2b');
 
     expect(text()).toContain('Other');
   });
