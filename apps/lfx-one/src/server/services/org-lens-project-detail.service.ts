@@ -439,7 +439,10 @@ export class OrgLensProjectDetailService {
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
     const key = buildOrgCacheKey(orgUid, `project-detail-influence:${this.paramSignature([slug, range])}`);
     if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(key, OrgLensProjectDetailService.isInfluenceBlock);
+      const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
+        key,
+        (value) => OrgLensProjectDetailService.isInfluenceBlock(value) && (range !== 'all' || OrgLensProjectDetailService.hasAdaptivePeriods(value))
+      );
       if (cached !== null) return cached;
     }
 
@@ -484,7 +487,10 @@ export class OrgLensProjectDetailService {
     // carries the range — otherwise a 1y/2y series would be served for an all-time request.
     const key = buildOrgCacheKey(orgUid, `project-detail-trend:${this.paramSignature([slug, range])}`);
     if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensTrendBlock>(key, OrgLensProjectDetailService.isTrendBlock);
+      const cached = await valkeyService.getJson<OrgLensTrendBlock>(
+        key,
+        (value) => OrgLensProjectDetailService.isTrendBlock(value) && (range !== 'all' || OrgLensProjectDetailService.hasAdaptivePeriods(value))
+      );
       if (cached !== null) return cached;
     }
 
@@ -1810,6 +1816,11 @@ export class OrgLensProjectDetailService {
   private static isTrendBlock(value: unknown): value is OrgLensTrendBlock {
     if (value === null || typeof value !== 'object') return false;
     return Array.isArray((value as OrgLensTrendBlock).trend);
+  }
+
+  private static hasAdaptivePeriods(value: unknown): boolean {
+    const periods = (value as { periods?: unknown }).periods;
+    return Array.isArray(periods) && periods.length > 0 && periods.every((label) => typeof label === 'string');
   }
 
   private static isLeaderboardPage(value: unknown): value is OrgLensLeaderboardPage {

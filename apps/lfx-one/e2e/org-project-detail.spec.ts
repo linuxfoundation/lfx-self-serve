@@ -357,6 +357,47 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
   });
 });
 
+test.describe('Org Project Detail — all-time range', () => {
+  test('All time fetches range=all influence + trend with aligned adaptive periods', async ({ page }) => {
+    await page.goto(DETAIL_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('project-detail-technical-card-maintainers')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const influenceAll = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return url.pathname.endsWith('/influence') && url.searchParams.get('range') === 'all' && response.status() === 200;
+      },
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('project-detail-time-range-all').click();
+    await expect(page).toHaveURL(/range=all/);
+    const influenceBody = (await (await influenceAll).json()) as { periods?: string[]; technical?: { sparkline?: unknown[] }[] };
+    expect(Array.isArray(influenceBody.periods)).toBe(true);
+    expect(influenceBody.periods!.length).toBeGreaterThan(0);
+    expect(influenceBody.periods!.length).toBeLessThanOrEqual(12);
+    const sparkline = influenceBody.technical?.[0]?.sparkline;
+    expect(Array.isArray(sparkline)).toBe(true);
+    expect(sparkline!.length).toBe(influenceBody.periods!.length);
+
+    const trendAll = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return url.pathname.endsWith('/trend') && url.searchParams.get('range') === 'all' && response.status() === 200;
+      },
+      { timeout: DATA_LOAD_TIMEOUT }
+    );
+    await page.getByTestId('project-detail-tab-pd-leaderboards').click();
+    const trendBody = (await (await trendAll).json()) as { periods?: string[]; trend?: { combined?: unknown[] }[] };
+    expect(Array.isArray(trendBody.periods)).toBe(true);
+    expect(trendBody.periods!.length).toBe(influenceBody.periods!.length);
+    expect(Array.isArray(trendBody.trend)).toBe(true);
+    expect(trendBody.trend!.length).toBeGreaterThan(0);
+    for (const series of trendBody.trend!) {
+      expect(series.combined?.length).toBe(trendBody.periods!.length);
+    }
+  });
+});
+
 test.describe('Org Project Detail — Contributors drawer deep-link', () => {
   test('auto-opens the Contributors drawer from ?card=contributors', async ({ page }) => {
     await page.goto(`${DETAIL_URL}?card=contributors`, { waitUntil: 'domcontentloaded' });
