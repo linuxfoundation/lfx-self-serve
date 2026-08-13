@@ -23,7 +23,7 @@ export class AddLinkDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
 
   protected readonly form = new FormGroup({
-    title: new FormControl('', [trimmedRequired()]),
+    title: new FormControl('', [Validators.required, trimmedRequired()]),
     url: new FormControl('', [Validators.required, httpsUrlValidator()]),
   });
 
