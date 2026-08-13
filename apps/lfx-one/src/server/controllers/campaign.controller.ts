@@ -1046,7 +1046,11 @@ export class CampaignController {
   private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
 
-    const { adAccountId: _adAccountId, ...rest } = body.linkedInConfig;
+    // Built by copy-and-delete rather than destructuring-with-rest: the lint config does not
+    // exempt an underscore-prefixed destructured binding, so `{ adAccountId: _x, ...rest }` is a
+    // no-unused-vars error.
+    const rest: Record<string, unknown> = { ...body.linkedInConfig };
+    delete rest['adAccountId'];
     const runtime = getLinkedInConfig();
 
     return {
