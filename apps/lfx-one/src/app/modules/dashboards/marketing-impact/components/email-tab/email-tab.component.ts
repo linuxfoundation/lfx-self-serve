@@ -38,8 +38,6 @@ export class EmailTabComponent {
   protected readonly kpiCards: Signal<PerformanceSummaryKpi[]> = this.initKpiCards();
   protected readonly emailTypeRows: Signal<EmailTypeRow[]> = this.initEmailTypeRows();
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
-  /** True once a real response has landed — not merely "not loading". */
-  protected readonly hasLoaded = computed(() => !this.failed() && this.emailData() !== null);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
   /**

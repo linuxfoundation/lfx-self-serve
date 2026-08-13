@@ -74,12 +74,13 @@
         <div class="flex items-baseline justify-between gap-3">
           <h4 class="text-sm font-semibold text-gray-900">Email sends</h4>
           <!--
-          Only after a response lands. emailData() is null while loading AND after a failed
-          request, so rendering the count unconditionally reports "0 sends" for data that was
-          never measured — the same conflation the neutral empty-state copy below avoids. A
-          successful empty response still shows zero, which is a real measurement.
+          Only when there are rows to count. Rendering it whenever a response landed still reported
+          "0 sends" in two cases where nothing was measured: while loading, and when the optional
+          breakdown query failed its own fallback (project.service.ts) while the primary read
+          succeeded — which would put "0 sends" beside KPI cards showing real sends. The empty
+          state below carries the neutral copy for the genuinely-empty case.
         -->
-          @if (hasLoaded()) {
+          @if (hasTopCampaigns()) {
             <span class="text-[11px] text-gray-500" data-testid="email-campaigns-count">{{ topCampaignsCountLabel() }}</span>
           }
         </div>

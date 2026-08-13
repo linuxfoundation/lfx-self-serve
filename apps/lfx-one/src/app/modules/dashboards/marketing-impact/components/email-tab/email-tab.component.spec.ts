@@ -110,6 +110,16 @@ describe('EmailTabComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('latest');
   });
 
+  // The optional breakdown query has its own server-side fallback, so it can come back empty while
+  // the primary read succeeded and the KPI cards show real sends. Showing "0 sends" there would
+  // report a count for rows that were never loaded, beside numbers proving they exist.
+  it('omits the count when the breakdown is empty but the primary read succeeded', async () => {
+    await renderCampaigns([]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="email-campaigns-count"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="email-campaigns-empty"]')).toBeTruthy();
+  });
+
   // The service used to swallow failures into a zero-filled response, so an outage rendered
   // "Total Sends 0 · CTR 0.0%" as measurements and no downstream gate could tell the difference.
   // It propagates now; this asserts the tab says so rather than showing zeros.
