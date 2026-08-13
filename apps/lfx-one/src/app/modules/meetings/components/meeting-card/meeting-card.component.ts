@@ -78,7 +78,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, pairwise, switchMap, take, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -140,6 +140,7 @@ export class MeetingCardComponent implements OnInit {
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public drawerGuestCount: WritableSignal<number> = signal(0);
+  private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -177,8 +178,11 @@ export class MeetingCardComponent implements OnInit {
 
   // Computed signals for invited/registration status to ensure reactivity after registration
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
+  // True when the user is invited OR has just registered in this session (optimistic, before the
+  // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
-    () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
+    () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)
@@ -262,6 +266,16 @@ export class MeetingCardComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.refreshAttachments$.next());
+
+    // Reset post-registration flag if this card instance is reused for a different meeting.
+    toObservable(this.meetingInput)
+      .pipe(
+        map((m) => m?.id),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.optimisticInvited.set(false));
   }
 
   public ngOnInit(): void {
@@ -327,6 +341,7 @@ export class MeetingCardComponent implements OnInit {
 
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
+        this.optimisticInvited.set(true);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }

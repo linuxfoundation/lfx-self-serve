@@ -17,6 +17,7 @@ const {
   getEffectiveEmailMock,
   getEffectiveUsernameMock,
   validatePasswordMock,
+  validateUidParameterMock,
   meetingSvc,
   projectSvc,
   addInvitedStatusToMeetingMock,
@@ -27,6 +28,7 @@ const {
   getEffectiveEmailMock: vi.fn(),
   getEffectiveUsernameMock: vi.fn(),
   validatePasswordMock: vi.fn(),
+  validateUidParameterMock: vi.fn<(uid: unknown, req: unknown, next: (err: unknown) => void) => boolean>(() => true),
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -35,6 +37,7 @@ const {
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
+    addMeetingRegistrantSelf: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -50,7 +53,7 @@ vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => n
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
-vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
+vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
 
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
@@ -422,5 +425,122 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
     expect(req.bearerToken).toBe('m2m-token');
+  });
+});
+
+describe('PublicMeetingController.registerForPublicMeeting', () => {
+  let controller: PublicMeetingController;
+
+  function buildRegisterReq(authenticated: boolean, body: Record<string, any> = {}, hasUserToken = true) {
+    const req = {
+      body: { meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', ...body },
+      headers: {},
+      bearerToken: hasUserToken ? 'user-token' : undefined,
+      oidc: { isAuthenticated: () => authenticated },
+      path: '/public/api/meetings/register',
+      log: {},
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
+  });
+
+  it('calls addMeetingRegistrantSelf with user token and returns 201', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, req.body);
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
+  });
+
+  it('fetches meeting with M2M token then restores user token for self-register', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    let tokenAtMeetingFetch: string | undefined;
+    let tokenAtSelfRegister: string | undefined;
+    meetingSvc.getMeetingById.mockImplementation((r: any) => {
+      tokenAtMeetingFetch = r.bearerToken;
+      return Promise.resolve(buildMeeting());
+    });
+    meetingSvc.addMeetingRegistrantSelf.mockImplementation((r: any) => {
+      tokenAtSelfRegister = r.bearerToken;
+      return Promise.resolve({ uid: 'reg-1' });
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(tokenAtMeetingFetch).toBe('m2m-token');
+    expect(tokenAtSelfRegister).toBe('user-token');
+  });
+
+  it('unauthenticated request returns 401 without calling the service', async () => {
+    const { req, res, next } = buildRegisterReq(false);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('missing first_name returns validation error without calling the service', async () => {
+    const { req, res, next } = buildRegisterReq(true, { first_name: '' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('non-public meeting returns authorization error', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE }));
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('restricted meeting returns authorization error', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true }));
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('missing meeting_id returns validation error', async () => {
+    const { req, res, next } = buildRegisterReq(true, { meeting_id: '' });
+    validateUidParameterMock.mockImplementationOnce((_uid, _req, nextFn) => {
+      nextFn(new Error('Meeting ID is required'));
+      return false;
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('restores user token when getMeetingById throws', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    meetingSvc.getMeetingById.mockRejectedValue(new Error('upstream error'));
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(req.bearerToken).toBe('user-token');
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });
