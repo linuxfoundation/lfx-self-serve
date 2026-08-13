@@ -327,7 +327,11 @@
 <p-popover #createMenu appendTo="body" [styleClass]="bannerOffset() ? 'w-72 lfx-create-popover lfx-create-popover-banner-offset' : 'w-72 lfx-create-popover'">
   <ng-template #content>
     @let creatables = creatableArtifacts();
-    <div class="py-1" data-testid="create-menu">
+    <!-- `lfx-lens-switcher` is mounted twice at once (desktop rail + mobile drawer instances in
+         main-layout.component.html) — each renders its own copy of this popover, so the testid is
+         suffixed per-instance to keep it unique, mirroring the `-mobile` suffix already used on the
+         two trigger buttons. -->
+    <div class="py-1" [attr.data-testid]="mobile() ? 'create-menu-mobile' : 'create-menu'">
       @for (artifact of creatables; track artifact.type; let i = $index) {
         <!-- Thin separator wherever the semantic group changes (Engage | Decide | Organize) -->
         @if (i > 0 && artifact.group !== creatables[i - 1].group) {
@@ -336,7 +340,7 @@
         <button
           type="button"
           (click)="openCreateDialog(artifact)"
-          [attr.data-testid]="'create-menu-option-' + artifact.type"
+          [attr.data-testid]="(mobile() ? 'create-menu-mobile-option-' : 'create-menu-option-') + artifact.type"
           class="group flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors">
           <i [class]="artifact.icon + ' fa-fw text-base text-gray-400 mt-0.5'"></i>
           <span class="flex flex-col min-w-0">
