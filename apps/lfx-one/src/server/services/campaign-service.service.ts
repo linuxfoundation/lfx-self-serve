@@ -195,9 +195,14 @@ interface CampaignServiceMarketingEmail {
  *
  * Mirrors `hubspot.maxUnfilteredEmails` in campaign-service. Duplicated rather than fetched
  * because the wire result carries no pagination field at all — a capped 500 and a complete 500
- * are byte-identical — so the only way a caller can flag truncation is to know the cap. If the
- * service raises its cap, this under-reports (a 600-email portal returning 600 would not be
- * flagged), which fails toward silence rather than toward a false "truncated" warning.
+ * are byte-identical — so the only way a caller can flag truncation is to know the cap.
+ *
+ * KNOWN GAP (LFXV2-3255): the two services deploy independently, so this constant can drift from
+ * the one it mirrors, in EITHER direction. A raised cap under-reports (a 600-email portal
+ * returning 600 is not flagged, failing toward silence); a LOWERED cap over-reports the opposite
+ * way, calling a genuinely capped list complete — which is the false absence this flag exists to
+ * prevent. The real fix is upstream returning explicit truncation metadata, so a consumer reads
+ * the fact instead of re-deriving it. Not a live defect: the constants agree today.
  */
 const UNFILTERED_EMAIL_CAP = 500;
 
