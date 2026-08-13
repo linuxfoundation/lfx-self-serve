@@ -289,7 +289,7 @@ export class OrgProjectsComponent {
       }
     });
 
-    // Clear any pending timers on teardown.
+    // Clear pending debounce timer on teardown.
     inject(DestroyRef).onDestroy(() => {
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
