@@ -12,6 +12,7 @@ import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, mer
 
 import { AccountContextService } from './account-context.service';
 import { LensService } from './lens.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Client state machine for the org-selector — single-state mirror of NavigationService (research.md D-002) with generation race-guard + uid dedup on scroll. */
 @Injectable({
@@ -23,6 +24,7 @@ export class OrgNavigationService {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
 
   private readonly state: OrgListState = this.createOrgListState();
 
@@ -210,6 +212,14 @@ export class OrgNavigationService {
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
     if (page.items.length === 0) {
+      // For staff an empty unsearched list is the normal starting state, not
+      // a loss of access, so the "No access" toast + cleared selection + redirect would be wrong: it
+      // reads as being signed out, and it navigates away from the search box that is the way in.
+      // Narrow deliberately: a genuine upstream failure still reports, and a search that matched
+      // nothing is handled by the list's own empty state rather than reaching here.
+      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed && !this.state.searchTerm().trim()) {
+        return;
+      }
       this.handleEmptyOrgResponse(page);
       return;
     }

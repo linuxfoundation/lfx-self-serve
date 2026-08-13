@@ -5,7 +5,8 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { Account, DisplayOrgItem, OrgItem } from '@lfx-one/shared/interfaces';
+import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
@@ -95,6 +96,47 @@ export class OrgSelectorComponent {
     });
   });
 
+  /** Gates the catalogue-search affordance; only staff can reach beyond their own rows. */
+  protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
+
+  /**
+   * A staff caller's list is legitimately empty until the catalogue is queried, and the catalogue is
+   * only queried at `ORG_CATALOGUE_SEARCH_MIN_CHARS`. "No organizations found" there reads as a
+   * permissions failure rather than an invitation, so prompt instead; the not-found copy is reserved
+   * for a search that genuinely matched nothing.
+   */
+  protected readonly showSearchPrompt: Signal<boolean> = computed(
+    () => this.isStaff() && this.orgNavigationService.searchTerm()().trim().length < ORG_CATALOGUE_SEARCH_MIN_CHARS
+  );
+
+  /**
+   * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
+   * row of each group. Sectioning turns on only when a catalogue search actually returned something,
+   * so a non-staff caller — and a staff caller who hasn't searched — keeps today's single flat list.
+   * Attaching the heading to a row rather than rendering it from a group count is what guarantees a
+   * heading can never appear above an empty group.
+   */
+  protected readonly displayedRows: Signal<OrgSelectorRow[]> = computed(() => {
+    const rows = this.displayedItems();
+    const sectioned = rows.some((row) => row.item.isAssigned === false);
+    if (!sectioned) {
+      return rows.map((display) => ({ display, heading: null }));
+    }
+
+    let assignedSeen = false;
+    let discoveredSeen = false;
+    return rows.map((display) => {
+      if (display.item.isAssigned === false) {
+        const heading = discoveredSeen ? null : 'All organizations';
+        discoveredSeen = true;
+        return { display, heading };
+      }
+      const heading = assignedSeen ? null : 'Your organizations';
+      assignedSeen = true;
+      return { display, heading };
+    });
+  });
+
   protected readonly autoLoadTriggerIndex: Signal<number> = computed(() => Math.max(0, this.displayedItems().length - 8));
 
   public constructor() {
@@ -163,6 +205,15 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /**
+   * Binary membership state for a discovered row. Shown only on discovered rows,
+   * where the caller has no other context for what the organization is to the LF; an assigned row's
+   * membership is already implied by the caller administering it.
+   */
+  protected membershipLabel(item: OrgItem): string {
+    return item.isMember ? 'Member' : 'Non-member';
   }
 
   /**

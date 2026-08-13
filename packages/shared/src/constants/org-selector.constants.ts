@@ -9,6 +9,12 @@ export const ORG_SELECTOR_DEBOUNCE_MS = NAV_SEARCH_DEBOUNCE_MS;
 /** Hard cap on the role-grants `per_page` (spec SC-005b); orgs beyond this fall to no-badge. */
 export const ORG_ROLE_GRANTS_HARD_CAP = 500;
 
+/** LF staff team whose `#member` relation carries `auditor` on every `b2b_org`. Environment-invariant: member-service declares the single copy in `charts/lfx-v2-member-service/values.yaml` (`lfStaffTeamName`), so this is a constant rather than configuration. */
+export const LF_STAFF_TEAM_NAME = 'lf-staff';
+
+/** Minimum trimmed search length before the staff catalogue query runs; shorter terms still filter the caller's own assigned rows in memory. */
+export const ORG_CATALOGUE_SEARCH_MIN_CHARS = 2;
+
 /** Spec 022 (FR-017) — page-through cap per direct-granted parent when paginating cascading children. */
 export const ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP = 500;
 
