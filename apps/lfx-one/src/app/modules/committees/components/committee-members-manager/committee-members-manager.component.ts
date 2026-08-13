@@ -497,6 +497,82 @@ export class CommitteeMembersManagerComponent implements OnInit {
     };
   }
 
+  /**
+   * Reapplies pending member add/update/delete from the input onto a freshly-loaded server roster.
+   * membersWithState only ever comes from this fetch — without this, remounting Step 4 (which
+   * re-fetches) silently drops any staged member add/update/delete the next time
+   * emitMemberUpdates() runs, since that always re-derives toAdd/toUpdate/toDelete from
+   * membersWithState rather than from the input (LFXV2-2606 review).
+   */
+  private reconcilePendingMemberState(serverMembers: CommitteeMemberWithState[]): CommitteeMemberWithState[] {
+    const pending = this.memberUpdates();
+    const deletedUids = new Set(pending.toDelete);
+    const updatesByUid = new Map(pending.toUpdate.map((update) => [update.uid, update.changes]));
+
+    const reconciled = serverMembers.map((member) => {
+      if (deletedUids.has(member.uid)) {
+        return { ...member, state: 'deleted' as CommitteeMemberState };
+      }
+      const changes = updatesByUid.get(member.uid);
+      if (!changes) {
+        return member;
+      }
+      return {
+        ...member,
+        ...this.memberFieldsFromRequest(changes),
+        updated_at: new Date().toISOString(),
+        state: 'modified' as CommitteeMemberState,
+      };
+    });
+
+    const added: CommitteeMemberWithState[] = pending.toAdd.map((request) => ({
+      ...this.memberFieldsFromRequest(request),
+      uid: '',
+      committee_uid: this.committeeId() || '',
+      committee_name: this.committee()?.name || '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      state: 'new' as CommitteeMemberState,
+      tempId: generateTempId(),
+      originalData: undefined,
+    }));
+
+    return [...reconciled, ...added];
+  }
+
+  /** Maps a CreateCommitteeMemberRequest's display fields onto the CommitteeMember shape. */
+  private memberFieldsFromRequest(
+    request: CreateCommitteeMemberRequest
+  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
+    return {
+      email: request.email,
+      first_name: request.first_name || '',
+      last_name: request.last_name || '',
+      job_title: request.job_title || undefined,
+      appointed_by: request.appointed_by || undefined,
+      organization: request.organization
+        ? {
+            name: request.organization.name || '',
+            website: request.organization.website || undefined,
+          }
+        : undefined,
+      role: request.role
+        ? {
+            name: request.role.name,
+            start_date: request.role.start_date || undefined,
+            end_date: request.role.end_date || undefined,
+          }
+        : undefined,
+      voting: request.voting
+        ? {
+            status: request.voting.status,
+            start_date: request.voting.start_date || undefined,
+            end_date: request.voting.end_date || undefined,
+          }
+        : undefined,
+    };
+  }
+
   private loadCommittee(): void {
     const committeeId = this.committeeId();
     if (!committeeId) {
@@ -554,12 +630,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
           this.loading.set(false);
         }),
         tap((members) => {
-          if (!members || members.length === 0) {
-            this.membersWithState.set([]);
-            return;
-          }
-
-          this.membersWithState.set(members.map((m) => this.createMemberWithState(m, 'existing')));
+          const serverMembers = (members ?? []).map((m) => this.createMemberWithState(m, 'existing'));
+          this.membersWithState.set(this.reconcilePendingMemberState(serverMembers));
         })
       )
       .subscribe();

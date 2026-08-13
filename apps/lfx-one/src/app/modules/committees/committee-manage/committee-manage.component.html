@@ -105,6 +105,7 @@
               [label]="isLastStep() ? 'Skip For Now' : 'Cancel'"
               severity="secondary"
               size="small"
+              [disabled]="submitting()"
               (onClick)="onCancel()"
               data-testid="committee-manage-cancel-btn">
             </lfx-button>
