@@ -139,10 +139,10 @@ describe('ProfileClasComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-inv"]')).toBeNull();
   });
 
-  it('lists Project, Type, Status, Signed, then an unlabelled actions column, with no Document column', async () => {
+  it('lists Project, Type, Status, Signed, then a screen-reader Actions header, with no Document column', async () => {
     await render([agreement()]);
 
-    expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', '']);
+    expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
     expect(fixture.nativeElement.textContent).not.toContain('Document');
   });
 
