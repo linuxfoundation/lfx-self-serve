@@ -375,6 +375,12 @@ test.describe('Org Project Detail — all-time range', () => {
     expect(Array.isArray(influenceBody.periods)).toBe(true);
     expect(influenceBody.periods!.length).toBeGreaterThan(0);
     expect(influenceBody.periods!.length).toBeLessThanOrEqual(12);
+    // Every label must be one of the four documented bucket formats — `MMM YYYY`, `Q# YYYY`, `YYYY`,
+    // `YYYY–YYYY`. A length-only assertion passes on empty or malformed labels, which is exactly what
+    // an unparseable bucket start produces, so it would hide a regression in the label derivation.
+    for (const period of influenceBody.periods!) {
+      expect(period).toMatch(/^(?:[A-Z][a-z]{2} \d{4}|Q[1-4] \d{4}|\d{4}(?:\u2013\d{4})?)$/);
+    }
     const sparkline = influenceBody.technical?.[0]?.sparkline;
     expect(Array.isArray(sparkline)).toBe(true);
     expect(sparkline!.length).toBe(influenceBody.periods!.length);
