@@ -14,7 +14,7 @@
         class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         [ngClass]="{
           'border-blue-700 bg-blue-700 text-white': row.active,
-          'border-blue-200 bg-white text-blue-700': !row.active && row.complete,
+          'border-blue-200 bg-white text-blue-700': !row.active && row.complete && !row.locked,
           'border-gray-200 bg-white text-gray-600': !row.active && !row.complete && !row.locked,
           'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-600': row.locked,
         }"
@@ -56,7 +56,7 @@
       <button
         type="button"
         class="group relative flex items-start gap-3 rounded-md py-2 pl-1 pr-3 text-left"
-        [ngClass]="row.locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'"
+        [ngClass]="row.locked ? 'cursor-not-allowed' : 'cursor-pointer'"
         [attr.aria-disabled]="row.locked ? 'true' : null"
         [attr.aria-current]="row.active ? 'step' : null"
         [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
@@ -92,7 +92,9 @@
             }
           </span>
           @if (row.locked) {
-            <span class="text-xs text-gray-400">Complete earlier sections first</span>
+            <!-- The only text saying why the row won't respond, and the row stays keyboard-reachable, so it
+                 carries no opacity and sits at `gray-500` (≈4.8:1 on white) rather than the decorative `gray-400` -->
+            <span class="text-xs text-gray-500">Complete earlier sections first</span>
           }
         </span>
       </button>

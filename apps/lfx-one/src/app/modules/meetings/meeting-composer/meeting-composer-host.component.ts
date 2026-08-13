@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -35,6 +36,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
+    NgClass,
     DrawerModule,
     MeetingComposerRailComponent,
     MeetingComposerPreviewComponent,
@@ -74,18 +76,23 @@ export class MeetingComposerHostComponent {
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
   /**
-   * Whether a required section is currently invalid and the organizer has been shown it.
-   * @description Mirrors the rail's per-section dots, so the badge always has a dot to point at. Create
-   * mode only counts sections already visited — flagging a section the stepper hasn't reached yet would
-   * report the form as broken before it has been filled. Edit mode drops that gate: every section is
-   * reachable from the start and Save is gated on all of them, so an unvisited invalid one is exactly the
-   * case where the organizer has no other way to find out why Save is disabled.
+   * Whether a required section is currently invalid, matching the rail's dots.
+   * @description Create mode only counts sections already visited — flagging a section the stepper hasn't
+   * reached yet would report the form as broken before it has been filled. Edit mode drops that gate:
+   * every section is reachable from the start and Save is gated on all of them, so an unvisited invalid
+   * one is exactly the case where the organizer has no other way to find out why Save is disabled. An
+   * edit whose meeting never arrived is excluded — that form is empty because the fetch failed, not
+   * because of anything the organizer did.
    */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
 
     const isEditMode = this.composer.isEditMode();
     const visited = this.composer.visitedSections();
+
+    if (isEditMode && !this.formService.meeting()) {
+      return false;
+    }
 
     return this.sections.some((section) => section.required && (isEditMode || visited.has(section.id)) && !this.formService.isSectionValid(section.id));
   });
@@ -161,9 +168,9 @@ export class MeetingComposerHostComponent {
 
   /**
    * Reopens the composer on the meeting the toast was raised for.
-   * @description Guarded by `canEditFromToast`, which also disables the action — reopening while another
-   * meeting is part-way through the composer would discard that draft, and reopening after write access
-   * was lost would only fail on save.
+   * @description Guarded by `canEditFromToast`, which the template also reflects as `aria-disabled` —
+   * reopening while another meeting is part-way through the composer would discard that draft, and
+   * reopening after write access was lost would only fail on save.
    */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
     if (!this.canEditFromToast()) {
