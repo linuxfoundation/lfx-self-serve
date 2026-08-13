@@ -19,7 +19,7 @@ import {
 import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -241,6 +241,18 @@ export class VoteService {
     logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
 
     const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+
+    // The API client maps an empty response body to null; a 200 with no payload is anomalous
+    // (the upstream results contract always returns a body), so fail loudly — passing null
+    // through would emit a 200 that the results drawer renders as a genuine zero-response vote
+    // ("No responses yet") instead of its error state.
+    if (!results) {
+      throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${voteUid}/results`,
+      });
+    }
 
     // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
     // responses at the most recent N to keep the payload linear in prompt count rather than

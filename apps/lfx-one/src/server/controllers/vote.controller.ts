@@ -121,7 +121,9 @@ export class VoteController {
       project_uid: voteData?.project_uid,
       name: voteData?.name,
       end_time: voteData?.end_time,
-      body_size: JSON.stringify(req.body).length,
+      // Null-safe: express.json() leaves req.body undefined for non-JSON requests, and
+      // JSON.stringify(undefined).length would throw before validateRequestBody can return a 400.
+      body_size: JSON.stringify(req.body)?.length ?? 0,
     });
 
     try {
@@ -155,7 +157,9 @@ export class VoteController {
     const voteData: UpdateVoteRequest = req.body;
     const startTime = logger.startOperation(req, 'update_vote', {
       vote_uid: uid,
-      body_size: JSON.stringify(req.body).length,
+      // Null-safe: express.json() leaves req.body undefined for non-JSON requests, and
+      // JSON.stringify(undefined).length would throw before validateRequestBody can return a 400.
+      body_size: JSON.stringify(req.body)?.length ?? 0,
     });
 
     try {
