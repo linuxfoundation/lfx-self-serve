@@ -302,6 +302,8 @@ export interface MentionPlatformConfigEntry {
   label: string;
   /** Tailwind text-color class (no hex — repo styling rule). */
   colorClass: string;
+  /** Tailwind bg-color class for the analytics platform-distribution bar (no hex — repo styling rule). */
+  barClass: string;
 }
 
 /** Display config for a sentiment value (see `MENTION_SENTIMENT_CONFIG`). */
@@ -309,6 +311,8 @@ export interface MentionSentimentConfigEntry {
   icon: string;
   label: string;
   severity: TagSeverity;
+  /** Tailwind bg-color class for the analytics sentiment-distribution bar segment (no hex — repo styling rule). */
+  barClass: string;
 }
 
 /** Display config for a relevance value (see `MENTION_RELEVANCE_CONFIG`). */
@@ -322,6 +326,23 @@ export interface AuthorOption extends SocialListeningMentionAuthor {
   platformIcon: string;
   /** Tailwind text-color class (no hex — repo styling rule). */
   platformIconClass: string;
+}
+
+/** Analytics platform-distribution row with display config pre-resolved (built by `mapPlatformDistributionRows`). */
+export interface SocialListeningPlatformRow {
+  config: MentionPlatformConfigEntry;
+  mentionsCount: number;
+  /** 0–100 share of in-scope mentions, one decimal (server-rounded). */
+  percentOfTotal: number;
+}
+
+/** Analytics sentiment-distribution row with display config pre-resolved (built by `mapSentimentRows`). */
+export interface SocialListeningSentimentRow {
+  sentiment: MentionSentiment;
+  config: MentionSentimentConfigEntry;
+  mentionCount: number;
+  /** 0–100 share of in-scope mentions, one decimal (server-rounded). */
+  percentOfTotal: number;
 }
 
 /** Declarative fetch state for the toSignal pipelines. */

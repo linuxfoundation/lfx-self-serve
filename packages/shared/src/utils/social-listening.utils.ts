@@ -6,12 +6,17 @@
  * Ported from PCC; the bookmark (`mentionIds`) client branch is deferred to a follow-up ticket.
  */
 
+import type { ChartData } from 'chart.js';
+
 import {
+  ANALYTICS_TOP_PLATFORMS_LIMIT,
   DEFAULT_MENTION_PREDICATE,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_PLATFORM_CONFIG,
   MENTION_RELEVANCE_OPTIONS,
+  MENTION_SENTIMENT_CONFIG,
   MENTION_SENTIMENT_OPTIONS,
+  SOCIAL_LISTENING_CHART_PALETTE,
 } from '../constants/social-listening.constants';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -25,9 +30,16 @@ import type {
   SocialListeningMention,
   SocialListeningMentionAuthor,
   SocialListeningOption,
+  SocialListeningOverTimePoint,
   SocialListeningPlatform,
+  SocialListeningPlatformDistribution,
+  SocialListeningPlatformRow,
+  SocialListeningSentimentDistribution,
+  SocialListeningSentimentRow,
   SocialListeningSubProject,
+  SocialListeningTagCount,
 } from '../interfaces/social-listening.interface';
+import type { StatCardDelta, StatCardDeltaDirection } from '../interfaces/stat-card.interface';
 import { capitalizeFirst } from './string.utils';
 
 /** Lowercases + dedupes keywords so filter state and payloads stay canonical. */
@@ -163,6 +175,148 @@ export function mergeSelectedAuthors(options: AuthorOption[], selected: string[]
     platformIconClass: config.colorClass,
   }));
   return [...options, ...placeholders];
+}
+
+// ---------------------------------------------------------------------------
+// Analytics tab builders (LFXV2-3018) — pure functions over the feed-derived endpoint rows
+// ---------------------------------------------------------------------------
+
+/** Palette index for the Nth series — index 0 is reserved for the "Total" line, so cycles run over the remaining slots and never collide with it. */
+function seriesColor(index: number): string {
+  return SOCIAL_LISTENING_CHART_PALETTE[1 + (index % (SOCIAL_LISTENING_CHART_PALETTE.length - 1))];
+}
+
+/** Snowflake's TO_CHAR month labels arrive uppercase (`MAR 2026`, `MAR 05`) — title-case the words for display. */
+function formatPeriodLabel(label: string): string {
+  return label.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Mentions Over Time line chart: one dataset per sub-project plus a leading "Total" line.
+ * Buckets order by `PERIOD_START` (the DATE_TRUNC ISO start), not `PERIOD_LABEL`, which is
+ * display-only and can't sort across grains. Projects group by NAME (PCC parity — children
+ * may share the parent's id in the feed) and duplicate (bucket, name) rows fold by summing,
+ * since the server groups by (bucket, id, name). Returns null when there's nothing to chart
+ * (drives the panel's empty state).
+ */
+export function buildOverTimeChartData(points: SocialListeningOverTimePoint[]): ChartData<'line'> | null {
+  if (points.length === 0) return null;
+
+  const bucketStarts = [...new Set(points.map((p) => p.PERIOD_START))].sort();
+  const labelByStart = new Map<string, string>();
+  for (const point of points) {
+    if (!labelByStart.has(point.PERIOD_START)) {
+      labelByStart.set(point.PERIOD_START, formatPeriodLabel(point.PERIOD_LABEL));
+    }
+  }
+  const labels = bucketStarts.map((start) => labelByStart.get(start) ?? start);
+
+  const projectMap = new Map<string, Map<string, number>>();
+  for (const point of points) {
+    let byPeriod = projectMap.get(point.SOURCE_PROJECT_NAME);
+    if (!byPeriod) {
+      byPeriod = new Map();
+      projectMap.set(point.SOURCE_PROJECT_NAME, byPeriod);
+    }
+    byPeriod.set(point.PERIOD_START, (byPeriod.get(point.PERIOD_START) ?? 0) + (point.TOTAL_MENTIONS || 0));
+  }
+
+  const totals = bucketStarts.map((start) => {
+    let sum = 0;
+    projectMap.forEach((byPeriod) => {
+      sum += byPeriod.get(start) ?? 0;
+    });
+    return sum;
+  });
+
+  const line = (label: string, data: number[], color: string) => ({
+    label,
+    data,
+    borderColor: color,
+    backgroundColor: color,
+    pointBackgroundColor: color,
+    borderWidth: 2,
+  });
+
+  const datasets = [line('Total', totals, SOCIAL_LISTENING_CHART_PALETTE[0])];
+  let index = 0;
+  projectMap.forEach((byPeriod, name) => {
+    datasets.push(
+      line(
+        name,
+        bucketStarts.map((start) => byPeriod.get(start) ?? 0),
+        seriesColor(index)
+      )
+    );
+    index++;
+  });
+
+  return { labels, datasets };
+}
+
+/**
+ * Mentions by Tag bar chart: server rows arrive pre-sorted and capped at `MENTION_TOP_TAGS_LIMIT`,
+ * labels are title-cased with underscores as spaces (`formatTag`). Returns null when empty.
+ */
+export function buildTagsChartData(tags: SocialListeningTagCount[]): ChartData<'bar'> | null {
+  const rows = tags.filter((tag) => !!tag.TAG);
+  if (rows.length === 0) return null;
+
+  return {
+    labels: rows.map((tag) => formatTag(tag.TAG)),
+    datasets: [
+      {
+        data: rows.map((tag) => tag.TOTAL_COUNT),
+        backgroundColor: rows.map((_, i) => seriesColor(i)),
+        borderRadius: 4,
+        borderSkipped: false,
+      },
+    ],
+  };
+}
+
+/** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) with display config pre-resolved. */
+export function mapPlatformDistributionRows(
+  rows: SocialListeningPlatformDistribution[],
+  limit: number = ANALYTICS_TOP_PLATFORMS_LIMIT
+): SocialListeningPlatformRow[] {
+  return rows.slice(0, limit).map((row) => ({
+    config: MENTION_PLATFORM_CONFIG[normalizePlatformKey(row.SOURCE_PLATFORM || row.SOCIAL_NETWORK)],
+    mentionsCount: row.MENTIONS_COUNT,
+    percentOfTotal: row.PERCENT_OF_TOTAL || 0,
+  }));
+}
+
+/** Sentiment share rows in fixed positive → neutral → negative display order; unknown upstream values are dropped. */
+export function mapSentimentRows(rows: SocialListeningSentimentDistribution[]): SocialListeningSentimentRow[] {
+  const order: MentionSentiment[] = ['positive', 'neutral', 'negative'];
+  return rows
+    .filter((row) => Object.hasOwn(MENTION_SENTIMENT_CONFIG, row.SENTIMENT))
+    .map((row) => {
+      const sentiment = row.SENTIMENT as MentionSentiment;
+      return {
+        sentiment,
+        config: MENTION_SENTIMENT_CONFIG[sentiment],
+        mentionCount: row.MENTION_COUNT,
+        percentOfTotal: row.PERCENT_OF_TOTAL || 0,
+      };
+    })
+    .sort((a, b) => order.indexOf(a.sentiment) - order.indexOf(b.sentiment));
+}
+
+/**
+ * Maps a server's signed change percentage to a stat-card delta: the arrow carries the numeric
+ * direction, the label shows the absolute value (PCC parity), and `inverted` flips the color
+ * mapping for metrics where an increase is bad (negative sentiment). Returns undefined when the
+ * server suppressed the comparison (null — previous window too thin), hiding the delta line.
+ */
+export function buildAnalyticsDelta(changePct: number | null, inverted = false): StatCardDelta | undefined {
+  if (changePct === null) return undefined;
+  let direction: StatCardDeltaDirection = 'flat';
+  if (changePct > 0) direction = 'up';
+  else if (changePct < 0) direction = 'down';
+  const sign = changePct > 0 ? '+' : '';
+  return { label: `${sign}${Math.abs(changePct).toFixed(1)}% vs last period`, direction, inverted };
 }
 
 function buildTags(tagsStr: string): string[] {

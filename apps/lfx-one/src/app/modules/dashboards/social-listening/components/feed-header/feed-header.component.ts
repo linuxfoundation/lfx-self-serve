@@ -55,6 +55,10 @@ export class FeedHeaderComponent {
   public readonly activeFilterCount = input(0);
   public readonly filtersPrefetch = output<void>();
 
+  // === Analytics export (LFXV2-3018) — button renders on the Analytics tab only ===
+  public readonly exporting = input(false);
+  public readonly exportAnalytics = output<void>();
+
   // Neutral defaults — the model→form effects below populate the real values at construction
   // (required models can't be read in field initializers).
   protected readonly headerForm = this.fb.nonNullable.group({

@@ -28,7 +28,9 @@
           [projectOptions]="subProjectOptions()"
           [platformOptions]="platformOptions()"
           [optionsLoading]="optionsLoading()"
-          (filtersPrefetch)="prefetchFilterOptions()" />
+          [exporting]="exporting()"
+          (filtersPrefetch)="prefetchFilterOptions()"
+          (exportAnalytics)="onExportAnalytics()" />
 
         @if (filtersOpen() && activeTab() === 'feed') {
           <lfx-filters-panel
@@ -90,12 +92,13 @@
             platforms across the web. The Linux Foundation does not independently collect, enrich, or modify this data.
           </p>
         } @else {
-          <!-- Analytics tab content lands in LFXV2-3018 -->
-          <lfx-empty-state
-            icon="fa-light fa-chart-line-up"
-            title="Analytics are coming soon"
-            subtitle="Mention volumes, platform and sentiment breakdowns, and export are being migrated from PCC in an upcoming release."
-            data-testid="social-listening-analytics-placeholder" />
+          <lfx-social-listening-analytics
+            [foundationSlug]="foundationSlug()"
+            [period]="selectedPeriod()"
+            [platform]="selectedPlatform()"
+            [sourceProjectId]="selectedProject()"
+            [exportNonce]="exportNonce()"
+            [(isExporting)]="exporting" />
         }
       </div>
     </lfx-card>

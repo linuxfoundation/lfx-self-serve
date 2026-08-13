@@ -75,6 +75,7 @@ import type {
   SocialListeningTab,
 } from '@lfx-one/shared/interfaces';
 
+import { SocialListeningAnalyticsComponent } from './components/analytics/social-listening-analytics.component';
 import { FeedHeaderComponent } from './components/feed-header/feed-header.component';
 import { FiltersPanelComponent } from './components/filters-panel/filters-panel.component';
 import { MentionsListComponent } from './components/mentions-list/mentions-list.component';
@@ -91,7 +92,16 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
  */
 @Component({
   selector: 'lfx-social-listening',
-  imports: [CardComponent, EmptyStateComponent, FilterPillsComponent, MessageComponent, FeedHeaderComponent, FiltersPanelComponent, MentionsListComponent],
+  imports: [
+    CardComponent,
+    EmptyStateComponent,
+    FilterPillsComponent,
+    MessageComponent,
+    FeedHeaderComponent,
+    FiltersPanelComponent,
+    MentionsListComponent,
+    SocialListeningAnalyticsComponent,
+  ],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',
 })
@@ -132,6 +142,10 @@ export class SocialListeningComponent {
   // === Filters panel state (LFXV2-3017) ===
   public readonly filtersOpen = signal(false);
   private readonly filtersOpenedOnce = signal(false);
+
+  // === Analytics export state (LFXV2-3018) — the header emits, the analytics component captures ===
+  public readonly exporting = signal(false);
+  public readonly exportNonce = signal(0);
 
   /** Shared heartbeat that re-evaluates relative timestamps on rendered cards (one interval per page, not per card). */
   public readonly timeTick = signal(0);
@@ -315,6 +329,14 @@ export class SocialListeningComponent {
     if (!this.filtersOpenedOnce()) {
       this.filtersOpenedOnce.set(true);
     }
+  }
+
+  /**
+   * Triggers a PNG export of the analytics dashboard (LFXV2-3018) by bumping the nonce the
+   * analytics component reacts to — input-driven child trigger, no viewChild method calls.
+   */
+  public onExportAnalytics(): void {
+    this.exportNonce.update((nonce) => nonce + 1);
   }
 
   /**
