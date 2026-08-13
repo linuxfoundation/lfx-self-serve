@@ -107,7 +107,13 @@
                 type="button"
                 class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
                 title="View registrations & marketing campaigns"
-                [attr.aria-label]="'View registrations and marketing campaigns for ' + row.eventName"
+                [attr.aria-label]="
+                  row.eventName +
+                  ' registrations ' +
+                  row.registrations.actual +
+                  (row.registrations.hasGoal ? ' of ' + row.registrations.goal : '') +
+                  ' — view registrations and marketing campaigns'
+                "
                 (click)="openFocused(row.eventId, 'b2c', $event)"
                 (keydown.enter)="$event.stopPropagation()"
                 (keydown.space)="$event.stopPropagation()"
@@ -118,11 +124,7 @@
                     <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                       <div
                         class="h-full rounded-full"
-                        role="progressbar"
-                        [attr.aria-valuenow]="row.registrations.percent"
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        [attr.aria-label]="row.eventName + ' registrations: ' + row.registrations.actual + ' of ' + row.registrations.goal"
+                        aria-hidden="true"
                         [ngClass]="{
                           'bg-emerald-500': row.registrations.tone === 'good',
                           'bg-amber-500': row.registrations.tone === 'warn',
@@ -144,7 +146,13 @@
                 type="button"
                 class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
                 title="View sponsorship & partnerships"
-                [attr.aria-label]="'View sponsorship and partnerships for ' + row.eventName"
+                [attr.aria-label]="
+                  row.eventName +
+                  ' sponsorship revenue ' +
+                  row.sponsorshipRevenue.actual +
+                  (row.sponsorshipRevenue.hasGoal ? ' of ' + row.sponsorshipRevenue.goal : '') +
+                  ' — view sponsorship and partnerships'
+                "
                 (click)="openFocused(row.eventId, 'b2b', $event)"
                 (keydown.enter)="$event.stopPropagation()"
                 (keydown.space)="$event.stopPropagation()"
@@ -155,11 +163,7 @@
                     <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                       <div
                         class="h-full rounded-full"
-                        role="progressbar"
-                        [attr.aria-valuenow]="row.sponsorshipRevenue.percent"
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        [attr.aria-label]="row.eventName + ' sponsorship revenue: ' + row.sponsorshipRevenue.actual + ' of ' + row.sponsorshipRevenue.goal"
+                        aria-hidden="true"
                         [ngClass]="{
                           'bg-emerald-500': row.sponsorshipRevenue.tone === 'good',
                           'bg-amber-500': row.sponsorshipRevenue.tone === 'warn',

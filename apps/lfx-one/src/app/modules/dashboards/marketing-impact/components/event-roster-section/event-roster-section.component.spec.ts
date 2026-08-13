@@ -91,20 +91,24 @@ describe('EventRosterSectionComponent', () => {
       expect(text()).toContain('400');
     });
 
-    it('caps the percentage at 100 when actuals exceed the goal', async () => {
-      await render([row({ registrations: { actual: 2500, goal: 1000 } })], 'tlf');
+    it('caps the bar width at 100% when actuals exceed the goal', async () => {
+      await render([row({ eventId: 'evt-1', registrations: { actual: 2500, goal: 1000 } })], 'tlf');
 
-      const bars = fixture.nativeElement.querySelectorAll('[role="progressbar"]');
-      expect(bars[0].getAttribute('aria-valuenow')).toBe('100');
+      const bar = fixture.nativeElement.querySelector('[data-testid="event-roster-b2c-evt-1"] [style*="width"]');
+      expect((bar as HTMLElement).style.width).toBe('100%');
     });
 
-    it('exposes the completion percentage to assistive technology', async () => {
-      await render([row({ registrations: { actual: 750, goal: 1000 } })], 'tlf');
+    // The figures reach assistive technology through the button's own name, not a nested
+    // progressbar: these bars live inside a native button, whose descendants are flattened out of
+    // the accessible name, so a role there is announced to no one.
+    it('exposes the actual and goal in the cell button name', async () => {
+      await render([row({ eventId: 'evt-1', eventName: 'KubeCon', registrations: { actual: 750, goal: 1000 } })], 'tlf');
 
-      const bar = fixture.nativeElement.querySelector('[role="progressbar"]');
-      expect(bar.getAttribute('aria-valuenow')).toBe('75');
-      expect(bar.getAttribute('aria-valuemin')).toBe('0');
-      expect(bar.getAttribute('aria-valuemax')).toBe('100');
+      const label = fixture.nativeElement.querySelector('[data-testid="event-roster-b2c-evt-1"]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('KubeCon');
+      // Compact form, matching the visible cell — the name should read what the sighted user sees.
+      expect(label).toContain('750');
+      expect(label).toContain('1K');
     });
   });
 
