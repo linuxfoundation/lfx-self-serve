@@ -148,11 +148,13 @@ describe('EventsSummarySectionComponent', () => {
       );
     }
 
-    it('shows only the attendance tiles under the attendance split', async () => {
+    // The complete ordered set, not a spot check: asserting only that sponsorship is absent would
+    // still pass if a tile were misfiled — organizations especially, which counts the orgs
+    // attendees work for rather than sponsors, so its attendance tag reads as wrong at a glance.
+    it('shows exactly the attendance tiles, in order, under the attendance split', async () => {
       await render(response(), 'tlf', 'attendance');
 
-      expect(tileIds()).not.toContain('sponsorship');
-      expect(tileIds()).toContain('registrations');
+      expect(tileIds()).toEqual(['events', 'registrations', 'attendees', 'speakers', 'organizations', 'countries']);
     });
 
     it('shows only the sponsorship tile under the sponsorship split', async () => {

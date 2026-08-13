@@ -38,8 +38,14 @@ export class EmailTabComponent {
   protected readonly hasEmailTypes = computed(() => this.emailTypeRows().length > 0);
   protected readonly topCampaigns: Signal<TopCampaignRow[]> = this.initTopCampaigns();
   protected readonly hasTopCampaigns = computed(() => this.topCampaigns().length > 0);
-  /** True when the send list hit the render cap, so the header can say so rather than imply a total. */
-  protected readonly topCampaignsTruncated = computed(() => this.topCampaigns().length >= EMAIL_SENDS_ROW_LIMIT);
+  /**
+   * How many sends the response carried, before the render cap. Compared against the cap rather
+   * than against the rendered length: the rendered list can never exceed the cap, so a source of
+   * exactly EMAIL_SENDS_ROW_LIMIT would otherwise be labelled "latest N" despite being complete.
+   */
+  private readonly sendSourceCount = computed(() => this.emailData()?.emailTypeBreakdown?.flatMap((et) => et.campaigns ?? []).length ?? 0);
+  /** True only when rows were actually omitted, so the header claims truncation only when it happened. */
+  protected readonly topCampaignsTruncated = computed(() => this.sendSourceCount() > EMAIL_SENDS_ROW_LIMIT);
   protected readonly topCampaignsCountLabel = computed(() => {
     const count = this.topCampaigns().length;
     const noun = count === 1 ? 'send' : 'sends';

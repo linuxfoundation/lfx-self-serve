@@ -110,6 +110,20 @@ describe('EmailTabComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('latest');
   });
 
+  // The boundary the flag exists for: a source of exactly the cap is complete, not truncated. The
+  // rendered length can never exceed the cap, so comparing against it cannot tell the two apart —
+  // only the pre-slice source count can.
+  it('does not claim truncation when the source is exactly the cap', async () => {
+    const exact = Array.from({ length: EMAIL_SENDS_ROW_LIMIT }, (_, i) => ({
+      ...campaign(`2026-07-${String((i % 28) + 1).padStart(2, '0')}`),
+      campaignName: `Send ${i}`,
+    }));
+    await renderCampaigns(exact);
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="email-campaign-row-"]')).toHaveLength(EMAIL_SENDS_ROW_LIMIT);
+    expect(fixture.nativeElement.textContent).not.toContain('latest');
+  });
+
   // The ordering contract: newest first, undated last. A single-campaign fixture cannot see it.
   it('orders sends newest first and puts undated rows last', async () => {
     await renderCampaigns([
