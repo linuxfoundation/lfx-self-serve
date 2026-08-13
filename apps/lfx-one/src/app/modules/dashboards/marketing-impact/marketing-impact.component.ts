@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
@@ -57,6 +58,7 @@ export class MarketingImpactComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
   private readonly fb = inject(FormBuilder);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
   // === Forms ===
@@ -112,6 +114,39 @@ export class MarketingImpactComponent {
 
   protected onEventsSplitChange(view: EventsSplitView): void {
     this.selectedEventsSplit.set(view);
+  }
+
+  /**
+   * Roving-tabindex keyboard handling for the Events split tablist, mirroring the person-detail
+   * drawer's tabs. Only the selected tab is in the tab order, so without Arrow/Home/End movement a
+   * keyboard-only user could reach Attendance and never Sponsorship. Focus follows selection,
+   * which is what the roving pattern requires.
+   */
+  protected onEventsSplitKeydown(event: KeyboardEvent): void {
+    const views = this.eventsSplitOptions;
+    const current = views.findIndex((view) => view.id === this.selectedEventsSplit());
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % views.length;
+        break;
+      case 'ArrowLeft':
+        next = (current - 1 + views.length) % views.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = views.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    this.selectedEventsSplit.set(views[next].id);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`mi-events-tab-${views[next].id}`)?.focus();
+    }
   }
 
   // === Private Initializers ===

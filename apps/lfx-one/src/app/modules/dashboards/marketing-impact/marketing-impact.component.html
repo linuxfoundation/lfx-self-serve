@@ -81,7 +81,12 @@
          Both views swap content inside the single shared tabpanel below, so aria-controls points
          at that panel's real id; per-view ids would reference elements that never render. -->
     @if (showEventsSplit()) {
-      <div class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4" role="tablist" aria-label="Events views" data-testid="events-split-tabs">
+      <div
+        class="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4"
+        role="tablist"
+        aria-label="Events views"
+        (keydown)="onEventsSplitKeydown($event)"
+        data-testid="events-split-tabs">
         @for (view of eventsSplitOptions; track view.id) {
           <button
             type="button"

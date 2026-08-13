@@ -100,6 +100,7 @@
                 type="button"
                 class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
                 title="View registrations & marketing campaigns"
+                [attr.aria-label]="'View registrations and marketing campaigns for ' + row.eventName"
                 (click)="openFocused(row.eventId, 'b2c', $event)"
                 (keydown.space)="openFocused(row.eventId, 'b2c', $event)"
                 [attr.data-testid]="'event-roster-b2c-' + row.eventId">
@@ -135,6 +136,7 @@
                 type="button"
                 class="w-full cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-blue-50 text-left"
                 title="View sponsorship & partnerships"
+                [attr.aria-label]="'View sponsorship and partnerships for ' + row.eventName"
                 (click)="openFocused(row.eventId, 'b2b', $event)"
                 (keydown.space)="openFocused(row.eventId, 'b2b', $event)"
                 [attr.data-testid]="'event-roster-b2b-' + row.eventId">

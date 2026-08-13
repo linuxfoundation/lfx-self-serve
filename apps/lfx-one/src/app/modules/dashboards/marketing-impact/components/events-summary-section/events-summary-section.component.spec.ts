@@ -39,7 +39,12 @@ describe('EventsSummarySectionComponent', () => {
 
   // `slug` is deliberately not a defaulted parameter — passing an explicit `undefined`
   // must mean "no foundation", which a default value would silently override.
-  async function render(summary: EventsOverviewSummaryResponse | null, slug: string | undefined): Promise<void> {
+  async function render(
+    summary: EventsOverviewSummaryResponse | null,
+    slug: string | undefined,
+    split: 'attendance' | 'sponsorship' | null = null,
+    period = ''
+  ): Promise<void> {
     getEventsOverviewSummary = vi.fn().mockReturnValue(of(summary));
 
     TestBed.resetTestingModule();
@@ -51,6 +56,8 @@ describe('EventsSummarySectionComponent', () => {
     fixture = TestBed.createComponent(EventsSummarySectionComponent);
     fixture.componentRef.setInput('foundationSlug', slug);
     fixture.componentRef.setInput('foundationName', 'The Linux Foundation');
+    fixture.componentRef.setInput('eventsSplit', split);
+    fixture.componentRef.setInput('selectedPeriod', period);
     await fixture.whenStable();
   }
 
@@ -129,6 +136,44 @@ describe('EventsSummarySectionComponent', () => {
     await render(response(), undefined);
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-summary-skeleton"]')).toBeNull();
+  });
+
+  // The split is the point of this PR and only the unsplit path was covered: both halves could
+  // regress — wrong tiles, or sponsorship silently narrowed to a month it has no data for — with
+  // the suite still green.
+  describe('events split', () => {
+    function tileIds(): string[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="events-summary-tile-"]') as NodeListOf<HTMLElement>).map((el) =>
+        (el.getAttribute('data-testid') ?? '').replace('events-summary-tile-', '')
+      );
+    }
+
+    it('shows only the attendance tiles under the attendance split', async () => {
+      await render(response(), 'tlf', 'attendance');
+
+      expect(tileIds()).not.toContain('sponsorship');
+      expect(tileIds()).toContain('registrations');
+    });
+
+    it('shows only the sponsorship tile under the sponsorship split', async () => {
+      await render(response(), 'tlf', 'sponsorship');
+
+      expect(tileIds()).toEqual(['sponsorship']);
+    });
+
+    // Sponsorship exists only as a YTD rollup, so the request must drop the period even when one
+    // is picked — otherwise the tile renders a month's worth of nothing under a YTD number.
+    it('omits the period for sponsorship even when one is selected', async () => {
+      await render(response(), 'tlf', 'sponsorship', '2026-03');
+
+      expect(getEventsOverviewSummary).toHaveBeenCalledWith('tlf', undefined);
+    });
+
+    it('passes the period through for attendance', async () => {
+      await render(response(), 'tlf', 'attendance', '2026-03');
+
+      expect(getEventsOverviewSummary).toHaveBeenCalledWith('tlf', '2026-03');
+    });
   });
 
   it('scopes the request to the selected foundation', async () => {
