@@ -5,7 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { LENS_DEFAULT_ROUTES, ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
@@ -133,6 +133,10 @@ export class OrgNavigationService {
 
     const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(searchTerm(), token, loading, false, generation(), generation, null)));
 
+    // Rounds of client-driven auto-follow (below) for the current search. Reset whenever a page
+    // actually carries a row or a new search starts, so a fresh term always gets its own full budget.
+    let consecutiveEmptyAutoFollows = 0;
+
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
         // Drop responses from a superseded generation (e.g. a scroll fetch that lands after a new search reset).
@@ -145,11 +149,20 @@ export class OrgNavigationService {
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }
+          if (page.reset || page.items.length > 0) {
+            consecutiveEmptyAutoFollows = 0;
+          }
           // A catalogue page can dedupe to zero rows while still carrying a live cursor — the BFF's
           // own skip-ahead has a cap, and the caller-visible page beyond it is empty. No new row means
           // the viewport sentinel is never recreated, so nothing would ever ask for the next page;
           // paging has to drive itself here instead of waiting on a scroll event that can't happen.
-          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed) {
+          //
+          // Capped at ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP consecutive rounds — reusing the BFF's own
+          // per-request bound — so a term with no reachable match anywhere in the catalogue, or an
+          // upstream cursor that never advances, cannot drive the client into the same unbounded,
+          // scroll-free walk the server cap exists to prevent.
+          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed && consecutiveEmptyAutoFollows < ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP) {
+            consecutiveEmptyAutoFollows += 1;
             this.loadNextPage();
           }
         }),
