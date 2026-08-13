@@ -256,7 +256,7 @@ export interface SocialListeningAnalyticsRequest {
  */
 export interface SocialListeningFeedResponse {
   mentions: SocialListeningMention[];
-  /** Watermark from MAX(COMPUTED_AT) — surfaced as "Data as of". */
+  /** dbt rebuild timestamp carried on every row, read off the newest one — surfaced as "Data as of". */
   computedAt: string | null;
 }
 

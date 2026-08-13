@@ -25,6 +25,7 @@ import {
 import { Request } from 'express';
 
 import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
+import { MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT, MAX_FEED_OFFSET } from '../helpers/social-listening-params.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -76,6 +77,12 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 const LIKE_ESCAPE_CHAR = '!';
 
+/**
+ * Comma delimiter plus any surrounding whitespace, normalized away before `TAGS` is split into
+ * tokens. POSIX classes rather than `\s` so the SQL literal needs no backslash doubling.
+ */
+const TAG_DELIMITER_PATTERN = '[[:space:]]*,[[:space:]]*';
+
 /** Only ever `string | number` — every user-supplied value reaches Snowflake as a bind, never as SQL text. */
 type QueryBind = string | number;
 
@@ -120,22 +127,25 @@ export class SocialListeningService {
   public async getMentionsFeed(req: Request, params: SocialListeningFeedParams): Promise<SocialListeningFeedResponse> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(params);
+    const limit = this.clampInteger(params.limit, 1, MAX_FEED_LIMIT);
+    const offset = this.clampInteger(params.offset, 0, MAX_FEED_OFFSET);
 
     const sql = `
       SELECT * EXCLUDE (${FEED_EXCLUDED_COLUMNS}) RENAME _KEY AS MENTION_ID
       FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}
-      ORDER BY MENTION_TS DESC
-      LIMIT ? OFFSET ?
+      -- MENTION_TS is not unique, so _KEY breaks ties into a total order OFFSET paging can rely on.
+      ORDER BY MENTION_TS DESC, _KEY DESC
+      LIMIT ${limit} OFFSET ${offset}
     `;
 
     logger.debug(req, 'social_listening_mentions_feed', 'Querying mentions feed', {
       foundation_slug: params.foundationSlug,
-      limit: params.limit,
-      offset: params.offset,
+      limit,
+      offset,
     });
 
-    const result = await this.snowflakeService.execute<SocialListeningMention>(sql, [...scope.binds, ...filters.binds, params.limit, params.offset]);
+    const result = await this.snowflakeService.execute<SocialListeningMention>(sql, [...scope.binds, ...filters.binds]);
     const mentions = result.rows ?? [];
 
     return { mentions, computedAt: mentions[0]?.COMPUTED_AT ?? null };
@@ -250,13 +260,14 @@ export class SocialListeningService {
         AND TRIM(f.VALUE::STRING) != ''
       GROUP BY TRIM(f.VALUE::STRING)
       ORDER BY TOTAL_COUNT DESC, TAG
-      LIMIT ?
+      LIMIT ${MENTION_TOP_TAGS_LIMIT}
     `;
 
-    const binds: QueryBind[] = [...scope.binds, MENTION_TOP_TAGS_LIMIT];
+    // The row cap is a compile-time constant, but it still discriminates the cache entry.
+    const cacheBinds: QueryBind[] = [...scope.binds, MENTION_TOP_TAGS_LIMIT];
 
-    return this.cached(req, params.foundationSlug, 'tags', binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningTagCount>(sql, binds);
+    return this.cached(req, params.foundationSlug, 'tags', cacheBinds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningTagCount>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
@@ -287,12 +298,12 @@ export class SocialListeningService {
       )
       WHERE PLATFORM_RANK = 1
       ORDER BY MENTION_COUNT DESC
-      LIMIT ?
+      LIMIT ${MENTION_FILTER_MAX_VALUES}
     `;
 
     logger.debug(req, 'social_listening_mentions_authors', 'Querying author options', { foundation_slug: params.foundationSlug });
 
-    const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds, MENTION_FILTER_MAX_VALUES]);
+    const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds]);
 
     return result.rows ?? [];
   }
@@ -438,7 +449,7 @@ export class SocialListeningService {
 
   public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningTopProject[]> {
     const scope = this.buildScope(params);
-    const limit = params.limit ?? TOP_PROJECTS_LIMIT;
+    const limit = this.clampInteger(params.limit ?? TOP_PROJECTS_LIMIT, 1, MAX_ANALYTICS_LIMIT);
 
     const sql = `
       SELECT SOURCE_PROJECT_NAME, COUNT(*) AS TOTAL_MENTIONS
@@ -448,13 +459,14 @@ export class SocialListeningService {
         AND SOURCE_PROJECT_NAME != ''
       GROUP BY SOURCE_PROJECT_NAME
       ORDER BY TOTAL_MENTIONS DESC
-      LIMIT ?
+      LIMIT ${limit}
     `;
 
-    const binds: QueryBind[] = [...scope.binds, limit];
+    // `limit` is interpolated rather than bound, so it has to stay in the cache key explicitly.
+    const cacheBinds: QueryBind[] = [...scope.binds, limit];
 
-    return this.cached(req, params.foundationSlug, 'analytics-top-projects', binds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, binds);
+    return this.cached(req, params.foundationSlug, 'analytics-top-projects', cacheBinds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
@@ -523,12 +535,12 @@ export class SocialListeningService {
       binds.push(...keywords.map((keyword) => keyword.toLowerCase()));
     }
 
-    // TAGS is a comma-joined string upstream, so each selected tag is a substring match ANDed
-    // together — a mention must carry all of them.
+    // TAGS is a comma-joined string upstream, so it is split into exact tokens before comparing —
+    // a substring match would let `ai` select mentions tagged `email` or `retail`. ANDed per tag.
     const tags = this.capValues(filters.tags, MENTION_FILTER_MAX_VALUES);
     for (const tag of tags) {
-      clauses.push(`LOWER(TAGS) LIKE ? ESCAPE '${LIKE_ESCAPE_CHAR}'`);
-      binds.push(`%${escapeSqlLikePattern(tag.toLowerCase())}%`);
+      clauses.push(`ARRAY_CONTAINS(?::VARIANT, SPLIT(REGEXP_REPLACE(LOWER(TRIM(TAGS)), '${TAG_DELIMITER_PATTERN}', ','), ','))`);
+      binds.push(tag.toLowerCase());
     }
 
     const authors = this.capValues(filters.authors, MENTION_FILTER_MAX_VALUES);
@@ -625,5 +637,17 @@ export class SocialListeningService {
 
   private placeholders(count: number): string {
     return Array(count).fill('?').join(', ');
+  }
+
+  /**
+   * Snowflake rejects binds in `LIMIT` / `OFFSET`, so those values are interpolated as literals.
+   * This clamp is what makes that safe — the HTTP layer already bounds them, this is defense in depth.
+   */
+  private clampInteger(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) {
+      return min;
+    }
+
+    return Math.min(Math.max(Math.trunc(value), min), max);
   }
 }

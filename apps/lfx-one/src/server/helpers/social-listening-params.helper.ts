@@ -40,13 +40,13 @@ const FILTER_VALUE_MAX_LENGTH = 200;
 const SEARCH_MAX_LENGTH = 500;
 
 /** A page can never exceed the server window the client is built around. */
-const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
+export const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
 
 /** ~1000 windows deep. Past this, a paginated request is a scan, not navigation. */
-const MAX_FEED_OFFSET = 100_000;
+export const MAX_FEED_OFFSET = 100_000;
 
 /** Ceiling for the caller-supplied `limit` on the analytics top-projects panel. */
-const MAX_ANALYTICS_LIMIT = 100;
+export const MAX_ANALYTICS_LIMIT = 100;
 
 const VALID_SENTIMENTS = MENTION_SENTIMENT_OPTIONS.map((option) => option.value);
 const VALID_RELEVANCES = MENTION_RELEVANCE_OPTIONS.map((option) => option.value);
