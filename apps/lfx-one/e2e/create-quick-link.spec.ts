@@ -278,7 +278,9 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
 // popover (data-testid="create-menu-mobile") — see LFXV2-3248. The regression this suite guards
 // (lens-switcher.component.scss's rail-anchoring CSS) is gated at the `lg` breakpoint (1024px,
 // matching tailwind.config.js), so the skip boundary matches that rather than `md` (768px) —
-// a viewport in [768, 1024) would still get the desktop-anchored popover CSS applied.
+// a viewport in [768, 1024) still renders the mobile drawer (the app's own responsive split is
+// keyed on `lg`, not `md`), so gating the skip at `md` would incorrectly treat that range as
+// desktop and skip M1 even though the regression this test guards still applies there.
 function skipOnDesktopViewport(page: Page): void {
   const viewport = page.viewportSize();
   if (viewport && viewport.width >= 1024) {
@@ -325,7 +327,15 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     // button.component.ts does for `aria-pressed`), but adding that is a production-template
     // change out of scope for this test-only commit. The class this test already relies on to
     // scope the SCSS override is the stable hook available today.
-    const panel = page.locator('.p-popover.lfx-create-popover');
+    //
+    // `.filter({ visible: true })`: `lfx-lens-switcher` mounts twice at once (desktop rail +
+    // mobile drawer instances in main-layout.component.html), each with its own `.p-popover
+    // .lfx-create-popover` panel. This only resolves to one element today because PrimeNG lazily
+    // creates the panel DOM on first `show()`/`toggle()` — the never-toggled desktop instance's
+    // panel isn't in the DOM during this test. The visibility filter hardens that assumption so a
+    // future PrimeNG version with eager panel creation fails on the real regression instead of a
+    // Playwright strict-mode "resolved to 2 elements" error.
+    const panel = page.locator('.p-popover.lfx-create-popover').filter({ visible: true });
     const menuPosition = await panel.evaluate((el) => getComputedStyle(el).position);
     // PrimeNG's own anchor-relative default sets `position: absolute`; the regressed (rail-pinned)
     // state is `position: fixed`. Assert the specific expected value, not just an exclusion, so an

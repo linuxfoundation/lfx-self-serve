@@ -27,6 +27,8 @@
           (click)="toggleCreateMenu($event)"
           data-testid="create-rail-button-mobile"
           aria-label="Create new artifact"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="createMenu.overlayVisible"
           class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
           <i class="fa-light fa-plus text-sm"></i>
         </button>
