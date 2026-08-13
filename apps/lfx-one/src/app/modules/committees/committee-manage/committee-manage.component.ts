@@ -75,6 +75,12 @@ export class CommitteeManageComponent {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
+  // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
+  // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
+  public readonly organizationRequirements = computed(() => ({
+    enable_voting: !!this.formValue().enable_voting,
+    business_email_required: !!this.formValue().business_email_required,
+  }));
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);

@@ -17,7 +17,7 @@
         size="small"
         label="Invite by email"
         icon="fa-light fa-envelope"
-        [disabled]="loading() || committeeLoading()"
+        [disabled]="loading() || committeeLoading() || membersLoadFailed() || committeeLoadFailed()"
         data-testid="invite-by-email-button"
         (click)="openInviteByEmailDialog()">
       </lfx-button>

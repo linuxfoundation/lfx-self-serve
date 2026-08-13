@@ -64,6 +64,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public committeeId = input.required<string | null>();
   public memberUpdates = input<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
   public refresh = input<BehaviorSubject<void>>();
+  /**
+   * Live Step 3 draft values for the org-required flags. In edit mode these can differ from the
+   * persisted `committee()` snapshot until the wizard is submitted — overridden onto it before
+   * opening the invite dialog so org validation reflects what Done/Update is about to save, not
+   * what's currently on the server (LFXV2-2606 review).
+   */
+  public organizationRequirements = input<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
 
   // Output events for two-way binding
   public readonly memberUpdatesChange = output<MemberPendingChanges>();
@@ -78,6 +85,11 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public committeeLoading: WritableSignal<boolean> = signal(true);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
+
+  // "Finished loading" isn't "loaded successfully" — both fetches below swallow their errors into
+  // an empty fallback, so a failure alone wouldn't otherwise keep the invite action disabled.
+  public readonly membersLoadFailed = signal(false);
+  public readonly committeeLoadFailed = signal(false);
 
   // Committee data
   public committee = signal<Committee | null>(null);
@@ -295,13 +307,19 @@ export class CommitteeMembersManagerComponent implements OnInit {
     // The dialog only reads invitee_email off these, so a partial shape is sufficient.
     const stagedAsInvites: Pick<CommitteeInvite, 'invitee_email'>[] = this.pendingInvites().map((invite) => ({ invitee_email: invite.invitee_email }));
 
+    // Overlay the live Step 3 draft onto the persisted snapshot so org validation matches what
+    // Done/Update is about to save, not stale server-side settings (see the input's doc comment).
+    const committee = this.committee();
+    const orgOverrides = this.organizationRequirements();
+    const effectiveCommittee = committee && orgOverrides ? { ...committee, ...orgOverrides } : committee;
+
     const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
       header: 'Invite by Email',
       width: '540px',
       modal: true,
       closable: true,
       data: {
-        committee: this.committee(),
+        committee: effectiveCommittee,
         mode: 'invite',
         collectOnly: true,
         existingMembers: this.visibleMembers(),
@@ -486,12 +504,20 @@ export class CommitteeMembersManagerComponent implements OnInit {
       return;
     }
 
+    this.committeeLoadFailed.set(false);
     this.committeeService
       .getCommittee(committeeId)
       .pipe(
         take(1),
         catchError((error) => {
           console.error('Failed to load committee:', error);
+          this.committeeLoadFailed.set(true);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Load Committee',
+            detail: 'Could not load committee details. Refresh the page to try again.',
+            life: 6000,
+          });
           return of(null);
         }),
         finalize(() => this.committeeLoading.set(false))
@@ -508,12 +534,20 @@ export class CommitteeMembersManagerComponent implements OnInit {
       return;
     }
 
+    this.membersLoadFailed.set(false);
     this.committeeService
       .getCommitteeMembers(committeeId)
       .pipe(
         take(1),
         catchError((error) => {
           console.error('Error loading members:', error);
+          this.membersLoadFailed.set(true);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Load Members',
+            detail: 'Could not load committee members. Refresh the page to try again.',
+            life: 6000,
+          });
           return of([]);
         }),
         finalize(() => {
