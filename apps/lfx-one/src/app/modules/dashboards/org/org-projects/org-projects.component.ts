@@ -917,6 +917,16 @@ export class OrgProjectsComponent {
   private initTableEmptyState(): OrgProjectsEmptyState {
     const workspace = this.selectedWorkspace();
     if (workspace && !this.isCanonicalDefaultWorkspace(workspace) && workspace.projectSlugs.length === 0) {
+      // The CTA is the same mutation the toolbar button gates, so it has to answer to the same grant:
+      // for a read-only caller `openAddProjects()` returns silently, leaving a button that does
+      // nothing.
+      if (!this.canManageWorkspaces()) {
+        return {
+          icon: 'fa-light fa-folder-open',
+          title: 'No projects in this workspace yet',
+          subtitle: 'An administrator of this organization can add projects to this workspace.',
+        };
+      }
       return {
         icon: 'fa-light fa-folder-plus',
         title: 'No projects in this workspace yet',

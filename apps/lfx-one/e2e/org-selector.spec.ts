@@ -712,7 +712,10 @@ test.describe('Org Selector — staff sections and membership chips (S19)', () =
     await expect(chip).toBeVisible();
     await expect(chip).toHaveAttribute('data-membership', 'non-member');
     await expect(chip).toHaveAttribute('data-membership-status', 'Lapsed');
-    await expect(chip).toHaveText('Non-member');
+    // Visible label first, then the finer status as screen-reader-only text. The status has to reach
+    // the accessible text and not just the tooltip: the chip is a non-focusable span inside the row
+    // button, so a tooltip alone is never announced.
+    await expect(chip).toHaveText(/^\s*Non-member\s*,\s*Lapsed\s*$/);
   });
 });
 

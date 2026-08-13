@@ -75,6 +75,10 @@ export interface OrgSelectorRow {
   display: DisplayOrgItem;
   /** Non-null only on the first row of a section, and only when the list is sectioned at all. */
   heading: string | null;
+  /** Membership chip text, precomputed so the template reads a prepared value rather than calling a method per change-detection pass. Null on assigned rows, which carry no chip. */
+  membershipLabel: string | null;
+  /** Finer membership status behind the chip's tooltip, repeated as screen-reader text because a tooltip on a non-focusable span is never announced. Null when upstream omits it. */
+  membershipStatus: string | null;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
@@ -209,6 +213,8 @@ export interface OrgListState {
   loaded: WritableSignal<boolean>;
   nextPageToken: WritableSignal<string | null>;
   hasMore: Signal<boolean>;
+  /** Last response reported an upstream failure. Lets the list say the search broke rather than that nothing matched — indistinguishable otherwise for a caller with no assigned rows. */
+  upstreamFailed: WritableSignal<boolean>;
   pendingDefaultSelection: WritableSignal<boolean>;
   /** Incremented on every reset; nextPage emissions tagged with the value at dispatch. */
   generation: WritableSignal<number>;

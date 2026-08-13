@@ -35,6 +35,7 @@ export class OrgNavigationService {
   public readonly loading: Signal<boolean> = this.state.loading;
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
+  public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -64,12 +65,13 @@ export class OrgNavigationService {
     const loading = signal<boolean>(false);
     const loaded = signal<boolean>(false);
     const nextPageToken = signal<string | null>(null);
+    const upstreamFailed = signal<boolean>(false);
     const pendingDefaultSelection = signal<boolean>(false);
     const generation = signal<number>(0);
     const loadMore$ = new Subject<string>();
     const reload$ = new Subject<void>();
 
-    const items = this.initItems(searchTerm, loading, loaded, nextPageToken, pendingDefaultSelection, generation, loadMore$, reload$);
+    const items = this.initItems(searchTerm, loading, loaded, nextPageToken, upstreamFailed, pendingDefaultSelection, generation, loadMore$, reload$);
     const hasMore = computed(() => nextPageToken() !== null);
 
     return {
@@ -79,6 +81,7 @@ export class OrgNavigationService {
       loaded,
       nextPageToken,
       hasMore,
+      upstreamFailed,
       pendingDefaultSelection,
       generation,
       loadMore$,
@@ -91,6 +94,7 @@ export class OrgNavigationService {
     loading: WritableSignal<boolean>,
     loaded: WritableSignal<boolean>,
     nextPageToken: WritableSignal<string | null>,
+    upstreamFailed: WritableSignal<boolean>,
     pendingDefaultSelection: WritableSignal<boolean>,
     generation: WritableSignal<number>,
     loadMore$: Subject<string>,
@@ -136,6 +140,7 @@ export class OrgNavigationService {
         map(({ page }) => page),
         tap((page) => {
           nextPageToken.set(page.nextPageToken);
+          upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
@@ -212,12 +217,14 @@ export class OrgNavigationService {
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
     if (page.items.length === 0) {
-      // For staff an empty unsearched list is the normal starting state, not
-      // a loss of access, so the "No access" toast + cleared selection + redirect would be wrong: it
-      // reads as being signed out, and it navigates away from the search box that is the way in.
-      // Narrow deliberately: a genuine upstream failure still reports, and a search that matched
-      // nothing is handled by the list's own empty state rather than reaching here.
-      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed && !this.state.searchTerm().trim()) {
+      // For staff an empty list is never a loss of access, so the "No access" toast + cleared
+      // selection + redirect would be wrong: it reads as being signed out, and it navigates away from
+      // the search box that is the way in. Deliberately not conditioned on the search term being
+      // blank: a search typed before the bootstrap response lands can be the response that resolves
+      // the pending selection, and an empty result for it would otherwise sign the caller out. A
+      // search that matched nothing is reported by the list's own empty state instead. Narrow enough
+      // that a genuine upstream failure still reports.
+      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed) {
         return;
       }
       this.handleEmptyOrgResponse(page);

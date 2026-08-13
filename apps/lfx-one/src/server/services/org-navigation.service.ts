@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP, ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   GetOrgItemsParams,
@@ -78,7 +78,7 @@ export class OrgNavigationService {
 
     const catalogueResult = catalogueTerm
       ? await this.fetchCatalogueMatches(req, catalogueTerm, pageToken, items)
-      : { items: [] as OrgItem[], nextPageToken: null };
+      : { items: [] as OrgItem[], nextPageToken: null, failed: false };
     const nextPageToken = catalogueResult.nextPageToken;
     const discoveredItems = pinnedDiscovered
       ? [pinnedDiscovered, ...catalogueResult.items.filter((item) => item.uid !== pinnedDiscovered.uid)]
@@ -94,7 +94,10 @@ export class OrgNavigationService {
     return {
       items: [...assignedItems, ...discoveredItems],
       next_page_token: nextPageToken,
-      upstream_failed: false,
+      // A failed catalogue search is reported rather than folded into an empty result: for a staff
+      // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
+      // found" would blame the search term for an outage.
+      upstream_failed: catalogueResult.failed,
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
     };
@@ -124,39 +127,62 @@ export class OrgNavigationService {
    * authorizes every result individually, so a caller without the staff grant would see only their
    * own organizations even if this query were issued for them.
    *
-   * Fails soft: the caller keeps their assigned rows rather than losing the whole switcher to a
-   * catalogue outage.
+   * Fails soft on the rows but not on the fact: the caller keeps their assigned rows rather than
+   * losing the whole switcher to a catalogue outage, and `failed` is reported so the caller can say
+   * the search broke instead of presenting an outage as "no matches".
+   *
+   * Skips ahead through pages whose every row is already an assigned row. Upstream builds its cursor
+   * before this dedupe, so such a page can arrive with a live token; handing that token back with no
+   * rows would append nothing, and the client's viewport sentinel only re-arms when the row it sits
+   * near is recreated. Paging would stop for good with matches still unread. Bounded by
+   * `ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP` so a pathological term cannot walk the whole catalogue.
    */
   private async fetchCatalogueMatches(
     req: Request,
     term: string,
     pageToken: string | undefined,
     assignedItems: OrgItem[]
-  ): Promise<{ items: OrgItem[]; nextPageToken: string | null }> {
-    const query: OrgItemsQuery = { type: 'b2b_org', name: term, sort: 'best_match', filters: [] };
-    if (pageToken) query.page_token = pageToken;
-
-    let response: QueryServiceResponse<B2bOrgIndexedDoc>;
-    try {
-      response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
-    } catch (error) {
-      logger.warning(req, 'get_org_items', 'Catalogue search failed; returning assigned rows only', { err: error });
-      return { items: [], nextPageToken: null };
-    }
-
+  ): Promise<{ items: OrgItem[]; nextPageToken: string | null; failed: boolean }> {
     // Deduped against the caller's whole assigned universe, not just the rows on this page, so a
     // catalogue hit can never mask the role they hold — including on continuation pages, where the
     // assigned rows are absent from the response but still theirs.
     const assignedUids = new Set(assignedItems.map((item) => item.uid));
-    const discovered: OrgItem[] = [];
+    let token = pageToken;
 
-    for (const resource of response?.resources ?? []) {
-      const uid = this.extractUid(resource.id);
-      if (!uid || !resource.data || assignedUids.has(uid)) continue;
-      discovered.push(this.toDiscoveredItem(uid, resource.data));
+    for (let attempt = 0; attempt < ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP; attempt += 1) {
+      const query: OrgItemsQuery = { type: 'b2b_org', name: term, sort: 'best_match', filters: [] };
+      if (token) query.page_token = token;
+
+      let response: QueryServiceResponse<B2bOrgIndexedDoc>;
+      try {
+        response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
+      } catch (error) {
+        logger.warning(req, 'get_org_items', 'Catalogue search failed; returning assigned rows only', { err: error });
+        return { items: [], nextPageToken: null, failed: true };
+      }
+
+      const discovered: OrgItem[] = [];
+      for (const resource of response?.resources ?? []) {
+        const uid = this.extractUid(resource.id);
+        if (!uid || !resource.data || assignedUids.has(uid)) continue;
+        discovered.push(this.toDiscoveredItem(uid, resource.data));
+      }
+
+      const next = response?.page_token ?? null;
+      if (discovered.length > 0 || next === null) {
+        return { items: this.applyPrefixRank(discovered, term), nextPageToken: next, failed: false };
+      }
+
+      token = next;
     }
 
-    return { items: this.applyPrefixRank(discovered, term), nextPageToken: response?.page_token ?? null };
+    // Cap reached: every page so far held only the caller's own organizations. The token is still
+    // handed back so nothing is silently truncated, at the cost of the client needing another
+    // sentinel hit to continue.
+    logger.warning(req, 'get_org_items', 'Catalogue skip-ahead cap reached; all pages held only assigned rows', {
+      skipped_pages: ORG_CATALOGUE_FILTERED_PAGE_SKIP_CAP,
+    });
+    return { items: [], nextPageToken: token ?? null, failed: false };
   }
 
   /**

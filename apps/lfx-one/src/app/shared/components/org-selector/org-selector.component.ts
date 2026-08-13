@@ -110,6 +110,12 @@ export class OrgSelectorComponent {
   );
 
   /**
+   * An outage and a genuine no-match look identical to a caller with nothing assigned, and blaming the
+   * search term for an upstream failure sends them off to retype a term that was fine.
+   */
+  protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed());
+
+  /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
    * row of each group. Sectioning turns on only when a catalogue search actually returned something,
    * so a non-staff caller — and a staff caller who hasn't searched — keeps today's single flat list.
@@ -120,7 +126,7 @@ export class OrgSelectorComponent {
     const rows = this.displayedItems();
     const sectioned = rows.some((row) => row.item.isAssigned === false);
     if (!sectioned) {
-      return rows.map((display) => ({ display, heading: null }));
+      return rows.map((display) => this.toRow(display, null));
     }
 
     let assignedSeen = false;
@@ -129,11 +135,11 @@ export class OrgSelectorComponent {
       if (display.item.isAssigned === false) {
         const heading = discoveredSeen ? null : 'All organizations';
         discoveredSeen = true;
-        return { display, heading };
+        return this.toRow(display, heading);
       }
       const heading = assignedSeen ? null : 'Your organizations';
       assignedSeen = true;
-      return { display, heading };
+      return this.toRow(display, heading);
     });
   });
 
@@ -208,12 +214,21 @@ export class OrgSelectorComponent {
   }
 
   /**
-   * Binary membership state for a discovered row. Shown only on discovered rows,
-   * where the caller has no other context for what the organization is to the LF; an assigned row's
-   * membership is already implied by the caller administering it.
+   * Chip text is resolved here rather than in the template: only discovered rows carry one, because
+   * the caller has no other context for what such an organization is to the LF, whereas an assigned
+   * row's membership is already implied by the caller administering it.
    */
-  protected membershipLabel(item: OrgItem): string {
-    return item.isMember ? 'Member' : 'Non-member';
+  private toRow(display: DisplayOrgItem, heading: string | null): OrgSelectorRow {
+    if (display.item.isAssigned !== false) {
+      return { display, heading, membershipLabel: null, membershipStatus: null };
+    }
+
+    return {
+      display,
+      heading,
+      membershipLabel: display.item.isMember ? 'Member' : 'Non-member',
+      membershipStatus: display.item.status ?? null,
+    };
   }
 
   /**

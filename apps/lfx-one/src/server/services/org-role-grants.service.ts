@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  LF_STAFF_TEAM_NAME,
+  LF_STAFF_TEAM_ID,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -263,7 +263,9 @@ export class OrgRoleGrantsService {
 
   /**
    * Asks the platform authorizer whether the caller belongs to the LF staff team, which carries
-   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`).
+   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`). Shares
+   * `LF_STAFF_TEAM_ID` with `PersonaDetectionService.checkLFStaff`, so the two authorization paths
+   * cannot drift onto different team names.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
@@ -272,7 +274,7 @@ export class OrgRoleGrantsService {
    */
   private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
     try {
-      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_NAME, access: 'member' });
+      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF staff membership check failed; treating caller as non-staff', {
         username_length: username.length,

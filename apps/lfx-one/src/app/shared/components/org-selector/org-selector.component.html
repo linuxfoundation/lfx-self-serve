@@ -127,7 +127,7 @@
               </p>
               <!-- Keyed on the row being discovered, not on a search being
                    active, so an administrator's own rows stay unchanged the moment they type. -->
-              @if (displayItem.item.isAssigned === false) {
+              @if (row.membershipLabel) {
                 <span
                   class="inline-flex items-center text-[10px] leading-none mt-1 px-1.5 py-0.5 rounded border"
                   [class.border-green-200]="displayItem.item.isMember"
@@ -136,11 +136,16 @@
                   [class.text-gray-500]="!displayItem.item.isMember"
                   [attr.data-testid]="'org-item-' + displayItem.item.uid + '-membership-chip'"
                   [attr.data-membership]="displayItem.item.isMember ? 'member' : 'non-member'"
-                  [attr.data-membership-status]="displayItem.item.status || null"
-                  [pTooltip]="displayItem.item.status || ''"
+                  [attr.data-membership-status]="row.membershipStatus"
+                  [pTooltip]="row.membershipStatus || ''"
                   tooltipPosition="top"
-                  [tooltipDisabled]="!displayItem.item.status">
-                  {{ membershipLabel(displayItem.item) }}
+                  [tooltipDisabled]="!row.membershipStatus">
+                  {{ row.membershipLabel }}
+                  <!-- The status is otherwise reachable only through a tooltip on a span that never takes
+                       focus, so it would never be announced. -->
+                  @if (row.membershipStatus) {
+                    <span class="sr-only">, {{ row.membershipStatus }}</span>
+                  }
                 </span>
               }
 
@@ -169,7 +174,11 @@
         </div>
       } @empty {
         @if (!loading()) {
-          @if (showSearchPrompt()) {
+          @if (searchFailed()) {
+            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-failed">
+              Search is unavailable right now. Try again shortly.
+            </div>
+          } @else if (showSearchPrompt()) {
             <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-prompt">Search for any organization…</div>
           } @else {
             <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">No organizations found</div>

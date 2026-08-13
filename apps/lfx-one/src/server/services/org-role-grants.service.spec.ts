@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({
-  LF_STAFF_TEAM_NAME: 'lf-staff',
+  LF_STAFF_TEAM_ID: 'lf-staff',
   ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 500,
