@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, type Signal } from '@angular/core';
+import { Component, computed, inject, input, type Signal } from '@angular/core';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerRailRow, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 
@@ -24,9 +24,18 @@ export class MeetingComposerRailComponent {
   protected readonly composer = inject(MeetingComposerService);
   private readonly formService = inject(MeetingComposerFormService);
 
+  /**
+   * Renders as a horizontal chip row instead of a vertical stepper.
+   * @description What the composer shows below `lg`, where the rail column is hidden: the same rows and
+   * the same locking, laid out to fit above the section content.
+   */
+  public readonly compact = input(false);
+
   private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
 
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
+  // Both layouts can be in the DOM at once, so their test ids have to differ.
+  protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
 
   protected onSelect(row: MeetingComposerRailRow): void {
     if (row.locked || row.active) {
