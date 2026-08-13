@@ -84,7 +84,7 @@ import { MentionsListComponent } from './components/mentions-list/mentions-list.
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED-only), LFXV2-3016. Ports PCC's mentions feed
+ * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016. Ports PCC's mentions feed
  * (`reports/social-listening`) onto the LFXV2-3015 REST endpoints: two-phase windowed pagination
  * (100-row server windows, ±2 cached), bidirectional query-param sync via the shared codec, and
  * reset effects on scope/filter/foundation change. Bookmarks, read state, saved views, the

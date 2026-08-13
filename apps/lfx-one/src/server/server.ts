@@ -328,7 +328,7 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
-// ED-only Foundation Lens surface — the router applies requireExecutiveDirector to every endpoint.
+// Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
 app.use('/api/social-listening', socialListeningRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
