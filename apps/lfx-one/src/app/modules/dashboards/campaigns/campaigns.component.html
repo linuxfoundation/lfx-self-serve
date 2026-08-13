@@ -101,9 +101,16 @@
             LFXV2-3201 settled the question this comment used to pose: ONE planner, moded by
             `deliveryType`, rather than two components. The two types share the expensive halves —
             the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
-            stream, and brief save/restore. What differs is one card and one validity rule.
+            stream. What differs is more than the "one card and one validity rule" this comment
+            used to claim, and the paragraph below already listed more than that — the two
+            contradicted each other.
 
-            In email mode the planner drops the Ad Channels and Budget cards, drops the
+            Brief save/restore is NOT shared: email skips the saved-brief lookup entirely, because
+            persistence is keyed on (foundation, event) with no delivery type, so the row it would
+            find is a PAID brief. Email persistence and email refinement do not exist yet.
+
+            In email mode the planner drops the Ad Channels and Budget cards, hides Refine / Edit /
+            Copy All, refuses a refine outright, skips the saved-brief lookup, drops the
             ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
             server skips ad-copy and keyword generation rather than falling back to its paid
             default — omitting `platforms` alone does not achieve that, because the generator

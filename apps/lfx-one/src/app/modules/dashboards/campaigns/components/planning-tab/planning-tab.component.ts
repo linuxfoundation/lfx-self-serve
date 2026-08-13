@@ -55,10 +55,21 @@ export class PlanningTabComponent implements OnInit {
    * Which delivery channel this planner is planning for (LFXV2-3201).
    *
    * One component rather than two, because the halves the two types genuinely share are the
-   * expensive ones: the event URL, the scrape, the goal/audience/value-prop inputs, the SSE
-   * generation stream, and the brief save/restore round trip. What differs is a single card and
-   * one validity rule, which is a poor reason to fork ~800 lines and then maintain the shared
-   * parts twice.
+   * expensive ones: the event URL, the scrape, the goal/audience/value-prop inputs and the SSE
+   * generation stream — which is why this is one component rather than a ~800-line fork
+   * maintained twice.
+   *
+   * What DIFFERS grew past the "one card and one rule" this comment used to claim. Email mode:
+   *   - hides the Ad Channels and Budget cards
+   *   - drops the ad-platform requirement from `canGenerate`
+   *   - sends `deliveryType` so the server skips ad-copy and keyword generation
+   *   - hides Refine / Edit / Copy All, and refuses a refine outright
+   *   - skips the saved-brief lookup entirely
+   *
+   * That last one is worth stating plainly: brief save/restore is NOT shared. Persistence is keyed
+   * on `(foundation, event)` with no delivery type, so the row a lookup would find is a PAID
+   * brief. Email persistence and email refinement do not exist yet — they arrive with the
+   * `email-copy` endpoint under LFXV2-3198. Do not build on the assumption that they do.
    *
    * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
    * additive — an omitted binding keeps exactly today's behaviour.
@@ -730,11 +741,13 @@ export class PlanningTabComponent implements OnInit {
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
       // Same pair as the generate request: the delivery type is the signal the server acts on,
-      // and `platforms` is omitted rather than emptied. The server refuses an email refine
-      // outright — there is no email copy to refine until the `email-copy` endpoint lands
-      // (LFXV2-3198) — so this carries the type to get that refusal rather than a broken call.
+      // PAID-ONLY by construction: `submitRefine` returns above for email, so this request can
+      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmail()` here and
+      // documented a server refusal it could not reach — which made the client look as though it
+      // exercised that path when nothing did. The server guard stays for direct callers; this
+      // sends the paid shape unconditionally.
       deliveryType: this.deliveryType(),
-      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] }),
+      platforms: [...this.selectedPlatforms()],
       programType: this.programTypeConfig().id,
     };
 
