@@ -7939,10 +7939,15 @@ export class ProjectService {
   /**
    * Get the per-event registration-pacing summary + daily curve from
    * MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is day-grained and carries both. It is
-   * mirrored from PCC and may not exist yet, so a MISSING TABLE or an empty result resolves to an
-   * unavailable pacing block and the drawer degrades to its placeholder. Every other failure —
-   * timeout, permissions, an invalid column — propagates: those are outages, and swallowing them
-   * is what let a query against a non-existent table look like an event with no pacing data.
+   * mirrored from PCC and may not exist yet, so an absent table or an empty result resolves to an
+   * unavailable pacing block and the drawer degrades to its placeholder. Timeouts and invalid
+   * columns propagate instead — those are outages, and swallowing them is what let a query against
+   * a non-existent table look like an event with no pacing data.
+   *
+   * A missing GRANT degrades rather than propagating, because Snowflake reports both cases with
+   * one message ("does not exist or not authorized") and the predicate cannot separate them. That
+   * is a real gap: an unauthorized role renders as an event without pacing data rather than as the
+   * configuration error it is. Distinguishing them needs a signal Snowflake does not give us here.
    */
   private async getEventPacing(eventId: string): Promise<EventPacing> {
     const unavailable: EventPacing = {

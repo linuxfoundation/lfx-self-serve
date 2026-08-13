@@ -532,6 +532,16 @@ describe('EventDetailDrawerComponent', () => {
 
     expect(document.querySelector('[data-testid="event-detail-pacing-no-prior"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="event-detail-pacing-curve-unavailable"]')).toBeNull();
+
+    // The caption alone is not the regression. This fixture carries a non-null vsLastYear (1.1)
+    // and compScore 'high' alongside hasPriorYear: false — exactly the contradiction that shipped,
+    // where a card read "no prior year" beneath a green "Ahead of last year" badge. Asserting only
+    // the caption leaves both guards removable with this test still green.
+    const drawer = document.body.textContent ?? '';
+    expect(drawer).not.toContain('+10% vs last year');
+    expect(drawer).not.toContain('Ahead of last year');
+    expect(drawer).toContain('no prior year');
+    expect(drawer).toContain('No pace signal');
   });
 
   // Above 1,000 the display compacts to one decimal, so 1,240 and 1,244 round apart but both
