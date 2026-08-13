@@ -37,8 +37,13 @@ const req = {} as unknown as Request;
  * Asserted by EQUALITY rather than `.includes('deliveryType')`: the substring is satisfied by the
  * word alone, so it passed whether the list rendered correctly, empty, or as `[object Object]` —
  * it could not fail for the thing under test.
+ *
+ * Built through a `Set` to mirror production's exact transform, not just its output. The two are
+ * byte-identical while the ids are unique, so this is defensive: were the constant ever to gain a
+ * duplicate id, deriving from the raw array would let this test pass while production — which
+ * spreads a Set — rendered something different.
  */
-const expectedUnsupportedMessage = `Unsupported deliveryType. Supported: ${CAMPAIGN_DELIVERY_TYPES.map((d) => d.id).join(', ')}.`;
+const expectedUnsupportedMessage = `Unsupported deliveryType. Supported: ${[...new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id))].join(', ')}.`;
 
 /**
  * The email brief must not generate ad copy — and `platforms` being absent CANNOT carry that,

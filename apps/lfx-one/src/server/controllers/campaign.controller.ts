@@ -32,6 +32,9 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 /** Platforms that support the campaign status toggle endpoint. */
 const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
 
+/** Derived from the shared constant so the validation and its error message cannot drift apart. */
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
+
 const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
@@ -167,10 +170,9 @@ export class CampaignController {
     // is the copy a reader trusts most, because it is what the API actually says, so a hardcoded
     // tail there outlives every other duplicate. The two `Unsupported deliveryType` messages in
     // `campaign-proxy.service.ts` are interpolated from the same constant for the same reason.
-    const supportedDeliveryTypes = new Set<string>(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
-    if (body.deliveryType !== undefined && !supportedDeliveryTypes.has(body.deliveryType)) {
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
       _next(
-        ServiceValidationError.forField('deliveryType', `deliveryType must be one of: ${[...supportedDeliveryTypes].join(', ')}`, {
+        ServiceValidationError.forField('deliveryType', `deliveryType must be one of: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}`, {
           operation: 'campaign_refine_brief',
           service: 'campaign_controller',
           path: req.path,
