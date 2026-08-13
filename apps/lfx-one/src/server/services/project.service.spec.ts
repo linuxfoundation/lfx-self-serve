@@ -619,7 +619,8 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
       const result = await service.getEventDetail('evt-1', 'tlf');
 
-      expect(result.hasPriorYear).toBe(true);
+      expect(result).not.toBeNull();
+      expect(result!.hasPriorYear).toBe(true);
     });
 
     // The mirror case: no measured prior-year registrations means no baseline, whatever the
@@ -629,7 +630,8 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
       const result = await service.getEventDetail('evt-1', 'tlf');
 
-      expect(result.hasPriorYear).toBe(false);
+      expect(result).not.toBeNull();
+      expect(result!.hasPriorYear).toBe(false);
     });
 
     // The table holds duplicate (event, type, day) rows — 1,669 such groups, two rows carrying the
