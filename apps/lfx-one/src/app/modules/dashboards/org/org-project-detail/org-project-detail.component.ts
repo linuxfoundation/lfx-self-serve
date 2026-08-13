@@ -225,11 +225,36 @@ export class OrgProjectDetailComponent {
   private readonly monthLabels: string[] = this.buildMonthLabels();
   protected readonly technicalCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.influenceState().data?.technical ?? []).map((card) => this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months));
+    const periods = this.influenceState().data?.periods ?? null;
+    const trimStart = this.lifetimeTrimStart();
+    return (this.influenceState().data?.technical ?? []).map((card) =>
+      this.toInfluenceCard(card, lfxColors.blue[500], 'technical', months, periods, trimStart)
+    );
   });
   protected readonly ecosystemCards = computed(() => {
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    return (this.influenceState().data?.ecosystem ?? []).map((card) => this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months));
+    const periods = this.influenceState().data?.periods ?? null;
+    const trimStart = this.lifetimeTrimStart();
+    return (this.influenceState().data?.ecosystem ?? []).map((card) =>
+      this.toInfluenceCard(card, lfxColors.violet[500], 'ecosystem', months, periods, trimStart)
+    );
+  });
+  /**
+   * First all-time bucket worth plotting on the influence cards. The lifetime spine can start well
+   * before a project's first real activity, leaving empty leading buckets. Every card shares this one
+   * index rather than trimming to its own first value, so the cards keep a common axis and stay
+   * comparable with each other; a bucket is dropped only when no metric shows activity for either the
+   * org or the project. Always 0 for 1y/2y, where the requested window is plotted in full.
+   */
+  private readonly lifetimeTrimStart = computed(() => {
+    const data = this.influenceState().data;
+    if (!data?.periods?.length) return 0;
+    const cards = [...(data.technical ?? []), ...(data.ecosystem ?? [])];
+    const width = cards.reduce((max, card) => Math.max(max, card.sparkline.length), 0);
+    for (let i = 0; i < width; i++) {
+      if (cards.some((card) => (card.sparkline[i] ?? 0) > 0 || (card.projectSparkline[i] ?? 0) > 0)) return i;
+    }
+    return 0;
   });
   // Live VM for the open drawer card, re-derived from the current (range-scoped) cards so the drawer
   // hero stat/caption track the ?range= toggle instead of a stale open-time snapshot.
@@ -715,12 +740,12 @@ export class OrgProjectDetailComponent {
     );
   }
 
-  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation. */
+  /** B6 — Influence Trend stream: lazy on first pd-leaderboards activation, re-fetches on range change. */
   private buildTrendState(): Observable<BlockState<OrgLensTrendBlock>> {
-    return combineLatest([this.orgUid$, this.slug$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
-      filter(([, , activated]) => activated),
-      switchMap(([uid, slug]) =>
-        this.detailService.getTrendBlock(uid, this.orgName(), slug).pipe(
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.leaderboardsActivated$, toObservable(this.trendRetry)]).pipe(
+      filter(([, , , activated]) => activated),
+      switchMap(([uid, slug, range]) =>
+        this.detailService.getTrendBlock(uid, this.orgName(), slug, range).pipe(
           map(
             (block): BlockState<OrgLensTrendBlock> => (block && block.trend.length > 0 ? { status: 'ready', data: block } : { status: 'empty', data: block })
           ),
@@ -897,12 +922,23 @@ export class OrgProjectDetailComponent {
     return out;
   }
 
-  private toInfluenceCard(card: OrgLensProjectInfluenceCard, colorHex: string, group: 'technical' | 'ecosystem', months: number): InfluenceCardVm {
+  private toInfluenceCard(
+    card: OrgLensProjectInfluenceCard,
+    colorHex: string,
+    group: 'technical' | 'ecosystem',
+    months: number,
+    periods: string[] | null,
+    trimStart: number
+  ): InfluenceCardVm {
     const variant = this.chartVariantFor(card.key);
     const valueSuffix = card.key === 'avg-merge-time' ? ' days' : '';
-    const sparkline = card.sparkline.slice(-months);
-    const projectSparkline = card.projectSparkline.slice(-months);
-    const labels = this.monthLabels.slice(-sparkline.length);
+    // "All time" (periods present): the payload already carries the adaptive-bucket axis, so render
+    // the series against the server-emitted labels, dropping the empty leading buckets the whole block
+    // shares. 1y/2y: slice the trailing months and derive the fixed month labels client-side.
+    const useBuckets = periods !== null && periods.length > 0;
+    const sparkline = useBuckets ? card.sparkline.slice(trimStart) : card.sparkline.slice(-months);
+    const projectSparkline = useBuckets ? card.projectSparkline.slice(trimStart) : card.projectSparkline.slice(-months);
+    const labels = useBuckets ? periods.slice(-card.sparkline.length).slice(trimStart) : this.monthLabels.slice(-sparkline.length);
     return {
       key: card.key,
       title: card.label,
@@ -962,29 +998,47 @@ export class OrgProjectDetailComponent {
   }
 
   /**
-   * Builds a 100%-stacked area chart from the real per-org monthly combined-influence series.
-   * The server already sends the top-N named orgs plus a single "All others" band that sums the
-   * complete remaining tail, so every series is rendered as-is (no client-side truncation) and
-   * each month is normalized so all series sum to 100%.
+   * Builds a 100%-stacked area chart from the real per-org combined-influence series. The server
+   * already sends the top-N named orgs plus a single "All others" band that sums the complete
+   * remaining tail, so no org is dropped client-side, and each point is normalized so all series
+   * sum to 100%. For the all-time range, leading points where no org has any activity are trimmed
+   * so the axis opens on the project's first real data rather than on empty spine buckets.
    */
   private buildStackedTrend(): ChartData<ChartType> {
     const trend = this.trendState().data?.trend ?? [];
     if (trend.length === 0) return { labels: [], datasets: [] };
 
+    // "All time" (periods present): render the variable-length bucketed series as-is against the
+    // server-emitted bucket labels (a shared lifetime axis for every org). 1y/2y: slice trailing
+    // months + derive month labels client-side (unchanged).
+    const periods = this.trendState().data?.periods ?? null;
+    const useBuckets = periods !== null && periods.length > 0;
     const months = PD_TIME_RANGE_MONTHS[this.timeRange()];
-    const series = trend.map((t) => ({ name: t.orgName, data: t.combined.slice(-months) }));
+    const series = trend.map((t) => ({ name: t.orgName, data: useBuckets ? t.combined : t.combined.slice(-months) }));
     const len = series.reduce((max, s) => Math.max(max, s.data.length), 0);
     if (len === 0) return { labels: [], datasets: [] };
 
-    const labels = this.monthLabels.slice(-len);
-    const entries = series.map((s) => ({ name: s.name, data: this.padStart(s.data, len) }));
+    const allLabels = useBuckets ? periods.slice(-len) : this.monthLabels.slice(-len);
+    const allEntries = series.map((s) => ({ name: s.name, data: this.padStart(s.data, len) }));
 
-    // Normalize each month so all series sum to 100%.
-    const monthTotals = Array.from({ length: len }, (_, i) => entries.reduce((sum, e) => sum + (e.data[i] ?? 0), 0));
-    const pctSeries = entries.map((e) => e.data.map((val, i) => (monthTotals[i] > 0 ? (val / monthTotals[i]) * 100 : 0)));
+    // Total across every org at each point — also marks the points where nothing happened at all.
+    const allTotals = Array.from({ length: len }, (_, i) => allEntries.reduce((sum, e) => sum + (e.data[i] ?? 0), 0));
 
-    // Rank by most-recent-month share (most influential now → first/bottom of stack).
-    const lastIdx = len - 1;
+    // All time: the lifetime bucket spine can start well before the project's first real activity,
+    // which renders as leading 0% dead space. Open the axis on the first bucket that has data.
+    // 1y/2y keep the whole requested window — an empty leading month there is real information.
+    const firstWithData = useBuckets ? allTotals.findIndex((total) => total > 0) : 0;
+    if (firstWithData === -1) return { labels: [], datasets: [] };
+
+    const labels = allLabels.slice(firstWithData);
+    const entries = allEntries.map((e) => ({ name: e.name, data: e.data.slice(firstWithData) }));
+    const totals = allTotals.slice(firstWithData);
+
+    // Normalize each point so all series sum to 100%.
+    const pctSeries = entries.map((e) => e.data.map((val, i) => (totals[i] > 0 ? (val / totals[i]) * 100 : 0)));
+
+    // Rank by most-recent share (most influential now → first/bottom of stack).
+    const lastIdx = labels.length - 1;
     const ranked = entries.map((entry, i) => ({ entry, pct: pctSeries[i], lastShare: pctSeries[i][lastIdx] ?? 0 })).sort((a, b) => b.lastShare - a.lastShare);
 
     const datasets = ranked.map((item, rankIdx) => {

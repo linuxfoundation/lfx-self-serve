@@ -24,4 +24,8 @@ export class TextareaComponent {
   public autoResize = input<boolean>(false);
   public maxlength = input<number>();
   public dataTest = input<string>();
+  /** id of the element describing a validation error (wired to aria-describedby). */
+  public describedBy = input<string>();
+  /** Marks the control invalid for assistive tech (wired to aria-invalid). */
+  public invalid = input<boolean>(false);
 }

@@ -4,6 +4,9 @@
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   AttributionModelOption,
+  EventDrawerFocus,
+  EventsSplitOption,
+  EventsSplitView,
   MarketingImpactFocusProgram,
   MarketingImpactTab,
   MarketingImpactTabOption,
@@ -35,6 +38,29 @@ export const MARKETING_IMPACT_TABS: MarketingImpactTabOption[] = [
   { id: 'paid', label: 'Paid' },
   { id: 'social-listening', label: 'Social Listening' },
 ];
+
+/**
+ * Sub-tabs shown under the Events campaign type, in display order. Attendance covers the
+ * registration/attendee story; Sponsorship covers revenue and tiers. Only the Events campaign
+ * type has this second level — no other campaign type splits this way.
+ */
+export const EVENTS_SPLIT_OPTIONS: EventsSplitOption[] = [
+  { id: 'attendance', label: 'Event Attendance' },
+  { id: 'sponsorship', label: 'Event Sponsorship' },
+];
+
+/** Campaign Type that exposes the attendance/sponsorship sub-tabs. */
+export const EVENTS_SPLIT_FOCUS: MarketingImpactFocusProgram = 'lfEvents';
+
+/**
+ * Maps each Events sub-view onto the detail drawer's focus. The drawer hides its sponsorship
+ * blocks for 'b2c', so attendance opens the registration story and sponsorship opens the
+ * revenue story.
+ */
+export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, EventDrawerFocus> = {
+  attendance: 'b2c',
+  sponsorship: 'b2b',
+};
 
 /** Attribution model options for the model selector dropdown. */
 export const ATTRIBUTION_MODEL_OPTIONS: AttributionModelOption[] = [
@@ -172,3 +198,11 @@ export const PAID_CAMPAIGN_LIMIT = 25;
 
 /** Same contract as PAID_CAMPAIGN_LIMIT, for the per-event email list (ordered by sends). */
 export const EMAIL_CAMPAIGN_LIMIT = 12;
+
+/**
+ * How many email sends the campaign table renders. The query behind it is unbounded, so a large
+ * foundation over a wide period can return thousands of rows — every one of which would be built
+ * during SSR and hydration, not merely scrolled past. The rows are ordered newest-first, so the
+ * cap keeps the most recent sends and the header says when it is truncating.
+ */
+export const EMAIL_SENDS_ROW_LIMIT = 200;

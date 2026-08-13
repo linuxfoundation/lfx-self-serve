@@ -1,13 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
   CampaignCreateRequest,
@@ -48,6 +51,70 @@ export class CampaignService {
     return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/refine', {
       method: 'POST',
       body: request,
+    });
+  }
+
+  /**
+   * Store the approved brief in campaign-service.
+   *
+   * Storage only — nothing reads it back yet, so a reload still loses the brief from the page.
+   * The read path is LFXV2-3108. Saying "survives a reload" here would describe a round trip only
+   * half of which exists.
+   *
+   * Fire-and-forget from the caller's point of view — the Planning → Implementation handoff must
+   * not wait on it, because campaign creation still runs entirely client-side and a slow or
+   * failing save would block work that does not depend on it. The result is reported in the UI
+   * instead of thrown away; see `CampaignBriefPersistenceState`.
+   *
+   * `projectSlug` travels as a query param rather than in the body because the body IS the brief
+   * — the server reads `req.body` as one — and because `?project=<slug>` is already how this
+   * application names the active foundation on every route it scopes.
+   */
+  public persistBrief(
+    brief: CampaignBriefOutput,
+    projectSlug: string,
+    knownBriefId: string | null = null,
+    knownEtag: string | null = null,
+    allowEtagFallback = false
+  ): Observable<CampaignBriefPersistResult> {
+    // `brief_id` is sent only when this session has established ownership of that row, which on
+    // this branch has TWO sources: the page loaded the brief from campaign-service, or it created
+    // the brief itself on an earlier save.
+    //
+    // Either is proof, and its absence is MEANINGFUL rather than merely missing: the server
+    // refuses to replace a stored brief for a caller that cannot name it, so a freshly generated
+    // brief creates and never overwrites one nobody here has seen (LFXV2-3200).
+    let params = new HttpParams().set('project', projectSlug);
+    if (knownBriefId !== null && knownBriefId !== '') {
+      params = params.set('brief_id', knownBriefId);
+      // Only alongside the id. An ETag on its own names no row, and the server pairs them.
+      if (knownEtag !== null && knownEtag !== '') {
+        params = params.set('etag', knownEtag);
+      } else if (allowEtagFallback) {
+        // No validator BY CHOICE: the user saw the stale-brief warning and proceeded. Without
+        // this the server cannot tell that from "the write returned no ETag", and substituting a
+        // freshly read validator for the second would bypass the precondition silently.
+        params = params.set('etag_fallback', '1');
+      }
+    }
+    return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
+  }
+
+  /**
+   * Load the brief previously saved for this event slug.
+   *
+   * `HttpParams` rather than string interpolation: an event slug is derived from a pasted URL's
+   * last path segment and is not guaranteed to be URL-safe.
+   *
+   * `projectSlug` for the same reason `persistBrief` takes one — briefs are scoped and authorised
+   * per project in campaign-service, and `/foundation/campaigns` is reachable by an ED of any
+   * foundation. Reading without it would either 403 or, for a staffer holding several, offer to
+   * restore a brief filed under a foundation they are not looking at. The server refuses the
+   * request outright when it is missing rather than defaulting.
+   */
+  public loadBrief(eventSlug: string, projectSlug: string): Observable<CampaignBriefLoadResult> {
+    return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
+      params: new HttpParams().set('event_slug', eventSlug).set('project', projectSlug),
     });
   }
 
