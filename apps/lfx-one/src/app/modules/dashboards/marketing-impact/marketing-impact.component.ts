@@ -108,6 +108,12 @@ export class MarketingImpactComponent {
       if (!allowed.has(this.selectedTab())) {
         this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'all');
       }
+
+      // Leaving Events discards the sub-view, so returning to it always opens on Attendance rather
+      // than resuming a sponsorship view the user can no longer see or change.
+      if (focus !== EVENTS_SPLIT_FOCUS) {
+        this.selectedEventsSplit.set('attendance');
+      }
     }
   }
 
