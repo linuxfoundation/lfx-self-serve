@@ -335,6 +335,16 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
 ).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
 
 /**
+ * Toast key for the composer's post-save confirmation.
+ * @description Its own key so the action-bearing create toast renders through the composer's template
+ * rather than the app-wide `p-toast`.
+ */
+export const MEETING_COMPOSER_TOAST_KEY = 'meeting-composer-toast';
+
+/** How long the post-create toast stays up, in ms — longer than a plain toast because it carries actions. */
+export const MEETING_COMPOSER_TOAST_LIFE = 10000;
+
+/**
  * Default meeting duration in minutes
  * @description Standard meeting length when no custom duration is specified
  */
