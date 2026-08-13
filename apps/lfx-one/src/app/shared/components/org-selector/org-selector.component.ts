@@ -112,8 +112,14 @@ export class OrgSelectorComponent {
   /**
    * An outage and a genuine no-match look identical to a caller with nothing assigned, and blaming the
    * search term for an upstream failure sends them off to retype a term that was fine.
+   *
+   * Claimed only while a catalogue search is actually running: `upstreamFailed` covers any upstream
+   * failure, including a role-grants outage and a request that never carried a username, so keying the
+   * copy off the flag alone would blame search for failures search had no part in — telling a non-staff
+   * caller that search is unavailable when they have no search input at all, and telling a staff caller
+   * the same instead of prompting them to search, which still works.
    */
-  protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed());
+  protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed() && this.isStaff() && !this.showSearchPrompt());
 
   /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
