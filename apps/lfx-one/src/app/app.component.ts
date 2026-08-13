@@ -10,6 +10,7 @@ import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
+import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
@@ -30,7 +31,7 @@ const ACCESS_DENIED_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, ToastModule],
+  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
