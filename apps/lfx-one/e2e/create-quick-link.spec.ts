@@ -305,17 +305,17 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     await expect(menu).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId('create-menu-mobile-option-meeting')).toBeVisible();
 
-    // Popover must actually open near the tapped button, not pinned at the desktop rail's fixed
-    // coordinates (left:56px/top:58px) — regression guard for the rail-anchoring CSS scoped to
-    // the `lg` breakpoint. Check X, not Y: the mobile trigger sits in a right-aligned (`ml-auto`)
-    // icon group, far from the rail's x=56, while the rail's fixed top:58px happens to land close
-    // to the mobile trigger's real Y position too — so a Y-only check would likely still pass even
-    // if the `@media (min-width: 1024px)` scoping regressed. X actually distinguishes the two.
-    const [menuBox, triggerBox] = await Promise.all([menu.boundingBox(), trigger.boundingBox()]);
-    expect(menuBox).not.toBeNull();
-    expect(triggerBox).not.toBeNull();
-    if (menuBox && triggerBox) {
-      expect(Math.abs(menuBox.x - triggerBox.x)).toBeLessThan(150);
-    }
+    // Regression guard for the rail-anchoring CSS scoped to the `lg` breakpoint
+    // (lens-switcher.component.scss): assert the computed style directly rather than a pixel-
+    // distance heuristic. A bounding-box comparison against the trigger was tried first, but on
+    // the real Pixel 5 layout the mobile trigger's measured x (~115px, confirmed via a live
+    // authenticated session) sits close enough to the rail's fixed x=56 that any tolerance loose
+    // enough to avoid flaking on icon-group width (canImpersonate() adds/removes an icon,
+    // shifting the trailing `ml-auto` group) would also pass while the bug is present. Asserting
+    // `position` directly targets exactly what the `@media (min-width: 1024px)` scoping controls:
+    // PrimeNG's own anchor-relative default sets `position: absolute`; the regressed (rail-pinned)
+    // state is `position: fixed`.
+    const menuPosition = await menu.evaluate((el) => getComputedStyle(el).position);
+    expect(menuPosition).not.toBe('fixed');
   });
 });
