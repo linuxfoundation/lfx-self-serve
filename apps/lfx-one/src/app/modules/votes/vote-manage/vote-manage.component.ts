@@ -165,7 +165,7 @@ export class VoteManageComponent {
       this.messageService.add({
         severity: 'warn',
         summary: 'Cannot save draft',
-        detail: `Comment questions must be ${VOTE_COMMENT_PROMPT_MAX_LENGTH} characters or fewer before saving as a draft.`,
+        detail: `Comment questions cannot be blank and must be ${VOTE_COMMENT_PROMPT_MAX_LENGTH} characters or fewer before saving as a draft.`,
       });
       return;
     }
@@ -285,11 +285,11 @@ export class VoteManageComponent {
 
   /**
    * Create a new comment prompt FormGroup with default values
-   * Prompt text is optional but bounded by VOTE_COMMENT_PROMPT_MAX_LENGTH
+   * Prompt text is required (blank prompts are blocked per #1448) and bounded by VOTE_COMMENT_PROMPT_MAX_LENGTH
    */
   public createCommentPromptFormGroup(): FormGroup {
     return new FormGroup({
-      prompt: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+      prompt: new FormControl('', { nonNullable: true, validators: [trimmedRequired(), maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
     });
   }
 
@@ -442,7 +442,7 @@ export class VoteManageComponent {
 
     for (const commentPrompt of formValue.commentPrompts) {
       const commentPromptGroup = new FormGroup({
-        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
+        prompt: new FormControl(commentPrompt.prompt, { nonNullable: true, validators: [trimmedRequired(), maxCodePointsValidator(VOTE_COMMENT_PROMPT_MAX_LENGTH)] }),
       });
       commentPromptsArray.push(commentPromptGroup);
     }
@@ -621,7 +621,7 @@ export class VoteManageComponent {
           return questionValid && responseTypeValid && optionsValid;
         });
 
-        // Comment prompts are optional — an empty array is valid, but any prompt present must respect the max length
+        // Comment prompts are optional — an empty array is valid, but any prompt present must be non-blank and respect the max length
         const commentPromptsArray = form.get('commentPrompts') as FormArray;
         const commentPromptsValid = commentPromptsArray.controls.every((commentPromptGroup) => !!(commentPromptGroup as FormGroup).get('prompt')?.valid);
 

@@ -324,9 +324,13 @@ export class VoteResultsDrawerComponent {
    *  entirely on zero-response votes. Responses left-join in by prompt_id when present, sorted
    *  newest-first (pagination slices the already-sorted list, so page 1 always shows the most
    *  recent comments). If the detail fetch supplied no prompts (e.g. it failed and the list-vote
-   *  fallback lacks them), degrade to the results payload's prompts that have responses. */
+   *  fallback lacks them), degrade to the results payload's prompts that have responses. A failed
+   *  results fetch suppresses the section entirely — otherwise each prompt would render "No
+   *  responses yet" and a load failure would masquerade as a genuine zero-response vote. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
+      if (this.voteResultsError()) return [];
+
       const commentResults = this.voteResults()?.comment_results ?? [];
       const detailPrompts = this.vote()?.poll_comment_prompts;
 
