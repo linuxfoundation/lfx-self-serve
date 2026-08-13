@@ -18,6 +18,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 
 import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS, ORG_ALL_EMPLOYEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
 import type {
+  OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeeDetail,
