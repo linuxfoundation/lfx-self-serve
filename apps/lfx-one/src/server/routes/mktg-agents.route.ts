@@ -11,7 +11,13 @@ const mktgAgentsController = new MktgAgentsController();
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
 
-// GET /api/mktg-agents/history - fetch mapped session history
-router.get('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
+// POST /api/mktg-agents/history - fetch mapped session history (owner-token in body)
+router.post('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
+
+// POST /api/mktg-agents/brand-kit/generate - start a one-shot form-mode Brand Kit generation
+router.post('/brand-kit/generate', (req, res, next) => mktgAgentsController.generateBrandKit(req, res, next));
+
+// POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated document
+router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
 export default router;

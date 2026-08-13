@@ -19,6 +19,9 @@
  * - S13: Snowflake lens regression guard
  * - S14: /org/overview empty state renders without redirect
  * - S15: /org/overview no-access state renders instead of the skeleton
+ * - S17: staff with zero assigned orgs still gets the switcher, no redirect or error toast
+ * - S18: catalogue search runs only at or above the two-character minimum
+ * - S19: discovered rows sit under their own heading and carry a membership chip
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -52,13 +55,30 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-async function openSelector(page: Page) {
+// The search input is a staff-only affordance, so opening the panel can no longer wait on it
+// unconditionally; an administrator's panel legitimately has none.
+async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
   // inside <lfx-sidebar>; the test ID is identical across desktop and mobile.
   const trigger = page.getByTestId('org-selector');
   await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
   await trigger.click();
-  await expect(page.getByTestId('org-search-input')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 5_000 });
+  if (options.expectSearch) {
+    await expect(page.getByTestId('org-search-input')).toBeVisible({ timeout: 5_000 });
+  }
+}
+
+// Skip a staff-only scenario when the bootstrap identity does not actually hold the lf-staff grant.
+async function skipWhenNotStaff(page: Page): Promise<void> {
+  const response = await page.request.get('/api/orgs/me/role-grants');
+  if (response.status() !== 200) {
+    test.skip(true, `Skipping staff scenario — /api/orgs/me/role-grants returned ${response.status()}`);
+  }
+  const body = (await response.json()) as { isStaff?: boolean };
+  if (!body.isStaff) {
+    test.skip(true, 'Skipping staff scenario — TEST_USERNAME is not an lf-staff member');
+  }
 }
 
 test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
@@ -74,7 +94,9 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
 
   // S2 — server-side search hits /api/nav/org-items?name=… and re-renders rows
   test('S2: typing in the search input triggers a debounced /api/nav/org-items?name= request', async ({ page }) => {
-    await openSelector(page);
+    // The input this scenario types into is now rendered only for staff.
+    await skipWhenNotStaff(page);
+    await openSelector(page, { expectSearch: true });
 
     // Wait for the first natural-order page to populate so we have a baseline to verify the
     // search response replaces, not appends.
@@ -126,8 +148,9 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
 
     await firstRow.click();
 
-    // Popover closes — the search input should disappear from the DOM
-    await expect(page.getByTestId('org-search-input')).not.toBeVisible({ timeout: 5_000 });
+    // Popover closes — the row list should disappear from the DOM. Asserted on the list rather than
+    // the search input, which is absent for a non-staff persona whether the panel is open or not.
+    await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
 
     // Canonical fetch fires against the account-id (SFID) keyed `/api/orgs/uid/` route
     const canonicalResponse = await canonicalRequest;
@@ -174,6 +197,7 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [{ uid: CHILD_UID, parentUid: PARENT_UID, parentName: PARENT_NAME }],
+          isStaff: false,
           username: 'e2e-cascading',
           loaded_at: new Date().toISOString(),
         }),
@@ -245,6 +269,7 @@ test.describe('Org Selector — no mock fallback (S11)', () => {
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
+          isStaff: false,
           username: 'e2e-no-fallback',
           loaded_at: new Date().toISOString(),
         }),
@@ -291,6 +316,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
+          isStaff: false,
           username: 'e2e-empty-overview',
           loaded_at: new Date().toISOString(),
         }),
@@ -345,6 +371,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
+          isStaff: false,
           username: 'e2e-no-access',
           loaded_at: new Date().toISOString(),
         }),
@@ -475,6 +502,10 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
         body: JSON.stringify({
           writers: [],
           auditors: [],
+          // The gate is now "no grants AND not staff". `isStaff` is stated
+          // explicitly so this stays a real assertion: a staff caller with zero grants must see the
+          // switcher (S17), and only the conjunction hides it.
+          isStaff: false,
           username: 'e2e-zero-grants',
           loaded_at: new Date().toISOString(),
         }),
@@ -507,6 +538,191 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
 
     // Visually-hidden via parent `[class.hidden]` — the trigger MUST not be visible to the user.
     await expect(page.getByTestId('org-selector')).not.toBeVisible();
+  });
+});
+
+// Staff scenarios (S17–S19). These drive /org/overview rather than APP_HOME because the
+// org-selector slot is ANDed with the me-lens parent input (`sidebar.component.ts`
+// initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
+const ORG_LENS_HOME = '/org/overview';
+
+function skipWhenOrgLensOff(page: Page): void {
+  if (!page.url().includes('/org/')) {
+    test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
+  }
+}
+
+// S17 — a staff caller with zero assigned orgs must still get the switcher, and must land on
+// a usable page rather than being bounced away or shown a failure toast. This is the case that was
+// previously indistinguishable from "no access".
+test.describe('Org Selector — staff with zero assigned orgs (S17)', () => {
+  test('S17: staff with no grants sees the switcher on /org/overview with no redirect or error toast', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          writers: [],
+          auditors: [],
+          cascadingWriters: [],
+          cascadingAuditors: [],
+          isStaff: true,
+          username: 'e2e-staff-no-grants',
+          loaded_at: new Date().toISOString(),
+        }),
+      })
+    );
+    // No persona seeds either — `isStaff` alone must carry visibility.
+    await page.route('**/api/user/personas*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
+      })
+    );
+    // Unsearched view is empty for this caller: catalogue reach opens by typing, never by opening.
+    await page.route('**/api/nav/org-items*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], next_page_token: null, upstream_failed: false, total: 0 }),
+      })
+    );
+
+    await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenOrgLensOff(page);
+
+    const slot = page.getByTestId('org-selector-slot');
+    await expect(slot).toBeAttached({ timeout: SIDEBAR_TIMEOUT });
+    await expect(slot).toHaveAttribute('data-visible', 'true', { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+
+    // The staff affordance is the search input — an empty list must not read as "no access".
+    await openSelector(page, { expectSearch: true });
+
+    // Prompt copy, not "No organizations found": nothing has failed, the caller simply hasn't searched.
+    await expect(page.getByTestId('org-selector-search-prompt')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('org-selector-empty')).toHaveCount(0);
+
+    expect(page.url()).toContain('/org/overview');
+    await expect(page.locator('.p-toast-message-error')).toHaveCount(0);
+  });
+});
+
+// S18 — the catalogue query is skipped below ORG_CATALOGUE_SEARCH_MIN_CHARS. Enforcement is
+// server-side, so this asserts against the real BFF: a stub would only be testing itself.
+test.describe('Org Selector — catalogue search minimum length (S18)', () => {
+  test('S18: a two-character search returns discovered rows where a one-character search returns none', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await skipWhenNotStaff(page);
+
+    const discoveredCount = async (term: string): Promise<number> => {
+      const response = await page.request.get(`/api/nav/org-items?name=${encodeURIComponent(term)}`);
+      expect(response.status()).toBe(200);
+      const body = (await response.json()) as { items: { isAssigned?: boolean }[]; upstream_failed: boolean };
+      if (body.upstream_failed) {
+        test.skip(true, 'Skipping S18 — upstream reported failed; cannot evaluate the search minimum');
+      }
+      return body.items.filter((row) => row.isAssigned === false).length;
+    };
+
+    // 'r' is a prefix of the 're' term below, so the only difference between the two calls is length.
+    expect(await discoveredCount('r')).toBe(0);
+    expect(await discoveredCount('re')).toBeGreaterThan(0);
+  });
+});
+
+// S19 — once a catalogue search returns rows the list splits into two labelled
+// sections, and discovered rows carry a membership chip. Stubbed so the assertion does not depend on
+// what the dev catalogue happens to hold.
+test.describe('Org Selector — staff sections and membership chips (S19)', () => {
+  test('S19: discovered rows render under their own heading and carry a membership chip', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    const ASSIGNED_UID = '0014100000Te2QjAAJ';
+    const DISCOVERED_UID = '0014100000TdzYmAAJ';
+
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          writers: [ASSIGNED_UID],
+          auditors: [],
+          cascadingWriters: [],
+          cascadingAuditors: [],
+          isStaff: true,
+          username: 'e2e-staff-sections',
+          loaded_at: new Date().toISOString(),
+        }),
+      })
+    );
+
+    await page.route('**/api/nav/org-items*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              uid: ASSIGNED_UID,
+              accountId: ASSIGNED_UID,
+              name: 'Red Hat, Inc.',
+              logoUrl: null,
+              primaryDomain: 'redhat.com',
+              isMember: true,
+              parentName: null,
+              isAssigned: true,
+            },
+            {
+              uid: DISCOVERED_UID,
+              accountId: DISCOVERED_UID,
+              name: 'CoreOS, Inc.',
+              logoUrl: null,
+              primaryDomain: 'coreos.com',
+              isMember: false,
+              parentName: null,
+              isAssigned: false,
+              status: 'Lapsed',
+            },
+          ],
+          next_page_token: null,
+          upstream_failed: false,
+          total: 2,
+        }),
+      })
+    );
+
+    await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenOrgLensOff(page);
+    await openSelector(page, { expectSearch: true });
+
+    // Sectioning and chips are search-result context (FR-007/US2.5): they must not appear on the
+    // unsearched bootstrap list, only once the caller has actually searched.
+    await expect(page.getByTestId('org-selector-section-discovered')).toHaveCount(0);
+    await expect(page.getByTestId(`org-item-${DISCOVERED_UID}-membership-chip`)).toHaveCount(0);
+
+    await page.getByTestId('org-search-input').fill('co');
+
+    await expect(page.getByTestId('org-selector-section-assigned')).toHaveText('Your organizations');
+    await expect(page.getByTestId('org-selector-section-discovered')).toHaveText('All organizations');
+
+    // The chip is keyed on the row being discovered, not on a search being active — an assigned row
+    // never carries one, whatever the caller typed.
+    await expect(page.getByTestId(`org-item-${ASSIGNED_UID}-membership-chip`)).toHaveCount(0);
+    const chip = page.getByTestId(`org-item-${DISCOVERED_UID}-membership-chip`);
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveAttribute('data-membership', 'non-member');
+    await expect(chip).toHaveAttribute('data-membership-status', 'Lapsed');
+    // Visible label first, then the finer status as screen-reader-only text. The status has to reach
+    // the accessible text and not just the tooltip: the chip is a non-focusable span inside the row
+    // button, so a tooltip alone is never announced.
+    await expect(chip).toHaveText(/^\s*Non-member\s*,\s*Lapsed\s*$/);
   });
 });
 

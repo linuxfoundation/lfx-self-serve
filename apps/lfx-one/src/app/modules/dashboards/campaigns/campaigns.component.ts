@@ -61,7 +61,7 @@ export class CampaignsComponent {
    *
    * Declared before briefPersistence because a class field cannot read one declared after it.
    */
-  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null };
+  private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null, approved: false };
 
   /** The Paid Marketing side's current tab. Email keeps its own — see the delivery-type effect. */
   protected readonly selectedTab = signal<CampaignTab>('planning');
@@ -78,6 +78,32 @@ export class CampaignsComponent {
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
+
+  /**
+   * Is a brief save in flight, independent of whether a banner is shown for it?
+   *
+   * These were the same thing, and that conflation was a bug. `briefPersistence` drives the
+   * BANNER, and the first save of a session deliberately shows none — the persistence flag lives
+   * on the server, so until the first response arrives we cannot know whether the cutover is even
+   * on, and a "Saving this brief…" banner would otherwise appear for every user in every
+   * environment where it is dark (all of them, by default). So the first save sits in `off`.
+   *
+   * `off` therefore meant two different things: "the cutover is dark" and "the first save is
+   * running and we do not yet know". The Implementation tab needs to tell them apart, because a
+   * create issued during that window carries an empty brief id and is TERMINALLY refused with the
+   * cutover on. This signal is the half that answers "is a save running", with no bearing on what
+   * is displayed.
+   */
+  protected readonly briefSaveInFlight = signal(false);
+
+  /**
+   * How many saves are enqueued or running. Backs `briefSaveInFlight`.
+   *
+   * Saves are serialised on `persistChain`, so more than one can be outstanding: each appends its
+   * own clear, and with two queued the first one's clear lands between A finishing and B starting.
+   * Counting is what keeps the signal true across that seam.
+   */
+  private pendingBriefSaves = 0;
 
   /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
@@ -487,7 +513,7 @@ export class CampaignsComponent {
    * not model would be silently replaced by the narrower shape on the way back out. A restore
    * that quietly rewrites the thing it restored is the one outcome this path must not have.
    */
-  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false): void {
+  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false, restoredApproved = false): void {
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
@@ -507,6 +533,12 @@ export class CampaignsComponent {
         status: 'off',
         briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
         message: null,
+        // The RESTORED brief's own approval, carried through the restore output. campaign-service
+        // refuses a create from an unapproved brief, so filing one as create-ready here would
+        // enable a button whose request cannot succeed — the same defect the save path guards,
+        // one restore apart. Only this branch is reachable with a restored brief, so the default
+        // of false never reaches a genuinely-approved one.
+        approved: restoredApproved,
       });
       return;
     }
@@ -527,7 +559,7 @@ export class CampaignsComponent {
     this.selectedEmailTab.set('implementation');
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -586,17 +618,23 @@ export class CampaignsComponent {
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
-    this.onProceedToImplementation(brief, true);
+    this.onProceedToImplementation(brief, true, approved);
   }
 
   /**
    * Save the approved brief in the background.
    *
-   * Deliberately NOT awaited before the tab switch above. Nothing in the Implementation tab
-   * needs a brief id yet — campaign creation still runs through the vendor-direct path — so
-   * gating the handoff on a network call would trade a working flow for a spinner, and a
-   * campaign-service outage would strand the user on the Planning tab with an approved brief
-   * and nowhere to take it.
+   * Deliberately NOT awaited before the tab switch above: gating the handoff on a network call
+   * would trade a working flow for a spinner, and a campaign-service outage would strand the user
+   * on the Planning tab with an approved brief and nowhere to take it.
+   *
+   * The old justification — "nothing in the Implementation tab needs a brief id yet, campaign
+   * creation still runs through the vendor-direct path" — is FALSE as of the creation cutover.
+   * With the flags on, the create posts to `/briefs/{brief_id}/campaigns` and is terminally
+   * refused without that id. The handoff is still not awaited, for the reason above, but the
+   * consequence changed: the tab can now be reached before the id exists, so
+   * `briefSaveInFlight` disables Create until this save settles. Do not remove that gate on the
+   * strength of the sentence this paragraph replaced.
    *
    * `firstValueFrom` rather than `takeUntilDestroyed`: the request must finish and record its
    * outcome even if the user navigates away mid-flight, and one `HttpClient` POST completes on
@@ -659,7 +697,7 @@ export class CampaignsComponent {
     // that the first save shows no in-flight banner, only its outcome; every later one in the
     // same session shows both.
     if (this.briefPersistenceEnabled()) {
-      this.briefPersistence.set({ status: 'saving', briefId: null, message: null });
+      this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
     } else {
       // Clear rather than leave whatever was there. The flag being unknown is the FIRST save of a
       // session — but a first save that FAILED leaves an error banner and does not flip the flag,
@@ -671,6 +709,17 @@ export class CampaignsComponent {
       // in an environment where nothing is being saved at all.
       this.briefPersistence.set(this.idlePersistence);
     }
+
+    // Set for BOTH branches, unlike the banner above. Whether a save is running has nothing to do
+    // with whether we have decided to show a spinner for it.
+    //
+    // A COUNTER, not a boolean, because saves queue. Both `set(true)` calls run synchronously at
+    // enqueue time, but each save appends its own clear to the chain — so with two saves queued,
+    // A's clear lands between A finishing and B starting, and B never re-asserts. The flag went
+    // false while a save was still pending, which is exactly the window this guard exists to
+    // close. The count is decremented in the chain, so it only reaches zero when the queue drains.
+    this.pendingBriefSaves += 1;
+    this.briefSaveInFlight.set(true);
 
     this.persistChain = this.persistChain.then(() => {
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
@@ -813,6 +862,7 @@ export class CampaignsComponent {
               status: 'error',
               briefId: result.briefId,
               message: this.conflictMessages[result.conflict],
+              approved: false,
             });
             return;
           }
@@ -829,6 +879,7 @@ export class CampaignsComponent {
           this.briefPersistence.set({
             status: 'saved',
             briefId: result.briefId,
+            approved: result.approved,
             message: result.approved
               ? null
               : 'This brief was saved but not approved, so campaigns cannot be created from it yet. Ask an administrator to approve the stored brief.',
@@ -853,6 +904,7 @@ export class CampaignsComponent {
             status: 'error',
             briefId: null,
             message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+            approved: false,
           });
         }
       );
@@ -880,8 +932,24 @@ export class CampaignsComponent {
           status: 'error',
           briefId: null,
           message: 'This brief could not be saved — it will be lost if you reload. You can continue setting up the campaign.',
+          approved: false,
         });
       }
+    });
+
+    // Cleared AFTER the terminal catch, so it runs on every outcome — success, refusal and throw
+    // alike. Putting it in the success arm would leave the flag stuck on after a failure, which
+    // disables Create for the rest of the session.
+    //
+    // NOT generation-gated, unlike the banner writes above. This says "no save is running", and
+    // that is true of the whole component once the chain drains — gating it on generation would
+    // leave the flag set forever whenever a superseded save is the last to finish.
+    //
+    // Decrement-and-test, so a save queued behind this one keeps the flag set: with two enqueued,
+    // this clear belongs to A and runs immediately before B's request starts.
+    this.persistChain = this.persistChain.then(() => {
+      this.pendingBriefSaves = Math.max(0, this.pendingBriefSaves - 1);
+      this.briefSaveInFlight.set(this.pendingBriefSaves > 0);
     });
   }
 
