@@ -26,11 +26,25 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public API routes - optional authentication with token benefits
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },
 
-  // Public meeting join - no authentication required
-  { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
+  // Public meeting join (`/meetings/:id`, `/meetings/not-found`) — anchored to a single segment so
+  // multi-segment paths (authenticated `/meetings/:id/edit`, unknown `/meetings/:id/extra`) fall
+  // through to the default `required` auth and reach login before the in-shell catch-all 404. The
+  // reserved single-segment `create` route is excluded via the `(?!create(?:[/;]|$))` lookahead so it
+  // also classifies `required` — an anonymous `/meetings/create` reaches login rather than SSR-rendering
+  // the create shell as optional-auth. The `[/;]` delimiter class also excludes matrix-parameter suffixes
+  // (`/meetings/create;source=link`): Express leaves the `;...` in `req.path` while Angular strips matrix
+  // params and routes the segment as the protected `create`, so both must classify `required` to keep the
+  // SSR boundary aligned with the Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
+  { pattern: /^\/meetings\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
-  // Public group detail - anonymous access with optional auth for membership enrichment
-  { pattern: '/groups/', type: 'ssr', auth: 'optional' },
+  // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
+  // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
+  // auth for membership enrichment. `/groups/create` IS a real writer-gated route (`COMMITTEE_ROUTES`
+  // is mounted at `groups` in `app.routes.ts`), but no `create` lookahead is needed here because that
+  // shell mount carries `canMatch: [authenticatedMatchGuard]`: an anonymous SSR match skips the
+  // authenticated subtree and falls through to the public `groups/:id`, so `create` never reaches the
+  // protected shell. (Meetings has no such canMatch, which is why its matcher must exclude `create`.)
+  { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
@@ -86,11 +100,6 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   { pattern: /^\/sitemap\.xml$/, type: 'ssr', auth: 'public' },
   { pattern: /^\/robots\.txt$/, type: 'ssr', auth: 'public' },
 
-  // Generic not-found page — public so anonymous users land on a branded 404 instead of a login
-  // prompt when redirected here from an unrecognized URL. Anchored regex prevents startsWith
-  // semantics from matching /not-found-admin or similar future paths.
-  { pattern: /^\/not-found\/?$/, type: 'ssr', auth: 'public' },
-
   // All other routes - Angular SSR routes requiring authentication
   { pattern: '/', type: 'ssr', auth: 'required' },
 ];
@@ -108,22 +117,70 @@ const DEFAULT_CONFIG: AuthConfig = {
  * Classifies a route based on the request path and route configuration
  */
 function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
-  for (const routeConfig of config.routes) {
-    if (typeof routeConfig.pattern === 'string') {
-      if (path.startsWith(routeConfig.pattern)) {
-        return routeConfig;
-      }
-    } else if (routeConfig.pattern.test(path)) {
-      return routeConfig;
-    }
-  }
-
-  // Default fallback
-  return {
+  // Default fallback — also the fail-closed classification for malformed non-API input below.
+  const fallback: RouteAuthConfig = {
     pattern: '/',
     type: config.defaultType,
     auth: config.defaultAuth,
   };
+
+  // Fail-closed classification for malformed input on an API-prefixed path (`/api` or `/public/api`).
+  // Still `required` auth, but preserves `type: 'api'` + `tokenRequired` so a malformed/encoded API
+  // request returns a JSON 401 (not an HTML login redirect that XHR/fetch clients can't follow) and still
+  // triggers bearer-token extraction. Mirrors the `/api` catch-all row in DEFAULT_ROUTE_CONFIG; the
+  // `/public/api` prefix (normally `auth: 'optional'`) also fails closed to `required` here, since a
+  // malformed/undecodable path can't be trusted to be the anonymous public route it appears to be.
+  const apiFallback: RouteAuthConfig = {
+    pattern: '/api',
+    type: 'api',
+    auth: 'required',
+    tokenRequired: true,
+  };
+
+  // Any API-prefixed path — the raw `/api` mount and the `/public/api` mount both serve JSON, so a
+  // malformed request to either must fail closed to the JSON 401 shape rather than an SSR redirect.
+  const isApiPath = path.startsWith('/api') || path.startsWith('/public/api');
+
+  // Decode percent-encoding per segment before matching so the SSR auth boundary matches Angular's
+  // route matching, which splits the path on literal `/` first and only then decodes each segment
+  // (`/meetings/%63reate` → `/meetings/create`, so the `create` lookahead still fires). Express/Node
+  // leave `req.path` percent-encoded, so classifying the raw path would let an encoded segment fail-open
+  // to optional auth while Angular decodes it to the protected route. Decoding the whole path at once is
+  // NOT equivalent: it would turn an encoded separator (`%2F`) into a real `/` and shift segment
+  // boundaries — `/u%2Fsomeone` would become the two-segment public `/u/someone` here while Angular keeps
+  // it as one segment and falls through to the protected in-shell catch-all, reintroducing an anonymous
+  // fail-open. So a decoded segment that reintroduces `/` fails closed to `required`, as does a malformed
+  // escape (`%ZZ`), which throws in decodeURIComponent.
+  let decodedPath: string;
+  try {
+    decodedPath = path
+      .split('/')
+      .map((segment) => {
+        const decodedSegment = decodeURIComponent(segment);
+        if (decodedSegment.includes('/')) {
+          throw new Error('encoded path separator');
+        }
+        return decodedSegment;
+      })
+      .join('/');
+  } catch {
+    // Decoding failed (malformed escape like `%ZZ`, or an encoded separator `%2F` that would shift
+    // segment boundaries). Fail closed — but keep API-prefixed paths classified as `api` so they get a
+    // JSON 401 with bearer extraction rather than an SSR login redirect.
+    return isApiPath ? apiFallback : fallback;
+  }
+
+  for (const routeConfig of config.routes) {
+    if (typeof routeConfig.pattern === 'string') {
+      if (decodedPath.startsWith(routeConfig.pattern)) {
+        return routeConfig;
+      }
+    } else if (routeConfig.pattern.test(decodedPath)) {
+      return routeConfig;
+    }
+  }
+
+  return fallback;
 }
 
 /**
