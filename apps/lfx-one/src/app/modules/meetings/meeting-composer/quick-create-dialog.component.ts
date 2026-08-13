@@ -56,8 +56,10 @@ export class QuickCreateDialogComponent {
   private readonly seededAgenda = signal(false);
 
   // Derived rather than snapshotted: a hint has to go quiet the moment the organizer rewrites the field,
-  // and that happens without any type change to recompute it on.
-  protected readonly prefilledDetails: Signal<boolean> = this.initPrefilledDetails();
+  // and that happens without any type change to recompute it on. One hint per control, since each sits
+  // next to the field it describes and the two columns are far apart on screen.
+  protected readonly prefilledTitle: Signal<boolean> = this.initPrefilledTitle();
+  protected readonly prefilledDuration: Signal<boolean> = this.initPrefilledDuration();
   protected readonly prefilledAgenda: Signal<boolean> = this.initPrefilledAgenda();
 
   protected readonly agendaLength: Signal<number> = computed(() => {
@@ -108,19 +110,21 @@ export class QuickCreateDialogComponent {
   }
 
   // Private initializer functions
-  private initPrefilledDetails(): Signal<boolean> {
+  private initPrefilledTitle(): Signal<boolean> {
     return computed(() => {
-      // `revision` is what makes control state reactive here — the form service bumps it on value and
-      // status changes and on the methods that only mark controls dirty.
+      // `revision` is what makes control state reactive here — `validateForSubmit` bumps it for the marks
+      // that emit on neither `valueChanges` nor `statusChanges`.
       this.formService.revision();
 
-      const form = this.formService.form();
-      // Each seed paired with its own control: an OR across both flags would let the never-seeded control
-      // keep the hint alive.
-      const titleStillTemplate = this.seededTitle() && !!form.get('title')?.pristine;
-      const durationStillTemplate = this.seededDuration() && !!form.get('duration')?.pristine;
+      return this.seededTitle() && !!this.formService.form().get('title')?.pristine;
+    });
+  }
 
-      return titleStillTemplate || durationStillTemplate;
+  private initPrefilledDuration(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+
+      return this.seededDuration() && !!this.formService.form().get('duration')?.pristine;
     });
   }
 
