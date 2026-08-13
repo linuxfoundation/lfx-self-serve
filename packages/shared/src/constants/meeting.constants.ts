@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import { ArtifactVisibility, MeetingType, MeetingVisibility } from '../enums';
 import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
@@ -154,6 +154,71 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
     },
   },
 ];
+
+/**
+ * Selectable meeting types, in composer order.
+ * @description Drives the Details & Access type dropdown; `MeetingType.NONE` is deliberately absent
+ * because it is not a user-selectable value.
+ */
+export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
+  {
+    label: 'Board',
+    value: MeetingType.BOARD,
+    info: {
+      icon: 'fa-light fa-square-check',
+      description: 'Governance meetings for project direction, funding, and strategic decisions',
+      color: lfxColors.violet[500],
+    },
+  },
+  {
+    label: 'Maintainers',
+    value: MeetingType.MAINTAINERS,
+    info: {
+      icon: 'fa-light fa-award',
+      description: 'Regular sync meetings for core maintainers to discuss project health',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: 'Marketing',
+    value: MeetingType.MARKETING,
+    info: {
+      icon: 'fa-light fa-arrow-pointer',
+      description: 'Community growth, outreach, and marketing strategy meetings',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: 'Technical',
+    value: MeetingType.TECHNICAL,
+    info: {
+      icon: 'fa-light fa-code-simple',
+      description: 'Technical discussions, architecture decisions, and development planning',
+      color: lfxColors.violet[500],
+    },
+  },
+  {
+    label: 'Legal',
+    value: MeetingType.LEGAL,
+    info: {
+      icon: 'fa-light fa-shield',
+      description: 'Legal compliance, licensing, and policy discussions',
+      color: lfxColors.amber[500],
+    },
+  },
+  {
+    label: 'Other',
+    value: MeetingType.OTHER,
+    info: {
+      icon: 'fa-light fa-bars',
+      description: "General project meetings that don't fit other categories",
+      color: lfxColors.gray[500],
+    },
+  },
+];
+
+/** Meeting types a maintainer may create. */
+export const MAINTAINER_MEETING_TYPES: MeetingType[] = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
 
 /**
  * Meeting type color mappings
