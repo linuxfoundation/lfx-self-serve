@@ -287,7 +287,13 @@
     @switch (selectedTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-          <!-- `briefSaveInFlight` is separate from `briefPersistence` on purpose: the banner state
+          <!-- `draft`/`draftChange` keep the user's edits alive across this panel's teardown
+               (LFXV2-3229). The panel stays inside the @switch on purpose — the component
+               resolves the LinkedIn ad-account list in ngOnInit, so mounting it eagerly would issue that
+               request on every page load for a tab many users never open. Lifting the edits is
+               the cheaper half of that trade.
+
+               `briefSaveInFlight` is separate from `briefPersistence` on purpose: the banner state
                shows `off` during the FIRST save of a session (the cutover flag is unknown until
                that response lands, and a spinner everywhere it is dark would be wrong), so the
                banner cannot answer "is a save running". A create issued in that window carries an
@@ -296,6 +302,8 @@
             [briefData]="briefOutput()"
             [briefPersistence]="briefPersistence()"
             [briefSaveInFlight]="briefSaveInFlight()"
+            [draft]="implementationDraft()"
+            (draftChange)="implementationDraft.set($event)"
             data-testid="campaigns-implementation-tab" />
         </div>
       }
