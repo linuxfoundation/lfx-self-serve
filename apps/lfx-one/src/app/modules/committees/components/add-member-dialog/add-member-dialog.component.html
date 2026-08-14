@@ -14,8 +14,8 @@
     </p>
   }
 
-  <!-- ── Import from a meeting (optional; invite mode only — direct-add is out of scope, LFXV2-2227) ── -->
-  @if (!isDirectAdd() && meetingOptions().length > 0) {
+  <!-- ── Import from a meeting (optional) ─────────────────────────────────────── -->
+  @if (meetingOptions().length > 0) {
     <div class="flex flex-col gap-2" data-testid="add-member-import-section">
       <label class="block text-sm font-medium text-gray-700">Import from a meeting <span class="text-gray-400 font-normal">(optional)</span></label>
       <p class="text-xs text-gray-500">Pull a meeting's registrants into the list below. Their emails flow through the same review before anyone is invited.</p>

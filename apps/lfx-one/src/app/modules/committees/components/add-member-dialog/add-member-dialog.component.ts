@@ -688,7 +688,7 @@ export class AddMemberDialogComponent {
 
   private initMeetingOptions(): Signal<MeetingSelectOption[]> {
     const projectUid = this.committee?.project_uid;
-    if (!projectUid || this.isDirectAdd()) {
+    if (!projectUid) {
       return signal<MeetingSelectOption[]>([]);
     }
 

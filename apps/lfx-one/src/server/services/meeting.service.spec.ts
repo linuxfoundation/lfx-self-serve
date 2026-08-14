@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Meeting, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingRegistrant, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -342,5 +342,31 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
     expect(body).toMatchObject({ org: 'Linux Foundation', job_title: 'Engineer', occurrence: 'occ-42' });
     expect(body).not.toHaveProperty('org_name');
     expect(body).not.toHaveProperty('occurrence_id');
+  });
+});
+
+describe('MeetingService.getMeetingRegistrants', () => {
+  let service: MeetingService;
+
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('returns the partial roster by default when a later page fails', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].uid).toBe('a');
+  });
+
+  it('rejects instead of returning a truncated roster when failOnPartial is true', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true)).rejects.toThrow('query service down');
   });
 });
