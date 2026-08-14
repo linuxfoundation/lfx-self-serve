@@ -1056,10 +1056,21 @@ export class CampaignController {
    * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
    * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
    *
-   * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
-   * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
-   * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
-   * no Search campaign to fund, so this returns null.
+   * Budget depends on WHICH channel this config is for, and the two cases differ.
+   *
+   * For a SEARCH create, budget is the Search SHARE rather than the whole request budget: the
+   * dispatcher creates exactly one Search campaign, so handing it the combined figure would
+   * spend the demand-gen half on Search.
+   *
+   * For a DEMAND-GEN-ONLY selection this returns a config carrying the FULL budget and
+   * `channel: "demand-gen"` — not null, which is what an earlier version of this comment said
+   * and what the code did before LFXV2-3257 ported `createDemandGenCampaign` into
+   * campaign-service. There is no Search campaign to split the budget with, so the whole amount
+   * funds the one campaign being created.
+   *
+   * A MIXED selection is still refused before reaching here, because this function emits one
+   * config with one channel — see the inline comment below for why that is a limit of this
+   * builder rather than of campaign-service's schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
    * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
@@ -1085,12 +1096,15 @@ export class CampaignController {
     // (LFXV2-3257), which is why headlines/keywords below are harmless to send — the
     // Demand Gen path ignores them.
     //
-    // Search + Demand Gen together is still refused upstream of here, deliberately.
-    // campaign-service's `campaigns` table is UNIQUE on (brief_id, platform) and both
-    // channels are `google-ads`, so one brief cannot hold both rows; the legacy path
-    // loops `campaignTypes` and creates both only because it has no database. Serving
-    // the mixed case needs a schema decision, not a config field, and until it is made
-    // a loud refusal beats creating the Search half and silently dropping the other.
+    // Search + Demand Gen together is still refused upstream of here, deliberately — and the
+    // reason is THIS function, not campaign-service's schema. #130 widened the slot key to
+    // (brief_id, platform, variant), so a brief can now hold a Search row and a Demand Gen row
+    // at once; the database does not forbid the pair.
+    //
+    // What forbids it is that this builder returns ONE config with ONE channel. A mixed create
+    // would dispatch a single campaign and silently drop the other half — and half the budget.
+    // Serving the pair means emitting two configs, which is a change here rather than a schema
+    // decision. Until then a loud refusal beats a silent partial create.
     if (!includesSearch && includesDemandGen) {
       return { budget: body.budgetUsd ?? 0, channel: 'demand-gen' };
     }

@@ -606,15 +606,21 @@ export class CampaignServiceClient {
     // LFXV2-3257, which ported the legacy `createDemandGenCampaign` into campaign-service and
     // gave `googleAdsConfig` a `channel` field to select it.
     //
-    // What still cannot be served is BOTH in one create, and the reason is the schema rather
-    // than the dispatcher: `campaigns` is UNIQUE on `(brief_id, platform)` and both channels are
-    // `google-ads`, so one brief cannot hold a Search row and a Demand Gen row. The legacy path
-    // loops `campaignTypes` and creates both only because it has no database to constrain it.
+    // What still cannot be served is BOTH in one create, and the reason is THIS SERVICE, not
+    // the schema. campaign-service #130 widened the slot key to
+    // `(brief_id, platform, variant)`, so a brief CAN hold a Search row and a Demand Gen row
+    // simultaneously — the database no longer forbids the pair.
+    //
+    // The limit is here: `buildGoogleAdsConfig` emits ONE `googleAdsConfig` with ONE `channel`,
+    // so a create carrying both types would dispatch a single campaign and silently drop the
+    // other. Stating the real constraint matters — someone reading the old rationale after the
+    // migration landed would remove this guard as obsolete and reintroduce the silent partial
+    // create. Serving the pair needs this BFF to send two configs, not a schema change.
     //
     // Letting the pair through is the dangerous option, because it LOOKS like success: the
     // config carries one channel, so the create would succeed having silently dropped half of
     // what the user asked for and half their budget. Refusing keeps them on a path that can
-    // actually serve the request until the schema question is decided.
+    // actually serve the request until this BFF can send both channels in one envelope.
     //
     // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
     // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
