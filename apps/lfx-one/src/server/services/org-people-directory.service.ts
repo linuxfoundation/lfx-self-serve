@@ -267,6 +267,8 @@ export class OrgPeopleDirectoryService {
       this.logSourceFailure(req, accountId, 'access principals', access.reason);
     }
 
+    this.absorbIdentitylessRows(byKey);
+
     const rows = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
@@ -276,6 +278,72 @@ export class OrgPeopleDirectoryService {
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,
     };
+  }
+
+  /**
+   * Fold each address-keyed row into the identity-keyed row that already owns that address.
+   *
+   * Sources differ in whether they report an identity: the stored roster nearly always does, live
+   * committee seats often do not. When both describe the same person at the same address, the
+   * identity rung claims one and the address rung claims the other, and they never meet — the two
+   * kinds of key are deliberately disjoint so a single pass stays order-independent.
+   *
+   * Left alone that splits a person who was previously whole, since before identity matching existed
+   * both rows keyed on the shared address and merged. This pass restores that, and only that: an
+   * address-keyed row is absorbed strictly when exactly one identity row lists the same address. It
+   * introduces no matching the previous behaviour did not already perform, and it cannot pull two
+   * identities together, because a row that has one is never a candidate to be absorbed.
+   *
+   * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
+   * row (it owns data this fold does not carry), and any row whose address two identities both claim.
+   */
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRow>): void {
+    // An address claimed by more than one identity has no correct owner, so it gets none: picking the
+    // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
+    const claims = new Map<string, OrgAllEmployeeRow[]>();
+    for (const [key, row] of byKey) {
+      if (!key.startsWith('identity:')) continue;
+      for (const email of row.emails) {
+        claims.set(email, [...(claims.get(email) ?? []), row]);
+      }
+    }
+    const ownerByEmail = new Map<string, OrgAllEmployeeRow>();
+    for (const [email, owners] of claims) {
+      if (owners.length === 1) ownerByEmail.set(email, owners[0]);
+    }
+
+    for (const [key, orphan] of byKey) {
+      if (!key.startsWith('email:')) continue;
+      // A pending invitation is the one identity-less row that must stay standalone: nothing has yet
+      // confirmed the invitee is the person who already holds that address, and an accepted principal
+      // always carries a username, so `invited` is exactly the unverified case.
+      if (orphan.accessBadge === 'invited') continue;
+      // A stored orphan is left alone. It owns activity counts, engaged foundations and a real
+      // personKey that this fold does not carry across, and summing them into the owner would
+      // double-count the engagement the stored plane already attributes elsewhere. Absorbing it would
+      // trade a duplicate row for silently missing data, which is the worse defect.
+      if (orphan.sources.includes('snowflake')) continue;
+      const owner = ownerByEmail.get(key.slice('email:'.length));
+      if (!owner) continue;
+
+      // Counters are taken before the orphan's sources land on the owner: `addSource` would otherwise
+      // mark the owner as stored and skip the branch that reads them.
+      if (!owner.sources.includes('snowflake')) {
+        owner.seatsCount += orphan.seatsCount;
+        owner.boardSeatsCount += orphan.boardSeatsCount;
+        owner.committeeSeatsCount += orphan.committeeSeatsCount;
+      }
+      for (const source of orphan.sources) this.addSource(owner, source);
+      for (const email of orphan.emails) this.addEmail(owner, email);
+      owner.mergedFrom = [...(owner.mergedFrom ?? []), key];
+      this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
+      // Reachable only for an accepted principal whose settings record carries no username: it keys on
+      // the address like any orphan, but `isPending` is false so its badge is a real role rather than
+      // `invited`. Not observed today — every accepted principal currently has one — but member-service
+      // merely declines to emit an FGA tuple for that combination, it does not prevent the record.
+      if (!owner.accessBadge && orphan.accessBadge) owner.accessBadge = orphan.accessBadge;
+      byKey.delete(key);
+    }
   }
 
   private addSource(row: OrgAllEmployeeRow, source: OrgPersonSource): void {
