@@ -15,13 +15,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProfileLayoutComponent } from './profile-layout.component';
 
 /**
- * Guards the Flow C (management-token re-auth) cold-return read-your-writes fix (LFXV2-2933):
+ * Guards the Flow C (management-token re-auth) cold-return read-your-writes fix (LFXV2-3267):
  * on a full-page return the replayed save can resolve before the initial profile GET populates
  * combinedProfile, so the save is stashed and re-applied once a GET lands — an eventually-consistent
  * (pre-save) GET body must never mask the write. Template is overridden empty so the class logic runs
  * without instantiating the edit/visibility/panel children and their service graph.
  */
-describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-2933)', () => {
+describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-3267)', () => {
   const STALE_PROFILE = {
     user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@x.io' },
     profile: { bio: 'OLD BIO', job_title: 'Engineer' },
