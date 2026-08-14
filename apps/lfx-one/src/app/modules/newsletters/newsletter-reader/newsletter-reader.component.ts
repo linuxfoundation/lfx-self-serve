@@ -11,7 +11,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, filter, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
@@ -114,7 +114,12 @@ export class NewsletterReaderComponent {
                 catchError(() => of<NewsletterReaderState>({ loading: false, project, newsletter: null }))
               );
             }),
-            catchError(() => of<NewsletterReaderState>({ loading: false, project: null, newsletter: null }))
+            catchError(() => of<NewsletterReaderState>({ loading: false, project: null, newsletter: null })),
+            // Reset to the skeleton on every param change: the component is
+            // reused across permalink navigations (back/forward between
+            // issues), so without this the previous issue stays on screen
+            // until the new fetch resolves.
+            startWith<NewsletterReaderState>({ loading: true, project: null, newsletter: null })
           )
         )
       ),

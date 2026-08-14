@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { Newsletter, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { of } from 'rxjs';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
@@ -64,6 +64,7 @@ describe('NewsletterReaderComponent', () => {
   let fixture: ComponentFixture<NewsletterReaderComponent>;
   let projectService: ProjectService;
   let newsletterService: NewsletterService;
+  let paramMap$: BehaviorSubject<Map<string, string>>;
 
   beforeEach(async () => {
     const mockProjectService = {
@@ -76,13 +77,14 @@ describe('NewsletterReaderComponent', () => {
       copyLink: vi.fn(),
     };
 
+    paramMap$ = new BehaviorSubject(
+      new Map([
+        ['projectSlug', 'kubernetes'],
+        ['id', 'news-123'],
+      ])
+    );
     const activatedRoute = {
-      paramMap: of(
-        new Map([
-          ['projectSlug', 'kubernetes'],
-          ['id', 'news-123'],
-        ])
-      ),
+      paramMap: paramMap$,
     };
 
     await TestBed.configureTestingModule({
@@ -142,6 +144,35 @@ describe('NewsletterReaderComponent', () => {
 
     // Service should be called as route params are emitted
     expect(getProjectSpy).toHaveBeenCalled();
+  });
+
+  it('should reset to loading when route params change to another issue', () => {
+    // First call resolves the initial issue; every later call (the param
+    // change re-fires combineLatest per source signal) hangs, keeping the
+    // second load in flight.
+    vi.mocked(projectService.getProject).mockReturnValueOnce(of(makeProject())).mockReturnValue(NEVER);
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+    TestBed.tick();
+
+    // First issue fully loaded
+    expect(component['loading']()).toBe(false);
+    expect(component['newsletter']()).not.toBeNull();
+
+    // Navigate to another permalink: the component is reused, so the state
+    // must reset to the skeleton instead of showing the stale issue.
+    paramMap$.next(
+      new Map([
+        ['projectSlug', 'other-project'],
+        ['id', 'news-456'],
+      ])
+    );
+    TestBed.tick();
+
+    expect(component['loading']()).toBe(true);
+    expect(component['newsletter']()).toBeNull();
   });
 
   it('should have copyLink method bound to clipboard service', () => {
