@@ -4,13 +4,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { of, throwError } from 'rxjs';
-import { Clipboard } from '@angular/cdk/clipboard';
-import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 
 import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
 import { NewsletterService } from '@services/newsletter.service';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 
 describe('NewsletterReaderComponent', () => {
   let component: NewsletterReaderComponent;
@@ -25,11 +24,8 @@ describe('NewsletterReaderComponent', () => {
     const mockNewsletterService = {
       getNewsletter: vi.fn(),
     };
-    const mockClipboard = {
-      copy: vi.fn().mockReturnValue(true),
-    };
-    const mockMessageService = {
-      add: vi.fn(),
+    const mockClipboardShareService = {
+      copyLink: vi.fn(),
     };
 
     const activatedRoute = {
@@ -47,8 +43,7 @@ describe('NewsletterReaderComponent', () => {
         { provide: ProjectService, useValue: mockProjectService },
         { provide: NewsletterService, useValue: mockNewsletterService },
         { provide: ActivatedRoute, useValue: activatedRoute },
-        { provide: Clipboard, useValue: mockClipboard },
-        { provide: MessageService, useValue: mockMessageService },
+        { provide: ClipboardShareService, useValue: mockClipboardShareService },
       ],
     }).compileComponents();
 
