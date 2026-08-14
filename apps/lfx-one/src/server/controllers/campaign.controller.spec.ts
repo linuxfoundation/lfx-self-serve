@@ -9,18 +9,29 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, searchHubSpotEmails, isServerFeatureEnabled, logger } =
-  vi.hoisted(() => ({
-    saveBrief: vi.fn(),
-    loadBrief: vi.fn(),
-    createCampaigns: vi.fn(),
-    legacyCreate: vi.fn(),
-    svcGetJobStatus: vi.fn(),
-    legacyGetJobStatus: vi.fn(),
-    searchHubSpotEmails: vi.fn(),
-    isServerFeatureEnabled: vi.fn(),
-    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-  }));
+const {
+  saveBrief,
+  loadBrief,
+  createCampaigns,
+  legacyCreate,
+  legacyUpdateStatus,
+  svcGetJobStatus,
+  legacyGetJobStatus,
+  searchHubSpotEmails,
+  isServerFeatureEnabled,
+  logger,
+} = vi.hoisted(() => ({
+  saveBrief: vi.fn(),
+  loadBrief: vi.fn(),
+  createCampaigns: vi.fn(),
+  legacyCreate: vi.fn(),
+  legacyUpdateStatus: vi.fn(),
+  svcGetJobStatus: vi.fn(),
+  legacyGetJobStatus: vi.fn(),
+  searchHubSpotEmails: vi.fn(),
+  isServerFeatureEnabled: vi.fn(),
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+}));
 
 // `deriveEventSlug` is deliberately NOT stubbed. It is the function that decides whether a brief
 // is persistable at all, so a fake would let the slug-refusal test below pass against a controller
@@ -46,6 +57,7 @@ vi.mock('../services/campaign-proxy.service', () => ({
   CampaignProxyService: class {
     public createCampaign = legacyCreate;
     public getJobStatus = legacyGetJobStatus;
+    public updateCampaignStatus = legacyUpdateStatus;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -859,5 +871,79 @@ describe('CampaignController.refineBrief email refusal', () => {
     expect(next).toHaveBeenCalledTimes(1);
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
+  });
+});
+
+/**
+ * The status-toggle route (LFXV2-3226).
+ *
+ * The handler and its BFF route have existed since the toggle work landed, but nothing in the
+ * Angular service called them, so this endpoint had no coverage at all — including the platform
+ * allowlist, which is load-bearing: `updateCampaignStatus` dispatches through the LEGACY proxy,
+ * whose switch has cases for `meta-ads` and `reddit-ads` only. A well-meaning "re-derive the
+ * allowlist from the six dispatchers campaign-service implements" would send Google Ads and
+ * LinkedIn into a switch with no case for them. These tests make that refusal explicit rather
+ * than incidental.
+ */
+describe('CampaignController.updateCampaignStatus', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: ReturnType<typeof vi.fn>;
+
+  function statusReq(campaignId: string, body: unknown): Request {
+    return { params: { campaignId }, body, query: {}, path: `/api/campaigns/${campaignId}/status` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('dispatches a supported platform to the proxy', async () => {
+    legacyUpdateStatus.mockResolvedValue({ platform: 'meta-ads', campaignId: '123', previousStatus: 'ACTIVE', newStatus: 'PAUSED', success: true });
+
+    await controller.updateCampaignStatus(statusReq('123', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyUpdateStatus).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', success: true }));
+  });
+
+  /**
+   * The load-bearing case. Asserts the proxy is NOT called, not merely that an error came back:
+   * reaching a switch with no case for the platform is the defect, and a test that only checked
+   * for an error would pass even if the request got through.
+   */
+  it.each([['google-ads'], ['linkedin-ads'], ['twitter-ads'], ['microsoft-ads']])('refuses %s, which the legacy proxy cannot serve', async (platform) => {
+    await controller.updateCampaignStatus(statusReq('123', { platform, status: 'PAUSED' }), res, next);
+
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    // Assert the FIELD message, not the wrapper's generic "Validation failed for platform" —
+    // the field message is what names the accepted platforms, so it is the part a caller acts on.
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: [expect.objectContaining({ field: 'platform', message: expect.stringContaining('platform must be one of') })],
+      })
+    );
+  });
+
+  it('refuses a non-numeric campaignId before reaching the proxy', async () => {
+    await controller.updateCampaignStatus(statusReq('not-a-number', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
+
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: [expect.objectContaining({ field: 'campaignId', message: expect.stringContaining('numeric') })],
+      })
+    );
+  });
+
+  it('refuses a non-object body rather than reading fields off it', async () => {
+    await controller.updateCampaignStatus(statusReq('123', 'PAUSED'), res, next);
+
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
   });
 });

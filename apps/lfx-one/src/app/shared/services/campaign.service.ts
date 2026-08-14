@@ -19,6 +19,8 @@ import {
   CampaignJobStatus,
   CampaignMonitorResponse,
   CampaignSSEEventType,
+  CampaignStatusUpdateRequest,
+  CampaignStatusUpdateResult,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -185,6 +187,26 @@ export class CampaignService {
 
   public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
     return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
+  }
+
+  /**
+   * Pause or resume a campaign on its ad platform.
+   *
+   * The BFF route (`PATCH /api/campaigns/:campaignId/status`) and its handler have existed since
+   * the status-toggle work landed, but nothing in this service called them — so the capability was
+   * unreachable from the UI (LFXV2-3226). Pause is the primary cost-control lever: without it,
+   * stopping a mis-targeted campaign means logging into the ad platform directly.
+   *
+   * `platform` is restricted to Meta and Reddit by the BFF's `SUPPORTED_STATUS_PLATFORMS`, and that
+   * allowlist is CORRECT rather than stale — the handler dispatches through the legacy proxy, whose
+   * switch has cases for exactly those two. campaign-service implements all six, but the BFF does
+   * not route this endpoint to it yet, so a wider list here would produce a request the path below
+   * cannot serve.
+   *
+   * `campaignId` is the PLATFORM's campaign id, not a campaign-service row id.
+   */
+  public updateCampaignStatus(campaignId: string, request: CampaignStatusUpdateRequest): Observable<CampaignStatusUpdateResult> {
+    return this.http.patch<CampaignStatusUpdateResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/status`, request);
   }
 
   public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
