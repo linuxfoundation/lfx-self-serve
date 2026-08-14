@@ -103,9 +103,18 @@ export class NewsletterReaderComponent {
   // lens-prefixed mount, whose newsletterAccessGuard bounces non-writers to the
   // overview. Switching to the always-allowed 'me' lens first keeps the
   // permalink audience (any authenticated user) able to reach their feed.
-  protected goToMyNewsletters(event: Event): void {
-    event.preventDefault();
+  protected goToMyNewsletters(event: MouseEvent): void {
+    // Persist the lens before branching: setLens writes the lens cookie, so a
+    // browser-handled modified click (new tab/window) also lands on the feed.
     this.lensService.setLens('me');
+
+    // Let the browser honor the href for modified/non-primary clicks — same
+    // guard as the docs-article anchor interception.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+
+    event.preventDefault();
     void this.router.navigate(['/newsletters/my']);
   }
 

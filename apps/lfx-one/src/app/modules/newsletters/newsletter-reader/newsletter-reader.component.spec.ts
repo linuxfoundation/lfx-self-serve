@@ -243,10 +243,29 @@ describe('NewsletterReaderComponent', () => {
 
     const lensService = TestBed.inject(LensService);
     const router = TestBed.inject(Router);
-    component['goToMyNewsletters'](new Event('click'));
+    component['goToMyNewsletters'](new MouseEvent('click', { button: 0 }));
 
     expect(lensService.setLens).toHaveBeenCalledWith('me');
     expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my']);
+  });
+
+  it('should leave modified clicks on the breadcrumb to the browser (new tab)', () => {
+    // Cmd/Ctrl-click must not be intercepted so the href can open in a new
+    // tab; the lens is still persisted so that tab lands on the me feed.
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+
+    const lensService = TestBed.inject(LensService);
+    const router = TestBed.inject(Router);
+    const event = new MouseEvent('click', { button: 0, metaKey: true, cancelable: true });
+    component['goToMyNewsletters'](event);
+
+    expect(lensService.setLens).toHaveBeenCalledWith('me');
+    expect(event.defaultPrevented).toBe(false);
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('should have copyLink method bound to clipboard service', () => {
