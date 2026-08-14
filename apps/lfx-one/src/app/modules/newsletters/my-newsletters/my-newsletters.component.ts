@@ -93,6 +93,12 @@ export class MyNewslettersComponent {
     const sentAt = this.selected()?.sent_at;
     return sentAt ? `Received ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
   });
+  /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
+  protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
+    const selected = this.selected();
+    if (!selected?.project_slug || !selected.id) return null;
+    return toAbsoluteUrl(`/newsletters/${selected.project_slug}/${selected.id}`, isPlatformBrowser(this.platformId));
+  });
 
   // === Constructor ===
   public constructor() {
@@ -192,12 +198,6 @@ export class MyNewslettersComponent {
       queryParamsHandling: 'merge',
       preserveFragment: true,
     });
-  }
-
-  protected buildShareUrl(newsletter: MyNewsletter): string | null {
-    if (!newsletter.project_slug || !newsletter.id) return null;
-    const path = `/newsletters/${newsletter.project_slug}/${newsletter.id}`;
-    return toAbsoluteUrl(path, isPlatformBrowser(this.platformId));
   }
 
   protected onFoundationFilterChange(value: string | null): void {

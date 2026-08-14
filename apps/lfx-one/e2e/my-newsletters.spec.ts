@@ -34,6 +34,7 @@ const MOCK_NEWSLETTERS: MyNewsletter[] = [
     subject: 'TAC July Update',
     sent_at: '2026-07-15T12:00:00Z',
     project_name: 'Test Project',
+    project_slug: 'test-project',
     is_foundation: false,
     parent_project_uid: FOUNDATION_UID,
   },
@@ -43,6 +44,7 @@ const MOCK_NEWSLETTERS: MyNewsletter[] = [
     subject: 'Board Quarterly Digest',
     sent_at: '2026-06-20T12:00:00Z',
     project_name: 'Test Foundation',
+    project_slug: 'test-foundation',
     is_foundation: true,
     parent_project_uid: '',
   },
@@ -219,7 +221,7 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await gotoMyNewsletters(page);
 
     const issueId = MOCK_NEWSLETTERS[0].id;
-    const projectSlug = MOCK_NEWSLETTERS[0].project_name?.toLowerCase() || 'test-project';
+    const projectSlug = MOCK_NEWSLETTERS[0].project_slug || 'test-project';
 
     // Navigate directly with query params
     await page.goto(`/newsletters/my?issue=${issueId}&project=${projectSlug}`, { waitUntil: 'domcontentloaded' });
