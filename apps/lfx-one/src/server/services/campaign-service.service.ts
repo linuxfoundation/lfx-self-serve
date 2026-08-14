@@ -195,10 +195,11 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
  * the one wrong answer worth avoiding, because it invites the retry that duplicates a paid
  * campaign. The sibling approve path pins the same distinction (see its `definitelyRejected`).
  *
- * It needs its own check because such a failure is NOT a `MicroserviceError`: the proxy only
- * wraps errors carrying `.status` and `.code` (`microservice-proxy.service.ts:38-40`) and
- * re-throws everything else raw. So every `error instanceof MicroserviceError` predicate reads
- * false for it and falls through to the indeterminate branch.
+ * It needs its own check because a MicroserviceError alone does not distinguish a response from
+ * a failure to reach the service at all: `ApiClientService.executeRequest` wraps a Node fetch
+ * failure as `MicroserviceError(500, cause.code)`, so an unreachable service and a genuine 500
+ * arrive as the same class. Only the `code` tells them apart — a syscall name versus an HTTP-ish
+ * one — which is what `requestNeverLeft` below keys on.
  *
  * Observed 2026-08-13: with campaign-service stopped, a create answered "could not be confirmed —
  * check the ad platforms before retrying" for a request that was never sent. That is the exact

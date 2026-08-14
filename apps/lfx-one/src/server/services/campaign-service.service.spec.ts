@@ -875,6 +875,22 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
+  it('does not reconcile a save whose request NEVER LEFT this process', async () => {
+    // The transport twin of the 4xx case above, and the one `requestNeverLeft` guards inside
+    // `reconcileLostWrite`. A connect-time failure means the POST never reached the service, so
+    // there is no lost write to find — spending reconciliation reads on it can only surface
+    // someone else's row, and the delay between attempts makes the user wait to be told nothing.
+    //
+    // Every other transport test drives `createCampaigns`, which returns early at its own
+    // `requestNeverLeft` guard and never reaches `reconcileLostWrite`, so this arm was
+    // unexercised: deleting its `return null;` left the suite green.
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('connect ECONNREFUSED', 500, 'ECONNREFUSED', {}));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('ECONNREFUSED');
+    // find + POST only: no reconciliation read, exactly as for the 4xx refusal.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses a replace when the caller cannot say which version it last saw', async () => {
     // Two reasons produce a missing validator and they need opposite treatment. This is the
     // UNKNOWN one: the caller's previous write returned no ETag, or its approval outcome was
@@ -1609,7 +1625,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
    * Asserts the message does NOT tell the user to go check the ad platforms. Asserting only that
    * some error came back would pass on the old wording.
    */
-  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['EHOSTUNREACH']])(
+  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['EHOSTUNREACH'], ['ENETUNREACH']])(
     'reports a %s create as definitely-not-created rather than unconfirmed',
     async (code) => {
       bothFlagsOn();
@@ -1636,13 +1652,6 @@ describe('CampaignServiceClient.createCampaigns', () => {
   );
 
   /**
-   * The contrast, and the load-bearing half: a 5xx IS genuinely indeterminate — the request
-   * reached campaign-service and the outcome is unknown — so it must keep the "may have started"
-   * wording. Without this test the fix above could be satisfied by making every failure read as
-   * definite, which is the dangerous direction: it would invite exactly the duplicate-create
-   * retry the cutover exists to prevent.
-   */
-  /**
    * `ECONNRESET` must stay INDETERMINATE, even though it is a transport error. Node reports it
    * for a reset at any point, and nothing here distinguishes a connect-time reset from one that
    * arrives after the request was sent and processed — where the create may have landed and only
@@ -1664,6 +1673,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).not.toContain('nothing was created');
   });
 
+  /**
+   * The contrast, and the load-bearing half: a 5xx IS genuinely indeterminate — the request
+   * reached campaign-service and the outcome is unknown — so it must keep the "may have started"
+   * wording. Without this test the fix above could be satisfied by making every failure read as
+   * definite, which is the dangerous direction: it would invite exactly the duplicate-create
+   * retry the cutover exists to prevent.
+   */
   it('still reports a 5xx create as unconfirmed, because the request did reach the service', async () => {
     bothFlagsOn();
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream boom', 502, 'INTERNAL_ERROR', { operation: 'create' }));
