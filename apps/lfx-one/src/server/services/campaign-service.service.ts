@@ -212,8 +212,16 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
 const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 function requestNeverLeft(error: unknown): boolean {
-  if (error instanceof MicroserviceError) return false; // it got a response; not a transport failure
-  const code = (error as { code?: unknown } | null)?.code;
+  // A MicroserviceError is NOT automatically a response. `ApiClientService.executeRequest`
+  // (`api-client.service.ts:313-320`) wraps a Node fetch failure as
+  // `MicroserviceError(500, cause.code)` — so the production shape of an unreachable service is a
+  // 500 whose `code` is `ECONNREFUSED`, not a raw Error. An earlier revision returned false for
+  // every MicroserviceError and therefore fixed nothing in production; the tests passed only
+  // because they mocked a raw Error, which this client never throws. Both bots caught it.
+  //
+  // A REAL 500 from campaign-service carries an HTTP-ish code (`INTERNAL_ERROR`), never a
+  // syscall name, so keying on the code rather than the class keeps the two apart.
+  const code = error instanceof MicroserviceError ? error.code : (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' && NEVER_SENT_ERROR_CODES.has(code);
 }
 

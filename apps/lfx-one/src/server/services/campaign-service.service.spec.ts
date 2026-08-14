@@ -1613,7 +1613,16 @@ describe('CampaignServiceClient.createCampaigns', () => {
     'reports a %s create as definitely-not-created rather than unconfirmed',
     async (code) => {
       bothFlagsOn();
-      const transportError = Object.assign(new Error('connect failed'), { code });
+      // The PRODUCTION shape, not a raw Error: `ApiClientService.executeRequest` wraps a Node
+      // fetch failure as `MicroserviceError(500, cause.code)` before this service sees it
+      // (`api-client.service.ts:313-320`). An earlier revision of this test rejected with a raw
+      // `Error` carrying a top-level `code` — a shape this client never throws — so it passed
+      // against a `requestNeverLeft` that returned false for every MicroserviceError and fixed
+      // nothing in production.
+      const transportError = new MicroserviceError('Request failed: fetch failed', 500, code, {
+        operation: 'api_client_network_error',
+        service: 'api_client_service',
+      });
       proxyRequestWithResponse.mockRejectedValueOnce(transportError);
 
       const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
@@ -1645,7 +1654,9 @@ describe('CampaignServiceClient.createCampaigns', () => {
    */
   it('keeps an ECONNRESET create unconfirmed, because the reset may have followed a commit', async () => {
     bothFlagsOn();
-    proxyRequestWithResponse.mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('Request failed: socket hang up', 500, 'ECONNRESET', { service: 'api_client_service' })
+    );
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
 
