@@ -35,6 +35,7 @@ import type {
   LinkedInTargetingProfile,
   MetaAdVariant,
   RedditAdVariant,
+  RedditObjective,
 } from '@lfx-one/shared/interfaces';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
@@ -255,6 +256,25 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  /**
+   * Reddit's campaign objective, sent EXPLICITLY rather than left to the service default.
+   * The service defaults an absent objective to `conversions`, which then requires a
+   * conversion pixel id — so omitting both fields is the one combination that can never
+   * succeed, and it was what every Reddit create from this tab sent.
+   */
+  protected readonly redditObjective = signal<RedditObjective>('traffic');
+  /**
+   * Required by Reddit only when the objective is `conversions`, and ignored otherwise.
+   * Empty is valid for every other objective, which is why the create guard below checks
+   * the pair rather than this field alone.
+   */
+  protected readonly redditConversionPixelId = signal<string>('');
+  /**
+   * The one unusable combination, surfaced BEFORE the create rather than after a round
+   * trip: Reddit rejects it at input validation, so the campaign never exists, but the
+   * user only learns that from a failed job.
+   */
+  protected readonly redditNeedsPixel = computed(() => this.redditObjective() === 'conversions' && this.redditConversionPixelId().trim() === '');
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -287,6 +307,10 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    // Reddit rejects a conversions campaign with no pixel at input validation, so the create
+    // fails without anything existing upstream. Blocking here turns a failed job into a
+    // disabled button with a visible reason.
+    if (redditSelected && this.redditNeedsPixel()) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
 
@@ -520,6 +544,18 @@ export class ImplementationTabComponent implements OnInit {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onRedditObjectiveChange(event: Event): void {
+    this.redditObjective.set((event.target as HTMLSelectElement).value as RedditObjective);
+  }
+
+  protected onRedditPixelChange(event: Event): void {
+    this.redditConversionPixelId.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onRedditBudgetChange(event: Event): void {
+    this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 
@@ -587,6 +623,15 @@ export class ImplementationTabComponent implements OnInit {
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
+              // Always sent: an absent objective resolves to `conversions` service-side,
+              // which then demands a pixel. Sending it explicitly is what keeps the
+              // default from being the one value that cannot be created without one.
+              objective: this.redditObjective(),
+              // Only meaningful for `conversions`; omitted entirely otherwise so a stray
+              // value cannot reach Reddit on an objective that rejects the field.
+              ...(this.redditObjective() === 'conversions' && this.redditConversionPixelId().trim() !== ''
+                ? { conversionPixelId: this.redditConversionPixelId().trim() }
+                : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }

@@ -190,3 +190,118 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(true);
   });
 });
+
+/**
+ * Reddit's objective and its conversion pixel.
+ *
+ * Observed end-to-end on 2026-08-13: every Reddit create from this tab failed with
+ * "conversion pixel ID is required for objective conversions", and no campaign was ever
+ * created. The cause is a DEFAULT, not a validation gap — the campaign service resolves an
+ * ABSENT objective to `conversions` (reddit/client.go's defaultRedditObjective), and that
+ * objective then requires a pixel. This tab sent neither field, so the one combination it
+ * could produce was the one that can never succeed.
+ *
+ * These pin both halves: the objective is always sent, and the impossible pair is refused
+ * before a job exists rather than after a round trip.
+ */
+describe('ImplementationTabComponent reddit objective and pixel', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function inst(): {
+    canSubmit(): boolean;
+    selectedPlatforms: { set(v: string[]): void };
+    redditObjective: { set(v: string): void };
+    redditConversionPixelId: { set(v: string): void };
+    redditNeedsPixel(): boolean;
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+  } {
+    return fixture.componentInstance as never;
+  }
+
+  /** Reddit only, so Google's own required fields cannot be what blocks the gate. */
+  function redditOnlyValid(): void {
+    const c = inst();
+    c.selectedPlatforms.set(['reddit-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * The default must not be the objective that cannot be created without extra input. This is
+   * the regression that shipped: `conversions` by omission, with no way to supply a pixel.
+   */
+  it('does not default to an objective that requires a pixel', () => {
+    redditOnlyValid();
+    expect(inst().redditNeedsPixel()).toBe(false);
+    expect(inst().canSubmit()).toBe(true);
+  });
+
+  it('blocks submit when conversions is chosen with no pixel', () => {
+    redditOnlyValid();
+    expect(inst().canSubmit()).toBe(true);
+
+    inst().redditObjective.set('conversions');
+    fixture.detectChanges();
+
+    expect(inst().redditNeedsPixel()).toBe(true);
+    expect(inst().canSubmit()).toBe(false);
+  });
+
+  it('allows submit once a pixel is supplied for conversions', () => {
+    redditOnlyValid();
+    inst().redditObjective.set('conversions');
+    fixture.detectChanges();
+    expect(inst().canSubmit()).toBe(false);
+
+    inst().redditConversionPixelId.set('a2_abc123def456');
+    fixture.detectChanges();
+
+    expect(inst().redditNeedsPixel()).toBe(false);
+    expect(inst().canSubmit()).toBe(true);
+  });
+
+  /**
+   * Whitespace is not a pixel. Without a trim the gate would open on a space, and the create
+   * would then fail at Reddit for the very reason the gate exists to prevent.
+   */
+  it('treats a whitespace-only pixel as absent', () => {
+    redditOnlyValid();
+    inst().redditObjective.set('conversions');
+    inst().redditConversionPixelId.set('   ');
+    fixture.detectChanges();
+
+    expect(inst().redditNeedsPixel()).toBe(true);
+    expect(inst().canSubmit()).toBe(false);
+  });
+
+  /**
+   * The pixel is required ONLY for conversions. Switching away must clear the block rather
+   * than stranding the user behind a field the objective no longer uses.
+   */
+  it('stops requiring a pixel when the objective changes away from conversions', () => {
+    redditOnlyValid();
+    inst().redditObjective.set('conversions');
+    fixture.detectChanges();
+    expect(inst().canSubmit()).toBe(false);
+
+    inst().redditObjective.set('awareness');
+    fixture.detectChanges();
+
+    expect(inst().redditNeedsPixel()).toBe(false);
+    expect(inst().canSubmit()).toBe(true);
+  });
+});

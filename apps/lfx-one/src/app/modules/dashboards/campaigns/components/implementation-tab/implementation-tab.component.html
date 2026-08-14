@@ -351,6 +351,84 @@
         </div>
       }
 
+      <!-- Reddit Ads Section -->
+      @if (showRedditSection()) {
+        <div class="rounded-lg border border-orange-200 bg-white p-5" data-testid="implementation-reddit-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-reddit text-orange-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Reddit Ads</h3>
+          </div>
+
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-1">
+              <label for="reddit-objective" class="text-xs font-medium text-gray-700">Campaign Objective</label>
+              <select
+                id="reddit-objective"
+                [value]="redditObjective()"
+                (change)="onRedditObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-objective">
+                <option value="traffic">Traffic</option>
+                <option value="awareness">Awareness</option>
+                <option value="conversions">Conversions</option>
+                <option value="video_views">Video Views</option>
+              </select>
+            </div>
+
+            <!-- Rendered only for the objective that needs it: Reddit ignores the pixel for every
+                 other objective, so showing it there would imply an effect it does not have. -->
+            @if (redditObjective() === 'conversions') {
+              <div class="flex flex-col gap-1">
+                <label for="reddit-pixel" class="text-xs font-medium text-gray-700">
+                  Conversion Pixel ID
+                  <span class="text-red-600" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="reddit-pixel"
+                  type="text"
+                  [value]="redditConversionPixelId()"
+                  (input)="onRedditPixelChange($event)"
+                  placeholder="e.g. a2_abc123def456"
+                  [attr.aria-invalid]="redditNeedsPixel()"
+                  [attr.aria-describedby]="redditNeedsPixel() ? 'reddit-pixel-error' : 'reddit-pixel-hint'"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-reddit-pixel" />
+                @if (redditNeedsPixel()) {
+                  <p id="reddit-pixel-error" class="text-xs text-red-600" role="alert">
+                    Reddit requires a conversion pixel for the Conversions objective. Add one, or choose a different objective.
+                  </p>
+                } @else {
+                  <p id="reddit-pixel-hint" class="text-xs text-gray-400">Found in Reddit Ads under Events Manager.</p>
+                }
+              </div>
+            }
+
+            <div class="flex flex-col gap-1">
+              <label for="reddit-budget" class="text-xs font-medium text-gray-700">Budget (USD)</label>
+              <input
+                id="reddit-budget"
+                type="number"
+                min="1"
+                [value]="redditBudgetUsd()"
+                (input)="onRedditBudgetChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-budget" />
+            </div>
+
+            @if (redditSubreddits().length > 0) {
+              <div class="flex flex-col gap-2">
+                <span class="text-xs font-medium text-gray-700">Subreddits (AI-recommended)</span>
+                <div class="flex flex-wrap gap-2">
+                  @for (sub of redditSubreddits(); track sub) {
+                    <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">{{ sub }}</span>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Meta Ads Section -->
       @if (showMetaSection()) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-meta-section">
