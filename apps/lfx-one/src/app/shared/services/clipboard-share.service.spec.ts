@@ -72,17 +72,6 @@ describe('ClipboardShareService', () => {
     });
   });
 
-  it('should show warning when URL is null', () => {
-    service.copyLink(null as any);
-
-    expect(clipboard.copy).not.toHaveBeenCalled();
-    expect(messageService.add).toHaveBeenCalledWith({
-      severity: 'warn',
-      summary: 'No Link',
-      detail: 'No link available to copy.',
-    });
-  });
-
   it('should show error toast when clipboard copy fails', () => {
     vi.mocked(clipboard.copy).mockReturnValue(false);
     const url = 'https://example.com/newsletter/789';

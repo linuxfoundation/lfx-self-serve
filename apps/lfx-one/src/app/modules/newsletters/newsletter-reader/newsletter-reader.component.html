@@ -10,7 +10,7 @@
     <lfx-newsletter-not-found [reason]="isDraftHidden() ? 'draft' : 'not-found'" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
   } @else if (loading()) {
     <!-- Skeleton loader -->
-    <div class="mt-6 flex flex-col gap-4">
+    <div class="mt-6 flex flex-col gap-4" data-testid="newsletter-reader-loading">
       <p-skeleton width="15rem" height="2rem" />
       <p-skeleton width="20rem" height="1rem" />
     </div>

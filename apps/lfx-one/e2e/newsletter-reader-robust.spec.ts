@@ -123,8 +123,10 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
     await page.goto(`/newsletters/${PROJECT_SLUG}/news-456`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    // During loading, skeleton or placeholder should be visible
-    // The component should not display content testids until data arrives
+    // While the project request is held open, the skeleton must be visible
+    // and content testids must not render yet.
+    await expect(page.getByTestId('newsletter-reader-loading')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-reader-title')).toHaveCount(0);
     releaseProjectRequest!();
 
     // After data arrives, full content should render

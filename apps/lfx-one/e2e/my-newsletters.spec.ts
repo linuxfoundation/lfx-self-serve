@@ -212,9 +212,10 @@ test.describe('My Newsletters — Me-lens feed', () => {
     // Close drawer
     await page.getByTestId('newsletter-preview-drawer-close').click();
 
-    // URL should be clean (no query params)
+    // URL should be clean (both drawer params removed)
     const url = page.url();
     expect(url).not.toContain('issue=');
+    expect(url).not.toContain('project=');
   });
 
   test('direct navigation with query params auto-opens the drawer', async ({ page }) => {
