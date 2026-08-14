@@ -45,6 +45,7 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
+  getMeetingEditCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
@@ -639,7 +640,13 @@ export class MeetingManageComponent {
         if (ctx) {
           editQueryParams['committee_uid'] = ctx.uid;
         }
-        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
+        // Canonicalize on the created meeting's project tier — the create flow already resolved it
+        // (projectQueryParamGuard effectiveKind → isFoundationContext), so no extra fetch is needed.
+        const editCommands = getMeetingEditCommands({
+          id: meetingId,
+          is_foundation: this.projectContextService.isFoundationContext(),
+        });
+        this.router.navigate(editCommands ?? ['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
         this.navigateBack();

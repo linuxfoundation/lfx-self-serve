@@ -11,6 +11,9 @@ import { LensService } from '../services/lens.service';
  * the user to the lens-prefixed equivalent (`/foundation/...` or `/project/...`)
  * when foundation or project lens is active. Lets the request through unchanged
  * for `me` and `org` lenses, where the flat routes are the canonical destination.
+ * Carve-out: meeting EDIT links bypass this guard entirely — they canonicalize on the
+ * meeting's own project tier (`is_foundation`) via `getMeetingEditCommands`, so me/org-lens
+ * users land on the tier-prefixed `/foundation|project/meetings/{id}/edit` URL.
  *
  * Reads `state.url` so query params and trailing path segments (e.g.
  * `/groups/abc?tab=meetings`) are preserved verbatim across the redirect.
