@@ -71,7 +71,7 @@ describe('NewsletterReaderComponent', () => {
 
   beforeEach(async () => {
     const mockProjectService = {
-      getProject: vi.fn(),
+      getProjectStrict: vi.fn(),
     };
     const mockNewsletterService = {
       getNewsletter: vi.fn(),
@@ -107,7 +107,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should create', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -116,7 +116,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should initialize with loading true', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -125,7 +125,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should render draft newsletter when user is a writer', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject({ writer: true })));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ writer: true })));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter({ subject: 'Draft', body_html: '<p>Draft content</p>', status: 'draft' })));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -139,7 +139,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should call getProject with slug from route params', () => {
-    const getProjectSpy = vi.mocked(projectService.getProject);
+    const getProjectSpy = vi.mocked(projectService.getProjectStrict);
     getProjectSpy.mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
@@ -155,7 +155,7 @@ describe('NewsletterReaderComponent', () => {
     // First call resolves the initial issue; every later call (the param
     // change re-fires combineLatest per source signal) hangs, keeping the
     // second load in flight.
-    vi.mocked(projectService.getProject).mockReturnValueOnce(of(makeProject())).mockReturnValue(NEVER);
+    vi.mocked(projectService.getProjectStrict).mockReturnValueOnce(of(makeProject())).mockReturnValue(NEVER);
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -181,7 +181,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should map a 404 newsletter fetch to the not-found state, not error', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -194,8 +194,34 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should surface a 5xx newsletter fetch as error, not a permanent 404', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+    TestBed.tick();
+
+    expect(component['loading']()).toBe(false);
+    expect(component['error']()).toBe(true);
+    expect(component['notFound']()).toBe(false);
+  });
+
+  it('should map a 404 project lookup (bad slug) to the not-found state', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+    TestBed.tick();
+
+    expect(component['loading']()).toBe(false);
+    expect(component['error']()).toBe(false);
+    expect(component['notFound']()).toBe(true);
+  });
+
+  it('should surface a project-service outage as error, not a permanent 404', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -209,7 +235,7 @@ describe('NewsletterReaderComponent', () => {
   it('should switch to the me lens before navigating back to the feed', () => {
     // Without the lens switch, lensRedirectGuard rewrites /newsletters/my to the
     // lens-prefixed mount and newsletterAccessGuard bounces non-writers away.
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
@@ -224,7 +250,7 @@ describe('NewsletterReaderComponent', () => {
   });
 
   it('should have copyLink method bound to clipboard service', () => {
-    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);

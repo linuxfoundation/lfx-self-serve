@@ -115,10 +115,10 @@ export class NewsletterReaderComponent {
       combineLatest([toObservable(this.projectSlug), toObservable(this.newsletterId)]).pipe(
         filter((params): params is [string, string] => !!params[0] && !!params[1]),
         switchMap(([slug, id]) =>
-          // getProject swallows upstream failures into `null` internally, so a
-          // bad slug and a project-service outage both land on the not-found
-          // branch — the newsletter fetch below is where real statuses surface.
-          this.projectService.getProject(slug, false).pipe(
+          // Strict slug lookup: propagates HTTP failures so a project-service
+          // outage surfaces as the error state (HTTP 200) rather than being
+          // conflated with a bad slug and emitted as a real SSR 404.
+          this.projectService.getProjectStrict(slug).pipe(
             switchMap((project) => {
               if (!project?.uid) {
                 return of<NewsletterReaderState>({ loading: false, error: false, project: null, newsletter: null });
@@ -138,10 +138,15 @@ export class NewsletterReaderComponent {
                 })
               );
             }),
-            // Defensive: getProject catches internally, so anything erroring the
-            // outer stream is unexpected — surface the error state, never a 404.
+            // Only sees project-fetch errors — the newsletter fetch handles its
+            // own above. 400/404 = no such slug (not-found); anything else is
+            // transient and must not render (or SSR-return) as a 404.
             catchError((err) => {
-              console.error('Failed to load newsletter reader state', err);
+              const status = err?.status;
+              if (typeof status === 'number' && [400, 404].includes(status)) {
+                return of<NewsletterReaderState>({ loading: false, error: false, project: null, newsletter: null });
+              }
+              console.error('Failed to load project for newsletter reader', err);
               return of<NewsletterReaderState>({ loading: false, error: true, project: null, newsletter: null });
             }),
             // Emit a real HTTP 404 during SSR for the not-found branches (missing
