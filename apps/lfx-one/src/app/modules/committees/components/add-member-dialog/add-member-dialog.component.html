@@ -213,14 +213,14 @@
       severity="secondary"
       [outlined]="true"
       (onClick)="onCancel()"
-      [disabled]="submitting()"
+      [disabled]="!collectOnly && submitting()"
       size="small"
       type="button"
       data-testid="add-member-cancel"></lfx-button>
 
     <lfx-button
-      [label]="isDirectAdd() ? 'Add Members' : 'Send Invites'"
-      [icon]="isDirectAdd() ? 'fa-light fa-user-plus' : 'fa-light fa-paper-plane'"
+      [label]="submitLabel()"
+      [icon]="submitIcon()"
       [loading]="submitting()"
       [disabled]="!canSubmit() || submitting()"
       (onClick)="onSubmit()"

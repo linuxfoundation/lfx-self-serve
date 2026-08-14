@@ -22,6 +22,7 @@ import {
   CommitteeInviteResult,
   CommitteeMember,
   CommitteeOrganizationReference,
+  CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
@@ -92,10 +93,18 @@ export class AddMemberDialogComponent {
 
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
   private resolvedOrganizationName = '';
+  /** Set by onCancel() — lets a still-pending async org resolution's collect-only close no-op. */
+  private cancelled = false;
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
   public readonly mode: AddMemberDialogMode = this.config.data?.mode ?? 'direct-add';
   public readonly isDirectAdd = computed(() => this.mode === 'direct-add');
+  /**
+   * Collect-only mode: instead of sending invites immediately (POST /invites), validate + build
+   * the invite payloads and return them to the caller to stage. Used by the create-group wizard so
+   * invites are only sent when the wizard is completed — cancelling sends nothing (LFXV2-2606).
+   */
+  public readonly collectOnly: boolean = this.config.data?.collectOnly ?? false;
   /** True when the committee requires organization (voting or business email). */
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   /** Direct-add must include a valid organization before members can be created upstream. */
@@ -165,6 +174,19 @@ export class AddMemberDialogComponent {
   public readonly orgErrorMessage: Signal<string | null> = this.initOrgErrorMessage();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
+  /** Submit button copy — three distinct destinations (stage / add directly / send invite), so not a single ternary. */
+  public readonly submitLabel = computed(() => {
+    if (this.collectOnly) {
+      return 'Add to invitations';
+    }
+    return this.isDirectAdd() ? 'Add Members' : 'Send Invites';
+  });
+  public readonly submitIcon = computed(() => {
+    if (this.collectOnly) {
+      return 'fa-light fa-list-check';
+    }
+    return this.isDirectAdd() ? 'fa-light fa-user-plus' : 'fa-light fa-paper-plane';
+  });
 
   public readonly queryValue = toSignal(
     this.searchForm.get('query')!.valueChanges.pipe(
@@ -237,13 +259,19 @@ export class AddMemberDialogComponent {
   }
 
   public onCancel(): void {
+    // Collect-only submit can still be mid-flight (awaiting async org resolution) when Cancel is
+    // clicked — dialogRef.close(false) here would otherwise be silently followed by a second,
+    // ignored close(staged) once resolution finishes, discarding the staged invites with no
+    // feedback. Guard that late close instead of re-disabling Cancel (see onSubmit's comment).
+    this.cancelled = true;
     this.dialogRef.close(false);
   }
 
   public onSubmit(): void {
     const committeeId = this.committee?.uid;
     const emails = this.categorized().toInvite;
-    if (!committeeId || emails.length === 0) {
+    // Immediate mode POSTs to a committee, so it needs one; collect mode only stages payloads.
+    if ((!this.collectOnly && !committeeId) || emails.length === 0) {
       return;
     }
 
@@ -268,15 +296,33 @@ export class AddMemberDialogComponent {
       }
     }
 
+    // Disable the submit button up front — org resolution below is async, and leaving it enabled
+    // during that window allows a double-click that fires a second resolve → invite chain. Cancel
+    // stays enabled in collect-only mode (see the template) so the dialog is never unresponsive —
+    // but if the user cancels while org resolution below is still pending, the collect-only close
+    // in complete() below must no-op (see the `cancelled` guard) rather than staging after the
+    // dialog already closed. Cancel stays disabled while submitting in the immediate-send modes,
+    // since canceling mid-flight can abort in-progress member/invite POSTs after some have already
+    // succeeded, with no summary toast and no parent refresh.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
-    const fanOut = (organization: CommitteeOrganizationReference | null | undefined): void => {
-      if (this.isDirectAdd()) {
-        this.fanOutDirectAdd(committeeId, emails, role, organization);
+    const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
+      // Collect-only: return the built invites for the caller to stage; do not send them now.
+      if (this.collectOnly) {
+        if (this.cancelled) {
+          return;
+        }
+        const staged: CreateCommitteeInviteRequest[] = emails.map((email) => ({ invitee_email: email, role, organization: organization ?? null }));
+        this.dialogRef.close(staged);
         return;
       }
-      this.fanOutInvites(committeeId, emails, role, organization);
+
+      if (this.isDirectAdd()) {
+        this.fanOutDirectAdd(committeeId!, emails, role, organization);
+        return;
+      }
+      this.fanOutInvites(committeeId!, emails, role, organization);
     };
 
     if (this.showOrganizationField()) {
@@ -294,13 +340,13 @@ export class AddMemberDialogComponent {
             this.submitting.set(false);
             return;
           }
-          fanOut(buildCommitteeOrganizationPayload(formValue));
+          complete(buildCommitteeOrganizationPayload(formValue));
         },
       });
       return;
     }
 
-    fanOut(undefined);
+    complete(undefined);
   }
 
   private fanOutDirectAdd(committeeId: string, emails: string[], role: string | null, organization: CommitteeOrganizationReference | null | undefined): void {
