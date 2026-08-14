@@ -379,20 +379,83 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
     expect(rows).toHaveLength(2);
   });
 
-  it('is order-independent when two identities list the same address', async () => {
+  it('leaves an orphan standing when two identities claim its address, rather than picking by order', async () => {
+    // Whichever identity is folded first is an upstream accident, so an address with two claimants has
+    // no owner: attributing the orphan by insertion order would silently give one person another's data.
+    const both = [
+      storedRow({ personKey: 'p-a', lfUsername: 'alpha', name: 'Alpha One', email: 'shared@example.com', emails: ['shared@example.com'] }),
+      storedRow({ personKey: 'p-b', lfUsername: 'beta', name: 'Beta Two', email: 'other@example.com', emails: ['other@example.com', 'shared@example.com'] }),
+    ];
+
+    getAllEmployees.mockResolvedValue(baseResponse(both));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
+    const forward = await run();
+
+    vi.clearAllMocks();
+    getAllEmployees.mockResolvedValue(baseResponse([both[1], both[0]]));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
+    getKeyContactEmployees.mockResolvedValue([]);
+    getAccessPrincipals.mockResolvedValue([]);
+    const reversed = await run();
+
+    expect(forward.rows).toHaveLength(3);
+    expect(reversed.rows).toHaveLength(3);
+    // Neither identity absorbed it, so the outcome is identical whichever order they arrived in.
+    const committeeHolders = (r: typeof forward) => r.rows.filter((x) => x.sources.includes('committee') && x.lfUsername).length;
+    expect(committeeHolders(forward)).toBe(0);
+    expect(committeeHolders(reversed)).toBe(0);
+  });
+
+  it('never absorbs a stored orphan, which owns activity this fold does not carry', async () => {
     getAllEmployees.mockResolvedValue(
       baseResponse([
-        storedRow({ personKey: 'p-a', lfUsername: 'alpha', name: 'Alpha One', email: 'shared@example.com', emails: ['shared@example.com'] }),
-        storedRow({ personKey: 'p-b', lfUsername: 'beta', name: 'Beta Two', email: 'other@example.com', emails: ['other@example.com', 'shared@example.com'] }),
+        storedRow({
+          personKey: 'p-live-target',
+          lfUsername: 'shared',
+          name: 'Shared Person',
+          email: 'shared@example.com',
+          emails: ['shared@example.com'],
+          seatsCount: 0,
+          boardSeatsCount: 0,
+          committeeSeatsCount: 0,
+          eventsCount: 0,
+        }),
+        storedRow({
+          personKey: 'p-stored-orphan',
+          lfUsername: null,
+          name: 'Shared Person',
+          email: 'shared@example.com',
+          emails: ['shared@example.com'],
+          seatsCount: 4,
+          eventsCount: 9,
+          commitsCount: 7,
+          coursesCount: 2,
+          engagedFoundationIds: ['f-1'],
+        }),
       ])
     );
-    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
 
     const { rows } = await run();
 
-    // The orphan joins exactly one identity, and both identities survive.
     expect(rows).toHaveLength(2);
-    expect(rows.filter((r) => r.sources.includes('committee'))).toHaveLength(1);
+    const orphan = rows.find((r) => r.personKey === 'p-stored-orphan');
+    // Its activity is still reachable rather than deleted along with the row.
+    expect(orphan).toBeDefined();
+    expect(orphan?.eventsCount).toBe(9);
+    expect(orphan?.commitsCount).toBe(7);
+    expect(orphan?.engagedFoundationIds).toEqual(['f-1']);
+  });
+
+  it('takes a live orphan\u2019s seat counts before its sources mark the owner as stored', async () => {
+    fetchAllOrgSeats.mockResolvedValue([
+      seat({ username: 'liveowner', email: 'liveowner@example.com' }),
+      seat({ uid: 'seat-2', username: null, email: 'liveowner@example.com' }),
+    ]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].seatsCount).toBe(2);
   });
 });
 
