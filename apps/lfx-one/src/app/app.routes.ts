@@ -369,6 +369,17 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
+        // Canonical shareable newsletter permalink (GH-1550). Mounted ahead of
+        // the lens-redirected `newsletters` mount below so the URL never
+        // rewrites to /foundation/... or /project/..., whose mount-level
+        // newsletterAccessGuard would block non-manager readers. Any
+        // authenticated user may view sent issues; drafts 404 in-place for
+        // non-writers (enforced in the component).
+        path: 'newsletters/:projectSlug/:id',
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/newsletters/newsletter-reader/newsletter-reader.component').then((m) => m.NewsletterReaderComponent),
+      },
+      {
         path: 'newsletters',
         // No newsletterAccessGuard at the mount: the Me-lens member feed
         // (/newsletters/my) must be reachable by regular committee members.

@@ -88,6 +88,16 @@ export class ProjectService {
     return this.projectCache.get(cacheKey)!;
   }
 
+  /**
+   * Slug lookup that propagates HTTP failures instead of mapping them to null,
+   * for callers that must distinguish a missing project (400/404) from an
+   * upstream outage (5xx) — e.g. the newsletter reader's SSR 404 signaling.
+   * Uncached and side-effect free (does not touch the active-project state).
+   */
+  public getProjectStrict(slug: string): Observable<Project> {
+    return this.http.get<Project>(`/api/projects/${encodeURIComponent(slug)}`);
+  }
+
   public getProjectSfid(uid: string): Observable<string | null> {
     return this.http.get<{ sfid: string | null }>(`/api/projects/${encodeURIComponent(uid)}/sfid`).pipe(
       map((res) => res.sfid ?? null),

@@ -47,4 +47,11 @@ export const NEWSLETTER_ROUTES: Routes = [
     loadComponent: () => import('./newsletter-analytics/newsletter-analytics.component').then((m) => m.NewsletterAnalyticsComponent),
     data: { preload: false },
   },
+  // NOTE: the shareable reader permalink (/newsletters/:projectSlug/:id) is
+  // deliberately NOT a child here. This routes file is mounted at the flat
+  // `newsletters` path (behind lensRedirectGuard) and at the lens-prefixed
+  // /foundation/newsletters and /project/newsletters mounts (behind
+  // newsletterAccessGuard) — either mount would break the any-authenticated-user
+  // access model. The reader is mounted directly in app.routes.ts, ahead of the
+  // flat mount.
 ];
