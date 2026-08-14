@@ -625,7 +625,7 @@ export class CampaignProxyService {
     // — a request that MEANT to suppress that spend causing it instead. Failing loudly is the
     // only reading that cannot cost money.
     if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
-      yield { type: 'error', data: `Unsupported deliveryType. Supported: paid-marketing, email.` };
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
       return;
     }
 
@@ -878,7 +878,7 @@ export class CampaignProxyService {
     // paid branch and refines, which is what this endpoint did before the field existed — but a
     // caller who misspells the type should be told, not quietly given the other behaviour.
     if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
-      yield { type: 'error', data: `Unsupported deliveryType. Supported: paid-marketing, email.` };
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
       return;
     }
 
