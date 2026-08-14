@@ -191,11 +191,12 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                         | Description                                                                             | Required | Default |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`   | Serves campaign job status from campaign-service; see the accepted values below         | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` | Persists the generated brief in campaign-service instead of only in the browser tab     | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE` | Creates campaigns through campaign-service instead of the per-platform Express services | No       | off     |
+| Parameter                                             | Description                                                                                                                         | Required | Default |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`       | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`     | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`     | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
 
 All three flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
@@ -203,6 +204,22 @@ unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works"
 operator setting `yes` and expecting it to be ignored would route production traffic at
 campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
 in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is a CAPABILITY flag, not a routing one, and that is
+why it is separate from the three above. They ask "should this go through campaign-service?"; it
+asks "does the campaign-service we are actually talking to understand `googleAdsConfig.channel`?"
+Those can be out of step, because the two services deploy independently.
+
+Turning it on against a campaign-service that predates LFXV2-3257 is the failure it exists to
+prevent, and that failure is SILENT. Go's JSON decoder ignores unknown keys, so an older service
+drops `channel` and builds its default SEARCH campaign instead: real budget, no keywords, and by
+its own documentation it "can never serve". Nothing errors — the job reports success, and the
+wrong campaign is discovered later in Google Ads with money already spent.
+
+There is no version probe because campaign-service exposes no version endpoint, and inferring
+support from a successful create is exactly the ambiguity that makes this dangerous. So the order
+is: deploy campaign-service with LFXV2-3257, confirm it, then set this. Left off, a Demand Gen
+create is refused with a message telling the user to select Search instead.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
 (`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the
