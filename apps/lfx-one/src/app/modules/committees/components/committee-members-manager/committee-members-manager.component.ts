@@ -71,6 +71,16 @@ export class CommitteeMembersManagerComponent implements OnInit {
    * what's currently on the server (LFXV2-2606 review).
    */
   public organizationRequirements = input<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
+  /**
+   * True while the parent is flushing staged changes (Done/Update). flushMemberUpdates() snapshots
+   * memberUpdates() once and fires requests from it — any mutation made here after that snapshot
+   * (removing a pending invite, staging a new one, editing/deleting a member) wouldn't affect the
+   * in-flight batch and would be silently lost once the parent navigates away on success. Disables
+   * every mutating action below for the duration (LFXV2-2606 review).
+   */
+  public submitting = input<boolean>(false);
+  /** Whether this is rendered from the edit-mode "Update" flow rather than the create wizard — only affects copy. */
+  public isEditMode = input<boolean>(false);
 
   // Output events for two-way binding
   public readonly memberUpdatesChange = output<MemberPendingChanges>();

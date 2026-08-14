@@ -67,6 +67,8 @@
                   [committeeId]="committeeId()"
                   [memberUpdates]="memberUpdates()"
                   [organizationRequirements]="organizationRequirements()"
+                  [submitting]="submitting()"
+                  [isEditMode]="isEditMode()"
                   (memberUpdatesChange)="onMemberUpdatesChange($event)">
                 </lfx-committee-members-manager>
               } @else {
