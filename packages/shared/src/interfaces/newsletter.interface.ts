@@ -170,6 +170,8 @@ export interface Newsletter {
  */
 export interface NewsletterReaderState {
   loading: boolean;
+  /** Unexpected failure (non-404) loading the newsletter — distinct from notFound so 5xx never renders as a permanent 404. */
+  error: boolean;
   project: Project | null;
   newsletter: Newsletter | null;
 }

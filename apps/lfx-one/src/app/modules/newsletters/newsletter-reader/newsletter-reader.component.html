@@ -5,6 +5,17 @@
   @if (!paramsValid()) {
     <!-- 404: invalid or missing params -->
     <lfx-newsletter-not-found reason="not-found" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
+  } @else if (error()) {
+    <!-- Unexpected failure (non-404): transient — not rendered as a 404 -->
+    <div class="mt-6 rounded-xl border border-gray-200 bg-white" data-testid="newsletter-reader-error">
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <div class="flex h-24 w-24 items-center justify-center rounded-full bg-red-50">
+          <i class="fa-light fa-triangle-exclamation text-4xl text-red-400"></i>
+        </div>
+        <h1 class="text-gray-900">Something went wrong</h1>
+        <p class="max-w-lg text-gray-600">We couldn't load this newsletter right now. Please try again in a few minutes.</p>
+      </div>
+    </div>
   } @else if (notFound()) {
     <!-- 404: draft hidden from non-writer OR project/newsletter not found -->
     <lfx-newsletter-not-found [reason]="isDraftHidden() ? 'draft' : 'not-found'" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
@@ -31,7 +42,7 @@
           type="button"
           (click)="copyLink()"
           class="ml-4 p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-          [title]="'Copy link'"
+          title="Copy link"
           aria-label="Copy link"
           data-testid="newsletter-reader-copy-link">
           <i class="fa-light fa-link text-xl"></i>

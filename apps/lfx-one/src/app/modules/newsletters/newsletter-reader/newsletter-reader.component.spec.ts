@@ -4,8 +4,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { Newsletter, Project } from '@lfx-one/shared/interfaces';
+import { ProjectStage } from '@lfx-one/shared/enums';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BehaviorSubject, NEVER, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
@@ -21,7 +23,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     writer: false,
     public: true,
     parent_uid: '',
-    stage: 'active',
+    stage: ProjectStage.Active,
     category: 'test',
     funding_model: [],
     charter_url: '',
@@ -173,6 +175,32 @@ describe('NewsletterReaderComponent', () => {
 
     expect(component['loading']()).toBe(true);
     expect(component['newsletter']()).toBeNull();
+  });
+
+  it('should map a 404 newsletter fetch to the not-found state, not error', () => {
+    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+    TestBed.tick();
+
+    expect(component['loading']()).toBe(false);
+    expect(component['error']()).toBe(false);
+    expect(component['notFound']()).toBe(true);
+  });
+
+  it('should surface a 5xx newsletter fetch as error, not a permanent 404', () => {
+    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+    TestBed.tick();
+
+    expect(component['loading']()).toBe(false);
+    expect(component['error']()).toBe(true);
+    expect(component['notFound']()).toBe(false);
   });
 
   it('should have copyLink method bound to clipboard service', () => {

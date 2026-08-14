@@ -1,17 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { NewsletterReaderState } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, filter, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
@@ -32,11 +32,11 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
 export class NewsletterReaderComponent {
   // === Services ===
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
   // === Route Params (toSignal) ===
   protected readonly projectSlug: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((m) => m.get('projectSlug'))), {
@@ -55,6 +55,7 @@ export class NewsletterReaderComponent {
 
   // === Computed: state projections ===
   protected readonly loading = computed(() => this.state().loading);
+  protected readonly error = computed(() => this.state().error);
   protected readonly project = computed(() => this.state().project);
   protected readonly newsletter = computed(() => this.state().newsletter);
 
@@ -66,8 +67,8 @@ export class NewsletterReaderComponent {
 
   // === Computed: 404 (unresolvable project/newsletter, or draft gated) ===
   protected readonly notFound = computed(() => {
-    const { loading, project, newsletter } = this.state();
-    return !loading && (!project || !newsletter || this.isDraftHidden());
+    const { loading, error, project, newsletter } = this.state();
+    return !loading && !error && (!project || !newsletter || this.isDraftHidden());
   });
 
   // === Computed: page display strings ===
@@ -94,36 +95,61 @@ export class NewsletterReaderComponent {
     this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
   }
 
-  protected onBackClick(): void {
-    this.router.navigate(['/newsletters/my']);
-  }
-
   // === Private Initializers ===
   private initState(): Signal<NewsletterReaderState> {
     return toSignal(
       combineLatest([toObservable(this.projectSlug), toObservable(this.newsletterId)]).pipe(
         filter((params): params is [string, string] => !!params[0] && !!params[1]),
         switchMap(([slug, id]) =>
+          // getProject swallows upstream failures into `null` internally, so a
+          // bad slug and a project-service outage both land on the not-found
+          // branch — the newsletter fetch below is where real statuses surface.
           this.projectService.getProject(slug, false).pipe(
             switchMap((project) => {
               if (!project?.uid) {
-                return of<NewsletterReaderState>({ loading: false, project: null, newsletter: null });
+                return of<NewsletterReaderState>({ loading: false, error: false, project: null, newsletter: null });
               }
               return this.newsletterService.getNewsletter(project.uid, id).pipe(
-                map((newsletter): NewsletterReaderState => ({ loading: false, project, newsletter })),
-                catchError(() => of<NewsletterReaderState>({ loading: false, project, newsletter: null }))
+                map((newsletter): NewsletterReaderState => ({ loading: false, error: false, project, newsletter })),
+                catchError((err) => {
+                  // 400/404 is the expected "no such newsletter" path; anything
+                  // else (gateway 5xx, network) is a transient failure and must
+                  // not masquerade as a permanent 404.
+                  const status = err?.status;
+                  if (typeof status === 'number' && [400, 404].includes(status)) {
+                    return of<NewsletterReaderState>({ loading: false, error: false, project, newsletter: null });
+                  }
+                  console.error('Failed to load newsletter', err);
+                  return of<NewsletterReaderState>({ loading: false, error: true, project, newsletter: null });
+                })
               );
             }),
-            catchError(() => of<NewsletterReaderState>({ loading: false, project: null, newsletter: null })),
+            // Defensive: getProject catches internally, so anything erroring the
+            // outer stream is unexpected — surface the error state, never a 404.
+            catchError((err) => {
+              console.error('Failed to load newsletter reader state', err);
+              return of<NewsletterReaderState>({ loading: false, error: true, project: null, newsletter: null });
+            }),
+            // Emit a real HTTP 404 during SSR for the not-found branches (missing
+            // project/newsletter or draft gated) — same in-place pattern as
+            // not-found.component.ts. Error states intentionally stay 200-family.
+            tap((state) => {
+              if (isPlatformServer(this.platformId) && this.reqContext && !state.loading && !state.error) {
+                const draftHidden = !!state.newsletter && state.newsletter.status !== 'sent' && !!state.project && !state.project.writer;
+                if (!state.project || !state.newsletter || draftHidden) {
+                  this.reqContext.notFound = true;
+                }
+              }
+            }),
             // Reset to the skeleton on every param change: the component is
             // reused across permalink navigations (back/forward between
             // issues), so without this the previous issue stays on screen
             // until the new fetch resolves.
-            startWith<NewsletterReaderState>({ loading: true, project: null, newsletter: null })
+            startWith<NewsletterReaderState>({ loading: true, error: false, project: null, newsletter: null })
           )
         )
       ),
-      { initialValue: { loading: true, project: null, newsletter: null } }
+      { initialValue: { loading: true, error: false, project: null, newsletter: null } }
     );
   }
 }
