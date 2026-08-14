@@ -59,7 +59,7 @@
             pTooltip="Remove"
             tooltipPosition="top"
             [attr.aria-label]="'Remove invitation for ' + invite.invitee_email"
-            [disabled]="submitting()"
+            [disabled]="loading() || committeeLoading() || membersLoadFailed() || committeeLoadFailed() || submitting()"
             data-testid="remove-pending-invite"
             (click)="removePendingInvite(invite.invitee_email)">
           </lfx-button>
