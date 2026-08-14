@@ -1609,7 +1609,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
    * Asserts the message does NOT tell the user to go check the ad platforms. Asserting only that
    * some error came back would pass on the old wording.
    */
-  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['ECONNRESET']])(
+  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['EHOSTUNREACH']])(
     'reports a %s create as definitely-not-created rather than unconfirmed',
     async (code) => {
       bothFlagsOn();
@@ -1633,6 +1633,26 @@ describe('CampaignServiceClient.createCampaigns', () => {
    * definite, which is the dangerous direction: it would invite exactly the duplicate-create
    * retry the cutover exists to prevent.
    */
+  /**
+   * `ECONNRESET` must stay INDETERMINATE, even though it is a transport error. Node reports it
+   * for a reset at any point, and nothing here distinguishes a connect-time reset from one that
+   * arrives after the request was sent and processed — where the create may have landed and only
+   * the reply was lost.
+   *
+   * This is the direction that costs money: on a path with no idempotency key, telling the user
+   * "nothing was created" invites the retry that duplicates a paid campaign. An earlier revision
+   * of this fix had ECONNRESET in the definite set; the sibling approve-path test caught it.
+   */
+  it('keeps an ECONNRESET create unconfirmed, because the reset may have followed a commit', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+    expect(res.error).toContain('could not be confirmed');
+    expect(res.error).not.toContain('nothing was created');
+  });
+
   it('still reports a 5xx create as unconfirmed, because the request did reach the service', async () => {
     bothFlagsOn();
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream boom', 502, 'INTERNAL_ERROR', { operation: 'create' }));

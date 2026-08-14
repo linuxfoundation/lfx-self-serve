@@ -184,9 +184,16 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
 /**
  * Did the request definitively never reach campaign-service?
  *
- * A transport failure — ECONNREFUSED, ENOTFOUND, ECONNRESET on connect, DNS failure — means the
- * bytes never left this process, so nothing upstream can have started. That is as DEFINITE as a
- * 4xx refusal, and safer to retry than one.
+ * Only CONNECT-time failures qualify: the connection was never established, so the bytes never
+ * left this process and nothing upstream can have started. That is as DEFINITE as a 4xx refusal,
+ * and safer to retry than one.
+ *
+ * `ECONNRESET` is deliberately EXCLUDED even though it is a transport error. Node reports it for
+ * a reset at any point, and this code cannot tell a connect-time reset from one that arrives
+ * after the request was sent and processed — where the write may well have committed and only
+ * the reply was lost. Calling that "nothing was created" on a path with no idempotency key is
+ * the one wrong answer worth avoiding, because it invites the retry that duplicates a paid
+ * campaign. The sibling approve path pins the same distinction (see its `definitelyRejected`).
  *
  * It needs its own check because such a failure is NOT a `MicroserviceError`: the proxy only
  * wraps errors carrying `.status` and `.code` (`microservice-proxy.service.ts:38-40`) and
@@ -202,7 +209,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
  * Node.js system-error field, and an unrecognised code stays indeterminate — this widens what
  * counts as definite, and a wrong guess in that direction is the dangerous one.
  */
-const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH']);
+const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 function requestNeverLeft(error: unknown): boolean {
   if (error instanceof MicroserviceError) return false; // it got a response; not a transport failure
@@ -1158,6 +1165,13 @@ export class CampaignServiceClient {
       // is stored now may not be theirs. The distinction between "someone replaced it" and
       // "someone removed it" changes nothing they can act on.
       const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      // Deliberately NOT widened with `requestNeverLeft` the way the create path is. The two
+      // look alike and are not: this arm runs after the write already SUCCEEDED, on the
+      // follow-up approve. `ECONNRESET` here means the approve was sent and its reply was lost —
+      // campaign-service may have committed it and bumped the version — so the outcome is
+      // genuinely unknown, which is what the sibling test at "reports no validator when the
+      // approval outcome is unknown" pins. `requestNeverLeft` answers "did the bytes leave", and
+      // only a connect-time failure makes that a proof; a mid-flight reset does not.
       const definitelyRejected =
         error instanceof MicroserviceError &&
         error.statusCode >= 400 &&
