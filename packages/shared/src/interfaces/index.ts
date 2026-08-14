@@ -189,6 +189,9 @@ export * from './supabase.interface';
 // Stat card interfaces
 export * from './stat-card.interface';
 
+// Download-card (PNG export) interfaces
+export * from './download-card.interface';
+
 // Intercom interfaces
 export * from './intercom.interface';
 

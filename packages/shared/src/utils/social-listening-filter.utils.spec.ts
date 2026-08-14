@@ -74,28 +74,30 @@ describe('encode / decode round-trip', () => {
     expect(decoded.scope.period).not.toBe('');
   });
 
-  it('joins array values on commas', () => {
+  it('encodes multi-value keys as arrays (the router emits repeated params)', () => {
     const encoded = encodePredicateToQueryParams(predicate({ keywords: ['a', 'b'], tags: ['x'], authors: ['@u1', '@u2'] }), scope(), DEFAULT_PERIOD);
 
-    expect(encoded[q.keywords]).toBe('a,b');
-    expect(encoded[q.tags]).toBe('x');
-    expect(encoded[q.authors]).toBe('@u1,@u2');
+    expect(encoded[q.keywords]).toEqual(['a', 'b']);
+    expect(encoded[q.tags]).toEqual(['x']);
+    expect(encoded[q.authors]).toEqual(['@u1', '@u2']);
   });
 
-  it('drops the empty segments a stray comma produces', () => {
-    const decoded = decodePredicateFromQueryParams({ [q.tags]: ',ai,,kubernetes,', [q.keywords]: ',,', [q.authors]: '@alice,' }, DEFAULT_PERIOD);
+  it('drops empty entries in a multi-value param', () => {
+    const decoded = decodePredicateFromQueryParams({ [q.tags]: ['', 'ai', 'kubernetes'], [q.keywords]: [''], [q.authors]: ['@alice', ''] }, DEFAULT_PERIOD);
 
     expect(decoded.predicate.tags).toEqual(['ai', 'kubernetes']);
     expect(decoded.predicate.keywords).toEqual([]);
     expect(decoded.predicate.authors).toEqual(['@alice']);
   });
 
-  it('cannot round-trip a value containing the comma delimiter — the codec splits it back apart', () => {
-    // Documents a known limitation rather than asserting a behavior the codec does not have:
-    // tag/keyword/author values are comma-joined, so an embedded comma is a lossy encode.
-    const encoded = encodePredicateToQueryParams(predicate({ tags: ['a,b'] }), scope(), DEFAULT_PERIOD);
+  it('round-trips a value containing a comma — repeated params carry it verbatim', () => {
+    // Regression: the old comma-joined codec split `a,b` back into two bogus selections.
+    const original = predicate({ tags: ['a,b'], authors: ['Last, First'] });
 
-    expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate.tags).toEqual(['a', 'b']);
+    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD), DEFAULT_PERIOD);
+
+    expect(decoded.predicate.tags).toEqual(['a,b']);
+    expect(decoded.predicate.authors).toEqual(['Last, First']);
   });
 
   it('preserves non-delimiter characters verbatim', () => {
@@ -108,11 +110,14 @@ describe('encode / decode round-trip', () => {
   });
 
   it('normalizes keywords on ingress, not on encode', () => {
-    // Encode joins verbatim — the predicate reaching it has already been through
+    // Encode keeps the array verbatim — the predicate reaching it has already been through
     // predicateFromSignals/normalizePredicate. Decode is where untrusted input is canonicalized.
-    expect(encodePredicateToQueryParams(predicate({ keywords: ['Kubernetes', 'cncf'] }), scope(), DEFAULT_PERIOD)[q.keywords]).toBe('Kubernetes,cncf');
+    expect(encodePredicateToQueryParams(predicate({ keywords: ['Kubernetes', 'cncf'] }), scope(), DEFAULT_PERIOD)[q.keywords]).toEqual(['Kubernetes', 'cncf']);
 
-    expect(decodePredicateFromQueryParams({ [q.keywords]: 'Kubernetes,KUBERNETES,cncf' }, DEFAULT_PERIOD).predicate.keywords).toEqual(['kubernetes', 'cncf']);
+    expect(decodePredicateFromQueryParams({ [q.keywords]: ['Kubernetes', 'KUBERNETES', 'cncf'] }, DEFAULT_PERIOD).predicate.keywords).toEqual([
+      'kubernetes',
+      'cncf',
+    ]);
     expect(normalizePredicate({ keywords: ['Kubernetes', 'KUBERNETES'] }).keywords).toEqual(['kubernetes']);
   });
 });
@@ -133,11 +138,11 @@ describe('decode coercion', () => {
     expect(decodePredicateFromQueryParams({}, DEFAULT_PERIOD).scope.activeTab).toBe('feed');
   });
 
-  it('takes the first value when the router hands back a repeated param', () => {
+  it('takes the first value of a repeated scalar param but keeps every element of a multi-value param', () => {
     const decoded = decodePredicateFromQueryParams({ [q.sentiment]: ['positive', 'negative'], [q.tags]: ['ai,ml', 'ignored'] }, DEFAULT_PERIOD);
 
     expect(decoded.predicate.sentiment).toBe('positive');
-    expect(decoded.predicate.tags).toEqual(['ai', 'ml']);
+    expect(decoded.predicate.tags).toEqual(['ai,ml', 'ignored']);
   });
 
   it('falls back to the defaults for empty-string values', () => {
@@ -168,9 +173,12 @@ describe('queryParamsEqual', () => {
     expect(queryParamsEqual({ [q.search]: 'mesh' }, {})).toBe(false);
   });
 
-  it('compares the first element of an array-valued param', () => {
+  it('compares multi-value params as sets, regardless of order or collapse to a scalar', () => {
     expect(queryParamsEqual({ [q.sentiment]: ['positive'] }, { [q.sentiment]: 'positive' })).toBe(true);
     expect(queryParamsEqual({ [q.sentiment]: ['positive'] }, { [q.sentiment]: 'negative' })).toBe(false);
+    expect(queryParamsEqual({ [q.tags]: ['a', 'b'] }, { [q.tags]: ['b', 'a'] })).toBe(true);
+    expect(queryParamsEqual({ [q.tags]: ['a', 'b'] }, { [q.tags]: 'a' })).toBe(false);
+    expect(queryParamsEqual({ [q.tags]: ['a,b'] }, { [q.tags]: ['a', 'b'] })).toBe(false);
   });
 });
 

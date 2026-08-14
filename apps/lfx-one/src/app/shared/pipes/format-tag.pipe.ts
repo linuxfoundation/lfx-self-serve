@@ -4,11 +4,7 @@
 import { Pipe, PipeTransform } from '@angular/core';
 import { formatTag } from '@lfx-one/shared/utils';
 
-/**
- * Formats a raw Social Listening tag for display: underscores become spaces, each word is
- * capitalized, and `ai` is special-cased to `AI` (e.g. `ai_agents` -> `AI Agents`).
- * Thin wrapper over the standalone `formatTag` util so the transform is also usable programmatically.
- */
+/** Formats a raw Social Listening tag for display (`ai_agents` -> `AI Agents`). Thin wrapper over the standalone `formatTag` util (rule: pipes needing programmatic access wrap a function). */
 @Pipe({
   name: 'formatTag',
 })

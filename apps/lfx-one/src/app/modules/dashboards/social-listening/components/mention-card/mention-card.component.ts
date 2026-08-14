@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MENTION_PLATFORM_CONFIG, MENTION_RELEVANCE_CONFIG, MENTION_SENTIMENT_CONFIG } from '@lfx-one/shared/constants';
+import { MENTION_FORWARD_EMAIL_BODY_MAX_CHARS, MENTION_PLATFORM_CONFIG, MENTION_RELEVANCE_CONFIG, MENTION_SENTIMENT_CONFIG } from '@lfx-one/shared/constants';
 import { capitalizeFirst, isValidUrl, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
 import { FormatTagPipe } from '@pipes/format-tag.pipe';
 import { TooltipModule } from 'primeng/tooltip';
@@ -21,10 +21,8 @@ const ANALYSIS_COLLAPSED_MAX_HEIGHT_PX = 40;
 const COPIED_STATE_MS = 1000;
 
 /**
- * A single mention in the Social Listening feed (LFXV2-3016). The whole card is a stretched
- * link to the mention's `originalUrl`; interactive elements (author link, copy, forward) sit
- * above it via `.card-interactive`. Bookmark / read-state actions are intentionally omitted —
- * deferred to the follow-up ticket (see lfxv2-3002-todo.md §6).
+ * A single mention in the Social Listening feed (LFXV2-3016): a stretched link to `originalUrl` with
+ * interactive elements above it via `.card-interactive`. Bookmark/read state is deferred (todo §6).
  */
 @Component({
   selector: 'lfx-mention-card',
@@ -107,9 +105,11 @@ export class MentionCardComponent {
       const keyword = mention.keyword ? capitalizeFirst(mention.keyword) : 'this project';
       const subject = encodeURIComponent(`${keyword} - Worth sharing`);
       const intro = `I found this post on ${keyword} and thought it was worth sharing.`;
-      const plainContent = mention.content ? stripMarkdown(mention.content) : '';
+      // Truncated so the href stays under the ~2000-char URL limit mail clients enforce.
+      const plainContent = mention.content ? stripMarkdown(mention.content).slice(0, MENTION_FORWARD_EMAIL_BODY_MAX_CHARS) : '';
+      const truncated = plainContent.length === MENTION_FORWARD_EMAIL_BODY_MAX_CHARS ? `${plainContent}…` : plainContent;
       const linkSection = mention.originalUrl ? `You can see the original post below:\n${mention.originalUrl}` : '';
-      const body = encodeURIComponent([intro, mention.title, plainContent, linkSection].filter(Boolean).join('\n\n'));
+      const body = encodeURIComponent([intro, mention.title, truncated, linkSection].filter(Boolean).join('\n\n'));
       return `mailto:?subject=${subject}&body=${body}`;
     });
   }

@@ -1,10 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Social Listening runtime constants — option lists double as server-side validation
- * whitelists (3015). No hex colors (styling rule): Tailwind `colorClass` + `TagSeverity`.
- */
+/** Social Listening runtime constants — option lists double as server-side validation whitelists (3015). No hex colors (styling rule): Tailwind `colorClass` + `TagSeverity`. */
 
 import type {
   FilterPredicate,
@@ -100,9 +97,7 @@ export const ANALYTICS_TOP_PROJECTS_LIMIT = 5;
 
 /**
  * Series colors for the analytics charts (LFXV2-3018) — `lfxColors` scales only (styling rule).
- * Index 0 is reserved for the "Total" line on Mentions Over Time; per-project and per-tag
- * series cycle from index 1. 500 shades first, then 300s so foundations with more than
- * five child projects still get distinguishable lines.
+ * Index 0 is the "Total" line; other series cycle from index 1 (500s first, then 300s).
  */
 export const SOCIAL_LISTENING_CHART_PALETTE: string[] = [
   lfxColors.gray[900],
@@ -127,21 +122,19 @@ export const MENTION_TIME_TICK_INTERVAL_MS = 60_000;
 export const MENTION_SEARCH_DEBOUNCE_MS = 500;
 export const MENTION_SEARCH_MIN_CHARS = 3;
 
+/** Plain-text body cap for the forward-by-email mailto: keeps the href under the ~2000-char URL limit mail clients enforce. */
+export const MENTION_FORWARD_EMAIL_BODY_MAX_CHARS = 500;
+
 // ---------------------------------------------------------------------------
 // Query-param keys + defaults
 // ---------------------------------------------------------------------------
 
-/**
- * URL query-param keys for the filter predicate + scope round-trip. PCC's
- * `bookmarks` / `read` / `view` keys are dropped (deferred); `range` is renamed
- * to `period` to match the marketing-impact period vocabulary.
- */
+/** URL query-param keys for the predicate + scope round-trip; PCC's `bookmarks`/`read`/`view` keys are dropped (deferred) and `range` is renamed to `period`. */
 export const SOCIAL_LISTENING_QUERY_PARAMS = {
   tab: 'tab',
   period: 'period',
-  // `?project=` is reserved app-wide: projectQueryParamGuard consumes it to seed the foundation
-  // context and ProjectContextService rewrites it on every context change. The sub-project filter
-  // (a Snowflake SOURCE_PROJECT_ID, not a foundation slug) must use its own key.
+  // `?project=` is reserved app-wide (projectQueryParamGuard / ProjectContextService rewrite it for
+  // the foundation context), so the sub-project filter — a Snowflake SOURCE_PROJECT_ID — gets its own key.
   sourceProject: 'sourceProject',
   platform: 'platform',
   sentiment: 'sentiment',
@@ -154,10 +147,7 @@ export const SOCIAL_LISTENING_QUERY_PARAMS = {
   search: 'q',
 } as const;
 
-/**
- * Default predicate. Consumers must clone the array fields before mutating —
- * `predicateFromSignals` / `applyPredicateToSignals` already do.
- */
+/** Default predicate. Consumers must clone the array fields before mutating — `predicateFromSignals`/`applyPredicateToSignals` already do. */
 export const DEFAULT_MENTION_PREDICATE: FilterPredicate = {
   sentiment: 'all',
   relevance: 'all',
@@ -169,12 +159,7 @@ export const DEFAULT_MENTION_PREDICATE: FilterPredicate = {
   search: '',
 };
 
-/**
- * `period` is deliberately `''` — the real default is resolved at runtime by
- * `getDefaultMarketingImpactPeriod()`, so every encode/decode/compare helper in
- * `utils/social-listening-filter.utils.ts` takes `defaultPeriod` as an argument
- * rather than baking in a stale month.
- */
+/** `period` is deliberately `''` — the real default resolves at runtime via `getDefaultMarketingImpactPeriod()`, so codec helpers take `defaultPeriod` as an argument. */
 export const DEFAULT_MENTION_VIEW_SCOPE: SavedViewScope = {
   period: '',
   sourceProjectId: 'all',

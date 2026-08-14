@@ -56,21 +56,21 @@
       </div>
 
       <div class="flex flex-col gap-4 px-5 py-5">
-        @if (activeTab() === 'feed') {
-          <!-- Active-filter summary: one pill per active dimension — click a pill to remove that filter -->
-          @if (activeFilterPills().length > 0) {
-            <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
-              <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
-              <button
-                type="button"
-                class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                data-testid="social-listening-filter-pills-clear-all"
-                (click)="clearAllFilters()">
-                Clear all
-              </button>
-            </div>
-          }
+        <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
+        @if (activeFilterPills().length > 0) {
+          <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
+            <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
+            <button
+              type="button"
+              class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              data-testid="social-listening-filter-pills-clear-all"
+              (click)="clearAllFilters()">
+              Clear all
+            </button>
+          </div>
+        }
 
+        @if (activeTab() === 'feed') {
           @if (error(); as errorMessage) {
             <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
           }
@@ -96,7 +96,7 @@
             [foundationSlug]="foundationSlug()"
             [period]="selectedPeriod()"
             [platform]="selectedPlatform()"
-            [sourceProjectId]="selectedProject()"
+            [filters]="currentFilters()"
             [exportNonce]="exportNonce()"
             [(isExporting)]="exporting" />
         }

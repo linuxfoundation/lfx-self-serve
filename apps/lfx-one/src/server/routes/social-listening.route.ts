@@ -11,13 +11,8 @@ const router = Router();
 const socialListeningController = new SocialListeningController();
 
 /**
- * Social Listening is an executive-dashboard surface (LFXV2-3002): Executive Directors and
- * LF Staff, matching the client-side `dashboardAccessGuard` and the sidebar's
- * `canViewExecutiveDashboards` gate. The policy is applied to the whole router so every current
- * and future endpoint is covered — the client-side guard is a routing concern, not an
- * authorization boundary. Rate limiting comes from the app-wide `apiRateLimiter` mounted on
- * `/api/` in `server.ts`; these are read-only Snowflake queries behind a 30-minute cache, so
- * they don't warrant a tighter bucket than the shared 500/minute.
+ * Social Listening is an executive-dashboard surface (LFXV2-3002): EDs and LF Staff. The policy wraps
+ * the whole router so every current and future endpoint is covered; rate limiting is the app-wide one.
  */
 router.use(requireDashboardAccess);
 

@@ -10,12 +10,9 @@ import { logger } from '../services/logger.service';
 
 const ED: PersonaType = 'executive-director';
 
-// Dashboard access admits the same callers the client-side dashboardAccessGuard does:
-// Executive Directors and LF Staff. Like requireExecutiveDirector, authorization comes from
-// server-verified persona detection (never the client-spoofable persona cookie) and the ED
-// persona stays scoped to the foundations the caller holds it for. Root writers and LF staff
-// bypass the scope check — they are already trusted across foundations elsewhere in the app.
-export async function requireDashboardAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+// Dashboard access admits the same callers as the client-side dashboardAccessGuard: EDs and LF Staff,
+// via server-verified personas (never the spoofable cookie); ED scope is per-foundation, root writers bypass.
+export async function requireDashboardAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await personaDetectionService.getPersonas(req);
     const isED = result.personas.includes(ED);

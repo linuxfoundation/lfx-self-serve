@@ -664,12 +664,7 @@ export function formatHubSpotUpdatedAt(value: string | undefined): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
-/**
- * Long-form relative-time label for content timestamps ("Just now", "5 minutes ago",
- * "2 hours ago", "3 weeks ago"). Coarser callers (autosave indicators) use
- * `formatRelativeTime` instead. Returns '' for missing/invalid input. Callers that
- * want the label to refresh over time re-evaluate on a tick (e.g. MENTION_TIME_TICK_INTERVAL_MS).
- */
+/** Long-form relative-time label ("Just now", "5 minutes ago", "3 weeks ago"). Returns '' for missing/invalid input; re-evaluate on a tick to refresh (e.g. MENTION_TIME_TICK_INTERVAL_MS). */
 export function timeAgo(timestamp: string): string {
   if (!timestamp) return '';
 

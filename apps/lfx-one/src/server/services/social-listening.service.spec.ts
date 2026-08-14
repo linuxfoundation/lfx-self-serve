@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this
 // app's vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({
+  ANALYTICS_TOP_PROJECTS_LIMIT: 5,
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
@@ -360,6 +361,57 @@ describe('analytics', () => {
       'cncf',
       'analytics-top-projects',
       ['cncf', '2026-01-01', '2026-02-01', 100],
+      1800,
+      expect.any(Function)
+    );
+  });
+
+  it('applies the feed predicate to every analytics panel, with scope binds preceding filter binds', async () => {
+    const filters = { sentiment: 'Negative', keywords: ['Kubernetes'], search: 'mesh' };
+
+    await service().getAnalyticsOverview(req, { ...SCOPE, platform: 'Reddit', ...filters });
+    // Overview's base CTE spans the previous window, so scope dates are [prevStart, endDate]; the
+    // filter binds follow, then the two window ranges.
+    expect(lastCall().binds).toEqual([
+      'cncf',
+      '2025-12-01',
+      '2026-02-01',
+      'reddit',
+      'negative',
+      'kubernetes',
+      '%mesh%',
+      '%mesh%',
+      '2026-01-01',
+      '2026-02-01',
+      '2025-12-01',
+      '2026-01-01',
+    ]);
+    expect(normalize(lastCall().sql)).toContain('WITH base AS');
+
+    for (const run of [
+      () => service().getAnalyticsOverTime(req, { ...SCOPE, ...filters }),
+      () => service().getAnalyticsPlatformDistribution(req, { ...SCOPE, ...filters }),
+      () => service().getAnalyticsSentimentDistribution(req, { ...SCOPE, ...filters }),
+      () => service().getAnalyticsTopProjects(req, { ...SCOPE, ...filters }),
+    ]) {
+      await run();
+      expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'negative', 'kubernetes', '%mesh%', '%mesh%']);
+    }
+  });
+
+  it('filters the tags endpoint too, aliasing the columns so the LATERAL FLATTEN join stays unambiguous', async () => {
+    await service().getMentionsTags(req, { ...SCOPE, tags: ['ai'], authors: ['@alice'] });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).toContain('SPLIT(REGEXP_REPLACE(LOWER(TRIM(m.TAGS))');
+    expect(normalized).toContain('m.AUTHOR IN (?)');
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'ai', '@alice']);
+    // The filter binds discriminate the cache entry alongside the row cap.
+    expect(withSocialListeningCache).toHaveBeenLastCalledWith(
+      'cncf',
+      'tags',
+      ['cncf', '2026-01-01', '2026-02-01', 'ai', '@alice', 10],
       1800,
       expect.any(Function)
     );

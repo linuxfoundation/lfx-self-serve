@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Filter-predicate ⇄ signal ⇄ query-param codecs. `defaultPeriod` is always passed in
- * (runtime-resolved, never baked in); `SocialListeningQueryParams` replaces Angular's
- * `Params` so `@angular/router` stays out of the server-consumed shared package.
+ * Filter-predicate ⇄ signal ⇄ query-param codecs; `defaultPeriod` is always passed in. Multi-value
+ * keys round-trip as string arrays (repeated params — commas survive). `SocialListeningQueryParams`
+ * keeps `@angular/router` out of the server-consumed shared package.
  */
 
 import {
@@ -161,10 +161,12 @@ function asScalar(value: string | string[] | null | undefined): string | undefin
   return undefined;
 }
 
-/**
- * Returns an explicit `null` for keys that hit DEFAULT so that `queryParamsHandling: 'merge'`
- * removes them from the URL instead of preserving stale values. 3rd-party / utm_* keys survive.
- */
+/** Multi-valued keys arrive as a string array from the router (repeated params); a lone value collapses to a scalar. */
+function asMultiValue(value: string | string[] | null | undefined): string[] {
+  return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v !== '');
+}
+
+/** Explicit `null` at DEFAULT so `queryParamsHandling: 'merge'` strips the key from the URL; 3rd-party / utm_* keys survive. */
 export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeState, defaultPeriod: string): SocialListeningQueryParams {
   const q = SOCIAL_LISTENING_QUERY_PARAMS;
   return {
@@ -176,9 +178,9 @@ export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeSta
     [q.relevance]: p.relevance !== DEFAULT_MENTION_PREDICATE.relevance ? p.relevance : null,
     [q.language]: p.language !== DEFAULT_MENTION_PREDICATE.language ? p.language : null,
     [q.hasTitle]: p.hasTitle !== DEFAULT_MENTION_PREDICATE.hasTitle ? p.hasTitle : null,
-    [q.keywords]: p.keywords.length > 0 ? p.keywords.join(',') : null,
-    [q.tags]: p.tags.length > 0 ? p.tags.join(',') : null,
-    [q.authors]: p.authors.length > 0 ? p.authors.join(',') : null,
+    [q.keywords]: p.keywords.length > 0 ? [...p.keywords] : null,
+    [q.tags]: p.tags.length > 0 ? [...p.tags] : null,
+    [q.authors]: p.authors.length > 0 ? [...p.authors] : null,
     [q.search]: p.search !== DEFAULT_MENTION_PREDICATE.search ? p.search : null,
   };
 }
@@ -198,14 +200,9 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
 
   const activeTab: ScopeState['activeTab'] = asScalar(params[q.tab]) === 'analytics' ? 'analytics' : 'feed';
 
-  const rawKeywords = asScalar(params[q.keywords]);
-  const keywords = rawKeywords ? normalizeKeywords(rawKeywords.split(',').filter(Boolean)) : [];
-
-  const rawTags = asScalar(params[q.tags]);
-  const tags = rawTags ? rawTags.split(',').filter(Boolean) : [];
-
-  const rawAuthors = asScalar(params[q.authors]);
-  const authors = rawAuthors ? rawAuthors.split(',').filter(Boolean) : [];
+  const keywords = normalizeKeywords(asMultiValue(params[q.keywords]));
+  const tags = asMultiValue(params[q.tags]);
+  const authors = asMultiValue(params[q.authors]);
 
   const predicate: FilterPredicate = {
     sentiment: coerceLiteral(asScalar(params[q.sentiment]), SENTIMENT_VALUES, DEFAULT_MENTION_PREDICATE.sentiment),
@@ -233,14 +230,12 @@ export function scopesEqual(a: ScopeState, b: ScopeState): boolean {
 }
 
 /**
- * Compares only the codec-owned keys — live router params also carry `project` and any `utm_*`,
- * and unioning those in would make the URL write effect diff forever. Treats missing, null, and
- * empty-string values as equivalent for the same reason.
+ * Compares only the codec-owned keys (live router params also carry `project` / `utm_*`);
+ * multi-value keys compare as sets, and missing/null/empty-string are equivalent absences.
  */
 export function queryParamsEqual(a: SocialListeningQueryParams, b: SocialListeningQueryParams): boolean {
-  const normalize = (v: string | string[] | null | undefined): string => asScalar(v) ?? '';
   for (const key of Object.values(SOCIAL_LISTENING_QUERY_PARAMS)) {
-    if (normalize(a[key]) !== normalize(b[key])) return false;
+    if (!sortedEqual(asMultiValue(a[key]), asMultiValue(b[key]))) return false;
   }
   return true;
 }

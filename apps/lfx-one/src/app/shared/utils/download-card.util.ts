@@ -3,23 +3,15 @@
 
 import { toPng } from 'html-to-image';
 
-const IGNORE_CLASS = 'ignore-download';
+import type { DownloadCardOptions } from '@lfx-one/shared/interfaces';
 
-/** Optional capture tweaks for `downloadCardAsImage`. */
-export interface DownloadCardOptions {
-  /**
-   * Canvas background color (default: transparent, the historical behavior). Multi-panel
-   * dashboards want an explicit background — the captured container is transparent where the
-   * page background shows through (single cards are white themselves, so they don't need it).
-   */
-  backgroundColor?: string;
-}
+const IGNORE_CLASS = 'ignore-download';
 
 export async function downloadCardAsImage(element: HTMLElement, filename: string, options?: DownloadCardOptions): Promise<void> {
   try {
-    // Wait for webfonts so icon-font glyphs (Font Awesome) render in the capture — the browser
-    // may still be swapping them in when the export is triggered right after a tab switch.
-    await document.fonts.ready;
+    // Wait for webfonts so icon-font glyphs (Font Awesome) render in the capture. `document.fonts`
+    // is absent in older WebViews / jsdom — the capture still works there, just without the wait.
+    if (document.fonts?.ready) await document.fonts.ready;
 
     const dataUrl = await toPng(element, {
       pixelRatio: 2,

@@ -152,10 +152,9 @@ async function stubNavLensItems(page: Page, lens: 'foundation' | 'project', item
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
     if (!url.includes(`lens=${lens}`)) {
-      // Fulfill non-matching lens requests with empty items to keep the suite fully hermetic.
       // Echo the requested lens param back so NavigationService routing logic stays correct for
       // any lens value the app may prefetch (e.g. 'org', 'me'), not just 'foundation'/'project'.
-      const requestedLens = URL.canParse(url) ? (new URL(url).searchParams.get('lens') ?? lens) : lens;
+      const requestedLens = new URLSearchParams(url.split('?')[1] ?? '').get('lens') ?? lens;
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -192,15 +191,14 @@ async function stubProjectApi(page: Page, slug: string, writer: boolean): Promis
 }
 
 /**
- * Every social-listening endpoint is Snowflake-backed, so the page is stubbed empty — the
- * assertions are about the guard letting an ED through, not about feed content. Bodies must
- * match the per-endpoint wire contract: option/analytics-list endpoints return arrays (the
- * page calls .map() on them, so an object body would throw in its computed signals), while
- * feed/count/overview return objects.
+ * The social-listening endpoints are Snowflake-backed, so the page is stubbed empty — the assertions
+ * are about the guard, not feed content. Bodies must match the wire contract: option/analytics-list
+ * endpoints return arrays (the page calls .map() on them); feed/count/overview return objects.
  */
 async function stubSocialListeningApi(page: Page): Promise<void> {
   await page.route('**/api/social-listening/**', (route) => {
-    const path = new URL(route.request().url()).pathname;
+    // Path suffixes only — the query string is stripped rather than parsed (no throwing URL ctor).
+    const path = route.request().url().split('?')[0];
     let body: unknown;
     if (path.endsWith('/mentions-feed')) {
       body = { mentions: [], computedAt: null };

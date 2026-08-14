@@ -353,13 +353,10 @@ export function buildWeeklyBriefRatingCacheKey(committeeUid: string, briefUid: s
 }
 
 /**
- * Per-foundation Social Listening cache key. `discriminator` values are the query's own bind
- * parameters (date window, scope selects, limits) — hashed rather than concatenated so an arbitrary
- * user-supplied filter value can neither corrupt the `:`-delimited key nor blow past Valkey's key
- * length limit, while two different windows still resolve to different entries. Null (fail-closed →
- * direct fetch) when the foundation slug isn't filter-safe.
+ * Per-foundation Social Listening cache key: the query's binds are sha256-hashed (not concatenated)
+ * so a filter value can't corrupt the key, and null (fail-closed → direct fetch) for unsafe slugs.
  */
-export function buildSocialListeningCacheKey(foundationSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+function buildSocialListeningCacheKey(foundationSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
   if (!isFilterSafeIdentifier(foundationSlug)) return null;
   const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
   return `${keyPrefix()}:${VALKEY_CACHE.SOCIAL_LISTENING_NAMESPACE}:${foundationSlug}:${resource}:${digest}`;

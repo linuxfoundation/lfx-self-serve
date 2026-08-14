@@ -1,10 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Social Listening domain contracts — shared by the Angular app and the Express server.
- * Ported from PCC (lfxv2-3002-todo.md §0); types only — runtime values live in the constants file.
- */
+/** Social Listening domain contracts — shared by the Angular app and the Express server (PCC port). Types only; runtime values live in the constants file. */
 
 import type { TagSeverity } from './components.interface';
 
@@ -24,10 +21,7 @@ export type SocialListeningTab = 'feed' | 'analytics';
 // Snowflake row shapes (UPPER_SNAKE, as returned by ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED)
 // ---------------------------------------------------------------------------
 
-/**
- * Raw feed row. PCC's `BOOKMARKED` (deferred follow-up) and `[key: string]: unknown`
- * index signature (defeats excess-property checking) are deliberately not ported.
- */
+/** Raw feed row. PCC's `BOOKMARKED` (deferred follow-up) and index signature (defeats excess-property checking) are deliberately not ported. */
 export interface SocialListeningMention {
   MENTION_ID: string;
   PROJECT_ID: string;
@@ -80,11 +74,7 @@ export interface SocialListeningTag {
   TAG: string | null;
 }
 
-/**
- * Tag with usage count. The single `mentions-tags` endpoint serves both the tag
- * filter dropdown (ignores the count) and the analytics top-tags panel, so the
- * planned separate `analytics-tags` endpoint from PCC was dropped.
- */
+/** Tag with usage count. The single `mentions-tags` endpoint serves both the tag filter dropdown and the analytics top-tags panel (PCC's separate `analytics-tags` was dropped). */
 export interface SocialListeningTagCount {
   TAG: string;
   TOTAL_COUNT: number;
@@ -184,9 +174,7 @@ export interface SocialListeningOptionsParams {
   foundationSlug: string;
 }
 
-export interface SocialListeningAnalyticsParams extends SocialListeningScopeParams {
-  platform?: string;
-  sourceProjectId?: string;
+export interface SocialListeningAnalyticsParams extends SocialListeningScopeParams, SocialListeningFilterParams {
   limit?: number;
 }
 
@@ -194,10 +182,7 @@ export interface SocialListeningAnalyticsParams extends SocialListeningScopePara
 // Client request params (Angular service → REST query string; period token, not dates)
 // ---------------------------------------------------------------------------
 
-/**
- * Client-side filter fragment. Values are camelCase and already stripped of
- * `'all'`/empty sentinels by `buildMentionFilters`.
- */
+/** Client-side filter fragment: camelCase values already stripped of `'all'`/empty sentinels by `buildMentionFilters`. */
 export interface MentionFilters {
   sentiment?: string;
   relevance?: string;
@@ -238,11 +223,10 @@ export interface SocialListeningOptionsRequest {
   foundationSlug: string;
 }
 
-export interface SocialListeningAnalyticsRequest {
+/** Analytics panels take the same feed predicate as the feed/count endpoints, so the two tabs agree. */
+export interface SocialListeningAnalyticsRequest extends MentionFilters {
   foundationSlug: string;
   period?: string;
-  platform?: string;
-  sourceProjectId?: string;
   limit?: number;
 }
 
@@ -250,10 +234,7 @@ export interface SocialListeningAnalyticsRequest {
 // Responses
 // ---------------------------------------------------------------------------
 
-/**
- * Feed page. `total` deliberately lives on the separate count endpoint
- * (`SocialListeningCountResponse`) so the feed never claims a total it doesn't compute.
- */
+/** Feed page. `total` deliberately lives on the separate count endpoint so the feed never claims a total it doesn't compute. */
 export interface SocialListeningFeedResponse {
   mentions: SocialListeningMention[];
   /** dbt rebuild timestamp carried on every row, read off the newest one — surfaced as "Data as of". */
@@ -356,10 +337,7 @@ export interface LoadableState<T> {
 // Filter predicate + URL-synced scope
 // ---------------------------------------------------------------------------
 
-/**
- * URL-synced filter state. PCC's `bookmarkFilter` / `readFilter` keys are dropped
- * (deferred to the follow-up ticket); everything else round-trips through query params.
- */
+/** URL-synced filter state. PCC's `bookmarkFilter`/`readFilter` keys are dropped (deferred); everything else round-trips through query params. */
 export interface FilterPredicate {
   sentiment: string;
   relevance: string;
@@ -378,11 +356,7 @@ export interface SavedViewScope {
   platform: string;
 }
 
-/**
- * URL-tracked state that lives outside FilterPredicate: it changes the data the
- * user sees but is independent of saved views, so applying a view never
- * overwrites the user's current scope.
- */
+/** URL-tracked state outside FilterPredicate: it changes the visible data but is independent of saved views, so applying a view never overwrites the current scope. */
 export interface ScopeState {
   activeTab: SocialListeningTab;
   period: string;
@@ -390,11 +364,7 @@ export interface ScopeState {
   platform: string;
 }
 
-/**
- * Reserved for the deferred saved-views follow-up ticket. Kept now so the
- * query-param encode/decode round-trip stays stable and saved views become
- * "persist a predicate" rather than a re-architecture.
- */
+/** Reserved for the deferred saved-views follow-up ticket — kept now so the query-param round-trip stays stable and saved views become "persist a predicate". */
 export interface SavedFilter {
   /** UUID v4, client-generated; stable for URL ?view= sharing. */
   id: string;
@@ -409,10 +379,7 @@ export interface SavedFilter {
 // Signal bundles consumed by the filter utils
 // ---------------------------------------------------------------------------
 
-/**
- * Structural subset of Angular's `WritableSignal` (`()` read + `set`). Keeps
- * `@angular/core` out of the shared package the Express server also consumes.
- */
+/** Structural subset of Angular's `WritableSignal` (`()` read + `set`) — keeps `@angular/core` out of the server-consumed shared package. */
 export interface WritableSignalLike<T> {
   (): T;
   set(value: T): void;

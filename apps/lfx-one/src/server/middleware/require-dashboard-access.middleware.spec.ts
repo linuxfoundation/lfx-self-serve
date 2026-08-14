@@ -1,9 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// The middleware's import graph transitively reaches Angular's partially-compiled @angular/common
-// (via the shared logging/service chain). Under vitest that needs the JIT compiler as a fallback,
-// so load it before importing the module under test.
+// The middleware's import graph transitively reaches Angular's partially-compiled @angular/common;
+// under vitest that needs the JIT compiler, so load it before importing the module under test.
 import '@angular/compiler';
 
 import type { NextFunction, Request, Response } from 'express';

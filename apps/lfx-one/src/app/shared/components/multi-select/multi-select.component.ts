@@ -61,11 +61,7 @@ export class MultiSelectComponent {
   public readonly inputId = input<string | undefined>(undefined);
   public readonly filterChange = output<string>();
 
-  /**
-   * Optional custom option template (mirrors `lfx-select`'s `itemTemplate`) for rows richer than the
-   * built-in `optionSubLabel`/`optionImage` layout — e.g. a FontAwesome icon + label + meta count.
-   * Project as `<ng-template let-option #item>`. Takes precedence over the built-in layout.
-   */
+  /** Optional custom option template (mirrors `lfx-select`'s `itemTemplate`) for richer rows — project as `<ng-template let-option #item>`; takes precedence over the built-in layout. */
   public readonly itemTemplate = contentChild<TemplateRef<unknown>>('item');
 
   /** On panel open, match the body-appended overlay's width to the trigger (opt-in). Browser-only (touches document/rAF). */

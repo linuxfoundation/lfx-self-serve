@@ -18,20 +18,16 @@ import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
 
 /**
- * Query-parameter parsing for the Social Listening endpoints. Every value is validated, normalized,
- * and bounded here so the service only ever binds values the HTTP layer has already vetted — the
- * service's own caps are defense in depth, not the first line.
- *
- * These helpers do NOT log; the centralized `apiErrorHandler` logs every `ServiceValidationError`
- * at WARN. The wire keys are the camelCase `MentionFilters` field names the client builds with
- * `buildMentionFilters()`, with array values comma-joined (the 3016 service codec's `join(',')`) —
- * not the snake_case router params the page uses in the browser URL.
+ * Query-parameter parsing for the Social Listening endpoints: every value is validated and bounded
+ * here so the service only binds vetted values. No logging — `apiErrorHandler` logs every
+ * `ServiceValidationError` at WARN. Array values arrive as repeated params.
  */
 
 /** Foundation slugs are lowercase alphanumeric + hyphens, matching every other foundation-scoped endpoint. */
 const FOUNDATION_SLUG_PATTERN = /^[a-z0-9-]+$/;
 
-const FOUNDATION_SLUG_MAX_LENGTH = 200;
+/** Matches the `isFilterSafeIdentifier()` ceiling so a passing slug can always build a Valkey cache key. */
+const FOUNDATION_SLUG_MAX_LENGTH = 64;
 
 /** Upper bound for a single filter value (a keyword, tag, author handle, language code, or id). */
 const FILTER_VALUE_MAX_LENGTH = 200;
@@ -52,12 +48,7 @@ const VALID_SENTIMENTS = MENTION_SENTIMENT_OPTIONS.map((option) => option.value)
 const VALID_RELEVANCES = MENTION_RELEVANCE_OPTIONS.map((option) => option.value);
 const VALID_HAS_TITLE = MENTION_HAS_TITLE_OPTIONS.map((option) => option.value);
 
-/**
- * Required, format-checked foundation slug.
- *
- * Note: slugs longer than 64 characters clear this check but fail `isFilterSafeIdentifier()` inside
- * `buildSocialListeningCacheKey()`, which fails closed to an uncached direct fetch. Correct either way.
- */
+/** Required, format-checked foundation slug, capped at the cache-key builder's 64-char ceiling (`isFilterSafeIdentifier`). */
 export function parseFoundationSlug(req: Request, operation: string): string {
   const foundationSlug = getStringQueryParam(req, 'foundationSlug');
 
@@ -72,10 +63,7 @@ export function parseFoundationSlug(req: Request, operation: string): string {
   return foundationSlug;
 }
 
-/**
- * Foundation + half-open `[startDate, endDate)` window + the two selects that scope the whole page.
- * A missing `period` resolves to the same default the client starts on, so a bare request is valid.
- */
+/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. A missing `period` resolves to the client default, so a bare request is valid. */
 export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
   const period = getValidatedPeriod(req, operation) ?? defaultPeriodRange(operation);
 
@@ -97,10 +85,7 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
   };
 }
 
-/**
- * The filter subset the author-option query cascades off. Omits `authors` and `mentionIds` by
- * construction — a multiselect must never filter its own option list.
- */
+/** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` so a multiselect never filters its own option list. */
 export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds'> {
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
@@ -156,10 +141,7 @@ function parseEnumParam(req: Request, name: string, allowed: string[], operation
   return raw === 'all' ? undefined : raw;
 }
 
-/**
- * Length-bounded free-text value. Values that reach Snowflake as binds (a language code, a platform
- * key, a sub-project id, a search term) can't be whitelisted, so they are bounded instead.
- */
+/** Length-bounded free-text value: values that become Snowflake binds can't be whitelisted, so they are bounded instead. */
 function parseTextParam(req: Request, name: string, maxLength: number, operation: string): string | undefined {
   const raw = getStringQueryParam(req, name);
 
@@ -181,10 +163,8 @@ function parseTextParam(req: Request, name: string, maxLength: number, operation
 }
 
 /**
- * Comma-joined array params (`tags=a,b,c` — the client codec's `join(',')`) as a bounded string
- * array. Repeated keys are tolerated by splitting each element too. An over-long list is rejected
- * rather than truncated — silently dropping filter values would return results the caller didn't ask
- * for. A present-but-empty value is preserved as `[]`, which `mentionIds` reads as "nothing selected".
+ * Repeated-key array params (`tags=a&tags=b`) as a bounded string array; a lone key collapses to one
+ * element. Over-long lists are rejected, not truncated; a present-but-empty value stays `[]`.
  */
 function parseArrayParam(req: Request, name: string, cap: number, operation: string): string[] | undefined {
   const raw = req.query[name];
@@ -195,7 +175,6 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
 
   const values = (Array.isArray(raw) ? raw : [raw])
     .filter((value): value is string => typeof value === 'string')
-    .flatMap((value) => value.split(','))
     .map((value) => value.trim())
     .filter(Boolean);
 

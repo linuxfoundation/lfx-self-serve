@@ -1,10 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Social Listening mapping/filter helpers, shared by the Angular app and the Express server.
- * Ported from PCC; the bookmark (`mentionIds`) client branch is deferred to a follow-up ticket.
- */
+/** Social Listening mapping/filter helpers, shared by the Angular app and the Express server. The bookmark (`mentionIds`) client branch is deferred to a follow-up ticket. */
 
 import type { ChartData } from 'chart.js';
 
@@ -46,9 +43,8 @@ import { capitalizeFirst } from './string.utils';
 export const normalizeKeywords = (keywords: string[]): string[] => [...new Set(keywords.map((keyword) => keyword.toLowerCase()))];
 
 /**
- * Normalizes a raw Snowflake platform/network value to a `MentionPlatform` key.
- * Snowflake returns `'X'` for Twitter — mapped here. `Object.hasOwn` (not `in`)
- * so prototype keys like `'constructor'` can't pass the check.
+ * Normalizes a raw Snowflake platform/network value to a `MentionPlatform` key (`'X'` → twitter).
+ * `Object.hasOwn` (not `in`) so prototype keys like `'constructor'` can't pass the check.
  */
 export function normalizePlatformKey(network: string): MentionPlatform {
   const normalized = (network || '').toLowerCase().trim().replace(/\s/g, '');
@@ -90,10 +86,7 @@ export function mapRawToMention(raw: SocialListeningMention): Mention {
   };
 }
 
-/**
- * Converts raw filter-signal values into the client request fragment:
- * `'all'`/empty values are dropped, keywords are normalized, empty arrays are omitted.
- */
+/** Converts raw filter-signal values into the client request fragment: `'all'`/empty values dropped, keywords normalized, empty arrays omitted. */
 export function buildMentionFilters(opts: {
   sentiment: string;
   relevance: string;
@@ -145,12 +138,7 @@ export function mapAuthorsToOptions(authors: SocialListeningMentionAuthor[]): Au
   });
 }
 
-/**
- * Formats a raw Social Listening tag for display: underscores become spaces, each word is
- * capitalized, and `ai` is special-cased to `AI` (e.g. `ai_agents` -> `AI Agents`).
- * Standalone so non-template consumers (e.g. the filters panel's option mapping) share it
- * with the `formatTag` pipe (rule: pipes needing programmatic access wrap a function).
- */
+/** Formats a raw tag for display (`ai_agents` -> `AI Agents`). Standalone so non-template consumers share it with the `formatTag` pipe (rule: pipes wrap a function). */
 export function formatTag(value: string): string {
   if (!value) {
     return '';
@@ -162,11 +150,7 @@ export function formatTag(value: string): string {
     .join(' ');
 }
 
-/**
- * The author list cascades off other filters, so a kept selection can drop out of
- * the rescoped options. Re-add those as placeholders so the multiselect chip label
- * still resolves.
- */
+/** Re-adds selected authors missing from the rescoped options as placeholders, so the multiselect chip label still resolves. */
 export function mergeSelectedAuthors(options: AuthorOption[], selected: string[]): AuthorOption[] {
   const present = new Set(options.map((o) => o.AUTHOR));
   const missing = selected.filter((author) => !present.has(author));
@@ -199,12 +183,9 @@ function formatPeriodLabel(label: string): string {
 }
 
 /**
- * Mentions Over Time line chart: one dataset per sub-project plus a leading "Total" line.
- * Buckets order by `PERIOD_START` (the DATE_TRUNC ISO start), not `PERIOD_LABEL`, which is
- * display-only and can't sort across grains. Projects group by NAME (PCC parity — children
- * may share the parent's id in the feed) and duplicate (bucket, name) rows fold by summing,
- * since the server groups by (bucket, id, name). Returns null when there's nothing to chart
- * (drives the panel's empty state).
+ * Mentions Over Time: one dataset per sub-project plus a leading "Total" line, bucketed by
+ * `PERIOD_START` (ISO sorts; the label is display-only). Projects group by NAME (PCC parity);
+ * duplicate (bucket, name) rows fold by summing. Null when empty (drives the panel's empty state).
  */
 export function buildOverTimeChartData(points: SocialListeningOverTimePoint[]): ChartData<'line'> | null {
   if (points.length === 0) return null;
@@ -261,10 +242,7 @@ export function buildOverTimeChartData(points: SocialListeningOverTimePoint[]): 
   return { labels, datasets };
 }
 
-/**
- * Mentions by Tag bar chart: server rows arrive pre-sorted and capped at `MENTION_TOP_TAGS_LIMIT`,
- * labels are title-cased with underscores as spaces (`formatTag`). Returns null when empty.
- */
+/** Mentions by Tag bar chart: rows arrive pre-sorted/capped (`MENTION_TOP_TAGS_LIMIT`); labels title-cased via `formatTag`. Null when empty. */
 export function buildTagsChartData(tags: SocialListeningTagCount[]): ChartData<'bar'> | null {
   const rows = tags.filter((tag) => !!tag.TAG);
   if (rows.length === 0) return null;
@@ -312,10 +290,8 @@ export function mapSentimentRows(rows: SocialListeningSentimentDistribution[]): 
 }
 
 /**
- * Maps a server's signed change percentage to a stat-card delta: the arrow carries the numeric
- * direction, the label shows the absolute value (PCC parity), and `inverted` flips the color
- * mapping for metrics where an increase is bad (negative sentiment). Returns undefined when the
- * server suppressed the comparison (null — previous window too thin), hiding the delta line.
+ * Maps a signed change percentage to a stat-card delta: arrow = numeric direction, label = absolute
+ * value (PCC parity), `inverted` flips colors where an increase is bad. Undefined = no delta line.
  */
 export function buildAnalyticsDelta(changePct: number | null, inverted = false): StatCardDelta | undefined {
   if (changePct === null) return undefined;
@@ -354,11 +330,8 @@ function summarizePillValues(values: string[]): { summary: string; full: string 
 }
 
 /**
- * Builds the active-filter summary pills (LFXV2-3017): one `FilterPillOption` per non-default
- * predicate dimension, in predicate field order, so the pills row always matches the Filters
- * button badge (`countActiveFilters`). `id` is the `FilterPredicate` key — the page maps it back
- * to the signal it resets when a pill is clicked. `fullLabel` carries the remove affordance plus
- * the untruncated values (the pills component surfaces it as both tooltip and aria-label).
+ * Builds the active-filter summary pills (LFXV2-3017): one per non-default dimension, in predicate
+ * field order, matching the Filters badge. `id` is the `FilterPredicate` key the page resets on click.
  */
 export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOption[] {
   const labelFor = (options: SocialListeningOption[], value: string): string => options.find((o) => o.value === value)?.label ?? value;

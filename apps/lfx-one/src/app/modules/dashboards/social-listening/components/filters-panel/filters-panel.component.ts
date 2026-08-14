@@ -13,21 +13,8 @@ import { SkeletonModule } from 'primeng/skeleton';
 import type { AuthorOption, SocialListeningOption } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening filters panel (LFXV2-3017) — the dropdown that opens from the feed header's
- * Filters button. Ports PCC's filters-panel: static sentiment / relevance / has-title selects, a
- * scope-driven language select, and keywords / tags / authors multiselects with per-group loading
- * skeletons. Author rows render the platform icon + mention count through the multiselect's
- * `itemTemplate` hook. Save-as-View and the bookmark/read filters are deliberately absent
- * (deferred scope — see lfxv2-3002-todo.md §6).
- *
- * State lives in the page container and round-trips through query params; this component only
- * two-way-binds it via `model()`. The `lfx-select` / `lfx-multi-select` wrappers are form-bound,
- * so an internal `filtersForm` bridges the two (form → model via `valueChanges`; model → form via
- * `toObservable` + `setValue(..., { emitEvent: false })`) — the same pattern as the feed header.
- *
- * The panel owns its click-outside backdrop, which writes `visible` directly — that is what makes
- * the open state genuinely two-way. "Clear all" only emits `filtersCleared`; the page performs the
- * reset so the panel and the summary pills row share a single clear path.
+ * Social Listening filters panel (LFXV2-3017, PCC port): selects + keywords/tags/authors multiselects.
+ * Saved views and bookmark/read filters are deferred; `filtersForm` bridges state to the page.
  */
 @Component({
   selector: 'lfx-filters-panel',

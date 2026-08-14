@@ -84,11 +84,9 @@ import { MentionsListComponent } from './components/mentions-list/mentions-list.
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
 
 /**
- * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016. Ports PCC's mentions feed
- * (`reports/social-listening`) onto the LFXV2-3015 REST endpoints: two-phase windowed pagination
- * (100-row server windows, ±2 cached), bidirectional query-param sync via the shared codec, and
- * reset effects on scope/filter/foundation change. Bookmarks, read state, saved views, the
- * filters panel (3017), and the analytics tab content (3018) are out of scope for this slice.
+ * Social Listening — Foundation Lens page (ED + LF Staff), LFXV2-3016: PCC's mentions feed on the
+ * 3015 endpoints — windowed pagination (100-row windows, ±2 cached), query-param sync, and reset
+ * effects on scope/filter/foundation change. Saved views are deferred.
  */
 @Component({
   selector: 'lfx-social-listening',
@@ -163,7 +161,8 @@ export class SocialListeningComponent {
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
-  private readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
+  /** The live feed predicate as a request fragment — drives the feed, the count, and (as an input) the analytics tab. */
+  public readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
@@ -314,9 +313,8 @@ export class SocialListeningComponent {
       this.previousScopeKey = scopeKey;
     });
 
-    // One-way latch (3017) — defer filter-option requests until the panel is first opened. Covers
-    // keyboard/programmatic activation; pointer users typically arm it earlier via
-    // prefetchFilterOptions() on hover so the fetches are already in flight when the panel appears.
+    // One-way latch (3017): defer filter-option requests until the panel is first opened;
+    // prefetchFilterOptions() on hover typically arms it even earlier.
     toObservable(this.filtersOpen)
       .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.filtersOpenedOnce.set(true));
@@ -327,30 +325,19 @@ export class SocialListeningComponent {
     this.pageSize.set(event.rows);
   }
 
-  /**
-   * Arms the deferred filter-option fetches before the panel actually opens. Called on
-   * hover/focus of the Filters button so the network round-trip can happen during the
-   * ~150–500 ms between intent and click, hiding the skeletons (PCC port).
-   */
+  /** Arms the deferred filter-option fetches on hover/focus so the round-trip hides behind the intent→click gap (PCC port). */
   public prefetchFilterOptions(): void {
     if (!this.filtersOpenedOnce()) {
       this.filtersOpenedOnce.set(true);
     }
   }
 
-  /**
-   * Triggers a PNG export of the analytics dashboard (LFXV2-3018) by bumping the nonce the
-   * analytics component reacts to — input-driven child trigger, no viewChild method calls.
-   */
+  /** Triggers the analytics PNG export (LFXV2-3018) by bumping the nonce the analytics component reacts to. */
   public onExportAnalytics(): void {
     this.exportNonce.update((nonce) => nonce + 1);
   }
 
-  /**
-   * Resets the predicate to DEFAULT_MENTION_PREDICATE (search included — the badge counts it).
-   * `applyPredicateToSignals` already clones the array fields, so every signal gets a fresh
-   * instance and the URL-write effect re-encodes to a clean query string.
-   */
+  /** Resets the predicate to DEFAULT_MENTION_PREDICATE; cloned arrays make the URL-write effect re-encode cleanly. */
   public clearAllFilters(): void {
     applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
   }
@@ -437,9 +424,8 @@ export class SocialListeningComponent {
   }
 
   /**
-   * Two-phase windowed feed fetch (ported from PCC): phase 1 fetches just the visible page for a
-   * fast first paint when the page sits at the window start; phase 2 fills the rest of the window
-   * in the background as one stream (no nested subscribes) — `switchMap` cancels it on re-entry.
+   * Two-phase windowed feed fetch (PCC port): phase 1 paints the visible page fast; phase 2 fills
+   * the rest of the window in the background as one stream — `switchMap` cancels it on re-entry.
    */
   private initFeedState(): Signal<LoadableState<SocialListeningFeedResponse>> {
     return toSignal(
@@ -519,10 +505,7 @@ export class SocialListeningComponent {
     return this.initFoundationOptions((foundationSlug) => this.socialListeningService.getMentionsProjects({ foundationSlug }));
   }
 
-  /**
-   * Languages option fetch (3017): scoped by foundation + period, deferred until the Filters
-   * button is first hovered/focused/opened (`filtersOpenedOnce`) so page load never fires it.
-   */
+  /** Languages option fetch (3017): deferred until the Filters button is first hovered/focused/opened. */
   private initLanguagesState(): Signal<LoadableState<string[]>> {
     return toSignal(
       toObservable(computed(() => ({ foundationSlug: this.foundationSlug(), period: this.selectedPeriod(), opened: this.filtersOpenedOnce() }))).pipe(
@@ -540,10 +523,7 @@ export class SocialListeningComponent {
     );
   }
 
-  /**
-   * Keywords/tags option fetches (3017): like languages but also refetch when the platform or
-   * sub-project scope changes (their option lists rescope — PCC's `initializeScopedFilterOptions`).
-   */
+  /** Keywords/tags option fetches (3017): like languages, but also refetch when the platform/sub-project scope changes. */
   private initScopedOptionsState<T>(fetchFn: (req: SocialListeningScopedOptionsRequest) => Observable<T[]>): Signal<LoadableState<T[]>> {
     return toSignal(
       toObservable(
@@ -575,10 +555,8 @@ export class SocialListeningComponent {
   }
 
   /**
-   * Author options (3017): cascade off every OTHER filter — the request deliberately never
-   * includes the current `authors` selection (`SocialListeningAuthorsRequest` omits it). The
-   * heavier aggregation waits for the feed load to finish plus a 300 ms debounce so it does not
-   * contend with feed/count for the server's Snowflake connection pool (PCC `initializeAuthors`).
+   * Author options (3017): cascade off every OTHER filter (the request omits `authors` itself).
+   * Waits for the feed load + 300 ms debounce so it doesn't contend for the Snowflake pool.
    */
   private initAuthorsState(): Signal<LoadableState<AuthorOption[]>> {
     return toSignal(

@@ -26,17 +26,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`,
- * ED-gated server-side). Pure-read service by design (LFXV2-3016): no service-side state
- * container — the page owns loading/error/data via declarative `toSignal` pipelines, so errors
- * deliberately propagate instead of being swallowed into fallback values (unlike
- * `analytics.service.ts`, whose per-method `catchError(of(fallback))` would hide failures the
- * page needs to surface).
- *
- * Wire contract (see `server/helpers/social-listening-params.helper.ts`): keys are the camelCase
- * `MentionFilters` field names, array values are comma-joined, and empty/`undefined` values are
- * omitted. `'all'` sentinels never reach this service — callers pass fragments built by
- * `buildMentionFilters()`, which already strips them.
+ * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`, ED-gated
+ * server-side). Pure-read by design: errors deliberately propagate to the page's `toSignal` pipelines.
  */
 @Injectable({
   providedIn: 'root',
@@ -110,11 +101,7 @@ export class SocialListeningService {
     return this.http.get<SocialListeningTopProject[]>(`${this.baseUrl}/analytics-top-projects`, { params: this.toParams(request) });
   }
 
-  /**
-   * Serializes a request object to query params: arrays comma-join (the cross-slice contract
-   * with the server's params helper), and `undefined` / empty-string / empty-array values are
-   * omitted so the server's `all`/blank normalization never sees them.
-   */
+  /** Serializes a request to query params: arrays become repeated params (`tags=a&tags=b` — commas inside a value survive); empty values are omitted. */
   private toParams(request: object): HttpParams {
     // Shared request interfaces have no index signature, so entries are narrowed via a cast.
     const entries = Object.entries(request) as [string, string | number | string[] | undefined][];
@@ -122,7 +109,10 @@ export class SocialListeningService {
       if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
         return params;
       }
-      return params.set(key, Array.isArray(value) ? value.join(',') : String(value));
+      if (Array.isArray(value)) {
+        return value.reduce((p, element) => p.append(key, element), params);
+      }
+      return params.set(key, String(value));
     }, new HttpParams());
   }
 }

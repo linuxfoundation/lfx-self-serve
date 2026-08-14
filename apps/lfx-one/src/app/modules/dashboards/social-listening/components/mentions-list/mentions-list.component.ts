@@ -13,10 +13,8 @@ import type { Mention } from '@lfx-one/shared/interfaces';
 import { MentionCardComponent } from '../mention-card/mention-card.component';
 
 /**
- * The Social Listening feed list (LFXV2-3016). Renders one `lfx-mention-card` per row inside
- * `lfx-table` — the confirmed paginator wrapper (there is no standalone paginator wrapper in the
- * app, and raw `p-paginator` has no usages). The table runs `lazy`: the page feeds it the current
- * window slice and `totalRecords` comes from the separate count endpoint.
+ * The Social Listening feed list (LFXV2-3016): one `lfx-mention-card` per row inside a lazy
+ * `lfx-table`; the page feeds the current window slice, `totalRecords` comes from the count endpoint.
  */
 @Component({
   selector: 'lfx-mentions-list',

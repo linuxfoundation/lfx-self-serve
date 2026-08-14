@@ -20,6 +20,7 @@ import type { ChartData, ChartOptions } from 'chart.js';
 
 import type {
   LoadableState,
+  MentionFilters,
   SocialListeningAnalyticsOverview,
   SocialListeningAnalyticsRequest,
   SocialListeningPlatformRow,
@@ -29,20 +30,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening Analytics tab (LFXV2-3018), ported from PCC's
- * `reports/social-listening/.../analytics` component. All six panels read the feed-derived
- * 3015 endpoints (not PCC's pre-aggregated views — master §0) through declarative `toSignal`
- * pipelines keyed off the page's scope signals, so period/platform/sub-project changes
- * propagate automatically. A failed request degrades only its own panel.
- *
- * Bar visualizations (platform, sentiment) are CSS flex segments — export-safe and free of
- * chart lifecycle concerns; only Mentions Over Time (line) and Mentions by Tag (bar) use
- * `lfx-chart`, with options held as plain class properties (rule: `computed()` options churn
- * the reference and force PrimeNG to destroy/rebuild the chart).
- *
- * Export: the page increments `exportNonce` (input-driven trigger, rule 12.7 — no viewChild
- * calls); the component captures its own content grid via `downloadCardAsImage` and reports
- * progress back through the `isExporting` model so the header button can spin.
+ * Social Listening Analytics tab (LFXV2-3018, PCC port): six panels over the feed-derived 3015
+ * endpoints, refetched when the page's scope or feed predicate changes; each panel degrades independently.
  */
 @Component({
   selector: 'lfx-social-listening-analytics',
@@ -58,8 +47,10 @@ export class SocialListeningAnalyticsComponent {
   // === Scope inputs (page-owned signals, propagated down) ===
   public readonly foundationSlug = input('');
   public readonly period = input('');
+  /** Display-only: the per-platform % label is meaningful on the unfiltered view. The request itself takes `filters.platform`. */
   public readonly platform = input('all');
-  public readonly sourceProjectId = input('all');
+  /** The feed predicate — analytics panels filter identically to the feed so the two tabs agree. */
+  public readonly filters = input<MentionFilters>({});
 
   // === Export (page-triggered via nonce; progress reported back via model) ===
   public readonly exportNonce = input(0);
@@ -161,9 +152,8 @@ export class SocialListeningAnalyticsComponent {
   public constructor() {
     this.destroyRef.onDestroy(() => (this.destroyed = true));
 
-    // Export trigger: the page increments exportNonce; the component owns its content element
-    // and performs the capture itself. Effect = signal → imperative DOM sink (html-to-image),
-    // which is the sanctioned effect use; the initial run is a no-op via the nonce guard.
+    // Export trigger: the page increments exportNonce; the component captures its own content
+    // (effect = signal → imperative DOM sink). The initial run is a no-op via the nonce guard.
     effect(() => {
       if (this.exportNonce() === 0) return;
       if (!isPlatformBrowser(this.platformId)) return;
@@ -188,25 +178,19 @@ export class SocialListeningAnalyticsComponent {
     }
   }
 
-  /** Scope shared by all six analytics requests; null until the page has a foundation + period. */
+  /** Scope + feed predicate shared by all six analytics requests; null until the page has a foundation + period. */
   private initAnalyticsRequest(): Signal<SocialListeningAnalyticsRequest | null> {
     return computed(() => {
       const foundationSlug = this.foundationSlug();
       const period = this.period();
       if (!foundationSlug || !period) return null;
-      return {
-        foundationSlug,
-        period,
-        platform: this.platform() !== 'all' ? this.platform() : undefined,
-        sourceProjectId: this.sourceProjectId() !== 'all' ? this.sourceProjectId() : undefined,
-      };
+      return { foundationSlug, period, ...this.filters() };
     });
   }
 
   /**
-   * Shared declarative-state pipeline for the analytics panels: refetch on scope change
-   * (debounceTime(0) coalesces synchronous multi-signal changes into one round), loading via
-   * `startWith`, per-panel error via `catchError` (errors degrade one panel, not the tab).
+   * Shared declarative-state pipeline for the analytics panels: `debounceTime(0)` coalesces
+   * synchronous scope changes, `startWith`/`catchError` give per-panel loading/error.
    */
   private initAnalyticsState<T>(fetchFn: (req: SocialListeningAnalyticsRequest) => Observable<T>, empty: T): Signal<LoadableState<T>> {
     return toSignal(
@@ -227,11 +211,7 @@ export class SocialListeningAnalyticsComponent {
     );
   }
 
-  /**
-   * KPI stat cards (Total Mentions / Negative / Positive Sentiment). Deltas come precomputed
-   * from the server; `buildAnalyticsDelta` hides them when the previous window was too thin
-   * (null) and flips colors on the negative card (an increase in negative sentiment is bad).
-   */
+  /** KPI stat cards; deltas come precomputed from the server and `buildAnalyticsDelta` hides thin previous windows. */
   private initStatCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const overview = this.overviewState().data;

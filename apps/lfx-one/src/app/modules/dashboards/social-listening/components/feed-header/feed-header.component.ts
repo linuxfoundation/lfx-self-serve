@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, model, output, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, model, output, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,16 +19,8 @@ const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
 ];
 
 /**
- * Social Listening feed header (LFXV2-3016): Feed/Analytics tabs on the left (via
- * `lfx-card-tabs-bar`), sub-project / platform / period selects and the search input on the
- * right. LFXV2-3017 adds the Filters button: icon + active-filter count badge, toggles the
- * filters panel via the `filtersVisible` model, and arms the page's lazy option fetches early
- * (`filtersPrefetch` on hover/focus) so the round-trip hides behind the intent→click gap.
- *
- * State lives in the page container and round-trips through query params; this component only
- * two-way-binds it via `model()`. The `lfx-select` / `lfx-input-text` wrappers are form-bound,
- * so an internal `headerForm` bridges the two (form → model via `valueChanges`; model → form
- * via `toObservable` + `setValue(..., { emitEvent: false })`, which cannot loop).
+ * Social Listening feed header (LFXV2-3016/17/18): tabs, scope selects, search, Filters button, and
+ * the analytics export trigger. State lives in the page; `headerForm` bridges the form-bound wrappers.
  */
 @Component({
   selector: 'lfx-feed-header',
@@ -46,9 +38,9 @@ export class FeedHeaderComponent {
   public readonly selectedPlatform = model.required<string>();
   public readonly searchInput = model.required<string>();
 
-  public readonly projectOptions = model.required<SocialListeningOption[]>();
-  public readonly platformOptions = model.required<SocialListeningOption[]>();
-  public readonly optionsLoading = model<boolean>(false);
+  public readonly projectOptions = input.required<SocialListeningOption[]>();
+  public readonly platformOptions = input.required<SocialListeningOption[]>();
+  public readonly optionsLoading = input(false);
 
   // === Filters panel trigger (LFXV2-3017) ===
   public readonly filtersVisible = model(false);
@@ -86,10 +78,11 @@ export class FeedHeaderComponent {
     this.bindModelToControl(this.selectedPlatform, controls.platform);
     this.bindModelToControl(this.searchInput, controls.search);
 
-    // A foundation with a single sub-project locks the select to it (ported from PCC).
+    // A foundation with a single sub-project locks the select to it (ported from PCC). Latched on
+    // the 'all' default: a refetched option list must not clobber a user's or the URL's selection.
     effect(() => {
       const options = this.projectOptions();
-      if (options.length === 2) {
+      if (options.length === 2 && untracked(this.selectedProject) === 'all') {
         this.selectedProject.set(options[1].value);
       }
     });

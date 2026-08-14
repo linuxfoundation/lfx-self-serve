@@ -167,11 +167,7 @@ export function capitalizeFirst(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-/**
- * Strips markdown syntax for plain-text contexts (e.g. a mailto: body). Images are dropped,
- * links collapse to their label, emphasis/code/heading markers are removed, list and
- * blockquote markers are flattened, and 3+ consecutive newlines collapse to two.
- */
+/** Strips markdown syntax for plain-text contexts (e.g. a mailto: body): images dropped, links collapse to their label, emphasis/list/quote markers flattened. */
 export function stripMarkdown(text: string): string {
   return text
     .replace(/!\[[^\][]*\]\([^()]*\)/g, '')
