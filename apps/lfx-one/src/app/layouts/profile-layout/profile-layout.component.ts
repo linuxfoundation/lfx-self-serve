@@ -100,8 +100,11 @@ export class ProfileLayoutComponent {
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
 
-  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
-  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
+  // Avatar image URL: read the shared signal (uploaded avatar > Auth0 OIDC picture claim) instead
+  // of this component's own profileData fetch — that GET is eventually consistent (see comment
+  // above on fetchedProfileData), so after an upload elsewhere this rail must not fall back to its
+  // own possibly-stale copy (LFXV2-2628).
+  public readonly avatarUrl = this.userService.effectiveAvatarUrl;
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -194,6 +197,13 @@ export class ProfileLayoutComponent {
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
     this.applyOptimisticProfileUpdate(metadata);
+
+    // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
+    // (which read UserService.effectiveAvatarUrl, not this layout's own profileData) reflect it in
+    // the same session without waiting for the next full-page load's post-hydration fetch.
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
   }
 
   /**
@@ -409,6 +419,16 @@ export class ProfileLayoutComponent {
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {
     this.loading.set(false);
     this.combinedProfile = profile;
+
+    // Seed the shared avatar signal from this response, with the same no-clobber guard as
+    // UserService's own post-hydration fetch. This response is the profile GET itself, so unlike
+    // that guard (which runs inside afterNextRender and never fires during SSR) this one also runs
+    // server-side — the profile page's first render already carries the uploaded avatar instead of
+    // waiting on a second, client-only fetch to correct it (LFXV2-2628).
+    if (profile.profile?.picture && this.userService.uploadedAvatarUrl() === null) {
+      this.userService.uploadedAvatarUrl.set(profile.profile.picture);
+    }
+
     return {
       firstName: profile.user.first_name || '',
       lastName: profile.user.last_name || '',
@@ -424,7 +444,6 @@ export class ProfileLayoutComponent {
       phoneNumber: profile.profile?.phone_number || '',
       tshirtSize: normalizeTShirtSize(profile.profile?.t_shirt_size),
       aboutMe: profile.profile?.bio || '',
-      avatarUrl: profile.profile?.picture || '',
     };
   }
 }

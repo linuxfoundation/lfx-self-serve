@@ -5,15 +5,18 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignCreateRequest,
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
-import { VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -22,12 +25,15 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
-import { CampaignServiceClient, isCampaignServiceJobId } from '../services/campaign-service.service';
+import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
 const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
+
+/** Derived from the shared constant so the validation and its error message cannot drift apart. */
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
 
 const NUMERIC_ID_RE = /^\d+$/;
 
@@ -149,6 +155,51 @@ export class CampaignController {
       return;
     }
 
+    // Both delivery-type checks run BEFORE the paid-only field checks below, deliberately. An
+    // email brief has no generated copy and no keywords — `structuredCopy` is null and
+    // `currentKeywords` is empty — so those checks fire first and answer "currentCopy is
+    // required": true, but useless, because it names a field the caller cannot supply and hides
+    // the actual reason.
+    //
+    // VALIDATED first, not just matched. An exact `=== 'email'` test lets a typo through:
+    // `'emial'` falls past it into those same paid-only checks and produces the same misleading
+    // message, for a caller whose only mistake was a misspelling.
+    //
+    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES`, and so is the MESSAGE below — the sibling
+    // `platform` check already interpolates its own Set for exactly this reason. An error string
+    // is the copy a reader trusts most, because it is what the API actually says, so a hardcoded
+    // tail there outlives every other duplicate. The two `Unsupported deliveryType` messages in
+    // `campaign-proxy.service.ts` are interpolated from the same constant for the same reason.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
+      _next(
+        ServiceValidationError.forField('deliveryType', `deliveryType must be one of: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}`, {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // The service refuses email refines too — that guard stays, since this controller is not its
+    // only caller — but only this path is reached over HTTP, so only this one decides what the
+    // user reads.
+    if (body.deliveryType === 'email') {
+      // `ServiceValidationError`, not a manual `res.status().json()` — the sibling checks below
+      // all use it, and `docs/reviews/backend-checklist.md` §8 forbids the manual form. Going
+      // around the error middleware would have skipped the standard error shape and its
+      // centralized log line, so the one refusal a caller is most likely to hit would have been
+      // the one the logs never recorded.
+      _next(
+        ServiceValidationError.forField('deliveryType', 'refining email copy is not supported yet', {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
     if (!body.currentCopy || typeof body.currentCopy !== 'object' || Array.isArray(body.currentCopy)) {
       const validationError = ServiceValidationError.forField('currentCopy', 'currentCopy is required', {
         operation: 'campaign_refine_brief',
@@ -236,8 +287,85 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'campaign_create', {});
 
     try {
+      // Try the cutover FIRST, and fall through to the legacy path ONLY when the cutover is dark
+      // (`enabled: false`). "Anything short of an accepted job" would be the wrong rule and the
+      // dangerous one: an enabled-but-REFUSED create is terminal, because the legacy path has
+      // side effects on the ad platforms and would create the campaigns for real while the user
+      // is being told creation failed. Both branches below are explicit about which case they
+      // are, and the distinction is safety-critical for paid campaigns.
+      //
+      // `?project=` and `?brief_id=` mirror the persist route's convention rather than moving
+      // them into the body, so a caller that already knows how to save a brief knows how to
+      // create from it.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+      const body = req.body as CampaignCreateRequest;
+      const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+      const configEnvelope = this.createConfigEnvelope(body);
+
+      // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
+      // being left to `createCampaigns`.
+      //
+      // Left to fall through, a missing slug produced "this campaign could not be created because
+      // its brief has not been saved yet" — which is wrong (the brief may be saved; the caller
+      // just omitted the param) and, worse, is a TERMINAL refusal that blocks legacy fall-through,
+      // so with the cutover dark a missing slug failed a create the legacy path could have served.
+      // A missing query param is a client 400.
+      //
+      // Only when the cutover is on: with the flags off the legacy path neither reads nor needs
+      // these params, so requiring them there would be the same category error as the
+      // unconfigured-platform guard was.
+      //
+      // All THREE flags, matching `createCampaigns` exactly. Checking CREATE alone was a narrower
+      // version of that same mistake: with CREATE on but BRIEFS or JOBS off the cutover is dark,
+      // `createCampaigns` returns `enabled: false`, and the request is served by the legacy path —
+      // which needs no slug. Rejecting it here would 400 a request that path handles fine.
+      const cutoverOn =
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+        isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+      if (cutoverOn && projectSlug === '') {
+        next(
+          ServiceValidationError.forField('project', 'creating through campaign-service requires the project the brief was saved under', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // The unconfigured-platform refusal lives INSIDE `createCampaigns`, deliberately, so that it
+      // is gated by the cutover flags along with everything else there.
+      //
+      // It was here for one revision, above this call, and that was a regression: the guard tests
+      // for a CAMPAIGN-SERVICE envelope key, but sitting here it ran unconditionally and refused
+      // demand-gen-only Google creates even with every flag OFF — a case the legacy path has
+      // always supported, because `includeGoogle` gates on platform membership alone and Google's
+      // inputs live on the request root rather than in a config object. Gating the legacy path on
+      // a concept it does not have is a category error.
+      const viaService = await this.campaignServiceClient.createCampaigns(req, briefId, projectSlug, platforms, configEnvelope, {
+        campaignTypes: body?.campaignTypes,
+      });
+
+      if (viaService.enabled && viaService.jobId !== null) {
+        logger.success(req, 'campaign_create', startTime, { jobId: viaService.jobId, via: 'campaign-service' });
+        // The SAME response shape as the legacy path, so the client polls one way. The job id is
+        // a UUID here and `job_...` there, which is exactly what lets the poll route send each
+        // one back to the system that owns it.
+        res.json({ jobId: viaService.jobId });
+        return;
+      }
+      if (viaService.enabled && viaService.error !== null) {
+        // Enabled but refused: do NOT fall through. The legacy path would create campaigns on the
+        // platforms while the user is being told creation failed, which is the one outcome worth
+        // more than a confusing error message.
+        logger.warning(req, 'campaign_create', 'campaign-service refused the create; not falling back', { briefId, projectSlug });
+        res.json({ jobId: '', error: viaService.error });
+        return;
+      }
+
       const result = await this.proxyService.createCampaign(req, req.body);
-      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId });
+      logger.success(req, 'campaign_create', startTime, { jobId: result.jobId, via: 'legacy' });
       res.json(result);
     } catch (error) {
       next(error);
@@ -259,11 +387,13 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route: creation is not cut over, so
-    // `createCampaign` above still mints `job_<epoch>_<rand>` into the in-process map, and
-    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id` — it would answer
+    // The flag is necessary but NOT sufficient to route. With CREATE off — still the default —
+    // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
+    // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment
-    // the flag went on, which is the failure the flag exists to fix. `isCampaignServiceJobId`
+    // the JOBS flag went on, which is the failure the flag exists to fix. With CREATE on, both id
+    // shapes are in flight at once — which is the case the id check really serves.
+    // `isCampaignServiceJobId`
     // adds the second condition, and it needs no separate flag of its own: a `job_` id can only
     // have come from this process and a UUID can only have come from campaign-service, so ids
     // minted either side of the create cutover keep resolving against the store that holds them.
@@ -278,9 +408,233 @@ export class CampaignController {
       // running — turning a transient outage into a spurious terminal state the client
       // stops polling on. Letting the error through keeps the failure visible and the
       // flag is the way back.
-      const status = viaCampaignService ? await this.campaignServiceClient.getJobStatus(req, jobId) : await this.proxyService.getJobStatus(req, jobId);
+      // The slug the create was made under. campaign-service stores it on the brief and `GetJob`
+      // joins on it with an EXACT comparison, so polling under a different project answers
+      // `not_found` for a job that exists — and `not_found` is terminal for the poller.
+      const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      if (viaCampaignService && projectSlug === '') {
+        // Refuse rather than guess. The old module constant guessed 'tlf' for everyone, which was
+        // survivable only while no UUID job could exist; creation through campaign-service is what
+        // makes them real. Guessing here would answer "campaign lost" for another foundation's job.
+        // `ServiceValidationError`, matching the `jobId` check above and every other validation
+        // failure in this file. A bare `Error` is not a `BaseApiError`, so the error middleware
+        // falls through to a generic 500 `{ error: 'Internal server error' }` — the message below
+        // never reaches the client, and a missing query param is reported as a server fault.
+        next(
+          ServiceValidationError.forField('project', 'a campaign-service job poll requires the project it was created under', {
+            operation: 'campaign_job_status',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      const status = viaCampaignService
+        ? await this.campaignServiceClient.getJobStatus(req, jobId, projectSlug)
+        : await this.proxyService.getJobStatus(req, jobId);
       logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
       res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Persist the generated brief so it outlives the browser tab.
+   *
+   * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
+   * the whole Planning pass has to be redone. This writes it to campaign-service, which is also
+   * what later phases need — campaign creation, metrics and status writes are all nested under
+   * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
+   *
+   * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
+   * an error for the cutover to be dark — that is the default in every environment until it is
+   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * training whoever sees it to ignore the one signal that matters.
+   *
+   * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
+   * handoff to the Implementation tab works perfectly well without persistence; this repo has
+   * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
+   * UI. A user who is not told keeps working on a brief they believe is saved.
+   */
+  public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field is present rather than omitted so the response satisfies
+      // CampaignBriefPersistResult on both arms, and the client needs exactly one branch.
+      // `enabled: false` is the whole signal; the remaining values are the empty ones the
+      // client already ignores when it is false, not placeholders standing in for a real save.
+      res.json({ enabled: false, briefId: '', etag: null, created: false, approved: false });
+      return;
+    }
+
+    // The foundation the user has selected, from the same `?project=<slug>` the page itself is
+    // scoped by. NOT defaulted: `/foundation/campaigns` is reachable by an ED of any foundation,
+    // and campaign-service files briefs per project, so falling back to a constant would put one
+    // foundation's work in another's table. An unresolved context is a bug worth surfacing here
+    // rather than a reason to guess.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const brief = req.body as CampaignBriefOutput;
+    if (!brief || typeof brief !== 'object') {
+      next(ServiceValidationError.forField('brief', 'brief is required', { operation: 'campaign_persist_brief', service: 'campaign_controller' }));
+      return;
+    }
+
+    // The cast above is a compile-time claim about untrusted JSON, so the shapes the server path
+    // actually DEREFERENCES have to be checked at runtime. `deriveEventSlug` calls `.trim()` on
+    // `eventDetails.slug`, which throws a TypeError on a number or an object — turning malformed
+    // input into a 500 instead of the controlled 400 sitting right below it — and
+    // `selectedPlatforms` is forwarded to campaign-service as `platforms`, where a non-array
+    // becomes an upstream contract violation rather than a local one.
+    //
+    // Deliberately narrow: this validates the two fields whose types this request path relies on,
+    // not the whole brief. The rest is stored opaquely in `Any` columns that nothing validates on
+    // either side, so checking them here would claim a guarantee the system does not make — and
+    // `fromBriefResponse` already treats every one of them as untrusted when reading back.
+    const eventDetails: unknown = (brief as { eventDetails?: unknown }).eventDetails;
+    if (eventDetails !== undefined && eventDetails !== null && typeof eventDetails !== 'object') {
+      next(
+        ServiceValidationError.forField('eventDetails', 'eventDetails must be an object', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawSlug: unknown = (eventDetails as { slug?: unknown } | null | undefined)?.slug;
+    if (rawSlug !== undefined && rawSlug !== null && typeof rawSlug !== 'string') {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'eventDetails.slug must be a string', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawPlatforms: unknown = (brief as { selectedPlatforms?: unknown }).selectedPlatforms;
+    if (rawPlatforms !== undefined && rawPlatforms !== null && !Array.isArray(rawPlatforms)) {
+      next(
+        ServiceValidationError.forField('selectedPlatforms', 'selectedPlatforms must be an array', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Checked here rather than left to campaign-service because its 400 names `event_slug`, a
+    // field the user never typed. The slug is derived from the event page URL, so an empty one
+    // means the URL had no usable last path segment — which is what the message should say.
+    const eventSlug = deriveEventSlug(brief);
+    if (eventSlug === null) {
+      next(
+        ServiceValidationError.forField('eventDetails.slug', 'the brief has no event slug; check the event page URL', {
+          operation: 'campaign_persist_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_persist_brief', { eventSlug, projectSlug });
+
+    try {
+      // The brief id the CLIENT holds, when this session has established ownership of that row —
+      // either by loading the brief or by having created it on an earlier save. Absent on a first
+      // save of a brief nobody has seen, which is the ordinary case and must CREATE. It is the
+      // caller's proof of ownership — see saveBrief's guard (LFXV2-3200): without it a save can
+      // replace a stored brief the user never saw, which a reload or a second tab reaches.
+      const knownBriefId = typeof req.query['brief_id'] === 'string' && req.query['brief_id'].trim() !== '' ? req.query['brief_id'] : null;
+      // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
+      // anything, and the id without the ETag is the ceremonial-header case this fixes.
+      const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
+      // Only meaningful without an etag: it says the absence is deliberate (the user was shown a
+      // stale-brief warning and proceeded) rather than "the write returned no validator".
+      const allowEtagFallback = req.query['etag_fallback'] === '1';
+      const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag, allowEtagFallback);
+      logger.success(req, 'campaign_persist_brief', startTime, {
+        eventSlug,
+        projectSlug,
+        briefId: result.briefId,
+        created: result.created,
+        approved: result.approved,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read back the brief saved for an event slug — the other half of `persistBrief`.
+   *
+   * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
+   * while the write is dark would find nothing and look broken, and a write enabled while the
+   * read is dark is what shipped in the previous phase — briefs going into Postgres that nothing
+   * ever brings back. One flag makes "the cutover is on" a single, checkable fact.
+   *
+   * The slug arrives as a query parameter because there is nothing else to key on: the page has
+   * only the event URL the user pasted, and the slug derived from it is what `persistBrief`
+   * filed the brief under.
+   */
+  public async loadBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // `approved: false` is not a claim about any stored row -- with the flag off nothing was
+      // read. It is the safe default the field documents: never assert approval that was not
+      // observed.
+      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
+      return;
+    }
+
+    // Rejected rather than passed through: `find-brief` declares MinLength(1) on `event_slug`,
+    // so an empty one is a 400 from campaign-service naming a field the user never typed — the
+    // same reason `persistBrief` checks its own slug before sending.
+    // Trimmed to TEST for emptiness, never to rewrite the key — mirroring `deriveEventSlug`,
+    // which does exactly the same and stores the ORIGINAL slug. Querying with a trimmed key
+    // while the write stored an untrimmed one makes a padded slug unreadable: find-brief misses
+    // and the caller is told `none` for a brief that exists, which the next save then PUTs over.
+    const eventSlug = typeof req.query['event_slug'] === 'string' ? req.query['event_slug'] : '';
+    if (eventSlug.trim().length === 0) {
+      next(
+        ServiceValidationError.forField('event_slug', 'event_slug is required', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for exactly the reason `persistBrief` refuses: `/foundation/campaigns`
+    // is reachable by an ED of any foundation, and a constant here would read TLF's brief table on
+    // their behalf — offering to restore another foundation's brief, or finding nothing and letting
+    // the next save silently replace the one that does exist.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_load_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_load_brief', { eventSlug, projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.loadBrief(req, eventSlug, projectSlug);
+      // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
+      // a stored brief exists and this build cannot open it, and nothing else would record it.
+      logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -307,6 +661,42 @@ export class CampaignController {
       const data = await this.metricsService.getKeywords(req, days);
       logger.success(req, 'campaign_keywords', startTime, {});
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails for the template picker.
+   *
+   * `?project=` is required rather than defaulted, for the same reason every other
+   * campaign-service read here requires it: a HubSpot connection is per-project, and guessing the
+   * project would list one foundation's templates to another.
+   *
+   * `?q=` is optional — an empty query lists the most recently updated templates, which is the
+   * useful default when a user does not yet know what they are looking for.
+   */
+  public async searchHubSpotEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'hubspot_email_search',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const rawQuery = req.query['q'];
+    const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+    const startTime = logger.startOperation(req, 'hubspot_email_search', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.searchHubSpotEmails(req, projectSlug, query);
+      logger.success(req, 'hubspot_email_search', startTime, { enabled: result.enabled, count: result.emails.length });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -625,5 +1015,153 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /**
+   * The per-platform config envelope campaign-service expects, built from the legacy request.
+   *
+   * The service's `config` is an object keyed by `googleAdsConfig` / `linkedInConfig` /
+   * `redditConfig` / `metaConfig` with `hsToken` as a top-level sibling. LinkedIn and Reddit carry
+   * the service's own field names already, so those are projections; Google and Meta are
+   * translations, because the legacy request stores their inputs in a different shape (see each
+   * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
+   * absent config as "not selected", and a null one as a malformed selection.
+   */
+  private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
+    const envelope: Record<string, unknown> = {};
+    if (body?.hsToken) envelope['hsToken'] = body.hsToken;
+
+    const googleAdsConfig = this.buildGoogleAdsConfig(body);
+    if (googleAdsConfig) envelope['googleAdsConfig'] = googleAdsConfig;
+
+    const linkedInConfig = this.buildLinkedInConfig(body);
+    if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
+    if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
+
+    const metaConfig = this.buildMetaConfig(body);
+    if (metaConfig) envelope['metaConfig'] = metaConfig;
+
+    return envelope;
+  }
+
+  /**
+   * Google's config, translated from the flat legacy request.
+   *
+   * Google is the one platform whose inputs live on the request root rather than in a
+   * `<platform>Config` object, because the legacy path had a dedicated Google endpoint. Every
+   * field below is one the dispatcher reads from `config` and cannot recover from the stored
+   * brief: sending nothing creates a campaign with no budget and an ad group with no criteria,
+   * which per `googleAdsConfig.Keywords` "can never serve". The dispatcher's remaining optional
+   * fields are omitted because this request has no source for them — `audienceSegments` expects
+   * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
+   * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
+   *
+   * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
+   * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
+   * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
+   * no Search campaign to fund, so this returns null.
+   *
+   * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
+   * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
+   * caller already refused; it did not. `platforms` was passed through unfiltered, and
+   * campaign-service reads an absent config key as a zero value, so google-ads dispatched with
+   * budget 0 and no headlines. The refusal is real now rather than assumed.
+   */
+  private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.platforms?.includes('google-ads')) return null;
+
+    const types = body.campaignTypes ?? [];
+    const includesSearch = types.includes('search');
+    if (!includesSearch) return null;
+
+    const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
+    //
+    // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
+    // the ad ACCOUNT's currency (NOT USD — the client does no FX)" (campaign-service
+    // `internal/dispatch/googleads.go:49`; `meta.go:29` says the same). This field is fed from
+    // `budgetUsd`, so on a non-USD account 5000 becomes 5000 EUR/JPY rather than $5000.
+    //
+    // NOT fixable here: no FX conversion exists anywhere in campaign-service, and the account's
+    // currency is not exposed to this application — the connection read returns no currency field,
+    // so there is nothing to convert against. The real fix is either to surface the account
+    // currency on the connection and convert, or to collect an account-currency amount in the UI
+    // and stop calling it USD. campaign-service already made that second choice for X/Twitter
+    // (`twitter.go:42`: "The old `budgetUsd` name was misleading").
+    //
+    // Left as-is deliberately rather than silently renamed: renaming the variable would not change
+    // the denomination, and would make the gap harder to find. Every account in play today is USD.
+    const budget = ((body.budgetUsd ?? 0) * pct) / 100;
+
+    return {
+      budget,
+      headlines: body.headlines ?? [],
+      descriptions: body.descriptions ?? [],
+      // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
+      // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
+      // dispatcher has no field for.
+      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+    };
+  }
+
+  /**
+   * LinkedIn's config, translated from `linkedInConfig` on the legacy request.
+   *
+   * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
+   * adapter exists at all:
+   *
+   * 1. `adAccountId` is REJECTED on mismatch, not ignored. campaign-service resolves the account
+   *    from its own connection row, and honours a caller override only when it matches exactly —
+   *    `linkedin.go:143` returns "cross-account campaigns are not allowed" otherwise. The legacy
+   *    request carries this application's `LINKEDIN_AD_ACCOUNT_ID`, which has no reason to equal
+   *    the project's connection. Stripped: letting the connection decide is the whole point of
+   *    the cutover, and an override that matches adds nothing.
+   *
+   * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
+   *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
+   *    request carries `targetingProfile` (SINGULAR — the one the user picked) and no exclusions,
+   *    so without this the client fails with "profile not found in runtime config" for the
+   *    ordinary `cloud-native` and `mcp` selections. Both come from `getLinkedInConfig()`, which
+   *    is the same source the legacy path reads.
+   *
+   * The singular `targetingProfile` still travels: it is the user's SELECTION, and the catalogue
+   * is what that selection is resolved against. They are not duplicates of each other.
+   */
+  private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.linkedInConfig) return null;
+
+    // Built by copy-and-delete rather than destructuring-with-rest: the lint config does not
+    // exempt an underscore-prefixed destructured binding, so `{ adAccountId: _x, ...rest }` is a
+    // no-unused-vars error.
+    const rest: Record<string, unknown> = { ...body.linkedInConfig };
+    delete rest['adAccountId'];
+    const runtime = getLinkedInConfig();
+
+    return {
+      ...rest,
+      targetingProfiles: runtime.targetingProfiles,
+      employerExclusions: runtime.employerExclusions,
+    };
+  }
+
+  /**
+   * Meta's config, translated from `metaConfig` on the legacy request.
+   *
+   * The one difference is the budget key: the request says `budgetUsd`, the dispatcher reads
+   * `budget`. Passing the object through unchanged leaves `budget` at its zero value, which the
+   * Meta client rejects with "invalid budget: must be a positive number" on every dispatch.
+   *
+   * SAME KNOWN GAP as `buildGoogleAdsConfig` (LFXV2-3251) — the rename does NOT convert the
+   * denomination.
+   * `meta.go:29`: "Budget is in whole units of the ad ACCOUNT's currency (NOT USD — the client
+   * does no FX conversion)". On a non-USD Meta account this spends the number in that account's
+   * currency. Not fixable here (no FX anywhere in campaign-service, and the account currency is
+   * not exposed to this application); see the fuller note on `buildGoogleAdsConfig`.
+   */
+  private buildMetaConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.metaConfig) return null;
+
+    const { budgetUsd, ...rest } = body.metaConfig;
+    return { ...rest, budget: budgetUsd };
   }
 }

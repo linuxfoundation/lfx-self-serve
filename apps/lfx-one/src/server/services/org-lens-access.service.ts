@@ -33,6 +33,10 @@ function isAccessUser(value: unknown): boolean {
   return (
     isObject(value) &&
     typeof u.email === 'string' &&
+    // Required so an entry cached before `username` existed is rejected as a miss. Replaying one would
+    // silently drop every principal back to email-only matching in the people directory merge, for the
+    // whole TTL — a correctness regression that would look like the cache working.
+    (u.username === null || typeof u.username === 'string') &&
     typeof u.name === 'string' &&
     typeof u.initials === 'string' &&
     (u.avatarUrl === null || typeof u.avatarUrl === 'string') &&
@@ -227,6 +231,10 @@ export class OrgLensAccessService {
         const name = (principal.name ?? '').trim() || email.split('@')[0];
         byEmail.set(email, {
           email,
+          // Only an accepted principal has a username, and member-service emits its FGA tuple on
+          // exactly that condition — so this doubles as the "verified identity" signal the people
+          // directory merges on. Pending invites stay null and fall back to email matching.
+          username: status === 'accepted' ? (principal.username ?? '').trim().toLowerCase() || null : null,
           name,
           initials: this.deriveInitials(name),
           avatarUrl: principal.avatar?.trim() ? principal.avatar.trim() : null,

@@ -6,20 +6,36 @@
  *
  * The existing `feature-flag.service.ts` is the OpenFeature **Web** SDK: it runs in the
  * browser and returns Angular `Signal<T>`, so it cannot gate an Express handler. This
- * helper covers the server side only, and deliberately stays small — it exists so the
- * campaign-service cutover can move one endpoint at a time and roll a bad one back by
- * changing an environment variable, without shipping code.
+ * helper covers the server side only, and deliberately stays small. It was added so the
+ * campaign-service cutover could move one endpoint at a time and roll a bad one back by
+ * changing an environment variable, without shipping code; it now also gates a feature that
+ * is not part of that cutover (`WeeklyBriefSlack`), so read it as "server-side flags"
+ * generally rather than as cutover machinery.
  *
  * Be precise about what that buys, because "env var" reads as "instant" and it is not. The
  * chart injects these as container environment variables, so changing one edits the Deployment
  * pod template and reaches a process only through a rolling restart. What is avoided is a code
  * change, a build and an image promotion — not a rollout. Plan for the rollout: with the
  * default three replicas and a RollingUpdate, flag-on and flag-off pods overlap for its
- * duration. That overlap is harmless HERE only because routing also depends on the job id's
- * shape (`isCampaignServiceJobId`): a `job_` id goes to the in-process map on every pod
- * regardless of the flag, and a UUID cannot exist until creation is cut over. A future flag
- * whose two paths can both claim the same request needs a no-overlap rollout, or a runtime
- * configuration source every replica observes at once.
+ * duration. Whether that overlap is harmless is a PER-FLAG question, not a property of this
+ * helper — each flag's own doc below states its answer:
+ *
+ * - `CampaignServiceJobs` — NO LONGER harmless to flip in any order, and this PR is what changed
+ *   that. Routing depends on the job id's shape (`isCampaignServiceJobId`) as well as the flag, so
+ *   a `job_` id goes to the in-process map on every pod regardless — but the premise that "a UUID
+ *   cannot exist until creation is cut over" expired the moment `CampaignServiceCreate` shipped.
+ *   A pod with JOBS off skips the shape check entirely and sends a UUID poll to its in-process
+ *   map, answering terminal `not_found` for a campaign that is running and SPENDING. JOBS must be
+ *   fully rolled out before CREATE and must stay on until outstanding UUID jobs drain; see its
+ *   own doc below for the enable and rollback orders.
+ * - `CampaignServiceBriefs` — the "harmless while persistence is write-only" argument has also
+ *   expired: the read path (`loadBrief`, the Planning restore offer) is live behind this same
+ *   flag, deliberately, so read and write flip together. Its doc says why.
+ * - `WeeklyBriefSlack` — gates access to a feature rather than routing between two
+ *   implementations, so overlap means some pods refuse a request others serve.
+ *
+ * A flag whose two paths can BOTH claim the same request needs a no-overlap rollout, or a
+ * runtime configuration source every replica observes at once.
  *
  * Env vars are read on EVERY call rather than captured at module load. This buys NOTHING
  * operationally and the reason is worth stating, because per-request reads look like they
@@ -40,6 +56,78 @@ export enum ServerFeatureFlag {
    * byte-for-byte.
    */
   CampaignServiceJobs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS',
+
+  /**
+   * Persist the generated brief to lfx-v2-campaign-service when the user leaves the Planning
+   * tab. OFF keeps the brief where it lives today — a signal in `CampaignsComponent`, lost on
+   * reload — and `POST /api/campaigns/brief/persist` answers `{ enabled: false }` without
+   * calling anything.
+   *
+   * Unlike `CampaignServiceJobs` this flag has no id-shape backstop, because there is nothing
+   * to disambiguate on the WRITE: persistence is additive.
+   *
+   * The paragraph that used to sit here said "nothing reads a brief id yet — campaign creation is
+   * still the legacy path". Both halves have since stopped being true, and the safety argument
+   * that rested on them went with it. The read-back (`loadBrief`, the Planning restore offer)
+   * lives behind THIS flag, deliberately: a pod that read while the write flag was off would
+   * report an empty brief for one sitting in front of the user. Read and write flip together.
+   *
+   * `CampaignServiceCreate` then consumes the brief ID this flag produces, which is why it is
+   * checked second and is a no-op without this one.
+   */
+  CampaignServiceBriefs = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS',
+
+  /**
+   * Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
+   * services in `campaign-proxy.service.ts`. OFF keeps the legacy path byte-for-byte.
+   *
+   * Requires BOTH `CampaignServiceBriefs` AND `CampaignServiceJobs` to be on. `createCampaigns`
+   * gates on all three together — with either prerequisite off it returns `enabled: false` and
+   * every create silently stays on the legacy path.
+   *
+   * BRIEFS, because the create route is `/projects/{slug}/briefs/{brief_id}/campaigns` — there is
+   * no create-without-a-brief path, so without it there is no brief id to create from.
+   *
+   * JOBS, because a campaign-service create returns a job the client must then POLL. Creating
+   * through the new system while the poll route still assumes legacy `job_...` ids would strand
+   * the job: it exists and is spending, and nothing can report on it. JOBS is not merely an
+   * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
+   * it is a hard prerequisite.
+   *
+   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
+   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
+   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
+   * CREATE-flag-off pod polling still works.
+   *
+   * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
+   * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
+   * sends the poll to its in-process map, where a UUID job does not exist. Enable JOBS first and
+   * leave it on; disable CREATE first on the way back, and keep JOBS on until every outstanding
+   * UUID job has drained. Otherwise a job that is real and SPENDING becomes unreportable.
+   *
+   * What it does NOT survive is a create that lands flag-on while the ad-platform connection for
+   * that project is unconfigured: campaign-service reads credentials from its own connection
+   * tables, never from this application's GADS_ / LINKEDIN_ environment variables.
+   *
+   * There IS a system-account fallback, and it is narrower than it sounds. `credsSource.resolve`
+   * (campaign-service `internal/dispatch/creds.go`) falls back to the reserved system scope
+   * (`model.SystemProjectID`) when the project has **no connection of its own** — so a create can
+   * dispatch on the LF-owned ad account rather than failing. Three qualifications that matter
+   * before relying on it:
+   *
+   *   - ONLY a genuine absence falls back. Any other failure — an unusable row, a decrypt error —
+   *     means the project HAS a connection needing attention, and running its campaign on the LF
+   *     account would spend LF money on a request the project believed was its own.
+   *   - It is an AD-ACCOUNT fallback. HubSpot is deliberately excluded, because falling back there
+   *     would write one tenant's contacts into the LF's own portal.
+   *   - Spend lands on the LF account. Fine for an LF-run campaign; not what a foundation
+   *     expects for theirs.
+   *
+   * So per-project connections are still the thing to provision before turning this on — created
+   * with `POST /projects/{slug}/connection-{provider}` — and the fallback is a safety net for the
+   * LF's own campaigns, not a substitute for them.
+   */
+  CampaignServiceCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE',
 
   /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and

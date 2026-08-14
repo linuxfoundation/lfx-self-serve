@@ -119,6 +119,15 @@ export type CampaignSSEEventType =
 export interface CampaignBriefRequest {
   url: string;
   platforms?: CampaignPlatform[];
+  /**
+   * Which delivery channel the brief is for. Absent means `paid-marketing`.
+   *
+   * Explicit rather than inferred from `platforms` being absent. That inference does not work:
+   * the generator treats an absent platform list as the paid DEFAULT (`['google-ads']`), so
+   * "no platforms" and "the caller did not say" are the same value on the wire and cannot mean
+   * two different things. This field is what distinguishes them.
+   */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -161,6 +170,220 @@ export interface CampaignBriefOutput {
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
   metaCopy?: MetaBriefCopy;
+}
+
+/**
+ * What `POST /api/campaigns/brief/persist` reports back.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
+ * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * the two want opposite treatment — a disabled flag is the expected steady state and warrants
+ * no UI at all, while a failure means the user's brief is NOT durable and they should be told
+ * before they spend an afternoon on it.
+ *
+ * `created` distinguishes a first save from an update of an existing brief for the same
+ * `event_slug`. It is reported rather than inferred because the client cannot tell: the
+ * find-then-create-or-update decision happens server-side against campaign-service.
+ */
+export interface CampaignBriefPersistResult {
+  enabled: boolean;
+  briefId: string;
+  etag: string | null;
+  created: boolean;
+  /**
+   * Whether the saved brief reached `approved`, the state campaign-service requires before it
+   * will create campaigns or build an audience from it.
+   *
+   * Separate from the save's own success because the two really can differ: campaign-service
+   * writes every brief as `draft` and resets an existing one to `draft` on replace, so approval
+   * is a second call that can fail on its own. When it does, the brief IS durable — which is why
+   * this is a field rather than an error.
+   */
+  approved: boolean;
+  /**
+   * Why the save was REFUSED, when it was. Absent means the save happened.
+   *
+   * `unverified-validator`: this caller owns the brief but holds no trustworthy last-seen
+   * version — its previous write returned no ETag, or that write's approval outcome was
+   * indeterminate. The save is refused rather than sent with a validator this request read
+   * itself, which would bypass the precondition and could overwrite an intervening writer
+   * silently. Distinct from `stale-brief`, where a validator WAS sent and the server rejected it.
+   *
+   * `superseded-after-write`: the PUT committed, but the approval that follows it was refused
+   * with a 412 — the row's version moved in between, so another writer replaced the brief after
+   * this save wrote it. The write is durable but may no longer be what the row HOLDS, so it must
+   * not be confirmed as saved.
+   *
+   * `stale-brief`: the caller named the row and owns it, but another writer changed it since the
+   * caller last saw it, so the replace was refused with a 412 rather than overwriting their work.
+   * Distinct from `unowned-brief-exists` because the remedy differs: this caller may replace the
+   * brief, it just needs to see the newer version first.
+   *
+   * `unowned-brief-exists`: a brief already exists for this event slug and the caller could not
+   * prove it owns it — it never loaded that brief, so it holds no `briefId` matching the stored
+   * row. Replacing would overwrite content the user was never shown, and a reload or a second tab
+   * is enough to reach that: the page generates from scratch, the slug matches perfectly, and the
+   * server's find hits a row nobody read.
+   *
+   * `briefId` is deliberately EMPTY on this refusal, and that is a security property rather than
+   * an omission. Returning the blocking row's id would hand an unowned caller the one value the
+   * ownership check asks for: read the id off the refusal, replay it with `etag_fallback`, and
+   * the overwrite this conflict exists to prevent succeeds. The id is withheld at the source --
+   * the ownership check runs before the fallback -- so no caller can offer to "open the blocking
+   * brief" from this response, by design.
+   *
+   * LFXV2-3098 introduced this while persistence was write-only, where it refused EVERY
+   * collision — with no read path, nothing could hand a caller an id at all. LFXV2-3108 adds the
+   * read, so a restored brief now carries its own id and replaces its own row; everything else
+   * still refuses.
+   *
+   * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
+   * and the caller's next step is a CHOICE (open the existing one, or file under a different
+   * event) rather than a retry.
+   */
+  conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
+}
+
+/**
+ * The Implementation tab's view of whether the brief behind it is durable.
+ *
+ * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
+ * and is the reason this state exists at all: a persist failure that is swallowed leaves the
+ * user believing their brief is saved when it is not, and this repo has already been bitten by
+ * a graceful degradation that hid a 100% failure rate behind a clean UI.
+ */
+export interface CampaignBriefPersistenceState {
+  status: 'off' | 'saving' | 'saved' | 'error';
+  briefId: string | null;
+  /**
+   * The banner text, or `null` when the state needs none.
+   *
+   * Set on `error`, and also on `saved` when the write landed but the APPROVAL did not — a
+   * durable row that campaign creation and audience building both refuse, because they gate on
+   * `approved`. That case stays `saved` rather than becoming `error`: describing a write that
+   * really did land as failed would be its own falsehood, and the honest report is that the
+   * brief is stored but not yet usable.
+   */
+  message: string | null;
+
+  /**
+   * Is the stored brief APPROVED, and therefore usable for campaign creation?
+   *
+   * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
+   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * approved before creating campaigns" — so the Implementation tab has to know, and matching on
+   * banner prose to find out would break the first time the copy is edited.
+   *
+   * Load-bearing on `saved` AND on `off`-with-a-briefId, which is the RESTORE state. An earlier
+   * version of this line said "meaningful only on `saved`; `false` elsewhere, where there is no
+   * stored brief to approve" — every clause of that became false once restore began carrying the
+   * stored brief's own approval through (`onRestoreSavedBrief` → `onProceedToImplementation`).
+   *
+   * So the two states that gate creation on it are:
+   *   `saved`            — this session wrote the brief; `approved` is that write's approval.
+   *   `off` + a briefId  — a brief was RESTORED; `approved` is the stored row's.
+   *
+   * `off` with a NULL briefId is the genuinely-not-applicable case (cutover dark, or nothing
+   * saved yet), and `false` there means "no opinion", not "unapproved". The Implementation tab
+   * reads it exactly that way — see `canSubmit`, which checks the brief id before the flag.
+   */
+  approved: boolean;
+}
+
+/**
+ * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
+ *
+ * `ImplementationTabComponent` lives inside a structural `@switch`, so leaving the tab destroys
+ * it and everything it owns locally. LFXV2-3202 (PR #1437, not yet merged) proposes keeping the
+ * planner mounted for the Plan tab, but the same treatment is wrong here: this component fetches
+ * the LinkedIn ad-account list in `ngOnInit`, so mounting it eagerly would issue that request on
+ * every page load for a tab the user may never open. Lifting the edits out instead keeps the
+ * component cheap to destroy while the user's typing survives (LFXV2-3229).
+ *
+ * Deliberately a SNAPSHOT of the fields a user TYPES, not the whole component state. Anything
+ * re-derived from a fetch (results, progress, the LinkedIn account list) is left to re-derive —
+ * restoring those would be restoring a cache, and a stale one.
+ *
+ * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
+ * against the brief on screen so one event's edits cannot replay onto another's.
+ *
+ * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
+ * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
+ * user-editable and are still discarded, because they live in signals rather than this form and
+ * would need their own plumbing. The Google copy and budget carried here are the highest-volume
+ * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
+ *
+ * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
+ * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
+ * field, and replaying that over a freshly generated brief would erase it.
+ */
+export interface CampaignImplementationDraft {
+  /**
+   * Event identity as edited. All three are plain text inputs the user types into, and
+   * `registrationUrl` carries `Validators.required` — it is where the paid traffic lands, so a
+   * silently reverted one sends spend at a stale scraped URL.
+   */
+  eventName: string;
+  countryCode: string;
+  registrationUrl: string;
+  /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
+  headlines: string[];
+  descriptions: string[];
+  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  budgetUsd: number;
+  searchBudgetPct: number;
+  startDate: string;
+  endDate: string;
+  includeSearch: boolean;
+  includeDemandGen: boolean;
+  /**
+   * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
+   * Without it, generating a brief for event B and opening Implement would restore event A's
+   * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
+   */
+  eventSlug: string;
+}
+
+/**
+ * What `GET /api/campaigns/brief` reports back — the read half of brief persistence.
+ *
+ * The outcome is a single `status` rather than the `enabled` + payload pair
+ * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
+ * are "no brief". Collapsing them loses the distinction that matters:
+ *
+ * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
+ *   environment and warrants no UI.
+ * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
+ *   first-time case; the user generates one.
+ * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
+ * - `unreadable` — a row EXISTS for this slug but this build cannot reconstruct a
+ *   `CampaignBriefOutput` from it. Reporting that as `none` would be a lie with consequences:
+ *   the user would generate a replacement, and the save path is find-then-UPDATE, so the
+ *   unreadable brief would be silently overwritten rather than repaired or reported. Kept
+ *   distinct so the UI can say "a saved brief exists but could not be opened" and the id is
+ *   available to whoever investigates.
+ *
+ * `briefId` is populated for `loaded` and `unreadable` alike, and null for the other two.
+ */
+export interface CampaignBriefLoadResult {
+  status: 'off' | 'none' | 'loaded' | 'unreadable';
+  briefId: string | null;
+  brief: CampaignBriefOutput | null;
+  /**
+   * Whether the STORED row is already approved.
+   *
+   * campaign-service creates every brief as `draft` and approval is a second call, so a save
+   * whose approve step failed leaves an approved-looking brief sitting in `draft`. Restoring it
+   * suppresses the next save (the content is already stored), and without this flag the row
+   * would never reach `approved` — while `build-audience` and campaign creation both gate on
+   * `status = 'approved'`. Surfaced so the restore path can re-approve instead of assuming a
+   * stored brief is a finished one.
+   *
+   * `false` whenever the status could not be read, so the fallback is to re-approve rather than
+   * to assume approval.
+   */
+  approved: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +656,8 @@ export interface CampaignBriefRefineRequest {
   feedback: string;
   eventDetails?: CampaignEventDetails | null;
   platforms?: CampaignPlatform[];
+  /** See `CampaignBriefRequest.deliveryType`. Refine re-runs the same generators. */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
 }
 
@@ -465,6 +690,35 @@ export interface CampaignCreateRequest {
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+}
+
+/**
+ * The INTERNAL result of `CampaignServiceClient.createCampaigns` — not a wire shape.
+ *
+ * `POST /api/campaigns/create` never sends this. The controller translates it: `{ jobId }` on
+ * success, `{ jobId: '', error }` on refusal, and on `enabled: false` it falls through to the
+ * legacy path and answers with that path's response instead. `enabled` is a routing signal
+ * between these two layers and is stripped before anything reaches the client, so a client coded
+ * against it would read `undefined` forever.
+ *
+ * Deliberately NOT the legacy `{ jobId, result?, error? }` shape. The legacy path inline-waits up
+ * to 45s and can return a finished `result`; campaign-service answers 202 with a job id and
+ * nothing else, because dispatch is genuinely asynchronous there — the platforms are called by a
+ * dispatcher the request does not wait for.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is the steady state everywhere the
+ * cutover is dark, and the caller must fall through to the legacy path rather than showing an
+ * error.
+ */
+export interface CampaignServiceCreateResult {
+  enabled: boolean;
+  /** The campaign-service job id (a UUID). Poll it through the existing job-status route. */
+  jobId: string | null;
+  /**
+   * Why the cutover could not be used for this request, when `enabled` is true but `jobId` is
+   * null. Never a raw upstream error — the caller renders this.
+   */
+  error: string | null;
 }
 
 export interface CampaignCreateResult {
@@ -879,6 +1133,97 @@ export interface RedditMonitorResponse {
   campaigns: RedditCampaignMetrics[];
   accountTotals: RedditAccountTotals;
   actionItems: RedditActionItem[];
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot Email Templates
+// ---------------------------------------------------------------------------
+
+/**
+ * One HubSpot marketing email, as the template picker lists it.
+ *
+ * `id` is the only field campaign-service guarantees, and it is the one that matters: it is what
+ * `hubspotConfig.sourceEmailId` takes, and that field is REQUIRED with no default — staging an
+ * email clones a template, so without a choice here the email channel cannot dispatch at all.
+ *
+ * `state` is worth rendering. A template can be a DRAFT, and cloning one is legitimate but worth
+ * seeing first. Note it can never say ARCHIVED: HubSpot models archival as a separate flag rather
+ * than a lifecycle state, and this search does not request archived rows, so they are absent from
+ * the result entirely rather than present with a different `state`.
+ *
+ * `updatedAt` earns its place because two templates routinely share a name — the date is what
+ * tells them apart. The service already returns the list most-recently-updated first.
+ */
+export interface HubSpotMarketingEmail {
+  /**
+   * Never empty in practice — the service declares it Required — but a row that somehow arrives
+   * without one is not selectable, because this is the value `sourceEmailId` takes. Callers
+   * should drop such a row rather than render it as a choice that cannot be made.
+   */
+  id: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updatedAt?: string;
+}
+
+/**
+ * What the template search returns.
+ *
+ * `enabled: false` is a first-class outcome rather than a failure, matching the other
+ * campaign-service reads: it means **no HubSpot connection resolved for this project id**, which
+ * is the steady state until someone connects one. The picker renders a "connect HubSpot" empty
+ * state for it, not an error.
+ *
+ * It does NOT isolate "not connected yet". campaign-service reaches that typed 404 whenever the
+ * connection row is absent, and a project id that does not exist has no row either — so a
+ * mistyped slug produces the same answer as an unconfigured project. The empty state should name
+ * the project it queried, so a typo is visible rather than reported as a missing integration.
+ * A bad or undecryptable credential is a DIFFERENT status (400/500/503) and is not swallowed
+ * here.
+ *
+ * **An empty query returns a BOUNDED first screen, not the whole portal.** campaign-service caps
+ * an unfiltered listing at 500 because an empty needle matches every row, and it takes the first
+ * N in SERVER order before sorting them — so the screen is "recent emails to pick from", NOT a
+ * guarantee of the newest in the portal. `possiblyTruncated` says when that cap may have bitten,
+ * because the wire result carries no pagination field and a capped 500 is byte-identical to a
+ * complete 500.
+ *
+ * A FILTERED search is exempt from that 500-row cap — truncating one would report an email that
+ * exists as absent — but it is NOT unbounded, which an earlier version of this comment claimed.
+ * campaign-service walks at most `maxListPages = 200` and returns an error on exhausting them
+ * rather than a partial list, so a filtered search is COMPLETE-OR-ERROR: it either matched across
+ * every page or it failed. That is why `possiblyTruncated` is always false for one.
+ *
+ * The cost is latency: `q` never reaches HubSpot — its list endpoint cannot be queried by name or
+ * subject — so campaign-service walks the pages and matches name-or-subject case-insensitively
+ * in-process. On a large portal a typed query is a slow call, which is why the picker must
+ * debounce rather than search per keystroke, and why callers should not assume unlimited
+ * traversal time.
+ */
+export interface HubSpotEmailSearchResult {
+  enabled: boolean;
+  emails: HubSpotMarketingEmail[];
+  /**
+   * Whether this list may have been cut off by the unfiltered cap.
+   *
+   * True only for an EMPTY query that came back exactly at the cap — the one case where a
+   * complete portal listing and a truncated first screen are indistinguishable on the wire.
+   *
+   * A filtered search is COMPLETE-OR-ERROR rather than truncatable: campaign-service's walk is
+   * capped at 200 pages and returns an error on exhausting it, never a partial list. So this is
+   * always false for a filtered search — not because the walk is unbounded, but because a partial
+   * one fails instead of answering.
+   *
+   * The picker should say "showing the first 500 — type to search the rest" rather than
+   * presenting the list as everything. NOT "the 500 most recent": the service takes the first 500
+   * rows in server order and sorts them AFTER truncating, so the set is not the portal's newest
+   * 500 and telling the user otherwise would be a second falsehood on top of the first.
+   */
+  possiblyTruncated: boolean;
+
+  /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------

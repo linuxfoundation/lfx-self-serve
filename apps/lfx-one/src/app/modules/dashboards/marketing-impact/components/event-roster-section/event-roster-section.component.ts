@@ -5,12 +5,12 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { BEHIND_GOAL_PERCENT_THRESHOLD, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
-import { eventRegistrationPercent, formatCurrency, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
+import { BEHIND_GOAL_PERCENT_THRESHOLD, EVENTS_SPLIT_TO_DRAWER_FOCUS, ON_TRACK_PERCENT_THRESHOLD } from '@lfx-one/shared/constants';
+import { eventRegistrationPercent, formatCurrency, formatIsoDateLabel, formatNumber, isEventAtRisk } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
-import type { EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView } from '@lfx-one/shared/interfaces';
+import type { EventDrawerFocus, EventRosterBar, EventRosterResponse, EventRosterRow, EventRosterRowView, EventsSplitView } from '@lfx-one/shared/interfaces';
 
 import { EventDetailDrawerComponent } from '../event-detail-drawer/event-detail-drawer.component';
 
@@ -26,6 +26,8 @@ export class EventRosterSectionComponent {
   // === Inputs ===
   public readonly foundationSlug = input<string | undefined>();
   public readonly selectedPeriod = input<string>('');
+  /** Which half of the Events story to show; `null` shows both columns (the unsplit view). */
+  public readonly eventsSplit = input<EventsSplitView | null>(null);
 
   // === Controls ===
   protected readonly search = new FormControl('', { nonNullable: true });
@@ -41,6 +43,8 @@ export class EventRosterSectionComponent {
   protected readonly skeletons: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly drawerVisible = signal(false);
   protected readonly selectedEventId = signal<string | null>(null);
+  // Which story the open drawer tells: 'b2c' (registrations + campaigns) or 'b2b' (sponsorship).
+  protected readonly drawerFocus = signal<EventDrawerFocus>('b2c');
 
   // === Computed Signals ===
   protected readonly roster: Signal<EventRosterResponse> = this.initRoster();
@@ -58,14 +62,47 @@ export class EventRosterSectionComponent {
     // must not claim a period the user never selected.
     return this.includePast() ? 'No events found.' : 'No upcoming events.';
   });
+  /** Card subtitle, naming only the columns the current split renders. */
+  protected readonly subtitle = computed(() => {
+    switch (this.eventsSplit()) {
+      case 'attendance':
+        return 'Registrations vs goal';
+      case 'sponsorship':
+        return 'Sponsorship revenue vs goal';
+      default:
+        return 'Registrations and sponsorship vs goal';
+    }
+  });
+  protected readonly showRegistrations = computed(() => this.eventsSplit() !== 'sponsorship');
+  /** Sponsorship revenue column — hidden in the attendance view. */
+  protected readonly showSponsorship = computed(() => this.eventsSplit() !== 'attendance');
 
   // === Protected Methods ===
   protected toggleIncludePast(includePast: boolean): void {
     this.includePast.set(includePast);
   }
 
+  /**
+   * Row-level click. Opens the story matching the active split so a row clicked in the
+   * sponsorship view doesn't land on the registrations drawer; the unsplit view keeps its
+   * long-standing B2C default.
+   */
   protected openEvent(eventId: string): void {
+    const split = this.eventsSplit();
+    this.openFocused(eventId, split ? EVENTS_SPLIT_TO_DRAWER_FOCUS[split] : 'b2c');
+  }
+
+  /**
+   * Open the detail drawer scoped to one story. Called from the individual
+   * column cells so registrations open the B2C (campaigns) view and sponsorship
+   * opens the B2B view. `event` is stopped so the row-level click doesn't also fire — the cell
+   * buttons stop Enter and Space in the template for the same reason, since a native button
+   * turns both into a click and the row has its own keydown handlers.
+   */
+  protected openFocused(eventId: string, focus: EventDrawerFocus, event?: Event): void {
+    event?.stopPropagation();
     this.selectedEventId.set(eventId);
+    this.drawerFocus.set(focus);
     this.drawerVisible.set(true);
   }
 
@@ -120,13 +157,12 @@ export class EventRosterSectionComponent {
     return {
       eventId: event.eventId,
       eventName: event.eventName,
-      dateLabel: this.formatDate(event.startDate),
+      dateLabel: formatIsoDateLabel(event.startDate),
       eventUrl: event.eventUrl,
       country: event.country,
       registrations,
       sponsorshipRevenue,
       atRisk,
-      cfpStatus: event.cfpStatus,
     };
   }
 
@@ -144,22 +180,5 @@ export class EventRosterSectionComponent {
       tone = 'warn';
     }
     return { actual: fmt(actual), goal: fmt(goal), percent, hasGoal: true, tone };
-  }
-
-  private formatDate(iso: string): string {
-    const [year, month, day] = iso.split('-').map(Number);
-    if (!year || !month || !day) return iso;
-    // Range-check before Date.UTC: it silently rolls over out-of-range parts (month=13 becomes
-    // January of the next year), which would render a confidently wrong date rather than the raw
-    // value. Showing the unparsed string makes bad warehouse data visible instead of plausible.
-    if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    if (parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
-    return parsed.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC',
-    });
   }
 }

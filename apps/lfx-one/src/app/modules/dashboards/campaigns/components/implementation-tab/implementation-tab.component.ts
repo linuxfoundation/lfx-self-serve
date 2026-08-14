@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,12 +15,15 @@ import {
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { map, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
+  CampaignBriefPersistenceState,
   CampaignCreateResult,
+  CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
@@ -42,7 +45,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
  * part of any contract between the tiers. Two repo rules meet here and an intersection is the
- * only form satisfying both — `CLAUDE.md:176` prohibits the local `interface Foo {}` form inside
+ * only form satisfying both — CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule prohibits the local `interface Foo {}` form inside
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
@@ -65,11 +68,88 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 export class ImplementationTabComponent implements OnInit {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
+
+  /**
+   * Whether the brief this tab is configuring has been saved.
+   *
+   * Rendered here rather than on the Planning tab because this is where the user spends the
+   * next stretch of work — a "not saved" warning is only useful in front of the person about to
+   * lose something. The default is the `off` state, which renders nothing at all.
+   */
+  public readonly briefPersistence = input<CampaignBriefPersistenceState>({ status: 'off', briefId: null, message: null, approved: false });
+
+  /**
+   * Is a brief save running right now?
+   *
+   * Separate from `briefPersistence` because that input drives a BANNER, and the first save of a
+   * session deliberately shows none — the persistence flag lives on the server, so it is unknown
+   * until that first response lands. Its status therefore reads `off` while the save is in
+   * flight, which is indistinguishable from "the cutover is dark".
+   *
+   * The difference matters here and nowhere else: a create issued during that window carries an
+   * empty brief id and is TERMINALLY refused with the cutover on. Defaults to false so the input
+   * is additive.
+   */
+  public readonly briefSaveInFlight = input(false);
+
+  /**
+   * Edits carried over from a previous mount, or `null` on a first visit (LFXV2-3229).
+   *
+   * This component sits inside a structural `@switch`, so every trip to another tab destroys it
+   * and everything it holds. Keeping it mounted the way LFXV2-3202 (PR #1437, pending) proposes keeping the planner mounted is
+   * the wrong fix here — `ngOnInit` resolves the LinkedIn ad-account list, so an eager mount would issue that
+   * request on every page load for a tab the user may never open. The parent holds the edits
+   * instead, and this component is still free to be destroyed.
+   */
+  public readonly draft = input<CampaignImplementationDraft | null>(null);
+
+  /**
+   * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
+   * the tab is destroyed.
+   *
+   * Emitting on every change rather than on destroy is deliberate: `ngOnDestroy` runs during the
+   * same change-detection pass that removes the component, and a parent signal written there
+   * would be a write-after-read in the pass that is already rendering. Emitting as the user types
+   * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
+   */
+  public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
+   * Text for the always-present live region in the template.
+   *
+   * Kept separate from the visible banners because the announcement and the banner have
+   * different lifetimes: the banner is created and destroyed by `@switch`, while the region has
+   * to persist so a screen reader treats each new value as a CHANGE rather than an insertion.
+   * Empty in the `off` and `error` states — `off` has nothing to say, and `error` carries its own
+   * `role="alert"`, which would otherwise announce the same text twice.
+   */
+  protected readonly briefPersistenceAnnouncement = computed(() => {
+    switch (this.briefPersistence().status) {
+      case 'saving':
+        return 'Saving this brief.';
+      case 'saved':
+        // Must carry the SAME information as the visible banner, which tells the user to re-enter
+        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
+        // the reassurance without the instruction — and the instruction is the part they cannot
+        // recover on their own, since nothing else on the page says the brief needs a URL to come
+        // back.
+        //
+        // The unapproved message, when there is one, is appended rather than replacing this: the
+        // brief IS saved and the reload instruction still applies, so dropping either half would
+        // leave a screen-reader user with less than the visible banner shows.
+        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+          this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
+        }`;
+      default:
+        return '';
+    }
+  });
 
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
@@ -86,7 +166,10 @@ export class ImplementationTabComponent implements OnInit {
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
     budgetUsd: [500, [Validators.required, Validators.min(1)]],
-    searchBudgetPct: [CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct],
+    // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
+    // control type was the literal `70` — which is wrong for a slider the user drags, and made
+    // any other value a type error to patch in (LFXV2-3229).
+    searchBudgetPct: [CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct as number],
     startDate: ['', [Validators.required]],
     endDate: ['', [Validators.required]],
     includeSearch: [true],
@@ -206,6 +289,54 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+
+    // Blocked while a brief save is in flight, because the create needs the id that save produces.
+    //
+    // The parent sets `briefId: null` for the duration of a save, so submitting during that window
+    // sent an empty `brief_id` — which the cutover refuses TERMINALLY, with no fall-through to the
+    // legacy path. The user would see "brief has not been saved yet" for a brief that was being
+    // saved as they clicked. Disabling for the moment it takes is the honest reading; the button
+    // re-enables on its own when the save lands.
+    //
+    // `error` splits in two, and the brief id is what tells them apart — blocking the whole
+    // status was too broad, blocking none of it was too narrow.
+    //
+    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
+    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
+    //     brief on screen — the save was refused precisely because the two disagree. Creating
+    //     from it would launch paid campaigns off another writer's version while the user reads
+    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //
+    //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
+    //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
+    //     at all. ALLOWED — blocking it would contradict the message the user is reading. If the
+    //     cutover is on, `createCampaigns` refuses on the empty id with its own wording; that is
+    //     a different message for a different situation, and it is the create path's to give.
+    // `briefSaveInFlight` rather than `status === 'saving'`, because the status does not cover the
+    // FIRST save of a session: it stays `off` until the persistence flag is known, so a fast click
+    // straight after Proceed submitted an empty brief id and hit the terminal refusal. The
+    // dedicated input answers "is a save running" for every save, first or not.
+    if (this.briefSaveInFlight()) return false;
+
+    const persistence = this.briefPersistence();
+    if (persistence.status === 'saving') return false;
+    if (persistence.status === 'error' && persistence.briefId !== null) return false;
+
+    // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
+    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
+    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
+    // the hard way. Read from the explicit `approved` field rather than the banner prose, which
+    // would break the first time the copy is edited.
+    if (persistence.status === 'saved' && !persistence.approved) return false;
+
+    // A RESTORED brief arrives as `off` carrying its own id, and Planning deliberately lets an
+    // unapproved one be restored (the banner says to get it approved). `off` also covers the
+    // cutover-dark case, where there is no brief id and none is needed — so the id is again what
+    // separates them: an id present here means a restored brief, and an unapproved one cannot
+    // create.
+    if (persistence.status === 'off' && persistence.briefId !== null && !persistence.approved) return false;
+
     return true;
   });
 
@@ -230,13 +361,54 @@ export class ImplementationTabComponent implements OnInit {
   // === Private State ===
   private jobSubscription: Subscription | null = null;
 
+  /**
+   * True while the constructor effect is rebuilding the form from the brief and the draft.
+   *
+   * A plain field rather than a signal on purpose: nothing renders from it and nothing should
+   * react to it — it exists only to tell `valueChanges` that the write it just saw came from
+   * this component, not from the user.
+   */
+  private seeding = false;
+
   // === Lifecycle ===
 
   public constructor() {
     effect(() => {
       const brief = this.briefData();
       if (!brief) return;
+      // Everything between here and the emit below is the component REBUILDING itself, not the
+      // user editing. `valueChanges` cannot tell those apart, so the flag does: without it the
+      // seed's own patchValue emits a brief-shaped snapshot that overwrites the very draft this
+      // mount is about to restore, and the user's edits die on the NEXT tab leave.
+      this.seeding = true;
       this.populateFromBrief(brief);
+      // AFTER seeding from the brief, so a carried-over draft wins over the generated copy —
+      // that is the whole point. Inside the same effect rather than a second one because the two
+      // must not race: a separate effect could apply the draft first and have the brief overwrite
+      // it, which is exactly the bug being fixed.
+      //
+      // UNTRACKED, and this is load-bearing rather than an optimisation. The draft is restore
+      // state read once per mount, not a reactive dependency: tracking it closes a loop —
+      // valueChanges emits -> the parent's signal updates -> this input changes -> the effect
+      // re-runs -> it patches the form -> valueChanges emits again. Angular catches that as
+      // NG0103 (infinite change detection) and takes the whole page down with it, which is how
+      // this was found.
+      untracked(() => this.applyDraft());
+      this.seeding = false;
+      // Emit ONCE, after the form has settled into whatever this mount should show — the draft
+      // if one applied, the brief's copy otherwise. This is what keeps the parent's copy equal
+      // to the form at rest, so a tab leave with no typing in between preserves rather than
+      // reverts (the defect this line exists to close).
+      this.emitDraft();
+    });
+
+    // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
+    // types); it does NOT cover the platform signals, which is deliberate — see the draft
+    // interface for why this snapshot is scoped to the fields a user types rather than everything
+    // the component holds.
+    this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
     });
   }
 
@@ -438,7 +610,15 @@ export class ImplementationTabComponent implements OnInit {
         : {}),
     };
 
-    this.campaignService.createCampaign(request).subscribe({
+    // Read once, here, and carry it into the poll rather than re-reading per request. The
+    // foundation is switchable while a job runs, and `GetJob` matches the brief's project
+    // EXACTLY — a poll sent under a foundation the user switched to answers `not_found`, which
+    // is terminal for the poller and would be reported as a lost campaign that is in fact
+    // running.
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    const briefId = this.briefPersistence().briefId ?? '';
+
+    this.campaignService.createCampaign(request, projectSlug, briefId).subscribe({
       next: (response) => {
         if (response.result) {
           this.results.set(response.result.campaigns);
@@ -457,7 +637,7 @@ export class ImplementationTabComponent implements OnInit {
           return;
         }
         this.creationProgress.update((msgs) => [...msgs, `Job started: ${response.jobId}`]);
-        this.pollJob(response.jobId);
+        this.pollJob(response.jobId, projectSlug);
       },
       error: () => {
         this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
@@ -467,6 +647,102 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Methods ===
+  /**
+   * Replay edits carried over from a previous mount, over the values just seeded from the brief.
+   *
+   * Guarded on the event slug. A draft belongs to the brief it was typed against, and replaying
+   * event A's copy onto event B's freshly generated brief would silently overwrite it — the same
+   * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
+   * the draft is ignored and the brief's own copy stands.
+   */
+  private applyDraft(): void {
+    const draft = this.draft();
+    if (!draft) return;
+
+    const currentSlug = this.campaignForm.controls.eventSlug.value ?? '';
+    if (draft.eventSlug !== currentSlug) return;
+
+    // EMITS, unlike the first version of this method, and the difference is visible to the user.
+    //
+    // Two displays are derived from `valueChanges` through `toSignal` — the budget-split label
+    // (`displayBudgetPct`) and the campaign-name preview (`campaignName`). Patching with
+    // `emitEvent: false` restored the CONTROLS but never recomputed those, so the slider thumb
+    // moved to the draft value while the label beside it still read the brief's number. The
+    // restore looked applied and half of it was not.
+    //
+    // Suppressing emission was never what prevented the draft being written back over itself —
+    // `seeding` is, and it is already true for the whole of this call (see the effect that wraps
+    // it, where the `valueChanges` subscription returns early while it is set). Letting the patch
+    // emit therefore reaches the derived signals without reopening that loop.
+    this.campaignForm.patchValue({
+      eventName: draft.eventName,
+      countryCode: draft.countryCode,
+      registrationUrl: draft.registrationUrl,
+      budgetUsd: draft.budgetUsd,
+      searchBudgetPct: draft.searchBudgetPct,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      includeSearch: draft.includeSearch,
+      includeDemandGen: draft.includeDemandGen,
+    });
+
+    // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
+    // emits per control, so letting these through would fire `campaignName`'s recompute once per
+    // headline for no gain. The single patch above is enough to settle every derived signal.
+    this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
+    this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
+  }
+
+  /**
+   * Rebuild one copy FormArray from a list, preserving the validators the field carries.
+   *
+   * Shared by the draft restore and the brief seed so the two cannot drift — an earlier revision
+   * of the seed inlined this twice, which is how a validator ends up on one array and not the
+   * other.
+   */
+  private replaceCopyArray(target: FormArray, values: string[], maxLength: number, emitEvent: boolean): void {
+    target.clear({ emitEvent: false });
+    for (const value of values) {
+      target.push(this.fb.control(value, [Validators.required, Validators.maxLength(maxLength)]), { emitEvent: false });
+    }
+    // Emission is the CALLER's decision, and BOTH answers are load-bearing — an earlier revision
+    // of this helper hardcoded suppression for both and made the original bug strictly worse.
+    //
+    // The brief seed MUST emit. `populateFromBrief`'s `patchValue` above emits while these arrays
+    // still hold the form's initial empty control, so the draft the parent snapshots is `[""]`.
+    // Without a second emission after the arrays are filled, nothing ever corrects it, and a user
+    // who typed NOTHING lost all generated copy on a plain tab round-trip.
+    //
+    // The draft restore must NOT emit, or applying it re-enters `emitDraft` and writes the draft
+    // back over itself mid-apply. Emitted once at the end rather than per control, so a
+    // five-headline seed is one update rather than five.
+    if (emitEvent) {
+      target.updateValueAndValidity();
+    }
+  }
+
+  /** Snapshot the user-editable fields for the parent to hold across this component's teardown. */
+  private emitDraft(): void {
+    const form = this.campaignForm.getRawValue();
+    this.draftChange.emit({
+      eventName: form.eventName,
+      countryCode: form.countryCode,
+      registrationUrl: form.registrationUrl,
+      // No `??` fallbacks: the form is `fb.nonNullable.group`, so `getRawValue()` cannot yield
+      // null here — `submit()` reads the same fields unguarded. A dead `budgetUsd ?? 0` would
+      // also be an actively WRONG default, since 0 fails the control's own Validators.min(1).
+      headlines: form.headlines as string[],
+      descriptions: form.descriptions as string[],
+      budgetUsd: form.budgetUsd,
+      searchBudgetPct: form.searchBudgetPct,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      includeSearch: form.includeSearch,
+      includeDemandGen: form.includeDemandGen,
+      eventSlug: form.eventSlug,
+    });
+  }
+
   private populateFromBrief(brief: CampaignBriefOutput): void {
     this.step.set('form');
     this.creationProgress.set([]);
@@ -493,25 +769,23 @@ export class ImplementationTabComponent implements OnInit {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
 
-      const headlinesArr = this.campaignForm.controls.headlines as FormArray;
-      headlinesArr.clear();
-      for (const h of headlines) {
-        headlinesArr.push(this.fb.control(h, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)]));
-      }
-
-      const descriptionsArr = this.campaignForm.controls.descriptions as FormArray;
-      descriptionsArr.clear();
-      for (const d of descriptions) {
-        descriptionsArr.push(this.fb.control(d, [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)]));
-      }
+      this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, true);
+      this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
     }
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
       this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
       this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
-      if (brief.linkedInCopy.strategy) {
-        this.linkedInBudgetUsd.set(brief.linkedInCopy.strategy.budgetRecommendation.lifetimeBudgetUsd);
+      // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
+      // reaching here came straight from the generator, which always emits both; a RESTORED
+      // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
+      // discriminator and leaves the inner shape alone. A `strategy` without a
+      // `budgetRecommendation` therefore reaches this line and throws on the nested read —
+      // every other field in this block is assigned whole, so this is the only such reach.
+      const lifetimeBudget = brief.linkedInCopy.strategy?.budgetRecommendation?.lifetimeBudgetUsd;
+      if (typeof lifetimeBudget === 'number' && Number.isFinite(lifetimeBudget)) {
+        this.linkedInBudgetUsd.set(lifetimeBudget);
         this.linkedInLifetimeBudget.set(true);
       }
     }
@@ -555,11 +829,11 @@ export class ImplementationTabComponent implements OnInit {
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }
 
-  private pollJob(jobId: string): void {
+  private pollJob(jobId: string, projectSlug: string): void {
     const MAX_POLL_DURATION_MS = 300_000;
     const MAX_POLLS = Math.ceil(MAX_POLL_DURATION_MS / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.jobSubscription = this.campaignService
-      .getCreateResult(jobId)
+      .getCreateResult(jobId, projectSlug)
       .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (outcome: CampaignJobOutcome | null) => {

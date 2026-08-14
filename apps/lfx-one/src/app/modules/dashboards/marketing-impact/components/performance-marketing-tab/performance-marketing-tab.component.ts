@@ -4,7 +4,7 @@
 import { Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FOCUS_TO_CLASSIFICATION } from '@lfx-one/shared/constants';
-import { computeMomPct, formatChangePct, formatCurrency, formatNumber, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
+import { computeMomPct, formatChangePct, formatCurrency, formatNumber, formatPercent, trendColorClass, trendDirection } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
@@ -254,9 +254,9 @@ export class PerformanceMarketingTabComponent {
           roas: `${(p.roas ?? 0).toFixed(2)}x`,
           clicks: formatNumber(p.clicks),
           impressions: formatNumber(p.impressions),
-          ctr: `${(p.ctr ?? 0).toFixed(2)}%`,
+          ctr: `${formatPercent(p.ctr ?? 0, 2)}%`,
           cpc: formatCurrency(p.cpc),
-          convRate: `${(p.convRate ?? 0).toFixed(2)}%`,
+          convRate: `${formatPercent(p.convRate ?? 0, 2)}%`,
           conversions: formatNumber(p.conversions),
           performance: perf,
           performanceClass: this.getPerformanceClass(perf),
@@ -296,9 +296,9 @@ export class PerformanceMarketingTabComponent {
         roas: `${totalRoas.toFixed(2)}x`,
         clicks: formatNumber(totals.clicks),
         impressions: formatNumber(totals.impressions),
-        ctr: `${totalCtr.toFixed(2)}%`,
+        ctr: `${formatPercent(totalCtr, 2)}%`,
         cpc: formatCurrency(totalCpc),
-        convRate: `${totalConvRate.toFixed(2)}%`,
+        convRate: `${formatPercent(totalConvRate, 2)}%`,
         conversions: formatNumber(totals.conversions),
         performance: totalPerf,
         performanceClass: this.getPerformanceClass(totalPerf),
@@ -346,10 +346,10 @@ export class PerformanceMarketingTabComponent {
           clicks: formatNumber(k.clicks),
           spend: formatCurrency(k.spend),
           impressions: formatNumber(k.impressions),
-          ctr: `${(k.ctr ?? 0).toFixed(2)}%`,
+          ctr: `${formatPercent(k.ctr ?? 0, 2)}%`,
           cpc: formatCurrency(k.cpc),
           conversions: formatNumber(k.conversions),
-          convRate: `${(k.conversionRate ?? 0).toFixed(2)}%`,
+          convRate: `${formatPercent(k.conversionRate ?? 0, 2)}%`,
           revenue: formatCurrency(k.attributedRevenue),
           roas: `${(k.roas ?? 0).toFixed(2)}x`,
           searchTerms: (k.searchTerms ?? []).map(
@@ -359,7 +359,7 @@ export class PerformanceMarketingTabComponent {
               clicks: formatNumber(st.clicks),
               spend: formatCurrency(st.spend),
               impressions: formatNumber(st.impressions),
-              ctr: `${(st.ctr ?? 0).toFixed(2)}%`,
+              ctr: `${formatPercent(st.ctr ?? 0, 2)}%`,
               cpc: formatCurrency(st.cpc),
               conversions: st.conversions == null ? '—' : formatNumber(st.conversions),
             })

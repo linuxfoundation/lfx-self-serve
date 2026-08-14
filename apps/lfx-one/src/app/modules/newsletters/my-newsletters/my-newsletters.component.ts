@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -11,12 +12,13 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { MyNewsletter } from '@lfx-one/shared/interfaces';
+import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, finalize, of } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -50,7 +52,10 @@ export class MyNewslettersComponent {
   private readonly newsletterService = inject(NewsletterService);
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -61,7 +66,7 @@ export class MyNewslettersComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
-  protected readonly previewVisible = signal<boolean>(false);
+  protected readonly previewVisible = model<boolean>(false);
   /** Newsletter id whose body fetch is in flight — serializes drawer opens. */
   protected readonly openingId = signal<string | null>(null);
   protected readonly selected = signal<MyNewsletter | null>(null);
@@ -69,6 +74,10 @@ export class MyNewslettersComponent {
   protected readonly searchTerm = signal<string>('');
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
+
+  // === Query Param Signals (for drawer↔URL sync) ===
+  protected readonly queryIssueId: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('issue'))), { initialValue: null });
+  protected readonly queryProjectSlug: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('project'))), { initialValue: null });
 
   // === Computed Signals ===
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -84,12 +93,47 @@ export class MyNewslettersComponent {
     const sentAt = this.selected()?.sent_at;
     return sentAt ? `Received ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
   });
+  /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
+  protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
+    const selected = this.selected();
+    if (!selected?.project_slug || !selected.id) return null;
+    return toAbsoluteUrl(`/newsletters/${selected.project_slug}/${selected.id}`, isPlatformBrowser(this.platformId));
+  });
 
   // === Constructor ===
   public constructor() {
     this.searchForm.controls.search.valueChanges
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => this.searchTerm.set(value ?? ''));
+
+    // Drawer ↔ URL sync: open the drawer when `issue`/`project` params are
+    // present (page load or forward navigation), close it when they clear
+    // (browser back). Idempotent — an emission for an issue that is already
+    // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
+    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.myNewsletters), toObservable(this.loading)])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([issueId, projectSlug, newsletters, loading]) => {
+        if (!issueId || !projectSlug) {
+          // Params cleared (drawer close or back navigation) — close the drawer.
+          if (this.previewVisible()) {
+            this.previewVisible.set(false);
+          }
+          return;
+        }
+        // Wait for the feed before deciding; skip if this issue is already opening or open.
+        if (loading || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
+          return;
+        }
+        const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
+        if (newsletter) {
+          // Newsletter is in the feed — open the drawer via the normal path
+          this.onOpenNewsletter(newsletter);
+        } else {
+          // Newsletter not in the feed (e.g. non-member pasted a URL).
+          // Redirect to the canonical permalink page, which handles access uniformly.
+          this.router.navigate(['/newsletters', projectSlug, issueId]);
+        }
+      });
   }
 
   // === Protected Methods ===
@@ -99,6 +143,14 @@ export class MyNewslettersComponent {
     }
     this.selected.set(newsletter);
     this.openingId.set(newsletter.id);
+
+    // Update URL with query params (sync drawer open state to URL)
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { issue: newsletter.id, project: newsletter.project_slug },
+      queryParamsHandling: 'merge',
+      preserveFragment: true,
+    });
 
     // The list DTO deliberately omits body_html; fetch the full newsletter via
     // the project-scoped get (open to any authenticated user upstream) and
@@ -132,6 +184,20 @@ export class MyNewslettersComponent {
   protected onOpenSubject(event: Event, newsletter: MyNewsletter): void {
     event.stopPropagation();
     this.onOpenNewsletter(newsletter);
+  }
+
+  protected onDrawerVisibleChange(visible: boolean): void {
+    if (visible) {
+      return;
+    }
+    // Drawer closed by the user — clear the issue params so the URL matches.
+    // The [(visible)] model binding already reflects the closed state.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { issue: null, project: null },
+      queryParamsHandling: 'merge',
+      preserveFragment: true,
+    });
   }
 
   protected onFoundationFilterChange(value: string | null): void {

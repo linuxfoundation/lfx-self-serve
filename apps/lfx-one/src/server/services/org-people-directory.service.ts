@@ -6,6 +6,7 @@ import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   CommitteeServiceOrgSeat,
   KeyContactEmployee,
+  OrgAccessBadgeState,
   OrgAccessUser,
   OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
@@ -32,7 +33,13 @@ function isStringArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => typeof el === 'string');
 }
 
-/** Every row must match the wire shape: the cached value is replayed straight to the client, so a corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`. */
+/**
+ * Every row must match the wire shape: the cached value is replayed straight to the client, so a
+ * corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`.
+ *
+ * `lfUsername` and `emails` are required so an entry written by a pre-merge-key deployment is
+ * rejected as a miss and recomputed, rather than replayed into a renderer that expects them.
+ */
 function isAllEmployeeRow(value: unknown): boolean {
   const r = value as Partial<OrgAllEmployeeRow>;
   return (
@@ -40,6 +47,8 @@ function isAllEmployeeRow(value: unknown): boolean {
     typeof r.personKey === 'string' &&
     typeof r.name === 'string' &&
     (r.email === null || typeof r.email === 'string') &&
+    (r.lfUsername === null || typeof r.lfUsername === 'string') &&
+    isStringArray(r.emails) &&
     isStringArray(r.sources) &&
     isStringArray(r.engagedFoundationIds) &&
     typeof r.seatsCount === 'number' &&
@@ -49,6 +58,34 @@ function isAllEmployeeRow(value: unknown): boolean {
     typeof r.eventsCount === 'number' &&
     typeof r.coursesCount === 'number'
   );
+}
+
+/**
+ * Identity of a source record for merge purposes.
+ *
+ * A person holds ONE LF username but MANY email addresses, so the address is not an identifier —
+ * keying on it is what splits one human across several rows. Prefer the verified username; fall
+ * back to the address only when no username is available (key contacts, pending invites, the ~24%
+ * of seats platform-wide whose username has not been resolved upstream).
+ *
+ * The two kinds never match each other. That keeps the merge single-pass and order-independent (no
+ * transitive closure), and it means a record without a verified identity behaves exactly as it does
+ * today — no regression, and no guessing.
+ *
+ * NOT permitted as an input: the Snowflake email→member_id crosswalk. It is many-to-many and
+ * carries false links (`dqualls@linuxfoundation.org` resolves to a different person's member
+ * record), so using it would attribute one named individual's data to another.
+ */
+export function resolveMergeKey(record: { lfUsername?: string | null; email?: string | null }): string | null {
+  const username = (record.lfUsername ?? '').trim().toLowerCase();
+  if (username) return `identity:${username}`;
+  const email = (record.email ?? '').trim().toLowerCase();
+  return email ? `email:${email}` : null;
+}
+
+/** The badge a principal renders as: their role once accepted, `invited` while the invite is outstanding. */
+function badgeOf(user: OrgAccessUser): OrgAccessBadgeState {
+  return user.isPending ? 'invited' : user.role;
 }
 
 function isFoundationOption(value: unknown): boolean {
@@ -140,7 +177,7 @@ export class OrgPeopleDirectoryService {
     return this.merge(req, accountId, base, seats, keyContacts, access);
   }
 
-  /** Seed the snowflake rows by lowercased email (no-email rows pass through), then fold each live source in. */
+  /** Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in. */
   private merge(
     req: Request,
     accountId: string,
@@ -149,37 +186,40 @@ export class OrgPeopleDirectoryService {
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
     access: PromiseSettledResult<OrgAccessUser[]>
   ): OrgAllEmployeesResponse {
-    const byEmail = new Map<string, OrgAllEmployeeRow>();
-    const noEmailRows: OrgAllEmployeeRow[] = [];
+    const byKey = new Map<string, OrgAllEmployeeRow>();
+    const unkeyedRows: OrgAllEmployeeRow[] = [];
 
     for (const row of base.rows) {
-      const email = (row.email ?? '').trim().toLowerCase();
-      if (email) {
+      const key = resolveMergeKey(row);
+      if (key) {
         // Clone so we can mutate sources/enrichment without aliasing the snowflake service's array.
-        byEmail.set(email, { ...row, sources: [...row.sources] });
+        byKey.set(key, { ...row, sources: [...row.sources], emails: [...row.emails], mergedFrom: [key] });
       } else {
-        noEmailRows.push(row);
+        unkeyedRows.push(row);
       }
     }
 
     if (seats.status === 'fulfilled') {
       for (const seat of seats.value) {
         const email = (seat.email ?? '').trim().toLowerCase();
-        if (!email) continue;
+        const key = resolveMergeKey({ lfUsername: seat.username, email });
+        if (!key) continue;
         const source: OrgPersonSource = isBoardCategory(seat.committee_category) ? 'board' : 'committee';
-        const existing = byEmail.get(email);
+        const existing = byKey.get(key);
         if (existing) {
           this.addSource(existing, source);
+          this.addEmail(existing, email);
           this.fill(existing, {
             firstName: (seat.first_name ?? '').trim() || null,
             lastName: (seat.last_name ?? '').trim() || null,
             title: seat.job_title?.trim() || null,
           });
           // Count live seats only for live-only rows; Snowflake rows already carry authoritative seat counts, so
-          // incrementing here would double-count the same seat.
+          // incrementing here would double-count the same seat. Verified: a seat held under a person's secondary
+          // address is already inside the stored count, because the roster's governance join resolves it by LFID.
           if (!existing.sources.includes('snowflake')) this.addSeat(existing, source);
         } else {
-          byEmail.set(email, this.rowFromSeat(seat, email, source));
+          byKey.set(key, this.rowFromSeat(seat, email, source, key));
         }
       }
     } else {
@@ -189,13 +229,16 @@ export class OrgPeopleDirectoryService {
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
-        if (!email) continue;
-        const existing = byEmail.get(email);
+        // Key contacts carry no verified identity, so they always match at the email rung.
+        const key = resolveMergeKey({ email });
+        if (!key) continue;
+        const existing = byKey.get(key);
         if (existing) {
           this.addSource(existing, 'keyContact');
+          this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
         } else {
-          byEmail.set(email, this.rowFromKeyContact(emp, email));
+          byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }
       }
     } else {
@@ -205,21 +248,28 @@ export class OrgPeopleDirectoryService {
     if (access.status === 'fulfilled') {
       for (const user of access.value) {
         const email = (user.email ?? '').trim().toLowerCase();
-        if (!email) continue;
-        const existing = byEmail.get(email);
+        // A pending invite has no username and so cannot merge into a verified person — correct, not a
+        // limitation: until the invite is accepted there is no confirmed identity behind the address.
+        const key = resolveMergeKey({ lfUsername: user.username, email });
+        if (!key) continue;
+        const existing = byKey.get(key);
         if (existing) {
           this.addSource(existing, 'access');
+          this.addEmail(existing, email);
+          existing.accessBadge = badgeOf(user);
           const [firstName, lastName] = splitDisplayName(user.name);
           this.fill(existing, { firstName, lastName, title: user.jobTitle, avatarUrl: user.avatarUrl });
         } else {
-          byEmail.set(email, this.rowFromAccess(user, email));
+          byKey.set(key, this.rowFromAccess(user, email, key));
         }
       }
     } else {
       this.logSourceFailure(req, accountId, 'access principals', access.reason);
     }
 
-    const rows = [...byEmail.values(), ...noEmailRows].sort((a, b) => a.name.localeCompare(b.name));
+    this.absorbIdentitylessRows(byKey);
+
+    const rows = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
       rows,
@@ -230,9 +280,85 @@ export class OrgPeopleDirectoryService {
     };
   }
 
+  /**
+   * Fold each address-keyed row into the identity-keyed row that already owns that address.
+   *
+   * Sources differ in whether they report an identity: the stored roster nearly always does, live
+   * committee seats often do not. When both describe the same person at the same address, the
+   * identity rung claims one and the address rung claims the other, and they never meet — the two
+   * kinds of key are deliberately disjoint so a single pass stays order-independent.
+   *
+   * Left alone that splits a person who was previously whole, since before identity matching existed
+   * both rows keyed on the shared address and merged. This pass restores that, and only that: an
+   * address-keyed row is absorbed strictly when exactly one identity row lists the same address. It
+   * introduces no matching the previous behaviour did not already perform, and it cannot pull two
+   * identities together, because a row that has one is never a candidate to be absorbed.
+   *
+   * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
+   * row (it owns data this fold does not carry), and any row whose address two identities both claim.
+   */
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRow>): void {
+    // An address claimed by more than one identity has no correct owner, so it gets none: picking the
+    // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
+    const claims = new Map<string, OrgAllEmployeeRow[]>();
+    for (const [key, row] of byKey) {
+      if (!key.startsWith('identity:')) continue;
+      for (const email of row.emails) {
+        claims.set(email, [...(claims.get(email) ?? []), row]);
+      }
+    }
+    const ownerByEmail = new Map<string, OrgAllEmployeeRow>();
+    for (const [email, owners] of claims) {
+      if (owners.length === 1) ownerByEmail.set(email, owners[0]);
+    }
+
+    for (const [key, orphan] of byKey) {
+      if (!key.startsWith('email:')) continue;
+      // A pending invitation is the one identity-less row that must stay standalone: nothing has yet
+      // confirmed the invitee is the person who already holds that address, and an accepted principal
+      // always carries a username, so `invited` is exactly the unverified case.
+      if (orphan.accessBadge === 'invited') continue;
+      // A stored orphan is left alone. It owns activity counts, engaged foundations and a real
+      // personKey that this fold does not carry across, and summing them into the owner would
+      // double-count the engagement the stored plane already attributes elsewhere. Absorbing it would
+      // trade a duplicate row for silently missing data, which is the worse defect.
+      if (orphan.sources.includes('snowflake')) continue;
+      const owner = ownerByEmail.get(key.slice('email:'.length));
+      if (!owner) continue;
+
+      // Counters are taken before the orphan's sources land on the owner: `addSource` would otherwise
+      // mark the owner as stored and skip the branch that reads them.
+      if (!owner.sources.includes('snowflake')) {
+        owner.seatsCount += orphan.seatsCount;
+        owner.boardSeatsCount += orphan.boardSeatsCount;
+        owner.committeeSeatsCount += orphan.committeeSeatsCount;
+      }
+      for (const source of orphan.sources) this.addSource(owner, source);
+      for (const email of orphan.emails) this.addEmail(owner, email);
+      owner.mergedFrom = [...(owner.mergedFrom ?? []), key];
+      this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
+      // Reachable only for an accepted principal whose settings record carries no username: it keys on
+      // the address like any orphan, but `isPending` is false so its badge is a real role rather than
+      // `invited`. Not observed today — every accepted principal currently has one — but member-service
+      // merely declines to emit an FGA tuple for that combination, it does not prevent the record.
+      if (!owner.accessBadge && orphan.accessBadge) owner.accessBadge = orphan.accessBadge;
+      byKey.delete(key);
+    }
+  }
+
   private addSource(row: OrgAllEmployeeRow, source: OrgPersonSource): void {
     if (!row.sources.includes(source)) {
       row.sources.push(source);
+    }
+  }
+
+  /** Record a contributing address. A merged person legitimately holds several; `email` stays the preferred display one. */
+  private addEmail(row: OrgAllEmployeeRow, email: string): void {
+    if (email && !row.emails.includes(email)) {
+      row.emails.push(email);
+    }
+    if (!row.email) {
+      row.email = email || null;
     }
   }
 
@@ -254,43 +380,56 @@ export class OrgPeopleDirectoryService {
     if (!row.avatarUrl && patch.avatarUrl) row.avatarUrl = patch.avatarUrl;
   }
 
-  private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource): OrgAllEmployeeRow {
+  private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource, key: string): OrgAllEmployeeRow {
     const firstName = (seat.first_name ?? '').trim() || null;
     const lastName = (seat.last_name ?? '').trim() || null;
-    const row = this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source);
+    const row = this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source, key, seat.username ?? null);
     // The seat that created this live-only row counts as one held seat; further seats fold in via addSeat on the existing branch.
     this.addSeat(row, source);
     return row;
   }
 
-  private rowFromKeyContact(emp: KeyContactEmployee, email: string): OrgAllEmployeeRow {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact');
+  private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRow {
+    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, null);
   }
 
-  private rowFromAccess(user: OrgAccessUser, email: string): OrgAllEmployeeRow {
+  private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRow {
     const [firstName, lastName] = splitDisplayName(user.name);
-    return this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access');
+    const row = this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access', key, user.username);
+    row.accessBadge = badgeOf(user);
+    return row;
   }
 
-  /** Build a live-only row (no stored activity). personKey is a pattern-safe token so a detail expand returns an empty (200) payload rather than a 400. */
+  /**
+   * Build a live-only row (no stored activity). personKey is a pattern-safe token so a detail expand
+   * returns an empty (200) payload rather than a 400. It is derived from the merge key rather than
+   * the address, so a record identified only by username still gets a distinct token — deriving it
+   * from an absent address would collide every such row onto the same key.
+   */
   private liveRow(
     email: string,
     firstName: string | null,
     lastName: string | null,
     title: string | null,
     avatarUrl: string | null,
-    source: OrgPersonSource
+    source: OrgPersonSource,
+    key: string,
+    lfUsername: string | null
   ): OrgAllEmployeeRow {
-    const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
+    const username = (lfUsername ?? '').trim().toLowerCase() || null;
+    const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email || username || '';
     return {
-      personKey: `live-${Buffer.from(email).toString('base64url')}`,
+      personKey: `live-${Buffer.from(key).toString('base64url')}`,
       lfid: null,
+      lfUsername: username,
       cdpMemberId: null,
       name,
       firstName,
       lastName,
       title,
       email,
+      emails: email ? [email] : [],
+      mergedFrom: [key],
       avatarUrl,
       sources: [source],
       seatsCount: 0,

@@ -701,9 +701,35 @@ export interface EventChannelAttribution {
   sharePercent: number;
 }
 
+/** One paid-ad campaign's performance for an event. */
+export interface EventPaidCampaign {
+  /** Campaign name as recorded on the ad platform. */
+  name: string;
+  /** Platform the campaign ran on, e.g. "Google Ads", "LinkedIn", "Reddit". */
+  platform: string;
+  spend: number;
+  conversions: number;
+  clicks: number;
+  impressions: number;
+  /** Cost per conversion in dollars; null when no conversions. */
+  cpa: number | null;
+}
+
+/** One email campaign's engagement for an event. */
+export interface EventEmailCampaign {
+  name: string;
+  sends: number;
+  opens: number;
+  clicks: number;
+  /** Open rate as a percentage (0–100). */
+  openRate: number;
+  /** Click-through rate as a percentage (0–100). */
+  ctr: number;
+}
+
 /**
  * One point on the registration-pacing curve, keyed by days-to-event (x-axis).
- * Mirrors PCC's EventPredictionDrilldown grain.
+ * One row per day from MARKETING_EVENT_REGISTRATION_PREDICTIONS, summed across registration types.
  */
 export interface EventPacingPoint {
   daysToEvent: number;
@@ -717,10 +743,10 @@ export interface EventPacingPoint {
 }
 
 /**
- * Per-event registration-pacing summary + daily curve. Populated once the pacing prediction
- * models land (MARKETING_EVENT_REGISTRATION_PREDICTIONS[_DRILLDOWN]); until then `available` is
- * false, `points` is empty, and the UI shows a placeholder that links to PCC. Headline numbers
- * mirror PCC's EventPrediction; `points` mirrors EventPredictionDrilldown.
+ * Per-event registration-pacing summary + daily curve, both read from
+ * MARKETING_EVENT_REGISTRATION_PREDICTIONS: the headline from its event-level FINAL_* columns,
+ * the curve from its per-day CUMULATIVE_* ones. The table is mirrored from PCC and may not exist
+ * in every environment, so `available` is false and the UI shows a placeholder when it is absent.
  */
 export interface EventPacing {
   available: boolean;
@@ -730,7 +756,10 @@ export interface EventPacing {
   predictedAvg: number | null;
   predictedLow: number | null;
   predictedHigh: number | null;
-  /** The day-by-day cumulative curve; empty until the drilldown model lands. */
+  /**
+   * The day-by-day cumulative curve. Empty when the curve read fails — the headline and the curve
+   * are separate reads, so a headline can arrive without one. Not a signal that a model is pending.
+   */
   points: EventPacingPoint[];
 }
 
@@ -764,6 +793,10 @@ export interface EventDetailResponse {
   cfpStatus: string;
   sponsorshipTiers: EventSponsorshipTier[];
   channels: EventChannelAttribution[];
+  /** Paid-ad campaigns matched to this event (empty when none ran). */
+  paidCampaigns: EventPaidCampaign[];
+  /** Email campaigns matched to this event by name (empty when none). */
+  emailCampaigns: EventEmailCampaign[];
   pacing: EventPacing;
 }
 

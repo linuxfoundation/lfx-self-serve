@@ -110,7 +110,11 @@ export class ProfileEditDrawerComponent {
   // The avatar URL that failed to load, if any — mirrors ProfilePanelComponent's fallback pattern
   // so a broken/expired picture URL falls back to initials instead of a broken image icon.
   private readonly avatarErrorUrl = signal<string | null>(null);
-  public readonly avatarUrl = computed(() => this.combinedProfile()?.profile?.picture || '');
+  // Avatar image URL: read the shared signal (uploaded avatar > Auth0 OIDC picture claim) instead
+  // of this drawer's own combinedProfile fetch — that GET is eventually consistent, so reopening
+  // the drawer after an upload elsewhere must not fall back to its own possibly-stale copy
+  // (LFXV2-2628, same fix as ProfileLayoutComponent.avatarUrl).
+  public readonly avatarUrl = this.userService.effectiveAvatarUrl;
   public readonly avatarInitials = computed(() => {
     const profile = this.combinedProfile();
     if (!profile) return 'U';

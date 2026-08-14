@@ -4,6 +4,7 @@
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   AttributionModelOption,
+  EventDrawerFocus,
   EventsSplitOption,
   EventsSplitView,
   MarketingImpactFocusProgram,
@@ -54,9 +55,9 @@ export const EVENTS_SPLIT_FOCUS: MarketingImpactFocusProgram = 'lfEvents';
 /**
  * Maps each Events sub-view onto the detail drawer's focus. The drawer hides its sponsorship
  * blocks for 'b2c', so attendance opens the registration story and sponsorship opens the
- * revenue story — see `showSponsorship` in EventDetailDrawerComponent.
+ * revenue story.
  */
-export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, 'b2c' | 'b2b'> = {
+export const EVENTS_SPLIT_TO_DRAWER_FOCUS: Record<EventsSplitView, EventDrawerFocus> = {
   attendance: 'b2c',
   sponsorship: 'b2b',
 };
@@ -126,8 +127,11 @@ export const CRITICAL_ATTENTION_PERCENT_THRESHOLD = 25;
  * These are two different columns with two different taxonomies — this is a deliberate mapping,
  * not a join. Only 'lfEvents' reaches the email tab today (the rest are COMING_SOON_FOCUS_PROGRAMS
  * and expose only the "All" channel), so 'EVENT' is the only mapping that currently has an effect.
- * Matching is case-insensitive at the call site, and an unmatched mapping falls back to unfiltered
- * rather than rendering an empty table.
+ * Matching is case-insensitive at the call site. A focus whose mapping matches no rows renders an
+ * EMPTY breakdown — it does NOT fall back to the unfiltered rows. Under an Events focus that
+ * fallback showed newsletters and surveys as event analytics, which is a wrong answer rather than
+ * a partial one; getEmailCtr logs the EMAIL_TYPE vocabulary that failed to match so the mapping
+ * here can be corrected.
  */
 export const FOCUS_TO_EMAIL_TYPES: Record<MarketingImpactFocusProgram, readonly string[] | undefined> = {
   all: undefined,
@@ -182,3 +186,23 @@ export const FOCUS_VISIBLE_TABS: Record<MarketingImpactFocusProgram, ReadonlySet
   membership: COMING_SOON_TABS,
   lfCorporate: COMING_SOON_TABS,
 };
+
+/**
+ * How many paid campaigns the per-event drawer requests, ordered by spend. The drawer is a
+ * top-spenders view rather than a ledger, so an event with more campaigns than this shows its
+ * biggest and labels the summary as covering only those — see paidTruncated in
+ * EventDetailDrawerComponent. The server cap and that label must move together, which is why the
+ * number lives here rather than being inlined in the SQL.
+ */
+export const PAID_CAMPAIGN_LIMIT = 25;
+
+/** Same contract as PAID_CAMPAIGN_LIMIT, for the per-event email list (ordered by sends). */
+export const EMAIL_CAMPAIGN_LIMIT = 12;
+
+/**
+ * How many email sends the campaign table renders. The query behind it is unbounded, so a large
+ * foundation over a wide period can return thousands of rows — every one of which would be built
+ * during SSR and hydration, not merely scrolled past. The rows are ordered newest-first, so the
+ * cap keeps the most recent sends and the header says when it is truncating.
+ */
+export const EMAIL_SENDS_ROW_LIMIT = 200;

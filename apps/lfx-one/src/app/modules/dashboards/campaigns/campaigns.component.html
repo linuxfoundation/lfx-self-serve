@@ -40,25 +40,194 @@
 
   <hr class="border-gray-200" />
 
-  @if (selectedDeliveryType() === 'email') {
-    <!-- Email delivery is under active development — placeholder until it ships. -->
-    <div
-      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-      data-testid="campaigns-email-placeholder">
-      <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
-      <h2 class="text-base font-semibold text-gray-900">Email campaigns are coming soon</h2>
-      <p class="max-w-md text-sm text-gray-500">The Email delivery channel is under active development.</p>
-      <lfx-button label="Switch to Paid Marketing" [text]="true" size="small" (onClick)="switchToPaidMarketing()" data-testid="campaigns-email-switch-paid" />
+  <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
+       is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
+       destroy an in-progress email brief on every round-trip to Paid Marketing. -->
+  <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
+    <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
+         change when the OTHER container becomes active.
+
+         `aria-controls` is set only on the SELECTED tab, deliberately. The NON-PLANNING panels
+         live inside an @switch, so at most one of them is in the DOM at a time; setting the
+         attribute on every tab would point assistive technology at element ids that do not
+         exist. ARIA 1.2 makes aria-controls optional on a tab for this reason, and a dangling
+         reference is worse than an absent attribute — a screen reader following it lands
+         nowhere. marketing-impact.component.html sets it unconditionally over a single
+         @switch-rendered panel and therefore does have dangling ids on its inactive tabs; that
+         is a bug there rather than a pattern to copy.
+
+         Since LFXV2-3202 the planning panel is the exception: it is always in the DOM, so its
+         id is always resolvable and the condition is not load-bearing for that one tab. The
+         binding stays uniform across the tablist anyway — a per-tab special case would be more
+         code to say the same thing, and the lazy panels still need it. -->
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
+      @for (tab of emailTabs; track tab.id; let i = $index) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="selectedEmailTab() === tab.id"
+          [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
+          [attr.id]="'email-tab-' + tab.id"
+          [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
+          (click)="selectTab(tab.id, 'email')"
+          (keydown)="onTabKeydown($event, i, 'email')"
+          [class]="
+            selectedEmailTab() === tab.id
+              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+          "
+          [attr.data-testid]="'campaigns-email-' + tab.id + '-tab'">
+          <i [class]="tab.icon" aria-hidden="true"></i>
+          {{ tab.label }}
+        </button>
+      }
     </div>
-  }
+
+    <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
+         the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
+         structural @switch destroyed an in-progress brief on every trip to another tab.
+
+         The other email panels stay in the lazy @switch, but NOT for the paid side's reason —
+         they are static placeholders with no component, no ngOnInit and no local state, so
+         eager-mounting them would cost nothing. They stay switched so both containers keep the
+         same structure and the paid side's carve-out is not re-litigated one container over. -->
+    <div
+      role="tabpanel"
+      id="email-panel-planning"
+      aria-labelledby="email-tab-planning"
+      [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-email-planning-panel">
+      <!--
+            LFXV2-3201 settled the question this comment used to pose: ONE planner, moded by
+            `deliveryType`, rather than two components. The two types share the expensive halves —
+            the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
+            stream. What differs is more than the "one card and one validity rule" this comment
+            used to claim, and the paragraph below already listed more than that — the two
+            contradicted each other.
+
+            Brief save/restore is NOT shared: email skips the saved-brief lookup entirely, because
+            persistence is keyed on (foundation, event) with no delivery type, so the row it would
+            find is a PAID brief. Email persistence and email refinement do not exist yet.
+
+            In email mode the planner drops the Ad Channels and Budget cards, hides Refine / Edit /
+            Copy All, refuses a refine outright, skips the saved-brief lookup, drops the
+            ad-platform requirement from `canGenerate`, and sends `deliveryType: 'email'` so the
+            server skips ad-copy and keyword generation rather than falling back to its paid
+            default — omitting `platforms` alone does not achieve that, because the generator
+            reads an absent list as `['google-ads']`.
+
+            STILL OPEN: an email brief generates NO copy at all today — the scrape, event details
+            and HubSpot UTM are what it comes back with, and Refine is refused with a message
+            saying so. Subject, preview text and sender arrive with the `email-copy` endpoint
+            under LFXV2-3198, together with the template picker the Implement panel needs. Until
+            then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
+            does not read the payload.
+          -->
+      <!-- Keyed on the program type for the same reason the paid side is: the component
+               holds its brief state locally and does not reset on input change. -->
+      <!--
+            TWO planning-tab instances are in the DOM at once, because both delivery containers are
+            visibility-toggled rather than swapped with `@if` (destroying either would wipe an
+            in-progress brief). Since LFXV2-3202 that is true REGARDLESS of the selected tab as
+            well as the selected delivery type — the planners no longer leave the DOM when the
+            user is on Implement or Insights — so the scoping requirement below is unconditional
+            rather than "only when both sides happen to be on Plan". The planner emits FIXED
+            internal test ids — `planning-url-input`, `planning-generate-btn`,
+            `planning-platform-<id>` — so each of those always resolves to two elements, one of
+            them hidden.
+
+            Any selector on a bare `planning-*` id MUST therefore be scoped under its host:
+
+              [data-testid="campaigns-email-planning-tab"] [data-testid="planning-url-input"]
+              [data-testid="campaigns-planning-tab"]       [data-testid="planning-url-input"]
+
+            Namespacing the planner's own ids per instance would be the stronger fix. It stays
+            unfixed: LFXV2-3201 confirmed the two types SHARE this component, so per-instance ids
+            would have to come from an input threaded through every `data-testid` in the planner
+            — a wider change than the host-scoped selectors above, which already work.
+
+            The ids that double are the ones BOTH instances render. Ids inside a paid-only card
+            (the Ad Channels and Budget sections) render in the paid instance only — but scope
+            those selectors under the host anyway rather than relying on that, since which cards
+            each mode renders is exactly the thing this ticket changes.
+          -->
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          deliveryType="email"
+          (proceedToImplementation)="onEmailProceedToImplementation($event)"
+          data-testid="campaigns-email-planning-tab" />
+      }
+    </div>
+
+    @switch (selectedEmailTab()) {
+      @case ('implementation') {
+        <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
+          <!--
+            The staging form is the half of this channel that still needs a service endpoint:
+            campaign create clones a caller-specified source email and `sourceEmailId` has no
+            default, so the form cannot be built until the template picker has something to
+            list (LFXV2-3197 → LFXV2-3198). Said plainly rather than as "coming soon", which
+            would repeat the claim this PR exists to correct — the channel IS implemented in
+            campaign-service; what is missing is one route and the form over it.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-implementation-pending">
+            <i class="fa-light fa-envelope-open-text text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email staging is not wired up yet</h2>
+            <!--
+              The brief sentence is gated on there BEING a brief. This tab is directly clickable
+              with no disabled binding, so it is reachable before anything has been generated —
+              and "Your brief is ready" is then simply false, told to someone who has not started.
+              The rest of the panel is true either way: it explains what is missing from the
+              channel, which does not depend on the user's progress.
+            -->
+            <p class="max-w-md text-sm text-gray-500">
+              @if (emailBriefOutput()) {
+                Your brief is ready.
+              }
+              Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint that is still in
+              review.
+            </p>
+          </div>
+        </div>
+      }
+      @case ('insights') {
+        <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
+          <!--
+            Deliberately NOT <lfx-monitoring-tab>. That component is paid-ads only: its
+            `PlatformType` union is 'google' | 'linkedin' | 'reddit' | 'meta', it defaults to
+            'google', and it contains no reference to HubSpot or email at all. Rendering it here
+            would put Google Ads spend and clicks under a tab labelled Email — numbers that are
+            real, plausible, and about a different campaign entirely, which is worse than showing
+            nothing.
+
+            The email metrics read exists in campaign-service (LFXV2-3058), so this needs a
+            reader of its own rather than a reuse.
+          -->
+          <div
+            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+            data-testid="campaigns-email-insights-pending">
+            <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
+            <p class="max-w-md text-sm text-gray-500">
+              Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is not
+              wired to the email channel.
+            </p>
+          </div>
+        </div>
+      }
+    }
+  </div>
   <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
-       while the Email placeholder shows. PlanningTabComponent owns the brief form +
+       while the Email container above shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
        silently wipe the user's in-progress brief — hiding it keeps the instance alive.
        Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
        display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
        so [hidden] alone would leave both views rendered. An inline style always wins. -->
-  <div class="flex flex-col gap-6" [style.display]="selectedDeliveryType() === 'email' ? 'none' : null" data-testid="campaigns-paid-marketing">
+  <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
     <!-- Tab Navigation -->
     <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
       @for (tab of tabs; track tab.id; let i = $index) {
@@ -69,8 +238,8 @@
           [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
           [attr.id]="'tab-' + tab.id"
           [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id)"
-          (keydown)="onTabKeydown($event, i)"
+          (click)="selectTab(tab.id, 'paid-marketing')"
+          (keydown)="onTabKeydown($event, i, 'paid-marketing')"
           [class]="
             selectedTab() === tab.id
               ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
@@ -84,24 +253,71 @@
     </div>
 
     <!-- Tab Content -->
-    @switch (selectedTab()) {
-      @case ('planning') {
-        <div role="tabpanel" id="panel-planning" aria-labelledby="tab-planning" data-testid="campaigns-planning-panel">
-          <!-- Keyed on the program type so a program change (Events <-> Education)
-               recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
-               state locally and does not reset on input change, so without a fresh
-               instance a stale Events brief could show under Education. -->
-          @for (program of [selectedProgramType()]; track program) {
-            <lfx-planning-tab
-              [programTypeConfig]="activeProgramTypeConfig()"
-              (proceedToImplementation)="onProceedToImplementation($event)"
-              data-testid="campaigns-planning-tab" />
-          }
-        </div>
+
+    <!-- Planning stays MOUNTED and visibility-toggled, for the same reason the delivery-type
+         containers above are: PlanningTabComponent owns its brief/URL/copy/refinement state
+         locally, so a structural @switch destroyed an in-progress brief every time the user
+         looked at another tab (LFXV2-3202). A brief is a slow, non-deterministic AI generation,
+         not a keystroke — losing it costs minutes and cannot be reproduced exactly.
+         The reasoning was already applied one level up and simply not carried down to the tabs.
+
+         Only Planning is hoisted out of the @switch, deliberately. Implementation, Insights and
+         Optimization all fetch in ngOnInit — ad-account lookups on all three, plus metrics reads
+         on Insights and Optimization — so mounting them eagerly would issue network calls for
+         tabs the user may never open, on every page load. They keep the lazy @switch below.
+
+         That is a TRADE, not a free win, and the cost belongs here rather than implied:
+         Implementation also holds local state, including hand-edited headline and description
+         FormArrays, and a tab switch still discards it — the component is destroyed, and on
+         remount a constructor `effect` re-derives the form from `briefData`, so typed edits do
+         not survive. Insights and Optimization re-fetch what they display, so those two
+         genuinely lose nothing.
+
+         Planning is hoisted and Implementation is not because the two losses are not comparable:
+         a brief is a slow, non-deterministic AI generation that cannot be reproduced, while
+         Implementation's fields are re-derived from that brief immediately. If the edit loss
+         proves to matter, the fix is to lift Implementation's form state up to this component
+         rather than to mount it eagerly — that keeps the network cost off page load. -->
+    <div
+      role="tabpanel"
+      id="panel-planning"
+      aria-labelledby="tab-planning"
+      [style.display]="selectedTab() === 'planning' ? null : 'none'"
+      data-testid="campaigns-planning-panel">
+      <!-- Keyed on the program type so a program change (Events <-> Education)
+           recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
+           state locally and does not reset on input change, so without a fresh
+           instance a stale Events brief could show under Education. -->
+      @for (program of [selectedProgramType()]; track program) {
+        <lfx-planning-tab
+          [programTypeConfig]="activeProgramTypeConfig()"
+          (proceedToImplementation)="onProceedToImplementation($event)"
+          (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
+          data-testid="campaigns-planning-tab" />
       }
+    </div>
+
+    @switch (selectedTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-          <lfx-implementation-tab [briefData]="briefOutput()" data-testid="campaigns-implementation-tab" />
+          <!-- `draft`/`draftChange` keep the user's edits alive across this panel's teardown
+               (LFXV2-3229). The panel stays inside the @switch on purpose — the component
+               resolves the LinkedIn ad-account list in ngOnInit, so mounting it eagerly would issue that
+               request on every page load for a tab many users never open. Lifting the edits is
+               the cheaper half of that trade.
+
+               `briefSaveInFlight` is separate from `briefPersistence` on purpose: the banner state
+               shows `off` during the FIRST save of a session (the cutover flag is unknown until
+               that response lands, and a spinner everywhere it is dark would be wrong), so the
+               banner cannot answer "is a save running". A create issued in that window carries an
+               empty brief id and is terminally refused. -->
+          <lfx-implementation-tab
+            [briefData]="briefOutput()"
+            [briefPersistence]="briefPersistence()"
+            [briefSaveInFlight]="briefSaveInFlight()"
+            [draft]="implementationDraft()"
+            (draftChange)="implementationDraft.set($event)"
+            data-testid="campaigns-implementation-tab" />
         </div>
       }
       @case ('insights') {
