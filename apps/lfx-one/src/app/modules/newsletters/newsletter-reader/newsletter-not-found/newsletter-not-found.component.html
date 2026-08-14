@@ -18,7 +18,7 @@
             {{ description() }}
           </p>
 
-          <lfx-button routerLink="/newsletters/my" class="flex items-center" size="small" data-testid="back-to-newsletters-button">
+          <lfx-button (onClick)="goToMyNewsletters()" class="flex items-center" size="small" data-testid="back-to-newsletters-button">
             <i class="fa-light fa-arrow-left mr-2"></i>
             <span>Back to My Newsletters</span>
           </lfx-button>

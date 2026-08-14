@@ -4,9 +4,10 @@
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ClipboardShareService } from '@services/clipboard-share.service';
@@ -26,12 +27,14 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
  */
 @Component({
   selector: 'lfx-newsletter-reader',
-  imports: [NewsletterNotFoundComponent, NewsletterPreviewComponent, RouterLink, SkeletonModule],
+  imports: [NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
   templateUrl: './newsletter-reader.component.html',
 })
 export class NewsletterReaderComponent {
   // === Services ===
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
   private readonly clipboardShare = inject(ClipboardShareService);
@@ -93,6 +96,17 @@ export class NewsletterReaderComponent {
     if (!url) return;
 
     this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
+  }
+
+  // The feed is a Me-lens page: with a foundation/project lens active, a plain
+  // routerLink to /newsletters/my gets rewritten by lensRedirectGuard to the
+  // lens-prefixed mount, whose newsletterAccessGuard bounces non-writers to the
+  // overview. Switching to the always-allowed 'me' lens first keeps the
+  // permalink audience (any authenticated user) able to reach their feed.
+  protected goToMyNewsletters(event: Event): void {
+    event.preventDefault();
+    this.lensService.setLens('me');
+    void this.router.navigate(['/newsletters/my']);
   }
 
   // === Private Initializers ===

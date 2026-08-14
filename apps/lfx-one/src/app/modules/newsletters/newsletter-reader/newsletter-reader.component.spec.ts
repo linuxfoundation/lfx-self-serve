@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Newsletter, Project } from '@lfx-one/shared/interfaces';
 import { ProjectStage } from '@lfx-one/shared/enums';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { LensService } from '@services/lens.service';
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -96,6 +97,8 @@ describe('NewsletterReaderComponent', () => {
         { provide: NewsletterService, useValue: mockNewsletterService },
         { provide: ActivatedRoute, useValue: activatedRoute },
         { provide: ClipboardShareService, useValue: mockClipboardShareService },
+        { provide: LensService, useValue: { setLens: vi.fn().mockReturnValue(true) } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
       ],
     }).compileComponents();
 
@@ -201,6 +204,23 @@ describe('NewsletterReaderComponent', () => {
     expect(component['loading']()).toBe(false);
     expect(component['error']()).toBe(true);
     expect(component['notFound']()).toBe(false);
+  });
+
+  it('should switch to the me lens before navigating back to the feed', () => {
+    // Without the lens switch, lensRedirectGuard rewrites /newsletters/my to the
+    // lens-prefixed mount and newsletterAccessGuard bounces non-writers away.
+    vi.mocked(projectService.getProject).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    component = fixture.componentInstance;
+
+    const lensService = TestBed.inject(LensService);
+    const router = TestBed.inject(Router);
+    component['goToMyNewsletters'](new Event('click'));
+
+    expect(lensService.setLens).toHaveBeenCalledWith('me');
+    expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my']);
   });
 
   it('should have copyLink method bound to clipboard service', () => {
