@@ -11,7 +11,7 @@ import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -76,6 +76,10 @@ export class ProfileLayoutComponent {
 
   // Store raw CombinedProfile for passing to dialog
   private combinedProfile: CombinedProfile | null = null;
+
+  // A just-saved overlay awaiting a base profile: on the Flow C cold return the save can resolve before
+  // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
+  private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
   // Tab configuration. The read-only "My CLAs" tab is appended (before Transactions/Settings)
   // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
@@ -212,17 +216,12 @@ export class ProfileLayoutComponent {
    * drawer is correct too) and sets it as the optimistic header override.
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
-    if (!this.combinedProfile) {
-      // No base profile to merge into yet (e.g. Flow C cold load, where the save resolves before
-      // the initial profile GET populates combinedProfile). Fall back to a refetch so the UI still
-      // reflects the change — there's nothing cached to clobber in this case.
-      this.refreshProfile$.next();
-      return;
-    }
-
-    // A null profile means the GET never loaded; merging would fabricate a non-null profile and flip
-    // the drawer's metadataLoaded true, letting a later save wipe unloaded fields. Refetch instead.
-    if (this.combinedProfile.profile == null) {
+    // No base profile to merge into yet (Flow C cold load, or a user-only GET with no profile record
+    // where merging would fabricate one and flip the drawer's metadataLoaded true). Stash the save +
+    // refetch; reapplyPendingOptimisticUpdate merges it once a base profile lands, so an eventually-
+    // consistent (pre-save) body can't mask the write.
+    if (!this.combinedProfile || this.combinedProfile.profile == null) {
+      this.pendingOptimisticMetadata = { ...(this.pendingOptimisticMetadata ?? {}), ...metadata };
       this.refreshProfile$.next();
       return;
     }
@@ -247,6 +246,20 @@ export class ProfileLayoutComponent {
 
     this.combinedProfile = mergedProfile;
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
+    // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
+    this.pendingOptimisticMetadata = null;
+  }
+
+  // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
+  // existed when it resolved (Flow C cold return), so an eventually-consistent (pre-save) body can't
+  // mask the write. No-op until a real profile record lands (merging a null profile would fabricate one).
+  private reapplyPendingOptimisticUpdate(): void {
+    const pending = this.pendingOptimisticMetadata;
+    if (!pending || this.combinedProfile?.profile == null) {
+      return;
+    }
+    this.pendingOptimisticMetadata = null;
+    this.applyOptimisticProfileUpdate(pending);
   }
 
   /**
@@ -372,6 +385,9 @@ export class ProfileLayoutComponent {
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
                 map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
+                // Read-your-writes: if a save landed before this GET (Flow C cold return), re-apply it
+                // now that combinedProfile is populated so a stale (pre-save) body can't win.
+                tap(() => this.reapplyPendingOptimisticUpdate()),
                 catchError(() => of(null))
               )
             )

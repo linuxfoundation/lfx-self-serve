@@ -364,6 +364,30 @@ export class CampaignController {
         return;
       }
 
+      // The email channel exists ONLY on the cutover path, so it must not fall through here.
+      //
+      // Widening `platforms` to `CampaignAnyPlatform` is what makes this reachable: before it,
+      // `platforms: ['hubspot']` was a type error at every caller. The legacy path has no HubSpot
+      // client and no `includeHubspot` arm — it pushes "Unsupported platform(s): hubspot" into its
+      // `errors` array and then completes with an EMPTY promise list. That is the shape this
+      // cutover exists to prevent: a job that finishes, after the inline 45s wait, having created
+      // nothing, reported through a partial-success envelope rather than as a refusal.
+      //
+      // `hasPlatformConfig` cannot catch it — that guard lives inside `createCampaigns`,
+      // deliberately gated by the flags, so with the cutover dark it never runs.
+      //
+      // Refused terminally rather than passed through, matching the `viaService.error` arm above:
+      // when we know the create cannot succeed, saying so beats a 45-second wait for a result that
+      // names zero campaigns.
+      if (platforms.includes('hubspot')) {
+        logger.warning(req, 'campaign_create', 'email campaign requested while the campaign-service cutover is dark', { briefId, projectSlug });
+        res.json({
+          jobId: '',
+          error: 'Email campaigns require the campaign-service cutover to be enabled. The legacy creation path cannot stage email.',
+        });
+        return;
+      }
+
       const result = await this.proxyService.createCampaign(req, req.body);
       logger.success(req, 'campaign_create', startTime, { jobId: result.jobId, via: 'legacy' });
       res.json(result);
@@ -1041,6 +1065,9 @@ export class CampaignController {
     const metaConfig = this.buildMetaConfig(body);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
+    const hubspotConfig = this.buildHubSpotConfig(body);
+    if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
+
     return envelope;
   }
 
@@ -1163,5 +1190,45 @@ export class CampaignController {
 
     const { budgetUsd, ...rest } = body.metaConfig;
     return { ...rest, budget: budgetUsd };
+  }
+
+  /**
+   * The email channel's config.
+   *
+   * A BLANK `sourceEmailId` returns null — i.e. UNCONFIGURED — rather than an object carrying an
+   * empty string. Upstream requires it (`hubspot.go:281-283` refuses a blank one), so both paths
+   * end in a refusal; the difference is where. Null makes `hasPlatformConfig` refuse locally with
+   * "No configuration was built for: hubspot", naming the actual problem. Sending `''` instead
+   * spends a round trip to learn the same thing, and the job is created before it fails.
+   *
+   * Trimmed because a whitespace-only id is the same non-answer as an absent one: upstream
+   * `strings.TrimSpace`s it before the check, so `' '` would pass a truthiness test here and be
+   * refused there — the precise split this guard exists to avoid.
+   *
+   * `utmCampaign` is only forwarded when non-blank — canonicalization, not a correctness guard.
+   * An earlier version of this comment claimed a blank one would suppress the upstream default;
+   * that was wrong. `utm.Resolve` (`internal/utm/resolve.go:47-60`) trims the value and falls
+   * through to the name-derived slug when the result is empty, so `''`, `'  '` and absent all
+   * resolve identically. Omitted anyway so the envelope carries only fields that mean something,
+   * and so a reader cannot mistake an empty string for a deliberate override.
+   *
+   * This envelope is read ONLY by the cutover path. With the flags dark, `createCampaign` refuses
+   * an email create outright rather than falling through — see the guard above the legacy call.
+   * The legacy path does NOT fail loudly on `hubspot`: it records "Unsupported platform(s)" in an
+   * errors array and then completes with nothing created, which is why the refusal is explicit.
+   */
+  private buildHubSpotConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    // Type-checked at runtime, not just by the `CampaignCreateRequest` cast. This route has no
+    // body validator — `req.body` is asserted, not parsed — so a caller sending
+    // `sourceEmailId: 123` reaches here as a number and `.trim()` throws a TypeError, answering a
+    // malformed request with a 500 instead of the controlled "unconfigured" refusal. A wrong TYPE
+    // is the same non-answer as a blank one, and both should take the same exit.
+    const rawId = body?.hubspotConfig?.sourceEmailId;
+    const sourceEmailId = typeof rawId === 'string' ? rawId.trim() : '';
+    if (!sourceEmailId) return null;
+
+    const rawUtm = body.hubspotConfig?.utmCampaign;
+    const utmCampaign = typeof rawUtm === 'string' ? rawUtm.trim() : '';
+    return utmCampaign ? { sourceEmailId, utmCampaign } : { sourceEmailId };
   }
 }

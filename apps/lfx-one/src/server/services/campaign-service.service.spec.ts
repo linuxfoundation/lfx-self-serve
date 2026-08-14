@@ -1690,6 +1690,42 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
+   * LFXV2-3256 — the mapping that unblocks the email channel. Before it, `hubspot` fell to
+   * `requiredKey[platform] === undefined` and was refused here, so an email campaign could never
+   * reach the dispatcher no matter what the envelope carried.
+   *
+   * Both directions, because the guard's value is that it fails LOUDLY: mapping `hubspot` without
+   * a config builder would be the regression it exists to catch, and dropping the mapping would
+   * restore the block this ticket removed. One test alone cannot tell those apart.
+   */
+  it('dispatches an email campaign once hubspotConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000e' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], {
+      hubspotConfig: { sourceEmailId: 'email-123' },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000e');
+    expect(res.error).toBeNull();
+  });
+
+  it('still refuses an email campaign whose hubspotConfig is missing', async () => {
+    // The envelope is non-empty but carries the WRONG key, which is the shape a half-built config
+    // builder produces. `unmarshalPlatformConfig` would read the absent `hubspotConfig` as a zero
+    // value and dispatch a clone of email id "" — so this must never reach the wire.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], { hsToken: 'tok' });
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('hubspot');
+  });
+
+  /**
    * campaign-service has NO Demand Gen path — `internal/dispatch/googleads.go` creates a Search
    * campaign and nothing else. The legacy path does support it, so this is a capability the
    * cutover loses rather than one nobody has.

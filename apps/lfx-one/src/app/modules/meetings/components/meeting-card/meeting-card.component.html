@@ -65,7 +65,7 @@
             severity="secondary"
             data-testid="edit-meeting-button"
             tooltip="Edit Meeting"
-            [routerLink]="['/meetings', meeting().id, 'edit']"
+            [routerLink]="editCommands()"
             [queryParams]="editQueryParams()"></lfx-button>
         }
         @if (meeting().organizer) {

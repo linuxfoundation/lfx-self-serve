@@ -380,7 +380,7 @@ export class PublicMeetingController {
       const originalToken = req.bearerToken;
       const m2mToken = await this.setupM2MToken(req);
 
-      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', false).catch(() => null);
+      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', { access: false }).catch(() => null);
 
       // Fail closed: when the live series can't be loaded, its visibility can't be
       // verified, so the timeline is not exposed.
@@ -553,7 +553,7 @@ export class PublicMeetingController {
       let meeting: Awaited<ReturnType<typeof this.meetingService.getMeetingById>>;
       try {
         await this.setupM2MToken(req);
-        meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+        meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', { access: false });
       } finally {
         req.bearerToken = userToken;
       }
@@ -725,7 +725,7 @@ export class PublicMeetingController {
     } else {
       await this.setupM2MToken(req);
     }
-    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
+    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, { access: false });
 
     logger.success(req, 'fetch_meeting_with_m2m', startTime, {
       meeting_id: meeting.id,
