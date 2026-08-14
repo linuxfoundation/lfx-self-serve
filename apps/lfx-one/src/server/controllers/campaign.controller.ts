@@ -32,6 +32,9 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 /** Platforms that support the campaign status toggle endpoint. */
 const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
 
+/** Derived from the shared constant so the validation and its error message cannot drift apart. */
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
+
 const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
@@ -162,12 +165,14 @@ export class CampaignController {
     // `'emial'` falls past it into those same paid-only checks and produces the same misleading
     // message, for a caller whose only mistake was a misspelling.
     //
-    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES` rather than a fourth hardcoded list — the
-    // service already keeps its own copy, and a third one here would be the one that drifts.
-    const supportedDeliveryTypes = new Set<string>(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
-    if (body.deliveryType !== undefined && !supportedDeliveryTypes.has(body.deliveryType)) {
+    // Derived from the shared `CAMPAIGN_DELIVERY_TYPES`, and so is the MESSAGE below — the sibling
+    // `platform` check already interpolates its own Set for exactly this reason. An error string
+    // is the copy a reader trusts most, because it is what the API actually says, so a hardcoded
+    // tail there outlives every other duplicate. The two `Unsupported deliveryType` messages in
+    // `campaign-proxy.service.ts` are interpolated from the same constant for the same reason.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
       _next(
-        ServiceValidationError.forField('deliveryType', 'deliveryType must be one of: paid-marketing, email', {
+        ServiceValidationError.forField('deliveryType', `deliveryType must be one of: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}`, {
           operation: 'campaign_refine_brief',
           service: 'campaign_controller',
           path: req.path,
