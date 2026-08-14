@@ -107,9 +107,8 @@
               <ng-template #body let-newsletter>
                 <!-- The subject anchor is the accessible control (real link role, native
                      Enter/Space, right-click "Open in new tab"); the row click is a
-                     supplementary pointer convenience. `group` scopes the hover-revealed
-                     new-tab icon to this row. -->
-                <tr class="group cursor-pointer" (click)="onRowClick($event, newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
+                     supplementary pointer convenience. -->
+                <tr class="cursor-pointer" (click)="onRowClick($event, newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
                   <td>
                     <div class="flex items-center gap-2 min-w-0">
                       <!-- Real anchor when a permalink resolves (native new-tab/right-click);
@@ -142,10 +141,6 @@
                       }
                       @if (openingId() === newsletter.id) {
                         <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400 flex-none" aria-hidden="true"></i>
-                      } @else if (newsletter.issuePath) {
-                        <i
-                          class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 flex-none opacity-0 group-hover:opacity-100 transition-opacity"
-                          aria-hidden="true"></i>
                       }
                     </div>
                   </td>
