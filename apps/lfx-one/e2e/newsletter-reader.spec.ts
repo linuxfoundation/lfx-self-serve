@@ -40,7 +40,11 @@ const MOCK_PROJECT_MANAGER: Project = {
 const MOCK_NEWSLETTER_BODY_HTML = '<p data-e2e="newsletter-body-marker">K8s Weekly #42 update.</p>';
 
 async function stubProjectApi(page: Page, project: Project | null): Promise<void> {
-  await page.route('**/api/projects?**', (route) => {
+  // The reader fetches path-style /api/projects/:slug (no query string). Route
+  // by the exact slug under test — a bare '**/api/projects/*' would also
+  // intercept unrelated single-segment calls like /api/projects/writer-summary.
+  const slug = project?.slug ?? 'nonexistent-project';
+  await page.route(`**/api/projects/${slug}`, (route) => {
     if (!project) {
       return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });
     }

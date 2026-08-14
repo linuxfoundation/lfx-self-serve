@@ -54,6 +54,7 @@
     <lfx-newsletter-preview
       [subject]="newsletter()?.subject ?? ''"
       [bodyHtml]="newsletter()?.body_html ?? ''"
+      [displayName]="project()?.name ?? ''"
       data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
   }
 </div>
