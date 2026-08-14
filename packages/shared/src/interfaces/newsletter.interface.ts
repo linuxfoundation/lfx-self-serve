@@ -249,6 +249,15 @@ export interface MyNewsletter extends CommitteeNewsletter {
   parent_project_uid?: string;
 }
 
+/**
+ * `MyNewsletter` row precomputed with its permalink path, so the My
+ * Newsletters list template reads `row.issuePath` instead of calling a
+ * template function per row (`null` when `project_slug` failed to resolve).
+ */
+export interface MyNewsletterRow extends MyNewsletter {
+  issuePath: string | null;
+}
+
 export interface NewsletterListParams {
   status?: NewsletterStatus;
   page_token?: string;

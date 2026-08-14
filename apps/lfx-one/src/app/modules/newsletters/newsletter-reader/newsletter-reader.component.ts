@@ -6,7 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } fro
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
-import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
@@ -86,8 +86,7 @@ export class NewsletterReaderComponent {
     const slug = this.projectSlug();
     const id = this.newsletterId();
     if (!slug || !id) return null;
-    const path = `/newsletters/${slug}/${id}`;
-    return toAbsoluteUrl(path, isPlatformBrowser(this.platformId));
+    return toAbsoluteUrl(newsletterIssuePath(slug, id), isPlatformBrowser(this.platformId));
   });
 
   // === Protected Methods ===

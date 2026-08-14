@@ -11,8 +11,8 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { MyNewsletter } from '@lfx-one/shared/interfaces';
-import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { MyNewsletter, MyNewsletterRow } from '@lfx-one/shared/interfaces';
+import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
@@ -85,6 +85,14 @@ export class MyNewslettersComponent {
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initProjectOptions();
   protected readonly filteredNewsletters: Signal<MyNewsletter[]> = this.initFilteredNewsletters();
+  /**
+   * `filteredNewsletters()` with each row's permalink path precomputed —
+   * the table template reads `row.issuePath` rather than calling a
+   * template function per row (frontend-checklist.md § 4).
+   */
+  protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
+    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter) }))
+  );
   protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));
@@ -97,7 +105,7 @@ export class MyNewslettersComponent {
   protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
     const selected = this.selected();
     if (!selected?.project_slug || !selected.id) return null;
-    return toAbsoluteUrl(`/newsletters/${selected.project_slug}/${selected.id}`, isPlatformBrowser(this.platformId));
+    return toAbsoluteUrl(newsletterIssuePath(selected.project_slug, selected.id), isPlatformBrowser(this.platformId));
   });
 
   // === Constructor ===
@@ -137,6 +145,21 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
+  /**
+   * Relative permalink href for a row's subject anchor — lets modified clicks,
+   * middle-click, and right-click ("Open in new tab") reach the reader page
+   * natively. `project_slug` is an enrichment field that can fail to resolve
+   * upstream; the anchor omits its `href` in that case (see `onOpenSubject`).
+   */
+  protected issuePath(newsletter: MyNewsletter): string | null {
+    return newsletter.project_slug ? newsletterIssuePath(newsletter.project_slug, newsletter.id) : null;
+  }
+
+  /** True for a modified click (new-tab intent) that the browser, not this component, should handle. */
+  protected isModifiedClick(event: MouseEvent): boolean {
+    return event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+  }
+
   protected onOpenNewsletter(newsletter: MyNewsletter): void {
     if (this.openingId()) {
       return;
@@ -177,12 +200,26 @@ export class MyNewslettersComponent {
   }
 
   /**
-   * Subject-button click handler: the button is the accessible control (real
-   * role, native Enter/Space); stopPropagation keeps the supplementary row
-   * click from firing a second open.
+   * Subject-anchor click handler: the anchor is the accessible control (real
+   * link role, native Enter/Space, right-click "Open in new tab"/"Copy link
+   * address"); stopPropagation keeps the supplementary row click from firing
+   * a second open. A modified click (Cmd/Ctrl/Shift/Alt/middle-click) is left
+   * to the browser so it opens the permalink in a new tab instead of the drawer.
    */
-  protected onOpenSubject(event: Event, newsletter: MyNewsletter): void {
+  protected onOpenSubject(event: MouseEvent, newsletter: MyNewsletter): void {
     event.stopPropagation();
+    if (this.isModifiedClick(event)) {
+      return;
+    }
+    event.preventDefault();
+    this.onOpenNewsletter(newsletter);
+  }
+
+  /** Row click handler: same modified-click guard as the subject anchor, so a Cmd-click anywhere in the row is a no-op rather than opening the drawer with no new tab. */
+  protected onRowClick(event: MouseEvent, newsletter: MyNewsletter): void {
+    if (this.isModifiedClick(event)) {
+      return;
+    }
     this.onOpenNewsletter(newsletter);
   }
 

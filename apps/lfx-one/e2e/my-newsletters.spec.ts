@@ -86,14 +86,14 @@ async function stubMyNewslettersApi(page: Page, newsletters: MyNewsletter[]): Pr
 
 // The preview drawer fetches the full newsletter (incl. body_html) via the
 // project-scoped get when a row is clicked.
-async function stubNewsletterDetailApi(page: Page): Promise<void> {
+async function stubNewsletterDetailApi(page: Page, newsletters: MyNewsletter[] = MOCK_NEWSLETTERS): Promise<void> {
   await page.route('**/api/projects/*/newsletters/*', (route) => {
     if (route.request().method() !== 'GET') {
       return route.fallback();
     }
     const pathname = new URL(route.request().url()).pathname;
     const newsletterUid = pathname.split('/').pop() ?? '';
-    const match = MOCK_NEWSLETTERS.find((n) => n.id === newsletterUid);
+    const match = newsletters.find((n) => n.id === newsletterUid);
     if (!match) {
       return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'newsletter not found' }) });
     }
@@ -242,5 +242,60 @@ test.describe('My Newsletters — Me-lens feed', () => {
 
     // Success toast appears
     await expect(page.getByText('Link Copied')).toBeVisible();
+  });
+
+  test('subject renders as a real link to the canonical permalink', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    const subjectLink = page.getByTestId(`my-newsletters-open-${MOCK_NEWSLETTERS[0].id}`);
+    await expect(subjectLink).toHaveAttribute('href', `/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
+  });
+
+  test('new-tab button in drawer header opens the permalink in a new tab', async ({ page, context }) => {
+    await gotoMyNewsletters(page);
+
+    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
+    const drawer = page.getByTestId('my-newsletters-preview-drawer');
+    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const newTabButton = page.getByTestId('newsletter-preview-drawer-open-new-tab');
+    await expect(newTabButton).toHaveAttribute('target', '_blank');
+    await expect(newTabButton).toHaveAttribute('rel', /noopener/);
+    // The drawer's shareUrl is the absolute permalink (toAbsoluteUrl against the current origin),
+    // unlike the list's row anchor, which is relative.
+    const expectedUrl = new URL(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`, page.url()).toString();
+    await expect(newTabButton).toHaveAttribute('href', expectedUrl);
+
+    const [newPage] = await Promise.all([context.waitForEvent('page'), newTabButton.click()]);
+    await expect(newPage).toHaveURL(new RegExp(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`));
+
+    // Original tab's drawer stays open — the new tab is a separate context.
+    await expect(drawer).toBeVisible();
+  });
+
+  test('subject without a resolved project_slug degrades to a plain drawer opener', async ({ page }) => {
+    // project_slug is an enrichment field that can fail to resolve upstream —
+    // the subject anchor should omit its href (no dead/misleading permalink)
+    // while the click-to-open-drawer behavior keeps working.
+    const newsletterWithoutSlug: MyNewsletter = {
+      id: 'c0000000-0000-0000-0000-000000000003',
+      project_uid: PROJECT_UID,
+      subject: 'Untitled Project Update',
+      sent_at: '2026-05-01T12:00:00Z',
+      project_name: 'Test Project',
+      is_foundation: false,
+      parent_project_uid: FOUNDATION_UID,
+    };
+    await stubMyNewslettersApi(page, [newsletterWithoutSlug]);
+    await stubNewsletterDetailApi(page, [newsletterWithoutSlug]);
+    await gotoMyNewsletters(page);
+
+    const subjectLink = page.getByTestId(`my-newsletters-open-${newsletterWithoutSlug.id}`);
+    await expect(subjectLink).not.toHaveAttribute('href');
+
+    // Clicking still opens the drawer via the fetch-then-open path.
+    await subjectLink.click();
+    const drawer = page.getByTestId('my-newsletters-preview-drawer');
+    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });

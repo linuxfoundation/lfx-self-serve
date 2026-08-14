@@ -18,6 +18,16 @@
       </div>
       <div class="flex items-center gap-2">
         @if (shareUrl()) {
+          <a
+            [href]="shareUrl()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors no-underline"
+            title="Open in new tab"
+            aria-label="Open newsletter in a new tab"
+            data-testid="newsletter-preview-drawer-open-new-tab">
+            <i class="fa-light fa-arrow-up-right-from-square text-xl"></i>
+          </a>
           <button
             type="button"
             (click)="onCopyLink()"
