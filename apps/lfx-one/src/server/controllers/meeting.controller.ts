@@ -133,7 +133,9 @@ export class MeetingController {
         return;
       }
 
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting');
+      // includeProject: enrich with project_slug/project_name/is_foundation/parent_project_uid so
+      // clients can reconcile project context from the meeting payload itself (gh-1432).
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', true, true);
 
       // Log the success
       logger.success(req, 'get_meeting_by_id', startTime, {

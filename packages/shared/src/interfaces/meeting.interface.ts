@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
-import { TagSeverity } from './components.interface';
+import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { TagSeverity } from './components.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -323,10 +323,14 @@ export interface Meeting {
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;
-  /** Project name */
-  project_name: string;
-  /** Project slug */
-  project_slug: string;
+  /** Project name — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment (gh-1432) and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_name?: string;
+  /** Project slug — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment (gh-1432) and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_slug?: string;
   /** Whether the project is a foundation (top-level entity) */
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */

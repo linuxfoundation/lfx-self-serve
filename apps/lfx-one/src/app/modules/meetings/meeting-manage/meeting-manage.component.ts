@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -26,6 +26,7 @@ import {
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
+import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
@@ -42,6 +43,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import {
   combineDateTime,
+  computeIsFoundation,
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
@@ -52,6 +54,7 @@ import {
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -61,6 +64,7 @@ import {
   BehaviorSubject,
   catchError,
   concat,
+  distinctUntilChanged,
   filter,
   finalize,
   forkJoin,
@@ -81,6 +85,7 @@ import { MeetingRegistrantsManagerComponent } from '../components/meeting-regist
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
+import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -110,6 +115,7 @@ export class MeetingManageComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly committeeService = inject(CommitteeService);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
@@ -129,6 +135,9 @@ export class MeetingManageComponent {
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
   public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
+  // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
+  // meeting rather than the cookie-restored last-visited project (gh-1432).
+  private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
@@ -165,6 +174,12 @@ export class MeetingManageComponent {
   public constructor() {
     this.initCommitteeContext();
     evictOnWriteAccessLoss();
+
+    // Derive the project context from the loaded meeting so a context-less edit link
+    // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
+    // last-visited project (gh-1432). The fallback covers BFF project-enrichment failure.
+    syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef);
+    this.initMeetingContextFallback();
 
     // Initialize step based on mode
     // In edit mode, read from query parameters
@@ -253,8 +268,8 @@ export class MeetingManageComponent {
   public goToStep(step: number | undefined): void {
     if (step !== undefined && this.canNavigateToStep(step)) {
       if (this.isEditMode()) {
-        // In edit mode, update query params
-        this.router.navigate([], { queryParams: { step: step } });
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        this.router.navigate([], { queryParams: { step: step }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
         this.internalStep.set(step);
@@ -272,8 +287,8 @@ export class MeetingManageComponent {
       }
 
       if (this.isEditMode()) {
-        // In edit mode, update query params
-        this.router.navigate([], { queryParams: { step: next } });
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
         this.internalStep.set(next);
@@ -286,8 +301,8 @@ export class MeetingManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        // In edit mode, update query params
-        this.router.navigate([], { queryParams: { step: previous } });
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
         this.internalStep.set(previous);
@@ -628,13 +643,20 @@ export class MeetingManageComponent {
     this.submitting.set(false);
 
     if (this.isEditMode()) {
-      // In edit mode, navigate to step 5 to manage guests
-      this.router.navigate([], { queryParams: { step: '5' } });
+      // In edit mode, navigate to step 5 to manage guests. Merge so an existing ?project= (or
+      // ?committee_uid=) survives — replace semantics would regenerate a context-less link.
+      this.router.navigate([], { queryParams: { step: '5' }, queryParamsHandling: 'merge' });
     } else {
-      // After creating a meeting, navigate to edit mode on step 5 to manage guests
+      // After creating a meeting, navigate to edit mode on step 5 to manage guests. Carry the
+      // active project slug so the edit URL self-heals via projectQueryParamGuard instead of
+      // falling back to the cookie-restored context (gh-1432).
       const meetingId = this.meetingId();
       if (meetingId) {
         const editQueryParams: Record<string, string> = { step: '5' };
+        const projectSlug = this.projectContextService.activeContext()?.slug;
+        if (projectSlug) {
+          editQueryParams['project'] = projectSlug;
+        }
         const ctx = this.committeeContext();
         if (ctx) {
           editQueryParams['committee_uid'] = ctx.uid;
@@ -745,6 +767,54 @@ export class MeetingManageComponent {
     }
 
     this.navigateAfterMeetingSave();
+  }
+
+  /**
+   * Maps the loaded meeting to the {@link EntityWithProject} shape consumed by
+   * syncEntityProjectContext — Meeting carries `id`, not `uid`, and pre-enrichment payloads
+   * can lack the project fields entirely, so absent values map to null there.
+   */
+  private initializeMeetingEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting) {
+        return null;
+      }
+      return {
+        uid: meeting.id,
+        project_uid: meeting.project_uid,
+        project_slug: meeting.project_slug,
+        project_name: meeting.project_name,
+        is_foundation: meeting.is_foundation ?? null,
+      };
+    });
+  }
+
+  /**
+   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
+   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it
+   * (gh-1432). `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
+   * ProjectService's shared `project` state — already resolves to null on failure, so a failed
+   * fallback leaves the (stale) context untouched rather than erroring the page.
+   */
+  private initMeetingContextFallback(): void {
+    toObservable(this.meetingEntityContext)
+      .pipe(
+        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.project_uid === b.project_uid),
+        filter((entity) => entity.project_uid !== this.projectContextService.activeContextUid()),
+        switchMap((entity) => this.projectService.getProject(entity.project_uid, false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((project) => {
+        if (!project) {
+          return;
+        }
+        const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
+      });
   }
 
   private initializeMeeting() {

@@ -30,6 +30,7 @@ import {
   PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  Project,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
@@ -39,6 +40,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  computeIsFoundation,
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
@@ -174,8 +176,21 @@ export class MeetingService {
 
   /**
    * Fetches a single meeting by UID
+   *
+   * @param includeProject - When true, enrich the payload with the meeting's project fields
+   * (`project_slug`, `project_name`, `is_foundation`, `parent_project_uid`) so clients can
+   * reconcile project context from the meeting itself (gh-1432). Opt-in because the public
+   * meeting controller side-cars the project separately and other callers (e.g.
+   * getMyMeetingRegistrants) only need the organizer flag — neither should pay for the extra
+   * project fetch.
    */
-  public async getMeetingById(req: Request, meetingUid: string, meetingType: QueryServiceMeetingType = 'v1_meeting', access: boolean = true): Promise<Meeting> {
+  public async getMeetingById(
+    req: Request,
+    meetingUid: string,
+    meetingType: QueryServiceMeetingType = 'v1_meeting',
+    access: boolean = true,
+    includeProject: boolean = false
+  ): Promise<Meeting> {
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -195,13 +210,31 @@ export class MeetingService {
       });
     }
 
-    if (meeting.committees && meeting.committees.length > 0) {
+    const committees = meeting.committees && meeting.committees.length > 0 ? meeting.committees : null;
+
+    if (committees) {
       logger.debug(req, 'get_meeting_by_id', 'Enriching meeting with committee data', {
         meeting_id: meetingUid,
-        committee_count: meeting.committees.length,
+        committee_count: committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
-      meeting.committees = meeting.committees.map((c) => ({
+    }
+
+    // Project enrichment runs in parallel with the committee-name lookup (both depend only on
+    // the meeting payload), so it adds no sequential latency.
+    const [project, committeeNameMap] = await Promise.all([
+      includeProject ? this.fetchMeetingProject(req, meeting) : Promise.resolve(null),
+      committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
+    ]);
+
+    if (project) {
+      meeting.project_slug = project.slug;
+      meeting.project_name = project.name;
+      meeting.is_foundation = computeIsFoundation(project);
+      meeting.parent_project_uid = project.parent_uid;
+    }
+
+    if (committees && committeeNameMap) {
+      meeting.committees = committees.map((c) => ({
         uid: c.uid,
         name: committeeNameMap.get(c.uid) || c.name,
         allowed_voting_statuses: c.allowed_voting_statuses,
@@ -1675,6 +1708,32 @@ export class MeetingService {
 
   public async getMeetingProjectName<T extends Meeting>(req: Request, meetings: T[]): Promise<T[]> {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
+  }
+
+  /**
+   * Fetches the meeting's project for detail enrichment. Returns null on failure so the meeting
+   * still loads — the frontend falls back to resolving project context from `project_uid`.
+   *
+   * access=false: meeting access was already checked by the caller, and a meeting writer may
+   * lack a project-level viewer relation (the committee-writer case writerGuard handles) — an
+   * enforced project check would break context reconciliation for exactly the users gh-1432
+   * fixes this for. The exposed fields (slug/name/is_foundation/parent uid) are non-sensitive.
+   */
+  private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
+    if (!meeting.project_uid) {
+      return null;
+    }
+
+    try {
+      return await this.projectService.getProjectById(req, meeting.project_uid, false);
+    } catch (error) {
+      logger.warning(req, 'get_meeting_by_id', 'Failed to fetch project for meeting enrichment; continuing without project fields', {
+        meeting_id: meeting.id,
+        project_uid: meeting.project_uid,
+        err: error,
+      });
+      return null;
+    }
   }
 
   /**

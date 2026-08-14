@@ -11,6 +11,10 @@
  *     backfilled via `Location.replaceState`, with no extra navigation.
  *   - Entity detail routes with a route param (`/foundation/groups/:id`) are exempt from the
  *     backfill — they resolve context from the entity itself via `syncEntityProjectContext`.
+ *   - gh-1432: a context-less meeting EDIT link (`/project/meetings/:id/edit` with no
+ *     `?project=`) resolves context from the loaded meeting — via the BFF-enriched project
+ *     fields, or via the component's resolve-by-uid fallback when enrichment failed — instead
+ *     of the stale cookie-restored context.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -18,7 +22,7 @@
  */
 
 import type { Committee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_FOUNDATION_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(60_000);
@@ -31,6 +35,9 @@ const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-00000000d001';
 const OTHER_FOUNDATION_SLUG = 'other-foundation';
 const OTHER_FOUNDATION_UID = 'f0000000-0000-0000-0000-00000000d002';
 const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-00000000d001';
+const OTHER_PROJECT_SLUG = 'other-project';
+const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
+const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -170,6 +177,31 @@ async function setPersonaAndLensCookies(page: Page, personas: string[], lens: 'f
   ]);
 }
 
+/**
+ * Stubs the navigation lens-items feed. Without this the app loads the TEST ACCOUNT'S REAL
+ * foundations/projects from the dev backend, and NavigationService.applyDefaultSelection
+ * overrides the stubbed context with a real one mid-test (observed: sidebar links flipped to
+ * `?project=aswf`). Items intentionally include every cookie-seeded context used by these specs
+ * so the "preserve an existing selection" guard keeps it instead of picking a default.
+ */
+async function stubLensItems(page: Page): Promise<void> {
+  await page.route('**/api/nav/lens-items*', (route) => {
+    const url = new URL(route.request().url());
+    const isFoundation = url.searchParams.get('lens') !== 'project';
+    const items = isFoundation
+      ? [
+          { uid: MOCK_FOUNDATION_UID, slug: MOCK_FOUNDATION_SLUG, name: 'Test Foundation', logoUrl: null, isFoundation: true },
+          { uid: OTHER_FOUNDATION_UID, slug: OTHER_FOUNDATION_SLUG, name: 'Other Foundation', logoUrl: null, isFoundation: true },
+        ]
+      : [{ uid: OTHER_PROJECT_UID, slug: OTHER_PROJECT_SLUG, name: 'Other Project', logoUrl: null, isFoundation: false }];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: isFoundation ? 'foundation' : 'project' }),
+    });
+  });
+}
+
 async function setFoundationCookie(page: Page, uid: string, slug: string, name: string): Promise<void> {
   await page.context().addCookies([
     {
@@ -182,6 +214,66 @@ async function setFoundationCookie(page: Page, uid: string, slug: string, name: 
   ]);
 }
 
+async function setProjectCookie(page: Page, uid: string, slug: string, name: string): Promise<void> {
+  await page.context().addCookies([
+    {
+      name: SELECTED_PROJECT_COOKIE_KEY,
+      value: encodeURIComponent(JSON.stringify({ uid, slug, name })),
+      domain: 'localhost',
+      path: '/',
+      sameSite: 'Lax',
+    },
+  ]);
+}
+
+/**
+ * Meeting detail payload for the edit page. `enriched: false` simulates the BFF project
+ * enrichment having failed (project_slug/project_name/is_foundation absent from the detail
+ * payload) so the component's resolve-by-uid fallback is exercised instead (gh-1432).
+ */
+function buildMeetingStub(enriched: boolean) {
+  return {
+    id: MOCK_MEETING_UID,
+    title: 'Test Foundation Board Sync',
+    description: 'Meeting stub for project-context deep-link specs',
+    project_uid: MOCK_FOUNDATION_UID,
+    ...(enriched ? { project_slug: MOCK_FOUNDATION_SLUG, project_name: 'Test Foundation', is_foundation: true } : {}),
+    meeting_type: 'Board',
+    visibility: 'public',
+    restricted: false,
+    start_time: '2026-06-01T18:00:00Z',
+    duration: 60,
+    timezone: 'UTC',
+    early_join_time_minutes: 10,
+    committees: [],
+    occurrences: [],
+    recording_enabled: false,
+    transcript_enabled: false,
+    youtube_upload_enabled: false,
+    auto_email_reminder_enabled: false,
+    show_meeting_attendees: false,
+    registrant_count: 0,
+    individual_registrants_count: 0,
+    committee_members_count: 0,
+    writer: true,
+    organizer: true,
+  };
+}
+
+async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buildMeetingStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
+  // incidental list/count calls from the edit page don't escape to the real BFF.
+  await page.route('**/api/meetings*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}/attachments`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(meeting) });
+  });
+}
+
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
 const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
@@ -192,12 +284,39 @@ function skipWhenAuthMissing(): void {
   }
 }
 
-async function goto(page: Page, path: string): Promise<void> {
+/**
+ * Client-side (SPA) navigation for routes whose data is fully stubbed via page.route.
+ *
+ * A full `page.goto()` of an entity URL SSRs the route on the Express server — server-side
+ * data fetches bypass `page.route` stubs and hit the real BFF, where the stubbed entity does
+ * not exist, so the component's error path (e.g. meeting-manage's navigateBack) redirects away
+ * before the client ever boots. Booting on `/` first and then navigating via
+ * pushState + popstate keeps the router client-side, where every fetch is intercepted.
+ *
+ * Also note Playwright glob semantics: `*` does not cross `/`, so `**\/api/meetings*` matches
+ * `/api/meetings?tags=...` but NOT `/api/meetings/<uid>` — detail routes need an exact pattern
+ * (`**\/api/meetings/<uid>`) or a predicate.
+ */
+async function gotoSpa(page: Page, path: string, seedContext?: { uid: string; slug: string; name: string; foundation: boolean }): Promise<void> {
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-  await page.goto(path, { waitUntil: 'domcontentloaded' });
-  await expect(page).not.toHaveURL(/auth0\.com/);
+  // Wait for the app shell so the router is ready to process the synthetic popstate.
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  if (seedContext) {
+    // The '/' boot SSRs with the real backend persona data and can Set-Cookie a real selection
+    // (e.g. the test account's ASWF), racing the stubbed context these specs assert on. Re-assert
+    // the intended cookie post-boot so the client-side navigation starts from a clean slate.
+    if (seedContext.foundation) {
+      await setFoundationCookie(page, seedContext.uid, seedContext.slug, seedContext.name);
+    } else {
+      await setProjectCookie(page, seedContext.uid, seedContext.slug, seedContext.name);
+    }
+  }
+  await page.evaluate((url) => {
+    window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, path);
 }
 
 test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
@@ -209,7 +328,13 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
   });
 
   test('sidebar nav links carry ?project= while on a foundation-lens page', async ({ page }) => {
-    await goto(page, `/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`);
+    await stubLensItems(page);
+    await gotoSpa(page, `/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`, {
+      uid: MOCK_FOUNDATION_UID,
+      slug: MOCK_FOUNDATION_SLUG,
+      name: 'Test Foundation',
+      foundation: true,
+    });
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     const meetingsLink = page.getByTestId('sidebar-item-meetings');
@@ -222,12 +347,18 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
   });
 
   test('tab switch preserves ?project= across an in-app navigation', async ({ page }) => {
+    await stubLensItems(page);
     await page.route('**/api/meetings*', (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     });
 
-    await goto(page, `/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`);
+    await gotoSpa(page, `/foundation/groups?project=${MOCK_FOUNDATION_SLUG}`, {
+      uid: MOCK_FOUNDATION_UID,
+      slug: MOCK_FOUNDATION_SLUG,
+      name: 'Test Foundation',
+      foundation: true,
+    });
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     await page.getByTestId('sidebar-item-meetings').click();
@@ -238,7 +369,7 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
   test('fresh load with cookie-restored context backfills ?project= with no extra navigation', async ({ page }) => {
     await setFoundationCookie(page, MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation');
 
-    await goto(page, '/foundation/groups');
+    await gotoSpa(page, '/foundation/groups', { uid: MOCK_FOUNDATION_UID, slug: MOCK_FOUNDATION_SLUG, name: 'Test Foundation', foundation: true });
     await expect(page.getByTestId(`committee-row-${MOCK_COMMITTEE_UID}`)).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     await expect(page).toHaveURL(new RegExp(`/foundation/groups\\?project=${MOCK_FOUNDATION_SLUG}$`), { timeout: ELEMENT_TIMEOUT });
@@ -248,12 +379,120 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
     await setFoundationCookie(page, OTHER_FOUNDATION_UID, OTHER_FOUNDATION_SLUG, 'Other Foundation');
     await stubCommitteeDetail(page, MOCK_COMMITTEE_UID);
 
-    await goto(page, `/foundation/groups/${MOCK_COMMITTEE_UID}`);
+    await gotoSpa(page, `/foundation/groups/${MOCK_COMMITTEE_UID}`, {
+      uid: OTHER_FOUNDATION_UID,
+      slug: OTHER_FOUNDATION_SLUG,
+      name: 'Other Foundation',
+      foundation: true,
+    });
     await expect(page.getByTestId('committee-view-name')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     // Give the NavigationEnd-driven backfill a tick to (not) fire before asserting it stayed absent.
     await page.waitForTimeout(500);
     const parsed = new URL(page.url());
     expect(parsed.searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Meeting edit deep-link resolves the meeting’s project context (gh-1432)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens a context-less edit link for a meeting owned by Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+  });
+
+  test('edit link without ?project= switches context to the meeting’s foundation (BFF-enriched payload)', async ({ page }) => {
+    await stubMeetingEditDetail(page, buildMeetingStub(true));
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The sync derives context from the loaded meeting (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector and sidebar links follow the correction.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('writerGuard authorizes the edit page against the meeting’s project, not the stale context (Bug 2)', async ({ page }) => {
+    // Non-ED persona: no synchronous fast path — the guard must probe the meeting for its
+    // project slug. The stale cookie context (Other Project) is intentionally NOT writable:
+    // if the guard authorizes against it, the page redirects to /project/overview?_notice=...
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubMeetingEditDetail(page, buildMeetingStub(true));
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect), and the context follows the meeting.
+    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
+    // Enrichment-failed payload: project_uid only. The component fallback fetches the project
+    // by uid — this route satisfies computeIsFoundation (Funded + Membership + Active), so the
+    // resolved context lands in the foundation slot just like the enriched path.
+    await stubMeetingEditDetail(page, buildMeetingStub(false));
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
   });
 });
