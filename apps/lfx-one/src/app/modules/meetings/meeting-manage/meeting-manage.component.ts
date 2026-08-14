@@ -140,6 +140,10 @@ export class MeetingManageComponent {
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
   // meeting rather than the cookie-restored last-visited project (gh-1432).
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
+  // Access predicate for evictOnWriteAccessLoss — mirrors writerGuard's meetings standard
+  // (project writer, meeting coordinator, or committee writer via ?committee_uid=) so the
+  // context switch to the meeting's project doesn't evict guard-admitted organizers (gh-1432).
+  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
@@ -175,7 +179,7 @@ export class MeetingManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
-    evictOnWriteAccessLoss();
+    evictOnWriteAccessLoss(this.writeAccess);
 
     // Derive the project context from the loaded meeting so a context-less edit link
     // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
@@ -769,6 +773,43 @@ export class MeetingManageComponent {
     }
 
     this.navigateAfterMeetingSave();
+  }
+
+  /**
+   * Access predicate driving evictOnWriteAccessLoss. The default predicate (canWrite) is
+   * project-writer-only, but writerGuard also admits meetings editors via project
+   * meetingCoordinator or writer on the ?committee_uid= committee. Once syncEntityProjectContext
+   * switches the active context to the meeting's project, a coordinator/committee writer who
+   * holds writer on the boot context would see a true→false transition and get evicted mid-edit
+   * (gh-1432). The project leg matches meetings-dashboard's initCanWriteMeetings; the committee
+   * leg uses the side-effect-free fetchCommittee (the guard's getCommittee tap is for its own
+   * deny/allow flow) and the URL snapshot — the param survives step navigations via merge.
+   */
+  private initWriteAccess(): Signal<boolean> {
+    const projectAccess = toSignal(
+      toObservable(this.projectContextService.activeContext).pipe(
+        switchMap((ctx) => {
+          if (!ctx?.slug) {
+            return of(false);
+          }
+          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
+            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            catchError(() => of(false))
+          );
+        })
+      ),
+      { initialValue: false }
+    );
+    const committeeAccess = toSignal(
+      this.committeeUidFromUrl
+        ? this.committeeService.fetchCommittee(this.committeeUidFromUrl).pipe(
+            map((committee) => committee?.writer === true),
+            catchError(() => of(false))
+          )
+        : of(false),
+      { initialValue: false }
+    );
+    return computed(() => projectAccess() || committeeAccess());
   }
 
   /**
