@@ -1722,10 +1722,13 @@ export class MeetingService {
    * Fetches the meeting's project for detail enrichment. Returns null on failure so the meeting
    * still loads — the frontend falls back to resolving project context from `project_uid`.
    *
-   * access=false: meeting access was already checked by the caller, and a meeting writer may
-   * lack a project-level viewer relation (the committee-writer case writerGuard handles) — an
-   * enforced project check would break context reconciliation for exactly those users.
-   * The exposed fields (slug/name/is_foundation) are non-sensitive.
+   * Uses the query-service metadata lookup (getProjectsByIds) rather than getProjectById: the
+   * /projects/:uid endpoint is relation-gated, and a meeting writer may lack a project-level
+   * viewer relation (the committee-writer case writerGuard handles) — the direct fetch would
+   * 403 for exactly those users, and the client fallback hits the same gated endpoint, leaving
+   * the edit page in a stale context. The query-service path needs no project relation.
+   * Meeting access was already checked by the caller, and the exposed fields
+   * (slug/name/is_foundation) are non-sensitive.
    */
   private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
     if (!meeting.project_uid) {
@@ -1733,7 +1736,8 @@ export class MeetingService {
     }
 
     try {
-      return await this.projectService.getProjectById(req, meeting.project_uid, false);
+      const projects = await this.projectService.getProjectsByIds(req, [meeting.project_uid]);
+      return projects.get(meeting.project_uid) ?? null;
     } catch (error) {
       logger.warning(req, 'get_meeting_by_id', 'Failed to fetch project for meeting enrichment; continuing without project fields', {
         meeting_id: meeting.id,
