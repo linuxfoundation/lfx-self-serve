@@ -641,7 +641,7 @@ export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
 export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
- * Short TTL for the meeting-detail cache (gh-1432) — just long enough for the writerGuard
+ * Short TTL for the meeting-detail cache — just long enough for the writerGuard
  * project probe and MeetingManageComponent's immediate refetch to share one request, without
  * serving stale data across edits (write paths evict explicitly).
  */

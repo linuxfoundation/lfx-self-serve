@@ -11,7 +11,7 @@ import { ProjectContextService } from '../services/project-context.service';
 
 /**
  * Writes the entity's context into the matching slot and re-points the route lens kind at the
- * entity's kind so `activeContext` actually follows it (gh-1432). The kind correction matters
+ * entity's kind so `activeContext` actually follows it. The kind correction matters
  * when the entity contradicts the route's declared lens — e.g. a foundation-owned meeting
  * edited under `/project/meetings/:id/edit` (bare `/meetings/:id/edit` links redirect by active
  * lens, not entity kind): `routeLensKind` would otherwise pin `activeContext` to the project
@@ -37,19 +37,26 @@ export function applyEntityProjectContext(
  * Syncs the active project/foundation context to the owning project of the given
  * entity whenever its data loads or changes. Call once from the component constructor.
  *
- * Lens decision: when the entity carries `is_foundation` (BFF-enriched detail payloads,
- * gh-1432) it chooses setFoundation vs setProject directly — the route prefix alone can't
- * distinguish a foundation-owned entity sitting under a /project/* URL. When the entity
- * doesn't know, the URL-prefix heuristic is the fallback: /foundation/* routes set the
- * foundation context; all other routes (project lens, top-level) set the project context.
- * Either way this prevents the navigation service's default selection from leaving an
- * unrelated project slug active when navigating directly to an entity URL.
+ * Default lens decision is URL-prefix based: /foundation/* routes set the foundation context;
+ * all other routes (project lens, top-level) set the project context. This prevents the
+ * navigation service's default selection from leaving an unrelated project slug active when
+ * navigating directly to an entity URL.
+ *
+ * `preferEntityKind` (opt-in per caller): when the entity carries `is_foundation`
+ * (BFF-enriched detail payloads) it chooses setFoundation vs setProject directly AND re-points
+ * `routeLensKind` at the entity's kind — the route prefix alone can't distinguish a
+ * foundation-owned entity sitting under a /project/* URL (e.g. meeting edit). Off by default:
+ * on flat routes that declare no `data.lens` (groups, mailing lists) the pin would move
+ * `activeContext` from the persona-resolved selection to the project slot for the life of the
+ * page, and an entity kind contradicting the URL prefix would re-point the kind while the URL
+ * still reads otherwise — both behavior changes outside this fix's scope.
  */
 export function syncEntityProjectContext<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,
   projectContextService: ProjectContextService,
   router: Router,
-  destroyRef: DestroyRef
+  destroyRef: DestroyRef,
+  options?: { preferEntityKind?: boolean }
 ): void {
   const entityChanges$ = toObservable(entitySignal).pipe(
     distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid && a?.project_slug === b?.project_slug)
@@ -58,7 +65,7 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
   // Query-param-only navigations (e.g. edit-step changes via `?step=N`) don't re-run guards
   // (default `runGuardsAndResolvers: 'paramsChange'`) but still fire NavigationEnd, and
   // MainLayoutComponent.syncLensFromRoute re-asserts the route's *declared* lens kind — clobbering
-  // this entity correction when the entity contradicts the route (gh-1432). Re-apply after each
+  // this entity correction when the entity contradicts the route. Re-apply after each
   // navigation while the component lives. Ordering is safe: MainLayout subscribed at bootstrap,
   // so its re-assert runs before this handler on the same NavigationEnd. Re-applying is
   // idempotent — same-value signal writes don't propagate and setProject/setFoundation no-op on
@@ -83,9 +90,15 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
       // guard in NavigationService.applyDefaultSelection() to prevent injecting a wrong
       // project slug into entity-specific deep-link URLs (e.g. /project/groups/:id).
       const syncUrl = 'project' in router.parseUrl(router.url).queryParams;
-      // Prefer the entity's own is_foundation (BFF-enriched) over the URL-prefix heuristic —
-      // a foundation-owned entity can sit under a /project/* route (e.g. meeting edit, gh-1432).
-      const useFoundation = entity.is_foundation ?? router.url.startsWith('/foundation/');
-      applyEntityProjectContext(projectContextService, context, useFoundation, syncUrl);
+      if (options?.preferEntityKind) {
+        // Prefer the entity's own is_foundation (BFF-enriched) over the URL-prefix heuristic —
+        // a foundation-owned entity can sit under a /project/* route (e.g. meeting edit).
+        const useFoundation = entity.is_foundation ?? router.url.startsWith('/foundation/');
+        applyEntityProjectContext(projectContextService, context, useFoundation, syncUrl);
+      } else if (router.url.startsWith('/foundation/')) {
+        projectContextService.setFoundation(context, syncUrl);
+      } else {
+        projectContextService.setProject(context, syncUrl);
+      }
     });
 }

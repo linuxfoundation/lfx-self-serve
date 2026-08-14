@@ -380,7 +380,7 @@ export class PublicMeetingController {
       const originalToken = req.bearerToken;
       const m2mToken = await this.setupM2MToken(req);
 
-      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', false).catch(() => null);
+      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', { access: false }).catch(() => null);
 
       // Fail closed: when the live series can't be loaded, its visibility can't be
       // verified, so the timeline is not exposed.
@@ -545,7 +545,7 @@ export class PublicMeetingController {
       const m2mToken = await this.setupM2MToken(req);
 
       // Fetch the meeting to validate it's public and non-restricted
-      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', { access: false });
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', meetingId, {
@@ -713,7 +713,7 @@ export class PublicMeetingController {
     } else {
       await this.setupM2MToken(req);
     }
-    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
+    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, { access: false });
 
     logger.success(req, 'fetch_meeting_with_m2m', startTime, {
       meeting_id: meeting.id,

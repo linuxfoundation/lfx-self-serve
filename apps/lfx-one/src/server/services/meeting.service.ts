@@ -177,20 +177,22 @@ export class MeetingService {
   /**
    * Fetches a single meeting by UID
    *
-   * @param includeProject - When true, enrich the payload with the meeting's project fields
-   * (`project_slug`, `project_name`, `is_foundation`, `parent_project_uid`) so clients can
-   * reconcile project context from the meeting itself (gh-1432). Opt-in because the public
+   * @param options.access - When true (default), add the caller's organizer access fields.
+   * @param options.includeProject - When true, enrich the payload with the meeting's project fields
+   * (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project context
+   * from the meeting itself. Opt-in because the public
    * meeting controller side-cars the project separately and other callers (e.g.
    * getMyMeetingRegistrants) only need the organizer flag — neither should pay for the extra
-   * project fetch.
+   * project fetch. An options object (not boolean positionals) keeps call sites self-describing
+   * and makes swapping the two flags a type error — see CommitteeService.getCommitteeById.
    */
   public async getMeetingById(
     req: Request,
     meetingUid: string,
     meetingType: QueryServiceMeetingType = 'v1_meeting',
-    access: boolean = true,
-    includeProject: boolean = false
+    options: { access?: boolean; includeProject?: boolean } = {}
   ): Promise<Meeting> {
+    const { access = true, includeProject = false } = options;
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -225,12 +227,13 @@ export class MeetingService {
       includeProject ? this.fetchMeetingProject(req, meeting) : Promise.resolve(null),
       committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
     ]);
-
     if (project) {
       meeting.project_slug = project.slug;
       meeting.project_name = project.name;
       meeting.is_foundation = computeIsFoundation(project);
-      meeting.parent_project_uid = project.parent_uid;
+      // parent_project_uid is deliberately NOT mapped here: nothing in the detail/edit flow
+      // consumes it, and it discloses hierarchy the caller may hold no relation to. List
+      // payloads still carry it via enrichWithProjectData for the dashboard filters.
     }
 
     if (committees && committeeNameMap) {
@@ -1716,8 +1719,8 @@ export class MeetingService {
    *
    * access=false: meeting access was already checked by the caller, and a meeting writer may
    * lack a project-level viewer relation (the committee-writer case writerGuard handles) — an
-   * enforced project check would break context reconciliation for exactly the users gh-1432
-   * fixes this for. The exposed fields (slug/name/is_foundation/parent uid) are non-sensitive.
+   * enforced project check would break context reconciliation for exactly those users.
+   * The exposed fields (slug/name/is_foundation) are non-sensitive.
    */
   private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
     if (!meeting.project_uid) {

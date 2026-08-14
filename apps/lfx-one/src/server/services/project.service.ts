@@ -6762,7 +6762,7 @@ export class ProjectService {
   public async enrichWithProjectData<T extends { project_uid: string }>(
     req: Request,
     items: T[]
-  ): Promise<(T & { project_name: string; project_slug: string; is_foundation: boolean; parent_project_uid: string })[]> {
+  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
     logger.debug(req, 'enrich_with_project_data', 'Enriching items with project metadata', {
@@ -6792,7 +6792,11 @@ export class ProjectService {
         ...item,
         project_name: project?.name || (item as any).project_name || '',
         project_slug: project?.slug || (item as any).project_slug || '',
-        is_foundation: computeIsFoundation(project ?? null),
+        // Leave is_foundation absent (not false) when the lookup fails — consumers like
+        // getMeetingEditCommands treat undefined as "tier unknown" and fall back safely,
+        // whereas a coerced false would mislabel a foundation-owned entity as project-owned.
+        // Mirrors the meeting-detail enrichment's fail-soft contract.
+        is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
         parent_project_uid: project?.parent_uid || (item as any).parent_project_uid || '',
       };
     });

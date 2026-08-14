@@ -22,7 +22,7 @@ import { ProjectContextService } from '../services/project-context.service';
  * authorizes meetingCoordinator and ?committee_uid= committee writers — must
  * pass an `access` signal matching that standard; otherwise a context switch to
  * the entity's project (syncEntityProjectContext) produces a true→false
- * transition and evicts guard-admitted organizers mid-edit (gh-1432).
+ * transition and evicts guard-admitted organizers mid-edit.
  *
  * Redirecting to the same lens (foundation→/foundation/overview,
  * project→/project/overview) prevents NavigationService.applyDefaultSelection
@@ -31,10 +31,12 @@ import { ProjectContextService } from '../services/project-context.service';
  *
  * Must be called inside a component constructor (injection context required).
  *
- * skip(1) is safe here because the access signal starts false (canWrite and any
- * caller-built predicate both use initialValue: false) and Angular signal dedup
- * collapses consecutive identical values, so the first emission is always the
- * pre-load false — not a genuine access-lost signal.
+ * skip(1) drops the boot emission — the access signal's value at subscription. That value is
+ * false for the default canWrite predicate (pre-load), but caller-built predicates that mirror
+ * writerGuard's admission (e.g. MeetingManageComponent.initWriteAccess) are provisionally TRUE
+ * while their access legs resolve, so an unresolved leg can never win a race and evict a
+ * guard-admitted user mid-edit. Neither boot value is a genuine access-lost signal;
+ * the first false after full resolution is the eviction trigger.
  */
 export function evictOnWriteAccessLoss(access?: Signal<boolean>): void {
   const router = inject(Router);

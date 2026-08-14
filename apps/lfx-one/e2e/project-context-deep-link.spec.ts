@@ -11,7 +11,7 @@
  *     backfilled via `Location.replaceState`, with no extra navigation.
  *   - Entity detail routes with a route param (`/foundation/groups/:id`) are exempt from the
  *     backfill — they resolve context from the entity itself via `syncEntityProjectContext`.
- *   - gh-1432: a context-less meeting EDIT link (`/project/meetings/:id/edit` with no
+ *   - A context-less meeting EDIT link (`/project/meetings/:id/edit` with no
  *     `?project=`) resolves context from the loaded meeting — via the BFF-enriched project
  *     fields, or via the component's resolve-by-uid fallback when enrichment failed — instead
  *     of the stale cookie-restored context.
@@ -229,7 +229,7 @@ async function setProjectCookie(page: Page, uid: string, slug: string, name: str
 /**
  * Meeting detail payload for the edit page. `enriched: false` simulates the BFF project
  * enrichment having failed (project_slug/project_name/is_foundation absent from the detail
- * payload) so the component's resolve-by-uid fallback is exercised instead (gh-1432).
+ * payload) so the component's resolve-by-uid fallback is exercised instead.
  */
 function buildMeetingStub(enriched: boolean) {
   return {

@@ -25,11 +25,12 @@ import { ProjectService } from '../services/project.service';
  *    `'surveys'`, or `'votes'`. The backend ruleset allows committee:uid#writer to
  *    create resources associated with their committee.
  *
- * Slug resolution: on meeting EDIT routes (`writeFeature: 'meetings'` + `:id/edit`), resolves
- * the slug from the meeting itself first (gh-1432 — the active context can belong to a
- * different project when the edit link carried no `?project=`); otherwise prefers the
- * `?project=` query param (authoritative for the navigation target, works before the lens has
- * synced), then falls back to the active context's slug.
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting edit), resolves
+ * the slug from the meeting itself first — the active context can belong to a different project
+ * when the edit link carried no `?project=`; otherwise prefers the `?project=` query param
+ * (authoritative for the navigation target, works before the lens has synced), then falls back
+ * to the active context's slug. The flag lives in route data — not a routeConfig.path check — so
+ * a route rename/restructure can't silently disable the entity-scoped resolution.
  * Redirects to the lens-appropriate overview on denial so the correct project context is
  * preserved and NavigationService.applyDefaultSelection does not override the selection.
  *
@@ -49,6 +50,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);
   const committeeService = inject(CommitteeService);
+  const meetingService = inject(MeetingService);
   const router = inject(Router);
 
   if (personaService.currentPersona() === 'executive-director') {
@@ -60,7 +62,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
-  // gh-1432 Bug 2: on a meeting EDIT route, a missing or stale `?project=` means the active
+  // On a meeting EDIT route, a missing or stale `?project=` means the active
   // context can belong to a different project than the meeting being edited (bare
   // `/meetings/:id/edit` links redirect by active lens and carry no project param). Authorizing
   // against that stale context intermittently denied legitimate organizers — or worse, could
@@ -68,21 +70,20 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // back to the active context when the meeting can't be read (it may simply not exist — the
   // manage component handles that error path).
   const writeFeature: string | undefined = route.data?.['writeFeature'];
-  const meetingService = inject(MeetingService);
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
     if (writeFeature !== 'meetings') {
       return of(fromContext);
     }
     const meetingId = route.paramMap.get('id');
-    if (!meetingId || route.routeConfig?.path !== ':id/edit') {
+    if (!meetingId || route.data?.['entityScopedSlug'] !== true) {
       return of(fromContext);
     }
     // Resolve from the meeting payload itself, preferring the BFF-enriched slug but falling back
     // to the uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs, so the downstream
     // getProject access check resolves either identifier. Never fall back to the active context
-    // while the meeting is readable: doing so would authorize against a stale, unrelated project
-    // (gh-1432). A failed project probe now denies against the meeting's own project instead of
+    // while the meeting is readable: doing so would authorize against a stale, unrelated project.
+    // A failed project probe now denies against the meeting's own project instead of
     // silently switching to that stale context. Only a meeting that can't be read at all falls
     // back — it may simply not exist; the manage component handles that error path.
     // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with

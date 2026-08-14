@@ -138,11 +138,11 @@ export class MeetingManageComponent {
   public meeting = this.initializeMeeting();
   public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
-  // meeting rather than the cookie-restored last-visited project (gh-1432).
+  // meeting rather than the cookie-restored last-visited project.
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
   // Access predicate for evictOnWriteAccessLoss — mirrors writerGuard's meetings standard
   // (project writer, meeting coordinator, or committee writer via ?committee_uid=) so the
-  // context switch to the meeting's project doesn't evict guard-admitted organizers (gh-1432).
+  // context switch to the meeting's project doesn't evict guard-admitted organizers.
   private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
@@ -183,8 +183,12 @@ export class MeetingManageComponent {
 
     // Derive the project context from the loaded meeting so a context-less edit link
     // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
-    // last-visited project (gh-1432). The fallback covers BFF project-enrichment failure.
-    syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef);
+    // last-visited project. The fallback covers BFF project-enrichment failure.
+    // preferEntityKind: a foundation-owned meeting can be edited under a /project/* URL, so the
+    // meeting's own is_foundation (not the route prefix) picks the slot and re-points the route
+    // lens kind. Opt-in — the other syncEntityProjectContext callers keep URL-prefix
+    // behavior (see the util's doc).
+    syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initMeetingContextFallback();
 
     // Initialize step based on mode
@@ -274,7 +278,7 @@ export class MeetingManageComponent {
   public goToStep(step: number | undefined): void {
     if (step !== undefined && this.canNavigateToStep(step)) {
       if (this.isEditMode()) {
-        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive
         this.router.navigate([], { queryParams: { step: step }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
@@ -293,7 +297,7 @@ export class MeetingManageComponent {
       }
 
       if (this.isEditMode()) {
-        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive
         this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
@@ -307,7 +311,7 @@ export class MeetingManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        // In edit mode, update query params — merge so ?project=/?committee_uid= survive (gh-1432)
+        // In edit mode, update query params — merge so ?project=/?committee_uid= survive
         this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, update internal step
@@ -655,7 +659,7 @@ export class MeetingManageComponent {
     } else {
       // After creating a meeting, navigate to edit mode on step 5 to manage guests. Carry the
       // active project slug so the edit URL self-heals via projectQueryParamGuard instead of
-      // falling back to the cookie-restored context (gh-1432).
+      // falling back to the cookie-restored context.
       const meetingId = this.meetingId();
       if (meetingId) {
         const editQueryParams: Record<string, string> = { step: '5' };
@@ -778,27 +782,56 @@ export class MeetingManageComponent {
   /**
    * Access predicate driving evictOnWriteAccessLoss. The default predicate (canWrite) is
    * project-writer-only, but writerGuard also admits meetings editors via project
-   * meetingCoordinator or writer on the ?committee_uid= committee. Once syncEntityProjectContext
-   * switches the active context to the meeting's project, a coordinator/committee writer who
-   * holds writer on the boot context would see a true→false transition and get evicted mid-edit
-   * (gh-1432). The project leg matches meetings-dashboard's initCanWriteMeetings; the committee
-   * leg uses the side-effect-free fetchCommittee (the guard's getCommittee tap is for its own
-   * deny/allow flow) and the URL snapshot — the param survives step navigations via merge.
+   * meetingCoordinator or writer on the ?committee_uid= committee. The project leg
+   * matches meetings-dashboard's initCanWriteMeetings; the committee leg uses the
+   * side-effect-free fetchCommittee (the guard's getCommittee tap is for its own deny/allow
+   * flow) and the URL snapshot — the param survives step navigations via merge.
+   *
+   * Two properties keep this from evicting guard-admitted users on transient false:
+   *
+   * 1. In edit mode the project leg keys off the MEETING's own project (slug, falling back to
+   *    uid — the BFF getProject route sniffs UUIDs), the same target writerGuard authorized
+   *    against. Keying off activeContext instead would evaluate the stale cookie-restored boot
+   *    context, and its false could win the race against syncEntityProjectContext's correction
+   *    (a cached boot project resolves faster than the meeting fetch that triggers the switch).
+   *    Create mode has no meeting, so the guard-checked active context (?project=) is the key.
+   * 2. Each leg is pending (undefined) until its first resolution, and the predicate stays
+   *    provisionally true while any applicable leg is pending — writerGuard already authorized
+   *    this navigation, so an unresolved leg is not an access-lost signal. Eviction fires only
+   *    once every applicable leg has re-checked false; an error or non-writer response still
+   *    resolves false there.
    */
   private initWriteAccess(): Signal<boolean> {
+    const editMeetingId = this.route.snapshot.paramMap.get('id');
+    const projectKey$: Observable<string | null | undefined> = editMeetingId
+      ? toObservable(this.meeting).pipe(
+          map((meeting) => {
+            if (!meeting) {
+              // Pending — in edit mode the authorization target comes from the meeting itself.
+              return undefined;
+            }
+            // Mirror writerGuard's resolution order; the active-context fallback covers a meeting
+            // carrying neither slug nor uid (the manage component owns that error path).
+            return meeting.project_slug ?? meeting.project_uid ?? this.projectContextService.activeContext()?.slug ?? null;
+          })
+        )
+      : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
+
     const projectAccess = toSignal(
-      toObservable(this.projectContextService.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) {
+      projectKey$.pipe(
+        filter((key): key is string | null => key !== undefined),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) {
             return of(false);
           }
-          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
+          return this.projectService.getProject(key, false, { meetingCoordinator: true }).pipe(
             map((project) => project?.writer === true || project?.meetingCoordinator === true),
             catchError(() => of(false))
           );
         })
-      ),
-      { initialValue: false }
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
     const committeeAccess = toSignal(
       this.committeeUidFromUrl
@@ -806,10 +839,21 @@ export class MeetingManageComponent {
             map((committee) => committee?.writer === true),
             catchError(() => of(false))
           )
-        : of(false),
-      { initialValue: false }
+        : of(false)
+      // No initialValue: undefined doubles as the leg's pending state. Without a committee_uid
+      // param the synchronous of(false) resolves the leg immediately, so it never counts as pending.
     );
-    return computed(() => projectAccess() || committeeAccess());
+    return computed(() => {
+      const project = projectAccess();
+      const committee = committeeAccess();
+      if (project === true || committee === true) {
+        return true;
+      }
+      if (project === undefined || committee === undefined) {
+        return true; // provisional — a pending leg can still grant access
+      }
+      return false;
+    });
   }
 
   /**
@@ -835,8 +879,8 @@ export class MeetingManageComponent {
 
   /**
    * Fallback context sync for when the BFF project enrichment failed (the detail payload has
-   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it
-   * (gh-1432). `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
+   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
+   * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
    * ProjectService's shared `project` state — already resolves to null on failure, so a failed
    * fallback leaves the (stale) context untouched rather than erroring the page.
    *
