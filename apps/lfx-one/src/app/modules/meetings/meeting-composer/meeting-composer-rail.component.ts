@@ -10,12 +10,12 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 
 /**
- * Section navigation for the meeting composer (LFXV2-3240).
+ * Section navigation for the meeting composer (GH-1459).
  * @description Create mode is a progress stepper: later sections stay locked until every earlier
  * required section is valid, so the organizer can't skip past a section that would block submit.
  * Edit mode is a flat menu — the meeting already exists, so every section is reachable. `compact`
  * renders either mode as a horizontal chip row, which is what the composer shows below `lg` where the
- * rail column is hidden (LFXV2-3243).
+ * rail column is hidden (GH-1462).
  */
 @Component({
   selector: 'lfx-meeting-composer-rail',

@@ -29,7 +29,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
 
 /**
- * Date & Schedule section of the meeting composer (LFXV2-3236).
+ * Date & Schedule section of the meeting composer (GH-1454).
  * @description Owns `startDate`, `startTime`, `duration`/`customDuration`, `timezone`,
  * `early_join_time_minutes`, and the recurring card. Owns the simple-cadence → `recurrence` mapping
  * (daily / weekly / weekdays / monthly); `custom` is owned by `lfx-meeting-recurrence-pattern`. The

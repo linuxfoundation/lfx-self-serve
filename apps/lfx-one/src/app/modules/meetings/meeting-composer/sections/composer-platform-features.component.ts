@@ -27,7 +27,7 @@ import { EMPTY, switchMap } from 'rxjs';
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
- * Platform & Features section of the meeting composer (LFXV2-3237).
+ * Platform & Features section of the meeting composer (GH-1456).
  * @description Owns `platform`, the four feature toggles, `require_ai_summary_approval`,
  * `artifact_visibility`, and the email reminder timing. The recording dependency wiring and the
  * YouTube title-length validator behaviour are unchanged from the wizard.

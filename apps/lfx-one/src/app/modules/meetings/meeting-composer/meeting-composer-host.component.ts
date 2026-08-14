@@ -26,7 +26,7 @@ import { ComposerGuestsComponent } from './sections/composer-guests.component';
 import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-features.component';
 
 /**
- * Globally mounted host for the meeting composer drawer (LFXV2-3234).
+ * Globally mounted host for the meeting composer drawer (GH-1452).
  * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
  * opening the composer never unmounts the page underneath. Sections are reachable from both the rail
  * and the footer navigation; the live preview is create-mode only. Below `lg` the drawer goes full
@@ -200,7 +200,7 @@ export class MeetingComposerHostComponent {
   }
 
   /**
-   * Raises the post-create toast (LFXV2-3242).
+   * Raises the post-create toast (GH-1461).
    * @description Creating no longer navigates to the saved meeting, so this toast is the only route back
    * to it. A create that returned no meeting has nothing to link to, and falls back to a plain
    * confirmation rather than a toast whose actions would dead-end.

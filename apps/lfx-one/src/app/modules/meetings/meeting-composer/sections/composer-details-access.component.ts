@@ -24,7 +24,7 @@ import { map, of, startWith, switchMap } from 'rxjs';
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
- * Details & Access section of the meeting composer (LFXV2-3235).
+ * Details & Access section of the meeting composer (GH-1453).
  * @description Owns `title`, `meeting_type`, `visibility`, and `restricted`. Visibility and join
  * restriction are separate API fields with separate effects, so they render as two rows of one card
  * rather than as a single "privacy" control.
