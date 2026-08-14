@@ -10,10 +10,12 @@ const { proxyRequest, proxyRequestWithResponse, logger, isServerFeatureEnabled }
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
-  // Typed with the flag parameter, matching the real isServerFeatureEnabled(flag). Declared
-  // as `vi.fn(() => false)` the mock accepted no argument, so a per-flag mockImplementation
-  // failed to compile -- and only `yarn build` caught it, since check-types skips specs.
-  isServerFeatureEnabled: vi.fn((_flag: unknown) => false),
+  // Typed as taking the flag, matching the real isServerFeatureEnabled(flag). Declared as
+  // `vi.fn(() => false)` the mock accepted NO argument, so a per-flag mockImplementation
+  // could not typecheck against it -- and only `yarn build` caught that, since check-types
+  // skips spec files. The type is declared on the mock rather than as a named parameter so
+  // there is no unused binding for no-unused-vars to reject.
+  isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
 }));
 
 vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => ({
