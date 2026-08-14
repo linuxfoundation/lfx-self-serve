@@ -162,9 +162,15 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
  * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
  * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
- * service builds no `twitterConfig`, `microsoftConfig` or `hubspotConfig` at all, so waving them
- * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
- * the mapped four are protected from.
+ * service builds no `twitterConfig` or `microsoftConfig`, so waving those through queued a job
+ * whose dispatcher reads an absent key as a zero value — exactly the defect the mapped platforms
+ * are protected from.
+ *
+ * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
+ * guard is designed to enforce: map a platform only once something builds its config. Note that a
+ * mapped `hubspot` is necessary but NOT sufficient to stage an email — the dispatcher also needs
+ * the brief's audience to be BUILT (`hubspot.go:432-456`), which it resolves by `brief.ID` rather
+ * than from this envelope, so that failure surfaces upstream and not here.
  *
  * The cost of refusing is a clear error when a platform is enabled before its config builder
  * exists, which is the failure you want. The cost of allowing was a dispatched, unusable job.
@@ -175,6 +181,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'linkedin-ads': 'linkedInConfig',
     'reddit-ads': 'redditConfig',
     'meta-ads': 'metaConfig',
+    hubspot: 'hubspotConfig',
   };
   const key = requiredKey[platform];
   if (key === undefined) return false;
@@ -1377,6 +1384,18 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
 
   // Narrowed against the union rather than passed through: an unknown platform id reaches a
   // template that indexes icon and label maps by it, and renders blank rather than erroring.
+  //
+  // Narrowed to `CampaignPlatform`, NOT `CampaignAnyPlatform`, deliberately: this feeds the PAID
+  // planner's channel selection, and `hubspot` is not one of its channels. That means a stored
+  // email brief's `hubspot` is filtered out here and — because of the guard below — would read as
+  // UNREADABLE rather than as an email brief.
+  //
+  // No client sends such a brief TODAY (the email planner omits `platforms`), but that is a client
+  // guarantee and this is a server reading whatever campaign-service stored, so it does not bound
+  // what can arrive — the same reasoning `campaign-proxy.service.ts` applies to its own inputs.
+  // The case is deferred rather than dismissed: restoring an email brief needs a different shape,
+  // not a wider filter here, and widening this one would hand `hubspot` to a paid channel picker
+  // that has no such channel. That is LFXV2-3224's to solve deliberately.
   const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
 
   // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —
