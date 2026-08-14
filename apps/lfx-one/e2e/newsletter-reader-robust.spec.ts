@@ -185,8 +185,9 @@ test.describe('Newsletter Reader Page — Structural Tests', () => {
     await expect(copyButton).toBeEnabled();
 
     // Button should have accessible text or aria-label
-    const hasText = await copyButton.locator('text=').count().catch(() => 0);
+    const textContent = await copyButton.textContent();
+    const hasText = textContent && textContent.trim().length > 0;
     const hasAriaLabel = await copyButton.getAttribute('aria-label');
-    expect(hasText > 0 || hasAriaLabel).toBeTruthy();
+    expect(hasText || hasAriaLabel).toBeTruthy();
   });
 });
