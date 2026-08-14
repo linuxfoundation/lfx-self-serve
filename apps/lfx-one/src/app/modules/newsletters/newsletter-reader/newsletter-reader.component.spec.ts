@@ -247,6 +247,9 @@ describe('NewsletterReaderComponent', () => {
 
     expect(lensService.setLens).toHaveBeenCalledWith('me');
     expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my']);
+    // Order matters: navigating first would let lensRedirectGuard rewrite the
+    // URL against the old lens before the switch lands.
+    expect(vi.mocked(lensService.setLens).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(router.navigate).mock.invocationCallOrder[0]);
   });
 
   it('should leave modified clicks on the breadcrumb to the browser (new tab)', () => {
