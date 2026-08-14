@@ -19,7 +19,7 @@ import {
 import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -242,21 +242,37 @@ export class VoteService {
 
     const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
 
+    // The API client maps an empty response body to null; a 200 with no payload is anomalous
+    // (the upstream results contract always returns a body), so fail loudly — passing null
+    // through would emit a 200 that the results drawer renders as a genuine zero-response vote
+    // ("No responses yet") instead of its error state.
+    if (!results) {
+      throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${voteUid}/results`,
+      });
+    }
+
     // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
     // responses at the most recent N to keep the payload linear in prompt count rather than
     // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
     // reported via total_responses so the UI can disclose truncation.
-    for (const commentResult of results.comment_results ?? []) {
-      commentResult.total_responses = commentResult.responses.length;
-      if (commentResult.responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT) {
-        commentResult.responses = sortCommentResponsesByRecency(commentResult.responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT);
-      }
+    for (const commentResult of results?.comment_results ?? []) {
+      // Normalize to an array before touching length — this loop is the single aggregation point for
+      // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
+      const responses = commentResult.responses ?? [];
+      commentResult.total_responses = responses.length;
+      commentResult.responses =
+        responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
+          ? sortCommentResponsesByRecency(responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT)
+          : responses;
     }
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
-      num_poll_results: results.poll_results?.length ?? 0,
-      num_votes_cast: results.num_votes_cast,
+      num_poll_results: results?.poll_results?.length ?? 0,
+      num_votes_cast: results?.num_votes_cast,
     });
 
     return results;

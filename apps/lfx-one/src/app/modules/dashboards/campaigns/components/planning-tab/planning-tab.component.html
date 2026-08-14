@@ -154,67 +154,81 @@
         </div>
       </div>
 
-      <!-- Budget & Assets Card -->
-      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-budget-section">
-        <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget & Assets</h3>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-gray-700">Total Budget (USD) <span class="font-normal text-gray-400">(optional)</span></label>
-            <div class="flex items-center gap-0">
-              <span class="rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500">$</span>
-              <input
-                type="number"
-                formControlName="totalBudget"
-                placeholder="5000"
-                min="0"
-                step="100"
-                class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                data-testid="planning-budget-input" />
+      <!--
+        Budget & Assets Card — paid only, and not merely by association. Both halves state a
+        paid-ad fact that is wrong for email: the helper text under the budget describes DAILY AD
+        PACING ("Budget/day = Total / (End Date − Today)"), and HubSpot staging has no daily
+        spend; the asset sizes are ad creative dimensions.
+
+        The budget also reaches the copy generator, which appends "Total Campaign Budget: $N" to
+        the prompt (campaign-proxy.service.ts:1535) — so leaving it visible does not just show a
+        dead field, it feeds a paid-ad number into an email brief.
+      -->
+      @if (!isEmail()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-budget-section">
+          <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget & Assets</h3>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700">Total Budget (USD) <span class="font-normal text-gray-400">(optional)</span></label>
+              <div class="flex items-center gap-0">
+                <span class="rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-500">$</span>
+                <input
+                  type="number"
+                  formControlName="totalBudget"
+                  placeholder="5000"
+                  min="0"
+                  step="100"
+                  class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="planning-budget-input" />
+              </div>
+              <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
             </div>
-            <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
-            <input
-              type="url"
-              formControlName="driveFolderUrl"
-              placeholder="https://drive.google.com/drive/folders/..."
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="planning-drive-url-input" />
-            <p class="text-xs text-gray-500">Link a folder with 1200×628, 1200×1200, 960×1200 images</p>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
+              <input
+                type="url"
+                formControlName="driveFolderUrl"
+                placeholder="https://drive.google.com/drive/folders/..."
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="planning-drive-url-input" />
+              <p class="text-xs text-gray-500">Link a folder with 1200×628, 1200×1200, 960×1200 images</p>
+            </div>
           </div>
         </div>
-      </div>
+      }
     </form>
 
-    <!-- Ad Channels Card -->
-    <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
-      <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        @for (platform of platforms; track platform.id) {
-          <button
-            type="button"
-            (click)="platform.disabled ? null : togglePlatform(platform.id)"
-            [disabled]="platform.disabled"
-            [class]="
-              platform.disabled
-                ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
-                : isPlatformSelected(platform.id)
-                  ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
-                  : 'flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50'
-            "
-            [attr.data-testid]="'planning-platform-' + platform.id">
-            <i [class]="platform.icon" aria-hidden="true"></i>
-            <span class="flex flex-col items-start gap-0">
-              {{ platform.label }}
-              @if (platform.disabled) {
-                <span class="text-[10px] font-normal leading-tight text-gray-400">Coming soon</span>
-              }
-            </span>
-          </button>
-        }
+    <!-- Ad Channels Card — paid only. Email has no ad channel to pick; its destination is the
+         HubSpot template chosen on the Implement tab (LFXV2-3198). -->
+    @if (!isEmail()) {
+      <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          @for (platform of platforms; track platform.id) {
+            <button
+              type="button"
+              (click)="platform.disabled ? null : togglePlatform(platform.id)"
+              [disabled]="platform.disabled"
+              [class]="
+                platform.disabled
+                  ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
+                  : isPlatformSelected(platform.id)
+                    ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
+                    : 'flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+              "
+              [attr.data-testid]="'planning-platform-' + platform.id">
+              <i [class]="platform.icon" aria-hidden="true"></i>
+              <span class="flex flex-col items-start gap-0">
+                {{ platform.label }}
+                @if (platform.disabled) {
+                  <span class="text-[10px] font-normal leading-tight text-gray-400">Coming soon</span>
+                }
+              </span>
+            </button>
+          }
+        </div>
       </div>
-    </div>
+    }
 
     <!-- Generate Button -->
     <div class="flex items-center gap-3">
@@ -319,7 +333,9 @@
             <span class="text-sm font-semibold text-green-800">Brief generated successfully</span>
           }
         </div>
-        @if (!isEditing()) {
+        <!-- The header's Edit entry point. Same reason as the action row below: an email brief
+             has no `structuredCopy`, so this opens an empty editor. -->
+        @if (!isEditing() && !isEmail()) {
           <button
             type="button"
             (click)="enterEditMode()"
@@ -943,30 +959,45 @@
           (onClick)="onProceedToImplementation()"
           ariaLabel="Proceed to implement with this brief"
           data-testid="planning-proceed-btn" />
-        <lfx-button
-          label="Refine Brief"
-          icon="fa-light fa-wand-magic-sparkles"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="enterRefineMode()"
-          ariaLabel="Provide feedback to regenerate the brief"
-          data-testid="planning-refine-brief-btn" />
-        <lfx-button
-          label="Edit Brief"
-          icon="fa-light fa-pen-to-square"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="enterEditMode()"
-          ariaLabel="Edit the generated brief"
-          data-testid="planning-edit-brief-btn" />
-        <lfx-button
-          label="Copy All"
-          icon="fa-light fa-clipboard"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="copyToClipboard()"
-          ariaLabel="Copy all ad copy to clipboard"
-          data-testid="planning-copy-all-btn" />
+        <!--
+          The three copy actions, hidden together for email because all three operate on ad copy
+          an email brief does not have. Guarding only Refine was the shallower fix and left two
+          worse buttons behind:
+
+            Refine   — the server refuses it outright (no email copy to refine until `email-copy`
+                       lands, LFXV2-3198), so it was a guaranteed error.
+            Edit     — `structuredCopy` is null, so it opens an EMPTY editor whose Save Edits
+                       writes empty `google_search`/`google_display` objects onto an email brief.
+            Copy All — copies the empty copy buffer, silently putting nothing on the clipboard.
+
+          Proceed and New Brief stay: both are delivery-agnostic.
+        -->
+        @if (!isEmail()) {
+          <lfx-button
+            label="Refine Brief"
+            icon="fa-light fa-wand-magic-sparkles"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="enterRefineMode()"
+            ariaLabel="Provide feedback to regenerate the brief"
+            data-testid="planning-refine-brief-btn" />
+          <lfx-button
+            label="Edit Brief"
+            icon="fa-light fa-pen-to-square"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="enterEditMode()"
+            ariaLabel="Edit the generated brief"
+            data-testid="planning-edit-brief-btn" />
+          <lfx-button
+            label="Copy All"
+            icon="fa-light fa-clipboard"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="copyToClipboard()"
+            ariaLabel="Copy all ad copy to clipboard"
+            data-testid="planning-copy-all-btn" />
+        }
         <lfx-button
           label="New Brief"
           icon="fa-light fa-rotate"

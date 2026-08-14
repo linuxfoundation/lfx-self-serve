@@ -49,9 +49,10 @@ export class UserService {
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
   /**
-   * The current user's uploaded avatar (Auth0 user_metadata.picture), null until the one-time
-   * post-hydration profile fetch resolves — that field never reaches `user` (it's absent from the
-   * OIDC claims `user` is seeded from) or is set from the profile-edit upload flow (LFXV2-2628).
+   * The current user's uploaded avatar (Auth0 user_metadata.picture), null until either the
+   * one-time post-hydration profile fetch resolves or the profile-edit upload flow sets it
+   * directly. It never arrives via `user` — that field is absent from the OIDC claims `user` is
+   * seeded from (LFXV2-2628).
    */
   public readonly uploadedAvatarUrl: WritableSignal<string | null> = signal<string | null>(null);
   /**

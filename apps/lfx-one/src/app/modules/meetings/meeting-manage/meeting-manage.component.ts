@@ -47,9 +47,11 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
+  getMeetingEditCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
@@ -596,7 +598,7 @@ export class MeetingManageComponent {
         : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
-      committees: formValue.committees || [],
+      committees: sanitizeMeetingCommittees(formValue.committees),
     };
   }
 
@@ -671,7 +673,13 @@ export class MeetingManageComponent {
         if (ctx) {
           editQueryParams['committee_uid'] = ctx.uid;
         }
-        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
+        // Canonicalize on the created meeting's project tier — the create flow already resolved it
+        // (projectQueryParamGuard effectiveKind → isFoundationContext), so no extra fetch is needed.
+        const editCommands = getMeetingEditCommands({
+          id: meetingId,
+          is_foundation: this.projectContextService.isFoundationContext(),
+        });
+        this.router.navigate(editCommands ?? ['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
         this.navigateBack();
@@ -1018,7 +1026,7 @@ export class MeetingManageComponent {
       reminderHours: reminderHours,
       reminderMinutes: reminderTotalMinutes % 60,
       recurrenceType: finalRecurrenceValue,
-      committees: meeting.committees || [],
+      committees: sanitizeMeetingCommittees(meeting.committees),
     });
 
     // Populate the recurrence FormGroup if there's recurrence data

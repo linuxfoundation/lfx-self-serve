@@ -60,12 +60,16 @@
         </div>
       } @else {
         @if (voteData.description) {
-          <div class="text-sm text-slate-700 whitespace-pre-line" data-testid="vote-cast-drawer-description">
-            {{ voteData.description }}
+          <div class="flex flex-col gap-4" data-testid="vote-cast-drawer-details">
+            <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
+            <div class="text-sm text-slate-700 whitespace-pre-line" data-testid="vote-cast-drawer-description">
+              {{ voteData.description }}
+            </div>
           </div>
         }
 
         <form [formGroup]="form" class="flex flex-col gap-6">
+          <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
           @for (question of questions(); track question.question_id) {
             <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-3" [attr.data-testid]="'vote-cast-question-' + question.question_id">
               <div class="flex flex-col gap-1">
@@ -150,8 +154,8 @@
         </form>
 
         @if (commentPromptsData().length > 0) {
-          <div class="flex flex-col gap-4" [formGroup]="commentForm" data-testid="vote-cast-comments">
-            <h3 class="text-sm font-semibold text-slate-900">Additional Comments (Optional)</h3>
+          <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" [formGroup]="commentForm" data-testid="vote-cast-comments">
+            <h2 class="text-lg font-semibold text-slate-900">Additional Comments (Optional)</h2>
             @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
               <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2" [attr.data-testid]="'vote-cast-comment-' + commentData.prompt.prompt_id">
                 <label [for]="'vote-cast-comment-text-' + commentData.prompt.prompt_id" class="text-sm font-medium text-slate-700">
@@ -189,7 +193,7 @@
               <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />
               <label for="vote-cast-abstain" class="text-sm font-medium text-gray-700 cursor-pointer">Abstain from this vote</label>
             </div>
-            <p class="text-xs text-slate-500">An abstention is recorded as a non-vote and overrides any selections above.</p>
+            <p class="text-xs text-slate-500">An abstention is recorded as a non-vote and overrides your choices above; any comments are still submitted.</p>
           </div>
         }
 

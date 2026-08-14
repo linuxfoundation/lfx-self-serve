@@ -98,6 +98,9 @@ export * from './mailing-list.interface';
 // Runtime config interfaces
 export * from './runtime-config.interface';
 
+// Server request context (SSR REQUEST_CONTEXT shape)
+export * from './server-request-context.interface';
+
 // Poll interfaces
 export * from './poll.interface';
 
@@ -315,3 +318,5 @@ export * from './profile-visibility.interface';
 // Org Lens ROI Metrics (LFXV2-2980) interfaces
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
+// Brand Kit generation contract interfaces
+export * from './brand-kit.interface';

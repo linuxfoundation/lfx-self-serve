@@ -29,6 +29,9 @@ export class OrgRoleGrantsService {
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly errorInternal: WritableSignal<string | null> = signal<string | null>(null);
   private readonly loadedAtMsInternal: WritableSignal<number | null> = signal<number | null>(null);
+  // Caller-level, not per-org: the LF staff grant carries read access to every org, so it is
+  // deliberately not folded into the sets above. Defaults false and resets to false on error.
+  private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -40,6 +43,8 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
+  /** Caller holds the LF staff grant (`auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -58,6 +63,7 @@ export class OrgRoleGrantsService {
         this.inheritedWriterSetInternal.set(new Set((response.cascadingWriters ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
+        this.isStaffInternal.set(response.isStaff === true);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -72,6 +78,7 @@ export class OrgRoleGrantsService {
         this.inheritedWriterSetInternal.set(new Set());
         this.inheritedAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
+        this.isStaffInternal.set(false);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

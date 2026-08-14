@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Project } from './project.interface';
+
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
 
 /**
@@ -161,6 +163,19 @@ export interface Newsletter {
   updated_at: string;
 }
 
+/**
+ * Load state of the standalone newsletter reader page
+ * (/newsletters/:projectSlug/:id). A single object so loading, resolution
+ * failures, and draft gating all derive from one stream emission.
+ */
+export interface NewsletterReaderState {
+  loading: boolean;
+  /** Unexpected failure (non-404) loading the newsletter — distinct from notFound so 5xx never renders as a permanent 404. */
+  error: boolean;
+  project: Project | null;
+  newsletter: Newsletter | null;
+}
+
 export interface CreateNewsletterRequest {
   subject: string;
   body_html: string;
@@ -232,6 +247,15 @@ export interface MyNewsletter extends CommitteeNewsletter {
   project_slug?: string;
   is_foundation?: boolean;
   parent_project_uid?: string;
+}
+
+/**
+ * `MyNewsletter` row precomputed with its permalink path, so the My
+ * Newsletters list template reads `row.issuePath` instead of calling a
+ * template function per row (`null` when `project_slug` failed to resolve).
+ */
+export interface MyNewsletterRow extends MyNewsletter {
+  issuePath: string | null;
 }
 
 export interface NewsletterListParams {

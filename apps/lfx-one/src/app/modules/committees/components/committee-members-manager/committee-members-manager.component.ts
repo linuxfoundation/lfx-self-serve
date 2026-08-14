@@ -15,20 +15,23 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
+  CommitteeInvite,
   CommitteeMember,
   CommitteeMemberState,
   CommitteeMemberWithState,
+  CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
-import { ConfirmationService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
+import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -53,13 +56,31 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Injected services
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Input signals
   public committeeId = input.required<string | null>();
-  public memberUpdates = input<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });
+  public memberUpdates = input<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
   public refresh = input<BehaviorSubject<void>>();
+  /**
+   * Live Step 3 draft values for the org-required flags. In edit mode these can differ from the
+   * persisted `committee()` snapshot until the wizard is submitted — overridden onto it before
+   * opening the invite dialog so org validation reflects what Done/Update is about to save, not
+   * what's currently on the server (LFXV2-2606 review).
+   */
+  public organizationRequirements = input<Pick<Committee, 'enable_voting' | 'business_email_required'> | null>(null);
+  /**
+   * True while the parent is flushing staged changes (Done/Update). flushMemberUpdates() snapshots
+   * memberUpdates() once and fires requests from it — any mutation made here after that snapshot
+   * (removing a pending invite, staging a new one, editing/deleting a member) wouldn't affect the
+   * in-flight batch and would be silently lost once the parent navigates away on success. Disables
+   * every mutating action below for the duration (LFXV2-2606 review).
+   */
+  public submitting = input<boolean>(false);
+  /** Whether this is rendered from the edit-mode "Update" flow rather than the create wizard — only affects copy. */
+  public isEditMode = input<boolean>(false);
 
   // Output events for two-way binding
   public readonly memberUpdatesChange = output<MemberPendingChanges>();
@@ -71,16 +92,36 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Writable signals for state management
   public membersWithState: WritableSignal<CommitteeMemberWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
+  public committeeLoading: WritableSignal<boolean> = signal(true);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
 
+  // "Finished loading" isn't "loaded successfully" — both fetches below swallow their errors into
+  // an empty fallback, so a failure alone wouldn't otherwise keep the invite action disabled.
+  public readonly membersLoadFailed = signal(false);
+  public readonly committeeLoadFailed = signal(false);
+
   // Committee data
   public committee = signal<Committee | null>(null);
+
+  // Bulk email invites staged in the wizard, deduped by normalized email. These are collected
+  // client-side and flushed by the wizard on completion (POST /invites) — never sent immediately,
+  // so cancelling the wizard sends nothing (LFXV2-2606). Surfaced as a "Pending invitations" list.
+  // Hydrated from the input in ngOnInit (not here) — signal inputs apply after field
+  // initializers run, so reading memberUpdates() at this point would only ever see its default.
+  public readonly pendingInvites = signal<CreateCommitteeInviteRequest[]>([]);
+
+  // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
+  private readonly loadingInvites = signal(false);
 
   // Simple computed signals
   public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted'));
   public readonly memberCount = computed(() => this.visibleMembers().length);
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
+  /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
+  public readonly mutationsDisabled = computed(
+    () => this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting()
+  );
 
   // Complex computed signals (using private initializers)
   public readonly filteredMembers = this.initFilteredMembers();
@@ -118,6 +159,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public ngOnInit(): void {
+    // Rehydrate from the parent-bound input now that it's applied (see the field comment above).
+    this.pendingInvites.set(this.memberUpdates().toInvite);
+
     this.initializeMembers();
     this.loadCommittee();
 
@@ -127,6 +171,54 @@ export class CommitteeMembersManagerComponent implements OnInit {
         this.initializeMembers();
         this.loadCommittee();
       });
+  }
+
+  public openInviteByEmailDialog(): void {
+    if (this.loadingInvites()) {
+      return;
+    }
+
+    const committeeId = this.committeeId();
+    if (!committeeId) {
+      // Fresh group (create mode) has no server-side invites yet — nothing to dedupe against.
+      this.openCollectInviteDialog([]);
+      return;
+    }
+
+    this.loadingInvites.set(true);
+
+    this.committeeService
+      .getCommitteeInvites(committeeId)
+      .pipe(
+        take(1),
+        finalize(() => this.loadingInvites.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (invites) => {
+          // Only pending invites should block re-inviting — accepted invitees are already members,
+          // and declined/revoked ones must be re-invitable. Matches committee-view.component.ts.
+          const pending = invites.filter((invite) => (invite.status ?? '').toLowerCase() === 'pending');
+          this.openCollectInviteDialog(pending);
+        },
+        // Falling back to "no existing invites" on failure would silently defeat the dedupe
+        // guarantee (a staged invite could duplicate an already-pending one) — abort instead.
+        error: (error) => {
+          console.error('Failed to load existing invites for dedupe:', error);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Open Invite Dialog',
+            detail: 'Could not load existing invites. Please try again.',
+            life: 6000,
+          });
+        },
+      });
+  }
+
+  /** Remove a staged (not-yet-sent) invite from the pending list. */
+  public removePendingInvite(email: string): void {
+    this.pendingInvites.update((current) => current.filter((invite) => invite.invitee_email !== email));
+    this.emitMemberUpdates();
   }
 
   public openAddMemberDialog(): void {
@@ -224,37 +316,66 @@ export class CommitteeMembersManagerComponent implements OnInit {
     }
   }
 
+  private openCollectInviteDialog(serverInvites: CommitteeInvite[]): void {
+    // Dedupe the dialog against both already-sent invites (edit mode) and locally-staged ones.
+    // The dialog only reads invitee_email off these, so a partial shape is sufficient.
+    const stagedAsInvites: Pick<CommitteeInvite, 'invitee_email'>[] = this.pendingInvites().map((invite) => ({ invitee_email: invite.invitee_email }));
+
+    // Overlay the live Step 3 draft onto the persisted snapshot so org validation matches what
+    // Done/Update is about to save, not stale server-side settings (see the input's doc comment).
+    const committee = this.committee();
+    const orgOverrides = this.organizationRequirements();
+    const effectiveCommittee = committee && orgOverrides ? { ...committee, ...orgOverrides } : committee;
+
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Invite by Email',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: effectiveCommittee,
+        mode: 'invite',
+        collectOnly: true,
+        existingMembers: this.visibleMembers(),
+        existingInvites: [...serverInvites, ...stagedAsInvites],
+      },
+    }) as DynamicDialogRef;
+
+    // Collect mode returns the built invite payloads; stage them for flush on wizard completion.
+    dialogRef.onClose.pipe(take(1)).subscribe((staged: CreateCommitteeInviteRequest[] | undefined) => {
+      if (staged?.length) {
+        this.stageInvites(staged);
+      }
+    });
+  }
+
+  /** Union newly-staged invites into the pending list, deduped by normalized email, then emit. */
+  private stageInvites(invites: CreateCommitteeInviteRequest[]): void {
+    const seen = new Set(this.pendingInvites().map((invite) => (invite.invitee_email ?? '').trim().toLowerCase()));
+    const additions = invites.filter((invite) => {
+      const email = (invite.invitee_email ?? '').trim().toLowerCase();
+      if (!email || seen.has(email)) {
+        return false;
+      }
+      seen.add(email);
+      return true;
+    });
+
+    if (additions.length === 0) {
+      return;
+    }
+
+    this.pendingInvites.update((current) => [...current, ...additions]);
+    this.emitMemberUpdates();
+  }
+
   private handleEditMemberResult(originalMember: CommitteeMemberWithState, memberData: CreateCommitteeMemberRequest): void {
     // Build updated CommitteeMember object from the form data
     const updatedMemberData: CommitteeMember = {
+      ...this.memberFieldsFromRequest(memberData),
       uid: originalMember.uid,
       committee_uid: originalMember.committee_uid,
       committee_name: originalMember.committee_name,
-      email: memberData.email,
-      first_name: memberData.first_name || '',
-      last_name: memberData.last_name || '',
-      job_title: memberData.job_title || undefined,
-      appointed_by: memberData.appointed_by || undefined,
-      organization: memberData.organization
-        ? {
-            name: memberData.organization.name || '',
-            website: memberData.organization.website || undefined,
-          }
-        : undefined,
-      role: memberData.role
-        ? {
-            name: memberData.role.name,
-            start_date: memberData.role.start_date || undefined,
-            end_date: memberData.role.end_date || undefined,
-          }
-        : undefined,
-      voting: memberData.voting
-        ? {
-            status: memberData.voting.status,
-            start_date: memberData.voting.start_date || undefined,
-            end_date: memberData.voting.end_date || undefined,
-          }
-        : undefined,
       created_at: originalMember.created_at,
       updated_at: new Date().toISOString(),
     };
@@ -269,34 +390,10 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private handleAddMemberResult(memberData: CreateCommitteeMemberRequest): void {
     // Build complete CommitteeMember object from the form data
     const newMemberData: CommitteeMember = {
+      ...this.memberFieldsFromRequest(memberData),
       uid: '',
       committee_uid: this.committeeId() || '',
       committee_name: this.committee()?.name || '',
-      email: memberData.email,
-      first_name: memberData.first_name || '',
-      last_name: memberData.last_name || '',
-      job_title: memberData.job_title || undefined,
-      appointed_by: memberData.appointed_by || undefined,
-      organization: memberData.organization
-        ? {
-            name: memberData.organization.name || '',
-            website: memberData.organization.website || undefined,
-          }
-        : undefined,
-      role: memberData.role
-        ? {
-            name: memberData.role.name,
-            start_date: memberData.role.start_date || undefined,
-            end_date: memberData.role.end_date || undefined,
-          }
-        : undefined,
-      voting: memberData.voting
-        ? {
-            status: memberData.voting.status,
-            start_date: memberData.voting.start_date || undefined,
-            end_date: memberData.voting.end_date || undefined,
-          }
-        : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -366,18 +463,106 @@ export class CommitteeMembersManagerComponent implements OnInit {
     };
   }
 
+  /**
+   * Reapplies pending member add/update/delete from the input onto a freshly-loaded server roster.
+   * membersWithState only ever comes from this fetch — without this, remounting Step 4 (which
+   * re-fetches) silently drops any staged member add/update/delete the next time
+   * emitMemberUpdates() runs, since that always re-derives toAdd/toUpdate/toDelete from
+   * membersWithState rather than from the input (LFXV2-2606 review).
+   */
+  private reconcilePendingMemberState(serverMembers: CommitteeMemberWithState[]): CommitteeMemberWithState[] {
+    const pending = this.memberUpdates();
+    const deletedUids = new Set(pending.toDelete);
+    const updatesByUid = new Map(pending.toUpdate.map((update) => [update.uid, update.changes]));
+
+    const reconciled = serverMembers.map((member) => {
+      if (deletedUids.has(member.uid)) {
+        return { ...member, state: 'deleted' as CommitteeMemberState };
+      }
+      const changes = updatesByUid.get(member.uid);
+      if (!changes) {
+        return member;
+      }
+      return {
+        ...member,
+        ...this.memberFieldsFromRequest(changes),
+        updated_at: new Date().toISOString(),
+        state: 'modified' as CommitteeMemberState,
+      };
+    });
+
+    const added: CommitteeMemberWithState[] = pending.toAdd.map((request) => ({
+      ...this.memberFieldsFromRequest(request),
+      uid: '',
+      committee_uid: this.committeeId() || '',
+      committee_name: this.committee()?.name || '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      state: 'new' as CommitteeMemberState,
+      tempId: generateTempId(),
+      originalData: undefined,
+    }));
+
+    return [...reconciled, ...added];
+  }
+
+  /** Maps a CreateCommitteeMemberRequest's display fields onto the CommitteeMember shape. */
+  private memberFieldsFromRequest(
+    request: CreateCommitteeMemberRequest
+  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
+    return {
+      email: request.email,
+      first_name: request.first_name || '',
+      last_name: request.last_name || '',
+      job_title: request.job_title || undefined,
+      appointed_by: request.appointed_by || undefined,
+      organization: request.organization
+        ? {
+            name: request.organization.name || '',
+            website: request.organization.website || undefined,
+          }
+        : undefined,
+      role: request.role
+        ? {
+            name: request.role.name,
+            start_date: request.role.start_date || undefined,
+            end_date: request.role.end_date || undefined,
+          }
+        : undefined,
+      voting: request.voting
+        ? {
+            status: request.voting.status,
+            start_date: request.voting.start_date || undefined,
+            end_date: request.voting.end_date || undefined,
+          }
+        : undefined,
+    };
+  }
+
   private loadCommittee(): void {
     const committeeId = this.committeeId();
-    if (!committeeId) return;
+    if (!committeeId) {
+      this.committeeLoading.set(false);
+      return;
+    }
 
+    this.committeeLoadFailed.set(false);
     this.committeeService
       .getCommittee(committeeId)
       .pipe(
         take(1),
         catchError((error) => {
           console.error('Failed to load committee:', error);
+          this.committeeLoadFailed.set(true);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Load Committee',
+            detail: 'Could not load committee details. Refresh the page to try again.',
+            life: 6000,
+          });
           return of(null);
-        })
+        }),
+        finalize(() => this.committeeLoading.set(false))
       )
       .subscribe((committee) => {
         this.committee.set(committee);
@@ -391,24 +576,28 @@ export class CommitteeMembersManagerComponent implements OnInit {
       return;
     }
 
+    this.membersLoadFailed.set(false);
     this.committeeService
       .getCommitteeMembers(committeeId)
       .pipe(
         take(1),
         catchError((error) => {
           console.error('Error loading members:', error);
+          this.membersLoadFailed.set(true);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Load Members',
+            detail: 'Could not load committee members. Refresh the page to try again.',
+            life: 6000,
+          });
           return of([]);
         }),
         finalize(() => {
           this.loading.set(false);
         }),
         tap((members) => {
-          if (!members || members.length === 0) {
-            this.membersWithState.set([]);
-            return;
-          }
-
-          this.membersWithState.set(members.map((m) => this.createMemberWithState(m, 'existing')));
+          const serverMembers = (members ?? []).map((m) => this.createMemberWithState(m, 'existing'));
+          this.membersWithState.set(this.reconcilePendingMemberState(serverMembers));
         })
       )
       .subscribe();
@@ -416,6 +605,16 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   private emitMemberUpdates(): void {
     const members = this.membersWithState();
+
+    // A staged invite whose email now also matches an added/edited member would otherwise queue
+    // both a member-create op and an invite op for the same person on Done. Drop it from the
+    // pending list rather than just the emit, so the "Pending invitations" UI doesn't lie either.
+    const activeMemberEmails = new Set(members.filter((m) => m.state !== 'deleted').map((m) => (m.email ?? '').trim().toLowerCase()));
+    const toInvite = this.pendingInvites().filter((invite) => !activeMemberEmails.has((invite.invitee_email ?? '').trim().toLowerCase()));
+    if (toInvite.length !== this.pendingInvites().length) {
+      this.pendingInvites.set(toInvite);
+    }
+
     this.memberUpdatesChange.emit({
       toAdd: members.filter((m) => m.state === 'new').map((m) => this.stripMetadata(m)),
       toUpdate: members
@@ -425,6 +624,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
           changes: this.stripMetadata(m), // Pass entire member object, not just changed fields
         })),
       toDelete: members.filter((m) => m.state === 'deleted').map((m) => m.uid),
+      toInvite,
     });
   }
 

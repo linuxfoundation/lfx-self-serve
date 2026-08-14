@@ -61,7 +61,6 @@ export interface ProfileHeaderData {
   phoneNumber?: string;
   tshirtSize?: string;
   aboutMe?: string;
-  avatarUrl?: string;
 }
 
 /**

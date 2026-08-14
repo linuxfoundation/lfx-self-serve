@@ -141,6 +141,8 @@ Prefer the impersonation-aware helpers in `apps/lfx-one/src/server/utils/auth-he
 | `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** for identity references generally — no upstream requires the prefixed `sub` — but still the right choice for indefinitely-retained server log metadata, where `username` would put readable PII in the log stream |
 | `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | For email-keyed lookups                                                                                                                                                                                                             |
 
+For the deliberate opposite case — resolving the REAL impersonator's identity/token for a write that must be attributed to the actual actor rather than the impersonation target — see [`getRealEmail`/`resolveRealAccessToken` in `impersonation.md`](./impersonation.md#5-identity-helpers) (LFXV2-3093).
+
 ### Migration: `sub` → `username`
 
 Backend identity references have migrated from the Auth0 `sub` to the LFID `username`. In this repo:

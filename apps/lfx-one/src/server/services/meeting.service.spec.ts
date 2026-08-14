@@ -278,3 +278,69 @@ describe('MeetingService.getPastOccurrencesForMeeting', () => {
     expect(result).toEqual([]);
   });
 });
+
+describe('MeetingService.addMeetingRegistrantSelf', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('posts to the self-register endpoint with required fields and returns the new registrant', async () => {
+    const registrant = { uid: 'reg-abc', email: 'alice@example.com' };
+    proxyRequest.mockResolvedValueOnce(registrant);
+
+    const result = await service.addMeetingRegistrantSelf(req, 'mtg-1', {
+      meeting_id: 'mtg-1',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      email: 'alice@example.com',
+    });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body, headers] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/meetings/mtg-1/registrants/self');
+    expect(method).toBe('POST');
+    expect(body).toMatchObject({ first_name: 'Alice', last_name: 'Liddell' });
+    expect(body).not.toHaveProperty('email');
+    expect(body).not.toHaveProperty('username');
+    expect(headers).toEqual({ 'X-Sync': 'true' });
+    expect(result).toEqual(registrant);
+  });
+
+  it('omits optional fields when they are absent from the request', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'reg-1' });
+
+    await service.addMeetingRegistrantSelf(req, 'mtg-1', {
+      meeting_id: 'mtg-1',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      email: 'alice@example.com',
+    });
+
+    const [, , , , , body] = proxyRequest.mock.calls[0];
+    expect(body).not.toHaveProperty('org');
+    expect(body).not.toHaveProperty('job_title');
+    expect(body).not.toHaveProperty('occurrence');
+  });
+
+  it('maps org_name to org and occurrence_id to occurrence when provided', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'reg-1' });
+
+    await service.addMeetingRegistrantSelf(req, 'mtg-1', {
+      meeting_id: 'mtg-1',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      email: 'alice@example.com',
+      org_name: 'Linux Foundation',
+      job_title: 'Engineer',
+      occurrence_id: 'occ-42',
+    });
+
+    const [, , , , , body] = proxyRequest.mock.calls[0];
+    expect(body).toMatchObject({ org: 'Linux Foundation', job_title: 'Engineer', occurrence: 'occ-42' });
+    expect(body).not.toHaveProperty('org_name');
+    expect(body).not.toHaveProperty('occurrence_id');
+  });
+});

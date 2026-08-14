@@ -1678,32 +1678,37 @@ export class MeetingService {
   }
 
   /**
-   * Creates a new meeting registrant using M2M token (for public endpoints)
-   * @param req - Express request object
-   * @param registrantData - Registrant data to create
-   * @param m2mToken - M2M token for authentication
-   * @returns The created meeting registrant
+   * Registers the authenticated user as a meeting registrant using their bearer token.
+   * Email and username are sourced from the user's JWT by the meeting service — they must
+   * not be included in the payload. Only public meetings are supported; private meetings
+   * return 403.
    */
-  public async addMeetingRegistrantWithM2M(req: Request, registrantData: CreateMeetingRegistrantRequest, m2mToken: string): Promise<MeetingRegistrant> {
-    const startTime = logger.startOperation(req, 'add_meeting_registrant_with_m2m', { meeting_id: registrantData.meeting_id });
+  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
+    const startTime = logger.startOperation(req, 'add_meeting_registrant_self', { meeting_id: meetingId });
 
-    const sanitizedPayload = logger.sanitize({ registrantData });
-    logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
+    logger.debug(req, 'add_meeting_registrant_self', 'Self-registering authenticated user for meeting', { meeting_id: meetingId });
+
+    const payload = {
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      ...(registrantData.org_name && { org: registrantData.org_name }),
+      ...(registrantData.job_title && { job_title: registrantData.job_title }),
+      ...(registrantData.occurrence_id && { occurrence: registrantData.occurrence_id }),
+    };
 
     const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${registrantData.meeting_id}/registrants`,
+      `/itx/meetings/${meetingId}/registrants/self`,
       'POST',
       undefined,
-      registrantData,
-      { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
+      payload,
+      { 'X-Sync': 'true' }
     );
 
-    logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
-      meeting_id: registrantData.meeting_id,
+    logger.success(req, 'add_meeting_registrant_self', startTime, {
+      meeting_id: meetingId,
       registrant_uid: newRegistrant.uid,
-      host: registrantData.host || false,
     });
 
     return newRegistrant;

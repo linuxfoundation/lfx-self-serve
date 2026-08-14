@@ -61,7 +61,19 @@ export interface MktgChatRequest {
  */
 export type MktgChatResponse = { sessionId: string; ownerToken: string } | { success: true };
 
-/** Response from `GET /api/mktg-agents/history`. */
+/**
+ * Request body for `POST /api/mktg-agents/history` — the owner token travels
+ * in the body (never the query string) so it stays out of access logs,
+ * proxies, and browser history.
+ */
+export interface MktgHistoryRequest {
+  /** Guild session id. */
+  sessionId: string;
+  /** Creator-binding owner token returned when the session was created. */
+  ownerToken: string;
+}
+
+/** Response from `POST /api/mktg-agents/history`. */
 export interface MktgHistoryResponse {
   /** Messages sorted chronologically (oldest first). */
   messages: MktgChatMessage[];
