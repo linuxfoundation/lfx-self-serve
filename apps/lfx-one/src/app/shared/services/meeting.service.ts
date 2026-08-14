@@ -202,11 +202,11 @@ export class MeetingService {
   }
 
   /**
-   * Meeting-detail fetch with a short-TTL shared cache (gh-1432): the writerGuard project
-   * probe (via ProjectService.getProjectForMeeting) and MeetingManageComponent's
-   * initializeMeeting both need the same payload within one navigation — sharing the request
-   * avoids a duplicate fetch on every edit-page load. Probe-friendly: no `meeting` signal
-   * side-effect. Entries evict on error and on write (updateMeeting/deleteMeeting).
+   * Meeting-detail fetch with a short-TTL shared cache (gh-1432): the writerGuard slug
+   * resolution and MeetingManageComponent's initializeMeeting both need the same payload
+   * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
+   * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
+   * write (updateMeeting/deleteMeeting).
    */
   public getMeetingDetail(id: string): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);

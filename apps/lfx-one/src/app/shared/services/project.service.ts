@@ -5,11 +5,9 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { WRITER_SUMMARY_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, switchMap, take, tap, timeout } from 'rxjs';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
 
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-
-import { MeetingService } from './meeting.service';
 
 @Injectable({
   providedIn: 'root',
@@ -19,7 +17,6 @@ export class ProjectService {
   public project$: BehaviorSubject<Project | null> = new BehaviorSubject<Project | null>(null);
 
   private readonly http = inject(HttpClient);
-  private readonly meetingService = inject(MeetingService);
   private readonly projectCache = new Map<string, Observable<Project | null>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
 
@@ -94,24 +91,6 @@ export class ProjectService {
       this.projectCache.set(cacheKey, project$);
     }
     return this.projectCache.get(cacheKey)!;
-  }
-
-  /**
-   * Resolves the project that owns a meeting via the BFF-enriched meeting detail payload
-   * (gh-1432). Probe-only: never touches the shared `project`/`project$` state (delegates to
-   * `getProject(slug, false)`) and goes through MeetingService's tap-free `getMeetingDetail`,
-   * whose short-TTL cache lets the writerGuard probe and MeetingManageComponent's refetch
-   * share one request. Returns null when the meeting or project can't be read — callers fall
-   * back to the active-context slug.
-   */
-  public getProjectForMeeting(meetingId: string, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
-    return this.meetingService.getMeetingDetail(meetingId).pipe(
-      switchMap((meeting) => (meeting?.project_slug ? this.getProject(meeting.project_slug, false, options) : of(null))),
-      catchError((error) => {
-        console.error(`Failed to resolve project for meeting ${meetingId}:`, error);
-        return of(null);
-      })
-    );
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {

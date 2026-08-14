@@ -3,9 +3,9 @@
 
 import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
-import { distinctUntilChanged, filter } from 'rxjs';
+import { distinctUntilChanged, filter, map, merge } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
 
@@ -51,10 +51,26 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
   router: Router,
   destroyRef: DestroyRef
 ): void {
-  toObservable(entitySignal)
+  const entityChanges$ = toObservable(entitySignal).pipe(
+    distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid && a?.project_slug === b?.project_slug)
+  );
+
+  // Query-param-only navigations (e.g. edit-step changes via `?step=N`) don't re-run guards
+  // (default `runGuardsAndResolvers: 'paramsChange'`) but still fire NavigationEnd, and
+  // MainLayoutComponent.syncLensFromRoute re-asserts the route's *declared* lens kind — clobbering
+  // this entity correction when the entity contradicts the route (gh-1432). Re-apply after each
+  // navigation while the component lives. Ordering is safe: MainLayout subscribed at bootstrap,
+  // so its re-assert runs before this handler on the same NavigationEnd. Re-applying is
+  // idempotent — same-value signal writes don't propagate and setProject/setFoundation no-op on
+  // an unchanged context.
+  const navigationReapply$ = router.events.pipe(
+    filter((event) => event instanceof NavigationEnd),
+    map(() => entitySignal())
+  );
+
+  merge(entityChanges$, navigationReapply$)
     .pipe(
       filter((entity): entity is T & { project_slug: string } => !!entity?.project_uid && !!entity?.project_slug),
-      distinctUntilChanged((a, b) => a.uid === b.uid && a.project_uid === b.project_uid && a.project_slug === b.project_slug),
       takeUntilDestroyed(destroyRef)
     )
     .subscribe((entity) => {

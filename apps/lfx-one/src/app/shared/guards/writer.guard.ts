@@ -6,6 +6,7 @@ import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
 import { CommitteeService } from '../services/committee.service';
+import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
@@ -67,6 +68,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // back to the active context when the meeting can't be read (it may simply not exist — the
   // manage component handles that error path).
   const writeFeature: string | undefined = route.data?.['writeFeature'];
+  const meetingService = inject(MeetingService);
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
     if (writeFeature !== 'meetings') {
@@ -76,11 +78,17 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     if (!meetingId || route.routeConfig?.path !== ':id/edit') {
       return of(fromContext);
     }
-    // Probe-only: getProjectForMeeting never touches ProjectService's shared `project` state.
-    // Pass the meetingCoordinator flag through so the downstream access re-check hits the
-    // getProject cache instead of issuing a second project fetch.
-    return projectService.getProjectForMeeting(meetingId, { meetingCoordinator: true }).pipe(
-      map((project) => project?.slug ?? fromContext),
+    // Resolve from the meeting payload itself, preferring the BFF-enriched slug but falling back
+    // to the uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs, so the downstream
+    // getProject access check resolves either identifier. Never fall back to the active context
+    // while the meeting is readable: doing so would authorize against a stale, unrelated project
+    // (gh-1432). A failed project probe now denies against the meeting's own project instead of
+    // silently switching to that stale context. Only a meeting that can't be read at all falls
+    // back — it may simply not exist; the manage component handles that error path.
+    // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with
+    // MeetingManageComponent's fetch on the same navigation.
+    return meetingService.getMeetingDetail(meetingId).pipe(
+      map((meeting) => meeting?.project_slug ?? meeting?.project_uid ?? fromContext),
       catchError(() => of(fromContext))
     );
   };

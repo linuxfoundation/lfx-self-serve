@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, effect, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -69,6 +69,8 @@ import {
   finalize,
   forkJoin,
   from,
+  map,
+  merge,
   mergeMap,
   Observable,
   of,
@@ -796,13 +798,26 @@ export class MeetingManageComponent {
    * (gh-1432). `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
    * ProjectService's shared `project` state — already resolves to null on failure, so a failed
    * fallback leaves the (stale) context untouched rather than erroring the page.
+   *
+   * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
+   * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation` — e.g.
+   * `/project/meetings/:id/edit?project=<foundation>` seeds the foundation into the project slot
+   * under the route's declared `project` kind, and only the resolved project record reveals the
+   * mismatch. As in syncEntityProjectContext, NavigationEnd re-applies the correction: query-param
+   * step navigations re-assert the route's declared kind via syncLensFromRoute without re-running
+   * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
    */
   private initMeetingContextFallback(): void {
-    toObservable(this.meetingEntityContext)
+    const unresolvedEntity$ = toObservable(this.meetingEntityContext).pipe(
+      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
+    );
+    const navigationReapply$ = this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.meetingEntityContext())
+    );
+    merge(unresolvedEntity$, navigationReapply$)
       .pipe(
         filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        distinctUntilChanged((a, b) => a.uid === b.uid && a.project_uid === b.project_uid),
-        filter((entity) => entity.project_uid !== this.projectContextService.activeContextUid()),
         switchMap((entity) => this.projectService.getProject(entity.project_uid, false)),
         takeUntilDestroyed(this.destroyRef)
       )
