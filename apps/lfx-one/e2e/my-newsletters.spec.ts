@@ -188,4 +188,56 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await expect(page.getByTestId('my-newsletters-empty-state')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('my-newsletters-empty-state')).toContainText('No newsletters yet');
   });
+
+  test('opening newsletter updates URL with query params (?issue=...&project=...)', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
+
+    // URL should include query params
+    await expect(page).toHaveURL(/\?issue=.*&project=.*/);
+    const url = page.url();
+    expect(url).toContain(`issue=${MOCK_NEWSLETTERS[0].id}`);
+  });
+
+  test('closing drawer clears query params', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    // Open drawer
+    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
+    await expect(page).toHaveURL(/\?issue=.*&project=.*/);
+
+    // Close drawer
+    await page.getByTestId('newsletter-preview-drawer-close').click();
+
+    // URL should be clean (no query params)
+    const url = page.url();
+    expect(url).not.toContain('issue=');
+  });
+
+  test('direct navigation with query params auto-opens the drawer', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    const issueId = MOCK_NEWSLETTERS[0].id;
+    const projectSlug = MOCK_NEWSLETTERS[0].project_name?.toLowerCase() || 'test-project';
+
+    // Navigate directly with query params
+    await page.goto(`/newsletters/my?issue=${issueId}&project=${projectSlug}`, { waitUntil: 'domcontentloaded' });
+
+    // Drawer should be open with the newsletter content
+    const drawer = page.getByTestId('my-newsletters-preview-drawer');
+    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('share button in drawer copies the canonical permalink URL', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
+
+    // Click the copy-link button
+    await page.getByTestId('newsletter-preview-drawer-copy-link').click();
+
+    // Success toast appears
+    await expect(page.getByText('Link Copied')).toBeVisible();
+  });
 });

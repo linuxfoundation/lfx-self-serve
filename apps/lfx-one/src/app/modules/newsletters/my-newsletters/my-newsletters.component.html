@@ -144,7 +144,8 @@
 
 <!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
      the body fetch resolves in onOpenNewsletter. Header is reader-framed
-     (project + received date) rather than the sender-side "Preview" default. -->
+     (project + received date) rather than the sender-side "Preview" default.
+     Share button shows the absolute permalink URL. -->
 <lfx-newsletter-preview-drawer
   [(visible)]="previewVisible"
   [subject]="selected()?.subject ?? ''"
@@ -152,4 +153,6 @@
   [displayName]="selected()?.project_name || 'Newsletter'"
   [headerTitle]="selected()?.project_name || 'Newsletter'"
   [headerSubtitle]="drawerSubtitle()"
+  [shareUrl]="selected() ? buildShareUrl(selected()!) : null"
+  (visibleChange)="onCloseDrawer()"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

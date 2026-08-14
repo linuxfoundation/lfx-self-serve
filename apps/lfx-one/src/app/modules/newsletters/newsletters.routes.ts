@@ -47,4 +47,14 @@ export const NEWSLETTER_ROUTES: Routes = [
     loadComponent: () => import('./newsletter-analytics/newsletter-analytics.component').then((m) => m.NewsletterAnalyticsComponent),
     data: { preload: false },
   },
+  {
+    // Reader page for shareable newsletter permalinks. Any authenticated user
+    // may view sent newsletters (gated upstream on project#viewer, which includes
+    // user:* wildcard). Non-managers cannot view drafts. projectSlug enables
+    // human-readable URLs; slug-to-uid resolution happens in the component.
+    path: ':projectSlug/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./newsletter-reader/newsletter-reader.component').then((m) => m.NewsletterReaderComponent),
+    data: { preload: false },
+  },
 ];
