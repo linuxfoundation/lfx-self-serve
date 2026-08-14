@@ -267,6 +267,8 @@ export class OrgPeopleDirectoryService {
       this.logSourceFailure(req, accountId, 'access principals', access.reason);
     }
 
+    this.absorbIdentitylessRows(byKey);
+
     const rows = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
@@ -276,6 +278,56 @@ export class OrgPeopleDirectoryService {
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,
     };
+  }
+
+  /**
+   * Fold each address-keyed row into the identity-keyed row that already owns that address.
+   *
+   * Sources differ in whether they report an identity: the stored roster nearly always does, live
+   * committee seats often do not. When both describe the same person at the same address, the
+   * identity rung claims one and the address rung claims the other, and they never meet — the two
+   * kinds of key are deliberately disjoint so a single pass stays order-independent.
+   *
+   * Left alone that splits a person who was previously whole, since before identity matching existed
+   * both rows keyed on the shared address and merged. This pass restores that, and only that: an
+   * address-keyed row is absorbed strictly when an identity row already lists the same address. It
+   * introduces no matching the previous behaviour did not already perform, and it cannot pull two
+   * identities together, because a row that has one is never a candidate to be absorbed.
+   */
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRow>): void {
+    const ownerByEmail = new Map<string, OrgAllEmployeeRow>();
+    for (const [key, row] of byKey) {
+      if (!key.startsWith('identity:')) continue;
+      for (const email of row.emails) {
+        // First identity row wins a contested address; a later one must not steal it, which would make
+        // the outcome depend on source ordering.
+        if (!ownerByEmail.has(email)) ownerByEmail.set(email, row);
+      }
+    }
+
+    for (const [key, orphan] of byKey) {
+      if (!key.startsWith('email:')) continue;
+      // A pending invitation is the one identity-less row that must stay standalone: nothing has yet
+      // confirmed the invitee is the person who already holds that address, and an accepted principal
+      // always carries a username, so `invited` is exactly the unverified case.
+      if (orphan.accessBadge === 'invited') continue;
+      const owner = ownerByEmail.get(key.slice('email:'.length));
+      if (!owner) continue;
+
+      for (const source of orphan.sources) this.addSource(owner, source);
+      for (const email of orphan.emails) this.addEmail(owner, email);
+      owner.mergedFrom = [...(owner.mergedFrom ?? []), key];
+      this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
+      if (!owner.accessBadge && orphan.accessBadge) owner.accessBadge = orphan.accessBadge;
+      // Same rule as the per-source folds: a stored row's counters are authoritative, so only a row
+      // built purely from live sources takes on the orphan's counts.
+      if (!owner.sources.includes('snowflake')) {
+        owner.seatsCount += orphan.seatsCount;
+        owner.boardSeatsCount += orphan.boardSeatsCount;
+        owner.committeeSeatsCount += orphan.committeeSeatsCount;
+      }
+      byKey.delete(key);
+    }
   }
 
   private addSource(row: OrgAllEmployeeRow, source: OrgPersonSource): void {

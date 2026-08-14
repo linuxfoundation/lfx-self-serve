@@ -303,6 +303,99 @@ describe('OrgPeopleDirectoryService.merge — access badge is server-attributed'
   });
 });
 
+describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the identity that owns the address', () => {
+  it('absorbs a live seat that reports no username, at an address the person already owns', async () => {
+    // The regression this covers: sources disagree on whether they report an identity, so the same
+    // person at the same address landed on two rows -- one keyed on identity, one on the address.
+    getAllEmployees.mockResolvedValue(
+      baseResponse([
+        storedRow({
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'dqualls@contractor.linuxfoundation.org',
+          emails: ['dqualls@contractor.linuxfoundation.org'],
+          seatsCount: 3,
+          committeeSeatsCount: 3,
+        }),
+      ])
+    );
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'dqualls@contractor.linuxfoundation.org', first_name: 'Dano', last_name: 'Qualls' })]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].lfUsername).toBe('dqualls');
+    expect(rows[0].sources).toEqual(expect.arrayContaining(['snowflake', 'committee']));
+  });
+
+  it('keeps the stored counters authoritative when absorbing', async () => {
+    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'kmcdermott@linuxfoundation.org' })]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].seatsCount).toBe(22);
+  });
+
+  it('adds the orphan\u2019s counts when the surviving row is itself live-only', async () => {
+    fetchAllOrgSeats.mockResolvedValue([
+      seat({ username: 'liveonly', email: 'live@example.com' }),
+      seat({ uid: 'seat-2', username: null, email: 'live@example.com' }),
+    ]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].seatsCount).toBe(2);
+  });
+
+  it('does not absorb an address the identity row does not own', async () => {
+    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'someone.else@example.com' })]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('never absorbs a row that carries its own identity', async () => {
+    // Two verified identities at one address stay apart: only identity-less rows are candidates.
+    getAllEmployees.mockResolvedValue(
+      baseResponse([
+        storedRow({
+          personKey: 'p-a',
+          lfUsername: 'dqualls',
+          name: 'Dano Qualls',
+          email: 'shared@linuxfoundation.org',
+          emails: ['shared@linuxfoundation.org'],
+        }),
+        storedRow({ personKey: 'p-b', lfUsername: 'jzemlin', name: 'Jim Zemlin', email: 'shared@linuxfoundation.org', emails: ['shared@linuxfoundation.org'] }),
+      ])
+    );
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('is order-independent when two identities list the same address', async () => {
+    getAllEmployees.mockResolvedValue(
+      baseResponse([
+        storedRow({ personKey: 'p-a', lfUsername: 'alpha', name: 'Alpha One', email: 'shared@example.com', emails: ['shared@example.com'] }),
+        storedRow({ personKey: 'p-b', lfUsername: 'beta', name: 'Beta Two', email: 'other@example.com', emails: ['other@example.com', 'shared@example.com'] }),
+      ])
+    );
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
+
+    const { rows } = await run();
+
+    // The orphan joins exactly one identity, and both identities survive.
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((r) => r.sources.includes('committee'))).toHaveLength(1);
+  });
+});
+
 describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   it('does not merge two different people who share an address', async () => {
     // The Snowflake address→member index links dqualls@linuxfoundation.org to Jim Zemlin's member
