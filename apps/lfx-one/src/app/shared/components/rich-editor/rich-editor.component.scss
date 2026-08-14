@@ -64,6 +64,11 @@
     text-decoration: underline;
   }
 
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
   // Tiptap placeholder rendered via ProseMirror decoration
   p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);

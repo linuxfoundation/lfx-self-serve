@@ -8,6 +8,7 @@ import {
   Newsletter,
   NewsletterAnalytics,
   NewsletterCancelScheduleResult,
+  NewsletterImageUploadResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
@@ -21,6 +22,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
+import FormData from 'form-data';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -201,6 +203,25 @@ export class NewsletterServiceClient {
       'POST',
       undefined,
       payload
+    );
+  }
+
+  /**
+   * Upload an image to a newsletter. The image is sent as multipart/form-data
+   * with the raw file bytes to the upstream newsletter-service. The user's
+   * bearer token is automatically forwarded by proxyRequest, so image uploads
+   * carry live FGA project-write authorization.
+   */
+  public async uploadImage(req: Request, projectUid: string, fileBuffer: Buffer, contentType: string): Promise<NewsletterImageUploadResult> {
+    const formData = new FormData();
+    formData.append('file', fileBuffer, { contentType });
+    return this.microserviceProxy.proxyRequest<NewsletterImageUploadResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/images`,
+      'POST',
+      undefined,
+      formData
     );
   }
 

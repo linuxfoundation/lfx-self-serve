@@ -7,8 +7,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import type { Editor } from '@tiptap/core';
 import { RICH_EDITOR_TOOLBAR_BUTTONS } from '@lfx-one/shared/constants';
-import { RichEditorToolbarButton } from '@lfx-one/shared/interfaces';
+import { NewsletterImageUploadResult, RichEditorToolbarButton } from '@lfx-one/shared/interfaces';
 
+import { NewsletterService } from '@services/newsletter.service';
 import { cleanPastedHtml } from './clean-pasted-html.util';
 
 @Component({
@@ -21,6 +22,7 @@ export class RichEditorComponent {
   // 1. Private injections
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly newsletterService = inject(NewsletterService);
 
   // 2. Inputs
   public readonly form = input.required<FormGroup>();
@@ -29,6 +31,8 @@ export class RichEditorComponent {
   public readonly editorStyle = input<Record<string, string>>({ minHeight: '320px' });
   public readonly readonly = input<boolean>(false);
   public readonly dataTest = input<string>();
+  // projectUid is optional — only required for newsletter image upload via insertImage
+  public readonly projectUid = input<string>('');
 
   // viewChild for the editor mount point
   protected readonly editorHost = viewChild.required<ElementRef<HTMLDivElement>>('editorHost');
@@ -88,6 +92,9 @@ export class RichEditorComponent {
       case 'link':
         this.toggleLink(editor);
         break;
+      case 'image':
+        void this.insertImage(editor);
+        break;
       case 'clear':
         chain.unsetAllMarks().clearNodes().run();
         break;
@@ -100,6 +107,8 @@ export class RichEditorComponent {
       return;
     }
 
+    // TODO: requires @tiptap/extension-image dependency, not installable in this session
+    // When available, add import('@tiptap/extension-image') to Promise.all and wire it below.
     const [{ Editor: TiptapEditor }, starterKitModule, underlineModule, linkModule, placeholderModule] = await Promise.all([
       import('@tiptap/core'),
       import('@tiptap/starter-kit'),
@@ -112,6 +121,7 @@ export class RichEditorComponent {
     const Underline = underlineModule.default ?? underlineModule;
     const Link = linkModule.default ?? linkModule;
     const Placeholder = placeholderModule.default ?? placeholderModule;
+    // const Image = imageModule.default ?? imageModule; // TODO: uncomment when @tiptap/extension-image is available
 
     const ctrl = this.getControl();
     const initialValue = typeof ctrl?.value === 'string' ? ctrl.value : '';
@@ -128,6 +138,7 @@ export class RichEditorComponent {
           HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank' },
         }),
         Placeholder.configure({ placeholder: this.placeholder() }),
+        // Image.configure({ HTMLAttributes: { class: 'lfx-rich-editor__image max-w-full h-auto' } }), // TODO: uncomment when @tiptap/extension-image is available
       ],
       content: initialValue,
       editable: !this.readonly(),
@@ -197,6 +208,36 @@ export class RichEditorComponent {
       return;
     }
     editor.chain().focus().extendMarkRange('link').setLink({ href: trimmed }).run();
+  }
+
+  private async insertImage(editor: Editor): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    // Create a hidden file input and trigger the native picker
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      try {
+        const result = await this.newsletterService.uploadImage(this.projectUid(), file).toPromise();
+
+        if (result) {
+          editor.chain().focus().setImage({ src: result.public_url }).run();
+        }
+      } catch (error) {
+        console.error('Failed to upload image:', error);
+      }
+    });
+
+    input.click();
   }
 
   private refreshActiveStates(): void {

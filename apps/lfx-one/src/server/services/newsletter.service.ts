@@ -8,6 +8,7 @@ import {
   Newsletter,
   NewsletterAnalytics,
   NewsletterCancelScheduleResult,
+  NewsletterImageUploadResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
@@ -163,6 +164,10 @@ export class NewsletterService {
 
   public testSend(req: Request, projectUid: string, payload: NewsletterTestSendPayload): Promise<{ ok: boolean }> {
     return this.newsletterClient.testSend(req, projectUid, payload);
+  }
+
+  public uploadImage(req: Request, projectUid: string, fileBuffer: Buffer, contentType: string): Promise<NewsletterImageUploadResult> {
+    return this.newsletterClient.uploadImage(req, projectUid, fileBuffer, contentType);
   }
 
   public getAnalytics(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAnalytics> {

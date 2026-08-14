@@ -86,6 +86,15 @@ export interface NewsletterTestSendPayload {
   to_email: string;
 }
 
+export interface NewsletterImageUploadResult {
+  hash: string;
+  content_type: string;
+  width: number;
+  height: number;
+  byte_size: number;
+  public_url: string;
+}
+
 export interface NewsletterSendFailure {
   email: string;
   error: string;

@@ -11,6 +11,7 @@ import {
   Newsletter,
   NewsletterAnalytics,
   NewsletterCancelScheduleResult,
+  NewsletterImageUploadResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
@@ -52,6 +53,14 @@ export class NewsletterService {
 
   public testSend(projectUid: string, payload: NewsletterTestSendPayload): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/projects/${this.enc(projectUid)}/newsletters/test-send`, payload).pipe(take(1));
+  }
+
+  public uploadImage(projectUid: string, file: File): Observable<NewsletterImageUploadResult> {
+    return this.http
+      .post<NewsletterImageUploadResult>(`/api/projects/${this.enc(projectUid)}/newsletters/images`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+      })
+      .pipe(take(1));
   }
 
   public generate(projectUid: string, payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {
