@@ -11,7 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { MyNewsletter } from '@lfx-one/shared/interfaces';
+import { MyNewsletter, MyNewsletterRow } from '@lfx-one/shared/interfaces';
 import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
@@ -85,6 +85,14 @@ export class MyNewslettersComponent {
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initProjectOptions();
   protected readonly filteredNewsletters: Signal<MyNewsletter[]> = this.initFilteredNewsletters();
+  /**
+   * `filteredNewsletters()` with each row's permalink path precomputed —
+   * the table template reads `row.issuePath` rather than calling a
+   * template function per row (frontend-checklist.md § 4).
+   */
+  protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
+    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter) }))
+  );
   protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));

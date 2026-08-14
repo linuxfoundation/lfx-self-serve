@@ -261,7 +261,10 @@ test.describe('My Newsletters — Me-lens feed', () => {
     const newTabButton = page.getByTestId('newsletter-preview-drawer-open-new-tab');
     await expect(newTabButton).toHaveAttribute('target', '_blank');
     await expect(newTabButton).toHaveAttribute('rel', /noopener/);
-    await expect(newTabButton).toHaveAttribute('href', `/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
+    // The drawer's shareUrl is the absolute permalink (toAbsoluteUrl against the current origin),
+    // unlike the list's row anchor, which is relative.
+    const expectedUrl = new URL(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`, page.url()).toString();
+    await expect(newTabButton).toHaveAttribute('href', expectedUrl);
 
     const [newPage] = await Promise.all([context.waitForEvent('page'), newTabButton.click()]);
     await expect(newPage).toHaveURL(new RegExp(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`));
