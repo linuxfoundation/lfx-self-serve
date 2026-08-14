@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard } from '@angular/cdk/clipboard';
 import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -10,7 +9,7 @@ import { Project } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
-import { MessageService } from 'primeng/api';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, finalize, filter, map, of, switchMap } from 'rxjs';
 
@@ -36,8 +35,7 @@ export class NewsletterReaderComponent {
   private readonly router = inject(Router);
   private readonly projectService = inject(ProjectService);
   private readonly newsletterService = inject(NewsletterService);
-  private readonly clipboard = inject(Clipboard);
-  private readonly messageService = inject(MessageService);
+  private readonly clipboardShare = inject(ClipboardShareService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === WritableSignals ===
@@ -88,20 +86,7 @@ export class NewsletterReaderComponent {
     const url = this.shareUrl();
     if (!url) return;
 
-    const success = this.clipboard.copy(url);
-    if (success) {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Link Copied',
-        detail: 'Newsletter link copied to clipboard.',
-      });
-    } else {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Copy Failed',
-        detail: 'Failed to copy link. Please try again.',
-      });
-    }
+    this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
   }
 
   protected onBackClick(): void {

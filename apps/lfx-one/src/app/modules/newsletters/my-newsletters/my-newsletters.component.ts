@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardComponent } from '@components/card/card.component';
@@ -18,7 +18,7 @@ import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, finalize, map, of } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, skip, switchMap } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -106,23 +106,28 @@ export class MyNewslettersComponent {
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => this.searchTerm.set(value ?? ''));
 
-    // Auto-open drawer if query params present on page load or back/forward
-    effect(() => {
-      const issueId = this.queryIssueId();
-      const projectSlug = this.queryProjectSlug();
-      if (issueId && projectSlug && !this.openingId()) {
-        // Find matching newsletter in the feed
-        const newsletter = this.myNewsletters().find((n) => n.id === issueId && n.project_slug === projectSlug);
-        if (newsletter) {
-          // Newsletter is in the feed — open the drawer via the normal path
-          this.onOpenNewsletter(newsletter);
-        } else {
-          // Newsletter not in the feed (e.g. non-member pasted a URL).
-          // Redirect to the canonical permalink page, which handles access uniformly.
-          this.router.navigate(['/newsletters', projectSlug, issueId]);
-        }
-      }
-    });
+    // Auto-open drawer if query params present on page load or back/forward.
+    // Skip the initial emission (page load) and only react to actual param changes.
+    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.myNewsletters), toObservable(this.openingId)])
+      .pipe(
+        skip(1),
+        switchMap(([issueId, projectSlug, newsletters, opening]) => {
+          if (issueId && projectSlug && !opening) {
+            const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
+            if (newsletter) {
+              // Newsletter is in the feed — open the drawer via the normal path
+              this.onOpenNewsletter(newsletter);
+            } else {
+              // Newsletter not in the feed (e.g. non-member pasted a URL).
+              // Redirect to the canonical permalink page, which handles access uniformly.
+              this.router.navigate(['/newsletters', projectSlug, issueId]);
+            }
+          }
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe();
   }
 
   // === Protected Methods ===

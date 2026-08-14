@@ -1,10 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard } from '@angular/cdk/clipboard';
 import { Component, inject, input, model } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { MessageService } from 'primeng/api';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { DrawerModule } from 'primeng/drawer';
 
 import { NewsletterPreviewComponent } from '../newsletter-preview/newsletter-preview.component';
@@ -16,8 +15,7 @@ import { NewsletterPreviewComponent } from '../newsletter-preview/newsletter-pre
 })
 export class NewsletterPreviewDrawerComponent {
   // === Services ===
-  private readonly clipboard = inject(Clipboard);
-  private readonly messageService = inject(MessageService);
+  private readonly clipboardShare = inject(ClipboardShareService);
 
   // === Inputs (pass-through to the preview component) ===
   public readonly subject = input.required<string>();
@@ -43,20 +41,7 @@ export class NewsletterPreviewDrawerComponent {
     const url = this.shareUrl();
     if (!url) return;
 
-    const success = this.clipboard.copy(url);
-    if (success) {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Link Copied',
-        detail: 'Newsletter link copied to clipboard.',
-      });
-    } else {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Copy Failed',
-        detail: 'Failed to copy link. Please try again.',
-      });
-    }
+    this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
   }
 
   public onClose(): void {
