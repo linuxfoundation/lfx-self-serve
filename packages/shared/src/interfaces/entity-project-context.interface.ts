@@ -8,4 +8,8 @@ export interface EntityWithProject {
   project_slug?: string | null;
   project_name?: string | null;
   foundation_name?: string | null;
+  /** Whether the owning project is a foundation. When non-null it drives the
+   * setFoundation/setProject choice in syncEntityProjectContext; when absent the
+   * /foundation/* URL-prefix heuristic is the fallback. */
+  is_foundation?: boolean | null;
 }

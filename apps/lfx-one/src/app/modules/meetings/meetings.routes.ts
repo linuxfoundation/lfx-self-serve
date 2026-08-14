@@ -22,7 +22,10 @@ export const MEETING_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { writeFeature: 'meetings' },
+    // entityScopedSlug: writerGuard resolves the authorization slug from the meeting itself on
+    // this route. A route-data flag, not a path check, so a route rename/restructure
+    // can't silently revert the guard to stale-context authorization.
+    data: { writeFeature: 'meetings', entityScopedSlug: true },
   },
   {
     path: ':id/details',
