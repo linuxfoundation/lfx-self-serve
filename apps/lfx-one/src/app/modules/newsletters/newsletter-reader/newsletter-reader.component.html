@@ -7,9 +7,7 @@
     <lfx-newsletter-not-found reason="not-found" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
   } @else if (notFound()) {
     <!-- 404: draft hidden from non-writer OR project/newsletter not found -->
-    <lfx-newsletter-not-found
-      [reason]="isDraftHidden() ? 'draft' : 'not-found'"
-      data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
+    <lfx-newsletter-not-found [reason]="isDraftHidden() ? 'draft' : 'not-found'" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
   } @else if (loading()) {
     <!-- Skeleton loader -->
     <div class="mt-6 flex flex-col gap-4">

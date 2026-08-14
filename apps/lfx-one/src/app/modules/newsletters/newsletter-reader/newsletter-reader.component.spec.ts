@@ -64,9 +64,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should initialize with loading true', () => {
     vi.mocked(projectService.getProject).mockReturnValue(of({ uid: 'proj-123', writer: false } as any));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(
-      of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any)
-    );
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -75,9 +73,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should render draft newsletter when user is a writer', () => {
     vi.mocked(projectService.getProject).mockReturnValue(of({ uid: 'proj-123', writer: true } as any));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(
-      of({ subject: 'Draft', body_html: '<p>Draft content</p>', status: 'draft' } as any)
-    );
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of({ subject: 'Draft', body_html: '<p>Draft content</p>', status: 'draft' } as any));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -92,9 +88,7 @@ describe('NewsletterReaderComponent', () => {
   it('should call getProject with slug from route params', () => {
     const getProjectSpy = vi.mocked(projectService.getProject);
     getProjectSpy.mockReturnValue(of({ uid: 'proj-123', writer: false } as any));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(
-      of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any)
-    );
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -106,9 +100,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should have copyLink method bound to clipboard service', () => {
     vi.mocked(projectService.getProject).mockReturnValue(of({ uid: 'proj-123', writer: false } as any));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(
-      of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any)
-    );
+    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of({ subject: 'Test', body_html: '<p>Test</p>', status: 'sent' } as any));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;

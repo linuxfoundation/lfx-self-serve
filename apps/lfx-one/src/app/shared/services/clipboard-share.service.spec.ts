@@ -22,11 +22,7 @@ describe('ClipboardShareService', () => {
     };
 
     TestBed.configureTestingModule({
-      providers: [
-        ClipboardShareService,
-        { provide: Clipboard, useValue: mockClipboard },
-        { provide: MessageService, useValue: mockMessageService },
-      ],
+      providers: [ClipboardShareService, { provide: Clipboard, useValue: mockClipboard }, { provide: MessageService, useValue: mockMessageService }],
     });
 
     service = TestBed.inject(ClipboardShareService);

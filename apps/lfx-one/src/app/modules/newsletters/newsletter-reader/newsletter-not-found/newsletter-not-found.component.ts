@@ -19,6 +19,6 @@ export class NewsletterNotFoundComponent {
   protected readonly description = computed(() =>
     this.reason() === 'draft'
       ? 'Only project managers can view draft newsletters. If you have access questions, contact your project manager.'
-      : "We couldn't find the newsletter you're looking for. It may have been removed or the link may be incorrect.",
+      : "We couldn't find the newsletter you're looking for. It may have been removed or the link may be incorrect."
   );
 }

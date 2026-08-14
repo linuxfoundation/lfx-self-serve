@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -66,7 +66,7 @@ export class MyNewslettersComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
-  protected readonly previewVisible = signal<boolean>(false);
+  protected readonly previewVisible = model<boolean>(false);
   /** Newsletter id whose body fetch is in flight — serializes drawer opens. */
   protected readonly openingId = signal<string | null>(null);
   protected readonly selected = signal<MyNewsletter | null>(null);
@@ -76,14 +76,8 @@ export class MyNewslettersComponent {
   protected readonly projectFilter = signal<string | null>(null);
 
   // === Query Param Signals (for drawer↔URL sync) ===
-  protected readonly queryIssueId: Signal<string | null> = toSignal(
-    this.route.queryParamMap.pipe(map((m) => m.get('issue'))),
-    { initialValue: null },
-  );
-  protected readonly queryProjectSlug: Signal<string | null> = toSignal(
-    this.route.queryParamMap.pipe(map((m) => m.get('project'))),
-    { initialValue: null },
-  );
+  protected readonly queryIssueId: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('issue'))), { initialValue: null });
+  protected readonly queryProjectSlug: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('project'))), { initialValue: null });
 
   // === Computed Signals ===
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -125,7 +119,7 @@ export class MyNewslettersComponent {
           }
           return of(null);
         }),
-        takeUntilDestroyed(this.destroyRef),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }

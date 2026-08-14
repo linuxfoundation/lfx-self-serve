@@ -48,13 +48,7 @@ async function stubProjectApi(page: Page, project: Project | null): Promise<void
   });
 }
 
-async function stubNewsletterApi(
-  page: Page,
-  projectUid: string,
-  newsletterId: string,
-  status: string = 'sent',
-  shouldExist: boolean = true,
-): Promise<void> {
+async function stubNewsletterApi(page: Page, projectUid: string, newsletterId: string, status: string = 'sent', shouldExist: boolean = true): Promise<void> {
   await page.route(`**/api/projects/${projectUid}/newsletters/${newsletterId}`, (route) => {
     if (!shouldExist) {
       return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });

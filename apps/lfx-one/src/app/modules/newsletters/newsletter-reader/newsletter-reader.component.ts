@@ -55,8 +55,7 @@ export class NewsletterReaderComponent {
 
   // === Data Signals (Complex — init via private functions) ===
   protected readonly project: Signal<Project | null> = this.initProject();
-  protected readonly newsletter: Signal<{ id: string; subject: string; body_html: string; status: string; sent_at?: string } | null> =
-    this.initNewsletter();
+  protected readonly newsletter: Signal<{ id: string; subject: string; body_html: string; status: string; sent_at?: string } | null> = this.initNewsletter();
 
   // === Computed: draft hidden from non-manager ===
   protected readonly isDraftHidden = computed(() => {
@@ -98,9 +97,9 @@ export class NewsletterReaderComponent {
     return toSignal(
       toObservable(this.projectSlug).pipe(
         filter((slug): slug is string => !!slug),
-        switchMap((slug) => this.projectService.getProject(slug, false).pipe(catchError(() => of(null)))),
+        switchMap((slug) => this.projectService.getProject(slug, false).pipe(catchError(() => of(null))))
       ),
-      { initialValue: null },
+      { initialValue: null }
     );
   }
 
@@ -117,9 +116,9 @@ export class NewsletterReaderComponent {
             this.notFound.set(true);
           }
           this.loading.set(false);
-        }),
+        })
       ),
-      { initialValue: null },
+      { initialValue: null }
     );
   }
 }
