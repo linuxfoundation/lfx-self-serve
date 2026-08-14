@@ -1598,6 +1598,51 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
+   * A transport failure means the bytes never left this process, so nothing upstream can have
+   * started — as definite as a 4xx, and safer to retry than one.
+   *
+   * Observed 2026-08-13 with campaign-service stopped: the create answered "could not be
+   * confirmed — check the ad platforms before retrying" for a request that was never sent. The
+   * `definitelyRejected` predicate could not catch it, because a connection failure is not a
+   * `MicroserviceError` at all — the proxy only wraps errors carrying `.status` and `.code`.
+   *
+   * Asserts the message does NOT tell the user to go check the ad platforms. Asserting only that
+   * some error came back would pass on the old wording.
+   */
+  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['ECONNRESET']])(
+    'reports a %s create as definitely-not-created rather than unconfirmed',
+    async (code) => {
+      bothFlagsOn();
+      const transportError = Object.assign(new Error('connect failed'), { code });
+      proxyRequestWithResponse.mockRejectedValueOnce(transportError);
+
+      const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+      expect(res.enabled).toBe(true);
+      expect(res.jobId).toBeNull();
+      expect(res.error).toContain('nothing was created');
+      expect(res.error).not.toContain('may have started');
+      expect(res.error).not.toContain('check the ad platforms');
+    }
+  );
+
+  /**
+   * The contrast, and the load-bearing half: a 5xx IS genuinely indeterminate — the request
+   * reached campaign-service and the outcome is unknown — so it must keep the "may have started"
+   * wording. Without this test the fix above could be satisfied by making every failure read as
+   * definite, which is the dangerous direction: it would invite exactly the duplicate-create
+   * retry the cutover exists to prevent.
+   */
+  it('still reports a 5xx create as unconfirmed, because the request did reach the service', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream boom', 502, 'INTERNAL_ERROR', { operation: 'create' }));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+    expect(res.error).toContain('could not be confirmed');
+  });
+
+  /**
    * campaign-service has NO Demand Gen path — `internal/dispatch/googleads.go` creates a Search
    * campaign and nothing else. The legacy path does support it, so this is a capability the
    * cutover loses rather than one nobody has.

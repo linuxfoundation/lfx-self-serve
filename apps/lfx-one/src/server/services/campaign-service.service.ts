@@ -181,6 +181,35 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
   return envelope[key] !== undefined;
 }
 
+/**
+ * Did the request definitively never reach campaign-service?
+ *
+ * A transport failure — ECONNREFUSED, ENOTFOUND, ECONNRESET on connect, DNS failure — means the
+ * bytes never left this process, so nothing upstream can have started. That is as DEFINITE as a
+ * 4xx refusal, and safer to retry than one.
+ *
+ * It needs its own check because such a failure is NOT a `MicroserviceError`: the proxy only
+ * wraps errors carrying `.status` and `.code` (`microservice-proxy.service.ts:38-40`) and
+ * re-throws everything else raw. So every `error instanceof MicroserviceError` predicate reads
+ * false for it and falls through to the indeterminate branch.
+ *
+ * Observed 2026-08-13: with campaign-service stopped, a create answered "could not be confirmed —
+ * check the ad platforms before retrying" for a request that was never sent. That is the exact
+ * harm those predicates exist to prevent, told to a user who then has to go read an ad account to
+ * rule out a campaign that could not exist.
+ *
+ * Deliberately NOT keyed on the message text, which is not a contract. `code` is the documented
+ * Node.js system-error field, and an unrecognised code stays indeterminate — this widens what
+ * counts as definite, and a wrong guess in that direction is the dangerous one.
+ */
+const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function requestNeverLeft(error: unknown): boolean {
+  if (error instanceof MicroserviceError) return false; // it got a response; not a transport failure
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NEVER_SENT_ERROR_CODES.has(code);
+}
+
 /** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
 interface CampaignServiceMarketingEmail {
   id?: string;
@@ -683,6 +712,16 @@ export class CampaignServiceClient {
       // tell us whether a job exists, and the create endpoints expose no such route today. That
       // is the better fix and belongs with an idempotency key on the service side; this stops the
       // active harm of instructing the retry.
+      // A request that never left this process is definite too — see `requestNeverLeft`. Without
+      // it, campaign-service simply being unreachable answered "it may have started, check the ad
+      // platforms", which is the retry-inducing wording this branch exists to avoid.
+      if (requestNeverLeft(error)) {
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Could not reach the campaign service, so nothing was created. Please try again.',
+        };
+      }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
@@ -843,6 +882,12 @@ export class CampaignServiceClient {
     error: unknown,
     versionIsAcceptable: (version: number) => boolean
   ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // A request that never left this process cannot have committed, so there is nothing to
+    // reconcile — skip the reads rather than spending them proving a negative. Same class as the
+    // `definitelyRejected` case below; see `requestNeverLeft`.
+    if (requestNeverLeft(error)) {
+      return null;
+    }
     const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
     if (definitelyRejected) {
       return null;
