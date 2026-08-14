@@ -337,6 +337,10 @@ export class OrgPeopleDirectoryService {
       for (const email of orphan.emails) this.addEmail(owner, email);
       owner.mergedFrom = [...(owner.mergedFrom ?? []), key];
       this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
+      // Reachable only for an accepted principal whose settings record carries no username: it keys on
+      // the address like any orphan, but `isPending` is false so its badge is a real role rather than
+      // `invited`. Not observed today — every accepted principal currently has one — but member-service
+      // merely declines to emit an FGA tuple for that combination, it does not prevent the record.
       if (!owner.accessBadge && orphan.accessBadge) owner.accessBadge = orphan.accessBadge;
       byKey.delete(key);
     }

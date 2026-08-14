@@ -446,6 +446,24 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
     expect(orphan?.engagedFoundationIds).toEqual(['f-1']);
   });
 
+  it('carries the badge across when an accepted principal has no username', async () => {
+    // The one shape that reaches the badge transfer: accepted, so `isPending` is false and the badge is
+    // a real role, but with no username, so it keys on the address and arrives as an orphan. Rare enough
+    // that it looks like dead code, and representable enough to keep.
+    getAllEmployees.mockResolvedValue(
+      baseResponse([storedRow({ lfUsername: 'nobadge', name: 'No Badge', email: 'nobadge@example.com', emails: ['nobadge@example.com'] })])
+    );
+    getAccessPrincipals.mockResolvedValue([
+      accessUser({ email: 'nobadge@example.com', username: null, inviteStatus: 'accepted', isPending: false, role: 'admin' }),
+    ]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].accessBadge).toBe('admin');
+    expect(rows[0].sources).toEqual(expect.arrayContaining(['snowflake', 'access']));
+  });
+
   it('takes a live orphan\u2019s seat counts before its sources mark the owner as stored', async () => {
     fetchAllOrgSeats.mockResolvedValue([
       seat({ username: 'liveowner', email: 'liveowner@example.com' }),
