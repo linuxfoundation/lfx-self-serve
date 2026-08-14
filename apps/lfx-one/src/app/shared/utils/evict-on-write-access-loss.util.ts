@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { filter, skip, take } from 'rxjs';
 
 import { LensService } from '../services/lens.service';
+import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 
 /**
@@ -31,6 +32,14 @@ import { ProjectContextService } from '../services/project-context.service';
  *
  * Must be called inside a component constructor (injection context required).
  *
+ * writerGuard's executive-director fast path is mirrored here as an early return: the guard
+ * admits the ED persona synchronously without an OpenFGA check, but the reactive predicates
+ * (the default canWrite and caller-built signals like MeetingManageComponent.initWriteAccess)
+ * only model the OpenFGA legs, so they resolve false for an ED who lacks writer/coordinator on
+ * the entity's project — evicting a guard-admitted ED mid-edit. The persona is cookie-seeded
+ * synchronously in PersonaService's constructor, so the value checked here is the same one the
+ * guard checked at navigation time.
+ *
  * skip(1) drops the boot emission — the access signal's value at subscription. That value is
  * false for the default canWrite predicate (pre-load), but caller-built predicates that mirror
  * writerGuard's admission (e.g. MeetingManageComponent.initWriteAccess) are provisionally TRUE
@@ -42,7 +51,13 @@ export function evictOnWriteAccessLoss(access?: Signal<boolean>): void {
   const router = inject(Router);
   const projectContextService = inject(ProjectContextService);
   const lensService = inject(LensService);
+  const personaService = inject(PersonaService);
   const destroyRef = inject(DestroyRef);
+
+  // Mirror writerGuard's executive-director fast path — see the doc block above.
+  if (personaService.currentPersona() === 'executive-director') {
+    return;
+  }
 
   toObservable(access ?? projectContextService.canWrite)
     .pipe(
