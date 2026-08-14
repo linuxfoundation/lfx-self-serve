@@ -10,7 +10,6 @@ import {
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
-  NewsletterImageUploadResult,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
   NewsletterSchedulePayload,

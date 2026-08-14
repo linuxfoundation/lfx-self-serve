@@ -7,7 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import type { Editor } from '@tiptap/core';
 import { RICH_EDITOR_TOOLBAR_BUTTONS } from '@lfx-one/shared/constants';
-import { NewsletterImageUploadResult, RichEditorToolbarButton } from '@lfx-one/shared/interfaces';
+import { RichEditorToolbarButton } from '@lfx-one/shared/interfaces';
 
 import { NewsletterService } from '@services/newsletter.service';
 import { cleanPastedHtml } from './clean-pasted-html.util';
@@ -107,21 +107,20 @@ export class RichEditorComponent {
       return;
     }
 
-    // TODO: requires @tiptap/extension-image dependency, not installable in this session
-    // When available, add import('@tiptap/extension-image') to Promise.all and wire it below.
-    const [{ Editor: TiptapEditor }, starterKitModule, underlineModule, linkModule, placeholderModule] = await Promise.all([
+    const [{ Editor: TiptapEditor }, starterKitModule, underlineModule, linkModule, placeholderModule, imageModule] = await Promise.all([
       import('@tiptap/core'),
       import('@tiptap/starter-kit'),
       import('@tiptap/extension-underline'),
       import('@tiptap/extension-link'),
       import('@tiptap/extension-placeholder'),
+      import('@tiptap/extension-image'),
     ]);
 
     const StarterKit = starterKitModule.default ?? starterKitModule;
     const Underline = underlineModule.default ?? underlineModule;
     const Link = linkModule.default ?? linkModule;
     const Placeholder = placeholderModule.default ?? placeholderModule;
-    // const Image = imageModule.default ?? imageModule; // TODO: uncomment when @tiptap/extension-image is available
+    const Image = imageModule.default ?? imageModule;
 
     const ctrl = this.getControl();
     const initialValue = typeof ctrl?.value === 'string' ? ctrl.value : '';
@@ -138,7 +137,7 @@ export class RichEditorComponent {
           HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank' },
         }),
         Placeholder.configure({ placeholder: this.placeholder() }),
-        // Image.configure({ HTMLAttributes: { class: 'lfx-rich-editor__image max-w-full h-auto' } }), // TODO: uncomment when @tiptap/extension-image is available
+        Image.configure({ HTMLAttributes: { class: 'lfx-rich-editor__image max-w-full h-auto' } }),
       ],
       content: initialValue,
       editable: !this.readonly(),
