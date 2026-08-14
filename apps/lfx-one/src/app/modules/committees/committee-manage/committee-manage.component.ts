@@ -235,21 +235,14 @@ export class CommitteeManageComponent {
       return;
     }
 
+    // flushMemberUpdates() wraps every operation in its own catchError, so this can only ever
+    // emit a results array and complete — never error. Failures surface through the results
+    // array (see showMemberOperationToast's partial-failure branch), not here.
     this.flushMemberUpdates()
       .pipe(finalize(() => this.submitting.set(false)))
-      .subscribe({
-        next: (results) => {
-          this.showMemberOperationToast(results);
-          this.router.navigate(['/groups']);
-        },
-        error: (err: HttpErrorResponse) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: getHttpErrorDetail(err, 'Failed to save member changes'),
-          });
-          this.router.navigate(['/groups']);
-        },
+      .subscribe((results) => {
+        this.showMemberOperationToast(results);
+        this.router.navigate(['/groups']);
       });
   }
 

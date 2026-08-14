@@ -93,6 +93,8 @@ export class AddMemberDialogComponent {
 
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
   private resolvedOrganizationName = '';
+  /** Set by onCancel() — lets a still-pending async org resolution's collect-only close no-op. */
+  private cancelled = false;
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
   public readonly mode: AddMemberDialogMode = this.config.data?.mode ?? 'direct-add';
@@ -257,6 +259,11 @@ export class AddMemberDialogComponent {
   }
 
   public onCancel(): void {
+    // Collect-only submit can still be mid-flight (awaiting async org resolution) when Cancel is
+    // clicked — dialogRef.close(false) here would otherwise be silently followed by a second,
+    // ignored close(staged) once resolution finishes, discarding the staged invites with no
+    // feedback. Guard that late close instead of re-disabling Cancel (see onSubmit's comment).
+    this.cancelled = true;
     this.dialogRef.close(false);
   }
 
@@ -291,16 +298,21 @@ export class AddMemberDialogComponent {
 
     // Disable the submit button up front — org resolution below is async, and leaving it enabled
     // during that window allows a double-click that fires a second resolve → invite chain. Cancel
-    // stays enabled in collect-only mode (see the template) — staging is synchronous and closing
-    // mid-resolution is safe there — but stays disabled while submitting in the immediate-send
-    // modes, since canceling mid-flight can abort in-progress member/invite POSTs after some have
-    // already succeeded, with no summary toast and no parent refresh.
+    // stays enabled in collect-only mode (see the template) so the dialog is never unresponsive —
+    // but if the user cancels while org resolution below is still pending, the collect-only close
+    // in complete() below must no-op (see the `cancelled` guard) rather than staging after the
+    // dialog already closed. Cancel stays disabled while submitting in the immediate-send modes,
+    // since canceling mid-flight can abort in-progress member/invite POSTs after some have already
+    // succeeded, with no summary toast and no parent refresh.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
     const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
       // Collect-only: return the built invites for the caller to stage; do not send them now.
       if (this.collectOnly) {
+        if (this.cancelled) {
+          return;
+        }
         const staged: CreateCommitteeInviteRequest[] = emails.map((email) => ({ invitee_email: email, role, organization: organization ?? null }));
         this.dialogRef.close(staged);
         return;

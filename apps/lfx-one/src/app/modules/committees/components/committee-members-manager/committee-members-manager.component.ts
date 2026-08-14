@@ -118,6 +118,10 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted'));
   public readonly memberCount = computed(() => this.visibleMembers().length);
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
+  /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
+  public readonly mutationsDisabled = computed(
+    () => this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting()
+  );
 
   // Complex computed signals (using private initializers)
   public readonly filteredMembers = this.initFilteredMembers();
@@ -368,34 +372,10 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private handleEditMemberResult(originalMember: CommitteeMemberWithState, memberData: CreateCommitteeMemberRequest): void {
     // Build updated CommitteeMember object from the form data
     const updatedMemberData: CommitteeMember = {
+      ...this.memberFieldsFromRequest(memberData),
       uid: originalMember.uid,
       committee_uid: originalMember.committee_uid,
       committee_name: originalMember.committee_name,
-      email: memberData.email,
-      first_name: memberData.first_name || '',
-      last_name: memberData.last_name || '',
-      job_title: memberData.job_title || undefined,
-      appointed_by: memberData.appointed_by || undefined,
-      organization: memberData.organization
-        ? {
-            name: memberData.organization.name || '',
-            website: memberData.organization.website || undefined,
-          }
-        : undefined,
-      role: memberData.role
-        ? {
-            name: memberData.role.name,
-            start_date: memberData.role.start_date || undefined,
-            end_date: memberData.role.end_date || undefined,
-          }
-        : undefined,
-      voting: memberData.voting
-        ? {
-            status: memberData.voting.status,
-            start_date: memberData.voting.start_date || undefined,
-            end_date: memberData.voting.end_date || undefined,
-          }
-        : undefined,
       created_at: originalMember.created_at,
       updated_at: new Date().toISOString(),
     };
@@ -410,34 +390,10 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private handleAddMemberResult(memberData: CreateCommitteeMemberRequest): void {
     // Build complete CommitteeMember object from the form data
     const newMemberData: CommitteeMember = {
+      ...this.memberFieldsFromRequest(memberData),
       uid: '',
       committee_uid: this.committeeId() || '',
       committee_name: this.committee()?.name || '',
-      email: memberData.email,
-      first_name: memberData.first_name || '',
-      last_name: memberData.last_name || '',
-      job_title: memberData.job_title || undefined,
-      appointed_by: memberData.appointed_by || undefined,
-      organization: memberData.organization
-        ? {
-            name: memberData.organization.name || '',
-            website: memberData.organization.website || undefined,
-          }
-        : undefined,
-      role: memberData.role
-        ? {
-            name: memberData.role.name,
-            start_date: memberData.role.start_date || undefined,
-            end_date: memberData.role.end_date || undefined,
-          }
-        : undefined,
-      voting: memberData.voting
-        ? {
-            status: memberData.voting.status,
-            start_date: memberData.voting.start_date || undefined,
-            end_date: memberData.voting.end_date || undefined,
-          }
-        : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

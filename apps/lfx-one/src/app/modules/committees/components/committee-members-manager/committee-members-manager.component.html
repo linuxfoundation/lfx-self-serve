@@ -17,7 +17,7 @@
         size="small"
         label="Invite by email"
         icon="fa-light fa-envelope"
-        [disabled]="loading() || committeeLoading() || membersLoadFailed() || committeeLoadFailed() || submitting()"
+        [disabled]="mutationsDisabled()"
         data-testid="invite-by-email-button"
         (click)="openInviteByEmailDialog()">
       </lfx-button>
@@ -26,7 +26,7 @@
         label="Add with details"
         icon="fa-light fa-user-plus"
         severity="secondary"
-        [disabled]="submitting()"
+        [disabled]="mutationsDisabled()"
         data-testid="add-member-button"
         (click)="openAddMemberDialog()">
       </lfx-button>
@@ -59,7 +59,7 @@
             pTooltip="Remove"
             tooltipPosition="top"
             [attr.aria-label]="'Remove invitation for ' + invite.invitee_email"
-            [disabled]="loading() || committeeLoading() || membersLoadFailed() || committeeLoadFailed() || submitting()"
+            [disabled]="mutationsDisabled()"
             data-testid="remove-pending-invite"
             (click)="removePendingInvite(invite.invitee_email)">
           </lfx-button>
@@ -187,7 +187,7 @@
                   styleClass="text-gray-400 hover:text-blue-600"
                   pTooltip="Edit"
                   tooltipPosition="top"
-                  [disabled]="submitting()"
+                  [disabled]="mutationsDisabled()"
                   data-testid="edit-member-button"
                   (click)="openEditMemberDialog(member)">
                 </lfx-button>
@@ -207,7 +207,7 @@
                   styleClass="text-gray-400 hover:text-red-600"
                   pTooltip="Remove"
                   tooltipPosition="top"
-                  [disabled]="submitting()"
+                  [disabled]="mutationsDisabled()"
                   (click)="handleMemberDelete(member.uid || member.tempId || '')">
                 </lfx-button>
               </div>
