@@ -18,7 +18,7 @@ import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, skip, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -100,28 +100,34 @@ export class MyNewslettersComponent {
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => this.searchTerm.set(value ?? ''));
 
-    // Auto-open drawer if query params present on page load or back/forward.
-    // Skip the initial emission (page load) and only react to actual param changes.
-    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.myNewsletters), toObservable(this.openingId)])
-      .pipe(
-        skip(1),
-        switchMap(([issueId, projectSlug, newsletters, opening]) => {
-          if (issueId && projectSlug && !opening) {
-            const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
-            if (newsletter) {
-              // Newsletter is in the feed — open the drawer via the normal path
-              this.onOpenNewsletter(newsletter);
-            } else {
-              // Newsletter not in the feed (e.g. non-member pasted a URL).
-              // Redirect to the canonical permalink page, which handles access uniformly.
-              this.router.navigate(['/newsletters', projectSlug, issueId]);
-            }
+    // Drawer ↔ URL sync: open the drawer when `issue`/`project` params are
+    // present (page load or forward navigation), close it when they clear
+    // (browser back). Idempotent — an emission for an issue that is already
+    // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
+    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.myNewsletters), toObservable(this.loading)])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([issueId, projectSlug, newsletters, loading]) => {
+        if (!issueId || !projectSlug) {
+          // Params cleared (drawer close or back navigation) — close the drawer.
+          if (this.previewVisible()) {
+            this.previewVisible.set(false);
           }
-          return of(null);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe();
+          return;
+        }
+        // Wait for the feed before deciding; skip if this issue is already opening or open.
+        if (loading || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
+          return;
+        }
+        const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
+        if (newsletter) {
+          // Newsletter is in the feed — open the drawer via the normal path
+          this.onOpenNewsletter(newsletter);
+        } else {
+          // Newsletter not in the feed (e.g. non-member pasted a URL).
+          // Redirect to the canonical permalink page, which handles access uniformly.
+          this.router.navigate(['/newsletters', projectSlug, issueId]);
+        }
+      });
   }
 
   // === Protected Methods ===
@@ -174,9 +180,12 @@ export class MyNewslettersComponent {
     this.onOpenNewsletter(newsletter);
   }
 
-  protected onCloseDrawer(): void {
-    this.previewVisible.set(false);
-    // Clear query params when drawer closes
+  protected onDrawerVisibleChange(visible: boolean): void {
+    if (visible) {
+      return;
+    }
+    // Drawer closed by the user — clear the issue params so the URL matches.
+    // The [(visible)] model binding already reflects the closed state.
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { issue: null, project: null },

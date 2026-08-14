@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Project } from '@lfx-one/shared/interfaces';
+import { NewsletterReaderState } from '@lfx-one/shared/interfaces';
 import { toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, finalize, filter, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, switchMap } from 'rxjs';
 
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
@@ -38,10 +38,6 @@ export class NewsletterReaderComponent {
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // === WritableSignals ===
-  protected readonly loading = signal(true);
-  protected readonly notFound = signal(false);
-
   // === Route Params (toSignal) ===
   protected readonly projectSlug: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((m) => m.get('projectSlug'))), {
     initialValue: null,
@@ -54,14 +50,24 @@ export class NewsletterReaderComponent {
   protected readonly paramsValid = computed(() => !!this.projectSlug() && !!this.newsletterId());
 
   // === Data Signals (Complex — init via private functions) ===
-  protected readonly project: Signal<Project | null> = this.initProject();
-  protected readonly newsletter: Signal<{ id: string; subject: string; body_html: string; status: string; sent_at?: string } | null> = this.initNewsletter();
+  /** Single load-state stream: loading, project/newsletter resolution, and failures all derive from one emission. */
+  protected readonly state: Signal<NewsletterReaderState> = this.initState();
+
+  // === Computed: state projections ===
+  protected readonly loading = computed(() => this.state().loading);
+  protected readonly project = computed(() => this.state().project);
+  protected readonly newsletter = computed(() => this.state().newsletter);
 
   // === Computed: draft hidden from non-manager ===
   protected readonly isDraftHidden = computed(() => {
-    const nl = this.newsletter();
-    const proj = this.project();
-    return nl && nl.status !== 'sent' && proj && !proj.writer;
+    const { newsletter, project } = this.state();
+    return !!newsletter && newsletter.status !== 'sent' && !!project && !project.writer;
+  });
+
+  // === Computed: 404 (unresolvable project/newsletter, or draft gated) ===
+  protected readonly notFound = computed(() => {
+    const { loading, project, newsletter } = this.state();
+    return !loading && (!project || !newsletter || this.isDraftHidden());
   });
 
   // === Computed: page display strings ===
@@ -93,32 +99,26 @@ export class NewsletterReaderComponent {
   }
 
   // === Private Initializers ===
-  private initProject(): Signal<Project | null> {
+  private initState(): Signal<NewsletterReaderState> {
     return toSignal(
-      toObservable(this.projectSlug).pipe(
-        filter((slug): slug is string => !!slug),
-        switchMap((slug) => this.projectService.getProject(slug, false).pipe(catchError(() => of(null))))
+      combineLatest([toObservable(this.projectSlug), toObservable(this.newsletterId)]).pipe(
+        filter((params): params is [string, string] => !!params[0] && !!params[1]),
+        switchMap(([slug, id]) =>
+          this.projectService.getProject(slug, false).pipe(
+            switchMap((project) => {
+              if (!project?.uid) {
+                return of<NewsletterReaderState>({ loading: false, project: null, newsletter: null });
+              }
+              return this.newsletterService.getNewsletter(project.uid, id).pipe(
+                map((newsletter): NewsletterReaderState => ({ loading: false, project, newsletter })),
+                catchError(() => of<NewsletterReaderState>({ loading: false, project, newsletter: null }))
+              );
+            }),
+            catchError(() => of<NewsletterReaderState>({ loading: false, project: null, newsletter: null }))
+          )
+        )
       ),
-      { initialValue: null }
-    );
-  }
-
-  private initNewsletter(): Signal<{ id: string; subject: string; body_html: string; status: string; sent_at?: string } | null> {
-    return toSignal(
-      combineLatest([toObservable(this.project), toObservable(this.newsletterId).pipe(filter((id) => !!id))]).pipe(
-        switchMap(([project, id]) => {
-          if (!project?.uid || !id) return of(null);
-          return this.newsletterService.getNewsletter(project.uid, id).pipe(catchError(() => of(null)));
-        }),
-        finalize(() => {
-          // If draft is hidden from this user, or resources couldn't be loaded, render 404.
-          if (this.isDraftHidden() || (!this.project() && this.projectSlug()) || (!this.newsletter() && this.newsletterId() && this.project())) {
-            this.notFound.set(true);
-          }
-          this.loading.set(false);
-        })
-      ),
-      { initialValue: null }
+      { initialValue: { loading: true, project: null, newsletter: null } }
     );
   }
 }

@@ -154,5 +154,5 @@
   [headerTitle]="selected()?.project_name || 'Newsletter'"
   [headerSubtitle]="drawerSubtitle()"
   [shareUrl]="selected() ? buildShareUrl(selected()!) : null"
-  (visibleChange)="onCloseDrawer()"
+  (visibleChange)="onDrawerVisibleChange($event)"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>
