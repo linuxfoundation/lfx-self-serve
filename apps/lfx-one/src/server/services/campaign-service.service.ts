@@ -637,7 +637,35 @@ export class CampaignServiceClient {
         // and would now send a user who wants Demand Gen to the one channel they did not ask
         // for. No internal vocabulary — "campaign-service" and "the cutover" name controls the
         // reader does not have.
-        error: 'Search and Demand Gen cannot be created together yet. Create them one at a time — deselect one, create it, then come back for the other.',
+        // Does NOT promise that creating them one after another works, which an earlier
+        // wording did. Whether a second Google campaign can be added to the same brief
+        // depends on the campaign-service version deployed: the widened
+        // (brief_id, platform, variant) slot key ships with LFXV2-3257, and against an older
+        // deployment the second create is refused by the narrower (brief_id, platform)
+        // uniqueness AFTER the first has already spent budget. Telling a user to retry into
+        // that is worse than telling them nothing.
+        error: 'Search and Demand Gen cannot be created together. Deselect one and create it; adding the second to the same brief may not be supported yet.',
+      };
+    }
+
+    // Demand Gen requires a campaign-service that understands `googleAdsConfig.channel`
+    // (LFXV2-3257). Against an older deployment the field is silently DROPPED — Go's decoder
+    // ignores unknown keys — and the dispatcher builds its default SEARCH campaign instead:
+    // real budget, no keywords, and per `googleAdsConfig.Keywords` it "can never serve".
+    //
+    // That is the worst outcome available here. It is not a visible failure the user can
+    // react to; it is a paid campaign created under the wrong channel with the wrong budget,
+    // reported as success. Refusing costs a user one create; the alternative costs money and
+    // is discovered later in Google Ads.
+    //
+    // Gated on the CAPABILITY flag rather than a version probe: the service exposes no
+    // version endpoint, and inferring support from a successful create is exactly the
+    // ambiguity that makes the silent-Search case dangerous.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen)) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Demand Gen campaigns are not available yet. Select Search instead, or ask an administrator to enable Demand Gen support.',
       };
     }
 
