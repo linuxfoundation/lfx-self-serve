@@ -5,7 +5,7 @@
   <lfx-quick-create-dialog (create)="onSubmit()" />
 }
 
-<!-- Post-create toast (LFXV2-3242): creating no longer navigates, so this is the way back to the meeting -->
+<!-- Post-create toast (GH-1461): creating no longer navigates, so this is the way back to the meeting -->
 <p-toast [key]="toastKey" position="top-right">
   <ng-template let-message pTemplate="message">
     <div class="flex w-full items-start gap-3" data-testid="meeting-composer-toast">
@@ -51,7 +51,7 @@
   </ng-template>
 </p-toast>
 
-<!-- Meeting composer drawer (LFXV2-3234) -->
+<!-- Meeting composer drawer (GH-1452) -->
 <p-drawer
   [visible]="composer.isOpen() && !composer.isQuickCreate()"
   (visibleChange)="onVisibleChange($event)"
@@ -71,7 +71,7 @@
   </ng-template>
 
   <div class="flex h-full min-h-0 gap-6">
-    <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (LFXV2-3243).
+    <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (GH-1462).
          The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
          would report empty and clicking one would swap a section the organizer can't see. -->
     @if (!formService.meetingLoadFailed()) {

@@ -19,7 +19,7 @@ import { ManualGuestDialogComponent } from '../manual-guest-dialog/manual-guest-
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
- * Guests section of the meeting composer (LFXV2-3238).
+ * Guests section of the meeting composer (GH-1457).
  * @description Guests are editable before the meeting exists: the list lives on
  * `MeetingComposerFormService`, which derives the `RegistrantPendingChanges` persisted in the same
  * submit that creates the meeting. That removes the wizard's "create the meeting first" gate.

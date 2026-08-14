@@ -32,7 +32,7 @@ import { AddLinkDialogComponent } from '../add-link-dialog/add-link-dialog.compo
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
- * Agenda & Resources section of the meeting composer (LFXV2-3239).
+ * Agenda & Resources section of the meeting composer (GH-1458).
  * @description Attachments and links are read straight off the form controls rather than mirrored into
  * local signals: the host's `@switch` destroys this component on every section change, so any local
  * copy of the queue would be lost.

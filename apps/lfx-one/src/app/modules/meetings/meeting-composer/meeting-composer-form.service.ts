@@ -81,7 +81,7 @@ import {
 } from 'rxjs';
 
 /**
- * Form state and persistence for the meeting composer (LFXV2-3234).
+ * Form state and persistence for the meeting composer (GH-1452).
  * @description Owns the single meeting FormGroup, edit-mode hydration, the create/update request
  * payload, and the attachment + registrant operations that run alongside the meeting save.
  * Provided by `MeetingComposerHostComponent`, so `initialize()` fully resets state on every open.

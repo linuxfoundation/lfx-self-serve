@@ -7,7 +7,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from './meeting-composer.service';
 
 /**
- * Keeps `/meetings/create` and `/meetings/:id/edit` deep-linkable (LFXV2-3234).
+ * Keeps `/meetings/create` and `/meetings/:id/edit` deep-linkable (GH-1452).
  * @description Renders nothing: it opens the composer, then replaces the URL with the meetings
  * list so the composer sits over a real page. Composer state lives in a root service, so it
  * survives this component being destroyed by the redirect.

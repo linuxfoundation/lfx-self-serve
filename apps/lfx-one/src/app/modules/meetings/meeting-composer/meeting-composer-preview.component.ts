@@ -14,7 +14,7 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 
 /**
- * Live preview of the meeting being created (LFXV2-3240).
+ * Live preview of the meeting being created (GH-1459).
  * @description Create mode only — in edit mode the meeting already exists and the sections themselves
  * show its saved state. Several controls are pre-filled with defaults, so a row only resolves once its
  * owning section has been visited; until then it renders as a skeleton bar rather than presenting a

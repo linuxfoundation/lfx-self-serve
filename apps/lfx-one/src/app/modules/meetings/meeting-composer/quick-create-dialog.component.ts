@@ -19,7 +19,7 @@ import { ComposerDateScheduleComponent } from './sections/composer-date-schedule
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
 
 /**
- * Quick create dialog (LFXV2-3241).
+ * Quick create dialog (GH-1460).
  * @description The condensed create surface: the same form and the same submit path as the drawer, laid
  * out as two columns with no rail and no per-section gating. It composes the drawer's Details & Access
  * and Date & Schedule sections rather than reimplementing their controls, so validators, hint copy and

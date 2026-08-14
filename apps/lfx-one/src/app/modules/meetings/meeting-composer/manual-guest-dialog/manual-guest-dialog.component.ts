@@ -10,7 +10,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { RegistrantFormComponent } from '../../components/registrant-form/registrant-form.component';
 
 /**
- * Manual guest entry for the composer's Guests section (LFXV2-3238).
+ * Manual guest entry for the composer's Guests section (GH-1457).
  * @description Opened through `DialogService` rather than an inline `<p-dialog>`, so the overlay lives
  * outside the section that the composer's `@switch` destroys on every section change.
  */

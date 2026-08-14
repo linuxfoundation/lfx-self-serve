@@ -10,7 +10,7 @@ import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
- * Add-link entry for the composer's Agenda & Resources section (LFXV2-3239).
+ * Add-link entry for the composer's Agenda & Resources section (GH-1458).
  * @description Opened through `DialogService` so the overlay outlives the section, which the composer's
  * `@switch` destroys on every section change.
  */
