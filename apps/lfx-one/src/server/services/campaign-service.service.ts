@@ -602,36 +602,36 @@ export class CampaignServiceClient {
       };
     }
 
-    // Demand Gen is refused outright, because campaign-service cannot create one.
+    // Search + Demand Gen TOGETHER is refused. Demand Gen alone is not — that changed with
+    // LFXV2-3257, which ported the legacy `createDemandGenCampaign` into campaign-service and
+    // gave `googleAdsConfig` a `channel` field to select it.
     //
-    // There is no Demand Gen path anywhere in the service — `internal/dispatch/googleads.go`
-    // creates a Search campaign and nothing else. The legacy path DOES support it
-    // (`createDemandGenCampaign`), so this is a capability the cutover loses rather than one
-    // nobody has.
+    // What still cannot be served is BOTH in one create, and the reason is the schema rather
+    // than the dispatcher: `campaigns` is UNIQUE on `(brief_id, platform)` and both channels are
+    // `google-ads`, so one brief cannot hold a Search row and a Demand Gen row. The legacy path
+    // loops `campaignTypes` and creates both only because it has no database to constrain it.
     //
-    // Both selections are wrong, in different ways, and neither is safe to let through:
-    //   - demand-gen ONLY  → `buildGoogleAdsConfig` returns null, caught by the check above.
-    //   - search + demand-gen → the config carries only the SEARCH budget share, so the create
-    //     succeeds having silently dropped half of what the user asked for and half their budget.
+    // Letting the pair through is the dangerous option, because it LOOKS like success: the
+    // config carries one channel, so the create would succeed having silently dropped half of
+    // what the user asked for and half their budget. Refusing keeps them on a path that can
+    // actually serve the request until the schema question is decided.
     //
-    // The second is the dangerous one: it looks like success. Refusing keeps the user on a path
-    // that can actually serve the request until the service grows Demand Gen support.
-    // Gated on google-ads being SELECTED, not on `campaignTypes` alone.
-    //
-    // `campaignTypes` is a Google concept but the Implementation tab sends it unconditionally:
-    // `includeDemandGen` defaults to true in the form and nothing clears it when Google is
-    // deselected, so a LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type
-    // alone rejected creates that have no Google campaign in them at all — a Google error on a
-    // request Google was never part of.
-    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen')) {
+    // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
+    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
+    // defaults to true in the form and nothing clears it when Google is deselected — so a
+    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
+    // creates that have no Google campaign in them at all.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
       return {
         enabled: true,
         jobId: null,
-        // No internal vocabulary: the siblings above say what the user did and what to do next,
-        // and "campaign-service"/"the cutover" are neither. A user who deselects Demand Gen gets
-        // a Search campaign; one who needs Demand Gen needs an operator, and telling them to
-        // "disable the cutover" names a control they do not have.
-        error: 'Demand Gen campaigns are not supported yet. Deselect Demand Gen to create the Search campaign, or contact support to run this campaign.',
+        // Names BOTH escapes now, because either one works: Search alone and Demand Gen alone
+        // are each servable, and only the pair is not. The previous wording said "Deselect
+        // Demand Gen", which was the only option when Demand Gen could not be created at all
+        // and would now send a user who wants Demand Gen to the one channel they did not ask
+        // for. No internal vocabulary — "campaign-service" and "the cutover" name controls the
+        // reader does not have.
+        error: 'Search and Demand Gen cannot be created together yet. Create them one at a time — deselect one, create it, then come back for the other.',
       };
     }
 

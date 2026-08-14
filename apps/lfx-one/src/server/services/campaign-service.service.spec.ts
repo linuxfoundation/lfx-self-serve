@@ -1623,6 +1623,32 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('Demand Gen');
   });
 
+  /**
+   * The half this refusal must NOT cover, since LFXV2-3257 ported Demand Gen into
+   * campaign-service. Demand-gen-only is now servable — one channel, one campaign row, which the
+   * `(brief_id, platform)` uniqueness holds fine. Only the PAIR is refused.
+   *
+   * Without this test the guard could be widened back to `includes('demand-gen')` and every
+   * sibling would stay green, silently re-blocking the capability this work added.
+   */
+  it('dispatches a demand-gen-only create rather than refusing it', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000d' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000d');
+    expect(res.error).toBeNull();
+  });
+
   it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
     // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
     // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a

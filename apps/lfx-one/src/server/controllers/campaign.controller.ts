@@ -1067,9 +1067,30 @@ export class CampaignController {
 
     const types = body.campaignTypes ?? [];
     const includesSearch = types.includes('search');
-    if (!includesSearch) return null;
+    const includesDemandGen = types.includes('demand-gen');
 
-    const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    // Neither type selected: nothing to build. Returning null marks the platform
+    // UNCONFIGURED, and `hasPlatformConfig` refuses the create rather than dispatching
+    // a zero-value config.
+    if (!includesSearch && !includesDemandGen) return null;
+
+    // DEMAND-GEN-ONLY is the one mixed-type case the cutover can serve today, and it
+    // gets the WHOLE budget: there is no Search campaign to fund, so the split does not
+    // apply. campaign-service creates a Demand Gen campaign with no ad and no keywords
+    // (LFXV2-3257), which is why headlines/keywords below are harmless to send — the
+    // Demand Gen path ignores them.
+    //
+    // Search + Demand Gen together is still refused upstream of here, deliberately.
+    // campaign-service's `campaigns` table is UNIQUE on (brief_id, platform) and both
+    // channels are `google-ads`, so one brief cannot hold both rows; the legacy path
+    // loops `campaignTypes` and creates both only because it has no database. Serving
+    // the mixed case needs a schema decision, not a config field, and until it is made
+    // a loud refusal beats creating the Search half and silently dropping the other.
+    if (!includesSearch && includesDemandGen) {
+      return { budget: body.budgetUsd ?? 0, channel: 'demand-gen' };
+    }
+
+    const pct = includesDemandGen ? (body.searchBudgetPct ?? 100) : 100;
     // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
     //
     // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
@@ -1090,6 +1111,10 @@ export class CampaignController {
 
     return {
       budget,
+      // Explicit rather than relying on the upstream default. Absent means Search there
+      // too, but naming it keeps the two branches of this function symmetrical and makes
+      // a future default change unable to repoint this one silently.
+      channel: 'search',
       headlines: body.headlines ?? [],
       descriptions: body.descriptions ?? [],
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
