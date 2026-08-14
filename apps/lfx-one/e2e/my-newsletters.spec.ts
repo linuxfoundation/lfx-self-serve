@@ -243,4 +243,30 @@ test.describe('My Newsletters — Me-lens feed', () => {
     // Success toast appears
     await expect(page.getByText('Link Copied')).toBeVisible();
   });
+
+  test('subject renders as a real link to the canonical permalink', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    const subjectLink = page.getByTestId(`my-newsletters-open-${MOCK_NEWSLETTERS[0].id}`);
+    await expect(subjectLink).toHaveAttribute('href', `/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
+  });
+
+  test('new-tab button in drawer header opens the permalink in a new tab', async ({ page, context }) => {
+    await gotoMyNewsletters(page);
+
+    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
+    const drawer = page.getByTestId('my-newsletters-preview-drawer');
+    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    const newTabButton = page.getByTestId('newsletter-preview-drawer-open-new-tab');
+    await expect(newTabButton).toHaveAttribute('target', '_blank');
+    await expect(newTabButton).toHaveAttribute('rel', /noopener/);
+    await expect(newTabButton).toHaveAttribute('href', `/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
+
+    const [newPage] = await Promise.all([context.waitForEvent('page'), newTabButton.click()]);
+    await expect(newPage).toHaveURL(new RegExp(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`));
+
+    // Original tab's drawer stays open — the new tab is a separate context.
+    await expect(drawer).toBeVisible();
+  });
 });

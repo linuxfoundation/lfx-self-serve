@@ -12,7 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { MyNewsletter } from '@lfx-one/shared/interfaces';
-import { toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
@@ -97,7 +97,7 @@ export class MyNewslettersComponent {
   protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
     const selected = this.selected();
     if (!selected?.project_slug || !selected.id) return null;
-    return toAbsoluteUrl(`/newsletters/${selected.project_slug}/${selected.id}`, isPlatformBrowser(this.platformId));
+    return toAbsoluteUrl(newsletterIssuePath(selected.project_slug, selected.id), isPlatformBrowser(this.platformId));
   });
 
   // === Constructor ===
@@ -137,6 +137,21 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
+  /**
+   * Relative permalink href for a row's subject anchor — lets modified clicks,
+   * middle-click, and right-click ("Open in new tab") reach the reader page
+   * natively. `project_slug` is an enrichment field that can fail to resolve
+   * upstream; the anchor omits its `href` in that case (see `onOpenSubject`).
+   */
+  protected issuePath(newsletter: MyNewsletter): string | null {
+    return newsletter.project_slug ? newsletterIssuePath(newsletter.project_slug, newsletter.id) : null;
+  }
+
+  /** True for a modified click (new-tab intent) that the browser, not this component, should handle. */
+  protected isModifiedClick(event: MouseEvent): boolean {
+    return event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+  }
+
   protected onOpenNewsletter(newsletter: MyNewsletter): void {
     if (this.openingId()) {
       return;
@@ -177,12 +192,26 @@ export class MyNewslettersComponent {
   }
 
   /**
-   * Subject-button click handler: the button is the accessible control (real
-   * role, native Enter/Space); stopPropagation keeps the supplementary row
-   * click from firing a second open.
+   * Subject-anchor click handler: the anchor is the accessible control (real
+   * link role, native Enter/Space, right-click "Open in new tab"/"Copy link
+   * address"); stopPropagation keeps the supplementary row click from firing
+   * a second open. A modified click (Cmd/Ctrl/Shift/Alt/middle-click) is left
+   * to the browser so it opens the permalink in a new tab instead of the drawer.
    */
-  protected onOpenSubject(event: Event, newsletter: MyNewsletter): void {
+  protected onOpenSubject(event: MouseEvent, newsletter: MyNewsletter): void {
     event.stopPropagation();
+    if (this.isModifiedClick(event)) {
+      return;
+    }
+    event.preventDefault();
+    this.onOpenNewsletter(newsletter);
+  }
+
+  /** Row click handler: same modified-click guard as the subject anchor, so a Cmd-click anywhere in the row is a no-op rather than opening the drawer with no new tab. */
+  protected onRowClick(event: MouseEvent, newsletter: MyNewsletter): void {
+    if (this.isModifiedClick(event)) {
+      return;
+    }
     this.onOpenNewsletter(newsletter);
   }
 
