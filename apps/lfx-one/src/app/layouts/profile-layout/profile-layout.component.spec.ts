@@ -9,7 +9,7 @@ import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, of } from 'rxjs';
+import { EMPTY, Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileLayoutComponent } from './profile-layout.component';
@@ -27,12 +27,28 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
     profile: { bio: 'OLD BIO', job_title: 'Engineer' },
   } as unknown as CombinedProfile;
 
-  async function setup(queryParams: Record<string, string>, pendingSave?: unknown): Promise<ComponentFixture<ProfileLayoutComponent>> {
+  // A user-only GET body (no profile record) — merging into it would fabricate a profile.
+  const USER_ONLY_PROFILE = {
+    user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@x.io' },
+    profile: null,
+  } as unknown as CombinedProfile;
+
+  // A later, consistent GET carrying a server-side change the stash never touched.
+  const NEWER_PROFILE = {
+    user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@x.io' },
+    profile: { bio: 'SERVER BIO', job_title: 'Manager' },
+  } as unknown as CombinedProfile;
+
+  async function setup(
+    queryParams: Record<string, string>,
+    pendingSave?: unknown,
+    getProfile?: () => Observable<CombinedProfile>
+  ): Promise<ComponentFixture<ProfileLayoutComponent>> {
     if (pendingSave !== undefined) {
       sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify(pendingSave));
     }
 
-    const getCurrentUserProfile = vi.fn(() => of(STALE_PROFILE));
+    const getCurrentUserProfile = vi.fn(getProfile ?? (() => of(STALE_PROFILE)));
     const userServiceMock = {
       user: signal({ user_id: 'u1' } as unknown as User),
       impersonating: signal(false),
@@ -70,10 +86,42 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
   });
 
   it('re-applies a stashed save after the initial GET lands, so the pre-save body cannot win', async () => {
-    const fixture = await setup({ success: 'profile_token_obtained' }, { savedAt: Date.now(), userMetadata: { bio: 'NEW BIO' } });
+    // Deferred GET: the save is stashed during construction and cannot merge until we emit here, so
+    // the stash branch is provably the path under test — not a warm merge that happened to race first.
+    const profile$ = new Subject<CombinedProfile>();
+    const fixture = await setup({ success: 'profile_token_obtained' }, { savedAt: Date.now(), userMetadata: { bio: 'NEW BIO' } }, () =>
+      profile$.asObservable()
+    );
 
-    // The replayed save (bio: NEW BIO) resolved before the eventually-consistent GET (bio: OLD BIO);
-    // the optimistic override must reflect the write, not the stale refetch.
+    // GET has not resolved: the save was stashed (not applied), so nothing shows yet.
+    expect(fixture.componentInstance.aboutMe()).toBe('');
+
+    // Stale (pre-save) body lands; reapply must win over it.
+    profile$.next(STALE_PROFILE);
+    expect(fixture.componentInstance.aboutMe()).toBe('NEW BIO');
+    // A field the save didn't touch survives the merge.
+    expect(fixture.componentInstance.jobTitle()).toBe('Engineer');
+  });
+
+  it('retains the stash across a null-profile GET, applies once, then clears it', async () => {
+    const profile$ = new Subject<CombinedProfile>();
+    const fixture = await setup({ success: 'profile_token_obtained' }, { savedAt: Date.now(), userMetadata: { bio: 'NEW BIO' } }, () =>
+      profile$.asObservable()
+    );
+
+    // Null-profile GET: reapply is a no-op (merging would fabricate a profile), stash is retained.
+    profile$.next(USER_ONLY_PROFILE);
+    expect(fixture.componentInstance.aboutMe()).toBe('');
+
+    // Real profile lands: the retained stash applies and is cleared.
+    profile$.next(STALE_PROFILE);
+    expect(fixture.componentInstance.aboutMe()).toBe('NEW BIO');
+    expect(fixture.componentInstance.jobTitle()).toBe('Engineer');
+
+    // A later GET must not re-apply the cleared stash: the optimistic override persists (Engineer),
+    // it does not merge onto the newer body (which would surface Manager).
+    profile$.next(NEWER_PROFILE);
+    expect(fixture.componentInstance.jobTitle()).toBe('Engineer');
     expect(fixture.componentInstance.aboutMe()).toBe('NEW BIO');
   });
 

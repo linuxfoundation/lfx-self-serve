@@ -11,7 +11,7 @@ import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -384,13 +384,10 @@ export class ProfileLayoutComponent {
             filter((user) => user !== null),
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
-                map((profile: CombinedProfile) => {
-                  const headerData = this.mapToHeaderData(profile);
-                  // Read-your-writes: if a save landed before this GET (Flow C cold return), re-apply it
-                  // now that combinedProfile is populated so a stale (pre-save) body can't win.
-                  this.reapplyPendingOptimisticUpdate();
-                  return headerData;
-                }),
+                map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
+                // Read-your-writes: if a save landed before this GET (Flow C cold return), re-apply it
+                // now that combinedProfile is populated so a stale (pre-save) body can't win.
+                tap(() => this.reapplyPendingOptimisticUpdate()),
                 catchError(() => of(null))
               )
             )
