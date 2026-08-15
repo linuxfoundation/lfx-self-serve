@@ -625,7 +625,10 @@ describe('CampaignController.createCampaign cutover', () => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
-    expect(sent['channel']).toBe('demand-gen');
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 1000,
+      channel: 'demand-gen',
+    });
   });
 
   /**
@@ -679,8 +682,14 @@ describe('CampaignController.createCampaign cutover', () => {
       next
     );
 
-    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
-    expect(sent['budget']).toBe(500);
+    // Pinned WHOLE, like the search branch above. Asserting only `budget` would pass a builder
+    // that leaked a stray field into the demand-gen envelope — headlines or keywords copied
+    // across from the search branch, say — which campaign-service would then receive on a
+    // channel that has no use for them.
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 500,
+      channel: 'demand-gen',
+    });
   });
 
   /**

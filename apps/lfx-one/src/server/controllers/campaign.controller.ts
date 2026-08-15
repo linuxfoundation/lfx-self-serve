@@ -1068,9 +1068,12 @@ export class CampaignController {
    * campaign-service. There is no Search campaign to split the budget with, so the whole amount
    * funds the one campaign being created.
    *
-   * A MIXED selection is still refused before reaching here, because this function emits one
-   * config with one channel — see the inline comment below for why that is a limit of this
-   * builder rather than of campaign-service's schema.
+   * A MIXED selection is refused DOWNSTREAM, not before this point: the controller builds the
+   * envelope (line ~304) and only then calls `createCampaigns` (line ~346), where the
+   * Search+Demand-Gen guard lives. So a mixed selection DOES reach this builder and produces a
+   * search-shaped config, which `createCampaigns` then refuses — see the inline comment below
+   * for why one-config-one-channel is a limit of this builder rather than of campaign-service's
+   * schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
    * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
@@ -1096,7 +1099,8 @@ export class CampaignController {
     // (LFXV2-3257), which is why headlines/keywords below are harmless to send — the
     // Demand Gen path ignores them.
     //
-    // Search + Demand Gen together is still refused upstream of here, deliberately — and the
+    // Search + Demand Gen together is refused DOWNSTREAM in `createCampaigns`, not before this
+    // builder runs, deliberately — and the
     // reason is THIS function, not campaign-service's schema. #130 widened the slot key to
     // (brief_id, platform, variant), so a brief can now hold a Search row and a Demand Gen row
     // at once; the database does not forbid the pair.

@@ -198,7 +198,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`     | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
 
-All three flags are ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
 unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
 operator setting `yes` and expecting it to be ignored would route production traffic at
