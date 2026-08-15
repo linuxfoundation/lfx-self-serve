@@ -624,7 +624,6 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 1000,
       channel: 'demand-gen',
