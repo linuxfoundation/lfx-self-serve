@@ -1299,6 +1299,43 @@ export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
   status: CampaignToggleStatus;
   accountId?: string;
+  /**
+   * Parent brief, required by campaign-service's toggle route
+   * (`PATCH /projects/{p}/briefs/{brief_id}/campaigns/{c}/status`).
+   *
+   * Optional on this type only because the legacy Meta/Reddit path did not need it. A request
+   * without it cannot address the campaign-service endpoint at all, so the controller refuses it
+   * rather than defaulting — see `updateCampaignStatus`.
+   */
+  briefId?: string;
+  /**
+   * The campaign row's current ETag, sent as `If-Match`.
+   *
+   * campaign-service answers a missing header with 428, so this is required in practice. It is
+   * what makes a pause safe against a concurrent editor: a 412 means the row moved since the
+   * caller read it, and the toggle is refused rather than dispatched to an ad platform on the
+   * strength of a stale view.
+   */
+  etag?: string;
+}
+
+/**
+ * A campaign row as campaign-service returns it.
+ *
+ * Mirrors the `Campaign` schema in the service's generated OpenAPI contract; `etag` mirrors
+ * `version` and is what a subsequent toggle must send back as `If-Match`.
+ */
+export interface CampaignServiceCampaign {
+  id: string;
+  brief_id: string;
+  project_id: string;
+  platform: string;
+  campaign_name: string;
+  /** Absent until the ad platform confirms the create, so optional per the contract. */
+  platform_campaign_id?: string;
+  status: string;
+  version: number;
+  etag?: string;
 }
 
 export interface CampaignStatusUpdateResult {
