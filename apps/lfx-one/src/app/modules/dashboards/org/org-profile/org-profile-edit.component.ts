@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, EventEmitter, inject, input, OnInit, Output, signal } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, EventEmitter, inject, input, OnInit, Output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { INDUSTRY_OPTIONS, ORG_DESCRIPTION_MAX_LENGTH, SECTOR_OPTIONS } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, INDUSTRY_OPTIONS, MAX_ORG_LOGO_SIZE_BYTES, ORG_DESCRIPTION_MAX_LENGTH, SECTOR_OPTIONS } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
@@ -47,6 +47,9 @@ export class OrgProfileEditComponent implements OnInit {
   /** Emitted on cancel — parent exits edit mode and discards changes. */
   @Output() public readonly cancelled = new EventEmitter<void>();
 
+  /** Emitted after a successful logo upload — parent patches its cached record without exiting edit mode (logo saves immediately, independent of the form's Save/Cancel). */
+  @Output() public readonly logoUpdated = new EventEmitter<OrgCanonicalRecord>();
+
   private readonly fb = inject(FormBuilder);
   private readonly orgProfileService = inject(OrgProfileService);
   private readonly messageService = inject(MessageService);
@@ -67,6 +70,14 @@ export class OrgProfileEditComponent implements OnInit {
   protected readonly dirty = signal(false);
   protected readonly formValid = signal(true);
 
+  // Logo upload (LFXV2-3288). Uploads immediately on selection — mirrors the avatar-upload pattern
+  // (profile-edit-drawer.component.ts), independent of this form's own Save/Cancel.
+  private readonly logoInput = viewChild<ElementRef<HTMLInputElement>>('logoInput');
+  protected readonly logoUploading = signal(false);
+  protected readonly logoDragActive = signal(false);
+  /** Overrides `record().logoUrl` after a successful upload so the preview updates without waiting on the parent's own record refresh. */
+  protected readonly logoUrl = signal<string | null>(null);
+
   /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (CLAUDE.md "No functions in HTML templates"). */
   protected readonly descriptionInvalid = signal(false);
   protected readonly employeesInvalid = signal(false);
@@ -78,6 +89,7 @@ export class OrgProfileEditComponent implements OnInit {
   private original!: OrgProfileEditableFields;
 
   public ngOnInit(): void {
+    this.logoUrl.set(this.record().logoUrl ?? null);
     this.initForm();
   }
 
@@ -129,6 +141,38 @@ export class OrgProfileEditComponent implements OnInit {
     this.refreshFieldFlags();
   }
 
+  /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
+  protected triggerLogoUpload(): void {
+    if (this.logoUploading()) return;
+    this.logoInput()?.nativeElement.click();
+  }
+
+  protected onLogoFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
+    input.value = '';
+    if (file) this.handleLogoFile(file);
+  }
+
+  protected onLogoDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (!this.logoUploading()) this.logoDragActive.set(true);
+  }
+
+  protected onLogoDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.logoDragActive.set(false);
+  }
+
+  protected onLogoDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.logoDragActive.set(false);
+    if (this.logoUploading()) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (file) this.handleLogoFile(file);
+  }
+
   private initForm(): void {
     this.original = this.snapshotFromRecord(this.record());
     this.industryOptions = this.withCurrentSelectOption(INDUSTRY_OPTIONS, this.original.industry);
@@ -175,6 +219,42 @@ export class OrgProfileEditComponent implements OnInit {
       detail: 'Something went wrong while saving. Please try again.',
       life: 5000,
     };
+  }
+
+  private handleLogoFile(file: File): void {
+    if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG or JPEG image.' });
+      return;
+    }
+    if (file.size > MAX_ORG_LOGO_SIZE_BYTES) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Logo must be 2MB or smaller.' });
+      return;
+    }
+
+    this.logoUploading.set(true);
+    // No takeUntilDestroyed — same reviewed exception as the avatar-upload precedent: the upload
+    // itself is the user-visible operation and shouldn't abort on component destroy.
+    this.orgProfileService.uploadLogo(this.record().uid, file).subscribe({
+      next: (updated) => {
+        this.logoUploading.set(false);
+        this.logoUrl.set(updated.logoUrl ?? null);
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Logo updated!' });
+        this.logoUpdated.emit(updated);
+      },
+      error: (error: unknown) => {
+        this.logoUploading.set(false);
+        this.messageService.add(this.toastForLogoError(error));
+      },
+    });
+  }
+
+  /** FR-010-equivalent for the logo upload — mirrors toastForError's status mapping with upload-specific copy. */
+  private toastForLogoError(error: unknown): { severity: string; summary: string; detail: string; life: number } {
+    const status = error instanceof HttpErrorResponse ? error.status : 0;
+    if (status === 403) {
+      return { severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this organization.', life: 5000 };
+    }
+    return { severity: 'error', summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.', life: 5000 };
   }
 
   private refreshFieldFlags(): void {

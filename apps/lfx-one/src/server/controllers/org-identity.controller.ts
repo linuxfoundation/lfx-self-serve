@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -139,6 +139,88 @@ export class OrgIdentityController {
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
         logger.warning(req, 'update_org_canonical_record', 'Upstream failure', { err: error, upstream_status: error.statusCode });
         res.status(502).json({ error: 'Unable to save changes. Please try again.' });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * LFXV2-3288 — `POST /api/orgs/uid/:uid/logo`. BFF proxy leg to member-service's
+   * `POST /b2b_orgs/{uid}/logo` (LFXV2-2016): forwards the browser's raw upload using the caller's
+   * own access token (never M2M), reusing the already-buffered request body (no streaming), and
+   * propagating member-service's response as-is — the settled transport contract from the
+   * object-storage skill (PR #67). Member-service owns S3 write + Salesforce `Logo_URL__c` patch;
+   * this BFF does not touch object storage directly.
+   */
+  public async uploadLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'upload_org_logo', {
+      content_type: req.headers['content-type'],
+      content_length: req.headers['content-length'],
+    });
+
+    try {
+      const uid = req.params['uid'];
+      this.assertNonEmpty(uid, 'uid', 'upload_org_logo', req.path);
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
+        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const rawContentType = req.headers['content-type'];
+      const contentType = (Array.isArray(rawContentType) ? rawContentType[0] : rawContentType || '').split(';')[0].trim();
+      if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(contentType)) {
+        throw ServiceValidationError.forField('content-type', `Unsupported logo content type: ${contentType || 'unknown'}`, {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const buffer: unknown = req.body;
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+        throw ServiceValidationError.forField('body', 'Request body must contain logo image data', {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const raw = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(uid)}/logo`,
+        'POST',
+        undefined,
+        buffer,
+        { 'Content-Type': contentType }
+      );
+
+      const response = this.toCanonicalRecord(raw);
+
+      logger.success(req, 'upload_org_logo', startTime, { uid, logo_url: response.logoUrl });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        next(error);
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 403) {
+        logger.warning(req, 'upload_org_logo', 'Upstream rejected with 403', { err: error });
+        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        res.status(404).json({ error: 'Organization not found' });
+        return;
+      }
+      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
+        logger.warning(req, 'upload_org_logo', 'Upstream failure', { err: error, upstream_status: error.statusCode });
+        res.status(502).json({ error: 'Unable to upload logo. Please try again.' });
         return;
       }
       next(error);

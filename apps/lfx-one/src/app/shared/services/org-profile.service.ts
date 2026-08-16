@@ -24,4 +24,9 @@ export class OrgProfileService {
   public updateOrg(uid: string, payload: OrgUpdateRequest): Observable<OrgCanonicalRecord> {
     return this.http.put<OrgCanonicalRecord>(`/api/orgs/uid/${encodeURIComponent(uid)}`, payload);
   }
+
+  /** LFXV2-3288 — raw-body upload to the BFF logo proxy; returns the updated canonical record (new `logoUrl`). */
+  public uploadLogo(uid: string, file: File): Observable<OrgCanonicalRecord> {
+    return this.http.post<OrgCanonicalRecord>(`/api/orgs/uid/${encodeURIComponent(uid)}/logo`, file, { headers: { 'Content-Type': file.type } });
+  }
 }

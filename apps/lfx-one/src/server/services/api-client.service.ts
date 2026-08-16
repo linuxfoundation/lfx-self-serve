@@ -188,6 +188,9 @@ export class ApiClientService {
   ): Promise<ApiResponse<T>> {
     // Check if data is FormData (from form-data package for Node.js)
     const isFormData = data && typeof data === 'object' && typeof data.append === 'function' && typeof data.getHeaders === 'function';
+    // A raw Buffer body (e.g. proxying a binary file upload) carries its own Content-Type via
+    // customHeaders — the caller already validated it, so it's set below with the other custom headers.
+    const isBuffer = Buffer.isBuffer(data);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -198,7 +201,7 @@ export class ApiClientService {
     if (isFormData) {
       const formDataHeaders = data.getHeaders();
       Object.assign(headers, formDataHeaders);
-    } else {
+    } else if (!isBuffer) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -219,7 +222,10 @@ export class ApiClientService {
     };
 
     if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      if (isFormData) {
+      if (isBuffer) {
+        headers['Content-Length'] = String(data.length);
+        requestInit.body = data as BodyInit;
+      } else if (isFormData) {
         // For FormData (from form-data package in Node.js), we need to:
         // 1. Convert FormData to a buffer (since Node.js fetch doesn't handle streams well)
         // 2. Calculate and set Content-Length header
