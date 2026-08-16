@@ -131,7 +131,7 @@ export class AddMemberDialogComponent {
     organization: new FormControl(''),
     organization_url: new FormControl(''),
     organization_id: new FormControl<string | null>(null),
-    send_notification: new FormControl<boolean>(true, { nonNullable: true }),
+    send_notification: new FormControl<boolean>(false, { nonNullable: true }),
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
 

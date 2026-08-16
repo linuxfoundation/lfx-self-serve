@@ -560,6 +560,8 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 1000,
+      // Named explicitly since LFXV2-3257 — see buildGoogleAdsConfig.
+      channel: 'search',
       headlines: ['H1'],
       descriptions: ['D1'],
       // `text`, not `term`, and an upper-case enum: the service's keyword shape.
@@ -607,16 +609,25 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budgetUsd']).toBe(100);
   });
 
-  it('omits googleAdsConfig when only demand-gen is selected', async () => {
-    // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
-    // request as Search. The REFUSAL that makes this omission safe lives in `createCampaigns`
-    // (see its spec) — deliberately not here, so it is gated by the cutover flags.
+  /**
+   * SUPERSEDED by LFXV2-3257, which is why this now asserts the opposite of what it once did.
+   *
+   * The old contract omitted `googleAdsConfig` entirely for a demand-gen-only create, because
+   * "the dispatcher would otherwise run a demand-gen request as Search" — true when the config
+   * had no way to name a channel. campaign-service now takes `channel`, so the config is sent
+   * and names it. Omitting it today would mark the platform UNCONFIGURED and refuse a create the
+   * service can serve.
+   */
+  it('sends a demand-gen googleAdsConfig rather than omitting it', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 1000,
+      channel: 'demand-gen',
+    });
   });
 
   /**
@@ -639,6 +650,66 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_dg_1' });
   });
 
+  /**
+   * Demand-gen-only is the one mixed-type case the cutover can serve today (LFXV2-3257).
+   * Before this, `buildGoogleAdsConfig` returned null whenever Search was unselected, so the
+   * platform read as UNCONFIGURED and the whole create was refused — Demand Gen was
+   * unreachable through campaign-service even after the Go client existed.
+   */
+  it('sends the demand-gen channel when only demand gen is selected', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('demand-gen');
+  });
+
+  /**
+   * The WHOLE budget, not the search share. `searchBudgetPct` splits a budget between two
+   * campaigns; with no Search campaign to fund there is nothing to split, and sending 70% would
+   * silently underfund the only campaign being created.
+   */
+  it('gives a demand-gen-only create the whole budget', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // Pinned WHOLE, like the search branch above. Asserting only `budget` would pass a builder
+    // that leaked a stray field into the demand-gen envelope — headlines or keywords copied
+    // across from the search branch, say — which campaign-service would then receive on a
+    // channel that has no use for them.
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 500,
+      channel: 'demand-gen',
+    });
+  });
+
+  /**
+   * Search keeps its channel explicitly, and keeps the SPLIT budget. The contrast matters: without
+   * it the two tests above would pass on a builder that sent demand-gen for everything.
+   */
+  it('keeps sending the search channel and the split budget for a mixed selection', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['search', 'demand-gen'], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('search');
+    expect(sent['budget']).toBe(350);
+  });
+
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
     // Passing metaConfig through unchanged leaves `budget` at zero, and the Meta client rejects
     // every such dispatch with "invalid budget: must be a positive number".
@@ -652,6 +723,192 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budget']).toBe(250);
     expect(sent).not.toHaveProperty('budgetUsd');
     expect(sent['geoTargets']).toEqual(['US']);
+  });
+
+  /**
+   * LFXV2-3256. The envelope key and field names are a CONTRACT with
+   * `internal/dispatch/hubspot.go:47-56` — the dispatcher reads `hubspotConfig.sourceEmailId`, and
+   * `unmarshalPlatformConfig` treats a missing key as a zero value rather than an error. A typo on
+   * either side therefore produces a silent zero-value dispatch, not a type error, which is why
+   * these assert the exact strings.
+   */
+  it('builds the hubspot envelope key the email dispatcher reads', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent).toEqual({ sourceEmailId: 'email-123' });
+  });
+
+  it('forwards utmCampaign only when it is set', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: 'kubecon-eu' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1', utmCampaign: 'kubecon-eu' });
+  });
+
+  /**
+   * Canonicalization, not a correctness guard: `utm.Resolve` trims and falls through to the
+   * name-derived slug on empty, so `''` and absent resolve the same upstream. Pinned anyway
+   * because the envelope should carry only fields that mean something — an empty string reads as
+   * a deliberate override to anyone inspecting the wire.
+   *
+   * Asserts the key is MISSING rather than falsy: `toBeFalsy()` would pass on `''`, which is the
+   * exact value this omits.
+   */
+  it('omits a blank utmCampaign rather than sending an empty override', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('utmCampaign');
+    expect(sent['sourceEmailId']).toBe('e-1');
+  });
+
+  /**
+   * A blank id must read as UNCONFIGURED, so `hasPlatformConfig` refuses locally and names the
+   * problem. Upstream trims before its own emptiness check, so a whitespace-only id would pass a
+   * truthiness test here and be refused there — the split this guard exists to prevent.
+   *
+   * Asserts the key is ABSENT, not that it holds `''`: only absence reaches the refusal.
+   */
+  it.each([
+    ['whitespace only', '   '],
+    ['empty string', ''],
+  ])('treats a %s sourceEmailId as unconfigured rather than sending it', async (_label, sourceEmailId) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId } }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  /**
+   * `CampaignCreateRequest` is a compile-time assertion over `req.body`, and this route has no
+   * runtime validator — so a caller CAN send a number. Before the typeof checks, `.trim()` threw a
+   * TypeError and the request 500'd instead of taking the controlled refusal.
+   *
+   * `next` is asserted unused: an unhandled throw here surfaces through the catch as a 500, so a
+   * test that only checked the envelope would pass while the request errored.
+   */
+  it.each([
+    ['a numeric sourceEmailId', { sourceEmailId: 123 }],
+    ['a null sourceEmailId', { sourceEmailId: null }],
+    ['an object sourceEmailId', { sourceEmailId: {} }],
+  ])('refuses %s without throwing', async (_label, hubspotConfig) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig } as unknown as Record<string, unknown>, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('drops a non-string utmCampaign rather than throwing on it', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: 42 } } as unknown as Record<string, unknown>, {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
+  });
+
+  it('omits hubspotConfig entirely when the request carries none', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({}), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('hubspotConfig');
+  });
+
+  /**
+   * The path this ticket actually ships — the envelope tests above all run with the cutover DARK
+   * (they assert on the ARGUMENT handed to a mocked `createCampaigns` that reports `enabled:
+   * false`), so without this one nothing proves an email create succeeds when the cutover is on.
+   */
+  it('returns the campaign-service job id for an email create when the cutover is on', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'a3f1c2d4-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'a3f1c2d4-0000-4000-8000-00000000000e' });
+  });
+
+  /**
+   * The dark-cutover refusal, and the reason `hasPlatformConfig` cannot cover it: that guard lives
+   * inside `createCampaigns` and is gated by the same flags, so with the cutover off it never
+   * runs. Widening `platforms` to `CampaignAnyPlatform` is what made this reachable at all —
+   * `platforms: ['hubspot']` used to be a type error at every caller.
+   *
+   * The legacy path would NOT have failed loudly: it has no `includeHubspot` arm, so it records
+   * "Unsupported platform(s)" in an errors array and completes with an empty promise list — a job
+   * that finishes, after the inline 45s wait, having created nothing.
+   *
+   * Asserts `legacyCreate` was never called, not merely that an error came back: reaching that
+   * path at all is the defect.
+   */
+  it('refuses an email create instead of falling through to the legacy path', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'email-123' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: expect.stringContaining('cutover') });
+  });
+
+  it('still runs the legacy path for a paid create when the cutover is dark', async () => {
+    // The contrast. Without it the refusal above would pass on a controller that refused every
+    // dark-cutover create, not just the email ones.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody({}), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_1' });
   });
 });
 
