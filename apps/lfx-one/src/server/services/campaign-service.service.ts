@@ -580,8 +580,10 @@ export class CampaignServiceClient {
     // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
     // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
     //
-    // The reachable case is google-ads with Demand Gen only and no Search, where
-    // `buildGoogleAdsConfig` correctly returns null because it builds SEARCH config.
+    // The reachable case is google-ads selected with NEITHER supported campaign type: the
+    // builder returns null only when it can name no channel at all. Demand-Gen-only no longer
+    // reaches it — since LFXV2-3257 `buildGoogleAdsConfig` returns a full-budget
+    // `{budget, channel: 'demand-gen'}` config for that selection.
     //
     // This check belongs HERE and not in the controller. It tests for a campaign-service envelope
     // key, so it must only apply once the cutover is on — the legacy path needs no

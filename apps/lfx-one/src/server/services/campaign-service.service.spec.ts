@@ -1611,9 +1611,10 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
-   * campaign-service has NO Demand Gen path — `internal/dispatch/googleads.go` creates a Search
-   * campaign and nothing else. The legacy path does support it, so this is a capability the
-   * cutover loses rather than one nobody has.
+   * campaign-service DOES have a Demand Gen path as of #130, and the slot key is
+   * `(brief_id, platform, variant)` — so a brief can hold a Search row and a Demand Gen row at
+   * once and the database does not forbid the pair. What is refused here is a MIXED selection,
+   * and the reason is this BFF: `buildGoogleAdsConfig` emits one config with one channel.
    *
    * The mixed selection is the dangerous one because it looks like success: the config carries
    * only the SEARCH budget share, so the create would succeed having silently dropped half the
@@ -1639,7 +1640,9 @@ describe('CampaignServiceClient.createCampaigns', () => {
   /**
    * The half this refusal must NOT cover, since LFXV2-3257 ported Demand Gen into
    * campaign-service. Demand-gen-only is now servable — one channel, one campaign row, which the
-   * `(brief_id, platform)` uniqueness holds fine. Only the PAIR is refused.
+   * `(brief_id, platform, variant)` slot key holds fine (#130 widened it from the two-column
+   * form; a demand-gen retry on a brief that already has Search needs that third column). Only
+   * the PAIR is refused, and by THIS service's one-config envelope rather than by the schema.
    *
    * Without this test the guard could be widened back to `includes('demand-gen')` and every
    * sibling would stay green, silently re-blocking the capability this work added.
