@@ -143,21 +143,22 @@ router.get('/org-involvement-event-attendance-monthly', (req, res, next) => anal
 router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
-// Web activities summary endpoint (marketing dashboard)
-router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
+// Web activities summary endpoint (marketing dashboard) — ED-only surface, same as the
+// events-overview-summary/event-roster/event-detail endpoints below.
+router.get('/web-activities-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
 
 // Email CTR endpoint (marketing dashboard)
-router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req, res, next));
+router.get('/email-ctr', requireExecutiveDirector, (req, res, next) => analyticsController.getEmailCtr(req, res, next));
 
 // Social reach endpoint (marketing dashboard)
-router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
+router.get('/social-reach', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
 // Keyword performance endpoint (marketing dashboard)
-router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+router.get('/keyword-performance', requireExecutiveDirector, (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
 
 // Social media endpoints (marketing dashboard)
-router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
-router.get('/social-media/monthly', (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
+router.get('/social-media', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
@@ -203,13 +204,15 @@ router.get('/event-roster', requireExecutiveDirector, (req, res, next) => analyt
 // per-tier sponsorship breakdown and CFP status. The drawer that opens it is ED-only
 // client-side, so authorization is enforced here with server-verified persona detection.
 router.get('/event-detail', requireExecutiveDirector, (req, res, next) => analyticsController.getEventDetail(req, res, next));
-router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
-router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
-router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
-router.get('/marketing-attribution', (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
+router.get('/brand-reach', requireExecutiveDirector, (req, res, next) => analyticsController.getBrandReach(req, res, next));
+router.get('/brand-health', requireExecutiveDirector, (req, res, next) => analyticsController.getBrandHealth(req, res, next));
+router.get('/revenue-impact', requireExecutiveDirector, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+router.get('/marketing-attribution', requireExecutiveDirector, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
-// Multi-foundation summary endpoint (multi-foundation dashboard)
-router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
+// Multi-foundation summary endpoint (multi-foundation dashboard). Scoped by a `slugs` list rather
+// than a single foundationSlug/project, so requireExecutiveDirector only enforces the ED gate here,
+// not per-slug scoping — same as any other unscoped ED endpoint.
+router.get('/multi-foundation-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
 
 // Org Lens — bootstrap account context (display attrs + cdev mapping + tier)
 router.get('/org-lens-account-context', (req, res, next) => analyticsController.getOrgLensAccountContext(req, res, next));

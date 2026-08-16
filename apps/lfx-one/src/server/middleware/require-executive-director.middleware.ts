@@ -42,7 +42,11 @@ export async function requireExecutiveDirector(req: Request, res: Response, next
       return;
     }
 
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    // Analytics routes scope by `foundationSlug`; campaigns routes scope by `project` — same
+    // concept, two names carried over from each route file's own convention.
+    const requestedSlug =
+      (typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '') ||
+      (typeof req.query['project'] === 'string' ? req.query['project'] : '');
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped ED endpoints stay allowed.
