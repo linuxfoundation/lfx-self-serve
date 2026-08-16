@@ -188,6 +188,51 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
   return envelope[key] !== undefined;
 }
 
+/**
+ * Did the request definitively never reach campaign-service?
+ *
+ * Only CONNECT-time failures qualify: the connection was never established, so the bytes never
+ * left this process and nothing upstream can have started. That is as DEFINITE as a 4xx refusal,
+ * and safer to retry than one.
+ *
+ * `ECONNRESET` is deliberately EXCLUDED even though it is a transport error. Node reports it for
+ * a reset at any point, and this code cannot tell a connect-time reset from one that arrives
+ * after the request was sent and processed — where the write may well have committed and only
+ * the reply was lost. Calling that "nothing was created" on a path with no idempotency key is
+ * the one wrong answer worth avoiding, because it invites the retry that duplicates a paid
+ * campaign. The sibling approve path pins the same distinction (see its `definitelyRejected`).
+ *
+ * It needs its own check because a MicroserviceError alone does not distinguish a response from
+ * a failure to reach the service at all: `ApiClientService.executeRequest` wraps a Node fetch
+ * failure as `MicroserviceError(500, cause.code)`, so an unreachable service and a genuine 500
+ * arrive as the same class. Only the `code` tells them apart — a syscall name versus an HTTP-ish
+ * one — which is what `requestNeverLeft` below keys on.
+ *
+ * Observed 2026-08-13: with campaign-service stopped, a create answered "could not be confirmed —
+ * check the ad platforms before retrying" for a request that was never sent. That is the exact
+ * harm those predicates exist to prevent, told to a user who then has to go read an ad account to
+ * rule out a campaign that could not exist.
+ *
+ * Deliberately NOT keyed on the message text, which is not a contract. `code` is the documented
+ * Node.js system-error field, and an unrecognised code stays indeterminate — this widens what
+ * counts as definite, and a wrong guess in that direction is the dangerous one.
+ */
+const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function requestNeverLeft(error: unknown): boolean {
+  // A MicroserviceError is NOT automatically a response. `ApiClientService.executeRequest`
+  // (`api-client.service.ts:313-320`) wraps a Node fetch failure as
+  // `MicroserviceError(500, cause.code)` — so the production shape of an unreachable service is a
+  // 500 whose `code` is `ECONNREFUSED`, not a raw Error. An earlier revision returned false for
+  // every MicroserviceError and therefore fixed nothing in production; the tests passed only
+  // because they mocked a raw Error, which this client never throws. Both bots caught it.
+  //
+  // A REAL 500 from campaign-service carries an HTTP-ish code (`INTERNAL_ERROR`), never a
+  // syscall name, so keying on the code rather than the class keeps the two apart.
+  const code = error instanceof MicroserviceError ? error.code : (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NEVER_SENT_ERROR_CODES.has(code);
+}
+
 /** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
 interface CampaignServiceMarketingEmail {
   id?: string;
@@ -690,6 +735,16 @@ export class CampaignServiceClient {
       // tell us whether a job exists, and the create endpoints expose no such route today. That
       // is the better fix and belongs with an idempotency key on the service side; this stops the
       // active harm of instructing the retry.
+      // A request that never left this process is definite too — see `requestNeverLeft`. Without
+      // it, campaign-service simply being unreachable answered "it may have started, check the ad
+      // platforms", which is the retry-inducing wording this branch exists to avoid.
+      if (requestNeverLeft(error)) {
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Could not reach the campaign service, so nothing was created. Please try again.',
+        };
+      }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
@@ -850,6 +905,12 @@ export class CampaignServiceClient {
     error: unknown,
     versionIsAcceptable: (version: number) => boolean
   ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // A request that never left this process cannot have committed, so there is nothing to
+    // reconcile — skip the reads rather than spending them proving a negative. Same class as the
+    // `definitelyRejected` case below; see `requestNeverLeft`.
+    if (requestNeverLeft(error)) {
+      return null;
+    }
     const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
     if (definitelyRejected) {
       return null;
@@ -1120,6 +1181,13 @@ export class CampaignServiceClient {
       // is stored now may not be theirs. The distinction between "someone replaced it" and
       // "someone removed it" changes nothing they can act on.
       const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      // Deliberately NOT widened with `requestNeverLeft` the way the create path is. The two
+      // look alike and are not: this arm runs after the write already SUCCEEDED, on the
+      // follow-up approve. `ECONNRESET` here means the approve was sent and its reply was lost —
+      // campaign-service may have committed it and bumped the version — so the outcome is
+      // genuinely unknown, which is what the sibling test at "reports no validator when the
+      // approval outcome is unknown" pins. `requestNeverLeft` answers "did the bytes leave", and
+      // only a connect-time failure makes that a proof; a mid-flight reset does not.
       const definitelyRejected =
         error instanceof MicroserviceError &&
         error.statusCode >= 400 &&
