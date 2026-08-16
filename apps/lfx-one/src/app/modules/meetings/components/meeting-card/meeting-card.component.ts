@@ -44,6 +44,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
+  getMeetingEditCommands,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
@@ -210,6 +211,9 @@ export class MeetingCardComponent implements OnInit {
     if (committeeUid) params['committee_uid'] = committeeUid;
     return params;
   });
+  // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
+  // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
+  public readonly editCommands: Signal<string[]> = computed(() => getMeetingEditCommands(this.meeting()) ?? ['/meetings', this.meeting().id, 'edit']);
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;

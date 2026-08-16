@@ -30,6 +30,7 @@ import {
   PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  Project,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
@@ -39,6 +40,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  computeIsFoundation,
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
@@ -174,8 +176,23 @@ export class MeetingService {
 
   /**
    * Fetches a single meeting by UID
+   *
+   * @param options.access - When true (default), add the caller's organizer access fields.
+   * @param options.includeProject - When true, enrich the payload with the meeting's project fields
+   * (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project context
+   * from the meeting itself. Opt-in because the public
+   * meeting controller side-cars the project separately and other callers (e.g.
+   * getMyMeetingRegistrants) only need the organizer flag — neither should pay for the extra
+   * project fetch. An options object (not boolean positionals) keeps call sites self-describing
+   * and makes swapping the two flags a type error — see CommitteeService.getCommitteeById.
    */
-  public async getMeetingById(req: Request, meetingUid: string, meetingType: QueryServiceMeetingType = 'v1_meeting', access: boolean = true): Promise<Meeting> {
+  public async getMeetingById(
+    req: Request,
+    meetingUid: string,
+    meetingType: QueryServiceMeetingType = 'v1_meeting',
+    options: { access?: boolean; includeProject?: boolean } = {}
+  ): Promise<Meeting> {
+    const { access = true, includeProject = false } = options;
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -195,13 +212,32 @@ export class MeetingService {
       });
     }
 
-    if (meeting.committees && meeting.committees.length > 0) {
+    const committees = meeting.committees && meeting.committees.length > 0 ? meeting.committees : null;
+
+    if (committees) {
       logger.debug(req, 'get_meeting_by_id', 'Enriching meeting with committee data', {
         meeting_id: meetingUid,
-        committee_count: meeting.committees.length,
+        committee_count: committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
-      meeting.committees = meeting.committees.map((c) => ({
+    }
+
+    // Project enrichment runs in parallel with the committee-name lookup (both depend only on
+    // the meeting payload), so it adds no sequential latency.
+    const [project, committeeNameMap] = await Promise.all([
+      includeProject ? this.fetchMeetingProject(req, meeting) : Promise.resolve(null),
+      committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
+    ]);
+    if (project) {
+      meeting.project_slug = project.slug;
+      meeting.project_name = project.name;
+      meeting.is_foundation = computeIsFoundation(project);
+      // parent_project_uid is deliberately NOT mapped here: nothing in the detail/edit flow
+      // consumes it, and it discloses hierarchy the caller may hold no relation to. List
+      // payloads still carry it via enrichWithProjectData for the dashboard filters.
+    }
+
+    if (committees && committeeNameMap) {
+      meeting.committees = committees.map((c) => ({
         uid: c.uid,
         name: committeeNameMap.get(c.uid) || c.name,
         allowed_voting_statuses: c.allowed_voting_statuses,
@@ -1680,6 +1716,36 @@ export class MeetingService {
 
   public async getMeetingProjectName<T extends Meeting>(req: Request, meetings: T[]): Promise<T[]> {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
+  }
+
+  /**
+   * Fetches the meeting's project for detail enrichment. Returns null on failure so the meeting
+   * still loads — the frontend falls back to resolving project context from `project_uid`.
+   *
+   * Uses the query-service metadata lookup (getProjectsByIds) rather than getProjectById: the
+   * /projects/:uid endpoint is relation-gated, and a meeting writer may lack a project-level
+   * viewer relation (the committee-writer case writerGuard handles) — the direct fetch would
+   * 403 for exactly those users, and the client fallback hits the same gated endpoint, leaving
+   * the edit page in a stale context. The query-service path needs no project relation.
+   * Meeting access was already checked by the caller, and the exposed fields
+   * (slug/name/is_foundation) are non-sensitive.
+   */
+  private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
+    if (!meeting.project_uid) {
+      return null;
+    }
+
+    try {
+      const projects = await this.projectService.getProjectsByIds(req, [meeting.project_uid]);
+      return projects.get(meeting.project_uid) ?? null;
+    } catch (error) {
+      logger.warning(req, 'get_meeting_by_id', 'Failed to fetch project for meeting enrichment; continuing without project fields', {
+        meeting_id: meeting.id,
+        project_uid: meeting.project_uid,
+        err: error,
+      });
+      return null;
+    }
   }
 
   /**

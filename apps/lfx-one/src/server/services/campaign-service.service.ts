@@ -162,9 +162,15 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
  * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
  * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
- * service builds no `twitterConfig`, `microsoftConfig` or `hubspotConfig` at all, so waving them
- * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
- * the mapped four are protected from.
+ * service builds no `twitterConfig` or `microsoftConfig`, so waving those through queued a job
+ * whose dispatcher reads an absent key as a zero value — exactly the defect the mapped platforms
+ * are protected from.
+ *
+ * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
+ * guard is designed to enforce: map a platform only once something builds its config. Note that a
+ * mapped `hubspot` is necessary but NOT sufficient to stage an email — the dispatcher also needs
+ * the brief's audience to be BUILT (`hubspot.go:432-456`), which it resolves by `brief.ID` rather
+ * than from this envelope, so that failure surfaces upstream and not here.
  *
  * The cost of refusing is a clear error when a platform is enabled before its config builder
  * exists, which is the failure you want. The cost of allowing was a dispatched, unusable job.
@@ -175,10 +181,56 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'linkedin-ads': 'linkedInConfig',
     'reddit-ads': 'redditConfig',
     'meta-ads': 'metaConfig',
+    hubspot: 'hubspotConfig',
   };
   const key = requiredKey[platform];
   if (key === undefined) return false;
   return envelope[key] !== undefined;
+}
+
+/**
+ * Did the request definitively never reach campaign-service?
+ *
+ * Only CONNECT-time failures qualify: the connection was never established, so the bytes never
+ * left this process and nothing upstream can have started. That is as DEFINITE as a 4xx refusal,
+ * and safer to retry than one.
+ *
+ * `ECONNRESET` is deliberately EXCLUDED even though it is a transport error. Node reports it for
+ * a reset at any point, and this code cannot tell a connect-time reset from one that arrives
+ * after the request was sent and processed — where the write may well have committed and only
+ * the reply was lost. Calling that "nothing was created" on a path with no idempotency key is
+ * the one wrong answer worth avoiding, because it invites the retry that duplicates a paid
+ * campaign. The sibling approve path pins the same distinction (see its `definitelyRejected`).
+ *
+ * It needs its own check because a MicroserviceError alone does not distinguish a response from
+ * a failure to reach the service at all: `ApiClientService.executeRequest` wraps a Node fetch
+ * failure as `MicroserviceError(500, cause.code)`, so an unreachable service and a genuine 500
+ * arrive as the same class. Only the `code` tells them apart — a syscall name versus an HTTP-ish
+ * one — which is what `requestNeverLeft` below keys on.
+ *
+ * Observed 2026-08-13: with campaign-service stopped, a create answered "could not be confirmed —
+ * check the ad platforms before retrying" for a request that was never sent. That is the exact
+ * harm those predicates exist to prevent, told to a user who then has to go read an ad account to
+ * rule out a campaign that could not exist.
+ *
+ * Deliberately NOT keyed on the message text, which is not a contract. `code` is the documented
+ * Node.js system-error field, and an unrecognised code stays indeterminate — this widens what
+ * counts as definite, and a wrong guess in that direction is the dangerous one.
+ */
+const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function requestNeverLeft(error: unknown): boolean {
+  // A MicroserviceError is NOT automatically a response. `ApiClientService.executeRequest`
+  // (`api-client.service.ts:313-320`) wraps a Node fetch failure as
+  // `MicroserviceError(500, cause.code)` — so the production shape of an unreachable service is a
+  // 500 whose `code` is `ECONNREFUSED`, not a raw Error. An earlier revision returned false for
+  // every MicroserviceError and therefore fixed nothing in production; the tests passed only
+  // because they mocked a raw Error, which this client never throws. Both bots caught it.
+  //
+  // A REAL 500 from campaign-service carries an HTTP-ish code (`INTERNAL_ERROR`), never a
+  // syscall name, so keying on the code rather than the class keeps the two apart.
+  const code = error instanceof MicroserviceError ? error.code : (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NEVER_SENT_ERROR_CODES.has(code);
 }
 
 /** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
@@ -719,6 +771,16 @@ export class CampaignServiceClient {
       // tell us whether a job exists, and the create endpoints expose no such route today. That
       // is the better fix and belongs with an idempotency key on the service side; this stops the
       // active harm of instructing the retry.
+      // A request that never left this process is definite too — see `requestNeverLeft`. Without
+      // it, campaign-service simply being unreachable answered "it may have started, check the ad
+      // platforms", which is the retry-inducing wording this branch exists to avoid.
+      if (requestNeverLeft(error)) {
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Could not reach the campaign service, so nothing was created. Please try again.',
+        };
+      }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
@@ -879,6 +941,12 @@ export class CampaignServiceClient {
     error: unknown,
     versionIsAcceptable: (version: number) => boolean
   ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // A request that never left this process cannot have committed, so there is nothing to
+    // reconcile — skip the reads rather than spending them proving a negative. Same class as the
+    // `definitelyRejected` case below; see `requestNeverLeft`.
+    if (requestNeverLeft(error)) {
+      return null;
+    }
     const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
     if (definitelyRejected) {
       return null;
@@ -1149,6 +1217,13 @@ export class CampaignServiceClient {
       // is stored now may not be theirs. The distinction between "someone replaced it" and
       // "someone removed it" changes nothing they can act on.
       const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      // Deliberately NOT widened with `requestNeverLeft` the way the create path is. The two
+      // look alike and are not: this arm runs after the write already SUCCEEDED, on the
+      // follow-up approve. `ECONNRESET` here means the approve was sent and its reply was lost —
+      // campaign-service may have committed it and bumped the version — so the outcome is
+      // genuinely unknown, which is what the sibling test at "reports no validator when the
+      // approval outcome is unknown" pins. `requestNeverLeft` answers "did the bytes leave", and
+      // only a connect-time failure makes that a proof; a mid-flight reset does not.
       const definitelyRejected =
         error instanceof MicroserviceError &&
         error.statusCode >= 400 &&
@@ -1413,6 +1488,18 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
 
   // Narrowed against the union rather than passed through: an unknown platform id reaches a
   // template that indexes icon and label maps by it, and renders blank rather than erroring.
+  //
+  // Narrowed to `CampaignPlatform`, NOT `CampaignAnyPlatform`, deliberately: this feeds the PAID
+  // planner's channel selection, and `hubspot` is not one of its channels. That means a stored
+  // email brief's `hubspot` is filtered out here and — because of the guard below — would read as
+  // UNREADABLE rather than as an email brief.
+  //
+  // No client sends such a brief TODAY (the email planner omits `platforms`), but that is a client
+  // guarantee and this is a server reading whatever campaign-service stored, so it does not bound
+  // what can arrive — the same reasoning `campaign-proxy.service.ts` applies to its own inputs.
+  // The case is deferred rather than dismissed: restoring an email brief needs a different shape,
+  // not a wider filter here, and widening this one would hand `hubspot` to a paid channel picker
+  // that has no such channel. That is LFXV2-3224's to solve deliberately.
   const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
 
   // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —
