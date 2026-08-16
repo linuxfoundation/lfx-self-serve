@@ -1028,9 +1028,20 @@ export class CampaignController {
     // If-Match is answered upstream with 428. Failing here names the missing field instead.
     let briefId = '';
     let etag = '';
+    let projectSlug = '';
     if (viaCampaignService) {
       briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
       etag = typeof body.etag === 'string' ? body.etag.trim() : '';
+      projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      if (!projectSlug) {
+        next(
+          ServiceValidationError.forField('project', 'project is required', {
+            operation: 'campaign_status_update',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
       if (!briefId) {
         next(
           ServiceValidationError.forField('briefId', 'briefId is required to change a campaign-service campaign status', {
@@ -1055,14 +1066,7 @@ export class CampaignController {
 
     try {
       if (viaCampaignService) {
-        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
-        if (!projectSlug) {
-          throw ServiceValidationError.forField('project', 'project is required', {
-            operation: 'campaign_status_update',
-            service: 'campaign_controller',
-          });
-        }
-        await this.campaignServiceClient.toggleCampaignStatus(req, {
+        const campaign = await this.campaignServiceClient.toggleCampaignStatus(req, {
           projectSlug,
           briefId,
           campaignId,
@@ -1070,17 +1074,30 @@ export class CampaignController {
           etag,
         });
         // `previousStatus` is what the caller asked to move AWAY from, which is the opposite of
-        // the requested state — the row's own prior value is not returned by the toggle, and
-        // inventing one from `campaign.status` would be wrong in the `created_degraded` case,
-        // where the returned status is deliberately UNCHANGED.
+        // the requested state — the row's own prior value is not returned by the toggle.
+        //
+        // `etag` and `serviceStatus` come from the ROW, and dropping them is not cosmetic. The
+        // fresh etag is the only way a caller can chain pause→resume: its own validator went
+        // stale the moment this toggle committed, and a stale If-Match is answered with 412. And
+        // `newStatus` is an echo of the REQUEST, which the `created_degraded` case makes false —
+        // pausing such a campaign pauses it upstream while deliberately leaving the row's status
+        // unchanged, so echoing "PAUSED" would render a transition the service declined to
+        // record. `serviceStatus` is what actually happened; `newStatus` is what was asked.
         const result: CampaignStatusUpdateResult = {
           platform: body.platform,
           campaignId,
           previousStatus: body.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE',
           newStatus: body.status as CampaignToggleStatus,
           success: true,
+          etag: campaign.etag,
+          serviceStatus: campaign.status,
         };
-        logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus, via: 'campaign-service' });
+        logger.success(req, 'campaign_status_update', startTime, {
+          campaignId,
+          newStatus: result.newStatus,
+          serviceStatus: result.serviceStatus,
+          via: 'campaign-service',
+        });
         res.json(result);
         return;
       }

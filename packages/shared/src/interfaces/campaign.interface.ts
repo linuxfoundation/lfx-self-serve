@@ -1344,4 +1344,21 @@ export interface CampaignStatusUpdateResult {
   previousStatus: string;
   newStatus: CampaignToggleStatus;
   success: boolean;
+  /**
+   * The campaign row's NEW ETag, for chaining a follow-up toggle.
+   *
+   * Without it, pause-then-resume is impossible: the second call needs a fresh `If-Match`, and
+   * the caller's own etag went stale the moment the first toggle committed. Absent on the legacy
+   * per-platform path, which has no row and no version.
+   */
+  etag?: string;
+  /**
+   * The status the SERVICE reports after the toggle, which is not always the one requested.
+   *
+   * Pausing a `created_degraded` campaign pauses it upstream and deliberately leaves the row's
+   * status unchanged, so `newStatus` — an echo of the request — would claim a transition the
+   * service declined to record. Read this field to render actual state; read `newStatus` only as
+   * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
+   */
+  serviceStatus?: string;
 }

@@ -796,35 +796,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
-   *
-   * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
-   * REQUIRED with no default, and staging clones a template, so a user who cannot choose one
-   * cannot stage anything.
-   *
-   * A SEARCH rather than a dropdown, deliberately. campaign-service caps an unfiltered listing at
-   * 500 and the wire result has no pagination field, so a portal with more would show a truncated
-   * list indistinguishable from a complete one — the exact shape of falsehood a picker must not
-   * have. `possiblyTruncated` below is how the caller can tell.
-   *
-   * `q` does NOT reach HubSpot. Its list endpoint cannot be queried by name or subject, so
-   * campaign-service walks every page and matches in-process. Do not describe this as server-side
-   * search: the service's own design warns that reading it that way invites optimising the walk
-   * away, reintroducing the false absence the cap exists to prevent.
-   *
-   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
-   * said unbounded and was wrong. `SearchEmails` (campaign-service
-   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
-   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
-   * filtered search either sees every page or fails; it never quietly returns a subset. That is
-   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
-   * case where a partial result is returned as if complete.
-   *
-   * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
-   * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
-   * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
-   */
-  /**
    * Pause or resume a campaign on its ad platform, then persist the confirmed state.
    *
    * This is a DISPATCHING write, not a row update: campaign-service calls the platform first and
@@ -883,6 +854,35 @@ export class CampaignServiceClient {
     return { ...response.data, etag: readEtag(response) ?? response.data.etag };
   }
 
+  /**
+   * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
+   *
+   * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
+   * REQUIRED with no default, and staging clones a template, so a user who cannot choose one
+   * cannot stage anything.
+   *
+   * A SEARCH rather than a dropdown, deliberately. campaign-service caps an unfiltered listing at
+   * 500 and the wire result has no pagination field, so a portal with more would show a truncated
+   * list indistinguishable from a complete one — the exact shape of falsehood a picker must not
+   * have. `possiblyTruncated` below is how the caller can tell.
+   *
+   * `q` does NOT reach HubSpot. Its list endpoint cannot be queried by name or subject, so
+   * campaign-service walks every page and matches in-process. Do not describe this as server-side
+   * search: the service's own design warns that reading it that way invites optimising the walk
+   * away, reintroducing the false absence the cap exists to prevent.
+   *
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
+   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
+   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
+   * filtered search either sees every page or fails; it never quietly returns a subset. That is
+   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
+   * case where a partial result is returned as if complete.
+   *
+   * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
+   * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
+   * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
+   */
   public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
     if (projectSlug === '') {
       // Refused rather than defaulted, for the reason `loadBrief` refuses: `/projects//…` is a

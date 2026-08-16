@@ -1234,6 +1234,29 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  // The assertion whose absence let a real defect through: the client was called without
+  // assignment, so the etag it fetched died one frame later. The service spec asserts the CLIENT's
+  // return value and this spec mocks the whole client, so nothing observed the seam between them —
+  // reverting the client fix broke a test while leaving production behaviour identical.
+  it("propagates the row's fresh etag so a follow-up toggle has a valid If-Match", async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 7, etag: '7' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '6' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ etag: '7' }));
+  });
+
+  // Pausing a created_degraded campaign pauses it UPSTREAM while deliberately leaving the row's
+  // status unchanged (campaign-service `pauseDegraded`). Echoing the request would render "Paused"
+  // for a transition the service declined to record.
+  it('reports the service status, not the requested one, for a degraded campaign', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'created_degraded', version: 4, etag: '4' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '4' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', serviceStatus: 'created_degraded' }));
+  });
+
   it('rejects an id that is neither numeric nor a UUID', async () => {
     await controller.updateCampaignStatus(statusReq('not-an-id', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
 
