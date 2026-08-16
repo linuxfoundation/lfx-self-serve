@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
+import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -409,9 +409,9 @@ export class CommitteeService {
       has_slack_webhook: settings.has_chat_webhook === true,
     };
 
-    // `settings` above is a raw, uncast GET /committees/:id/settings body spread into `merged`
-    // alongside `withAccess`, un-stripped — this is what stops chat_webhook_url itself (not just
-    // the has_slack_webhook boolean derived from it) from leaking into the response.
+    // `settingsForResponse` above is stripped only of `has_chat_webhook` (the raw upstream signal
+    // has_slack_webhook is derived from) — chat_webhook_url itself is stopped from leaking by
+    // stripChatWebhookUrl below, applied to the fully-merged response either way.
     if (!options.includeProjectMetadata) {
       return this.stripChatWebhookUrl(merged);
     }
@@ -557,11 +557,15 @@ export class CommitteeService {
 
     // A truthiness-only check below would let falsy non-strings through: they'd skip the pattern
     // test entirely and ride straight into the settings PUT payload. The check below therefore
-    // rejects every value that isn't absent, null, or a string — before any write happens.
+    // rejects every value that isn't absent, null, or a string — before any write happens. The
+    // length bound mirrors upstream's own MaxLength(500) — without it here, an over-length value
+    // that still happens to match the pattern would pass this check and fail upstream's instead,
+    // with a less actionable error.
     if (
       rawChatWebhookUrl !== undefined &&
       rawChatWebhookUrl !== null &&
-      (typeof rawChatWebhookUrl !== 'string' || (rawChatWebhookUrl !== '' && !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(rawChatWebhookUrl)))
+      (typeof rawChatWebhookUrl !== 'string' ||
+        (rawChatWebhookUrl !== '' && (rawChatWebhookUrl.length > CHAT_WEBHOOK_URL_MAX_LENGTH || !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(rawChatWebhookUrl))))
     ) {
       throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
         operation: 'update_committee',

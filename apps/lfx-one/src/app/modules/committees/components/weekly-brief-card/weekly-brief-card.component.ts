@@ -97,9 +97,8 @@ export class WeeklyBriefCardComponent {
   public readonly impersonating = this.userService.impersonating;
 
   // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
-  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
-  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
-  // with a hint pointing at settings UI that's itself still flag-hidden.
+  // it, once wg-weekly-brief is on, every user would see a Share to Slack button pointing at
+  // settings UI (the webhook card) that's itself still flag-hidden, with no way to configure it.
   public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't

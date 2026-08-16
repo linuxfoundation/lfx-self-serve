@@ -850,7 +850,12 @@ export class WeeklyBriefService {
     // Needs project_uid for the strict project-writer check below — a plain GET, not
     // getCommitteeById, since this method reads nothing from its settings/membership/access-check
     // enrichment.
-    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${encodeURIComponent(committeeId)}`,
+      'GET'
+    );
     if (!committee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
         operation: 'share_weekly_brief_slack',
@@ -892,6 +897,7 @@ export class WeeklyBriefService {
     // posts to Slack itself — see this method's doc comment. Its response codes are mapped below
     // onto the same client-facing messages/codes this method already used for the equivalent
     // local checks, so the Angular error-handling contract doesn't change.
+    logger.debug(req, 'share_weekly_brief_slack', 'Proxying to committee-service', { committee_id: committeeId, revision: expectedRevision });
     try {
       await this.microserviceProxy.proxyRequest<void>(
         req,
@@ -905,6 +911,15 @@ export class WeeklyBriefService {
       if (!(error instanceof MicroserviceError)) {
         throw error;
       }
+      // Logged before remapping — the remapped client-facing error (esp. the 400 case below,
+      // which collapses both a stale local/upstream state race AND a genuine BFF↔upstream
+      // contract bug to the same "brief not found" 404) would otherwise leave no operator-visible
+      // trace of what upstream actually said.
+      logger.warning(req, 'share_weekly_brief_slack', 'committee-service rejected the share-to-chat request', {
+        committee_id: committeeId,
+        upstream_status: error.statusCode,
+        upstream_code: error.code,
+      });
       switch (error.statusCode) {
         case 400:
           // Race window between the local shareable-state check above and this call landing

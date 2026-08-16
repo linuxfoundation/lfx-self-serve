@@ -42,6 +42,7 @@ vi.mock('@lfx-one/shared/enums', () => ({
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', () => ({
   SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
+  CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
 }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -536,13 +537,24 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
-    it("rejects non-string chat_webhook_url JSON values (false, 0, objects) with a 400 before any write — the declared string|null type doesn't stop a raw req.body cast, and falsy non-strings would otherwise skip the pattern test and only fail post-write via the read-back mismatch", async () => {
+    it("rejects non-string chat_webhook_url JSON values (false, 0, objects) with a 400 before any write — the declared string|null type doesn't stop a raw req.body cast, and a truthiness-only check would otherwise let falsy non-strings skip the pattern test entirely", async () => {
       for (const badValue of [false, 0, { url: VALID_WEBHOOK_URL }]) {
         await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: badValue as unknown as string })).rejects.toMatchObject({
           statusCode: 400,
           code: 'VALIDATION_ERROR',
         });
       }
+
+      expect(fetchWithETag).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects a chat_webhook_url longer than CHAT_WEBHOOK_URL_MAX_LENGTH, even if it otherwise matches the pattern, before touching upstream', async () => {
+      const overLongUrl = `https://hooks.slack.com/services/T000/B000/${'X'.repeat(500)}`;
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: overLongUrl })).rejects.toMatchObject({
+        statusCode: 400,
+      });
 
       expect(fetchWithETag).not.toHaveBeenCalled();
       expect(proxyRequest).not.toHaveBeenCalled();

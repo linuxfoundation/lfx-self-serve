@@ -103,11 +103,12 @@ export class CommitteeSettingsTabComponent {
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
 
   // Dark-launch gate for the whole Slack webhook card — mirrors committee-overview.component.ts's
-  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag: the server-side kill
-  // switch (ServerFeatureFlag.WeeklyBriefSlack, committee.service.ts's updateCommittee) is the
-  // real enforcement boundary, but that flag only gates the write — rendering the card
-  // unconditionally would still show every user a card that 409s on save until this UI-only flag
-  // is flipped on too.
+  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag. Purely a UI-visibility
+  // gate: the real enforcement boundary is the server-side kill switch
+  // (ServerFeatureFlag.WeeklyBriefSlack, committee.service.ts's updateCommittee — env-var only,
+  // defaults off, this OpenFeature/GrowthBook flag can't reach it). Both must be on for a save to
+  // actually succeed; this flag alone controls whether the card renders at all, so it stays off
+  // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the

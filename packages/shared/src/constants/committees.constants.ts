@@ -25,30 +25,25 @@ export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'membe
 
 /**
  * Slack Incoming Webhook URLs always live under this stable, documented prefix. Enforced as a
- * hard allowlist (not just format hinting) because `chat_webhook_url` drives a server-initiated
- * outbound POST to a URL the committee writer fully controls — without a domain allowlist, an
- * arbitrary URL here would let the BFF be used as an SSRF vector.
+ * hard allowlist (not just format hinting) on write (`committee.service.ts`'s `updateCommittee`) —
+ * committee-service itself now owns the actual outbound POST to Slack (LFXV2-3094 /
+ * lfx-v2-committee-service PR #178), enforcing the same host allowlist independently at send
+ * time, but this BFF-side check still matters: it's what gives the caller an actionable 400 at
+ * save time instead of a webhook that silently 422s every future share attempt.
  *
  * The `hooks.slack.com` host is duplicated as a literal in `apps/lfx-one/otel.mjs`'s
- * `ignoreRequestHook` (LFXV2-3080) — that carve-out exists because this URL carries a bearer
- * credential in its path, which OTel's undici instrumentation would otherwise export unredacted
- * on every outbound share. It checks only the derived request URL's hostname — deliberately
- * broader than this path-anchored full-URL pattern, since suppressing every request to the host
- * is the safe direction for a redaction guard — and the OTel bootstrap deliberately imports no
- * app-side package so nothing app-side loads before instrumentations register. If this pattern's
- * host ever changes or a second host is added, `otel.mjs`'s carve-out must be updated to match,
- * or the credential leak reopens silently.
+ * `ignoreRequestHook`. That carve-out predates the send moving server-side (LFXV2-3080) — this
+ * BFF no longer makes any outbound request to hooks.slack.com itself, so it's dormant today, kept
+ * as defense-in-depth against a future direct-fetch path being reintroduced. It checks only the
+ * derived request URL's hostname — deliberately broader than this path-anchored full-URL pattern,
+ * since suppressing every request to the host is the safe direction for a redaction guard. If
+ * this pattern's host ever changes or a second host is added, update `otel.mjs`'s carve-out to
+ * match, in case that dormant path is ever reactivated.
  */
 export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
 
-/**
- * Non-anchored, `/g`-flagged sibling of {@link SLACK_INCOMING_WEBHOOK_URL_PATTERN} — for
- * scrubbing a webhook URL that might appear *embedded* in arbitrary third-party text (e.g. a
- * caught fetch error's message), not for validating a whole string. Deliberately looser than the
- * validation pattern (no path-segment shape requirement past `/services/`) since a defensive
- * redaction site should err toward over-matching, not under-matching, a potential credential.
- */
-export const SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN = /https:\/\/hooks\.slack\.com\/services\/\S*/g;
+/** Mirrors upstream's `chat_webhook_url` bound (lfx-v2-committee-service's `ChatWebhookURLAttribute`, `dsl.MaxLength(500)`) — checked alongside {@link SLACK_INCOMING_WEBHOOK_URL_PATTERN} so an over-length value fails loud with an actionable 400 at the BFF boundary instead of an opaque upstream rejection. */
+export const CHAT_WEBHOOK_URL_MAX_LENGTH = 500;
 
 /**
  * Configurable labels for committees displayed throughout the UI
