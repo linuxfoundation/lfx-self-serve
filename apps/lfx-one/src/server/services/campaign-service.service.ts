@@ -872,7 +872,15 @@ export class CampaignServiceClient {
       { status: params.status.toLowerCase() },
       { 'If-Match': params.etag }
     );
-    return response.data;
+    // The HEADER is the authoritative validator for the NEXT toggle, and it must not be dropped:
+    // `etag` is an attribute on the upstream `Campaign` type but is NOT in its `Required` list, so
+    // the body may legitimately carry none while `Response(StatusOK, Header("etag:ETag"))` always
+    // does. Discarding it breaks precisely the interaction this feature enables — pause, then
+    // resume — because after a successful toggle the caller's own etag is stale, and a stale
+    // If-Match is answered with 412. Preferring the header over the body is deliberate for the
+    // same reason: where both exist they mirror the same version, and where they disagree the
+    // header is the one the response contract guarantees.
+    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
   }
 
   public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
