@@ -2,12 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Profile & Account hub. The profile panel is a fixed, full-height 300px rail pinned to the right
-  edge of the viewport at lg and up — mirroring the left menu. It never stacks above the content,
-  never changes width, and always sits above page content (z-40) at that breakpoint.
-  MainLayoutComponent reserves a matching right gutter (lg:pr-[300px]) on the profile hub so the
-  content and the shared footer stay clear of the rail. The rail's `top` matches the impersonation
-  banner offset. Below lg, the panel renders inline in the content column above the subtabs instead.
+  Profile & Account hub. At lg and up, the profile panel is a fixed, full-height 300px rail pinned
+  to the right edge of the viewport — mirroring the left menu: it never stacks above the content,
+  never changes width, and always sits above page content (z-40). MainLayoutComponent reserves a
+  matching right gutter (lg:pr-[300px]) on the profile hub so the content and the shared footer
+  stay clear of the rail. The rail's `top` matches the impersonation banner offset. Below lg, the
+  panel renders inline in the content column above the subtabs instead, capped at max-w-md so it
+  keeps rail-like proportions rather than stretching to the full column width.
 -->
 <div class="flex flex-col" data-testid="profile-layout">
   <!-- Left column -->
@@ -30,9 +31,9 @@
         <p class="mt-1 text-sm text-slate-500">Manage your profile and account settings.</p>
       </div>
 
-      <!-- Profile panel — inline below lg; fixed full-height right rail at lg and up (out of normal flow) -->
+      <!-- Profile panel — inline below lg (capped at max-w-md); fixed full-height right rail at lg and up (out of normal flow) -->
       <div
-        class="lg:fixed lg:bottom-0 lg:right-0 lg:z-40 lg:w-[300px]"
+        class="max-w-md lg:max-w-none lg:fixed lg:bottom-0 lg:right-0 lg:z-40 lg:w-[300px]"
         [ngClass]="{ 'lg:top-12': impersonating(), 'lg:top-0': !impersonating() }">
         <lfx-profile-panel
           [loading]="loading()"
