@@ -130,6 +130,27 @@ export enum ServerFeatureFlag {
   CampaignServiceCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE',
 
   /**
+   * Gates whether a Demand Gen Google campaign may be requested at all.
+   *
+   * SEPARATE from `CampaignServiceCreate` because it asks a different question: not "should
+   * creates go through campaign-service?" but "does the DEPLOYED campaign-service understand
+   * `googleAdsConfig.channel`?" That field ships with LFXV2-3257, and the two can be out of
+   * step — the cutover flag may be on against a service that predates it.
+   *
+   * The failure it prevents is silent and expensive. Go's JSON decoder ignores unknown keys,
+   * so an older campaign-service DROPS `channel` and builds its default SEARCH campaign
+   * instead: real budget, no keywords, and per its own `googleAdsConfig.Keywords` doc it "can
+   * never serve". Nothing reports an error — the job succeeds, and the wrong campaign is
+   * discovered later in Google Ads.
+   *
+   * A capability flag rather than a version probe: campaign-service exposes no version
+   * endpoint, and inferring support from a successful create is exactly the ambiguity that
+   * makes the silent-Search case dangerous. OFF by default, so a deployment that has not
+   * confirmed the upstream version refuses rather than guesses.
+   */
+  CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

@@ -632,8 +632,10 @@ export class CampaignServiceClient {
     // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
     // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
     //
-    // The reachable case is google-ads with Demand Gen only and no Search, where
-    // `buildGoogleAdsConfig` correctly returns null because it builds SEARCH config.
+    // The reachable case is google-ads selected with NEITHER supported campaign type: the
+    // builder returns null only when it can name no channel at all. Demand-Gen-only no longer
+    // reaches it — since LFXV2-3257 `buildGoogleAdsConfig` returns a full-budget
+    // `{budget, channel: 'demand-gen'}` config for that selection.
     //
     // This check belongs HERE and not in the controller. It tests for a campaign-service envelope
     // key, so it must only apply once the cutover is on — the legacy path needs no
@@ -654,36 +656,70 @@ export class CampaignServiceClient {
       };
     }
 
-    // Demand Gen is refused outright, because campaign-service cannot create one.
+    // Search + Demand Gen TOGETHER is refused. Demand Gen alone is not — that changed with
+    // LFXV2-3257, which ported the legacy `createDemandGenCampaign` into campaign-service and
+    // gave `googleAdsConfig` a `channel` field to select it.
     //
-    // There is no Demand Gen path anywhere in the service — `internal/dispatch/googleads.go`
-    // creates a Search campaign and nothing else. The legacy path DOES support it
-    // (`createDemandGenCampaign`), so this is a capability the cutover loses rather than one
-    // nobody has.
+    // What still cannot be served is BOTH in one create, and the reason is THIS SERVICE, not
+    // the schema. campaign-service #130 widened the slot key to
+    // `(brief_id, platform, variant)`, so a brief CAN hold a Search row and a Demand Gen row
+    // simultaneously — the database no longer forbids the pair.
     //
-    // Both selections are wrong, in different ways, and neither is safe to let through:
-    //   - demand-gen ONLY  → `buildGoogleAdsConfig` returns null, caught by the check above.
-    //   - search + demand-gen → the config carries only the SEARCH budget share, so the create
-    //     succeeds having silently dropped half of what the user asked for and half their budget.
+    // The limit is here: `buildGoogleAdsConfig` emits ONE `googleAdsConfig` with ONE `channel`,
+    // so a create carrying both types would dispatch a single campaign and silently drop the
+    // other. Stating the real constraint matters — someone reading the old rationale after the
+    // migration landed would remove this guard as obsolete and reintroduce the silent partial
+    // create. Serving the pair needs this BFF to send two configs, not a schema change.
     //
-    // The second is the dangerous one: it looks like success. Refusing keeps the user on a path
-    // that can actually serve the request until the service grows Demand Gen support.
-    // Gated on google-ads being SELECTED, not on `campaignTypes` alone.
+    // Letting the pair through is the dangerous option, because it LOOKS like success: the
+    // config carries one channel, so the create would succeed having silently dropped half of
+    // what the user asked for and half their budget. Refusing keeps them on a path that can
+    // actually serve the request until this BFF can send both channels in one envelope.
     //
-    // `campaignTypes` is a Google concept but the Implementation tab sends it unconditionally:
-    // `includeDemandGen` defaults to true in the form and nothing clears it when Google is
-    // deselected, so a LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type
-    // alone rejected creates that have no Google campaign in them at all — a Google error on a
-    // request Google was never part of.
-    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen')) {
+    // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
+    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
+    // defaults to true in the form and nothing clears it when Google is deselected — so a
+    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
+    // creates that have no Google campaign in them at all.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
       return {
         enabled: true,
         jobId: null,
-        // No internal vocabulary: the siblings above say what the user did and what to do next,
-        // and "campaign-service"/"the cutover" are neither. A user who deselects Demand Gen gets
-        // a Search campaign; one who needs Demand Gen needs an operator, and telling them to
-        // "disable the cutover" names a control they do not have.
-        error: 'Demand Gen campaigns are not supported yet. Deselect Demand Gen to create the Search campaign, or contact support to run this campaign.',
+        // Names BOTH escapes now, because either one works: Search alone and Demand Gen alone
+        // are each servable, and only the pair is not. The previous wording said "Deselect
+        // Demand Gen", which was the only option when Demand Gen could not be created at all
+        // and would now send a user who wants Demand Gen to the one channel they did not ask
+        // for. No internal vocabulary — "campaign-service" and "the cutover" name controls the
+        // reader does not have.
+        // Does NOT promise that creating them one after another works, which an earlier
+        // wording did. Whether a second Google campaign can be added to the same brief
+        // depends on the campaign-service version deployed: the widened
+        // (brief_id, platform, variant) slot key ships with LFXV2-3257, and against an older
+        // deployment the second create is refused by the narrower (brief_id, platform)
+        // uniqueness AFTER the first has already spent budget. Telling a user to retry into
+        // that is worse than telling them nothing.
+        error: 'Search and Demand Gen cannot be created together. Deselect one and create it; adding the second to the same brief may not be supported yet.',
+      };
+    }
+
+    // Demand Gen requires a campaign-service that understands `googleAdsConfig.channel`
+    // (LFXV2-3257). Against an older deployment the field is silently DROPPED — Go's decoder
+    // ignores unknown keys — and the dispatcher builds its default SEARCH campaign instead:
+    // real budget, no keywords, and per `googleAdsConfig.Keywords` it "can never serve".
+    //
+    // That is the worst outcome available here. It is not a visible failure the user can
+    // react to; it is a paid campaign created under the wrong channel with the wrong budget,
+    // reported as success. Refusing costs a user one create; the alternative costs money and
+    // is discovered later in Google Ads.
+    //
+    // Gated on the CAPABILITY flag rather than a version probe: the service exposes no
+    // version endpoint, and inferring support from a successful create is exactly the
+    // ambiguity that makes the silent-Search case dangerous.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen)) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Demand Gen campaigns are not available yet. Select Search instead, or ask an administrator to enable Demand Gen support.',
       };
     }
 

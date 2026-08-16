@@ -10,7 +10,12 @@ const { proxyRequest, proxyRequestWithResponse, logger, isServerFeatureEnabled }
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
-  isServerFeatureEnabled: vi.fn(() => false),
+  // Typed as taking the flag, matching the real isServerFeatureEnabled(flag). Declared as
+  // `vi.fn(() => false)` the mock accepted NO argument, so a per-flag mockImplementation
+  // could not typecheck against it -- and only `yarn build` caught that, since check-types
+  // skips spec files. The type is declared on the mock rather than as a named parameter so
+  // there is no unused binding for no-unused-vars to reject.
+  isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
 }));
 
 vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => ({
@@ -36,6 +41,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
@@ -1427,6 +1433,13 @@ describe('CampaignServiceClient.loadBrief', () => {
 describe('CampaignServiceClient.createCampaigns', () => {
   const bothFlagsOn = () => isServerFeatureEnabled.mockReturnValue(true);
 
+  /**
+   * Cutover flags ON but the Demand Gen capability flag OFF — the state a deployment is in
+   * when campaign-service predates LFXV2-3257 and does not understand
+   * `googleAdsConfig.channel`.
+   */
+  const demandGenUnsupported = () => isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceDemandGen);
+
   beforeEach(() => {
     vi.clearAllMocks();
     isServerFeatureEnabled.mockReturnValue(false);
@@ -1726,9 +1739,10 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
-   * campaign-service has NO Demand Gen path — `internal/dispatch/googleads.go` creates a Search
-   * campaign and nothing else. The legacy path does support it, so this is a capability the
-   * cutover loses rather than one nobody has.
+   * campaign-service DOES have a Demand Gen path as of #130, and the slot key is
+   * `(brief_id, platform, variant)` — so a brief can hold a Search row and a Demand Gen row at
+   * once and the database does not forbid the pair. What is refused here is a MIXED selection,
+   * and the reason is this BFF: `buildGoogleAdsConfig` emits one config with one channel.
    *
    * The mixed selection is the dangerous one because it looks like success: the config carries
    * only the SEARCH budget share, so the create would succeed having silently dropped half the
@@ -1751,6 +1765,34 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('Demand Gen');
   });
 
+  /**
+   * The half this refusal must NOT cover, since LFXV2-3257 ported Demand Gen into
+   * campaign-service. Demand-gen-only is now servable — one channel, one campaign row, which the
+   * `(brief_id, platform, variant)` slot key holds fine (#130 widened it from the two-column
+   * form; a demand-gen retry on a brief that already has Search needs that third column). Only
+   * the PAIR is refused, and by THIS service's one-config envelope rather than by the schema.
+   *
+   * Without this test the guard could be widened back to `includes('demand-gen')` and every
+   * sibling would stay green, silently re-blocking the capability this work added.
+   */
+  it('dispatches a demand-gen-only create rather than refusing it', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000d' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000d');
+    expect(res.error).toBeNull();
+  });
+
   it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
     // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
     // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
@@ -1769,6 +1811,76 @@ describe('CampaignServiceClient.createCampaigns', () => {
     );
 
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000c');
+  });
+
+  /**
+   * The silent-Search hazard, and the reason this guard exists rather than a comment.
+   *
+   * Go's JSON decoder ignores unknown keys, so a campaign-service that predates LFXV2-3257
+   * DROPS `googleAdsConfig.channel` and builds its default SEARCH campaign: real budget, no
+   * keywords, and per its own docs it "can never serve". Nothing errors — the job reports
+   * success and the wrong campaign is found later in Google Ads.
+   *
+   * Refusing costs one create. The alternative costs money.
+   */
+  it('refuses a demand-gen create when the deployed service cannot understand the channel', async () => {
+    demandGenUnsupported();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Demand Gen');
+  });
+
+  /**
+   * The guard must be scoped to the request that is actually at risk. A Search-only create
+   * carries no `channel` an older service could drop, so gating it on the same flag would
+   * refuse the platform's most common create for no reason.
+   */
+  it('still allows a search-only create when demand gen is unsupported', async () => {
+    demandGenUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000f' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000f');
+    expect(res.error).toBeNull();
+  });
+
+  /**
+   * And a non-Google create must not be caught by it: `campaignTypes` is a Google concept the
+   * Implementation tab sends unconditionally, so a LinkedIn-only create arrives carrying
+   * `demand-gen` with no Google campaign in it at all.
+   */
+  it('does not refuse a non-google create when demand gen is unsupported', async () => {
+    demandGenUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000010' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000010');
   });
 
   it('still creates a search-only google campaign', async () => {
