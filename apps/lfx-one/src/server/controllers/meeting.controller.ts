@@ -21,7 +21,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
@@ -372,16 +372,18 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid } = req.query;
     const includeRsvp = include_rsvp === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
+    const committeeUid = typeof committee_uid === 'string' && committee_uid.length > 0 ? committee_uid : undefined;
 
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
       occurrence_id: occurrenceId,
       fail_on_partial: failOnPartial,
+      committee_id: committeeUid,
     });
 
     try {
@@ -393,6 +395,36 @@ export class MeetingController {
         })
       ) {
         return;
+      }
+
+      // The upstream query-service has no default per-user grant filtering on
+      // v1_meeting_registrant (no filter_grants param is set here), so this endpoint returns any
+      // meeting's full registrant PII to any authenticated caller who supplies its uid — there's
+      // no organizer/registrant relationship required, unlike the sibling getMyMeetingRegistrants.
+      // failOnPartial is only ever set by the committee "import registrants" flow, whose caller has
+      // no such relationship to the target meeting either. Require and verify committee write
+      // access whenever completeness is requested, so that flow can't be used to bulk-harvest
+      // registrant PII from meetings the caller doesn't manage.
+      if (failOnPartial) {
+        if (!committeeUid) {
+          throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
+            operation: 'get_meeting_registrants',
+            service: 'meeting_controller',
+          });
+        }
+
+        const [committee, meeting, isCommitteeWriter] = await Promise.all([
+          this.committeeService.getCommitteeById(req, committeeUid),
+          this.meetingService.getMeetingById(req, uid, 'v1_meeting', false),
+          this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+        ]);
+
+        if (!isCommitteeWriter || committee.project_uid !== meeting.project_uid) {
+          throw new AuthorizationError('Not authorized to import registrants for this meeting', {
+            operation: 'get_meeting_registrants',
+            service: 'meeting_controller',
+          });
+        }
       }
 
       // Get the meeting registrants

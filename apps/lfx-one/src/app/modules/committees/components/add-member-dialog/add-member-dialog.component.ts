@@ -33,9 +33,11 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildCommitteeOrganizationPayload,
+  buildImportSummary,
   committeeOrganizationFormComplete,
   committeeRequiresOrganization,
   extractRegistrantEmails,
+  filterUnlistedEmails,
   hasLfAccount,
   normalizeToUrl,
   parseEmailList,
@@ -309,7 +311,7 @@ export class AddMemberDialogComponent {
 
     this.importing.set(true);
     this.meetingService
-      .getMeetingRegistrants(meetingId, false, undefined, true)
+      .getMeetingRegistrants(meetingId, false, undefined, true, this.committee?.uid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
@@ -661,29 +663,16 @@ export class AddMemberDialogComponent {
     const { emails, skippedNoEmail } = extractRegistrantEmails(registrants);
     const meetingTitle = this.meetingOptions().find((option) => option.value === meetingId)?.title ?? 'the meeting';
 
-    const alreadyListed = new Set(this.parsed().valid);
-    const toAppend = emails.filter((email) => !alreadyListed.has(email.toLowerCase()));
+    const toAppend = filterUnlistedEmails(emails, this.parsed().valid);
     if (toAppend.length > 0) {
       const current = this.form.get('emails')!.value.trim();
       const appended = toAppend.join('\n');
       this.form.get('emails')!.setValue(current ? `${current}\n${appended}` : appended);
     }
 
-    this.importSummary.set(this.buildImportSummary(meetingTitle, toAppend.length, emails.length - toAppend.length, skippedNoEmail));
+    this.importSummary.set(buildImportSummary(meetingTitle, toAppend.length, emails.length - toAppend.length, skippedNoEmail));
     this.importForm.get('meeting')!.setValue(null);
     this.importing.set(false);
-  }
-
-  /** Compose the import result line: how many were added, already listed, and skipped for no email. */
-  private buildImportSummary(meetingTitle: string, added: number, alreadyListed: number, skippedNoEmail: number): string {
-    const parts: string[] = [added === 1 ? `Added 1 address from "${meetingTitle}"` : `Added ${added} addresses from "${meetingTitle}"`];
-    if (alreadyListed > 0) {
-      parts.push(`${alreadyListed} already listed`);
-    }
-    if (skippedNoEmail > 0) {
-      parts.push(skippedNoEmail === 1 ? '1 registrant had no email and was skipped' : `${skippedNoEmail} registrants had no email and were skipped`);
-    }
-    return `${parts.join(' — ')}.`;
   }
 
   private initMeetingOptions(): Signal<MeetingSelectOption[]> {

@@ -107,6 +107,24 @@ export function extractRegistrantEmails(registrants: MeetingRegistrant[] | null 
   return { emails, skippedNoEmail };
 }
 
+/** Filters `emails` down to those not already present (case-insensitively) in `alreadyListed`. */
+export function filterUnlistedEmails(emails: string[], alreadyListed: string[]): string[] {
+  const listed = new Set(alreadyListed.map((email) => email.toLowerCase()));
+  return emails.filter((email) => !listed.has(email.toLowerCase()));
+}
+
+/** Compose the import result line: how many were added, already listed, and skipped for no email. */
+export function buildImportSummary(meetingTitle: string, added: number, alreadyListed: number, skippedNoEmail: number): string {
+  const parts: string[] = [added === 1 ? `Added 1 address from "${meetingTitle}"` : `Added ${added} addresses from "${meetingTitle}"`];
+  if (alreadyListed > 0) {
+    parts.push(`${alreadyListed} already listed`);
+  }
+  if (skippedNoEmail > 0) {
+    parts.push(skippedNoEmail === 1 ? '1 registrant had no email and was skipped' : `${skippedNoEmail} registrants had no email and were skipped`);
+  }
+  return `${parts.join(' — ')}.`;
+}
+
 /**
  * Build a human-readable recurrence summary from custom recurrence pattern
  * @param pattern The custom recurrence pattern

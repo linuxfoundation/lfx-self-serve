@@ -393,12 +393,16 @@ export class MeetingService {
    * @param failOnPartial - If true, the request fails instead of returning a truncated roster
    *   when a later page fails server-side. Callers that rely on the complete list for
    *   correctness (e.g. importing every registrant) should set this.
+   * @param committeeUid - Required whenever `failOnPartial` is true. The server verifies the
+   *   caller has writer access on this committee and that it belongs to the same project as the
+   *   meeting before returning a complete roster — see meeting.controller.ts.
    */
   public getMeetingRegistrants(
     meetingUid: string,
     includeRsvp: boolean = false,
     occurrenceId?: string,
-    failOnPartial: boolean = false
+    failOnPartial: boolean = false,
+    committeeUid?: string
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -406,6 +410,9 @@ export class MeetingService {
     }
     if (failOnPartial) {
       params = params.set('fail_on_partial', 'true');
+    }
+    if (committeeUid) {
+      params = params.set('committee_uid', committeeUid);
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }

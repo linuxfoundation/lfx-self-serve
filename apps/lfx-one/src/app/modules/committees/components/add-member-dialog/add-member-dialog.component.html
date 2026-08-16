@@ -43,7 +43,7 @@
           data-testid="add-member-import"></lfx-button>
       </div>
       @if (importSummary()) {
-        <p class="text-xs text-emerald-600" data-testid="add-member-import-summary">{{ importSummary() }}</p>
+        <p class="text-xs text-emerald-600" role="status" aria-live="polite" data-testid="add-member-import-summary">{{ importSummary() }}</p>
       }
     </div>
   }
