@@ -180,13 +180,13 @@ export interface ShareWeeklyBriefResult {
 }
 
 /**
- * Unlike {@link ShareWeeklyBriefResult}, a Slack incoming webhook POST is synchronous — Slack
- * accepts or rejects the message in the same request, so there is no recipient-count/fan-out
- * concept to report here. A resolved promise means Slack accepted the message.
+ * The committee-service composes and sends the Slack message itself (lfx-v2-committee-service
+ * PR #178 / LFXV2-3094), responding `204 No Content` on success — there is nothing to report
+ * back beyond a resolved promise meaning Slack accepted the message. Empty on purpose, not a
+ * placeholder: the Angular success handler never read `committee_name` even when this interface
+ * carried it, and this BFF no longer fetches the committee for its own sake to populate it.
  */
-export interface ShareWeeklyBriefToSlackResult {
-  committee_name: string;
-}
+export type ShareWeeklyBriefToSlackResult = Record<string, never>;
 
 /**
  * An AI-extracted follow-up item from a brief's `brief_text` (LFXV2-3043). Extraction runs

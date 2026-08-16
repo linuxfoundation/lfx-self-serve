@@ -362,6 +362,10 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect(result.has_slack_webhook).toBe(true);
       expect('chat_webhook_url' in result).toBe(false);
+      // has_chat_webhook itself is upstream's raw wire field, not part of the Committee contract
+      // (has_slack_webhook is) — it must not ride out on the response just because it's spread
+      // in from the settings fetch.
+      expect('has_chat_webhook' in result).toBe(false);
     });
 
     it('reports has_slack_webhook: false when no webhook is configured upstream', async () => {
@@ -402,43 +406,6 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
 
       expect('chat_webhook_url' in result).toBe(false);
       expect(result.project_slug).toBe('test-project');
-    });
-  });
-
-  // getSlackWebhookUrlStrict is private (its only caller is updateCommittee, in this same
-  // class) — its "returns the raw URL when configured" / "returns null when not configured"
-  // behavior is exercised indirectly by updateCommittee's read-back tests below (e.g. "accepts
-  // a well-formed hooks.slack.com URL" and "throws SLACK_WEBHOOK_NOT_PERSISTED..."), not by a
-  // dedicated describe block calling it directly.
-
-  describe('getCommitteeForSlackShare', () => {
-    it('returns name, project_uid (base resource), and the raw webhook URL (settings resource) from two parallel fetches', async () => {
-      // Array order in the Promise.all inside getCommitteeForSlackShare determines mock order:
-      // base committee first, settings second.
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' })
-        .mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL });
-
-      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).resolves.toEqual({
-        name: 'Test',
-        project_uid: 'project-1',
-        chat_webhook_url: VALID_WEBHOOK_URL,
-      });
-      // Two calls, not one — chat_webhook_url no longer lives on the same resource as
-      // name/project_uid (LFXV2-3094), so a single fetch can no longer cover all three.
-      expect(proxyRequest).toHaveBeenCalledTimes(2);
-    });
-
-    it('returns chat_webhook_url: null when not configured', async () => {
-      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({});
-
-      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).resolves.toMatchObject({ chat_webhook_url: null });
-    });
-
-    it('throws 404 when the base committee does not exist, regardless of the settings fetch', async () => {
-      proxyRequest.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL });
-
-      await expect(service.getCommitteeForSlackShare(req, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 
@@ -696,7 +663,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
-    it('normalizes an empty-string chat_webhook_url to null in the settings PUT payload (clear, not a literal empty string)', async () => {
+    it("sends an empty-string chat_webhook_url through to the settings PUT payload as-is — upstream treats null/omitted as preserve, only '' as clear", async () => {
       proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
       fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
       updateWithETag.mockResolvedValueOnce(undefined);
@@ -708,7 +675,24 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         'LFX_V2_SERVICE',
         `/committees/${COMMITTEE_UID}/settings`,
         'settings-etag-1',
-        expect.objectContaining({ chat_webhook_url: null }),
+        expect.objectContaining({ chat_webhook_url: '' }),
+        'update_committee_settings'
+      );
+    });
+
+    it("normalizes an explicit null chat_webhook_url to '' in the settings PUT payload too — a caller sending null to THIS API means clear, same as '', even though upstream's own null means preserve", async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: null })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+
+      expect(updateWithETag).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}/settings`,
+        'settings-etag-1',
+        expect.objectContaining({ chat_webhook_url: '' }),
         'update_committee_settings'
       );
     });

@@ -391,9 +391,15 @@ export class CommitteeService {
       options.includeMailingListStatus ? this.getMailingListCountByCommittee(req, committeeId) : Promise.resolve(null),
     ]);
 
+    // has_chat_webhook is upstream's raw wire field (settings.has_chat_webhook) — read into
+    // has_slack_webhook below, then excluded from the spread so it doesn't ride out on the
+    // response undeclared (Committee has no has_chat_webhook field of its own).
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const { has_chat_webhook: _hasChatWebhook, ...settingsForResponse } = settings;
+
     const merged = {
       ...withAccess,
-      ...settings,
+      ...settingsForResponse,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
@@ -550,9 +556,8 @@ export class CommitteeService {
     }
 
     // A truthiness-only check below would let falsy non-strings through: they'd skip the pattern
-    // test, ride the settings PUT, and only surface after the write via the read-back mismatch.
-    // The check below therefore rejects every value that isn't absent, null, or a string —
-    // before any write happens.
+    // test entirely and ride straight into the settings PUT payload. The check below therefore
+    // rejects every value that isn't absent, null, or a string — before any write happens.
     if (
       rawChatWebhookUrl !== undefined &&
       rawChatWebhookUrl !== null &&
@@ -565,11 +570,17 @@ export class CommitteeService {
       });
     }
 
-    // Normalized once, up front: an empty string must behave identically to omission/null
-    // everywhere below it's used (hasSettingsUpdate and the settings PUT payload) — a stored
-    // empty string isn't a meaningful "configured" state, and upstream's own clear semantics
-    // (LFXV2-3094) treat '' the same as sending null.
-    const chatWebhookUrlToSave: string | null | undefined = rawChatWebhookUrl === '' ? null : (rawChatWebhookUrl as string | null | undefined);
+    // Normalized to upstream's OWN clear signal, not this API's usual null-means-clear
+    // convention (see mailing_list/chat_channel elsewhere on this same type): upstream treats
+    // omitted/null as "preserve the existing value" and only an explicit '' as "clear" — see
+    // lfx-v2-committee-service's committee_writer.go UpdateSettings, which documents this
+    // specifically because chat_webhook_url is write-only, so a GET→PUT round-trip here always
+    // sends nil for it and must not be read as "wipe the credential". A caller sending either ''
+    // or null to THIS API means "clear" (both are an explicit action, unlike omission — see the
+    // impersonation guard above, which blocks both the same as setting a real URL); both are
+    // normalized to upstream's '' here so the settings PUT actually clears rather than silently
+    // preserving the old value.
+    const chatWebhookUrlToSave: string | undefined = rawChatWebhookUrl === '' || rawChatWebhookUrl === null ? '' : (rawChatWebhookUrl as string | undefined);
 
     const hasSettingsUpdate =
       business_email_required !== undefined ||
@@ -1747,38 +1758,6 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     });
     return count > 0;
-  }
-
-  /**
-   * Fetch variant for `shareToSlack`: `name`, `project_uid`, and the raw webhook URL — not
-   * {@link getCommitteeById}'s settings/membership/access-check enrichment, none of which
-   * `shareToSlack` reads. See {@link getSlackWebhookUrlStrict}'s doc comment for why this exists
-   * as its own method rather than composing the two.
-   *
-   * Two upstream calls, run in parallel via `Promise.all`, not one: per LFXV2-3094,
-   * `chat_webhook_url` lives on the settings sub-resource while `name`/`project_uid` live on the
-   * base one, so a single fetch can no longer cover all three (it could before the field moved).
-   * Running both concurrently keeps the TOCTOU window between "read the webhook" and "use it"
-   * as small as it can be given two separate reads — sequential fetches would only widen it.
-   *
-   * @internal Cannot be `private` like {@link getSlackWebhookUrlStrict} — `WeeklyBriefService`
-   * must call it — but that also means nothing mechanically stops a future caller from obtaining
-   * the raw credential through it. Only `WeeklyBriefService.shareToSlack` may call this today;
-   * treat any new call site as a review flag, not a routine addition.
-   */
-  public async getCommitteeForSlackShare(req: Request, committeeId: string): Promise<{ name: string; project_uid: string; chat_webhook_url: string | null }> {
-    const [committee, settings] = await Promise.all([
-      this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET'),
-      this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET'),
-    ]);
-    if (!committee) {
-      throw new ResourceNotFoundError('Committee', committeeId, {
-        operation: 'get_committee_for_slack_share',
-        service: 'committee_service',
-        path: `/committees/${committeeId}`,
-      });
-    }
-    return { name: committee.name, project_uid: committee.project_uid, chat_webhook_url: settings?.chat_webhook_url ?? null };
   }
 
   /**

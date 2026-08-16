@@ -14,11 +14,8 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that
  * parent flag (committee-overview.component.ts), but committee-settings-tab does not sit behind
  * it at all (rendered unconditionally from the Settings tab in committee-view.component.html) —
- * so flipping this flag alone is sufficient to expose the settings card. Default false: the
- * upstream committee-service declares chat_webhook_url on the settings resource per
- * lfx-v2-committee-service PR #177 (LFXV2-3094), but #177 is not yet merged/deployed as of this
- * writing, so every save would still 409 today — see committee.service.ts's
- * updateCommittee/getSlackWebhookUrlStrict comments.
+ * so flipping this flag alone is sufficient to expose the settings card. Default false: this is a
+ * dark launch, gating rollout independently of when the code itself ships.
  *
  * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through the OpenFeature Web SDK,
  * which never runs server-side, so it cannot gate an Express handler. The actual write
