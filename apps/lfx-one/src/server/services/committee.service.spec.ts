@@ -349,13 +349,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
   });
 
   describe('getCommitteeById', () => {
-    it('computes has_slack_webhook from the settings-resource chat_webhook_url field and never returns the raw value', async () => {
-      // Seeded on the SETTINGS response (second proxyRequest call), not the base one — per
-      // LFXV2-3094 / lfx-v2-committee-service PR #177, chat_webhook_url lives on
-      // GET /committees/:id/settings, not the base committee resource.
+    it('computes has_slack_webhook from the settings-resource has_chat_webhook boolean and never returns the raw value', async () => {
+      // Seeded on the SETTINGS response (second proxyRequest call), not the base one, and via the
+      // upstream-computed has_chat_webhook boolean — per LFXV2-3094 / lfx-v2-committee-service
+      // PR #179, upstream never returns the raw chat_webhook_url on any read, so has_chat_webhook
+      // is the only real signal available.
       proxyRequest
         .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }) // GET /committees/:id
-        .mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL }); // GET /committees/:id/settings
+        .mockResolvedValueOnce({ has_chat_webhook: true }); // GET /committees/:id/settings
 
       const result = await service.getCommitteeById(req, COMMITTEE_UID);
 
@@ -364,34 +365,23 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
 
     it('reports has_slack_webhook: false when no webhook is configured upstream', async () => {
-      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({});
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
 
       const result = await service.getCommitteeById(req, COMMITTEE_UID);
 
       expect(result.has_slack_webhook).toBe(false);
-    });
-
-    it('reports has_slack_webhook: false for a settings-resource value that fails the Slack allowlist (e.g. written by a non-BFF caller)', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' })
-        .mockResolvedValueOnce({ chat_webhook_url: 'https://evil.example.com/x' });
-
-      const result = await service.getCommitteeById(req, COMMITTEE_UID);
-
-      expect(result.has_slack_webhook).toBe(false);
-      expect('chat_webhook_url' in result).toBe(false);
     });
 
     it('strips a chat_webhook_url that unexpectedly shows up on the base committee resource too — defense-in-depth beyond the settings-resource source', async () => {
       proxyRequest
         .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })
-        .mockResolvedValueOnce({});
+        .mockResolvedValueOnce({ has_chat_webhook: false });
 
       const result = await service.getCommitteeById(req, COMMITTEE_UID);
 
       expect('chat_webhook_url' in result).toBe(false);
-      // has_slack_webhook is sourced from settings only — a base-resource leak alone must not
-      // flip it true.
+      // has_slack_webhook is sourced from settings.has_chat_webhook only — a base-resource leak
+      // of the raw URL alone must not flip it true.
       expect(result.has_slack_webhook).toBe(false);
     });
 
@@ -625,54 +615,68 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
-    it('accepts a well-formed hooks.slack.com URL', async () => {
-      // Webhook-only payload — no core field — so this goes through the settings-only branch:
-      // a plain GET for project_uid/response-shaping, then the settings fetchWithETag/updateWithETag
-      // pair, then the read-back confirmation GET.
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }) // webhook-only branch's committee GET
-        .mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL }); // getSlackWebhookUrlStrict's read-back settings GET
+    it('accepts a well-formed hooks.slack.com URL, PUTting it through the settings endpoint (not the base committee PUT)', async () => {
+      // Webhook-only payload — no core field — so this goes through the settings-only branch: a
+      // plain GET for project_uid/response-shaping, then the settings fetchWithETag/updateWithETag
+      // pair. No read-back confirmation GET — the upstream schema (LFXV2-3094/#177) is merged and
+      // deployed, so a normal updateWithETag failure already surfaces correctly on its own.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }); // webhook-only branch's committee GET
       fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // updateCommitteeSettings' own fetch
       updateWithETag.mockResolvedValueOnce(undefined); // updateCommitteeSettings' own PUT
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+
+      // Pins the actual contract this PR is about: chat_webhook_url must land in the SETTINGS
+      // PUT body, not the base committee PUT — a regression that dropped it from the settings
+      // body or hit the wrong resource would otherwise still pass every other test here.
+      expect(updateWithETag).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}/settings`,
+        'settings-etag-1',
+        expect.objectContaining({ chat_webhook_url: VALID_WEBHOOK_URL }),
+        'update_committee_settings'
+      );
     });
 
-    it('throws SLACK_WEBHOOK_NOT_PERSISTED when upstream silently drops the field instead of reporting a false success (schema not deployed yet — LFXV2-3094/#177 unmerged)', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }) // webhook-only branch's committee GET
-        // The read-back confirmation GET comes back without it — simulates today's real
-        // committee-service, which doesn't persist the field yet.
-        .mockResolvedValueOnce({});
-      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
-      updateWithETag.mockResolvedValueOnce(undefined);
+    it('accepts a combined core-field + webhook change, PUTting the core fields to the base resource and chat_webhook_url to settings', async () => {
+      // The production UI (committee-settings-tab.component.ts) always sends chat_channel/
+      // join_mode/website alongside chat_webhook_url in one save — this is the actual happy path
+      // that reaches upstream, not the webhook-only branch alone. Every other core+webhook test
+      // above only covers the authorization-failure side of this branch.
+      fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'core-etag-1' });
+      updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_channel: '#general' }); // core PUT
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // updateCommitteeSettings' own fetch
+      updateWithETag.mockResolvedValueOnce(undefined); // updateCommitteeSettings' own PUT
 
-      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
-        statusCode: 409,
-        code: 'SLACK_WEBHOOK_NOT_PERSISTED',
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_channel: '#general', chat_webhook_url: VALID_WEBHOOK_URL })).resolves.toMatchObject({
+        uid: COMMITTEE_UID,
+        chat_channel: '#general',
       });
-    });
 
-    it('throws SLACK_WEBHOOK_UNVERIFIED (distinct from SLACK_WEBHOOK_NOT_PERSISTED) when the confirmation read itself fails, after the settings update already succeeded', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' })
-        // getSlackWebhookUrlStrict's read-back GET fails outright (e.g. a transient upstream
-        // outage) — must not be reported the same way as a confirmed mismatch, since everything
-        // requested up to this point already committed.
-        .mockRejectedValueOnce(new Error('upstream unavailable'));
-      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
-      updateWithETag.mockResolvedValueOnce(undefined);
-
-      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL })).rejects.toMatchObject({
-        statusCode: 409,
-        code: 'SLACK_WEBHOOK_UNVERIFIED',
-      });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(updateWithETag).toHaveBeenNthCalledWith(
+        1,
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}`,
+        'core-etag-1',
+        expect.objectContaining({ chat_channel: '#general' }),
+        'update_committee'
+      );
+      expect(updateWithETag).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}/settings`,
+        'settings-etag-1',
+        expect.objectContaining({ chat_webhook_url: VALID_WEBHOOK_URL }),
+        'update_committee_settings'
+      );
     });
 
     it('never returns chat_webhook_url on the response even if upstream happens to echo it back', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })
-        .mockResolvedValueOnce({ chat_webhook_url: VALID_WEBHOOK_URL });
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL });
       fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
       updateWithETag.mockResolvedValueOnce(undefined);
 
@@ -681,47 +685,54 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect('chat_webhook_url' in result).toBe(false);
     });
 
-    it('does not perform the read-back confirmation GET, and does not run the webhook-only branch, when chat_webhook_url is not part of the update', async () => {
+    it('does not run the webhook-only branch when chat_webhook_url is not part of the update', async () => {
       fetchWithETag.mockResolvedValueOnce({ data: { uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }, etag: 'etag-1' });
       updateWithETag.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Updated', project_uid: 'project-1' });
 
       await service.updateCommittee(req, COMMITTEE_UID, { name: 'Updated' });
 
-      // Neither the webhook-only branch's committee GET nor the read-back check
-      // (getSlackWebhookUrlStrict) issue a bare proxyRequest call in this flow — its absence
-      // proves both were skipped.
+      // The webhook-only branch's committee GET is the only bare proxyRequest call site in this
+      // flow — its absence proves the branch was skipped.
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
-    it('normalizes an empty-string chat_webhook_url to null instead of a spurious read-back mismatch', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' })
-        // Read-back GET — nothing configured upstream, matching the normalized null.
-        .mockResolvedValueOnce({});
+    it('normalizes an empty-string chat_webhook_url to null in the settings PUT payload (clear, not a literal empty string)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
       fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
       updateWithETag.mockResolvedValueOnce(undefined);
 
       await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: '' })).resolves.toMatchObject({ uid: COMMITTEE_UID });
+
+      expect(updateWithETag).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}/settings`,
+        'settings-etag-1',
+        expect.objectContaining({ chat_webhook_url: null }),
+        'update_committee_settings'
+      );
     });
 
-    it('runs the read-back check after the settings update, so unrelated settings changes are not silently discarded when the webhook fails to persist', async () => {
-      // chat_webhook_url and is_audit_enabled are both settings-routed fields — no core field
-      // in this payload, so only ONE PUT happens (settings), not two.
-      proxyRequest
-        .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }) // webhook-only branch's committee GET
-        .mockResolvedValueOnce({}); // read-back GET, still no webhook
-      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' }); // settings fetch
-      updateWithETag.mockResolvedValueOnce(undefined); // settings PUT — webhook silently dropped
+    it('sends chat_webhook_url alongside other settings fields in a single settings PUT when there is no core update', async () => {
+      // chat_webhook_url and is_audit_enabled are both settings-routed fields — no core field in
+      // this payload, so only ONE PUT happens (settings), not two.
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }); // webhook-only branch's committee GET
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag-1' });
+      updateWithETag.mockResolvedValueOnce(undefined);
 
-      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL, is_audit_enabled: true })).rejects.toMatchObject({
-        statusCode: 409,
-        code: 'SLACK_WEBHOOK_NOT_PERSISTED',
+      await expect(service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL, is_audit_enabled: true })).resolves.toMatchObject({
+        uid: COMMITTEE_UID,
       });
 
-      // The settings PUT (carrying both is_audit_enabled and chat_webhook_url) ran before the
-      // throw — is_audit_enabled was not silently dropped just because the webhook failed to
-      // persist.
       expect(updateWithETag).toHaveBeenCalledTimes(1);
+      expect(updateWithETag).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${COMMITTEE_UID}/settings`,
+        'settings-etag-1',
+        expect.objectContaining({ chat_webhook_url: VALID_WEBHOOK_URL, is_audit_enabled: true }),
+        'update_committee_settings'
+      );
     });
   });
 

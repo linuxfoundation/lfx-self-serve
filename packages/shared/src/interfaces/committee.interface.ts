@@ -424,11 +424,11 @@ export interface Committee {
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
   chat_channel?: string | null;
   /**
-   * Whether the committee has a *valid* Slack incoming webhook configured — `false` if the stored
-   * value doesn't match `SLACK_INCOMING_WEBHOOK_URL_PATTERN`, not just presence, since this repo's
-   * write path isn't the only possible writer of the field. The raw `chat_webhook_url` is a bearer
-   * credential and is deliberately never returned by any read — see
-   * {@link CommitteeSettingsData.chat_webhook_url}. This boolean is the only signal reads get.
+   * Whether the committee has a Slack incoming webhook configured. The raw `chat_webhook_url` is
+   * a bearer credential and is deliberately never returned by any read — see
+   * {@link CommitteeSettingsData.chat_webhook_url}. This boolean is the only signal reads get,
+   * sourced directly from the upstream-computed {@link CommitteeSettingsData.has_chat_webhook}
+   * (LFXV2-3094 / lfx-v2-committee-service PR #179) — the URL itself is never inspected here.
    *
    * Sourced from `GET /committees/:uid/settings` (fetched by `getCommitteeById` alongside the base
    * committee resource), unlike `has_mailing_list`, which list endpoints enrich too. Absence on a
@@ -609,6 +609,13 @@ export interface CommitteeSettingsData {
    * viewer. Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
    */
   chat_webhook_url?: string | null;
+  /**
+   * Whether a Slack incoming webhook is configured — computed server-side by upstream
+   * (`chat_webhook_url` set to a non-empty value), never the raw URL itself. Read-only: only ever
+   * present on a `GET`/`PUT .../settings` response, never accepted on a write. See
+   * {@link Committee.has_slack_webhook}, which is sourced from this field.
+   */
+  has_chat_webhook?: boolean;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */
