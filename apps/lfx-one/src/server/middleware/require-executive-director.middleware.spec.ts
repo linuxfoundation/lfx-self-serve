@@ -134,4 +134,33 @@ describe('requireExecutiveDirector', () => {
 
     expect(verdict(next)).toBe('deny');
   });
+
+  // campaigns.route.ts scopes by `project` rather than `foundationSlug` — the middleware must
+  // honor that convention too, not just analytics.route.ts's.
+  it('allows an ED using the project parameter as scope', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf', 'cncf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
+  it('denies an ED requesting a project they do not hold the persona for', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('prefers foundationSlug over project when both are present', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'tlf', project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
 });
