@@ -62,6 +62,32 @@ const MOCK_ADDRESSES = {
 
 test.setTimeout(120_000);
 
+/**
+ * Neutralize the Osano cookie-consent overlay. global-setup clears cookies, so the banner
+ * (.osano-cm-window) reappears in each fresh context and its bottom bar intercepts pointer events on
+ * elements like the edit/upload buttons these tests click. Registered via addInitScript so it runs on
+ * every navigation before page scripts — deterministic, unlike racing the banner's entrance animation.
+ * Mirrors the identical helper in e2e/me-profile-nav.spec.ts.
+ */
+async function suppressCookieBanner(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const hide = (): void => {
+      if (document.getElementById('e2e-hide-osano')) {
+        return;
+      }
+      const style = document.createElement('style');
+      style.id = 'e2e-hide-osano';
+      style.textContent = '.osano-cm-window { display: none !important; pointer-events: none !important; }';
+      (document.head ?? document.documentElement).appendChild(style);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', hide);
+    } else {
+      hide();
+    }
+  });
+}
+
 function skipWhenAuthMissing(page: Page): void {
   try {
     const { hostname } = new URL(page.url());
@@ -99,6 +125,23 @@ async function stubOrgProfileContext(page: Page, options: StubGrantsOptions): Pr
           },
         ],
         isRootWriter: false,
+      }),
+    })
+  );
+
+  // OrgNavigationService (the sidebar org-selector) independently bootstraps its own org-items page on
+  // app init. If that page comes back without the selected uid, it treats it as "no access" and calls
+  // AccountContextService.clearAccount() — wiping the selection persona.service just set and racing
+  // canEdit() back to false regardless of the role-grants stub above. Must stub this too, or the writer
+  // gate is flaky depending on which of the two responses lands last.
+  await page.route('**/api/nav/org-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ uid: MOCK_UID, accountId: MOCK_ACCOUNT_ID, name: MOCK_CANONICAL.name, logoUrl: null }],
+        next_page_token: null,
+        upstream_failed: false,
       }),
     })
   );
@@ -145,6 +188,7 @@ async function gotoProfileWithStubs(page: Page, writers: string[]): Promise<void
   await stubCanonicalAndAddresses(page);
 
   // Install stubs before reload so client-side persona + role-grant fetches are intercepted (mirrors org-selector S9).
+  await suppressCookieBanner(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -250,6 +294,7 @@ test.describe('Org Profile — authenticated smoke set (S1/S2/S3/S4)', () => {
       })
     );
 
+    await suppressCookieBanner(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -285,6 +330,7 @@ test.describe('Org Profile — spec 022 inherited-auditor (US4)', () => {
     });
     await stubCanonicalAndAddresses(page);
 
+    await suppressCookieBanner(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -339,6 +385,7 @@ test.describe('Org Profile — spec 023 empty addresses graceful degradation', (
       })
     );
 
+    await suppressCookieBanner(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -365,5 +412,63 @@ test.describe('Org Profile — spec 023 empty addresses graceful degradation', (
     const primaryCard = page.getByTestId('org-profile-primary-address-card');
     await expect(primaryCard).toBeVisible();
     await expect(primaryCard).not.toContainText(MOCK_ADDRESSES.primaryAddress.line1);
+  });
+});
+
+// LFXV2-3288 — logo upload on the edit page. Saves immediately (independent of the form's own
+// Save/Cancel), so these stub the dedicated logo endpoint rather than the record PUT used by S3.
+test.describe('Org Profile — logo upload (LFXV2-3288)', () => {
+  test('S7: uploading a valid PNG updates the preview and shows a success toast', async ({ page }) => {
+    await gotoProfileWithStubs(page, [MOCK_UID]);
+
+    const root = page.getByTestId('org-profile-page');
+    await expect(root).toHaveAttribute('data-state', 'loaded', { timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-profile-edit-button').click();
+    await expect(root).toHaveAttribute('data-mode', 'edit');
+
+    const updatedLogoUrl = 'https://cdn.example.com/logo.png?v=2';
+    await page.route(`**/api/orgs/uid/${MOCK_UID}/logo`, (route) => {
+      if (route.request().method() !== 'POST') {
+        return route.fallback();
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...MOCK_CANONICAL, logoUrl: updatedLogoUrl }),
+      });
+    });
+
+    await page.getByTestId('org-profile-edit-logo-input').setInputFiles({
+      name: 'logo.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('fake-png-bytes'),
+    });
+
+    await expect(page.getByTestId('org-profile-edit-logo-image')).toHaveAttribute('src', updatedLogoUrl);
+    await expect(page.locator('p-toast .p-toast-message-success')).toBeVisible();
+  });
+
+  test('S8: an oversized file is rejected client-side with an error toast and no upload request', async ({ page }) => {
+    await gotoProfileWithStubs(page, [MOCK_UID]);
+
+    const root = page.getByTestId('org-profile-page');
+    await expect(root).toHaveAttribute('data-state', 'loaded', { timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-profile-edit-button').click();
+    await expect(root).toHaveAttribute('data-mode', 'edit');
+
+    let uploadCalled = false;
+    await page.route(`**/api/orgs/uid/${MOCK_UID}/logo`, (route) => {
+      uploadCalled = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_CANONICAL) });
+    });
+
+    await page.getByTestId('org-profile-edit-logo-input').setInputFiles({
+      name: 'oversized.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(3 * 1024 * 1024),
+    });
+
+    await expect(page.locator('p-toast .p-toast-message-error')).toBeVisible();
+    expect(uploadCalled).toBe(false);
   });
 });
