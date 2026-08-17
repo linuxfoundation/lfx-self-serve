@@ -15,9 +15,9 @@ Users with a **maintainer**, **board-member**, or **executive-director** persona
 
 ## Why can't I see a group I should be in?
 
-Which group were you expecting to see? Tell us the name and we'll open a ticket and sort it out — we can see which account you're signed in with, so that's all we need.
+Contact LFX support through the Help Center and tell us which group you were expecting to see. If you're signed in, we can already see your account, so that's all we need from you.
 
-Two things cause this: either you're not currently on that group's list, or you are and our records haven't linked you to your login yet. We'll check which and come back to you. Your group's chair can also confirm your membership and send you meeting details directly in the meantime.
+Two things cause this: either you're not currently on that group's list, or you are and our records haven't linked you to your login yet. Support will check which and follow up. Your group's chair can also confirm your membership and send you meeting details directly in the meantime.
 
 ## How do I add members to a committee?
 
