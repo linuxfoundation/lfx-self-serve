@@ -29,7 +29,7 @@
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="marketing-impact-empty-state">
       <p class="text-sm text-gray-500">Select a foundation to view campaign impact.</p>
     </div>
-  } @else if (!isExecutiveDirector()) {
+  } @else if (!hasFullMarketingAccess()) {
     <!-- LF Staff: direct access to Social Listening only, no tabs/focus UI for the ED-restricted sections -->
     <div class="flex flex-col gap-6" data-testid="marketing-impact-social-listening-only">
       <lfx-social-listening-tab

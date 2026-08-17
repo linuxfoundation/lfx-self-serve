@@ -61,6 +61,14 @@ export interface PersonaApiResponse extends PersonaDetections {
   isRootWriter: boolean;
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
   isLFStaff: boolean;
+  /**
+   * Root-scoped `marketing_auditor` FGA grant (LFXV2-2235/LFXV2-2236). Only ever computed while
+   * `ServerFeatureFlag.MarketingOpsFga` is on — always `false` while the flag is off. Request-scoped,
+   * not cached.
+   */
+  isMarketingAuditor: boolean;
+  /** Root-scoped `campaign_manager` FGA grant. Same flag/caching caveats as {@link isMarketingAuditor}. */
+  isCampaignManager: boolean;
 }
 
 export interface SsrPersonaResult {

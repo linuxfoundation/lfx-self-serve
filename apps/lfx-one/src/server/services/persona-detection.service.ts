@@ -25,6 +25,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { ServerFeatureFlag, isServerFeatureEnabled } from '../helpers/server-feature-flag.helper';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -99,11 +100,17 @@ export class PersonaDetectionService {
     const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
 
-    // isRootWriter/isLFStaff are request-scoped (bearer-token dependent) — resolve per-request and merge.
-    const [detections, isRootWriter, isLFStaff] = await Promise.all([
+    // isRootWriter/isLFStaff/isMarketingAuditor/isCampaignManager are request-scoped
+    // (bearer-token dependent) — resolve per-request and merge. The marketing-ops checks are
+    // skipped entirely while their server flag is off, so this endpoint costs nothing extra
+    // for the default (flag-off) case.
+    const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
+    const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager] = await Promise.all([
       this.getPersonaDetections(req, username, email, cacheKey),
       this.checkRootWriter(req),
       this.checkLFStaff(req),
+      marketingOpsFgaEnabled ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
+      marketingOpsFgaEnabled ? this.checkRootCampaignManager(req) : Promise.resolve(false),
     ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
@@ -119,7 +126,7 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
-    return { ...detections, personas, isRootWriter, isLFStaff };
+    return { ...detections, personas, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {

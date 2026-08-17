@@ -47,8 +47,16 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root-scoped `marketing_auditor` FGA grant (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
+  public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
+  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
+  /** EDs plus root/project-scoped `marketing_auditor` grants — the audience for full Marketing Impact access. LF Staff are deliberately excluded (see LFXV2-2236). */
+  public readonly canViewMarketingImpact: Signal<boolean>;
+  /** EDs plus root/project-scoped `campaign_manager` grants — the audience for Campaigns. */
+  public readonly canManageCampaigns: Signal<boolean>;
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -60,6 +68,8 @@ export class PersonaService {
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.canViewExecutiveDashboards = computed(() => this.currentPersona() === 'executive-director' || this.isLFStaff());
+    this.canViewMarketingImpact = computed(() => this.currentPersona() === 'executive-director' || this.isMarketingAuditor());
+    this.canManageCampaigns = computed(() => this.currentPersona() === 'executive-director' || this.isCampaignManager());
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
     // Cookie can't carry personaProjects/detectedProjects, so always refresh from API after hydration.
@@ -137,6 +147,8 @@ export class PersonaService {
       });
       this.isRootWriter.set(false);
       this.isLFStaff.set(false);
+      this.isMarketingAuditor.set(false);
+      this.isCampaignManager.set(false);
       this.personaLoaded.set(true);
       return;
     }
@@ -146,6 +158,8 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
+    this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    this.isCampaignManager.set(response.isCampaignManager ?? false);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();
