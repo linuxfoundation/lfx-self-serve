@@ -98,9 +98,13 @@ const VIEWPORTS = [
   { name: 'desktop-narrow', width: 1439, height: 900 },
 ] as const;
 
-// The panel's own max-w-md cap (below sm only) — sm:max-w-none removes it from sm up.
+// The panel's own max-w-md cap (below sm only) — sm:max-w-none removes it from sm up. The cap's
+// pixel value is read off the element's computed style at assertion time (see below) rather than
+// hard-coded here: apps/lfx-one/src/styles.scss sets `html { font-size: 14px }`, so max-w-md
+// (28rem) actually renders at 392px in this app, not the browser-default-root 448px a naive
+// rem-to-px conversion would suggest — a hard-coded constant would silently drift from the real
+// cap on any root-font-size or Tailwind maxWidth change.
 const SM_BREAKPOINT = 640;
-const MAX_MD_WIDTH = 448;
 
 // Desktop control: at and above 2xl, the rail must be the fixed overlay again — the regression
 // guard for the rail disappearing entirely rather than just moving breakpoints. Requested a margin
@@ -205,15 +209,20 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         const wrapperPosition = await panelRail.evaluate((el) => getComputedStyle(el).position);
         expect(wrapperPosition, `profile panel rail position at ${vp.width}px should not be fixed`).not.toBe('fixed');
 
-        // Below sm, the rail wrapper is capped at max-w-md (448px) so it stays a proportioned stacked
-        // card instead of stretching wide while its internals are still fully stacked (a content
-        // column can exceed 448px below the 640px sm breakpoint once page padding is this small, e.g.
-        // ~510px at a 550px viewport). This regression was introduced and reverted twice on this
-        // branch before this assertion existed.
-        if (vp.width < SM_BREAKPOINT) {
+        // Below sm, the rail wrapper is capped at max-w-md so it stays a proportioned stacked card
+        // instead of stretching wide while its internals are still fully stacked (the content column
+        // can exceed the cap below the 640px sm breakpoint once page padding is this small — this app
+        // renders max-w-md at 392px, not the naive 448px, because of the 14px root font-size noted
+        // above). This regression was introduced and reverted twice on this branch before this
+        // assertion existed. Gated on clientWidth, not vp.width, for the same scrollbar reason as the
+        // md/lg checks above — a classic desktop scrollbar can put clientWidth on the other side of
+        // SM_BREAKPOINT from vp.width.
+        if (overflow.clientWidth < SM_BREAKPOINT) {
           const railBox = await panelRail.boundingBox();
           expect(railBox, 'profile panel rail should have a bounding box').not.toBeNull();
-          expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md`).toBeLessThanOrEqual(MAX_MD_WIDTH + 1);
+          const capPx = await panelRail.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+          expect(capPx, `profile panel rail max-width at ${vp.width}px should be a real px cap, not "none"`).toBeGreaterThan(0);
+          expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md (${capPx}px)`).toBeLessThanOrEqual(capPx + 1);
         }
 
         // Inline placement: the panel should be left-aligned with the content column (both children of
