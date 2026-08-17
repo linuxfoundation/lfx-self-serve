@@ -71,8 +71,10 @@
                   class="flex flex-wrap items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
                   [attr.data-testid]="'period-row-' + period.id">
-                  <!-- Start Month/Year — grid below sm so the pair wraps to two rows instead of overflowing; inline row at sm and up -->
-                  <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                  <!-- Start Month/Year — equal-width grid below sm so the pair wraps to two rows instead of
+                       overflowing; fixed 110px/100px columns at sm and up so w-full resolves to the original
+                       month/year widths instead of shrink-to-fit sizing -->
+                  <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
                     <p-select
                       [options]="monthOptions"
                       [ngModel]="period.startMonth"
@@ -105,8 +107,8 @@
                   @if (period.isPresent) {
                     <span class="text-xs font-medium text-slate-500">Present</span>
                   } @else {
-                    <!-- End Month/Year — same grid-below-sm / inline-row-at-sm pattern as the start pair -->
-                    <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                    <!-- End Month/Year — same equal-width-below-sm / fixed-columns-at-sm pattern as the start pair -->
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
                       <p-select
                         [options]="monthOptions"
                         [ngModel]="period.endMonth"
