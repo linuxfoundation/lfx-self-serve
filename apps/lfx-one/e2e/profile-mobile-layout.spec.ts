@@ -64,9 +64,14 @@ test.setTimeout(60_000);
 
 const LOAD_TIMEOUT = 20_000;
 
-// The breakpoint at which the page container's own horizontal padding steps up
-// (px-5 -> md:px-8, see main-layout.component.html), used to derive the width-slack tolerance.
+// The breakpoint at which the page container's own horizontal padding steps up (px-5 -> md:px-8,
+// see main-layout.component.html), used to derive the width-slack tolerance. In rem, not px — like
+// MAX_MD_REM below, this app's html { font-size: 14px } (styles.scss) means a naive 16px-root
+// rem-to-px conversion (px-5 -> 40px, md:px-8 -> 64px) would be wrong; the actual px value is
+// derived from the root font-size read at assertion time.
 const MD_BREAKPOINT = 768;
+const PAGE_PADDING_REM_BELOW_MD = 2.5; // px-5 = 1.25rem per side x 2
+const PAGE_PADDING_REM_AT_MD = 4; // md:px-8 = 2rem per side x 2
 
 // The sidebar's own breakpoint (unrelated to the profile-rail breakpoint this follow-up moves) —
 // <main> picks up lg:ml-[348px] here, which the content-width expectation below must account for.
@@ -101,12 +106,8 @@ const VIEWPORTS = [
 const SM_BREAKPOINT = 640;
 
 // max-w-md is 28rem. apps/lfx-one/src/styles.scss sets `html { font-size: 14px }`, so it renders at
-// 392px in this app, not the browser-default-root 448px a naive rem-to-px conversion would suggest.
-// The expected cap below is computed from this rem value times the *actual* root font-size read at
-// assertion time (immune to a root-font-size change), not read off the tested element's own computed
-// max-width — reading the "expected" value off the same element being asserted on would make the
-// check tautological (box-sizing: border-box guarantees a rendered width can never exceed its own
-// max-width, so that assertion could never fail regardless of which class were actually applied).
+// 392px in this app, not the browser-default-root 448px a naive rem-to-px conversion would suggest
+// (see the cap assertion below for how — and why — this is derived at assertion time).
 const MAX_MD_REM = 28;
 
 // Desktop control: at and above 2xl, the rail must be the fixed overlay again — the regression
@@ -186,15 +187,21 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         }));
         expect(overflow.scrollWidth, `document scrollWidth at ${vp.width}px`).toBeLessThanOrEqual(overflow.clientWidth + 1);
 
+        // The root font-size this app actually renders at (styles.scss sets html { font-size: 14px })
+        // — shared by the page-padding and max-w-md cap derivations below so neither has to hard-code
+        // a px value that would silently drift from the real one on a root-font-size change.
+        const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+
         // The content column must reclaim (close to) the available layout width — not be squeezed by
         // an unconditional right gutter reserved for a rail that, below 2xl, no longer renders as a
-        // fixed overlay. Page padding is px-5 (40px total) below md, md:px-8 (64px total) at md and up.
-        // Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px sidebar
-        // also reserves space, and the content column stops growing past max-w-[1024px] regardless.
-        // Both breakpoint checks key off clientWidth, not vp.width — the media queries the app
-        // actually evaluates run against the layout viewport, which a classic desktop scrollbar
+        // fixed overlay. Page padding is px-5 below md, md:px-8 at md and up — derived from rem times
+        // the real root font-size, not the 40px/64px a 16px-root assumption would give (35px/56px
+        // here). Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px
+        // sidebar also reserves space, and the content column stops growing past max-w-[1024px]
+        // regardless. Both breakpoint checks key off clientWidth, not vp.width — the media queries the
+        // app actually evaluates run against the layout viewport, which a classic desktop scrollbar
         // shrinks below the requested device width (same reasoning as the scrollWidth check above).
-        const pagePadding = overflow.clientWidth >= MD_BREAKPOINT ? 64 : 40;
+        const pagePadding = (overflow.clientWidth >= MD_BREAKPOINT ? PAGE_PADDING_REM_AT_MD : PAGE_PADDING_REM_BELOW_MD) * rootFontSize;
         const sidebar = overflow.clientWidth >= LG_BREAKPOINT ? SIDEBAR_WIDTH : 0;
         const expectedContentWidth = Math.min(CONTENT_MAX, overflow.clientWidth - sidebar - pagePadding);
         const contentBox = await content.boundingBox();
@@ -225,11 +232,21 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
 
           // Expected cap is derived independently of the tested element (MAX_MD_REM x the actual root
           // font-size), not read off panelRail's own computed max-width — reading the expectation off
-          // the same element being measured would make the assertion tautological (box-sizing: border-
-          // box guarantees a rendered width can never exceed its own max-width, so that comparison
-          // could never fail regardless of which class were actually applied).
-          const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+          // the same element being measured would make the width assertion below tautological
+          // (box-sizing: border-box guarantees a rendered width can never exceed its own max-width, so
+          // that comparison could never fail regardless of which class were actually applied).
           const expectedCapPx = MAX_MD_REM * rootFontSize;
+
+          // Cap-existence check: at the two narrowest viewports (360/393) the uncapped rail would
+          // already render under 392px on its own (the content column itself is that narrow), so the
+          // width assertion below can't tell "correctly capped" from "cap silently removed" there —
+          // this compares the CSS property directly instead, at every sub-sm viewport including those.
+          const capPx = await panelRail.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+          expect(capPx, `profile panel rail max-width at ${vp.width}px should be the max-w-md cap (${expectedCapPx}px), not absent`).toBeCloseTo(
+            expectedCapPx,
+            0
+          );
+
           expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md (${expectedCapPx}px)`).toBeLessThanOrEqual(
             expectedCapPx + 1
           );
