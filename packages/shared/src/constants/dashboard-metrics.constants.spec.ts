@@ -266,7 +266,7 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(members?.changePercentage).toBeUndefined();
   });
 
-  // The Members card is the only one reading two responses. Retention supplies the caption
+  // Members reads two responses, so its two halves degrade separately. Retention supplies the caption
   // alone, so its failure leaves the value measured while the caption must stop claiming a
   // retention rate it never received.
   it('drops the retention caption when only the retention request failed', () => {
@@ -312,7 +312,12 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(card(cards, 'ed-evo-event-growth')?.value).toBe('0');
     expect(card(cards, 'ed-evo-member-growth')?.value).toBe('0');
     expect(card(cards, 'ed-evo-flywheel-conversion')?.value).toBe('0.0%');
-    for (const testId of ['ed-evo-event-growth', 'ed-evo-member-growth', 'ed-evo-flywheel-conversion']) {
+    // Adoption and Sentiment need the same pin: a guard written as a truthiness test on
+    // totalMembers/totalMentions would keep every failure case green while reporting a real
+    // zero as an outage — the inverse defect, and just as wrong.
+    expect(card(cards, 'ed-evo-engaged-community')?.value).toBe('0');
+    expect(card(cards, 'ed-evo-brand-health')?.dualSignals?.every((row) => row.value !== '—')).toBe(true);
+    for (const testId of ['ed-evo-event-growth', 'ed-evo-member-growth', 'ed-evo-flywheel-conversion', 'ed-evo-engaged-community']) {
       expect(card(cards, testId)?.subtitle).not.toContain('could not be loaded');
     }
   });

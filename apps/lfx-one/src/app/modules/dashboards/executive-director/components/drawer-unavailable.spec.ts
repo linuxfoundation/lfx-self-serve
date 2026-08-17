@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BrandHealthDrawerComponent } from './brand-health-drawer/brand-health-drawer.component';
 import { EmailCtrDrawerComponent } from './email-ctr-drawer/email-ctr-drawer.component';
 import { EngagedCommunityDrawerComponent } from './engaged-community-drawer/engaged-community-drawer.component';
+import { WebsiteVisitsDrawerComponent } from './website-visits-drawer/website-visits-drawer.component';
 import { FlywheelConversionDrawerComponent } from './flywheel-conversion-drawer/flywheel-conversion-drawer.component';
 import { MemberAcquisitionDrawerComponent } from './member-acquisition-drawer/member-acquisition-drawer.component';
 import { MemberRetentionDrawerComponent } from './member-retention-drawer/member-retention-drawer.component';
@@ -345,10 +346,11 @@ describe('ED drill-down drawers — a failed request must not read as no activit
     TestBed.resetTestingModule();
   });
 
-  // The Email drawer is the only one that fetches its own data, so its failure arrives
-  // through catchError rather than a parent input — a distinct path that the cases above
-  // cannot reach. Its catchError resolves to a zero-filled default, which is exactly what
-  // used to render "No email activity detected" for a failed request.
+  // Email and Website fetch their own data, so their failures arrive through catchError
+  // rather than a parent input — a distinct path the parent-fed cases cannot reach. Both
+  // resolve to a zero-filled default, which is what used to render a measured-absence
+  // finding for a failed request. Do not describe either as "the only one": that claim was
+  // in this comment and is what let the Website drawer ship unfixed.
   it('Email: says the data could not be loaded when its own request fails', async () => {
     await TestBed.configureTestingModule({
       imports: [EmailCtrDrawerComponent],
@@ -426,6 +428,36 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       TestBed.resetTestingModule();
     });
   }
+
+  // Website is the second self-fetching drawer. It was missed on the first pass because the
+  // Email comment above called Email "the only one" — an enumerating claim that was wrong when
+  // written. Same mechanism: catchError resolves to a zero-filled default, which rendered
+  // "No website traffic detected" for a failed request.
+  it('Website: says the data could not be loaded when its own request fails', async () => {
+    await TestBed.configureTestingModule({
+      imports: [WebsiteVisitsDrawerComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        { provide: AnalyticsService, useValue: { getWebActivitiesSummary: () => throwError(() => new Error('boom')) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>({ uid: 'f-1', name: 'TLF', slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(WebsiteVisitsDrawerComponent);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(DRAWER_UNAVAILABLE_HEADING);
+    expect(text).not.toContain('No website traffic detected');
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+  });
 
   for (const { name, component, inputs, measuredCopy } of drawers) {
     it(`${name}: says the data could not be loaded when the request failed`, async () => {

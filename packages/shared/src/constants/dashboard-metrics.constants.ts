@@ -913,7 +913,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD${eventGrowth.monthlyData.length > 0 ? ' · Trend: quarterly, 3 yrs + upcoming' : ''}`;
   const eventsSparkline =
     eventGrowth && eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth?.totalRegistrants ?? 0);
-  // The Members card is the only one reading two responses: the value comes from
+  // Members reads TWO responses, which is why it needs a combined guard: the value comes from
   // memberAcquisition and the caption from memberRetention, so either failing makes the card
   // no longer a measurement.
   // Note the Members DRAWER binds `unavailable` on either response failing, which is stricter
