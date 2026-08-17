@@ -44,9 +44,10 @@
  * via <main>'s lg:ml-[348px], and the content column itself is capped at max-w-[1024px] on the inner
  * wrapper in profile-layout.component.html, so it stops growing well before `2xl`.
  *
- * A separate desktop-control test at 1440px asserts the OPPOSITE of the main matrix — the rail
- * wrapper IS `position: fixed` and IS 300px wide — as a regression guard for the rail disappearing
- * entirely if the breakpoint or its classes ever get dropped instead of moved.
+ * A separate desktop-control test above 2xl (TWO_XL_BREAKPOINT + 40, not exactly 1440px — see the
+ * DESKTOP_VIEWPORT comment for why) asserts the OPPOSITE of the main matrix — the rail wrapper IS
+ * `position: fixed` and IS 300px wide — as a regression guard for the rail disappearing entirely
+ * if the breakpoint or its classes ever get dropped instead of moved.
  *
  * The rail wrapper carries its own `profile-panel-rail` testid (added alongside the original spec)
  * specifically so the CSS-position mechanism check below doesn't rely on a DOM-position hop off
