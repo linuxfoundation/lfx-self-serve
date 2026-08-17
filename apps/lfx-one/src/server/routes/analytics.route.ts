@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
+import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 import { requireExecutiveDashboardAccess } from '../middleware/require-executive-dashboard-access.middleware';
 
 const router = Router();
@@ -192,17 +193,16 @@ router.get('/code-contribution-summary', (req, res, next) => analyticsController
 router.get('/board-meeting-participation-summary', (req, res, next) => analyticsController.getBoardMeetingParticipationSummary(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
-// ED-or-LF-Staff-gated: backs the Marketing Overview event growth drawer, which
-// canViewExecutiveDashboards() renders for both. Authorization is enforced here with
-// server-verified persona detection rather than trusting the UI guard.
-router.get('/event-growth', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getEventGrowth(req, res, next));
-router.get('/events-overview-summary', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
-router.get('/event-roster', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getEventRoster(req, res, next));
-router.get('/event-detail', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getEventDetail(req, res, next));
-router.get('/brand-reach', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getBrandReach(req, res, next));
+// ED-only: events, revenue, and attribution data; gated by requireExecutiveDirector.
+router.get('/event-growth', requireExecutiveDirector, (req, res, next) => analyticsController.getEventGrowth(req, res, next));
+router.get('/events-overview-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
+router.get('/event-roster', requireExecutiveDirector, (req, res, next) => analyticsController.getEventRoster(req, res, next));
+router.get('/event-detail', requireExecutiveDirector, (req, res, next) => analyticsController.getEventDetail(req, res, next));
+router.get('/brand-reach', requireExecutiveDirector, (req, res, next) => analyticsController.getBrandReach(req, res, next));
+// Brand health: ED or LF Staff (Social Listening tab is visible to both in marketing-impact.component.html)
 router.get('/brand-health', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getBrandHealth(req, res, next));
-router.get('/revenue-impact', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
-router.get('/marketing-attribution', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
+router.get('/revenue-impact', requireExecutiveDirector, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+router.get('/marketing-attribution', requireExecutiveDirector, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
 // Multi-foundation summary endpoint (multi-foundation dashboard) — any authenticated user viewing
 // their own multi-persona foundations. Authorization is enforced server-side by

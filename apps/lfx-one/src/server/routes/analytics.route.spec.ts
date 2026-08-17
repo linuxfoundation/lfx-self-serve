@@ -77,11 +77,10 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
   };
 }
 
-// Every endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff, no service-level
-// scope validation for multi-persona users) — the full registration list, so a missing/deleted
-// gate on any one of them shows up here rather than only in a sample. Middleware branching
-// itself is covered by require-executive-dashboard-access.middleware.spec.ts.
-const DASHBOARD_ACCESS_GATED = [
+// Every endpoint gated by requireExecutiveDirector (ED-only) — the full registration list,
+// so a missing/deleted gate on any one of them shows up here rather than only in a sample.
+// Middleware branching itself is covered by require-executive-director.middleware.spec.ts.
+const ED_ONLY_GATED = [
   '/web-activities-summary',
   '/email-ctr',
   '/social-reach',
@@ -93,12 +92,15 @@ const DASHBOARD_ACCESS_GATED = [
   '/event-roster',
   '/event-detail',
   '/brand-reach',
-  '/brand-health',
   '/revenue-impact',
   '/marketing-attribution',
 ];
 
-const GATED_SAMPLE = [...DASHBOARD_ACCESS_GATED];
+// Endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff):
+// Social Listening only, visible to both personas in marketing-impact.component.html
+const ED_OR_LF_STAFF_GATED = ['/brand-health'];
+
+const GATED_SAMPLE = [...ED_ONLY_GATED, ...ED_OR_LF_STAFF_GATED];
 
 describe('analytics router — authorization on marketing/dashboard endpoints', () => {
   it.each(GATED_SAMPLE)('refuses %s for a non-ED caller', async (path) => {
@@ -152,10 +154,18 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
     expect(res.status).toBe(403);
   });
 
-  it('admits LF staff without the ED persona on an ED-or-LF-Staff dashboard endpoint', async () => {
+  it('refuses LF staff without the ED persona on ED-only routes', async () => {
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
 
     const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('admits LF staff without the ED persona on ED-or-LF-Staff endpoints (social listening only)', async () => {
+    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
+
+    const res = await fetch(`${baseUrl}/api/analytics/brand-health?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
