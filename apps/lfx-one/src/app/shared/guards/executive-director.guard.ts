@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { inject, PLATFORM_ID } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { map } from 'rxjs';
+import { catchError, filter, map, of, switchMap, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { PersonaService } from '../services/persona.service';
@@ -13,11 +15,13 @@ import { PersonaService } from '../services/persona.service';
  * Route guard restricting access to the Campaigns page — the only current consumer.
  *
  * The ED fast path stays fully synchronous (PersonaService is cookie-seeded, so SSR
- * never has to wait on API hydration for this check). While `marketing-ops-fga-enabled`
- * is off (the default), this is byte-identical to the original ED-only guard: no async
- * path is taken, non-ED users redirect immediately. When the flag is on, a non-ED caller
- * additionally gets a chance via a root/project-scoped `campaign_manager` FGA grant,
- * resolved asynchronously through the personas API (LFXV2-2236).
+ * never has to wait on API hydration for this check). LaunchDarkly is browser-only
+ * (see `feature-flag.provider.ts`) — its provider never initializes server-side, so
+ * reading the flag there always yields its default (`false`), which would permanently
+ * redirect a non-ED FGA campaign manager away via a real SSR redirect before the client
+ * ever gets a chance to check. On the server this defers instead, matching
+ * `mktgOsAgentsEnabledGuard`/`akritesEnabledGuard`: the client-side rerun of this guard
+ * after hydration awaits `providerReady` and makes the real decision (LFXV2-2236).
  */
 export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -27,21 +31,38 @@ export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnaps
     return true;
   }
 
-  const featureFlagService = inject(FeatureFlagService);
-  if (!featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)()) {
-    return router.parseUrl('/foundation/overview');
+  const platformId = inject(PLATFORM_ID);
+  if (!isPlatformBrowser(platformId)) {
+    return true;
   }
 
+  const featureFlagService = inject(FeatureFlagService);
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
-  // Force a refetch unless we already know the caller is a campaign manager — the "already
-  // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
-  return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
-    map(() => {
-      if (personaService.isCampaignManager()) {
-        return true;
+  const providerReady$ = featureFlagService.providerReady()
+    ? of(true)
+    : toObservable(featureFlagService.providerReady).pipe(
+        filter((isReady): isReady is true => isReady === true),
+        timeout(5000),
+        catchError(() => of(false))
+      );
+
+  return providerReady$.pipe(
+    switchMap((ready) => {
+      if (!ready || !featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)()) {
+        return of(router.parseUrl('/foundation/overview'));
       }
-      return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
+
+      // Force a refetch unless we already know the caller is a campaign manager — the "already
+      // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
+      return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
+        map(() => {
+          if (personaService.isCampaignManager()) {
+            return true;
+          }
+          return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
+        })
+      );
     })
   );
 };

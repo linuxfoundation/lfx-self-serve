@@ -335,6 +335,11 @@ test.describe('S8: Foundation lens — flag OFF (default) ignores marketing_audi
   });
 
   test('/foundation/marketing-impact shows Social-Listening-only view despite granted API response', async ({ page }) => {
+    // A plain contributor has no route access to Marketing Impact at all while the flag is off
+    // (the route still gates on canViewExecutiveDashboards) — grant LF Staff so this test actually
+    // reaches the page, then verify the granted marketing_auditor flag doesn't unlock full tabs.
+    await stubPersona(page, ['contributor'], { isLFStaff: true, isMarketingAuditor: true, isCampaignManager: true });
+
     await gotoAndWaitForSidebar(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
     await expect(page.getByTestId('marketing-impact-social-listening-only'), 'flag=off marketing_auditor grant should not unlock full tabs').toBeVisible({
       timeout: ELEMENT_TIMEOUT,

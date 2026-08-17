@@ -122,12 +122,15 @@ export class PersonaService {
         catchError(() => of(null))
       )
       .subscribe((response) => {
-        // If enriched resolved first, preserve its project metadata instead of clobbering with the sparse payload.
+        // If enriched resolved first, preserve its project metadata and FGA grants instead of
+        // clobbering them with the sparse bootstrap payload (which never carries these fields).
         if (this.enrichedPersonasLoaded() && response && !response.error) {
           this.applyPersonaResponse({
             ...response,
             projects: this.detectedProjects(),
             personaProjects: this.personaProjects(),
+            isMarketingAuditor: this.isMarketingAuditor(),
+            isCampaignManager: this.isCampaignManager(),
           });
           return;
         }
