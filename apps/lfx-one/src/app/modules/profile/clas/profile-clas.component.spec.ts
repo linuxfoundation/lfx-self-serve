@@ -6,7 +6,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router, RouterLink } from '@angular/router';
 import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -113,8 +113,10 @@ describe('ProfileClasComponent', () => {
 
     const emptyState = fixture.debugElement.query(By.css('[data-testid="my-clas-empty-state"]'));
     expect(emptyState).toBeTruthy();
-    const cta = emptyState.query(By.css('a[href]'));
-    expect(cta.nativeElement.getAttribute('href')).toBe('/docs/account/my-clas');
+    const link = emptyState.query(By.directive(RouterLink));
+    if (!link) throw new Error('empty state rendered no RouterLink');
+    const urlTree = link.injector.get(RouterLink).urlTree;
+    expect(urlTree && TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {
