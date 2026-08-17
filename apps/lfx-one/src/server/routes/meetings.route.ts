@@ -74,9 +74,9 @@ router.put('/:uid/attachments/:attachmentId', (req, res, next) => meetingControl
 
 router.delete('/:uid/attachments/:attachmentId', (req, res, next) => meetingController.deleteMeetingAttachment(req, res, next));
 
-// AI agenda generation endpoint. Reachable from the composer's Agenda & Resources section, which
-// the section rail can jump to at any point — including before a title or type exists. Every call
-// costs a LiteLLM completion, so it's rate-limited per user on top of the global /api limiter.
+// AI agenda generation endpoint. Reachable only from the composer's Agenda & Resources section, and
+// in edit mode that section is reachable with no title or type set. Every call costs a LiteLLM
+// completion, so it's rate-limited per user on top of the global /api limiter.
 router.post('/generate-agenda', aiRateLimiter, (req, res, next) => meetingController.generateAgenda(req, res, next));
 
 export default router;

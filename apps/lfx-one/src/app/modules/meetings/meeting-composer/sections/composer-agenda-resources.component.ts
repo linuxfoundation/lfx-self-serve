@@ -14,6 +14,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
   MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
@@ -53,6 +54,9 @@ export class ComposerAgendaResourcesComponent {
   public readonly form = input.required<FormGroup>();
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  /** Hard cap on the AI goal. Enforced on the input rather than as a validator — see the control's
+   * declaration in `MeetingComposerFormService`: a validator here would block the meeting save. */
+  protected readonly promptMaxLength = MEETING_AGENDA_PROMPT_MAX_LENGTH;
   protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
   protected readonly acceptString = generateAcceptString();
   protected readonly acceptedTypesDisplay = getAcceptedFileTypesDisplay();
@@ -133,10 +137,11 @@ export class ComposerAgendaResourcesComponent {
     const meetingType = this.meetingType();
     const project = this.projectContextService.activeContext();
 
-    // A title or a goal — whichever the organizer has — is enough. The section rail can jump here
-    // before Details & Access is filled in, so the type and project may legitimately be missing;
-    // the backend drops absent descriptors from the prompt rather than rejecting the request. This
-    // guard deliberately mirrors the server's `!title && !context` contract.
+    // A title or a goal — whichever the organizer has — is enough. Edit mode drops the rail's
+    // section locking entirely, so the organizer can be standing here having just cleared the title;
+    // the project also resolves asynchronously and may not be there yet. The backend drops absent
+    // descriptors from the prompt rather than rejecting the request. This guard deliberately mirrors
+    // the server's `!title && !context` contract.
     if (!context && !title) {
       this.messageService.add({
         severity: 'warn',

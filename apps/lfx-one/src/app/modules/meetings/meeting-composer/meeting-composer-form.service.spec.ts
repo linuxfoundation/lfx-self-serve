@@ -308,6 +308,19 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(getMeeting).not.toHaveBeenCalled();
   });
 
+  // GH-1464: `aiPrompt` is a scratch field the save payload never carries, but it lives in the group
+  // `validateForSubmit()` reads. A validator on it would block the meeting from saving over a value
+  // the meeting doesn't even have, with no error UI anywhere to explain the dead button.
+  it('does not let an over-long AI goal block the meeting save', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+    expect(service.validateForSubmit()).toBe(true);
+
+    service.form().get('aiPrompt')?.setValue('x'.repeat(5000));
+
+    expect(service.validateForSubmit()).toBe(true);
+  });
+
   it('does not re-fetch in create mode, where meetingId comes from the save', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.meetingId.set('meeting-1');

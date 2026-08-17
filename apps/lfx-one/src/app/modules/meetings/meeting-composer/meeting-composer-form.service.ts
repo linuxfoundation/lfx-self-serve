@@ -16,7 +16,6 @@ import {
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
-  MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
@@ -616,9 +615,11 @@ export class MeetingComposerFormService {
 
         title: new FormControl('', [Validators.required]),
         description: new FormControl('', [Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)]),
-        // Bounded because the goal is interpolated verbatim into the AI prompt; the server drops
-        // anything past the same cap rather than truncating it mid-sentence.
-        aiPrompt: new FormControl('', [Validators.maxLength(MEETING_AGENDA_PROMPT_MAX_LENGTH)]),
+        // Deliberately unvalidated. `aiPrompt` is a scratch field that never reaches the save payload,
+        // but it lives in the group `validateForSubmit()` reads, so any validator here would block the
+        // meeting from saving over a value the meeting doesn't even carry. The cap is enforced where it
+        // can't do that damage: `maxlength` on the textarea (untypeable) and a server-side drop.
+        aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),
         duration: new FormControl(DEFAULT_DURATION, [Validators.required]),
