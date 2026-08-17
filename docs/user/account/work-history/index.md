@@ -62,7 +62,7 @@ When the system attributes contributions from your employment timeline, you may 
 
 ### Confirm your maintainer or contributor role
 
-If the system detects you may be a maintainer, it asks you to verify: in the **Verify your role** dialog, choose **Yes, I'm a maintainer** or **No, I'm a contributor**. Some maintainer roles are defined in a project's repository configuration file and are shown as read-only.
+If the system detects you may be a maintainer, it asks you to verify: in the **Verify your role** dialog, choose **Yes, I'm a maintainer** or **No, I'm a contributor**. A role that comes from a project's repository configuration file is marked with a lock icon and the tooltip _Role defined in repository configuration file_; you can still open the role menu and change it to **Contributor** if it's wrong.
 
 If nothing is linked yet, the section shows _No project affiliations yet_ with prompts to **Verify identities** and **Add work experience**.
 

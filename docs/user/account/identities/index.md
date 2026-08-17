@@ -36,7 +36,7 @@ Identities are grouped into two sections:
 
 1. Select **Add identity**.
 2. Choose a provider:
-   - For a social account (for example GitHub, Google, LinkedIn, or X), select **Continue with _[provider]_** and complete the provider's sign-in. This links the account and attributes its contributions to you.
+   - For a social account (for example GitHub, Google, or LinkedIn), select **Continue with _[provider]_** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. Enter the 6-digit code sent to that address, then select **Verify email**. Use **Resend Code** if it does not arrive.
 
 ## Verify an unverified identity
@@ -53,7 +53,7 @@ If an unverified identity is not yours, select **This is not me** to reject it.
 1. Open the actions menu on a verified identity and select **Remove**.
 2. In **Remove verified identity**, acknowledge that removing it may affect your contribution attribution, then select **Remove identity**.
 
-Unverified identities can be removed the same way (**Remove** → **Remove**). Your **Primary** identity cannot be removed.
+To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your **Primary** identity cannot be removed.
 
 > **Note:** Removing an identity can't be undone. Some identity information may be retained to support project insights.
 

@@ -58,7 +58,7 @@ Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** t
 
 ## How do I turn off auto-renew or stop my membership?
 
-On the **Individual Enrollment** tab, select **Disable auto-renew** and confirm. Your membership stays active until its expiration date, then lapses — there is no separate immediate-cancel step. See [Individual Enrollment](../individual-enrollment/).
+If your membership supports automatic renewal, the **Individual Enrollment** tab shows a **Disable auto-renew** control — select it and confirm. Your membership then stays active until its expiration date and won't renew automatically; there is no separate immediate-cancel step. Memberships that renew manually don't show an auto-renew control. See [Individual Enrollment](../individual-enrollment/).
 
 ## Where do I find My CLAs?
 

@@ -41,6 +41,8 @@ Once you are enrolled, the membership card shows:
 
 ## Turn auto-renew on or off
 
+The **Disable auto-renew** / **Enable auto-renew** control appears on the membership card while your membership is active. If your membership doesn't support automatic renewal, this control isn't shown.
+
 1. On the membership card, select **Disable auto-renew** or **Enable auto-renew**.
 2. Confirm in the dialog:
    - **Enabling** shows: _This will enable auto-renew for your membership; your next payment will be charged on [date]._
