@@ -27,7 +27,14 @@
  * Drives an explicit viewport matrix (mirrors e2e/docs/responsive.spec.ts) covering mobile and
  * tablet widths up to just under the `lg` breakpoint, rather than relying on whichever project
  * happens to run it — so the tablet band (768-1023px) is exercised too, not just mobile-chrome's
- * fixed 393px.
+ * fixed 393px. Because that matrix forces its own viewport per test, it also runs under the
+ * chromium/firefox desktop projects now (not just mobile-chrome) — so width comparisons read
+ * document.documentElement.clientWidth rather than the device viewport width, since desktop
+ * projects render a classic scrollbar that mobile-emulated overlay scrollbars don't.
+ *
+ * The rail wrapper carries its own `profile-panel-rail` testid (added alongside this spec)
+ * specifically so the CSS-position mechanism check below doesn't rely on a DOM-position hop off
+ * `profile-panel` that would silently break if a wrapper element is ever inserted between them.
  *
  * Prerequisites (mirrors profile-edit-drawer.spec.ts):
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -103,6 +110,7 @@ test.describe('Profile & Account hub — mobile layout (LFXV2-3285)', () => {
         skipWhenAuthMissing(page);
 
         const panel = page.getByTestId('profile-panel');
+        const panelRail = page.getByTestId('profile-panel-rail');
         const content = page.getByTestId('profile-content');
         const tabs = page.getByTestId('profile-tabs-desktop');
 
@@ -110,30 +118,34 @@ test.describe('Profile & Account hub — mobile layout (LFXV2-3285)', () => {
         await expect(content, 'profile content column should render').toBeVisible({ timeout: LOAD_TIMEOUT });
         await expect(tabs, 'subtab nav should render').toBeVisible({ timeout: LOAD_TIMEOUT });
 
-        // The content column must reclaim (close to) the full viewport width — not be squeezed by an
-        // unconditional right gutter reserved for a rail that, below lg, no longer renders as a fixed
-        // overlay. Page padding is px-5 (40px total) below md, md:px-8 (64px total) at md and up.
-        const pagePadding = vp.width >= MD_BREAKPOINT ? 64 : 40;
-        const contentBox = await content.boundingBox();
-        expect(contentBox, 'content column should have a bounding box').not.toBeNull();
-        expect(contentBox!.width, `content column width at ${vp.width}px viewport`).toBeGreaterThanOrEqual(vp.width - pagePadding - 8);
-
-        // No horizontal page scroll — the classic symptom of a fixed-width element bleeding past the
-        // viewport (1px fudge factor mirrors docs/responsive.spec.ts).
+        // Read the layout viewport (clientWidth), not the device viewport (vp.width) — desktop
+        // projects (chromium/firefox) render a classic ~15px scrollbar that a mobile-emulated overlay
+        // scrollbar doesn't, so comparing against vp.width directly is scrollbar-blind and would false-
+        // fail there. No horizontal page scroll either (1px fudge factor mirrors docs/responsive.spec.ts).
         const overflow = await page.evaluate(() => ({
           scrollWidth: document.documentElement.scrollWidth,
           clientWidth: document.documentElement.clientWidth,
         }));
         expect(overflow.scrollWidth, `document scrollWidth at ${vp.width}px`).toBeLessThanOrEqual(overflow.clientWidth + 1);
 
-        // Direct mechanism check: the element two levels up from the `profile-panel` testid (the
-        // <aside>) is the wrapper <div> carrying `lg:fixed` in profile-layout.component.html. Below lg
-        // it must NOT resolve to position: fixed — this is what actually distinguishes "inline in
-        // normal flow" from "fixed overlay pinned to the viewport"; bounding-box comparisons alone
-        // don't, since a fixed rail still sits above the nav and (once the content column is squeezed
-        // thin enough) may not geometrically overlap it either.
-        const wrapperPosition = await panel.evaluate((el) => getComputedStyle(el.parentElement!.parentElement!).position);
-        expect(wrapperPosition, `profile panel wrapper position at ${vp.width}px should not be fixed`).not.toBe('fixed');
+        // The content column must reclaim (close to) the full layout width — not be squeezed by an
+        // unconditional right gutter reserved for a rail that, below lg, no longer renders as a fixed
+        // overlay. Page padding is px-5 (40px total) below md, md:px-8 (64px total) at md and up.
+        const pagePadding = vp.width >= MD_BREAKPOINT ? 64 : 40;
+        const contentBox = await content.boundingBox();
+        expect(contentBox, 'content column should have a bounding box').not.toBeNull();
+        expect(contentBox!.width, `content column width at ${vp.width}px viewport`).toBeGreaterThanOrEqual(overflow.clientWidth - pagePadding - 8);
+
+        // Direct mechanism check on the dedicated profile-panel-rail testid (not a DOM-position hop
+        // off profile-panel, which would silently start reading the wrong ancestor and pass vacuously
+        // if a wrapper element is ever inserted between them): below lg it must NOT resolve to
+        // position: fixed — this is what actually distinguishes "inline in normal flow" from "fixed
+        // overlay pinned to the viewport"; bounding-box comparisons alone don't, since a fixed rail
+        // still sits above the nav and (once the content column is squeezed thin enough) may not
+        // geometrically overlap it either.
+        await expect(panelRail, 'profile panel rail wrapper should render').toBeVisible({ timeout: LOAD_TIMEOUT });
+        const wrapperPosition = await panelRail.evaluate((el) => getComputedStyle(el).position);
+        expect(wrapperPosition, `profile panel rail position at ${vp.width}px should not be fixed`).not.toBe('fixed');
 
         // Inline placement: the panel should be left-aligned with the content column (both children of
         // the same padded container) rather than offset toward the right edge like a fixed rail would be.

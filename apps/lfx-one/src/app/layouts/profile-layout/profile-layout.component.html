@@ -34,7 +34,8 @@
       <!-- Profile panel — inline below lg (capped at max-w-md); fixed full-height right rail at lg and up (out of normal flow) -->
       <div
         class="max-w-md lg:max-w-none lg:fixed lg:bottom-0 lg:right-0 lg:z-40 lg:w-[300px]"
-        [ngClass]="{ 'lg:top-12': impersonating(), 'lg:top-0': !impersonating() }">
+        [ngClass]="{ 'lg:top-12': impersonating(), 'lg:top-0': !impersonating() }"
+        data-testid="profile-panel-rail">
         <lfx-profile-panel
           [loading]="loading()"
           [impersonating]="impersonating()"
