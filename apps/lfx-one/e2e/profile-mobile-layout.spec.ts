@@ -27,8 +27,9 @@
  * Drives an explicit viewport matrix (mirrors e2e/docs/responsive.spec.ts) covering mobile and
  * tablet widths up to just under the `lg` breakpoint, rather than relying on whichever project
  * happens to run it — so the tablet band (768-1023px) is exercised too, not just mobile-chrome's
- * fixed 393px. Because that matrix forces its own viewport per test, it also runs under the
- * chromium/firefox desktop projects now (not just mobile-chrome) — so width comparisons read
+ * fixed 393px. This spec runs under all three playwright.config.ts projects (chromium, firefox,
+ * mobile-chrome — none scope out e2e/**); because the matrix forces its own viewport per test, the
+ * desktop projects exercise the sub-lg bands too, so width comparisons read
  * document.documentElement.clientWidth rather than the device viewport width, since desktop
  * projects render a classic scrollbar that mobile-emulated overlay scrollbars don't.
  *
