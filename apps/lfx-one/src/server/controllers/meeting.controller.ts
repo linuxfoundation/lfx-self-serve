@@ -370,10 +370,12 @@ export class MeetingController {
    * GET /meetings/:uid/registrants
    *
    * `include_committee=true` opts into the same committee enrichment `getMyMeetingRegistrants`
-   * applies, so callers that render group attribution (the meeting composer's Guests list) get
-   * `committee_name` / `committee_role` / `committee_category` / `committee_voting_status` /
-   * `committee_appointed_by` populated. It stays opt-in because it costs a per-committee
-   * details + members fan-out that the plain registrant listing has no use for.
+   * applies, so callers that render group attribution (the meeting composer's Guests list, and the
+   * registrants display's group filter) get `committee_name` / `committee_role` /
+   * `committee_category` / `committee_voting_status` / `committee_appointed_by` populated, and get
+   * `committee_uid` normalized from the upstream v1 SFID to the v2 UID. It stays opt-in because it
+   * costs a per-committee details + members fan-out — to the committee service, not upstream — that
+   * the plain registrant listing has no use for.
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -518,79 +520,85 @@ export class MeetingController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
-      // Use tags_all to filter by both meeting_id and email
-      logger.debug(req, 'get_my_meeting_registrants', 'Checking if user is a registrant', {
-        meeting_id: uid,
-        user_email: userEmail,
-      });
-      const userRegistrantCheck = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail);
-
-      logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
-        meeting_id: uid,
-        user_email: userEmail,
-        registrant_count: userRegistrantCheck.length,
-      });
-
-      // Step 6: If user is not a registrant, check if they are an organizer
-      if (userRegistrantCheck.length === 0) {
-        if (!meeting.organizer) {
-          logger.success(req, 'get_my_meeting_registrants', startTime, {
-            meeting_id: uid,
-            user_email: userEmail,
-            is_registrant: false,
-            is_organizer: false,
-            registrant_count: 0,
-          });
-          res.json([]);
-          return;
-        }
-
-        logger.debug(req, 'get_my_meeting_registrants', 'User is not a registrant but is an organizer, granting access', {
+      // Everything that runs under the M2M token lives in this try/finally so the restore below can't
+      // be skipped. It used to sit inline on the happy path, which meant an enrichment throw — or the
+      // early `res.json([])` for a non-registrant non-organizer — left the M2M token on `req` for
+      // whatever ran next in the request's lifetime.
+      try {
+        // Use tags_all to filter by both meeting_id and email
+        logger.debug(req, 'get_my_meeting_registrants', 'Checking if user is a registrant', {
           meeting_id: uid,
           user_email: userEmail,
         });
+        const userRegistrantCheck = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail);
+
+        logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
+          meeting_id: uid,
+          user_email: userEmail,
+          registrant_count: userRegistrantCheck.length,
+        });
+
+        // Step 6: If user is not a registrant, check if they are an organizer
+        if (userRegistrantCheck.length === 0) {
+          if (!meeting.organizer) {
+            logger.success(req, 'get_my_meeting_registrants', startTime, {
+              meeting_id: uid,
+              user_email: userEmail,
+              is_registrant: false,
+              is_organizer: false,
+              registrant_count: 0,
+            });
+            res.json([]);
+            return;
+          }
+
+          logger.debug(req, 'get_my_meeting_registrants', 'User is not a registrant but is an organizer, granting access', {
+            meeting_id: uid,
+            user_email: userEmail,
+          });
+        }
+
+        // Step 7: User is a registrant or organizer, fetch all registrants using M2M token
+        logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
+          meeting_id: uid,
+          user_email: userEmail,
+          include_rsvp: includeRsvp,
+        });
+
+        logger.debug(req, 'get_my_meeting_registrants', 'M2M token generated, fetching all registrants', {
+          meeting_id: uid,
+          has_m2m_token: !!m2mToken,
+        });
+
+        const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
+
+        logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
+          meeting_id: uid,
+          registrant_count: registrants.length,
+        });
+
+        // Enrich committee registrant data with committee details and member info
+        const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          user_email: userEmail,
+          is_registrant: userRegistrantCheck.length > 0,
+          is_organizer: meeting.organizer,
+          registrant_count: enrichedRegistrants.length,
+          include_rsvp: includeRsvp,
+        });
+
+        // Send the registrants data to the client
+        res.json(enrichedRegistrants);
+      } finally {
+        // Restore original token (delete if it was undefined to avoid leaving M2M token)
+        if (originalToken !== undefined) {
+          req.bearerToken = originalToken;
+        } else {
+          delete req.bearerToken;
+        }
       }
-
-      // Step 7: User is a registrant or organizer, fetch all registrants using M2M token
-      logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
-        meeting_id: uid,
-        user_email: userEmail,
-        include_rsvp: includeRsvp,
-      });
-
-      logger.debug(req, 'get_my_meeting_registrants', 'M2M token generated, fetching all registrants', {
-        meeting_id: uid,
-        has_m2m_token: !!m2mToken,
-      });
-
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
-
-      logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
-        meeting_id: uid,
-        registrant_count: registrants.length,
-      });
-
-      // Enrich committee registrant data with committee details and member info
-      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
-
-      // Restore original token (delete if it was undefined to avoid leaving M2M token)
-      if (originalToken !== undefined) {
-        req.bearerToken = originalToken;
-      } else {
-        delete req.bearerToken;
-      }
-
-      logger.success(req, 'get_my_meeting_registrants', startTime, {
-        meeting_id: uid,
-        user_email: userEmail,
-        is_registrant: userRegistrantCheck.length > 0,
-        is_organizer: meeting.organizer,
-        registrant_count: enrichedRegistrants.length,
-        include_rsvp: includeRsvp,
-      });
-
-      // Send the registrants data to the client
-      res.json(enrichedRegistrants);
     } catch (error) {
       // Send the error to the next middleware
       next(error);
@@ -1500,21 +1508,24 @@ export class MeetingController {
       // client's project context resolves asynchronously. Only require enough signal to write a
       // useful agenda — a title or a free-text goal — and let the prompt builder omit the rest.
       // Both are trimmed first: whitespace is not signal, and both land verbatim in the model
-      // prompt, which is also why both are capped.
+      // prompt, which is also why both are capped at the prompt budget.
       const title = MeetingController.readPromptField(rawTitle);
       const context = MeetingController.readPromptField(rawContext);
 
-      // A dropped over-budget descriptor is otherwise invisible: the request still succeeds on the
-      // remaining one, so the organizer sees a generated agenda that ignored what they typed. Log the
-      // discard (lengths only — the values themselves are user content) so it's at least diagnosable.
-      const overBudget = [['title', rawTitle] as const, ['context', rawContext] as const].filter(
-        ([, raw]) => typeof raw === 'string' && raw.trim().length > MEETING_AGENDA_PROMPT_MAX_LENGTH
-      );
+      // Truncation is invisible to the organizer — the request still succeeds and returns an agenda
+      // written against a shortened descriptor — so log it. Derived by comparing what arrived against
+      // what `readPromptField` kept rather than re-testing the budget here, so the threshold lives in
+      // exactly one place. Lengths only: the values themselves are user content.
+      const truncated = [
+        { field: 'title', raw: rawTitle, kept: title },
+        { field: 'context', raw: rawContext, kept: context },
+      ]
+        .filter(({ raw, kept }) => typeof raw === 'string' && kept !== undefined && raw.trim().length > kept.length)
+        .map(({ field, raw, kept }) => ({ field, from: (raw as string).trim().length, to: kept?.length }));
 
-      if (overBudget.length > 0) {
-        logger.warning(req, 'generate_agenda', 'Dropped an over-budget prompt descriptor', {
-          dropped_fields: overBudget.map(([field]) => field),
-          lengths: overBudget.map(([, raw]) => (raw as string).trim().length),
+      if (truncated.length > 0) {
+        logger.warning(req, 'generate_agenda', 'Truncated an over-budget prompt descriptor', {
+          truncated,
           limit: MEETING_AGENDA_PROMPT_MAX_LENGTH,
         });
       }
@@ -1522,8 +1533,8 @@ export class MeetingController {
       if (!title && !context) {
         const validationError = ServiceValidationError.fromFieldErrors(
           {
-            title: `Provide a meeting title (max ${MEETING_AGENDA_PROMPT_MAX_LENGTH} characters) or describe what the meeting is for`,
-            context: `Describe what the meeting is for (max ${MEETING_AGENDA_PROMPT_MAX_LENGTH} characters) or provide a meeting title`,
+            title: 'Provide a meeting title or describe what the meeting is for',
+            context: 'Describe what the meeting is for or provide a meeting title',
           },
           'Agenda generation validation failed',
           {
@@ -1541,7 +1552,7 @@ export class MeetingController {
         title,
         projectName,
         context,
-        maxCharacters: MeetingController.clampAgendaMaxCharacters(maxCharacters),
+        maxCharacters: MeetingController.resolveAgendaMaxCharacters(maxCharacters),
       });
 
       // Usage telemetry: the helper is far more discoverable in the composer than it was in the
@@ -1857,16 +1868,23 @@ export class MeetingController {
         return { ...registrant, committee_uid: v1Sfid };
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
       const { committee_uid: _dropped, ...withoutCommittee } = registrant;
       return withoutCommittee;
     });
   }
 
   /**
-   * Normalizes a free-text field that will be interpolated into an AI prompt.
-   * Anything that isn't a non-empty string once trimmed, or that exceeds the prompt budget, is
-   * dropped rather than truncated — a half-sentence goal produces a worse agenda than no goal.
+   * Normalizes a free-text field that will be interpolated into an AI prompt: anything that isn't a
+   * non-empty string once trimmed is dropped, and anything over the prompt budget is truncated to it.
+   *
+   * Truncated, not dropped. Dropping was the earlier behaviour on the theory that half a sentence is
+   * a worse prompt than none, but it made the endpoint's contract impossible for a caller to satisfy
+   * honestly: the client's own guard tests for the *presence* of a title or goal, so an over-budget
+   * title with no goal passed the client and then failed `!title && !context` here, surfacing as a
+   * generic "could not generate an agenda" that no amount of retrying could fix. Truncating keeps the
+   * leading budget's worth of signal, so a descriptor the organizer typed is never silently discarded
+   * in full and the client guard mirrors this one exactly.
    */
   private static readPromptField(value: unknown): string | undefined {
     if (typeof value !== 'string') {
@@ -1875,18 +1893,24 @@ export class MeetingController {
 
     const trimmed = value.trim();
 
-    return trimmed.length > 0 && trimmed.length <= MEETING_AGENDA_PROMPT_MAX_LENGTH ? trimmed : undefined;
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+
+    return trimmed.length > MEETING_AGENDA_PROMPT_MAX_LENGTH ? trimmed.slice(0, MEETING_AGENDA_PROMPT_MAX_LENGTH) : trimmed;
   }
 
   /**
-   * Clamps the caller-supplied agenda cap into the range the agenda field actually accepts.
+   * Resolves the caller-supplied agenda cap to a value the agenda field can actually hold.
    * The value reaches the model twice — as `maxLength` in the response schema and interpolated into
    * the prompt — so an unvalidated `-1` / `"abc"` / `{}` off the request body would either produce an
    * opaque upstream 500 or let a caller ask for an agenda the `description` control can't hold.
    * Out-of-range values fall back to the default rather than being pinned to the nearest bound: a cap
    * of 1 is honoured nonsense that guarantees a useless completion, and the caller still pays for it.
+   * A caller that asked for an out-of-range cap gets no signal that it was substituted — acceptable
+   * because the only caller in the app sends `MEETING_AGENDA_MAX_LENGTH` itself.
    */
-  private static clampAgendaMaxCharacters(value: unknown): number {
+  private static resolveAgendaMaxCharacters(value: unknown): number {
     const parsed = typeof value === 'number' ? value : Number.NaN;
 
     const floored = Math.floor(parsed);

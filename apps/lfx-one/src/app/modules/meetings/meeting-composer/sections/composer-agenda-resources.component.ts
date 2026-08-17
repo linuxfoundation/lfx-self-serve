@@ -54,8 +54,10 @@ export class ComposerAgendaResourcesComponent {
   public readonly form = input.required<FormGroup>();
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
-  /** Hard cap on the AI goal. Enforced on the input rather than as a validator — see the control's
-   * declaration in `MeetingComposerFormService`: a validator here would block the meeting save. */
+  /** Hard cap on the AI goal. Enforced as a native `maxlength` attribute on the textarea and again by
+   * the server, which truncates an over-budget descriptor rather than dropping it — never as a
+   * validator: see the control's declaration in `MeetingComposerFormService` for why a validator on
+   * this scratch field would silently block the meeting save. */
   protected readonly promptMaxLength = MEETING_AGENDA_PROMPT_MAX_LENGTH;
   protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
   protected readonly acceptString = generateAcceptString();
@@ -72,6 +74,12 @@ export class ComposerAgendaResourcesComponent {
   protected readonly agendaLength: Signal<number> = computed(() => {
     this.formService.revision();
     return (this.form().get('description')?.value as string | null)?.length ?? 0;
+  });
+  // The prompt cap is a native attribute with no validator behind it, so without a counter the field
+  // just stops accepting characters with nothing to explain why.
+  protected readonly aiPromptLength: Signal<number> = computed(() => {
+    this.formService.revision();
+    return (this.form().get('aiPrompt')?.value as string | null)?.length ?? 0;
   });
   protected readonly agendaCounterClass: Signal<string> = computed(() => {
     const length = this.agendaLength();
@@ -139,9 +147,10 @@ export class ComposerAgendaResourcesComponent {
 
     // A title or a goal — whichever the organizer has — is enough. Edit mode drops the rail's
     // section locking entirely, so the organizer can be standing here having just cleared the title;
-    // the project also resolves asynchronously and may not be there yet. The backend drops absent
-    // descriptors from the prompt rather than rejecting the request. This guard deliberately mirrors
-    // the server's `!title && !context` contract.
+    // the project also resolves asynchronously and may not be there yet. The backend omits absent
+    // descriptors from the prompt and truncates over-budget ones rather than rejecting the request, so
+    // this presence-only guard mirrors the server's `!title && !context` contract exactly — nothing
+    // that passes here can fail there for length.
     if (!context && !title) {
       this.messageService.add({
         severity: 'warn',

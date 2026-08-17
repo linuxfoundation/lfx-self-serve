@@ -10,14 +10,16 @@ vi.mock('./logger.service', () => ({
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config — a real, unmocked
 // import re-triggers the Angular JIT-compilation failure (matches weekly-brief.service.spec.ts's
 // convention). Most values below are inert mock strings/numbers this file's assertions don't
-// depend on being "real" — except AI_REQUEST_CONFIG, which the timeout-split tests below assert
-// against directly. That one is pulled from the real file via a direct relative import inside this
-// async factory (bypassing the '@lfx-one/shared/constants' alias, which resolves to the barrel —
-// all constants files, including ones with the Angular-tainted transitive imports this mock exists
-// to avoid; the direct file only pulls in its own plain './weekly-brief.constants' import), so the
-// mock structurally cannot drift from the value AiService actually uses in production.
+// depend on being "real" — except AI_REQUEST_CONFIG and MEETING_AGENDA_MAX_LENGTH, which the
+// timeout-split and agenda-clamping tests below assert against directly. Those two are pulled from
+// their real files via direct relative imports inside this async factory (bypassing the
+// '@lfx-one/shared/constants' alias, which resolves to the barrel — all constants files, including
+// ones with the Angular-tainted transitive imports this mock exists to avoid; the two direct files
+// only pull in their own plain sibling imports), so the mock structurally cannot drift from the
+// values AiService actually uses in production.
 vi.mock('@lfx-one/shared/constants', async () => {
   const actual = await import('../../../../../packages/shared/src/constants/ai.constants');
+  const meeting = await import('../../../../../packages/shared/src/constants/meeting.constants');
   return {
     AI_AGENDA_SYSTEM_PROMPT: 'agenda prompt',
     AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
@@ -25,9 +27,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
     AI_REQUEST_CONFIG: actual.AI_REQUEST_CONFIG,
     DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
-    // Mirrors `MEETING_AGENDA_MAX_LENGTH` in the shared constants barrel; a literal because the
-    // meeting constants module can't be pulled in here without loading its own dependency graph.
-    MEETING_AGENDA_MAX_LENGTH: 2000,
+    // Pulled from the real file for the same reason as AI_REQUEST_CONFIG: the cap is asserted against
+    // directly below, so a hand-copied literal could drift from the value AiService actually clamps to.
+    MEETING_AGENDA_MAX_LENGTH: meeting.MEETING_AGENDA_MAX_LENGTH,
     NEWSLETTER_AI_MAX_TOKENS: 12_000,
     WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
     WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH: 300,
@@ -285,6 +287,58 @@ describe('AiService.generateMeetingAgenda', () => {
 
       expect(prompt).toContain('must not exceed 1200 characters');
       expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(1200);
+    });
+  });
+
+  // The schema's `maxLength` and the prompt's cap are both hints the model can ignore. The composer
+  // writes the returned agenda into a control carrying `Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)`
+  // programmatically — past the textarea's native cap — so an over-cap agenda would leave the whole
+  // form invalid and Save silently inert. Hence the clamp on the way out.
+  describe('agenda length clamping', () => {
+    it('clamps an over-cap agenda from the JSON path', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'x'.repeat(1500), duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toHaveLength(1200);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'generate_meeting_agenda',
+        expect.stringContaining('truncating'),
+        expect.objectContaining({ source: 'json' })
+      );
+    });
+
+    it('clamps an over-cap agenda from the plain-text fallback path', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse('y'.repeat(1500)));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toHaveLength(1200);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'generate_meeting_agenda',
+        expect.stringContaining('truncating'),
+        expect.objectContaining({ source: 'text_fallback' })
+      );
+    });
+
+    it('leaves an agenda within the cap untouched and logs nothing', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'Roll call', duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toBe('Roll call');
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('falls back to MEETING_AGENDA_MAX_LENGTH when the caller supplies no cap', async () => {
+      const { MEETING_AGENDA_MAX_LENGTH } = await import('@lfx-one/shared/constants');
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'z'.repeat(MEETING_AGENDA_MAX_LENGTH + 500), duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly' });
+
+      expect(result.agenda).toHaveLength(MEETING_AGENDA_MAX_LENGTH);
     });
   });
 });

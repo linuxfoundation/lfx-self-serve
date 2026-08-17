@@ -22,6 +22,14 @@ export class TextareaComponent {
   public readonly = input<boolean>(false);
   public styleClass = input<string>();
   public autoResize = input<boolean>(false);
+  /**
+   * Native character cap on the `<textarea>`. Bound as `[attr.maxlength]`, not `[maxlength]`:
+   * Angular's `MaxLengthValidator` has selector `[maxlength][formControlName]` and ships in the
+   * `ReactiveFormsModule` this component imports, so a property binding here would silently attach
+   * a validator to the caller's control and make the whole `FormGroup` invalid — invisible to a
+   * caller that only wanted the browser to stop typing at the cap. Callers that want the value
+   * gated declare `Validators.maxLength` on the control themselves.
+   */
   public maxlength = input<number>();
   public dataTest = input<string>();
 }

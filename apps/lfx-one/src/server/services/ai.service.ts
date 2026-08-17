@@ -60,6 +60,9 @@ export class AiService {
     });
 
     try {
+      // Resolved once: the same cap is asked of the model (in the schema and the prompt) and enforced
+      // on the way back out, so the three can't disagree.
+      const agendaMaxCharacters = request.maxCharacters || MEETING_AGENDA_MAX_LENGTH;
       const prompt = this.buildPrompt(request);
       const chatRequest: OpenAIChatRequest = {
         model: this.model,
@@ -86,9 +89,8 @@ export class AiService {
                 agenda: {
                   type: 'string',
                   description:
-                    'Well-structured meeting agenda with time allocations and clear objectives. ' +
-                    `Must not exceed ${request.maxCharacters || MEETING_AGENDA_MAX_LENGTH} characters.`,
-                  maxLength: request.maxCharacters || MEETING_AGENDA_MAX_LENGTH,
+                    'Well-structured meeting agenda with time allocations and clear objectives. ' + `Must not exceed ${agendaMaxCharacters} characters.`,
+                  maxLength: agendaMaxCharacters,
                 },
                 duration: {
                   type: 'number',
@@ -104,7 +106,7 @@ export class AiService {
       };
 
       const response = await this.makeAiRequest(chatRequest);
-      const result = this.extractAgendaAndDuration(req, response);
+      const result = this.extractAgendaAndDuration(req, response, agendaMaxCharacters);
 
       logger.success(req, 'generate_meeting_agenda', startTime, {
         estimatedDuration: result.estimatedDuration,
@@ -452,7 +454,18 @@ export class AiService {
     return response.json();
   }
 
-  private extractAgendaAndDuration(req: Request, response: OpenAIChatResponse): GenerateAgendaResponse {
+  /**
+   * @param maxCharacters Hard cap applied to the returned agenda.
+   *
+   * The cap is enforced here rather than trusted from the response schema's `maxLength` hint, which
+   * the model is free to overshoot (`MAX_TOKENS` leaves ample room to), and which the text-extraction
+   * fallback below bypasses entirely by returning the whole completion. That matters beyond tidiness:
+   * the composer writes this string straight into its `description` control, which carries
+   * `Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)`. An over-length agenda would therefore make the
+   * composer's whole form invalid and silently disable Save — the same class of dead button GH-1464
+   * fixed for the AI goal, reached through the AI helper itself.
+   */
+  private extractAgendaAndDuration(req: Request, response: OpenAIChatResponse, maxCharacters: number): GenerateAgendaResponse {
     if (!response.choices || response.choices.length === 0) {
       throw new Error('No agenda generated');
     }
@@ -479,7 +492,7 @@ export class AiService {
       const cappedDuration = Math.max(DURATION_ESTIMATION.MINIMUM_DURATION, Math.min(parsed.duration, DURATION_ESTIMATION.MAXIMUM_DURATION));
 
       return {
-        agenda: parsed.agenda.trim(),
+        agenda: AiService.capAgendaLength(req, parsed.agenda.trim(), maxCharacters, 'json'),
         estimatedDuration: cappedDuration,
       };
     } catch (parseError) {
@@ -497,9 +510,28 @@ export class AiService {
       const cappedFallbackDuration = Math.max(DURATION_ESTIMATION.MINIMUM_DURATION, Math.min(fallbackDuration, DURATION_ESTIMATION.MAXIMUM_DURATION));
 
       return {
-        agenda: content.trim(),
+        agenda: AiService.capAgendaLength(req, content.trim(), maxCharacters, 'text_fallback'),
         estimatedDuration: cappedFallbackDuration,
       };
     }
+  }
+
+  /**
+   * Trims an agenda to the requested cap, logging when it had to. Truncated rather than rejected: a
+   * shortened agenda is still a usable draft the organizer can edit, whereas a thrown error costs
+   * them the whole generation.
+   */
+  private static capAgendaLength(req: Request, agenda: string, maxCharacters: number, source: 'json' | 'text_fallback'): string {
+    if (agenda.length <= maxCharacters) {
+      return agenda;
+    }
+
+    logger.warning(req, 'generate_meeting_agenda', 'Agenda exceeded the requested cap, truncating', {
+      agenda_length: agenda.length,
+      max_characters: maxCharacters,
+      source,
+    });
+
+    return agenda.slice(0, maxCharacters);
   }
 }

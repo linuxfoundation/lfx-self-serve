@@ -144,17 +144,30 @@ describe('MeetingController', () => {
       expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'TAC Monthly', context: 'Plan Q3' }));
     });
 
-    // An over-long goal is dropped, not truncated — half a sentence is a worse prompt than none.
-    it('drops a goal that exceeds the prompt budget', async () => {
-      const req = buildReq({ body: { title: 'TAC Monthly', context: 'x'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH + 1) } });
+    // An over-budget descriptor is truncated, not dropped. Dropping made the endpoint's contract
+    // impossible for the client to satisfy: the client guard tests for the *presence* of a title or
+    // goal, so an over-budget title with no goal passed the client and then failed `!title && !context`
+    // here as an unfixable "could not generate an agenda".
+    it('truncates a goal that exceeds the prompt budget instead of dropping it', async () => {
+      const req = buildReq({ body: { title: 'TAC Monthly', context: 'x'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH + 50) } });
 
       await controller.generateAgenda(req, buildRes(), next);
 
-      // Asserted on the actual argument rather than `objectContaining({ context: undefined })`,
-      // which would also pass if the key were present with a real value stripped elsewhere.
+      // Asserted on the actual argument rather than `objectContaining`, which would also pass if the
+      // key were present with a value stripped elsewhere.
       const [, request] = aiSvc.generateMeetingAgenda.mock.calls[0];
-      expect(request.context).toBeUndefined();
+      expect(request.context).toBe('x'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH));
       expect(request.title).toBe('TAC Monthly');
+    });
+
+    it('truncates an over-budget title and still generates when it is the only descriptor', async () => {
+      const req = buildReq({ body: { title: 'y'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH + 50) } });
+
+      await controller.generateAgenda(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      const [, request] = aiSvc.generateMeetingAgenda.mock.calls[0];
+      expect(request.title).toBe('y'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH));
     });
 
     // The controller used to drop maxCharacters, so the client's agenda cap never reached the model.
@@ -173,7 +186,7 @@ describe('MeetingController', () => {
       ['a negative value', -1, MEETING_AGENDA_MAX_LENGTH],
       ['a zero cap', 0, MEETING_AGENDA_MAX_LENGTH],
       ['a fractional value', 900.7, 900],
-    ])('clamps %s to a usable agenda cap', async (_label, supplied, expected) => {
+    ])('resolves %s to a usable agenda cap', async (_label, supplied, expected) => {
       await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', maxCharacters: supplied } }), buildRes(), next);
 
       expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxCharacters: expected }));

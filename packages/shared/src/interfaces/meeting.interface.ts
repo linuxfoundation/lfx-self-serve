@@ -523,8 +523,12 @@ export interface MeetingRegistrant {
    * Committee this registrant was added from (present when `type` is `committee`).
    * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
    * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
-   * thing in both directions. Two carve-outs: an unenriched read returns the raw SFID, and an SFID with
-   * no v2 counterpart is passed through unchanged even on an enriched response.
+   * thing in both directions. Treat the normalization as best-effort rather than guaranteed — an
+   * enriched response still returns the raw SFID when the meeting has no committees, when the whole
+   * v1↔v2 mapping comes back empty, when this particular SFID has no v2 counterpart, or when
+   * enrichment throws (the BFF logs a warning and serves the unenriched rows with a 200 rather than
+   * failing the listing). Code that matches this field against a v2 committee UID should degrade
+   * gracefully on a miss rather than assume one can't happen.
    */
   committee_uid?: string | null;
   /** Committee name (resolved from committee_uid) - response only */
@@ -573,10 +577,12 @@ export interface CreateMeetingRegistrantRequest {
   /**
    * Committee this registrant was added from, as a **v2** committee UID.
    * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
-   * resolves v2 → v1 before proxying. Omit for a directly-added guest — upstream declares the field a
-   * non-nullable optional `string`, so the BFF drops the key rather than forwarding a `null`.
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest: upstream declares the field a
+   * non-nullable optional `string`, so `null` is off-contract and the BFF drops the key rather than
+   * forwarding it. Typed without `| null` so that's enforceable at compile time for internal callers —
+   * the BFF's runtime drop stays as a guard for bodies it doesn't build itself.
    */
-  committee_uid?: string | null;
+  committee_uid?: string;
 }
 
 /**
