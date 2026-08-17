@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { MAX_PLAIN_TEXT_BODY_LENGTH } from '@lfx-one/shared/constants';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
@@ -33,6 +34,94 @@ describe('getHttpErrorDetail', () => {
 
   it('uses the caller fallback for a status with no hint', () => {
     expect(getHttpErrorDetail(httpError(500), 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  // `ServiceValidationError.forField` interpolates the WIRE KEY into the top-level message, so showing
+  // it puts "Validation failed for invitee_email" in a toast. The readable reason is in `errors[0]`.
+  it('prefers the field reason over a wire-key `Validation failed for` message', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: {
+        error: 'Validation failed for invitee_email',
+        code: 'VALIDATION_ERROR',
+        errors: [{ field: 'invitee_email', message: 'Email address is required' }],
+      },
+    });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('Email address is required');
+  });
+
+  // The other half of that rule: a top-level message written for a person (what `fromFieldErrors` is
+  // given on the public-registration guards) wins over the wire-keyed field array.
+  it('keeps a human top-level message over the field array', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: { error: 'Email address is required.', code: 'VALIDATION_ERROR', errors: [{ field: 'email', message: 'Email address is required' }] },
+    });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('Email address is required.');
+  });
+
+  // The match is the two shapes `ServiceValidationError` mints — the bare prefix and `prefix + ' for '`
+  // — rather than any `startsWith`, so a human message that opens with the same words keeps its place.
+  it('does not demote a human message that merely starts with the prefix', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: {
+        error: 'Validation failed. Please check the highlighted fields.',
+        code: 'VALIDATION_ERROR',
+        errors: [{ field: 'email', message: 'Email address is required' }],
+      },
+    });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('Validation failed. Please check the highlighted fields.');
+  });
+
+  // A body with no top-level message at all can't come from this server's envelope — `toResponse()`
+  // always sets `error` — but an upstream service is free to send one, and the field array is then
+  // the only thing to read.
+  it('reads the field array when a foreign body carries no top-level message', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: { code: 'VALIDATION_ERROR', errors: [{ field: 'email', message: 'Email address is required' }] },
+    });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('Email address is required');
+  });
+
+  // A 5xx body says "Internal server error", or repeats an upstream Go service's message verbatim.
+  // Neither is something to show a user, and both would displace the fallback that at least names
+  // the action that failed.
+  it('ignores a 5xx body in favour of the caller fallback', () => {
+    const error = new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_ERROR' } });
+
+    expect(getHttpErrorDetail(error, 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  // `withFetch()` is on (`app.config.ts`), and Angular's fetch backend puts the raw thrown value in
+  // `HttpErrorResponse.error` — an `Error` reads as an object with a `message` key, which is exactly the
+  // shape this reader looks for. The 5xx skip does not cover it either: the status is 0.
+  it('ignores a thrown Error in the body on a network drop', () => {
+    const error = new HttpErrorResponse({ status: 0, error: new TypeError('Failed to fetch') });
+
+    expect(getHttpErrorDetail(error, 'Could not reach the server. Please try again.')).toBe('Could not reach the server. Please try again.');
+  });
+
+  // `MicroserviceError.toResponse()` forwards `errors` verbatim from upstream, so its shape is an
+  // upstream Go service's choice. Reading it unguarded threw from inside a `catchError` — costing the
+  // user the toast entirely rather than degrading it to a status hint. The fallback is the hint and
+  // NOT the top-level message: that one is already known to be a wire key here, so showing it would
+  // put "Validation failed for x" in the toast — the string this branch exists to suppress.
+  it('falls back to the status hint when `errors` is not an array of objects', () => {
+    const asString = new HttpErrorResponse({ status: 404, error: { error: 'Validation failed for x', code: 'VALIDATION_ERROR', errors: 'nope' } });
+    const asObject = new HttpErrorResponse({ status: 404, error: { error: 'Validation failed for x', code: 'VALIDATION_ERROR', errors: { x: 'nope' } } });
+    const ofStrings = new HttpErrorResponse({ status: 404, error: { error: 'Validation failed for x', code: 'VALIDATION_ERROR', errors: ['nope'] } });
+    const missing = new HttpErrorResponse({ status: 400, error: { error: 'Validation failed for x', code: 'VALIDATION_ERROR' } });
+
+    expect(getHttpErrorDetail(asString, 'fallback')).toBe('The resource was not found.');
+    expect(getHttpErrorDetail(asObject, 'fallback')).toBe('The resource was not found.');
+    expect(getHttpErrorDetail(ofStrings, 'fallback')).toBe('The resource was not found.');
+    expect(getHttpErrorDetail(missing, 'Could not add that member.')).toBe('Could not add that member.');
   });
 
   // A plain-text body (an upstream 502 HTML page, say) is not a reason to show, so the status hint
@@ -70,18 +159,93 @@ describe('extractErrorMessage', () => {
     expect(detail).not.toContain('Http failure');
   });
 
+  // 4xx, not 5xx: at 5xx this passes through the status skip and stops testing the branch it names.
   it('falls back when the body is an object with no usable string', () => {
-    const error = new HttpErrorResponse({ status: 500, error: { code: 'BOOM' } });
+    const error = new HttpErrorResponse({ status: 400, error: { code: 'BOOM' } });
 
     expect(extractErrorMessage(error, 'fallback')).toBe('fallback');
   });
 
+  // Unlike `getHttpErrorDetail`, this one has no status-hint layer to fall back to, so a plain-text
+  // 4xx body is the best thing it has.
   it('uses a plain-string body as the message', () => {
-    const error = new HttpErrorResponse({ status: 502, error: 'Bad gateway' });
+    const error = new HttpErrorResponse({ status: 400, error: 'Missing project' });
 
-    expect(extractErrorMessage(error, 'fallback')).toBe('Bad gateway');
+    expect(extractErrorMessage(error, 'fallback')).toBe('Missing project');
   });
 
+  // Angular's `parseBody` returns the raw response TEXT for any non-2xx body that isn't JSON, so a
+  // proxy or WAF page — a 413 from an nginx body-size limit, say — arrives as a whole HTML document.
+  // Reading it verbatim put that document in a toast, and in the `stripeError` signal at
+  // `add-payment-card-dialog.component.ts:119`, which renders it as a persistent block.
+  // The same text branch also catches a JSON document sent under the wrong content type and a stack
+  // trace — both reach a toast as a plain string, and neither is one sentence about the request.
+  it('refuses a plain-string body that is not one sentence', () => {
+    const fallback = 'Your file is too large to upload.';
+    const html = new HttpErrorResponse({ status: 413, error: '<html><head><title>413 Request Entity Too Large</title></head><body>...</body></html>' });
+    const json = new HttpErrorResponse({ status: 400, error: '{"error":"upstream timeout"}' });
+    const trace = new HttpErrorResponse({ status: 400, error: 'Error: upstream timeout\n    at Object.<anonymous> (/srv/app.js:12:9)' });
+    const wall = new HttpErrorResponse({ status: 400, error: 'x'.repeat(MAX_PLAIN_TEXT_BODY_LENGTH + 1) });
+
+    expect(extractErrorMessage(html, fallback)).toBe(fallback);
+    expect(extractErrorMessage(json, fallback)).toBe(fallback);
+    expect(extractErrorMessage(trace, fallback)).toBe(fallback);
+    expect(extractErrorMessage(wall, fallback)).toBe(fallback);
+  });
+
+  // The length and newline halves apply to a string inside an object body too — `MicroserviceError`
+  // takes its message from the upstream body at any status, so what lands in `error` on a 4xx can be a
+  // multi-line or arbitrarily long Go-service string rather than anything this server wrote.
+  it('refuses an object-body message that is not one line', () => {
+    const fallback = 'Could not save your changes.';
+    const multiline = new HttpErrorResponse({ status: 400, error: { error: 'rpc error: code = InvalidArgument\n\tdesc = bad field' } });
+    const wall = new HttpErrorResponse({ status: 400, error: { message: 'y'.repeat(MAX_PLAIN_TEXT_BODY_LENGTH + 1) } });
+    const wireKeyedWall = new HttpErrorResponse({
+      status: 400,
+      error: { error: 'Validation failed for id', code: 'VALIDATION_ERROR', errors: [{ field: 'id', message: 'z'.repeat(MAX_PLAIN_TEXT_BODY_LENGTH + 1) }] },
+    });
+
+    expect(extractErrorMessage(multiline, fallback)).toBe(fallback);
+    expect(extractErrorMessage(wall, fallback)).toBe(fallback);
+    expect(getHttpErrorDetail(wireKeyedWall, fallback)).toBe(fallback);
+  });
+
+  // Same policy as `getHttpErrorDetail`: nothing in a 5xx body was written for a user, and both the
+  // envelope's "Internal server error" and a forwarded Go-service string would displace the caller's
+  // fallback, which at least names the action that failed.
+  it('ignores a 5xx body in favour of the caller fallback', () => {
+    const envelope = new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_ERROR' } });
+    const upstreamText = new HttpErrorResponse({ status: 502, error: 'Bad gateway' });
+
+    expect(extractErrorMessage(envelope, 'Could not save your changes.')).toBe('Could not save your changes.');
+    expect(extractErrorMessage(upstreamText, 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  it('reads a field reason when the top-level message carries a wire key', () => {
+    const error = new HttpErrorResponse({
+      status: 400,
+      error: {
+        error: 'Validation failed for occurrence_id',
+        code: 'VALIDATION_ERROR',
+        errors: [{ field: 'occurrence_id', message: 'Occurrence ID is required' }],
+      },
+    });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Occurrence ID is required');
+  });
+
+  // Same fetch-backend shapes as above. The parse failure is the one the 5xx skip cannot catch: the
+  // status is the real response status, so a malformed 200 would otherwise show "Unexpected token <".
+  it('ignores a thrown Error in the body, on a network drop and on a parse failure', () => {
+    const dropped = new HttpErrorResponse({ status: 0, error: new TypeError('Failed to fetch') });
+    const unparsable = new HttpErrorResponse({ status: 200, error: new SyntaxError('Unexpected token < in JSON at position 0') });
+
+    expect(extractErrorMessage(dropped, 'Could not reach the server.')).toBe('Could not reach the server.');
+    expect(extractErrorMessage(unparsable, 'Could not reach the server.')).toBe('Could not reach the server.');
+  });
+
+  // An `Error` the caller threw itself is still worth reading — it is the one place the message was
+  // written by this codebase rather than by a network stack.
   it('reads a thrown Error message, and falls back for anything else', () => {
     expect(extractErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
     expect(extractErrorMessage(null, 'fallback')).toBe('fallback');

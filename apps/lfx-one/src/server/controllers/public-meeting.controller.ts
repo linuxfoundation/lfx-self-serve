@@ -535,8 +535,10 @@ export class PublicMeetingController {
           Object.fromEntries(overLength.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
           // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
           // endpoint shows the top-level message — serialized as the body's `error` key, since
-          // `BaseApiError.toResponse` emits no `message` — and discards the field array. A generic
-          // "validation failed" here would leave the registrant with no idea which field to shorten.
+          // `BaseApiError.toResponse` emits no `message`. It prefers the field array only when that
+          // message is one `ServiceValidationError` built itself around a wire key, which this one is
+          // not. A generic "validation failed" here would leave the registrant with no idea which
+          // field to shorten.
           //
           // Labels rather than wire keys, because this string is read by someone looking at a form.
           `${joinAsSentenceList(overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,

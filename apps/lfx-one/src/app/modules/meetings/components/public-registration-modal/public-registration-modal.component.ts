@@ -96,7 +96,12 @@ export class PublicRegistrationModalComponent {
             // `error?.error?.message` never matched: the server's error body is `{ error, code }` with
             // no `message` key (`BaseApiError.toResponse`), so every failure showed the fallback and a
             // registrant was never told which field was wrong. `extractErrorMessage` reads the body's
-            // `error` key too, so a validation message reaches the toast.
+            // `error` key too, so a validation message reaches the toast. One of its rules bites on
+            // this path today — it skips a 5xx body, and registration can 500. Its wire-key rule
+            // (prefer the reason in `errors[]` over a top-level "Validation failed for timing")
+            // does not: both `fromFieldErrors` calls in `registerForPublicMeeting` pass a message
+            // written for a person. It would apply if this path ever routed a `forField` error here,
+            // as the sibling join-url endpoint does. See `readErrorBodyMessage`.
             const errorMessage = extractErrorMessage(error, 'Failed to register for this meeting');
             this.messageService.add({
               severity: 'error',
