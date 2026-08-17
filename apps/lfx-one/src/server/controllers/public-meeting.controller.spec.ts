@@ -55,7 +55,14 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
 // but the default empty resolveCreatedByForMeetings map keeps enrichment a pass-through.
-vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null), resolveMeetingOwner: vi.fn(() => null) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  resolveMeetingOrganizer: vi.fn(() => null),
+  resolveMeetingOwner: vi.fn(() => null),
+  // Real implementation, not a stub: the rejection messages this suite asserts on are built by it, so a
+  // stub would make those assertions test the mock's wording rather than the controller's.
+  joinAsSentenceList: (labels: readonly string[]) =>
+    labels.length < 2 ? (labels[0] ?? '') : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`,
+}));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', () => ({
