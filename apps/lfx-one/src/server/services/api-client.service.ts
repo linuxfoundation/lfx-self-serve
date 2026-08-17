@@ -190,7 +190,7 @@ export class ApiClientService {
     const isFormData = data && typeof data === 'object' && typeof data.append === 'function' && typeof data.getHeaders === 'function';
     // A raw Buffer body (e.g. proxying a binary file upload) carries its own Content-Type via
     // customHeaders — the caller already validated it, so it's set below with the other custom headers.
-    const isBuffer = Buffer.isBuffer(data);
+    const isBuffer = !Array.isArray(data) && Buffer.isBuffer(data);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
