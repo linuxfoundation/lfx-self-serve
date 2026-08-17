@@ -4,8 +4,8 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 /**
- * ProfilePanelComponent is the right-hand panel of the Profile & Account hub. Below lg, the layout
- * renders it inline in the content column as a standalone card; at lg and up, the layout wraps it
+ * ProfilePanelComponent is the right-hand panel of the Profile & Account hub. Below 2xl, the layout
+ * renders it inline in the content column as a standalone card; at 2xl and up, the layout wraps it
  * in a fixed, full-height 300px rail pinned to the right edge, and this component fills that rail
  * and scrolls its own content independently when the viewport is short.
  * It is purely presentational: all values arrive via signal inputs (sourced from the
@@ -13,9 +13,9 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  * `editRequested` so the parent — which owns the profile data, edit dialog, and
  * optimistic-update logic — handles the actual edit flow.
  *
- * The host is `block lg:h-full` so at lg and up the inner `aside`'s `h-full`/`overflow-y-auto`
+ * The host is `block 2xl:h-full` so at 2xl and up the inner `aside`'s `h-full`/`overflow-y-auto`
  * resolves against the fixed rail's height (mirrors lfx-sidebar's `:host { height: 100% }`);
- * below lg the height chain is unused since the card renders inline instead of in a fixed rail.
+ * below 2xl the height chain is unused since the card renders inline instead of in a fixed rail.
  *
  * Rows render only when their value is present. About me (from the profile bio) and GitHub
  * (from the user's connected identities) are sourced and bound by the parent; LinkedIn is
@@ -24,7 +24,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
 @Component({
   selector: 'lfx-profile-panel',
   imports: [],
-  host: { class: 'block lg:h-full' },
+  host: { class: 'block 2xl:h-full' },
   templateUrl: './profile-panel.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

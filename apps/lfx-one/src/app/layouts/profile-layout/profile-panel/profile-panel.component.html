@@ -2,13 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Presentational summary card. Below lg it renders inline in the content column as a standalone
-  card (rounded, bordered, own padding). At lg and up the layout wraps this in a fixed full-height
+  Presentational summary card. Below 2xl it renders inline in the content column as a standalone
+  card (rounded, bordered, own padding). At 2xl and up the layout wraps this in a fixed full-height
   right rail; there we fill that rail (h-full) with a flush surface and a left border mirroring the
   left menu, scrolling its own content independently (overflow-y-auto) when the viewport is short.
 -->
 <aside
-  class="flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-6 lg:h-full lg:overflow-y-auto lg:rounded-none lg:border-0 lg:border-l lg:px-6 lg:py-7"
+  class="flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-6 2xl:h-full 2xl:overflow-y-auto 2xl:rounded-none 2xl:border-0 2xl:border-l 2xl:px-6 2xl:py-7"
   aria-label="Profile summary"
   data-testid="profile-panel">
   @if (loading()) {

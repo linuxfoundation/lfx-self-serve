@@ -47,8 +47,8 @@ export class MainLayoutComponent {
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
 
-  // True on the /profile hub — drives the lg:pr-[300px] right gutter on <main> at lg and up so
-  // content/footer clear the fixed rail; below lg the panel renders inline instead. Only the
+  // True on the /profile hub — drives the 2xl:pr-[300px] right gutter on <main> at 2xl and up so
+  // content/footer clear the fixed rail; below 2xl the panel renders inline instead. Only the
   // me-lens /profile route uses ProfileLayoutComponent.
   protected readonly isProfileHub = signal(false);
 
