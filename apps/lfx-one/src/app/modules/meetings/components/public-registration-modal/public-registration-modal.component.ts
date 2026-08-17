@@ -72,8 +72,11 @@ export class PublicRegistrationModalComponent {
           email: formValue.email,
           first_name: formValue.first_name,
           last_name: formValue.last_name,
-          job_title: formValue.job_title || null,
-          org_name: formValue.org_name || null,
+          // Omitted when blank rather than sent as `null` — see the note on
+          // `CreateMeetingRegistrantRequest`. This is the path with no user session, so the BFF's
+          // null-drop is the only thing between this form and upstream; don't lean on it.
+          ...(formValue.job_title ? { job_title: formValue.job_title } : {}),
+          ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })
         .subscribe({
           next: (registrant: MeetingRegistrant) => {
