@@ -62,6 +62,7 @@ export class MarketingImpactComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly isBrowser = isPlatformBrowser(this.platformId);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
   private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
