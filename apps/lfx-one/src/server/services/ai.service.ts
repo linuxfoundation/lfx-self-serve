@@ -366,9 +366,10 @@ export class AiService {
   }
 
   /**
-   * Every descriptor beyond the meeting type is optional — the composer can invoke the helper from
-   * any section (and from Quick create) before a title or project is set, so each clause is only
-   * appended when there's something to say.
+   * Every descriptor is optional, including the meeting type — the composer's section rail lets the
+   * organizer reach Agenda & Resources before Details & Access is filled in, so a title, type, or
+   * project may legitimately not exist yet. Each clause is only appended when there's something to
+   * say; the controller guarantees at least a title or a goal.
    */
   private buildPrompt(request: GenerateAgendaRequest): string {
     let prompt = `Generate a meeting agenda for a ${this.getMeetingTypeDescription(request.meetingType)} meeting`;

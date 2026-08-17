@@ -239,6 +239,51 @@ describe('AiService.generateMeetingAgenda', () => {
 
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
+
+  // GH-1464: the helper is reachable before Details & Access is filled in, so `buildPrompt` has to
+  // omit each absent descriptor rather than emit an "undefined" clause the model would read as text.
+  describe('prompt shape with partial descriptors', () => {
+    async function promptFor(request: Parameters<AiService['generateMeetingAgenda']>[1]): Promise<string> {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'agenda text', duration: 30 })));
+
+      await service.generateMeetingAgenda(req, request);
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      return body.messages.find((message: { role: string }) => message.role === 'user').content;
+    }
+
+    it('omits the title and project clauses when only a goal is supplied', async () => {
+      const prompt = await promptFor({ context: 'Plan the Q3 release' });
+
+      expect(prompt).toContain('Additional context: Plan the Q3 release');
+      expect(prompt).not.toContain('titled');
+      // The project clause reads `for the <name> project` — the type fallback also says "project".
+      expect(prompt).not.toContain('for the ');
+      expect(prompt).not.toContain('undefined');
+    });
+
+    it('omits the context clause when only a title is supplied', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly' });
+
+      expect(prompt).toContain('titled "TAC Monthly"');
+      expect(prompt).not.toContain('Additional context');
+      expect(prompt).not.toContain('undefined');
+    });
+
+    it('describes a project team meeting when no meeting type is chosen', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly' });
+
+      expect(prompt).toContain('for a project team meeting');
+    });
+
+    it('states the character cap in both the prompt and the response schema', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly', maxCharacters: 1200 });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+
+      expect(prompt).toContain('must not exceed 1200 characters');
+      expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(1200);
+    });
+  });
 });
 
 describe('AiService.generateNewsletter', () => {

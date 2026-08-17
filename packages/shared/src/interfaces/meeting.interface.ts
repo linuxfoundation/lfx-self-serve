@@ -519,7 +519,11 @@ export interface MeetingRegistrant {
   // Fields NOT in API - likely response-only
   /** Registrant's type */
   type: 'direct' | 'committee';
-  /** Registrant Committee UID (if type is committee) */
+  /**
+   * Committee this registrant was added from (present when `type` is `committee`).
+   * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID during
+   * `include_committee` enrichment so the field means the same thing in both directions.
+   */
   committee_uid?: string | null;
   /** Committee name (resolved from committee_uid) - response only */
   committee_name?: string | null;
@@ -567,7 +571,7 @@ export interface CreateMeetingRegistrantRequest {
   /**
    * Committee this registrant was added from, as a **v2** committee UID.
    * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
-   * resolves v2 → v1 before proxying. Omit for a directly-added guest.
+   * resolves v2 → v1 before proxying. Send `null` (or omit) for a directly-added guest.
    */
   committee_uid?: string | null;
 }

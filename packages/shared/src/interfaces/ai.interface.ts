@@ -10,7 +10,7 @@ export interface GenerateAgendaRequest {
   /**
    * Type of meeting for agenda generation.
    * Optional: the composer can reach the helper before a type is chosen, in which case the prompt
-   * falls back to a generic project meeting.
+   * describes a project team meeting.
    */
   meetingType?: MeetingType;
   /** Meeting title. Optional — omitted from the prompt when the user hasn't set one yet. */
@@ -19,7 +19,7 @@ export interface GenerateAgendaRequest {
   projectName?: string;
   /** Additional context or specific requirements. Required when `title` is absent. */
   context?: string;
-  /** Maximum characters allowed for the generated agenda */
+  /** Maximum characters allowed for the generated agenda. Clamped server-side to `1..MEETING_AGENDA_MAX_LENGTH`. */
   maxCharacters?: number;
 }
 

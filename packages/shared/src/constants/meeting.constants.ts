@@ -670,6 +670,13 @@ export const MEETING_AGENDA_MAX_LENGTH = 2000;
 /** Agenda length at which the character counter turns amber */
 export const MEETING_AGENDA_WARNING_LENGTH = 1800;
 
+/**
+ * Character limit for the free-text goal fed to the AI agenda helper.
+ * The value is interpolated straight into the model prompt, so it needs a ceiling of its own —
+ * `express.json`'s body limit is far too coarse to bound a prompt.
+ */
+export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
+
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 

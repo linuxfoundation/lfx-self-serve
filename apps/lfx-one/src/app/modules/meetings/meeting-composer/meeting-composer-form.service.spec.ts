@@ -249,6 +249,14 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(getMeeting).toHaveBeenCalledTimes(2);
   });
 
+  // GH-1463: the "via [Group]" chip needs `committee_*` metadata, which the registrant listing only
+  // returns behind `include_committee`. Dropping that flag would silently restore the missing chip.
+  it('asks for committee enrichment when loading the guest list', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(getMeetingRegistrants).toHaveBeenCalledWith('meeting-1', false, undefined, true);
+  });
+
   it('leaves a guest list that loaded fine alone on retry', () => {
     service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
     expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);

@@ -32,10 +32,18 @@ export const publicApiRateLimiter = rateLimit({
 /**
  * Rate limiter for AI generation endpoints.
  *
- * Applied per-route to endpoints that call out to the LiteLLM proxy. Those calls are far more
- * expensive than a normal proxy read, and the global `apiRateLimiter` (500/min) is nowhere near
- * tight enough to bound them. Keyed on the authenticated user where available so one user on a
- * shared egress IP can't exhaust the budget for everyone behind it.
+ * Applied per-route to `POST /api/meetings/generate-agenda`. That call fans out to the LiteLLM
+ * proxy and is far more expensive than a normal proxy read, while the global `apiRateLimiter`
+ * (500/min) is nowhere near tight enough to bound it. Keyed on the authenticated user where
+ * available so one user on a shared egress IP can't exhaust the budget for everyone behind it;
+ * anonymous callers fall back to a /56-masked IP key.
+ *
+ * Not yet applied to the other LiteLLM callers (newsletter generation, weekly-brief action-item
+ * extraction) — those are reached from different modules and are only bounded by the global limiter.
+ *
+ * The counter lives in the default in-process MemoryStore, so the effective ceiling is
+ * `limit × replicas`. That's exact today (`ecosystem.config.js` runs a single instance) but would
+ * need a shared store to hold under horizontal scaling.
  */
 export const aiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window

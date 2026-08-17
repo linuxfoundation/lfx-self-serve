@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
@@ -412,7 +413,7 @@ export class MeetingController {
         } catch (error) {
           logger.warning(req, 'get_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
             meeting_id: uid,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            err: error,
           });
         }
       }
@@ -1493,16 +1494,20 @@ export class MeetingController {
     });
 
     try {
-      const { meetingType, title, projectName, context, maxCharacters } = req.body;
+      const { meetingType, projectName, maxCharacters } = req.body;
+      // The composer's section rail lets the organizer reach Agenda & Resources before Details &
+      // Access is filled in, so a title / type / project are not guaranteed to exist yet. Only
+      // require enough signal to write a useful agenda — a title or a free-text goal — and let the
+      // prompt builder omit the rest. Both are trimmed first: whitespace is not signal, and both
+      // land verbatim in the model prompt.
+      const title = MeetingController.readPromptField(req.body['title']);
+      const context = MeetingController.readPromptField(req.body['context']);
 
-      // The composer reaches this helper from any section and from Quick create, so title / type /
-      // project are not guaranteed to be filled in yet. Only require enough signal to write a
-      // useful agenda — a title or a free-text context — and let the prompt builder omit the rest.
       if (!title && !context) {
         const validationError = ServiceValidationError.fromFieldErrors(
           {
-            title: 'Provide a meeting title or describe what the meeting is for',
-            context: 'Provide a meeting title or describe what the meeting is for',
+            title: `Provide a meeting title (max ${MEETING_AGENDA_PROMPT_MAX_LENGTH} characters) or describe what the meeting is for`,
+            context: `Describe what the meeting is for (max ${MEETING_AGENDA_PROMPT_MAX_LENGTH} characters) or provide a meeting title`,
           },
           'Agenda generation validation failed',
           {
@@ -1520,7 +1525,7 @@ export class MeetingController {
         title,
         projectName,
         context,
-        maxCharacters,
+        maxCharacters: MeetingController.clampAgendaMaxCharacters(maxCharacters),
       });
 
       // Usage telemetry: the helper is far more discoverable in the composer than it was in the
@@ -1765,6 +1770,11 @@ export class MeetingController {
 
       return {
         ...registrant,
+        // Hand the client back the v2 UID it works in. Upstream stores the v1 SFID, but the composer
+        // compares this field against `meeting.committees[].uid` (v2) and sends it back on create,
+        // where `resolveRegistrantCommitteeUids` expects v2 — leaving the SFID here would mean the
+        // same field carries two identifier spaces depending on which direction it was travelling.
+        committee_uid: v2Uid,
         // Committee details
         committee_name: committee?.name || null,
         committee_category: committee?.category || null,
@@ -1830,5 +1840,36 @@ export class MeetingController {
 
       return { ...registrant, committee_uid: v2ToV1Map.get(registrant.committee_uid) ?? null };
     });
+  }
+
+  /**
+   * Normalizes a free-text field that will be interpolated into an AI prompt.
+   * Anything that isn't a non-empty string once trimmed, or that exceeds the prompt budget, is
+   * dropped rather than truncated — a half-sentence goal produces a worse agenda than no goal.
+   */
+  private static readPromptField(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+
+    return trimmed.length > 0 && trimmed.length <= MEETING_AGENDA_PROMPT_MAX_LENGTH ? trimmed : undefined;
+  }
+
+  /**
+   * Clamps the caller-supplied agenda cap into the range the agenda field actually accepts.
+   * The value reaches the model twice — as `maxLength` in the response schema and interpolated into
+   * the prompt — so an unvalidated `-1` / `"abc"` / `{}` off the request body would either produce an
+   * opaque upstream 500 or let a caller ask for an agenda the `description` control can't hold.
+   */
+  private static clampAgendaMaxCharacters(value: unknown): number {
+    const parsed = typeof value === 'number' ? value : Number.NaN;
+
+    if (!Number.isFinite(parsed)) {
+      return MEETING_AGENDA_MAX_LENGTH;
+    }
+
+    return Math.min(Math.max(Math.floor(parsed), 1), MEETING_AGENDA_MAX_LENGTH);
   }
 }
