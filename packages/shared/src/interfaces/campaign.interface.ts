@@ -1320,6 +1320,24 @@ export interface CampaignStatusUpdateRequest {
 }
 
 /**
+ * Everything needed to address and authorize one status toggle.
+ *
+ * Named rather than inline because it is an app-facing contract: campaign-service addresses a
+ * campaign by `(project, brief, campaign)` and gates the write on `If-Match`, so a caller that
+ * gets any one of these wrong gets a 404, a 428 or a 412 rather than a type error. Every field
+ * is required — there is nothing safe to default, which is the point.
+ */
+export interface CampaignStatusToggleParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  platform: CampaignPlatform;
+  status: CampaignToggleStatus;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+/**
  * A campaign row as campaign-service returns it.
  *
  * Mirrors the `Campaign` schema in the service's generated OpenAPI contract; `etag` mirrors
@@ -1341,7 +1359,17 @@ export interface CampaignServiceCampaign {
 export interface CampaignStatusUpdateResult {
   platform: CampaignPlatform;
   campaignId: string;
-  previousStatus: string;
+  /**
+   * The status the campaign held BEFORE this toggle, as OBSERVED — never inferred.
+   *
+   * Present only on the legacy per-platform path, which issues a read before the write and can
+   * therefore report a fact. campaign-service's toggle returns the post-toggle row alone, so on
+   * that path there is nothing to observe and the field is OMITTED rather than guessed. Inferring
+   * it as "the opposite of what was requested" would be wrong exactly where it matters most: a
+   * `created_degraded` campaign is pausable, and its true prior status is `created_degraded`, not
+   * `ACTIVE`. A caller wanting the prior state on that path must read the row before toggling.
+   */
+  previousStatus?: string;
   newStatus: CampaignToggleStatus;
   success: boolean;
   /**

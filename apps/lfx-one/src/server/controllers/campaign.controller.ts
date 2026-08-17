@@ -976,7 +976,10 @@ export class CampaignController {
     // platform error that names the wrong cause entirely. Say which capability is off instead.
     if (viaCampaignService && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle)) {
       next(
-        ServiceValidationError.forField('campaignId', 'Campaign status changes are not enabled for this deployment', {
+        // Filed under `campaignId` because that is the field that made this request unservable —
+        // a UUID names a campaign only campaign-service can address. Lowercase to match every
+        // sibling message in this handler.
+        ServiceValidationError.forField('campaignId', 'campaign status changes are not enabled for this deployment', {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
           path: req.path,
@@ -1076,8 +1079,12 @@ export class CampaignController {
           status: body.status as CampaignToggleStatus,
           etag,
         });
-        // `previousStatus` is what the caller asked to move AWAY from, which is the opposite of
-        // the requested state — the row's own prior value is not returned by the toggle.
+        // `previousStatus` is OMITTED, not inferred. The legacy path reports it as a fact — it
+        // GETs the campaign before writing — so filling it here with "the opposite of what was
+        // requested" would put a guess and an observation behind one field name. It would also be
+        // wrong where it matters most: a `created_degraded` campaign is pausable, and its true
+        // prior status is `created_degraded`, not ACTIVE. Absence is the honest answer, and the
+        // caller already holds the row it read.
         //
         // `etag` and `serviceStatus` come from the ROW, and dropping them is not cosmetic. The
         // fresh etag is the only way a caller can chain pause→resume: its own validator went
@@ -1087,9 +1094,13 @@ export class CampaignController {
         // unchanged, so echoing "PAUSED" would render a transition the service declined to
         // record. `serviceStatus` is what actually happened; `newStatus` is what was asked.
         const result: CampaignStatusUpdateResult = {
-          platform: body.platform,
+          // The ROW's platform, not the caller's. `platform` never reaches campaign-service — the
+          // path is built from (project, brief, campaign) and the service resolves the platform
+          // from the stored row — so echoing the request would let a caller who paused a Reddit
+          // campaign while sending `google-ads` receive a 200 that agrees with them. Same class of
+          // falsehood as the `serviceStatus` case below, in the field beside it.
+          platform: (campaign.platform as CampaignPlatform) ?? body.platform,
           campaignId,
-          previousStatus: body.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE',
           newStatus: body.status as CampaignToggleStatus,
           success: true,
           etag: campaign.etag,

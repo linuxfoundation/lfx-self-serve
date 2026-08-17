@@ -1246,6 +1246,18 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ etag: '7' }));
   });
 
+  // A guess and an observation must not share a field name. The legacy path GETs the campaign
+  // before writing and reports previousStatus as a FACT; campaign-service returns only the
+  // post-toggle row, so there is nothing to observe and the field is omitted. Inferring "the
+  // opposite of what was requested" would be wrong for a created_degraded campaign, whose true
+  // prior status is created_degraded rather than ACTIVE.
+  it('omits previousStatus rather than inferring one it never observed', async () => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('previousStatus');
+  });
+
   // Pausing a created_degraded campaign pauses it UPSTREAM while deliberately leaving the row's
   // status unchanged (campaign-service `pauseDegraded`). Echoing the request would render "Paused"
   // for a transition the service declined to record.
@@ -1255,6 +1267,41 @@ describe('CampaignController.updateCampaignStatus', () => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '4' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', serviceStatus: 'created_degraded' }));
+  });
+
+  // Found by mutation: deleting `.filter((p) => !p.disabled)` from
+  // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
+  // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
+  // pinned the one thing it claims to do — this is the test that makes the claim binding.
+  it.each([['microsoft-ads'], ['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
+  // reaches upstream as `If-Match: " "` and comes back 412 — the very refusal the guard exists to
+  // pre-empt with a named field, arriving instead as an opaque upstream error.
+  it.each([
+    ['briefId', { platform: 'google-ads', status: 'PAUSED', briefId: '   ', etag: '1' }],
+    ['etag', { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '   ' }],
+  ])('refuses a whitespace-only %s rather than sending it upstream', async (_field, body) => {
+    await controller.updateCampaignStatus(statusReq(UUID, body), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // campaign-service resolves the platform from the stored row and never receives the caller's.
+  // Echoing the request would confirm a platform the caller invented.
+  it("reports the row's platform, not the caller's claim", async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'reddit-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'reddit-ads' }));
   });
 
   it('rejects an id that is neither numeric nor a UUID', async () => {

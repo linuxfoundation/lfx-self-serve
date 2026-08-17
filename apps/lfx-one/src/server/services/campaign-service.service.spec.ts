@@ -2115,7 +2115,7 @@ describe('CampaignServiceClient.toggleCampaignStatus', () => {
   });
 
   it('PATCHes the nested campaign path with the status as the BODY, not a query', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1', status: 'paused' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused' }));
 
     await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
@@ -2135,7 +2135,7 @@ describe('CampaignServiceClient.toggleCampaignStatus', () => {
     ['PAUSED', 'paused'],
     ['ACTIVE', 'active'],
   ])('lowercases %s to %s on the wire', async (input, wire) => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
 
     await new CampaignServiceClient().toggleCampaignStatus(req, { ...args, status: input as 'ACTIVE' | 'PAUSED' });
 
@@ -2144,7 +2144,7 @@ describe('CampaignServiceClient.toggleCampaignStatus', () => {
 
   // Upstream answers a missing If-Match with 428, so sending it is not optional hardening.
   it('sends the etag as If-Match', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
 
     await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
@@ -2152,7 +2152,7 @@ describe('CampaignServiceClient.toggleCampaignStatus', () => {
   });
 
   it('encodes every path segment so an id cannot escape its position', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'x' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
 
     await new CampaignServiceClient().toggleCampaignStatus(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
 
@@ -2160,7 +2160,7 @@ describe('CampaignServiceClient.toggleCampaignStatus', () => {
   });
 
   it('returns the campaign row the service answered with', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1', status: 'paused', version: 4, etag: '4' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused', version: 4, etag: '4' }));
 
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
@@ -2180,7 +2180,7 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
   // answered upstream with 412. The header is what the response contract guarantees — `etag` is
   // not in the upstream `Campaign` type's Required list, so the body may carry none.
   it('carries the ETag header forward so a follow-up toggle has a fresh validator', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1', status: 'paused', version: 4 }, headers: { etag: '4' } });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused', version: 4 }, { etag: '4' }));
 
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
@@ -2188,7 +2188,7 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
   });
 
   it('prefers the header over a body etag when both are present', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1', etag: 'stale' }, headers: { etag: '9' } });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: 'stale' }, { etag: '9' }));
 
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
@@ -2196,7 +2196,7 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
   });
 
   it('falls back to the body etag when the response carried no header', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce({ data: { id: 'c-1', etag: '7' }, headers: {} });
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '7' }));
 
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 

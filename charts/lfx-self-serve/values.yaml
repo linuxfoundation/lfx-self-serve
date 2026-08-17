@@ -482,6 +482,27 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN:
     value:
 
+  # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
+  # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
+  #
+  # This buys REACH, not just a different backend. The legacy path is a switch over meta-ads and
+  # reddit-ads whose default arm throws, so pause is unavailable for every other platform. Turning
+  # this on is what makes Google Ads and LinkedIn pausable at all — and pause is the primary
+  # cost-control lever on a mis-targeted or overspending campaign.
+  #
+  # ROLLOUT OVERLAP IS SAFE, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose hazard looks
+  # identical and is not. Routing runs a campaign-id SHAPE check BEFORE and INDEPENDENTLY of this
+  # flag, and the two id spaces are disjoint: campaign-service keys campaigns by UUID, the legacy
+  # path by the ad platform's numeric id. No request can be claimed by both paths, so a flag-on
+  # and a flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID
+  # refuses with a clear error rather than answering a confident falsehood.
+  #
+  # Order: this is INERT until LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE has been on long enough to
+  # produce UUID-keyed campaigns — a campaign only has a UUID if campaign-service created it.
+  # Enabling it earlier is harmless, just useless. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
+    value:
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

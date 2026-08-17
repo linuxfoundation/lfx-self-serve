@@ -132,7 +132,13 @@ interface CampaignServiceBriefEnvelope {
 }
 
 /**
- * True when `jobId` is a job campaign-service could possibly know about.
+ * True when `id` is one campaign-service could possibly know about — a bare UUID.
+ *
+ * TWO callers, two id spaces, one shape test. The name says "job" for its original caller and is
+ * kept for that continuity, but the predicate is a UUID check and the campaign status toggle
+ * (`updateCampaignStatus`) now routes on it too. Read what follows as applying to BOTH: if the
+ * job-id shape ever changes, this function is also what decides where a money-affecting status
+ * toggle is dispatched, and that second caller has no other guard. Do not narrow it to jobs.
  *
  * The flag alone is not a safe router, and this is the reason. Campaign CREATION has not been
  * cut over: `campaign-proxy.service.ts` still mints `job_<epoch>_<rand>` ids into an in-process

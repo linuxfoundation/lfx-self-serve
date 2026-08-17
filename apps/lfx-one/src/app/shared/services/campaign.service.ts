@@ -18,10 +18,9 @@ import {
   CampaignJobOutcome,
   CampaignJobStatus,
   CampaignMonitorResponse,
-  CampaignPlatform,
   CampaignSSEEventType,
+  CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
-  CampaignToggleStatus,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -257,14 +256,7 @@ export class CampaignService {
    * `projectSlug` travels as a query param for the reason `searchHubSpotEmails` takes one: the
    * campaign is addressed per-project upstream and the server refuses rather than defaulting.
    */
-  public updateCampaignStatus(request: {
-    projectSlug: string;
-    briefId: string;
-    campaignId: string;
-    platform: CampaignPlatform;
-    status: CampaignToggleStatus;
-    etag: string;
-  }): Observable<CampaignStatusUpdateResult> {
+  public updateCampaignStatus(request: CampaignStatusToggleParams): Observable<CampaignStatusUpdateResult> {
     const { projectSlug, briefId, campaignId, platform, status, etag } = request;
     return this.http.patch<CampaignStatusUpdateResult>(
       `/api/campaigns/${encodeURIComponent(campaignId)}/status`,
