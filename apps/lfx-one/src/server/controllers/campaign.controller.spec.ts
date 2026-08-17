@@ -18,6 +18,7 @@ const {
   legacyGetJobStatus,
   searchHubSpotEmails,
   toggleCampaignStatus,
+  listBriefCampaigns,
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
@@ -30,6 +31,7 @@ const {
   legacyGetJobStatus: vi.fn(),
   searchHubSpotEmails: vi.fn(),
   toggleCampaignStatus: vi.fn(),
+  listBriefCampaigns: vi.fn(),
   legacyUpdateStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -49,6 +51,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
+      public listBriefCampaigns = listBriefCampaigns;
     },
   };
 });
@@ -1336,6 +1339,66 @@ describe('CampaignController.updateCampaignStatus', () => {
 
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
     expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The controller's job here is the scope refusal. Both `project` and `brief_id` are required and
+ * neither is defaulted — `project` is the authorization boundary the platform checks FGA against,
+ * and a guessed `brief_id` would widen the read past the brief the caller asked about.
+ */
+describe('CampaignController.listBriefCampaigns', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function listReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/list' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true });
+  });
+
+  it('passes both scopes through, trimmed', async () => {
+    await controller.listBriefCampaigns(listReq({ project: '  tlf  ', brief_id: '  b-1  ' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listBriefCampaigns).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1');
+  });
+
+  it.each([
+    ['project', { brief_id: 'b-1' }],
+    ['brief_id', { project: 'tlf' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'tlf', brief_id: '   ' }],
+  ])('refuses a request with no %s', async (_label, query) => {
+    await controller.listBriefCampaigns(listReq(query), res, next);
+
+    expect(listBriefCampaigns).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // possiblyStale is the caller's only signal that an empty list may mean "not indexed yet"
+  // rather than "nothing exists". Dropping it would let the UI assert a spend does not exist.
+  it('forwards possiblyStale to the caller', async () => {
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ possiblyStale: true }));
+  });
+
+  it('lets a query-service failure reach the error middleware', async () => {
+    listBriefCampaigns.mockRejectedValue(new Error('query service unavailable'));
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
 });
