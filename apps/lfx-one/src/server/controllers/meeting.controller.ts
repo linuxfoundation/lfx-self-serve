@@ -420,7 +420,7 @@ export class MeetingController {
 
         const [committee, meeting, isCommitteeWriter] = await Promise.all([
           this.committeeService.getCommitteeById(req, committeeUid),
-          this.meetingService.getMeetingById(req, uid, 'v1_meeting', false),
+          this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: false }),
           this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
         ]);
 
