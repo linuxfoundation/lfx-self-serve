@@ -204,7 +204,8 @@
 <lfx-flywheel-conversion-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarFlywheelConversion"
   [data]="flywheelData()"
-  [unavailable]="!edEvolutionData().flywheel"
+  [unavailable]="!edEvolutionData().pending && !edEvolutionData().flywheel"
+  [pending]="!!edEvolutionData().pending"
   (visibleChange)="handleDrawerClose()"></lfx-flywheel-conversion-drawer>
 
 <!-- The [unavailable] binding below is deliberately stricter than the Members CARD, which keeps
@@ -215,7 +216,8 @@
 <lfx-member-acquisition-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberAcquisition"
   [data]="memberAcquisitionData()"
-  [unavailable]="!edEvolutionData().memberAcquisition || !edEvolutionData().memberRetention"
+  [unavailable]="!edEvolutionData().pending && (!edEvolutionData().memberAcquisition || !edEvolutionData().memberRetention)"
+  [pending]="!!edEvolutionData().pending"
   [retentionData]="memberRetentionData()"
   [revenueImpactData]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-member-acquisition-drawer>
@@ -223,7 +225,8 @@
 <lfx-engaged-community-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarEngagedCommunity"
   [data]="engagedCommunityData()"
-  [unavailable]="!edEvolutionData().engagedCommunity"
+  [unavailable]="!edEvolutionData().pending && !edEvolutionData().engagedCommunity"
+  [pending]="!!edEvolutionData().pending"
   [brandReachData]="brandReachData()"
   (visibleChange)="handleDrawerClose()"></lfx-engaged-community-drawer>
 
@@ -231,19 +234,22 @@
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarEventGrowth"
   [data]="eventGrowthData()"
   (visibleChange)="handleDrawerClose()"
-  [unavailable]="!edEvolutionData().eventGrowth"></lfx-event-growth-drawer>
+  [unavailable]="!edEvolutionData().pending && !edEvolutionData().eventGrowth"
+  [pending]="!!edEvolutionData().pending"></lfx-event-growth-drawer>
 
 <!-- Brand Drawers -->
 <lfx-brand-reach-drawer
   [visible]="activeDrawer() === DashboardDrawerType.BrandReach"
   [data]="brandReachData()"
   (visibleChange)="handleDrawerClose()"
-  [unavailable]="!edEvolutionData().brandReach"></lfx-brand-reach-drawer>
+  [unavailable]="!edEvolutionData().pending && !edEvolutionData().brandReach"
+  [pending]="!!edEvolutionData().pending"></lfx-brand-reach-drawer>
 
 <lfx-brand-health-drawer
   [visible]="activeDrawer() === DashboardDrawerType.BrandHealth"
   [data]="brandHealthData()"
-  [unavailable]="!edEvolutionData().brandHealth"
+  [unavailable]="!edEvolutionData().pending && !edEvolutionData().brandHealth"
+  [pending]="!!edEvolutionData().pending"
   (visibleChange)="handleDrawerClose()"></lfx-brand-health-drawer>
 
 <!-- Influence Drawer -->

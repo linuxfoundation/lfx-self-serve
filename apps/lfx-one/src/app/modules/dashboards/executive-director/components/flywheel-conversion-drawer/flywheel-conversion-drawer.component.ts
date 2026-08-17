@@ -10,6 +10,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   DASHBOARD_TOOLTIP_CONFIG,
   DRAWER_NO_ACTIVITY_BODY,
+  DRAWER_LOADING_HEADING,
   DRAWER_UNAVAILABLE_BODY,
   DRAWER_UNAVAILABLE_HEADING,
   createHorizontalBarChartOptions,
@@ -80,6 +81,13 @@ export class FlywheelConversionDrawerComponent {
   public readonly unavailable = input<boolean>(false);
   protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
   protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
   protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
 
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();

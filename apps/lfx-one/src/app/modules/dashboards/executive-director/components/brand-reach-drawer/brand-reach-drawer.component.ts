@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, model, Signal } fr
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, MARKETING_SOCIAL_PLATFORM_MAP } from '@lfx-one/shared/constants';
+import { DRAWER_LOADING_HEADING, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, MARKETING_SOCIAL_PLATFORM_MAP } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -32,6 +32,13 @@ export class BrandReachDrawerComponent {
   public readonly unavailable = input<boolean>(false);
   protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
   protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
 
   public readonly data = input<BrandReachResponse>({
     totalSocialFollowers: 0,

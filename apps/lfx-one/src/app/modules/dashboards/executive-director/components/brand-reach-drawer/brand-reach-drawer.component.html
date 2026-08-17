@@ -28,7 +28,7 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="brand-reach-drawer-content">
-    @if (unavailable()) {
+    @if (unavailable() || pending()) {
       <!-- A failed request renders ONLY this. Guarding section-by-section was tried and
            repeatedly missed one — stats, charts, insight blocks and per-section empty states
            each assert a measurement, so the whole body has to go, not a list of its parts. -->
@@ -40,8 +40,10 @@
         <div class="flex items-start gap-4 px-4 py-4">
           <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
           <div class="flex flex-col gap-1 flex-1 min-w-0">
-            <h3 class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</h3>
-            <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
+            <h3 class="text-sm font-semibold text-gray-900">{{ pending() ? loadingHeading : unavailableHeading }}</h3>
+            @if (!pending()) {
+              <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
+            }
           </div>
         </div>
       </div>

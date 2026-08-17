@@ -735,6 +735,12 @@ export const DRAWER_UNAVAILABLE_HEADING = 'Data unavailable';
  */
 export const DRAWER_NO_ACTIVITY_BODY = 'Engage with marketing ops to activate campaigns and start tracking results.';
 export const DRAWER_UNAVAILABLE_BODY = 'Please try again.';
+/**
+ * Shown while the request is still in flight. Distinct from the unavailable copy because
+ * nothing has failed yet — the drawer suppresses its body in BOTH states (the zero-filled
+ * fallback is not a measurement in either), but only one of them may claim a failure.
+ */
+export const DRAWER_LOADING_HEADING = 'Loading…';
 
 /**
  * A dual-signal row for a card whose data could not be fetched.

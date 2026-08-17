@@ -395,6 +395,38 @@ describe('ED drill-down drawers — a failed request must not read as no activit
     });
   }
 
+  // Pending is NOT failed. PENDING_ED_EVOLUTION_DATA spreads the error fallback, so every
+  // field is undefined while the request is still in flight — a drawer deriving failure from
+  // `!field` alone announces "Data unavailable" before anything has failed. The body stays
+  // suppressed either way (a zero-filled fallback is not a measurement while loading either),
+  // but only one of the two states may claim a failure.
+  for (const { name, component, inputs } of drawers.filter((d) => d.nonZero)) {
+    it(`${name}: says loading, not failed, while the request is still in flight`, async () => {
+      await TestBed.configureTestingModule({
+        imports: [component],
+        providers: [provideNoopAnimations(), provideRouter([])],
+      }).compileComponents();
+
+      const fixture = TestBed.createComponent(component);
+      for (const [key, value] of Object.entries({ ...inputs, visible: true, unavailable: false, pending: true })) {
+        fixture.componentRef.setInput(key, value);
+      }
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Loading');
+      expect(text).not.toContain(DRAWER_UNAVAILABLE_HEADING);
+      expect(text).not.toContain(DRAWER_UNAVAILABLE_BODY);
+      // The measured-absence copy must not appear either — nothing has been measured yet.
+      expect(text).not.toContain('Engage with marketing ops');
+
+      fixture.destroy();
+      TestBed.resetTestingModule();
+    });
+  }
+
   for (const { name, component, inputs, measuredCopy } of drawers) {
     it(`${name}: says the data could not be loaded when the request failed`, async () => {
       const fixture = await render(component, inputs, true);

@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { formatPercent, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { DRAWER_NO_ACTIVITY_BODY, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING } from '@lfx-one/shared/constants';
+import { DRAWER_NO_ACTIVITY_BODY, DRAWER_LOADING_HEADING, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING } from '@lfx-one/shared/constants';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { MarketingKeyInsight, MarketingRecommendedAction, MemberRetentionResponse } from '@lfx-one/shared/interfaces';
@@ -53,6 +53,13 @@ export class MemberRetentionDrawerComponent {
   public readonly unavailable = input<boolean>(false);
   protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
   protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
   protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
 
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
