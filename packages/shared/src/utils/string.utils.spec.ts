@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
+import { capCodePointEdit, codePointLength, joinAsSentenceList, slugify, splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -154,5 +154,24 @@ describe('truncateToUtf16Units', () => {
   it('returns an empty string for a non-positive cap', () => {
     expect(truncateToUtf16Units('agenda', 0)).toBe('');
     expect(truncateToUtf16Units('agenda', -5)).toBe('');
+  });
+});
+
+describe('joinAsSentenceList', () => {
+  it('returns a single label unchanged', () => {
+    expect(joinAsSentenceList(['Email address'])).toBe('Email address');
+  });
+
+  it('joins two labels with a bare and', () => {
+    expect(joinAsSentenceList(['Meeting ID', 'Email address'])).toBe('Meeting ID and Email address');
+  });
+
+  // The case a plain join(' and ') gets wrong — three items chant instead of reading as a list.
+  it('commas all but the last label for three or more', () => {
+    expect(joinAsSentenceList(['Meeting ID', 'Email address', 'First name'])).toBe('Meeting ID, Email address and First name');
+  });
+
+  it('returns an empty string for no labels', () => {
+    expect(joinAsSentenceList([])).toBe('');
   });
 });

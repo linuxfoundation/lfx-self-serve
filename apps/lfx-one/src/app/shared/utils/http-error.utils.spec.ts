@@ -5,11 +5,44 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
+import { extractErrorMessage, getHttpErrorDetail, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
 }
+
+describe('getHttpErrorDetail', () => {
+  // The read that was dead before: every server error body is `{ error, code }`, so a reader that
+  // only knew `message` fell through to the hard-coded per-status string on every real failure.
+  it('reads the `error` key this server actually sends', () => {
+    const error = new HttpErrorResponse({ status: 409, error: { error: 'A member with that email already exists.', code: 'CONFLICT' } });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('A member with that email already exists.');
+  });
+
+  it('still reads a `message` key, for upstream bodies that use it', () => {
+    const error = new HttpErrorResponse({ status: 422, error: { message: 'Upstream said no' } });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('Upstream said no');
+  });
+
+  it('uses the status hint when the body carries no message', () => {
+    expect(getHttpErrorDetail(httpError(403), 'fallback')).toBe('You do not have permission to perform this action.');
+    expect(getHttpErrorDetail(httpError(404), 'fallback')).toBe('The resource was not found.');
+  });
+
+  it('uses the caller fallback for a status with no hint', () => {
+    expect(getHttpErrorDetail(httpError(500), 'Could not save your changes.')).toBe('Could not save your changes.');
+  });
+
+  // A plain-text body (an upstream 502 HTML page, say) is not a reason to show, so the status hint
+  // still wins — unlike `extractErrorMessage`, whose callers have no hint layer to fall back to.
+  it('ignores a plain-string body', () => {
+    const error = new HttpErrorResponse({ status: 404, error: 'Not Found' });
+
+    expect(getHttpErrorDetail(error, 'fallback')).toBe('The resource was not found.');
+  });
+});
 
 describe('extractErrorMessage', () => {
   // `error` and not `message` is the key that matters: `BaseApiError.toResponse()` emits

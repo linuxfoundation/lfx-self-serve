@@ -5,6 +5,7 @@ import { Meeting } from '@lfx-one/shared';
 import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_LABELS, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
+import { joinAsSentenceList } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -538,7 +539,7 @@ export class PublicMeetingController {
           // "validation failed" here would leave the registrant with no idea which field to shorten.
           //
           // Labels rather than wire keys, because this string is read by someone looking at a form.
-          `${overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]).join(' and ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
+          `${joinAsSentenceList(overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
@@ -560,10 +561,9 @@ export class PublicMeetingController {
       const missing = (['meeting_id', 'email', 'first_name', 'last_name'] as const).filter((field) => !registrantData[field]);
 
       if (missing.length > 0) {
-        const labels = missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]);
         const validationError = ServiceValidationError.fromFieldErrors(
-          Object.fromEntries(missing.map((field, index) => [field, `${labels[index]} is required`])),
-          `${labels.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} required.`,
+          Object.fromEntries(missing.map((field) => [field, `${PUBLIC_REGISTRATION_FIELD_LABELS[field]} is required`])),
+          `${joinAsSentenceList(missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} ${missing.length > 1 ? 'are' : 'is'} required.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',

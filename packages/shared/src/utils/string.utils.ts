@@ -184,6 +184,22 @@ export function truncateToUtf16Units(value: string, max: number): string {
   return value.slice(0, splitsPair ? max - 1 : max);
 }
 
+/**
+ * Joins labels the way a sentence does — `"A"`, `"A and B"`, `"A, B and C"` — for user-facing copy
+ * that names a variable number of fields. A plain `join(' and ')` reads as a chant past two items
+ * ("Meeting ID and Email address and First name"), and a plain `join(', ')` drops the conjunction the
+ * last item needs.
+ *
+ * No Oxford comma, matching the rest of the app's copy.
+ */
+export function joinAsSentenceList(labels: readonly string[]): string {
+  if (labels.length < 2) {
+    return labels[0] ?? '';
+  }
+
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();

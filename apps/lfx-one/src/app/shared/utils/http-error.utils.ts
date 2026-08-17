@@ -7,11 +7,17 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 
 /**
  * Extracts a user-friendly error message from an HttpErrorResponse.
- * Prefers the upstream service message when available; falls back to
+ * Prefers the server's own message when the body carries one; falls back to
  * status-code hints, then the provided fallback string.
+ *
+ * The body's `error` key is read as well as `message`, because `error` is the one this server
+ * actually sends — `BaseApiError.toResponse()` emits `{ error, code }` and no `message`. Reading only
+ * `message` left every branch below on its hard-coded string, so a server validation reason never
+ * reached the ~13 committee and profile call sites.
  */
 export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): string {
-  const upstream = err.error?.message as string | undefined;
+  const body = err.error as { message?: string; error?: string } | string | null;
+  const upstream = typeof body === 'string' ? undefined : [body?.message, body?.error].find((value) => typeof value === 'string' && value.trim().length > 0);
 
   switch (err.status) {
     case 409:
@@ -42,8 +48,8 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  * Angular fills that property in for every failure with a string built for a developer reading a
  * console — "Http failure response for /public/api/...: 0 Unknown Error" — so preferring it would
  * put a URL and a status code in front of a user on exactly the failures where the body is empty:
- * a network drop, or a 500 with no envelope. Every call site passes a written-for-a-human fallback;
- * that is the one to show.
+ * a network drop, or a 500 with no envelope. Call sites are expected to pass a written-for-a-human
+ * fallback; that is the one to show.
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
