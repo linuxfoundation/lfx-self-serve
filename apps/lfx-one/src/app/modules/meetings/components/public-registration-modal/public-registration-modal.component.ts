@@ -95,8 +95,8 @@ export class PublicRegistrationModalComponent {
             this.submitting.set(false);
             // `error?.error?.message` never matched: the server's error body is `{ error, code }` with
             // no `message` key (`BaseApiError.toResponse`), so every failure showed the fallback and a
-            // registrant was never told which field was wrong. `extractErrorMessage` reads `message`
-            // then `error`, so a validation message reaches the toast.
+            // registrant was never told which field was wrong. `extractErrorMessage` reads the body's
+            // `error` key too, so a validation message reaches the toast.
             const errorMessage = extractErrorMessage(error, 'Failed to register for this meeting');
             this.messageService.add({
               severity: 'error',

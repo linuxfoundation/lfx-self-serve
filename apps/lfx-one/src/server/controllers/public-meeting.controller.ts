@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER, ROOT_PROJECT_SLUG, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_LABELS, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   CreateMeetingRegistrantRequest,
@@ -497,22 +497,26 @@ export class PublicMeetingController {
     // Length is measured on the stored form rather than the submitted one — `email` is already
     // lowercased here, and lowercasing can lengthen a value for a handful of Unicode code points. The
     // stored form is what has to fit, so that's what's checked.
-    const overLength = Object.entries({
+    const identifiers = {
       meeting_id: meetingId,
       email: registrantData.email,
       occurrence_id: registrantData.occurrence_id ?? '',
-    }).filter(([, value]) => value.length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
+    };
+    const overLength = (Object.keys(identifiers) as (keyof typeof identifiers)[]).filter(
+      (field) => identifiers[field].length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH
+    );
 
     if (overLength.length > 0) {
-      const fields = overLength.map(([field]) => field);
-
       return next(
         ServiceValidationError.fromFieldErrors(
-          Object.fromEntries(fields.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
+          Object.fromEntries(overLength.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
           // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
-          // endpoint renders `error.message` and discards the field array, so a generic "validation
-          // failed" here would leave the registrant with no idea which field to shorten.
-          `${fields.join(', ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`,
+          // endpoint shows the top-level message — serialized as the body's `error` key, since
+          // `BaseApiError.toResponse` emits no `message` — and discards the field array. A generic
+          // "validation failed" here would leave the registrant with no idea which field to shorten.
+          //
+          // Labels rather than wire keys, because this string is read by someone looking at a form.
+          `${overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]).join(' and ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
@@ -543,14 +547,24 @@ export class PublicMeetingController {
 
       const userToken = req.bearerToken;
 
-      if (!registrantData.first_name || !registrantData.last_name) {
+      // The missing fields are named individually in the top-level message for the same reason as the
+      // length rejection above: that message is the only part of this error the registration modal
+      // shows, so a generic "validation failed" here is what turns a fixable empty field into an
+      // unexplained failure.
+      //
+      // Only the two name fields are required. `meeting_id` is already covered by
+      // `validateMeetingId` above, and `email` never reaches upstream on this route —
+      // `addMeetingRegistrantSelf` posts to `/registrants/self`, where the meeting service takes
+      // identity off the caller's JWT — so requiring it would reject correct requests.
+      const missing = (['first_name', 'last_name'] as const).filter((field) => !registrantData[field]);
+
+      if (missing.length > 0) {
+        const labels = missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]);
+
         return next(
           ServiceValidationError.fromFieldErrors(
-            {
-              first_name: !registrantData.first_name ? 'First name is required' : [],
-              last_name: !registrantData.last_name ? 'Last name is required' : [],
-            },
-            'Registration data validation failed',
+            Object.fromEntries(missing.map((field, index) => [field, `${labels[index]} is required`])),
+            `${labels.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} required.`,
             {
               operation: 'register_for_public_meeting',
               service: 'public_meeting_controller',

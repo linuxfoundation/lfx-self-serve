@@ -108,18 +108,30 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage(error, 'fallback')).toBe('Meeting not found');
   });
 
+  // `error` and not `message` is the key that matters here: `BaseApiError.toResponse()` emits
+  // `{ error, code }`, so a reader that only knows `message` shows the fallback on every server
+  // validation failure.
   it('falls back to the top-level error when message is absent', () => {
     const error = httpErrorWithBody(403, { error: 'Not authorized' });
 
     expect(extractErrorMessage(error, 'fallback')).toBe('Not authorized');
   });
 
-  it('falls back to the synthesized HttpErrorResponse message when the body has no usable message', () => {
-    // HttpErrorResponse always synthesizes a `.message` ("Http failure response for ..."), so an
-    // empty/unusable body never reaches the caller-provided fallback string for a real HTTP error.
-    const error = httpErrorWithBody(500, {});
+  // Angular synthesizes `HttpErrorResponse.message` for every failure as a string written for a
+  // console — "Http failure response for /api/thing: 500 x". Preferring it would put a URL and a
+  // status code in front of a user on exactly the failures with no body to read, so the caller's
+  // fallback — which is written for a human — wins instead.
+  it('prefers the caller fallback over Angular synthesized message text', () => {
+    const detail = extractErrorMessage(httpErrorWithBody(500, {}), 'fallback');
 
-    expect(extractErrorMessage(error, 'fallback')).toContain('Http failure response');
+    expect(detail).toBe('fallback');
+    expect(detail).not.toContain('Http failure');
+  });
+
+  it('prefers the caller fallback for a network drop, which has no body at all', () => {
+    const detail = extractErrorMessage(httpError(0), 'Could not reach the server. Please try again.');
+
+    expect(detail).toBe('Could not reach the server. Please try again.');
   });
 
   it('does not throw when errors is present but not an array — falls back to the top-level message', () => {
