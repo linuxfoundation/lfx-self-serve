@@ -402,9 +402,13 @@ export class MeetingController {
       // meeting's full registrant PII to any authenticated caller who supplies its uid — there's
       // no organizer/registrant relationship required, unlike the sibling getMyMeetingRegistrants.
       // failOnPartial is only ever set by the committee "import registrants" flow, whose caller has
-      // no such relationship to the target meeting either. Require and verify committee write
-      // access whenever completeness is requested, so that flow can't be used to bulk-harvest
-      // registrant PII from meetings the caller doesn't manage.
+      // no such relationship to the target meeting either. Require and verify committee access
+      // whenever completeness is requested, so that flow can't be used to bulk-harvest registrant
+      // PII from meetings the caller doesn't manage. Writers always qualify; non-writer members are
+      // also allowed on invite_only committees — mirroring canSendMemberInvites() client-side — since
+      // they're already independently authorized to send invites for that committee (upstream, via
+      // their own bearer token, same as createCommitteeInvite always has been), so letting them
+      // populate the invite textarea via import grants no new privilege.
       if (failOnPartial) {
         if (!committeeUid) {
           throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
@@ -419,7 +423,8 @@ export class MeetingController {
           this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
         ]);
 
-        if (!isCommitteeWriter || committee.project_uid !== meeting.project_uid) {
+        const canImport = isCommitteeWriter || committee.join_mode === 'invite_only';
+        if (!canImport || committee.project_uid !== meeting.project_uid) {
           throw new AuthorizationError('Not authorized to import registrants for this meeting', {
             operation: 'get_meeting_registrants',
             service: 'meeting_controller',

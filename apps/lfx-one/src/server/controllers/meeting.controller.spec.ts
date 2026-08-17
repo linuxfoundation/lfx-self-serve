@@ -113,8 +113,8 @@ describe('MeetingController.getMeetingRegistrants — completeness authorization
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
   });
 
-  it('rejects when the caller lacks committee writer access', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+  it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'open' });
     meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
     accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
     const res = buildRes();
@@ -124,6 +124,20 @@ describe('MeetingController.getMeetingRegistrants — completeness authorization
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('passes through for a non-writer on an invite_only committee — mirrors canSendMemberInvites()', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'invite_only' });
+    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('rejects when the committee and meeting belong to different projects', async () => {
