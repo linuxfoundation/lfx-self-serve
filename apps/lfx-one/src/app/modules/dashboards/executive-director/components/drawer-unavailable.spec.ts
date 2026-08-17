@@ -50,7 +50,7 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       component: BrandHealthDrawerComponent,
       measuredCopy: 'No brand mention activity detected',
       nonZero: {
-        staleFigures: ['80.8K', 'Mentions Trend'],
+        staleFigures: ['80,799', 'Mentions Trend'],
         inputs: {
           data: {
             totalMentions: 80799,

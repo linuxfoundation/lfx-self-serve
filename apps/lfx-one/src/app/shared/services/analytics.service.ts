@@ -1287,30 +1287,28 @@ export class AnalyticsService {
   }
 
   /**
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   */
+  /**
    * Get event growth metrics for the ED dashboard.
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @returns Observable emitting event growth totals, YoY changes, and monthly trend (or zeroed defaults on error)
    */
   public getEventGrowth(foundationSlug: string): Observable<EventGrowthResponse> {
-    return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } }).pipe(
-      catchError(() =>
-        of({
-          totalAttendees: 0,
-          totalRegistrants: 0,
-          totalEvents: 0,
-          totalRevenue: 0,
-          revenuePerAttendee: 0,
-          attendeeYoyChange: 0,
-          registrantYoyChange: 0,
-          revenueYoyChange: 0,
-          trend: 'up' as const,
-          monthlyData: [],
-          topEvents: [],
-        })
-      )
-    );
+    return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } });
   }
 
+  /**
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   */
   /**
    * Get brand reach metrics for the ED dashboard (social followers + web sessions).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
@@ -1318,23 +1316,16 @@ export class AnalyticsService {
    * @returns Observable emitting reach totals, platform breakdowns, and weekly trend (or zeroed defaults on error)
    */
   public getBrandReach(foundationSlug: string, classification?: string): Observable<BrandReachResponse> {
-    return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) }).pipe(
-      catchError(() =>
-        of({
-          totalSocialFollowers: 0,
-          totalMonthlySessions: 0,
-          activePlatforms: 0,
-          changePercentage: 0,
-          sessionMomChangePct: 0,
-          trend: 'up' as const,
-          socialPlatforms: [],
-          websiteDomains: [],
-          weeklyTrend: [],
-        })
-      )
-    );
+    return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) });
   }
 
+  /**
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   */
   /**
    * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
@@ -1342,21 +1333,7 @@ export class AnalyticsService {
    */
   public getBrandHealth(foundationSlug: string, includeMentions = false, period?: string): Observable<BrandHealthResponse> {
     const params: Record<string, string> = { foundationSlug, ...(includeMentions && { includeMentions: 'true' }), ...(period && { period }) };
-    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params }).pipe(
-      catchError(() =>
-        of({
-          totalMentions: 0,
-          sentiment: { positive: 0, neutral: 0, negative: 0 },
-          sentimentMomChangePp: 0,
-          mentionMomChangePct: null,
-          trend: 'up' as const,
-          monthlyMentions: [],
-          topProjects: [],
-          topPositiveMentions: [],
-          topNegativeMentions: [],
-        })
-      )
-    );
+    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params });
   }
 
   /**
