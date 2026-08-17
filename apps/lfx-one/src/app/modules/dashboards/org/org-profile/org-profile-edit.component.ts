@@ -231,7 +231,7 @@ export class OrgProfileEditComponent implements OnInit {
 
   private handleLogoFile(file: File): void {
     if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG or JPEG image.' });
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG, JPEG, or SVG image.' });
       return;
     }
     if (file.size > MAX_ORG_LOGO_SIZE_BYTES) {

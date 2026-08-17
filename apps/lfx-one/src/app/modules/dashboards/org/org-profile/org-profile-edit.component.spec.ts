@@ -70,12 +70,20 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('rejects a disallowed file type without calling the service', async () => {
-    const file = new File([new Uint8Array(10)], 'logo.svg', { type: 'image/svg+xml' });
+    const file = new File([new Uint8Array(10)], 'logo.gif', { type: 'image/gif' });
     selectFile(file);
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Please choose a PNG or JPEG image.' }));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Please choose a PNG, JPEG, or SVG image.' }));
+  });
+
+  it('accepts an SVG file and calls the service', async () => {
+    const file = new File([new Uint8Array(10)], 'logo.svg', { type: 'image/svg+xml' });
+    selectFile(file);
+    await fixture.whenStable();
+
+    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, file);
   });
 
   it('rejects an oversized file without calling the service', async () => {
