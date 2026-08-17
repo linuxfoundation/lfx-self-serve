@@ -84,7 +84,15 @@ export class OrgProfileEditComponent implements OnInit {
   protected readonly crunchbaseInvalid = signal(false);
 
   /** Disabled until the user changes a field AND all validation passes (FR-007). */
-  protected readonly canSave = computed(() => this.dirty() && this.formValid() && !this.saving());
+  protected readonly canSave = computed(() => this.dirty() && this.formValid() && !this.busy());
+
+  // True while either mutation (form save or logo upload) is in flight — mirrors
+  // profile-edit-drawer.component.ts's `busy` gate for avatar uploads. Both mutation entry points
+  // and every dismissal path must gate on this, not on their own signal alone: otherwise a Save
+  // during an in-flight logo upload (or a logo upload started during Save) can race the parent
+  // destroying this component on Cancel, leaving an upload whose later `logoUpdated` emission has
+  // no listener and a persisted logo that can go stale in the cached profile.
+  protected readonly busy = computed(() => this.saving() || this.logoUploading());
 
   private original!: OrgProfileEditableFields;
 
@@ -94,7 +102,7 @@ export class OrgProfileEditComponent implements OnInit {
   }
 
   protected onCancel(): void {
-    if (this.saving()) return;
+    if (this.busy()) return;
     this.cancelled.emit();
   }
 
@@ -143,7 +151,7 @@ export class OrgProfileEditComponent implements OnInit {
 
   /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
   protected triggerLogoUpload(): void {
-    if (this.logoUploading()) return;
+    if (this.busy()) return;
     this.logoInput()?.nativeElement.click();
   }
 
@@ -157,7 +165,7 @@ export class OrgProfileEditComponent implements OnInit {
 
   protected onLogoDragOver(event: DragEvent): void {
     event.preventDefault();
-    if (!this.logoUploading()) this.logoDragActive.set(true);
+    if (!this.busy()) this.logoDragActive.set(true);
   }
 
   protected onLogoDragLeave(event: DragEvent): void {
@@ -168,7 +176,7 @@ export class OrgProfileEditComponent implements OnInit {
   protected onLogoDrop(event: DragEvent): void {
     event.preventDefault();
     this.logoDragActive.set(false);
-    if (this.logoUploading()) return;
+    if (this.busy()) return;
     const file = event.dataTransfer?.files?.[0];
     if (file) this.handleLogoFile(file);
   }

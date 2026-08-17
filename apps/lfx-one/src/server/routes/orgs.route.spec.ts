@@ -138,15 +138,9 @@ describe('orgs router — POST /uid/:uid/logo', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(proxyRequest).toHaveBeenCalledWith(
-      expect.anything(),
-      'LFX_V2_SERVICE',
-      `/b2b_orgs/${UID}/logo`,
-      'POST',
-      undefined,
-      expect.any(Buffer),
-      { 'Content-Type': 'image/png' }
-    );
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${UID}/logo`, 'POST', undefined, expect.any(Buffer), {
+      'Content-Type': 'image/png',
+    });
   });
 
   it('rejects a disallowed content type before it reaches the controller', async () => {

@@ -31,7 +31,9 @@
         @if (logoUrl()) {
           <img [src]="logoUrl()" [alt]="record().name + ' logo'" class="h-20 w-20 rounded-md object-contain" data-testid="org-profile-edit-logo-image" />
         } @else {
-          <div class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white" data-testid="org-profile-edit-logo-initials">
+          <div
+            class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
+            data-testid="org-profile-edit-logo-initials">
             {{ (record().name | initials) || 'OR' }}
           </div>
         }
@@ -46,7 +48,7 @@
         type="file"
         accept="image/png,image/jpeg"
         class="hidden"
-        [disabled]="logoUploading()"
+        [disabled]="busy()"
         (change)="onLogoFileSelected($event)"
         data-testid="org-profile-edit-logo-input" />
       <div class="flex flex-col gap-1">
@@ -54,7 +56,7 @@
           label="Upload Logo"
           severity="secondary"
           [outlined]="true"
-          [disabled]="logoUploading()"
+          [disabled]="busy()"
           (onClick)="triggerLogoUpload()"
           data-testid="org-profile-edit-upload-logo-button" />
         <p class="text-xs text-gray-500">PNG or JPEG, not more than 2MB.</p>
@@ -188,7 +190,7 @@
           label="Cancel"
           severity="secondary"
           [outlined]="true"
-          [disabled]="saving()"
+          [disabled]="busy()"
           data-testid="org-profile-edit-cancel-button"
           (onClick)="onCancel()" />
         <p-button

@@ -118,7 +118,7 @@ export class ApiClientService {
     } catch (error: unknown) {
       // Mirror executeRequest() transport-error classification for consistent MicroserviceError types.
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
             operation: 'api_client_stream_timeout',
             service: 'api_client_service',
@@ -308,7 +308,7 @@ export class ApiClientService {
       return apiResponse;
     } catch (error: unknown) {
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           throw new MicroserviceError(`Request timeout after ${options.timeoutMs ?? this.config.timeout}ms`, 408, 'TIMEOUT', {
             operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',
             service: 'api_client_service',

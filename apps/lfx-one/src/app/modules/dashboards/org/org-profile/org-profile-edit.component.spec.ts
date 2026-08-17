@@ -150,4 +150,22 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
   });
+
+  it('blocks Cancel while a logo upload is in flight, so an in-flight upload is not orphaned by exiting edit mode', async () => {
+    const cancelled: void[] = [];
+    fixture.componentInstance.cancelled.subscribe(() => cancelled.push(undefined));
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+    expect(fixture.componentInstance['logoUploading']()).toBe(true);
+
+    fixture.componentInstance['onCancel']();
+    expect(cancelled).toEqual([]);
+
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
+    await fixture.whenStable();
+
+    fixture.componentInstance['onCancel']();
+    expect(cancelled).toEqual([undefined]);
+  });
 });

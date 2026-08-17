@@ -181,7 +181,7 @@ export class OrgIdentityController {
       }
 
       const buffer: unknown = req.body;
-      if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      if (Array.isArray(buffer) || !Buffer.isBuffer(buffer) || buffer.length === 0) {
         throw ServiceValidationError.forField('body', 'Request body must contain logo image data', {
           operation: 'upload_org_logo',
           service: 'org_identity_controller',
