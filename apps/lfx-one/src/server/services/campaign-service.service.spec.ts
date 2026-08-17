@@ -2101,3 +2101,96 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     expect(result.error).toBeTruthy();
   });
 });
+
+/**
+ * The list read is the only place a campaign becomes addressable after its creating session ends,
+ * so what it returns decides whether a later pause or metrics call can name anything at all. The
+ * assertions below are about the two ways it could lie: scoping past the brief, and reporting a
+ * not-yet-indexed list as an empty one.
+ */
+describe('CampaignServiceClient.listBriefCampaigns', () => {
+  const doc = (over: Record<string, unknown> = {}) => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'google-ads',
+    campaign_name: 'KubeCon',
+    status: 'created',
+    version: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('scopes by project PARENT and brief FILTER, which are not interchangeable', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[2]).toBe('/query/resources');
+    // `parent` is the FGA boundary the platform authorizes against; `filters` narrows to the
+    // brief. There is no `brief:<id>` parent ref, so the brief cannot travel as a parent.
+    expect(call[4]).toEqual(expect.objectContaining({ type: 'campaign', parent: 'project:tlf', filters: ['brief_id:b-1'] }));
+  });
+
+  // The ticket's one unverified assumption: whether `data.brief_id` is a term field or an analysed
+  // one. Analysed, it matches on token overlap and returns another brief's campaigns — putting one
+  // brief's spend under another. The re-check is what makes that a dropped row instead of a lie.
+  it('drops rows belonging to another brief rather than trusting the filter', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ data: doc() }, { data: doc({ id: 'c-2', brief_id: 'b-2-other' }) }],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns.map((c) => c.id)).toEqual(['c-1']);
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'list_brief_campaigns',
+      expect.stringContaining('another brief'),
+      expect.objectContaining({ returned: 2, kept: 1 })
+    );
+  });
+
+  // Indexing is asynchronous, so "not indexed yet" and "none exist" are the same answer here.
+  // A caller that read absence as proof would tell a user their campaigns do not exist.
+  it('marks an empty result possiblyStale rather than asserting emptiness', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result).toEqual({ campaigns: [], possiblyStale: true });
+  });
+
+  it('does not mark a populated result stale', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.possiblyStale).toBe(false);
+  });
+
+  // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
+  // tell a short list from a complete one, and the campaigns missing from it are live and
+  // spending — so a page-two failure must propagate rather than quietly return page one.
+  it('throws rather than returning a truncated list when a later page fails', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }], page_token: 'p2' }).mockRejectedValue(new Error('query service unavailable'));
+
+    await expect(new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).rejects.toThrow();
+  });
+
+  // Refused rather than defaulted: a query missing either scope either fails authorization or
+  // widens past the brief the caller asked about.
+  it.each([
+    ['no project', '', 'b-1'],
+    ['no brief id', 'tlf', ''],
+  ])('refuses a request with %s without calling the query service', async (_label, slug, brief) => {
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, slug, brief);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(result).toEqual({ campaigns: [], possiblyStale: false });
+  });
+});

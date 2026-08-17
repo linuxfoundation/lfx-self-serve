@@ -700,6 +700,54 @@ export class CampaignController {
    * `?q=` is optional — an empty query lists the most recently updated templates, which is the
    * useful default when a user does not yet know what they are looking for.
    */
+  /**
+   * List the campaigns a brief created, so a later session can address them.
+   *
+   * This is the read that makes every per-campaign operation reachable after the creating tab is
+   * closed. The create job returns campaign ids in its per-platform results, but only to the
+   * session that ran it — reload the page and those ids are gone, which is why pause/resume and
+   * per-campaign metrics have no way to name a campaign today.
+   *
+   * Both scopes are REQUIRED and neither is defaulted: `project` is the authorization boundary
+   * the platform applies FGA against, and `brief_id` is what narrows to this brief. Guessing
+   * either would widen the read past what the caller asked for.
+   */
+  public async listBriefCampaigns(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'list_brief_campaigns',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (briefId === '') {
+      next(
+        ServiceValidationError.forField('brief_id', 'brief_id is required', {
+          operation: 'list_brief_campaigns',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'list_brief_campaigns', { projectSlug, briefId });
+
+    try {
+      const result = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
+      logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async searchHubSpotEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
     if (projectSlug === '') {

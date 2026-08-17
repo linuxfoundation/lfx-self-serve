@@ -1289,6 +1289,57 @@ export interface HubSpotUtmCreateResult {
 }
 
 // ---------------------------------------------------------------------------
+// Campaign List (Query Service)
+// ---------------------------------------------------------------------------
+
+/**
+ * A campaign as the platform's Query Service indexes it.
+ *
+ * Mirrors campaign-service's `CampaignDoc` (`internal/infrastructure/indexer/contract.go`)
+ * field for field, in the SNAKE_CASE the index stores — this is a wire shape, not a UI model,
+ * and renaming here would hide drift rather than absorb it.
+ *
+ * Read from Query Service rather than campaign-service deliberately: `docs/architecture.md` D5
+ * and `docs/api-catalog.md` rule 3 give Query Service ownership of lists, and campaign-service
+ * has no list endpoint by DESIGN. An earlier attempt to add one (campaign-service PR #117) was
+ * withdrawn for exactly this reason — the absent route is a decision, not a gap.
+ *
+ * `platform_campaign_id` is optional because it is absent until the ad platform confirms the
+ * create; a campaign row exists before its upstream id does.
+ */
+export interface CampaignIndexDoc {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  platform: string;
+  platform_campaign_id?: string;
+  campaign_name: string;
+  status: string;
+  version: number;
+}
+
+/**
+ * What `GET /api/campaigns/list` reports back.
+ *
+ * `campaigns` is what the index currently holds for the brief. That is NOT the same as what
+ * exists: indexing is asynchronous, so a campaign created seconds ago may not appear yet. The
+ * caller must not read an empty list as "no campaigns were created" — the create job's own
+ * per-platform results are the authority immediately after a create, and this read is for
+ * later sessions. `possiblyStale` marks the window where the two can disagree.
+ */
+export interface CampaignListResult {
+  campaigns: CampaignIndexDoc[];
+  /**
+   * True when the list may not yet reflect a very recent create.
+   *
+   * Set when the query succeeded but returned nothing, which is indistinguishable at this layer
+   * from "indexed and genuinely empty". Reported rather than resolved because the caller knows
+   * something this layer does not — whether it just created campaigns.
+   */
+  possiblyStale: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Campaign Status Toggle
 // ---------------------------------------------------------------------------
 

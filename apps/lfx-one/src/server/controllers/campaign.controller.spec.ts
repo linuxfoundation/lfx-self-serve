@@ -9,18 +9,29 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, searchHubSpotEmails, isServerFeatureEnabled, logger } =
-  vi.hoisted(() => ({
-    saveBrief: vi.fn(),
-    loadBrief: vi.fn(),
-    createCampaigns: vi.fn(),
-    legacyCreate: vi.fn(),
-    svcGetJobStatus: vi.fn(),
-    legacyGetJobStatus: vi.fn(),
-    searchHubSpotEmails: vi.fn(),
-    isServerFeatureEnabled: vi.fn(),
-    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-  }));
+const {
+  saveBrief,
+  loadBrief,
+  createCampaigns,
+  legacyCreate,
+  svcGetJobStatus,
+  legacyGetJobStatus,
+  searchHubSpotEmails,
+  listBriefCampaigns,
+  isServerFeatureEnabled,
+  logger,
+} = vi.hoisted(() => ({
+  saveBrief: vi.fn(),
+  loadBrief: vi.fn(),
+  createCampaigns: vi.fn(),
+  legacyCreate: vi.fn(),
+  svcGetJobStatus: vi.fn(),
+  legacyGetJobStatus: vi.fn(),
+  searchHubSpotEmails: vi.fn(),
+  listBriefCampaigns: vi.fn(),
+  isServerFeatureEnabled: vi.fn(),
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+}));
 
 // `deriveEventSlug` is deliberately NOT stubbed. It is the function that decides whether a brief
 // is persistable at all, so a fake would let the slug-refusal test below pass against a controller
@@ -35,6 +46,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public createCampaigns = createCampaigns;
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
+      public listBriefCampaigns = listBriefCampaigns;
     },
   };
 });
@@ -1116,5 +1128,65 @@ describe('CampaignController.refineBrief email refusal', () => {
     expect(next).toHaveBeenCalledTimes(1);
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
+  });
+});
+
+/**
+ * The controller's job here is the scope refusal. Both `project` and `brief_id` are required and
+ * neither is defaulted — `project` is the authorization boundary the platform checks FGA against,
+ * and a guessed `brief_id` would widen the read past the brief the caller asked about.
+ */
+describe('CampaignController.listBriefCampaigns', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function listReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/list' } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true });
+  });
+
+  it('passes both scopes through, trimmed', async () => {
+    await controller.listBriefCampaigns(listReq({ project: '  tlf  ', brief_id: '  b-1  ' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listBriefCampaigns).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1');
+  });
+
+  it.each([
+    ['project', { brief_id: 'b-1' }],
+    ['brief_id', { project: 'tlf' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'tlf', brief_id: '   ' }],
+  ])('refuses a request with no %s', async (_label, query) => {
+    await controller.listBriefCampaigns(listReq(query), res, next);
+
+    expect(listBriefCampaigns).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // possiblyStale is the caller's only signal that an empty list may mean "not indexed yet"
+  // rather than "nothing exists". Dropping it would let the UI assert a spend does not exist.
+  it('forwards possiblyStale to the caller', async () => {
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ possiblyStale: true }));
+  });
+
+  it('lets a query-service failure reach the error middleware', async () => {
+    listBriefCampaigns.mockRejectedValue(new Error('query service unavailable'));
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

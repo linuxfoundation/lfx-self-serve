@@ -16,6 +16,7 @@ router.post('/create', (req, res, next) => campaignController.createCampaign(req
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
 // the paths do not overlap.
+router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));

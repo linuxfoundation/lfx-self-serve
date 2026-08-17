@@ -17,6 +17,7 @@ import {
   CampaignCreateResponse,
   CampaignJobOutcome,
   CampaignJobStatus,
+  CampaignListResult,
   CampaignMonitorResponse,
   CampaignSSEEventType,
   HubSpotEmailSearchResult,
@@ -236,6 +237,23 @@ export class CampaignService {
       params = params.set('q', query);
     }
     return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
+  }
+
+  /**
+   * List the campaigns a brief created.
+   *
+   * The read that makes a campaign addressable after the creating session ends. The create job
+   * returns ids only to the tab that ran it, so without this a reload loses every handle to the
+   * campaigns it just made — which is why per-campaign pause and metrics are unreachable today.
+   *
+   * `possiblyStale` on the result matters and should not be discarded: indexing is asynchronous,
+   * so an empty list moments after a create means "not indexed yet", not "nothing was created".
+   * Rendering "no campaigns" for that window would tell the user their spend does not exist.
+   */
+  public listBriefCampaigns(projectSlug: string, briefId: string): Observable<CampaignListResult> {
+    return this.http.get<CampaignListResult>('/api/campaigns/list', {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
