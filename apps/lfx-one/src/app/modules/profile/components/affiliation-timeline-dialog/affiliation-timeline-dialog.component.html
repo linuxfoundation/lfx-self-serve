@@ -68,66 +68,69 @@
                 @let isOverlapping = overlappingPeriodIds().has(period.id);
                 @let periodYearOptions = availableYearsMap().get(period.id) ?? yearOptions;
                 <div
-                  class="flex items-center gap-2 rounded-md px-2 py-1"
+                  class="flex flex-wrap items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
                   [attr.data-testid]="'period-row-' + period.id">
-                  <!-- Start Month -->
-                  <p-select
-                    [options]="monthOptions"
-                    [ngModel]="period.startMonth"
-                    (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Month"
-                    [style]="{ width: '110px' }"
-                    size="small"
-                    appendTo="body"
-                    [attr.data-testid]="'period-start-month-' + period.id" />
+                  <!-- Start Month/Year — grid below sm so the pair wraps to two rows instead of overflowing; inline row at sm and up -->
+                  <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                    <p-select
+                      [options]="monthOptions"
+                      [ngModel]="period.startMonth"
+                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
+                      optionLabel="label"
+                      optionValue="value"
+                      placeholder="Month"
+                      styleClass="w-full"
+                      size="small"
+                      appendTo="body"
+                      [attr.data-testid]="'period-start-month-' + period.id" />
 
-                  <!-- Start Year -->
-                  <p-select
-                    [options]="periodYearOptions"
-                    [ngModel]="period.startYear"
-                    (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Year"
-                    [style]="{ width: '100px' }"
-                    size="small"
-                    appendTo="body"
-                    [attr.data-testid]="'period-start-year-' + period.id" />
+                    <p-select
+                      [options]="periodYearOptions"
+                      [ngModel]="period.startYear"
+                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
+                      optionLabel="label"
+                      optionValue="value"
+                      placeholder="Year"
+                      styleClass="w-full"
+                      size="small"
+                      appendTo="body"
+                      [attr.data-testid]="'period-start-year-' + period.id" />
+                  </div>
 
-                  <span class="text-xs text-slate-400">–</span>
+                  <!-- Hidden below sm — reads as a stray dash between wrapped start/end pairs there -->
+                  <span class="hidden text-xs text-slate-400 sm:inline">–</span>
 
                   <!-- End Date or Present -->
                   @if (period.isPresent) {
                     <span class="text-xs font-medium text-slate-500">Present</span>
                   } @else {
-                    <!-- End Month -->
-                    <p-select
-                      [options]="monthOptions"
-                      [ngModel]="period.endMonth"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Month"
-                      [style]="{ width: '110px' }"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-end-month-' + period.id" />
+                    <!-- End Month/Year — same grid-below-sm / inline-row-at-sm pattern as the start pair -->
+                    <div class="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+                      <p-select
+                        [options]="monthOptions"
+                        [ngModel]="period.endMonth"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Month"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-end-month-' + period.id" />
 
-                    <!-- End Year -->
-                    <p-select
-                      [options]="periodYearOptions"
-                      [ngModel]="period.endYear"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Year"
-                      [style]="{ width: '100px' }"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-end-year-' + period.id" />
+                      <p-select
+                        [options]="periodYearOptions"
+                        [ngModel]="period.endYear"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Year"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-end-year-' + period.id" />
+                    </div>
                   }
 
                   <!-- Present Checkbox -->
