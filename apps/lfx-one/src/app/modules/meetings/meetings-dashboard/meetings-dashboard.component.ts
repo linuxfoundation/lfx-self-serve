@@ -33,6 +33,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
+import { hasMeetingWriteAccess } from '@shared/utils/write-access.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
@@ -355,7 +356,7 @@ export class MeetingsDashboardComponent {
         switchMap((ctx) => {
           if (!ctx?.slug) return of(false);
           return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            map((project) => hasMeetingWriteAccess(project)),
             catchError(() => of(false))
           );
         })

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 import { COMMITTEE_WRITE_FEATURES } from '@lfx-one/shared/constants';
+import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
@@ -10,6 +11,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
+import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '../utils/write-access.util';
 
 /**
  * Protects create/edit/admin routes that require project write permission.
@@ -27,7 +29,8 @@ import { ProjectService } from '../services/project.service';
  *
  * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting edit), resolves
  * the slug from the meeting itself first — the active context can belong to a different project
- * when the edit link carried no `?project=`; otherwise prefers the `?project=` query param
+ * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
+ * so the guard redirects instead of authorizing against a stale context. Otherwise prefers the `?project=` query param
  * (authoritative for the navigation target, works before the lens has synced), then falls back
  * to the active context's slug. The flag lives in route data — not a routeConfig.path check — so
  * a route rename/restructure can't silently disable the entity-scoped resolution.
@@ -67,8 +70,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // `/meetings/:id/edit` links redirect by active lens and carry no project param). Authorizing
   // against that stale context intermittently denied legitimate organizers — or worse, could
   // authorize against the wrong project. Resolve the slug from the meeting itself first; fall
-  // back to the active context when the meeting can't be read (it may simply not exist — the
-  // manage component handles that error path).
+  // back to the active context only on a 404 (it may simply not exist — the manage component
+  // handles that error path), and fail closed on any other read failure.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
@@ -84,13 +87,14 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     // getProject access check resolves either identifier. Never fall back to the active context
     // while the meeting is readable: doing so would authorize against a stale, unrelated project.
     // A failed project probe now denies against the meeting's own project instead of
-    // silently switching to that stale context. Only a meeting that can't be read at all falls
-    // back — it may simply not exist; the manage component handles that error path.
+    // silently switching to that stale context. Only a 404 falls back — the meeting may simply not
+    // exist and the manage component owns that error path; every other failure resolves null and
+    // fails closed via the `if (!slug)` redirect, so no check runs against a stale project.
     // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with
     // MeetingManageComponent's fetch on the same navigation.
     return meetingService.getMeetingDetail(meetingId).pipe(
-      map((meeting) => meeting?.project_slug ?? meeting?.project_uid ?? fromContext),
-      catchError(() => of(fromContext))
+      map((meeting) => resolveMeetingWriteSlug(meeting, fromContext)),
+      catchError((error) => of(error instanceof HttpErrorResponse && error.status === 404 ? fromContext : null))
     );
   };
 
@@ -129,7 +133,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
             return of(true as const);
           }
           // meeting_coordinator can create meetings but not other write features
-          if (writeFeature === 'meetings' && project.meetingCoordinator === true) {
+          if (writeFeature === 'meetings' && hasMeetingWriteAccess(project)) {
             return of(true as const);
           }
           if (committeeUid && supportsCommitteeWriter) {
