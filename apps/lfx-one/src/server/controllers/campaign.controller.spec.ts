@@ -1304,6 +1304,33 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'reddit-ads' }));
   });
 
+  // The pre-check tests the CALLER'S label, which is never sent upstream — campaign-service loads
+  // the dispatcher from the row — so a mislabelled request passes it. The row is only knowable
+  // after the toggle returns, and by then the ad platform has already moved, so this is observed
+  // and logged rather than refused. The response still reports the row's platform, so the caller
+  // is not told their label was accepted.
+  it('logs when the toggled row is a platform this app does not offer', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'microsoft-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'campaign_status_update',
+      expect.stringContaining('does not offer'),
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'microsoft-ads' })
+    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'microsoft-ads' }));
+  });
+
+  it('does not log the platform warning for an offered platform', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'google-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
   it('rejects an id that is neither numeric nor a UUID', async () => {
     await controller.updateCampaignStatus(statusReq('not-an-id', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
 

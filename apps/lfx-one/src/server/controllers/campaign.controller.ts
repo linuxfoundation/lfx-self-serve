@@ -1008,6 +1008,14 @@ export class CampaignController {
     // implements SIX toggle dispatchers upstream, while this set is the FOUR non-disabled entries
     // of CAMPAIGN_PLATFORMS — Microsoft and X are dispatchable but not offered here. HubSpot is in
     // NEITHER set — an email send has no run state to pause.
+    //
+    // On the campaign-service path this check is a FAST REJECT, not the policy boundary, and the
+    // distinction is load-bearing. `platform` is caller-supplied and never sent upstream — the
+    // service loads the dispatcher from the campaign ROW — so a caller could label a Microsoft
+    // campaign `google-ads` and pass here. What actually enforces the narrowing is the row check
+    // after the toggle returns; this one exists to refuse an obviously-unsupported request before
+    // spending a round trip. Treating it as the boundary is what made an earlier version of this
+    // comment claim an exclusion the code did not perform.
     const supportedPlatforms = viaCampaignService ? CAMPAIGN_SERVICE_STATUS_PLATFORMS : SUPPORTED_STATUS_PLATFORMS;
     if (!body.platform || !supportedPlatforms.has(body.platform)) {
       next(
@@ -1079,6 +1087,32 @@ export class CampaignController {
           status: body.status as CampaignToggleStatus,
           etag,
         });
+        // Observed against the AUTHORITATIVE value. The pre-check above tested the caller's claim;
+        // this reads the row campaign-service actually toggled, which is the only thing that
+        // decides which dispatcher ran.
+        //
+        // Deliberately a LOG, not a refusal, and the reason is the ordering: by this point the
+        // toggle HAS happened upstream — the ad platform moved — so an error here would tell the
+        // caller nothing occurred, which is the false-absence failure this codebase keeps paying
+        // for. Nor can it be moved earlier: the row's platform is not knowable until the toggle
+        // returns it, because nothing in this BFF reads a campaign row (LFXV2-3099). So the honest
+        // options are "log that it happened" or "read the row first", and the second needs an
+        // endpoint that does not exist yet.
+        //
+        // What makes this acceptable rather than a hole: the platform label is cosmetic on this
+        // path. It is never sent upstream, so it cannot cause the wrong dispatcher to run — the
+        // worst a mislabelled request achieves is toggling a campaign the caller could already
+        // toggle by naming it correctly. The response reports the ROW's platform below, so the
+        // caller is not told their label was accepted.
+        const rowPlatform = campaign.platform as CampaignPlatform | undefined;
+        if (rowPlatform && !CAMPAIGN_SERVICE_STATUS_PLATFORMS.has(rowPlatform)) {
+          logger.warning(req, 'campaign_status_update', 'toggled a campaign whose platform this app does not offer', {
+            campaignId,
+            requestedPlatform: body.platform,
+            rowPlatform,
+          });
+        }
+
         // `previousStatus` is OMITTED, not inferred. The legacy path reports it as a fact — it
         // GETs the campaign before writing — so filling it here with "the opposite of what was
         // requested" would put a guess and an observation behind one field name. It would also be
