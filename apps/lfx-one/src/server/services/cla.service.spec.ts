@@ -127,6 +127,33 @@ describe('claReturnUrl', () => {
   it('throws rather than emitting a host-less URL when the Host header is missing', () => {
     expect(() => claReturnUrl(reqWithHost(undefined))).toThrow(MicroserviceError);
   });
+
+  it('accepts the production origin', () => {
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'))).toBe('https://app.lfx.dev/profile/clas');
+  });
+
+  it('refuses a forged Host rather than handing EasyCLA a foreign origin', () => {
+    // EasyCLA stores this value and later redirects to it verbatim, so an unchecked Host would
+    // make a trusted hand-off into an open redirect.
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'))).toThrow(MicroserviceError);
+  });
+
+  it('refuses a look-alike host that merely contains a trusted one', () => {
+    expect(() => claReturnUrl(reqWithHost('app.lfx.dev.evil.example.com'))).toThrow(MicroserviceError);
+    expect(() => claReturnUrl(reqWithHost('notapp.lfx.dev'))).toThrow(MicroserviceError);
+  });
+
+  it('refuses a preview-shaped host on the wrong domain', () => {
+    expect(() => claReturnUrl(reqWithHost('ui-pr-1440.dev.v2.cluster.evil.example.com'))).toThrow(MicroserviceError);
+  });
+
+  it('refuses a Host carrying userinfo that would resolve elsewhere', () => {
+    expect(() => claReturnUrl(reqWithHost('app.lfx.dev@evil.example.com'))).toThrow(MicroserviceError);
+  });
+
+  it('refuses a protocol that is neither http nor https', () => {
+    expect(() => claReturnUrl(reqWithHost('app.lfx.dev', 'javascript'))).toThrow(MicroserviceError);
+  });
 });
 
 describe('normalizeGithubId', () => {

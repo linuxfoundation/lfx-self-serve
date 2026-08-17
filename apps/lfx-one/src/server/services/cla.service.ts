@@ -49,6 +49,15 @@ export function claServiceBaseUrl(): string {
   return `${audience.replace(/\/+$/, '')}/cla-service`;
 }
 
+// Hostnames this app is served from. Pinned in code rather than an allowlist env var because the
+// hand-off adds no new configuration; the per-PR previews below are why the host cannot simply be
+// read from one configured base URL.
+const TRUSTED_RETURN_HOSTNAMES = new Set(['app.lfx.dev', 'app.dev.lfx.dev', 'localhost', '127.0.0.1']);
+
+// Per-PR preview deployments, e.g. ui-pr-1440.dev.v2.cluster.linuxfound.info. Fully anchored with a
+// bounded digit run — no nested quantifier, so it cannot backtrack pathologically.
+const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.info$/;
+
 /**
  * Absolute URL back to the contributor's CLAs view, for the Sign CLA hand-off (#1251).
  *
@@ -59,12 +68,34 @@ export function claServiceBaseUrl(): string {
  * Derived from the request rather than configured, so preview deployments (per-PR hostnames)
  * are correct without templating a fourth environment value. `trust proxy` is set, so
  * `protocol`/`host` already reflect the forwarded headers behind the ingress.
+ *
+ * Because that makes the origin request-controlled, the host is checked against our own origins
+ * before it is handed onward: EasyCLA stores this value and later redirects to it verbatim, so an
+ * unchecked forged Host would turn a trusted hand-off into an open redirect.
  */
 export function claReturnUrl(req: Request): string {
   const host = req.get('host');
   if (!host) {
     throw new MicroserviceError('Cannot derive the CLA return URL: request has no Host header', 500, 'RETURN_URL_UNRESOLVABLE', { service: SERVICE });
   }
+
+  if (req.protocol !== 'http' && req.protocol !== 'https') {
+    throw new MicroserviceError('Cannot derive the CLA return URL: unsupported protocol', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
+  }
+
+  // Parsed rather than string-split so a port (previews use one) and IPv6 literals resolve
+  // correctly, and so a host carrying userinfo or a path cannot smuggle another origin through.
+  let hostname: string;
+  try {
+    hostname = new URL(`${req.protocol}://${host}`).hostname.toLowerCase();
+  } catch {
+    throw new MicroserviceError('Cannot derive the CLA return URL: unparseable Host header', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
+  }
+
+  if (!TRUSTED_RETURN_HOSTNAMES.has(hostname) && !PREVIEW_RETURN_HOSTNAME.test(hostname)) {
+    throw new MicroserviceError('Cannot derive the CLA return URL: untrusted Host header', 500, 'RETURN_URL_UNTRUSTED', { service: SERVICE });
+  }
+
   return `${req.protocol}://${host}${MY_CLAS_PATH}`;
 }
 

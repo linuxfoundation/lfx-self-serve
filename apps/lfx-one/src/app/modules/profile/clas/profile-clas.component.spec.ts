@@ -13,13 +13,12 @@ import { TagComponent } from '@components/tag/tag.component';
 import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { ProfileClasComponent } from './profile-clas.component';
-
-/** Comfortably past the component's 250 ms search debounce. */
-const SEARCH_SETTLE_MS = 400;
 
 describe('ProfileClasComponent', () => {
   const agreement = (overrides: Partial<MyClaAgreement> = {}): MyClaAgreement => ({
@@ -197,9 +196,10 @@ describe('ProfileClasComponent', () => {
 /**
  * Covers the Sign CLA hand-off entry point (#1251).
  *
- * The template is rendered rather than overridden, because two of the three behaviours here —
- * whether the action is offered at all, and whether the dialog opens — are template conditions.
- * Asserting them on the class alone would keep passing if the binding were dropped.
+ * The picker itself is a dynamic dialog with its own spec; what matters here is that the action is
+ * offered only when it can succeed, that opening it goes through DialogService, and that whatever
+ * the dialog closes with drives the hand-off. The template is rendered rather than overridden,
+ * because whether the action is offered at all is a template condition.
  */
 describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
   const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test' };
@@ -208,13 +208,15 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
   let location: { href: string };
   let messageAdd: ReturnType<typeof vi.fn>;
   let getSignUrl: ReturnType<typeof vi.fn>;
-  let getClaGroupOptions: ReturnType<typeof vi.fn>;
+  let open: ReturnType<typeof vi.fn>;
 
-  async function setup(options: { impersonating?: boolean; signUrl?: () => Observable<string> } = {}): Promise<ComponentFixture<ProfileClasComponent>> {
+  async function setup(
+    options: { impersonating?: boolean; signUrl?: () => Observable<string>; closesWith?: ClaGroupOption | null } = {}
+  ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: 'https://app.dev.lfx.dev/profile/clas' };
     messageAdd = vi.fn();
-    getClaGroupOptions = vi.fn(() => of([CLA_GROUP]));
     getSignUrl = vi.fn(options.signUrl ?? (() => of('https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc')));
+    open = vi.fn(() => ({ onClose: of('closesWith' in options ? options.closesWith : CLA_GROUP) }));
 
     TestBed.configureTestingModule({
       imports: [ProfileClasComponent],
@@ -240,11 +242,12 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
         { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
         {
           provide: MyClasService,
-          useValue: { getMyClas: vi.fn(() => of(EMPTY_CLAS)), getPdfUrl: vi.fn(), getClaGroupOptions, getSignUrl },
+          useValue: { getMyClas: vi.fn(() => of(EMPTY_CLAS)), getPdfUrl: vi.fn(), getClaGroupOptions: vi.fn(() => of([CLA_GROUP])), getSignUrl },
         },
       ],
     });
     TestBed.overrideProvider(MessageService, { useValue: { add: messageAdd, addAll: vi.fn(), clear: vi.fn(), messageObserver: of(), clearObserver: of() } });
+    TestBed.overrideProvider(DialogService, { useValue: { open } });
 
     const fixture = TestBed.createComponent(ProfileClasComponent);
     fixture.detectChanges();
@@ -254,14 +257,6 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
 
   function query(fixture: ComponentFixture<ProfileClasComponent>, testId: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
-  }
-
-  /** Types into the picker and waits out the debounce so the query actually reaches the server. */
-  async function searchPicker(fixture: ComponentFixture<ProfileClasComponent>, queryText: string): Promise<void> {
-    (fixture.componentInstance as any).onClaGroupSearch(queryText);
-    await new Promise((resolve) => setTimeout(resolve, SEARCH_SETTLE_MS));
-    fixture.detectChanges();
-    await fixture.whenStable();
   }
 
   beforeEach(() => {
@@ -278,45 +273,25 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
     const fixture = await setup({ impersonating: true });
 
     expect(query(fixture, 'sign-cla-action')).toBeNull();
-    // The dialog must not be reachable either — hiding only the button would leave the
-    // hand-off one stray binding away from being offered.
-    expect(query(fixture, 'cla-group-select-dialog')).toBeNull();
   });
 
-  it('loads the selectable projects when the picker is searched', async () => {
+  it('opens the picker through DialogService rather than a template dialog', async () => {
     const fixture = await setup();
 
-    await searchPicker(fixture, '');
+    query(fixture, 'sign-cla-action')?.querySelector('button')?.click();
+    await fixture.whenStable();
 
-    expect(getClaGroupOptions).toHaveBeenCalledWith('');
-    expect((fixture.componentInstance as any).claGroupOptions()).toEqual([CLA_GROUP]);
-  });
-
-  it('sends the query upstream instead of filtering the fetched list', async () => {
-    const fixture = await setup();
-
-    await searchPicker(fixture, 'venus');
-
-    // #1250 replaces the route's stub with the real four-source search. That swap only stays
-    // invisible to this page if the query was never resolved in the browser.
-    expect(getClaGroupOptions).toHaveBeenCalledWith('venus');
-  });
-
-  it('coalesces keystrokes into a single query', async () => {
-    const fixture = await setup();
-
-    (fixture.componentInstance as any).onClaGroupSearch('v');
-    (fixture.componentInstance as any).onClaGroupSearch('ve');
-    await searchPicker(fixture, 'ven');
-
-    expect(getClaGroupOptions).toHaveBeenCalledTimes(1);
-    expect(getClaGroupOptions).toHaveBeenCalledWith('ven');
+    // The frontend checklist forbids <p-dialog> in feature templates; a regression to one would
+    // still open a dialog, so assert the mechanism rather than the visible result.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe(ClaGroupSelectComponent);
+    expect(fixture.nativeElement.querySelector('p-dialog')).toBeNull();
   });
 
   it('navigates to the resolved Console URL in the same tab', async () => {
     const fixture = await setup();
 
-    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    (fixture.componentInstance as any).openSignDialog();
     await fixture.whenStable();
 
     expect(getSignUrl).toHaveBeenCalledWith('cg-1');
@@ -327,17 +302,27 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
   it('never composes the URL client-side from a guessed identifier', async () => {
     const fixture = await setup();
 
-    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    (fixture.componentInstance as any).openSignDialog();
     await fixture.whenStable();
 
     // The only source of the contributor id is the server round trip.
     expect(getSignUrl).toHaveBeenCalledTimes(1);
   });
 
+  it('does nothing when the contributor backs out of the picker', async () => {
+    const fixture = await setup({ closesWith: null });
+
+    (fixture.componentInstance as any).openSignDialog();
+    await fixture.whenStable();
+
+    expect(getSignUrl).not.toHaveBeenCalled();
+    expect(location.href).toBe('https://app.dev.lfx.dev/profile/clas');
+  });
+
   it('stays on the page and reports failure when the hand-off cannot be resolved', async () => {
     const fixture = await setup({ signUrl: () => throwError(() => new Error('resolution failed')) });
 
-    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    (fixture.componentInstance as any).openSignDialog();
     await fixture.whenStable();
 
     // A failed resolution must not navigate to a half-built URL — the Console would show
@@ -346,53 +331,13 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 
-  it('ignores a second selection while one hand-off is already resolving', async () => {
+  it('ignores a second hand-off while one is already resolving', async () => {
     const pending = new Subject<string>();
     const fixture = await setup({ signUrl: () => pending.asObservable() });
 
-    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
-    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    (fixture.componentInstance as any).openSignDialog();
+    (fixture.componentInstance as any).openSignDialog();
 
     expect(getSignUrl).toHaveBeenCalledTimes(1);
-  });
-
-  it('surfaces a failure to load projects without closing the dialog', async () => {
-    const fixture = await setup();
-    getClaGroupOptions.mockReturnValue(throwError(() => new Error('boom')));
-
-    (fixture.componentInstance as any).openSignDialog();
-    await searchPicker(fixture, '');
-
-    expect((fixture.componentInstance as any).optionsError()).toBe(true);
-    expect((fixture.componentInstance as any).selectVisible()).toBe(true);
-  });
-
-  it('can search again after a failure', async () => {
-    const fixture = await setup();
-    getClaGroupOptions.mockReturnValueOnce(throwError(() => new Error('boom')));
-
-    await searchPicker(fixture, '');
-    // Retry re-issues the same empty query. A stream that dropped repeats would strand the
-    // picker on its error state with no way back.
-    await searchPicker(fixture, '');
-
-    expect((fixture.componentInstance as any).optionsError()).toBe(false);
-    expect((fixture.componentInstance as any).claGroupOptions()).toEqual([CLA_GROUP]);
-  });
-
-  it('reopens the picker clean after a failed search', async () => {
-    const fixture = await setup();
-    getClaGroupOptions.mockReturnValue(throwError(() => new Error('boom')));
-
-    (fixture.componentInstance as any).openSignDialog();
-    await searchPicker(fixture, '');
-    expect((fixture.componentInstance as any).optionsError()).toBe(true);
-
-    // Reopening must not greet the contributor with the previous attempt's error before any
-    // new request has run.
-    (fixture.componentInstance as any).openSignDialog();
-
-    expect((fixture.componentInstance as any).optionsError()).toBe(false);
-    expect((fixture.componentInstance as any).optionsLoading()).toBe(false);
   });
 });
