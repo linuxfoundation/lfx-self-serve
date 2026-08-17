@@ -32,7 +32,9 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
 
   return personaService.refreshEnrichedPersonas().pipe(
     map(() => {
-      const allowed = marketingOpsFgaEnabled ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor() : personaService.canViewExecutiveDashboards();
+      const allowed = marketingOpsFgaEnabled
+        ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
+        : personaService.canViewExecutiveDashboards();
       if (allowed) {
         return true;
       }

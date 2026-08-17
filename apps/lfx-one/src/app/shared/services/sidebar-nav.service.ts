@@ -358,9 +358,10 @@ export class SidebarNavService {
     }
 
     // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
-    // on, a root/project-scoped marketing_auditor grant also unlocks it — without that flag, or
-    // for LF Staff (deliberately excluded, LFXV2-2236 gap-analysis G4), it stays ED/LF-staff-gated
-    // the same as Metrics. Never widen the Metrics section itself for marketing_auditor.
+    // on, a root/project-scoped marketing_auditor grant also unlocks it. LF Staff see the section
+    // via canViewExecutiveDashboards() the same as Metrics, but are restricted to the Social
+    // Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+    // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
     const canSeeMarketing = this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
     if (canSeeMarketing) {
       const marketingItems: SidebarMenuItem[] = [
@@ -373,7 +374,8 @@ export class SidebarNavService {
       ];
 
       // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
-      const canSeeCampaigns = this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+      const canSeeCampaigns =
+        this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
       if (canSeeCampaigns) {
         marketingItems.push({
           label: 'Campaigns',

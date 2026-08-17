@@ -53,10 +53,6 @@ export class PersonaService {
   public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
-  /** EDs plus root/project-scoped `marketing_auditor` grants — the audience for full Marketing Impact access. LF Staff are deliberately excluded (see LFXV2-2236). */
-  public readonly canViewMarketingImpact: Signal<boolean>;
-  /** EDs plus root/project-scoped `campaign_manager` grants — the audience for Campaigns. */
-  public readonly canManageCampaigns: Signal<boolean>;
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -68,8 +64,6 @@ export class PersonaService {
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.canViewExecutiveDashboards = computed(() => this.currentPersona() === 'executive-director' || this.isLFStaff());
-    this.canViewMarketingImpact = computed(() => this.currentPersona() === 'executive-director' || this.isMarketingAuditor());
-    this.canManageCampaigns = computed(() => this.currentPersona() === 'executive-director' || this.isCampaignManager());
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
     // Cookie can't carry personaProjects/detectedProjects, so always refresh from API after hydration.

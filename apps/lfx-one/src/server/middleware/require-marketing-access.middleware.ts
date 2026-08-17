@@ -74,7 +74,7 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
 
       const { uid, exists } = await projectService.getProjectIdBySlug(req, requestedSlug);
       if (!exists) {
-        denyMarketingAccess(req, next, operation, access, 'project_not_found');
+        denyMarketingAccess(req, next, operation, access, 'project_not_found', requestedSlug);
         return;
       }
 
@@ -84,7 +84,7 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
         return;
       }
 
-      denyMarketingAccess(req, next, operation, access, 'no_grant');
+      denyMarketingAccess(req, next, operation, access, 'no_grant', requestedSlug);
     } catch (error) {
       next(error);
     }
@@ -95,10 +95,18 @@ type DenyReason = 'no_slug' | 'project_not_found' | 'no_grant';
 
 // `apiErrorHandler` logs every rejected request centrally (ADR 0002); this only adds the
 // triage detail — which of the three deny paths fired — that the generic error log can't carry.
-function denyMarketingAccess(req: Request, next: NextFunction, operation: string, access: MarketingAccessType, reason: DenyReason): void {
+function denyMarketingAccess(
+  req: Request,
+  next: NextFunction,
+  operation: string,
+  access: MarketingAccessType,
+  reason: DenyReason,
+  requestedSlug?: string
+): void {
   logger.debug(req, operation, `Denying marketing-ops access (${access})`, {
     path: req.path,
     reason,
+    requestedSlug,
   });
 
   next(
