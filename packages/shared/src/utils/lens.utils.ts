@@ -39,3 +39,17 @@ export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
   }
   return lenses;
 }
+
+/**
+ * True when the user can reach both the foundation and project lenses, from any grant source.
+ *
+ * Drives the sidebar's merged 'Projects' entry. Derived from {@link deriveAllowedLenses} rather
+ * than from persona roles directly so the merge rule cannot disagree with the visibility rule:
+ * foundation access also comes from LF staff membership, a root-writer grant, and a `writer`
+ * grant on a foundation, none of which a role-only check sees. Any grant source added later is
+ * picked up here for free.
+ */
+export function isHybridLensUser(inputs: LensGrantInputs): boolean {
+  const lenses = deriveAllowedLenses(inputs);
+  return lenses.includes('foundation') && lenses.includes('project');
+}
