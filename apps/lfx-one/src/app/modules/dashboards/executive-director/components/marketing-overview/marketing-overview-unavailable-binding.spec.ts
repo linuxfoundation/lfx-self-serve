@@ -21,8 +21,9 @@ import { EngagedCommunityDrawerComponent } from '../engaged-community-drawer/eng
  * MarketingOverviewComponent itself: that component fans out to 11 analytics endpoints on
  * mount, and a fixture faking all of them ends up testing the fan-out instead of the
  * binding. What matters here is that `!response` is the correct expression — that an
- * undefined response yields `unavailable: true` and a present one yields false. All four
- * failable drawers in the real template use this identical shape.
+ * undefined response yields `unavailable: true` and a present one yields false. Every failable
+ * drawer binds the negation of its own response field; the Members drawer additionally ORs a
+ * second response, because its drawer renders retention as headline figures.
  */
 @Component({
   selector: 'lfx-unavailable-binding-host',

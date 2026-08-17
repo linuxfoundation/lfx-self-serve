@@ -213,6 +213,17 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(adoption?.changePercentage).toBeUndefined();
   });
 
+  // The Sentiment card's unavailable arm had no assertion at all: reverting its guard left the
+  // whole shared suite green. Like Email it is a dual-signal card, so its state lives in
+  // dualSignals/caption rather than in `value`.
+  it('says the data is unavailable when the brand-health request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ brandHealth: undefined }));
+
+    const sentiment = card(cards, 'ed-evo-brand-health');
+    expect(sentiment?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(sentiment?.caption).toContain('could not be loaded');
+  });
+
   // A foundation that genuinely sent nothing must still read as a measured zero, or the fix
   // trades one wrong answer for another.
   it('renders a genuinely empty email month as zero, not as unavailable', () => {

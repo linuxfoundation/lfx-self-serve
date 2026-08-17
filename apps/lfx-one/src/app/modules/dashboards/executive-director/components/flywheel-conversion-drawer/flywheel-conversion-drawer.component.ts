@@ -9,6 +9,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   DASHBOARD_TOOLTIP_CONFIG,
+  DRAWER_NO_ACTIVITY_BODY,
   DRAWER_UNAVAILABLE_BODY,
   DRAWER_UNAVAILABLE_HEADING,
   createHorizontalBarChartOptions,
@@ -79,6 +80,7 @@ export class FlywheelConversionDrawerComponent {
   public readonly unavailable = input<boolean>(false);
   protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
   protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
 
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly reengagementRate: Signal<string> = computed(() => `${this.reengagement().reengagementRate.toFixed(1)}%`);

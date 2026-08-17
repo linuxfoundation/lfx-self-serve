@@ -49,6 +49,22 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       name: 'Sentiment',
       component: BrandHealthDrawerComponent,
       measuredCopy: 'No brand mention activity detected',
+      nonZero: {
+        staleFigures: ['80.8K', 'Mentions Trend'],
+        inputs: {
+          data: {
+            totalMentions: 80799,
+            sentiment: { positive: 60, neutral: 30, negative: 10 },
+            sentimentMomChangePp: 2.5,
+            mentionMomChangePct: 12,
+            trend: 'up',
+            monthlyMentions: [{ label: 'Jan', value: 80799 }],
+            topProjects: [{ name: 'pytorch', mentions: 500 }],
+            topPositiveMentions: [],
+            topNegativeMentions: [],
+          },
+        },
+      },
       inputs: {
         data: {
           totalMentions: 0,
@@ -67,6 +83,37 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       name: 'Adoption',
       component: EngagedCommunityDrawerComponent,
       measuredCopy: 'No community engagement activity detected',
+      nonZero: {
+        staleFigures: ['27.8K', '12.5'],
+        inputs: {
+          data: {
+            totalMembers: 27831,
+            changePercentage: 12.5,
+            trend: 'up',
+            breakdown: {
+              newsletterSubscribers: 10000,
+              communityMembers: 8000,
+              workingGroupMembers: 1000,
+              certifiedIndividuals: 500,
+              webVisitors: 7000,
+              codeContributors: 1000,
+              trainingEnrollees: 331,
+            },
+            monthlyData: [{ label: 'Jan', value: 27831 }],
+          },
+          brandReachData: {
+            totalSocialFollowers: 0,
+            totalMonthlySessions: 0,
+            activePlatforms: 0,
+            changePercentage: 0,
+            sessionMomChangePct: 0,
+            trend: 'up',
+            socialPlatforms: [],
+            websiteDomains: [],
+            weeklyTrend: [],
+          },
+        },
+      },
       inputs: {
         data: {
           totalMembers: 0,
@@ -100,6 +147,37 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       name: 'Flywheel',
       component: FlywheelConversionDrawerComponent,
       measuredCopy: 'No flywheel conversion activity detected',
+      nonZero: {
+        staleFigures: ['43.7', '61.2'],
+        inputs: {
+          data: {
+            conversionRate: 43.7,
+            changePercentage: 5,
+            trend: 'up',
+            funnel: {
+              eventAttendees: 1000,
+              convertedToNewsletter: 400,
+              convertedToCommunity: 300,
+              convertedToWorkingGroup: 100,
+              convertedToTraining: 80,
+              convertedToCode: 70,
+              convertedToWeb: 50,
+            },
+            reengagement: {
+              totalReengaged: 612,
+              reengagementRate: 61.2,
+              reengagementMomChange: 3,
+              reengagedToNewsletter: 200,
+              reengagedToCommunity: 150,
+              reengagedToWorkingGroup: 100,
+              reengagedToTraining: 62,
+              reengagedToCode: 50,
+              reengagedToWeb: 50,
+            },
+            monthlyData: [{ label: 'Jan', value: 43.7 }],
+          },
+        },
+      },
       inputs: {
         data: {
           conversionRate: 0,
@@ -152,7 +230,7 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       nonZero: {
         // Every live figure in the drawer, not just the headline: the first fix guarded the
         // stat block alone and left retention stats, insight blocks and charts rendering.
-        staleFigures: ['1,234', '92.5', '104.2'],
+        staleFigures: ['1.2K', '92.5', '104.2'],
         inputs: {
           data: {
             totalMembers: 1234,

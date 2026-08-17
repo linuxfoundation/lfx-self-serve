@@ -28,146 +28,165 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="brand-reach-drawer-content">
-    <!-- Summary Stats -->
-    <div class="flex gap-4" data-testid="brand-reach-drawer-stats">
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Social Followers</span>
-          @if (data().totalSocialFollowers > 0) {
-            <span class="text-2xl font-semibold text-gray-900">{{ data().totalSocialFollowers | number }}</span>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-400">—</span>
-          }
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Sessions (last 30 days)</span>
-          @if (data().totalMonthlySessions > 0) {
-            <span class="text-2xl font-semibold text-gray-900">{{ data().totalMonthlySessions | number }}</span>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-400">—</span>
-          }
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Active Platforms</span>
-          @if (data().activePlatforms > 0) {
-            <span class="text-2xl font-semibold text-gray-900">{{ data().activePlatforms }}</span>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-400">—</span>
-          }
-        </div>
-      </lfx-card>
-    </div>
-
-    <!-- FIRST FOLD: Needs Your Attention -->
-    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+    @if (unavailable()) {
+      <!-- A failed request renders ONLY this. Guarding section-by-section was tried and
+           repeatedly missed one — stats, charts, insight blocks and per-section empty states
+           each assert a measurement, so the whole body has to go, not a list of its parts. -->
       <div
-        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
-        data-testid="brand-reach-drawer-attention">
-        <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-          <i class="fa-light fa-triangle-exclamation text-red-600"></i>
-          <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="brand-reach-drawer-unavailable">
+        <div class="flex items-start gap-4 px-4 py-4">
+          <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <h3 class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</h3>
+            <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
+          </div>
         </div>
-
-        @for (action of attentionActions(); track action.title) {
-          <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
-            <div class="flex flex-col gap-1 flex-1 min-w-0">
-              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-              <p class="text-sm text-gray-500">{{ action.description }}</p>
-            </div>
-            @if (action.priority === 'high') {
-              <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+      </div>
+    } @else {
+      <!-- Summary Stats -->
+      <div class="flex gap-4" data-testid="brand-reach-drawer-stats">
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Social Followers</span>
+            @if (data().totalSocialFollowers > 0) {
+              <span class="text-2xl font-semibold text-gray-900">{{ data().totalSocialFollowers | number }}</span>
             } @else {
-              <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+              <span class="text-2xl font-semibold text-gray-400">—</span>
             }
           </div>
-        }
-
-        @for (insight of attentionInsights(); track insight.text) {
-          <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-            <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
-            <span>{{ insight.text }}</span>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Sessions (last 30 days)</span>
+            @if (data().totalMonthlySessions > 0) {
+              <span class="text-2xl font-semibold text-gray-900">{{ data().totalMonthlySessions | number }}</span>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-400">—</span>
+            }
           </div>
-        }
-      </div>
-    }
-
-    <!-- SECOND FOLD: Performing Well -->
-    @if (performingActions().length > 0 || performingInsights().length > 0) {
-      <div
-        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
-        data-testid="brand-reach-drawer-performing">
-        <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-          <i class="fa-light fa-check text-green-600"></i>
-          <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
-        </div>
-
-        @for (action of performingActions(); track action.title) {
-          <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
-            <div class="flex flex-col gap-1 flex-1 min-w-0">
-              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-              <p class="text-sm text-gray-500">{{ action.description }}</p>
-            </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Active Platforms</span>
+            @if (data().activePlatforms > 0) {
+              <span class="text-2xl font-semibold text-gray-900">{{ data().activePlatforms }}</span>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-400">—</span>
+            }
           </div>
-        }
+        </lfx-card>
+      </div>
 
-        @for (insight of performingInsights(); track insight.text) {
-          <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-            <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
-            <span>{{ insight.text }}</span>
+      <!-- FIRST FOLD: Needs Your Attention -->
+      @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+        <div
+          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+          data-testid="brand-reach-drawer-attention">
+          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+            <i class="fa-light fa-triangle-exclamation text-red-600"></i>
+            <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
           </div>
-        }
-      </div>
-    }
 
-    <!-- Social Followers by Platform -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-reach-drawer-social-platforms">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Social Followers by Platform</h3>
-        <p class="text-sm text-gray-600">Follower count across active social channels</p>
-      </div>
-      @if (socialPlatformViews().length > 0) {
-        <div class="flex flex-col gap-0">
-          @for (platform of socialPlatformViews(); track platform.name) {
-            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="brand-reach-drawer-platform-row">
-              <div class="flex items-center gap-3">
-                <i [class]="platform.icon + ' ' + platform.colorClass + ' text-lg w-5 text-center'"></i>
-                <span class="text-sm font-medium text-gray-900">{{ platform.name }}</span>
+          @for (action of attentionActions(); track action.title) {
+            <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                <p class="text-sm text-gray-500">{{ action.description }}</p>
               </div>
-              <span class="text-sm font-semibold text-gray-900">{{ platform.followers | number }}</span>
+              @if (action.priority === 'high') {
+                <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+              } @else {
+                <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+              }
             </div>
           }
-        </div>
-      } @else {
-        <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-platforms-empty">
-          {{ unavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Social platform data not yet available' }}
-        </div>
-      }
-    </div>
 
-    <!-- Website Sessions by Domain -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-reach-drawer-website-sessions">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Website Sessions by Domain</h3>
-        <p class="text-sm text-gray-600">Sessions across foundation web properties over the last 30 days</p>
-      </div>
-      @if (data().websiteDomains.length > 0) {
-        <div class="flex flex-col gap-0">
-          @for (site of data().websiteDomains; track site.domain) {
-            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="brand-reach-drawer-domain-row">
-              <span class="text-sm font-medium text-gray-900">{{ site.domain }}</span>
-              <span class="text-sm font-semibold text-gray-900">{{ site.sessions | number }}</span>
+          @for (insight of attentionInsights(); track insight.text) {
+            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+              <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
+              <span>{{ insight.text }}</span>
             </div>
           }
         </div>
-      } @else {
-        <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-domains-empty">
-          {{ unavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Website domain data not yet available' }}
+      }
+
+      <!-- SECOND FOLD: Performing Well -->
+      @if (performingActions().length > 0 || performingInsights().length > 0) {
+        <div
+          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+          data-testid="brand-reach-drawer-performing">
+          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+            <i class="fa-light fa-check text-green-600"></i>
+            <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+          </div>
+
+          @for (action of performingActions(); track action.title) {
+            <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                <p class="text-sm text-gray-500">{{ action.description }}</p>
+              </div>
+            </div>
+          }
+
+          @for (insight of performingInsights(); track insight.text) {
+            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+              <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
+              <span>{{ insight.text }}</span>
+            </div>
+          }
         </div>
       }
-    </div>
+
+      <!-- Social Followers by Platform -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-reach-drawer-social-platforms">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Social Followers by Platform</h3>
+          <p class="text-sm text-gray-600">Follower count across active social channels</p>
+        </div>
+        @if (socialPlatformViews().length > 0) {
+          <div class="flex flex-col gap-0">
+            @for (platform of socialPlatformViews(); track platform.name) {
+              <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="brand-reach-drawer-platform-row">
+                <div class="flex items-center gap-3">
+                  <i [class]="platform.icon + ' ' + platform.colorClass + ' text-lg w-5 text-center'"></i>
+                  <span class="text-sm font-medium text-gray-900">{{ platform.name }}</span>
+                </div>
+                <span class="text-sm font-semibold text-gray-900">{{ platform.followers | number }}</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-platforms-empty">
+            Social platform data not yet available
+          </div>
+        }
+      </div>
+
+      <!-- Website Sessions by Domain -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-reach-drawer-website-sessions">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Website Sessions by Domain</h3>
+          <p class="text-sm text-gray-600">Sessions across foundation web properties over the last 30 days</p>
+        </div>
+        @if (data().websiteDomains.length > 0) {
+          <div class="flex flex-col gap-0">
+            @for (site of data().websiteDomains; track site.domain) {
+              <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="brand-reach-drawer-domain-row">
+                <span class="text-sm font-medium text-gray-900">{{ site.domain }}</span>
+                <span class="text-sm font-semibold text-gray-900">{{ site.sessions | number }}</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-domains-empty">
+            Website domain data not yet available
+          </div>
+        }
+      </div>
+    }
   </div>
 </p-drawer>

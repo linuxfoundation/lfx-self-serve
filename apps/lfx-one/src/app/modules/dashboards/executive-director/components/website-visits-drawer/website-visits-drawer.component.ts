@@ -8,6 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { DRAWER_NO_ACTIVITY_BODY } from '@lfx-one/shared/constants';
 import { formatNumber, formatPercent, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -33,6 +34,7 @@ export class WebsiteVisitsDrawerComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Model Signals (two-way binding) ===
+  protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
   public readonly visible = model<boolean>(false);
 
   // === WritableSignals ===

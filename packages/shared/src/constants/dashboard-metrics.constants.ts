@@ -726,6 +726,14 @@ const DATA_LOADING_CAPTION = 'Loading…';
  * state: advice derived from data that never arrived is the defect, not just its wording.
  */
 export const DRAWER_UNAVAILABLE_HEADING = 'Data unavailable';
+/**
+ * The other half of the pair: shown when the request SUCCEEDED and the foundation genuinely
+ * has no activity. Extracted alongside the unavailable copy so the two cannot drift — the
+ * drawer alternates between them, and only one of them being centrally editable is how they
+ * end up contradicting each other. The Email drawer keeps its own variant ("start sending
+ * campaigns"), which is deliberately different advice.
+ */
+export const DRAWER_NO_ACTIVITY_BODY = 'Engage with marketing ops to activate campaigns and start tracking results.';
 export const DRAWER_UNAVAILABLE_BODY = 'Please try again.';
 
 /**
