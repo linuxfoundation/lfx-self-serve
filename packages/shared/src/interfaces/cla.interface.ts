@@ -84,3 +84,32 @@ export interface PdfUrlResponse {
   url: string;
   expiresInSeconds: number;
 }
+
+/**
+ * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
+ *
+ * Deliberately minimal: the hand-off needs `claGroupId` and the contributor needs a name
+ * to pick by. The real four-source search (#1250) may return more (logo, foundation, match
+ * provenance) — consumers MUST ignore unknown fields rather than validate exhaustively, so
+ * that search can enrich this without touching the hand-off.
+ */
+export interface ClaGroupOption {
+  /** Must be a real CLA Group UUID: the Contributor Console fetches the project by it. */
+  claGroupId: string;
+  /** Primary line in the picker. */
+  projectName: string;
+  /** Secondary line — the CLA group within the project, when it differs from the project name. */
+  claGroupName?: string;
+}
+
+/**
+ * Response for `GET /api/me/clas/sign-handoff` — the two halves of the Console URL that only
+ * the server can produce. The client supplies the rest (Console base + CLA group) and composes
+ * the final URL via `buildConsoleHandoffUrl`.
+ */
+export interface ClaSignHandoff {
+  /** EasyCLA user record UUID, resolved from the session token — never from client input. */
+  claUserId: string;
+  /** Absolute URL back to the CLAs view. Absolute because the last hop is a server-side redirect. */
+  redirectUrl: string;
+}

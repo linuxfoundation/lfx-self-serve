@@ -1,17 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Same reason as clas.route.spec.ts: validation.helper's import graph transitively reaches
+// Angular's partially-compiled @angular/common, which needs the JIT compiler under vitest.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, resolveIdentity, getPdfUrl } = vi.hoisted(() => ({ getMyClas: vi.fn(), resolveIdentity: vi.fn(), getPdfUrl: vi.fn() }));
+const { getMyClas, resolveIdentity, getPdfUrl, getSignHandoff } = vi.hoisted(() => ({
+  getMyClas: vi.fn(),
+  resolveIdentity: vi.fn(),
+  getPdfUrl: vi.fn(),
+  getSignHandoff: vi.fn(),
+}));
+const { listClaGroupOptions } = vi.hoisted(() => ({ listClaGroupOptions: vi.fn() }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
+vi.mock('../services/cla-group-search.stub', () => ({ listClaGroupOptions }));
 vi.mock('../services/cla.service', () => ({
   ClaService: class {
     public getMyClas = getMyClas;
     public resolveIdentity = resolveIdentity;
     public getPdfUrl = getPdfUrl;
+    public getSignHandoff = getSignHandoff;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -113,5 +125,96 @@ describe('ClasController.getPdfUrl', () => {
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
     expect(resolveIdentity).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sign CLA hand-off (#1251)
+// ---------------------------------------------------------------------------
+
+describe('ClasController.getSignHandoff', () => {
+  const handoff = { claUserId: 'u-1', redirectUrl: 'https://app.dev.lfx.dev/profile/clas' };
+
+  it('returns the server-resolved identifier and return URL', async () => {
+    getSignHandoff.mockResolvedValue(handoff);
+    const res = buildRes();
+
+    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(handoff);
+  });
+
+  it('ignores a client-supplied identifier — the session is the only source (FR-003)', async () => {
+    getSignHandoff.mockResolvedValue(handoff);
+    const res = buildRes();
+    // An attempt to have the hand-off carry someone else's EasyCLA record.
+    const req = { params: {}, query: { claUserId: 'someone-else' }, body: { claUserId: 'someone-else' } } as any;
+
+    await new ClasController().getSignHandoff(req, res, vi.fn());
+
+    // The service receives only (req) — no identifier is threaded through from input.
+    expect(getSignHandoff).toHaveBeenCalledWith(req);
+    expect(res.json).toHaveBeenCalledWith(handoff);
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ claUserId: 'someone-else' }));
+  });
+
+  it('returns 401 (via next) when unauthenticated', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const next = vi.fn();
+
+    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getSignHandoff).not.toHaveBeenCalled();
+  });
+
+  it('forwards a failed resolution instead of returning a partial payload', async () => {
+    getSignHandoff.mockRejectedValue(new MicroserviceError('no user id', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClasController.getClaGroupOptions', () => {
+  it('returns the stubbed selection options', async () => {
+    listClaGroupOptions.mockReturnValue([{ claGroupId: 'cg-1', projectName: 'Venus test' }]);
+    const res = buildRes();
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: {} } as any, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([{ claGroupId: 'cg-1', projectName: 'Venus test' }]);
+  });
+
+  it('forwards the picker query to the search', async () => {
+    listClaGroupOptions.mockReturnValue([]);
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'venus' } } as any, buildRes(), vi.fn());
+
+    // The query has to survive the route for #1250 to be a drop-in replacement of the search
+    // alone. If the controller dropped it, the picker would silently list everything.
+    expect(listClaGroupOptions).toHaveBeenCalledWith('venus');
+  });
+
+  it('treats a repeated or malformed q as an empty query rather than failing', async () => {
+    listClaGroupOptions.mockReturnValue([]);
+
+    // Express parses a repeated ?q=&q= into an array; it must not reach the search as one.
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: ['a', 'b'] } } as any, buildRes(), vi.fn());
+
+    expect(listClaGroupOptions).toHaveBeenCalledWith('');
+  });
+
+  it('returns 401 (via next) when unauthenticated', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const next = vi.fn();
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: {} } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
   });
 });

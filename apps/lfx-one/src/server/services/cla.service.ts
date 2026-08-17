@@ -10,10 +10,10 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { Auth0Identity, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse, type ClaStatus } from '@lfx-one/shared/interfaces';
+import { Auth0Identity, ClaSignHandoff, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse, type ClaStatus } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, ResolvedClaIdentity } from '../types/cla.types';
+import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, EasyClaUserFromTokenV2, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
@@ -29,6 +29,10 @@ const SERVICE = 'cla_service';
 // (many verified + linked-identity emails) break the page instead of degrading.
 const MAX_CLA_EMAILS = 100;
 
+// Where the Contributor Console returns a contributor after signing (#1251). Mirrors the
+// `clas` child route under /profile in profile.routes.ts.
+const MY_CLAS_PATH = '/profile/clas';
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in isolation). No I/O.
 // ---------------------------------------------------------------------------
@@ -43,6 +47,25 @@ export function claServiceBaseUrl(): string {
     throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', { service: SERVICE });
   }
   return `${audience.replace(/\/+$/, '')}/cla-service`;
+}
+
+/**
+ * Absolute URL back to the contributor's CLAs view, for the Sign CLA hand-off (#1251).
+ *
+ * Absolute, not relative: after signing, the last hop is a server-side redirect issued by the
+ * CLA API using the stored value verbatim, so a relative path would resolve against the CLA
+ * API's origin instead of ours.
+ *
+ * Derived from the request rather than configured, so preview deployments (per-PR hostnames)
+ * are correct without templating a fourth environment value. `trust proxy` is set, so
+ * `protocol`/`host` already reflect the forwarded headers behind the ingress.
+ */
+export function claReturnUrl(req: Request): string {
+  const host = req.get('host');
+  if (!host) {
+    throw new MicroserviceError('Cannot derive the CLA return URL: request has no Host header', 500, 'RETURN_URL_UNRESOLVABLE', { service: SERVICE });
+  }
+  return `${req.protocol}://${host}${MY_CLAS_PATH}`;
 }
 
 /**
@@ -284,6 +307,117 @@ export class ClaService {
 
     logger.success(req, 'cla_get_pdf_url', startTime);
     return { url: result.url, expiresInSeconds: result.expiresInSeconds ?? 0 };
+  }
+
+  /**
+   * Resolves the contributor's EasyCLA user-record UUID for the Sign CLA hand-off (#1251), from
+   * the `userIds` the identity search already returns.
+   *
+   * TEMPORARY BRIDGE. The intended source is a resolve-or-create "current user" endpoint, which
+   * `GET /v4/user-from-token` would be — except it is not reachable authenticated. The CLA
+   * backend's security scheme is an API key on the `X-ACL` header, injected by the platform
+   * gateway on authenticated routes; `/v4/user-from-token` is configured as an unauthenticated
+   * passthrough, so nothing injects it and go-swagger rejects the call before the authenticator
+   * runs. The BFF cannot supply `X-ACL` itself — the backend trusts that header precisely because
+   * only the gateway can set it. `/v4/my-clas` is an authenticated route, so its `userIds` are
+   * the same records, obtained through a door that is actually open.
+   *
+   * Two gaps this bridge cannot close, both of which the proper endpoint fixes:
+   *
+   * - It is a pure read. A contributor with no EasyCLA record yet — a first-time signer, the very
+   *   person this feature exists for — resolves to nothing and is refused below.
+   * - It can match several records, and nothing here can tell which one a signature ought to be
+   *   attributed to. We take the first and log the ambiguity rather than fail, because refusing a
+   *   returning contributor helps nobody; the proper endpoint returns one canonical record.
+   *
+   * No impersonation branch, on purpose: the hand-off route is blocked outright while
+   * impersonating, because a signature must never be attributed to the wrong person.
+   */
+  public async resolveContributorId(req: Request): Promise<string> {
+    const startTime = logger.startOperation(req, 'cla_resolve_contributor_id');
+
+    const resolvedOrCreated = await this.tryResolveOrCreateContributor(req);
+    if (resolvedOrCreated) {
+      logger.success(req, 'cla_resolve_contributor_id', startTime);
+      return resolvedOrCreated;
+    }
+
+    const identity = await this.resolveIdentity(req);
+    const list = await this.fetchMyClas(req, identity);
+    const userIds = (list.userIds ?? []).map((id) => id.trim()).filter(Boolean);
+
+    if (userIds.length === 0) {
+      // Handing off without a real id lands the contributor on the Console's "invalid user ID"
+      // screen, which reads as a broken product rather than a failed lookup — fail here instead.
+      throw new MicroserviceError('No EasyCLA user record matches this session', 502, 'CLA_USER_UNRESOLVED', { service: SERVICE });
+    }
+
+    if (userIds.length > 1) {
+      logger.warning(req, 'cla_resolve_contributor_id', 'identity matches several EasyCLA user records; handing off the first', {
+        matched_count: userIds.length,
+      });
+    }
+
+    logger.success(req, 'cla_resolve_contributor_id', startTime);
+    return userIds[0] as string;
+  }
+
+  /**
+   * Builds the two halves of the Console hand-off URL that only the server can produce: the
+   * session-resolved contributor id and the absolute return address.
+   *
+   * The client composes the final URL, because the Console base lives in the Angular environment
+   * (`urls.contributorConsole`) which the server layer does not import. Keeping these two here
+   * is what makes the identifier un-spoofable (FR-003) and the return address origin-correct.
+   */
+  public async getSignHandoff(req: Request): Promise<ClaSignHandoff> {
+    // Derived first: if the origin is unusable there is no point minting a user record upstream.
+    const redirectUrl = claReturnUrl(req);
+    const claUserId = await this.resolveContributorId(req);
+
+    return { claUserId, redirectUrl };
+  }
+
+  /**
+   * PROBE — `GET /v2/user-from-token`, the resolve-or-create the bridge below cannot do.
+   *
+   * Unlike its v4 namesake this route is *not* exempted from gateway auth, so it arrives with the
+   * gateway's injected headers, and it calls `get_or_create_user` — meaning it mints a record for a
+   * first-time signer instead of resolving to nothing.
+   *
+   * Whether it accepts *our* token is the open question. Its validator only requires a token
+   * signed by the configured Auth0 domain that carries a username claim; it does not check the
+   * audience, so a gateway-audience token is not disqualified on that ground. But the custom
+   * username claim is added by an Auth0 Action and is not guaranteed on every audience — if it is
+   * absent the validator answers "username claim not found".
+   *
+   * Returns null on any failure so the caller falls back rather than breaking the hand-off. The
+   * outcome is logged either way: this is here to answer the question, not to stay.
+   */
+  private async tryResolveOrCreateContributor(req: Request): Promise<string | null> {
+    try {
+      const user = await gatewayFetch<EasyClaUserFromTokenV2>(req, `${claServiceBaseUrl()}/v2/user-from-token`, {
+        operation: 'cla_probe_user_from_token_v2',
+        service: SERVICE,
+        errorMessage: 'Probe of /v2/user-from-token failed',
+        errorCode: 'UPSTREAM_ERROR',
+      });
+
+      const claUserId = user?.user_id?.trim();
+      if (!claUserId) {
+        logger.warning(req, 'cla_probe_user_from_token_v2', 'probe answered without a user_id; falling back to the userIds bridge');
+        return null;
+      }
+
+      logger.info(req, 'cla_probe_user_from_token_v2', 'probe succeeded — resolve-or-create is reachable with our token');
+      return claUserId;
+    } catch (error) {
+      logger.warning(req, 'cla_probe_user_from_token_v2', 'probe rejected; falling back to the userIds bridge', {
+        probe_status: error instanceof MicroserviceError ? error.statusCode : 'unknown',
+        probe_detail: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /** Fetches the composed CLA list for the resolved identity from `GET /v4/my-clas`. */
