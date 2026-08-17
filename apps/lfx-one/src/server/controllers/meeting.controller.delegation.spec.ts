@@ -339,19 +339,21 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 
-  it('restores the caller token and propagates the error when enrichCommitteeRegistrants throws', async () => {
+  it('restores the caller token and answers with unenriched rows when enrichCommitteeRegistrants throws', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [{ uid: COMMITTEE_UID }] }));
-    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }]);
-    const enrichError = new Error('NATS lookup failed');
-    vi.mocked(resolveCommitteeV2UidsToV1Ids).mockRejectedValue(enrichError);
+    const registrants = [{ uid: 'r1' }];
+    meetingSvc.getMeetingRegistrants.mockResolvedValue(registrants);
+    vi.mocked(resolveCommitteeV2UidsToV1Ids).mockRejectedValue(new Error('NATS lookup failed'));
     const req = buildRegistrantsReq();
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMyMeetingRegistrants(req, res, next);
 
-    expect(next).toHaveBeenCalledWith(enrichError);
-    expect(res.json).not.toHaveBeenCalled();
+    // Group attribution is decoration reached over NATS: a transient committee-service problem costs
+    // the caller the `via [Group]` chips, never the guest list. Same degrade as getMeetingRegistrants.
+    expect(res.json).toHaveBeenCalledWith(registrants);
+    expect(next).not.toHaveBeenCalled();
     // The M2M token swapped in for the enrichment call must not leak onto req after the throw.
     expect(req.bearerToken).toBe(USER_TOKEN);
   });

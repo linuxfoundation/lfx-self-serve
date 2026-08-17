@@ -15,6 +15,7 @@ import {
   MAX_FILE_SIZE_MB,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_WARNING_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
@@ -81,15 +82,14 @@ export class ComposerAgendaResourcesComponent {
     this.formService.revision();
     return (this.form().get('aiPrompt')?.value as string | null)?.length ?? 0;
   });
-  protected readonly agendaCounterClass: Signal<string> = computed(() => {
-    const length = this.agendaLength();
-
-    if (length >= MEETING_AGENDA_MAX_LENGTH) {
-      return 'text-red-600';
-    }
-
-    return length >= MEETING_AGENDA_WARNING_LENGTH ? 'text-amber-600' : 'text-gray-500';
-  });
+  protected readonly agendaCounterClass: Signal<string> = computed(() =>
+    this.counterClass(this.agendaLength(), MEETING_AGENDA_WARNING_LENGTH, MEETING_AGENDA_MAX_LENGTH)
+  );
+  // Same escalation as the agenda's counter two fields up. Without it the prompt counter reads a flat
+  // gray at the exact moment it matters — when the field has saturated and is dropping keystrokes.
+  protected readonly aiPromptCounterClass: Signal<string> = computed(() =>
+    this.counterClass(this.aiPromptLength(), MEETING_AGENDA_PROMPT_WARNING_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH)
+  );
   protected readonly pendingAttachments: Signal<PendingAttachment[]> = computed(() => {
     this.formService.revision();
     return (this.form().get('attachments')?.value as PendingAttachment[] | null) ?? [];
@@ -325,5 +325,14 @@ export class ComposerAgendaResourcesComponent {
     }
 
     return null;
+  }
+
+  /** Shared escalation for both character counters in this section: gray, amber near the cap, red at it. */
+  private counterClass(length: number, warnAt: number, max: number): string {
+    if (length >= max) {
+      return 'text-red-600';
+    }
+
+    return length >= warnAt ? 'text-amber-600' : 'text-gray-500';
   }
 }

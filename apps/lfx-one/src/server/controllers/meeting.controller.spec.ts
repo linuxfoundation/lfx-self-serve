@@ -31,7 +31,13 @@ vi.mock('@lfx-one/shared/enums', () => ({}));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
 // module-level bindings. Kept in sync with `MEETING_AGENDA_*` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000 }));
-vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
+// `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
+// the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
+// its own, so pulling it in directly doesn't drag the aliased barrel's graph along.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  resolveMeetingOrganizer: vi.fn(() => null),
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+}));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 vi.mock('../helpers/meeting.helper', () => ({

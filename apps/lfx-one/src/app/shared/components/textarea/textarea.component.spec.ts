@@ -15,7 +15,11 @@ import { TextareaComponent } from './textarea.component';
  * silently attaches a validator to the *caller's* control — a caller that only wanted the browser to
  * stop accepting characters ends up with an invalid `FormGroup` and, in the composer's case, a Save
  * button that does nothing with no error UI to explain it. `[attr.maxlength]` sets the attribute
- * without the directive. These specs fail if the property binding ever comes back.
+ * without the directive.
+ *
+ * The regression guard is specifically `leaves the control valid at a value over the cap`. Angular
+ * reflects a property-bound `maxlength` to the attribute as well, so the attribute assertions below
+ * pass either way — they pin the rendered contract, not the absence of the validator.
  */
 describe('TextareaComponent — maxlength', () => {
   const CAP = 1000;
