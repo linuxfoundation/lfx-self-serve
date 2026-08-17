@@ -36,6 +36,10 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     { name: 'getBrandReach', url: '/api/analytics/brand-reach', call: () => service.getBrandReach('aaif') },
     { name: 'getEventGrowth', url: '/api/analytics/event-growth', call: () => service.getEventGrowth('aaif') },
     { name: 'getBrandHealth', url: '/api/analytics/brand-health', call: () => service.getBrandHealth('aaif', false, 'last-6') },
+    { name: 'getMemberAcquisition', url: '/api/analytics/member-acquisition', call: () => service.getMemberAcquisition('aaif') },
+    { name: 'getMemberRetention', url: '/api/analytics/member-retention', call: () => service.getMemberRetention('aaif') },
+    { name: 'getEngagedCommunity', url: '/api/analytics/engaged-community', call: () => service.getEngagedCommunity('aaif') },
+    { name: 'getWebActivitiesSummary', url: '/api/analytics/web-activities-summary', call: () => service.getWebActivitiesSummary('aaif', undefined, 'last-6') },
   ];
 
   for (const { name, url, call } of endpoints) {

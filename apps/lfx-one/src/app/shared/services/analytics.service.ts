@@ -875,27 +875,20 @@ export class AnalyticsService {
   }
 
   /**
+   * Errors PROPAGATE deliberately — see getBrandReach. The Website drawer sets its own
+   * unavailable flag inside a catchError, and a swallow here makes that flag unreachable:
+   * the drawer would render "No website traffic detected" for a failed request.
+   */
+  /**
    * Get web activities summary grouped by domain category
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable of web activities summary response
    */
   public getWebActivitiesSummary(foundationSlug: string, classification?: string, period?: string): Observable<WebActivitiesSummaryResponse> {
-    return this.http
-      .get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', {
-        params: this.buildFoundationParams(foundationSlug, classification, period),
-      })
-      .pipe(
-        catchError(() => {
-          return of({
-            totalSessions: 0,
-            totalPageViews: 0,
-            domainGroups: [],
-            dailyData: [],
-            dailyLabels: [],
-          });
-        })
-      );
+    return this.http.get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**
@@ -976,66 +969,39 @@ export class AnalyticsService {
   // North Star Metrics
 
   /**
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   */
+  /**
    * Get member retention metrics from Snowflake North Star views
    */
   public getMemberRetention(foundationSlug: string): Observable<MemberRetentionResponse> {
-    return this.http.get<MemberRetentionResponse>('/api/analytics/member-retention', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          renewalRate: 0,
-          netRevenueRetention: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          target: 85,
-          monthlyData: [],
-        });
-      })
-    );
+    return this.http.get<MemberRetentionResponse>('/api/analytics/member-retention', { params: { foundationSlug } });
   }
 
+  /**
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   */
   /**
    * Get member acquisition rate metrics from Snowflake North Star views
    */
   public getMemberAcquisition(foundationSlug: string): Observable<MemberAcquisitionResponse> {
-    return this.http.get<MemberAcquisitionResponse>('/api/analytics/member-acquisition', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalMembers: 0,
-          totalMembersMonthlyData: [],
-          totalMembersMonthlyLabels: [],
-          newMembersThisQuarter: 0,
-          newMemberRevenue: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          quarterlyData: [],
-        });
-      })
-    );
+    return this.http.get<MemberAcquisitionResponse>('/api/analytics/member-acquisition', { params: { foundationSlug } });
   }
 
+  /**
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   */
   /**
    * Get engaged community size metrics from Snowflake North Star views
    */
   public getEngagedCommunity(foundationSlug: string): Observable<EngagedCommunitySizeResponse> {
-    return this.http.get<EngagedCommunitySizeResponse>('/api/analytics/engaged-community', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalMembers: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          breakdown: {
-            newsletterSubscribers: 0,
-            communityMembers: 0,
-            workingGroupMembers: 0,
-            certifiedIndividuals: 0,
-            webVisitors: 0,
-            codeContributors: 0,
-            trainingEnrollees: 0,
-          },
-          monthlyData: [],
-        });
-      })
-    );
+    return this.http.get<EngagedCommunitySizeResponse>('/api/analytics/engaged-community', { params: { foundationSlug } });
   }
 
   /**
