@@ -50,7 +50,12 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
+vi.mock('@lfx-one/shared/constants', () => ({
+  HOST_KEY_EARLY_MINUTES: 70,
+  HOST_KEY_LATE_MINUTES: 40,
+  MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
+}));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 
 vi.mock('../services/meeting.service', () => ({
@@ -449,6 +454,9 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.addMeetingRegistrantWithM2M.mockResolvedValue({ uid: 'reg-1' });
+    // Anonymous by default — this route is optional-auth, and `clearAllMocks` leaves return values
+    // from earlier suites in place, so pin it rather than inherit one.
+    getEffectiveUsernameMock.mockReturnValue(null);
   });
 
   it('forwards the fields a registrant may state about themselves', async () => {
@@ -475,14 +483,86 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
   });
 
   it('drops any other field the caller invents', async () => {
-    const { req, res, next } = buildRegisterReqRes({ ...validBody, username: 'someone-else', uid: 'reg-hijack', type: 'committee' });
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, uid: 'reg-hijack', type: 'committee' });
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    for (const key of ['username', 'uid', 'type']) {
+    for (const key of ['uid', 'type']) {
       expect(forwardedBody()).not.toHaveProperty(key);
     }
+  });
+
+  it('omits username entirely for an anonymous caller', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, username: 'someone-else' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody()).not.toHaveProperty('username');
+  });
+
+  // The route mounts the handler with no express-validator, so a non-string is what actually gets to
+  // choose whether it clears the `if (!registrantData.email …)` gate. Narrowing to a string is the
+  // only thing that stops an object or array being forwarded upstream under the M2M token.
+  it.each([[{ nested: 'x' }], [['a@example.com']], [42], [null]])('rejects a non-string email (%j) instead of forwarding it', async (email) => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, email });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw on a missing body', async () => {
+    const { req, res, next } = buildRegisterReqRes(undefined as any);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Query-service tag matching is case-sensitive and every read path lowercases, so a mixed-case
+  // registration would be indexed under a tag no later invited-status lookup matches.
+  it('lowercases and trims the fields it forwards', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, email: '  A@Example.COM ', first_name: ' A ', org_name: ' Acme ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody()).toMatchObject({ email: 'a@example.com', first_name: 'A', org_name: 'Acme' });
+  });
+
+  it('caps each free-text field so nothing unbounded reaches upstream', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, org_name: 'x'.repeat(400) });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody().org_name).toHaveLength(255);
+  });
+
+  // Derived from the session, never from the body: a signed-in registrant keeps their LFID on a
+  // record written with application credentials, and a forged `username` still can't get in.
+  it('takes username from the session and ignores the one in the body', async () => {
+    getEffectiveUsernameMock.mockReturnValue('realuser');
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, username: 'someone-else' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody().username).toBe('realuser');
+  });
+
+  it('responds with the registrant the service returned', async () => {
+    meetingSvc.addMeetingRegistrantWithM2M.mockResolvedValue({ uid: 'reg-1', org_name: 'Acme' });
+    const { req, res, next } = buildRegisterReqRes(validBody);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1', org_name: 'Acme' });
   });
 
   it('still rejects a non-public meeting before writing anything', async () => {

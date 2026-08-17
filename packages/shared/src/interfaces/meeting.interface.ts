@@ -556,12 +556,16 @@ export interface MeetingRegistrant {
 export interface CreateMeetingRegistrantRequest {
   /*
    * Every optional field is typed without `| null`: upstream declares them all as non-nullable
-   * optional `string`s in `CreateItxRegistrantRequestBody`, and nothing between here and there
-   * launders a `null` — the BFF's one such drop is `committee_uid`-specific — so a `null` would reach
-   * upstream verbatim. Keeping it out of the type is what makes omission enforceable at compile time
-   * rather than a convention each caller has to remember. A create has nothing to clear, so omission
-   * loses no meaning — unlike `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a
-   * stored value.
+   * optional `string`s in `CreateItxRegistrantRequestBody`. Keeping `null` out of the type is what
+   * makes omission enforceable at compile time rather than a convention each caller has to remember. A
+   * create has nothing to clear, so omission loses no meaning — unlike
+   * `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a stored value.
+   *
+   * The BFF does drop a nullish `org_name`, `avatar_url` or `occurrence_id` on the way out
+   * (`MeetingService.toUpstreamRegistrantBody`), and drops a blank one again on the public
+   * self-registration path (`PublicMeetingController.toSelfRegistration`) — but both exist to serve
+   * the rename and the public trust boundary, not to launder this type, and neither covers
+   * `job_title`, `username` or `committee_uid`. Treat the type as the guard.
    *
    * Note that three of these names differ from the wire: the BFF renames `org_name` → `org`,
    * `avatar_url` → `profile_picture` and `occurrence_id` → `occurrence` before proxying, so this

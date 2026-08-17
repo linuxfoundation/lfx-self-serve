@@ -681,6 +681,18 @@ export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 /** Prompt length at which the character counter turns amber — same 90% of cap as the agenda's */
 export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
 
+/**
+ * Character ceiling for each free-text field an anonymous caller may set on itself when registering
+ * for a public meeting (`POST /public/api/meetings/register`).
+ *
+ * That route has no express-validator and no session, and forwards upstream under an M2M token, so
+ * without a ceiling here the only bound on a name or organization is `express.json`'s body limit —
+ * megabytes, applied to the whole body rather than per field. 255 is generous for every field it
+ * covers (email, first/last name, job title, organization) and small enough that nothing unbounded
+ * reaches upstream or the logs.
+ */
+export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
+
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 

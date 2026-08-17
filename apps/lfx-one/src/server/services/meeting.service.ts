@@ -1781,12 +1781,18 @@ export class MeetingService {
    * `meeting_id` is dropped for the same reason it isn't declared: it's the path parameter, and the
    * caller has already used it to build the URL.
    *
-   * A `null` is omitted rather than renamed. `UpdateMeetingRegistrantRequest` uses `null` to erase a
-   * stored value, but all three targets are declared as non-nullable `type: string`, and
-   * `getChangedFields` sends `null` for every one of them whenever the value is blank — which is
-   * always, for the two that have no form control. Renaming those nulls would newly plant an
-   * off-contract value on a declared field on ordinary registrant edits, where before this rename Goa
-   * discarded the whole key as undeclared. Omitting keeps that outcome exactly.
+   * A `null` on one of the three renamed fields is omitted rather than renamed.
+   * `UpdateMeetingRegistrantRequest` uses `null` to erase a stored value, but all three targets are
+   * declared as non-nullable `type: string`, and `getChangedFields` sends `null` for every one of them
+   * whenever the value is blank — which is always, for the two that have no form control. Renaming
+   * those nulls would newly plant an off-contract value on a declared field on ordinary registrant
+   * edits, where before this rename Goa discarded the whole key as undeclared. Omitting keeps that
+   * outcome exactly.
+   *
+   * That omission is scoped to the renamed fields only. `getChangedFields` also nulls `job_title`,
+   * `username` and `linkedin_profile`; those keep whatever they had before, because their upstream
+   * handling is untouched by this rename (`job_title` and `username` are declared — non-nullable, so a
+   * `null` is off-contract there too, and unfixed — and `linkedin_profile` isn't declared at all).
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
    * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
@@ -1797,9 +1803,10 @@ export class MeetingService {
     const { org_name, avatar_url, occurrence_id } = body;
     const upstream: Record<string, unknown> = { ...body };
 
-    // Typed so a rename on either request interface fails the build here rather than silently
-    // re-introducing the drop this method exists to prevent.
-    const appOnlyKeys: (keyof CreateMeetingRegistrantRequest | keyof UpdateMeetingRegistrantRequest)[] = [
+    // Intersection, not union: a union only rejects a key once it's gone from *both* interfaces, so a
+    // rename on one of them would still compile while the `delete` quietly stopped matching. All four
+    // keys exist on both, so the intersection compiles as-is and does fail the build on either rename.
+    const appOnlyKeys: (keyof CreateMeetingRegistrantRequest & keyof UpdateMeetingRegistrantRequest)[] = [
       'meeting_id',
       'org_name',
       'avatar_url',
@@ -1821,24 +1828,33 @@ export class MeetingService {
   /**
    * Inverse of {@link toUpstreamRegistrantBody}, for the body ITX returns from a registrant write.
    *
-   * The POST and PUT both respond with `ITXZoomMeetingRegistrant`, which spells the three fields the
-   * same way the request body does — `org`, `profile_picture`, `occurrence`. Both write methods used
-   * to declare the response as `MeetingRegistrant` and hand it straight back, so the object the
-   * registrant modal renders after a successful save had `org_name` and `avatar_url` undefined no
-   * matter what was stored. Renaming on the way out is what makes that declared type true.
+   * The POST and PUT both respond with `ITXZoomMeetingRegistrant`, which spells the three request
+   * fields the same way the request body does — `org`, `profile_picture`, `occurrence` — and spells the
+   * modification timestamp `modified_at` rather than `updated_at`. Both write methods used to declare
+   * the response as `MeetingRegistrant` and hand it straight back, so the object the registrant modal
+   * renders after a successful save had `org_name` and `avatar_url` undefined no matter what was
+   * stored. Renaming on the way out is what makes those four fields true.
    *
-   * Only these three are remapped: every other field the app reads off a write response already
-   * shares its upstream name. The read paths need no equivalent, because they come from the v1
-   * query-service index, which already uses the app's spelling.
+   * The declared type is still wider than the response: `ITXZoomMeetingRegistrant` carries no
+   * `meeting_id`, `org_is_member`, `org_is_project_member`, `invite_accepted` or `linkedin_profile`,
+   * all of which `MeetingRegistrant` declares as required. They're absent under any spelling, so
+   * there's nothing to rename — the `as` cast is what covers the gap, and a consumer that needs them
+   * has to read the registrant back rather than trust a write response. The read paths need no mapper
+   * at all, because they come from the v1 query-service index, which already uses the app's spelling.
+   *
+   * Absent stays absent rather than becoming `null` — the app's spelling is only introduced for a
+   * value upstream actually returned, so a missing field reads as "the write response didn't say"
+   * instead of "upstream stored nothing".
    */
   private fromUpstreamRegistrant(upstream: Record<string, unknown>): MeetingRegistrant {
-    const { org, profile_picture, occurrence, ...rest } = upstream;
+    const { org, profile_picture, occurrence, modified_at, ...rest } = upstream;
 
     return {
       ...rest,
       ...(org === undefined ? {} : { org_name: org }),
       ...(profile_picture === undefined ? {} : { avatar_url: profile_picture }),
       ...(occurrence === undefined ? {} : { occurrence_id: occurrence }),
+      ...(modified_at === undefined ? {} : { updated_at: modified_at }),
     } as MeetingRegistrant;
   }
 }

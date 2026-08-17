@@ -73,9 +73,10 @@ export class PublicRegistrationModalComponent {
           first_name: formValue.first_name,
           last_name: formValue.last_name,
           // Omitted when blank rather than sent as `null` — see the note on
-          // `CreateMeetingRegistrantRequest`. There is no null-laundering anywhere on this path: the
-          // BFF's one such drop is `committee_uid`-specific and this endpoint doesn't send one, so a
-          // `null` here would reach upstream verbatim, onto a field it declares non-nullable.
+          // `CreateMeetingRegistrantRequest`. Upstream declares both fields non-nullable. The BFF now
+          // drops a blank or nullish one on this path too (`toSelfRegistration`, then
+          // `toUpstreamRegistrantBody`), so this is defense in depth rather than the only guard — keep
+          // it, because neither of those exists to serve this form and both could be re-scoped.
           ...(formValue.job_title ? { job_title: formValue.job_title } : {}),
           ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })

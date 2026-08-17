@@ -386,13 +386,25 @@ describe('MeetingService registrant write payloads', () => {
       (s: MeetingService) => s.addMeetingRegistrantWithM2M(req, { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' }, 'm2m-token'),
     ],
   ])('maps the %s response back to the app spelling', async (_label, call) => {
-    proxyRequest.mockResolvedValue({ uid: 'reg-1', org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+    proxyRequest.mockResolvedValue({
+      uid: 'reg-1',
+      org: 'Acme',
+      profile_picture: 'https://example.com/a.png',
+      occurrence: '1666848600',
+      modified_at: '2026-08-17T00:00:00Z',
+    });
 
     const result = await call(service);
 
-    expect(result).toMatchObject({ uid: 'reg-1', org_name: 'Acme', avatar_url: 'https://example.com/a.png', occurrence_id: '1666848600' });
-    expect(result).not.toHaveProperty('org');
-    expect(result).not.toHaveProperty('profile_picture');
-    expect(result).not.toHaveProperty('occurrence');
+    expect(result).toMatchObject({
+      uid: 'reg-1',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+      updated_at: '2026-08-17T00:00:00Z',
+    });
+    for (const upstreamKey of ['org', 'profile_picture', 'occurrence', 'modified_at']) {
+      expect(result).not.toHaveProperty(upstreamKey);
+    }
   });
 });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
+import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -503,7 +503,7 @@ export class PublicMeetingController {
    * Registers a user to a public, non-restricted meeting
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const registrantData = this.toSelfRegistration(req.body);
+    const registrantData = this.toSelfRegistration(req, req.body);
     const meetingId = registrantData.meeting_id;
 
     const startTime = logger.startOperation(req, 'register_for_public_meeting', {
@@ -604,17 +604,38 @@ export class PublicMeetingController {
    *
    * An allowlist rather than a denylist: a field added to `CreateMeetingRegistrantRequest` later
    * should have to be opted in to the public path deliberately, not inherit it.
+   *
+   * Values are narrowed, not just keys. The route mounts the handler bare — no express-validator — so
+   * the parameter is `unknown` rather than the request interface, which would be an assertion about a
+   * shape nothing produced. Anything that isn't a string is dropped, which is what stops an object or
+   * array from clearing the caller's `if (!registrantData.email …)` gate and reaching upstream.
+   *
+   * `username` is taken from the session when there is one and never from the body — a signed-in
+   * registrant keeps their LFID attribution on a record written with application credentials, and a
+   * forged one still can't get in. `email` is lowercased because query-service tag matching is
+   * case-sensitive and every read path lowercases; a mixed-case registration would otherwise be
+   * indexed under a tag no later lookup matches.
+   *
+   * One thing this doesn't close: `email` is the one field here that can't be self-asserted on a
+   * session-less route, so anyone can register a third party's address for a public meeting and
+   * trigger an invite to it. `publicApiRateLimiter` caps the volume, not the primitive.
    */
-  private toSelfRegistration(body: CreateMeetingRegistrantRequest): CreateMeetingRegistrantRequest {
+  private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '');
+    const username = getEffectiveUsername(req);
+    const jobTitle = text('job_title');
+    const orgName = text('org_name');
+
     return {
-      meeting_id: body?.meeting_id,
-      email: body?.email,
-      first_name: body?.first_name,
-      last_name: body?.last_name,
+      meeting_id: text('meeting_id'),
+      email: text('email').toLowerCase(),
+      first_name: text('first_name'),
+      last_name: text('last_name'),
       host: false,
-      ...(body?.job_title ? { job_title: body.job_title } : {}),
-      ...(body?.org_name ? { org_name: body.org_name } : {}),
-      ...(body?.occurrence_id ? { occurrence_id: body.occurrence_id } : {}),
+      ...(jobTitle ? { job_title: jobTitle } : {}),
+      ...(orgName ? { org_name: orgName } : {}),
+      ...(username ? { username } : {}),
     };
   }
 
