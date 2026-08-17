@@ -7,11 +7,12 @@
   never changes width, and always sits above page content (z-40). MainLayoutComponent reserves a
   matching right gutter (2xl:pr-[300px]) on the profile hub so the content and the shared footer
   stay clear of the rail. The rail's `top` matches the impersonation banner offset. Below 2xl, the
-  panel renders inline in the content column above the subtabs instead, capped at max-w-md so it
-  keeps rail-like proportions rather than stretching to the full column width. The 2xl threshold
-  (not lg) accounts for the 348px left sidebar (lg:ml-[348px] on <main>) plus 64px page padding
-  (md:px-8) that also apply once the sidebar shows — at lg that leaves only a 312px content column
-  next to a 300px rail; at 2xl it leaves 728px.
+  panel renders inline in the content column above the subtabs instead, full width — the panel's
+  own internal layout (profile-panel.component.html) reflows across three states: a stacked card
+  below sm, a full-width horizontal layout from sm up to just under 2xl, and the vertical rail at
+  2xl and up. The 2xl threshold (not lg) accounts for the 348px left sidebar (lg:ml-[348px] on
+  <main>) plus 64px page padding (md:px-8) that also apply once the sidebar shows — at lg that
+  leaves only a 312px content column next to a 300px rail; at 2xl it leaves 728px.
 -->
 <div class="flex flex-col" data-testid="profile-layout">
   <!-- Left column -->
@@ -34,9 +35,9 @@
         <p class="mt-1 text-sm text-slate-500">Manage your profile and account settings.</p>
       </div>
 
-      <!-- Profile panel — inline below 2xl (capped at max-w-md); fixed full-height right rail at 2xl and up (out of normal flow) -->
+      <!-- Profile panel — full-width inline below 2xl (reflows internally at sm+); fixed full-height right rail at 2xl and up (out of normal flow) -->
       <div
-        class="max-w-md 2xl:max-w-none 2xl:fixed 2xl:bottom-0 2xl:right-0 2xl:z-40 2xl:w-[300px]"
+        class="2xl:fixed 2xl:bottom-0 2xl:right-0 2xl:z-40 2xl:w-[300px]"
         [ngClass]="{ '2xl:top-12': impersonating(), '2xl:top-0': !impersonating() }"
         data-testid="profile-panel-rail">
         <lfx-profile-panel
