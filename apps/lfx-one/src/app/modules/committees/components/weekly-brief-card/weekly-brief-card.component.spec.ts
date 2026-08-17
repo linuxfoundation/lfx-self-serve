@@ -75,6 +75,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
           useValue: {
             getWeeklyBrief: vi.fn(() => of(BRIEF_RESPONSE)),
             shareWeeklyBriefToSlack,
+            listWeeklyBriefs: vi.fn(() => of({ data: [] })),
           },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
