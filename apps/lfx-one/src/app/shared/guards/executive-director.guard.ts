@@ -32,7 +32,9 @@ export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnaps
     return router.parseUrl('/foundation/overview');
   }
 
-  return personaService.refreshEnrichedPersonas().pipe(
+  const projectSlug = route.queryParamMap.get('project') ?? undefined;
+
+  return personaService.refreshEnrichedPersonas(false, projectSlug).pipe(
     map(() => {
       if (personaService.isCampaignManager()) {
         return true;

@@ -240,6 +240,28 @@ export class SidebarNavService {
     { initialValue: false }
   );
 
+  // Keeps isMarketingAuditor/isCampaignManager in sync with the active foundation — the root-scoped
+  // fetch alone misses a per-project grant (LFXV2-2235 review finding). Read in canSeeMarketing below
+  // to register the dependency; the refreshed value lives on PersonaService's own signals.
+  private readonly marketingPersonaSlug: Signal<string> = toSignal(
+    toObservable(
+      computed(() => {
+        if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
+          return '';
+        }
+        return this.projectContextService.selectedFoundation()?.slug ?? '';
+      })
+    ).pipe(
+      switchMap((slug) => {
+        if (!slug) {
+          return of('');
+        }
+        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(map(() => slug));
+      })
+    ),
+    { initialValue: '' }
+  );
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
     const items: SidebarMenuItem[] = [
@@ -362,6 +384,7 @@ export class SidebarNavService {
     // via canViewExecutiveDashboards() the same as Metrics, but are restricted to the Social
     // Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
     // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+    this.marketingPersonaSlug();
     const canSeeMarketing = this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
     if (canSeeMarketing) {
       const marketingItems: SidebarMenuItem[] = [

@@ -95,11 +95,14 @@ export class PersonaService {
    * No-ops after the first successful fetch unless `force=true` — callers can trigger this on every
    * consumer init without causing redundant network traffic.
    */
-  public refreshEnrichedPersonas(force: boolean = false): Observable<PersonaApiResponse | null> {
-    if (this.enrichedPersonasLoaded() && !force) {
+  public refreshEnrichedPersonas(force: boolean = false, projectSlug?: string): Observable<PersonaApiResponse | null> {
+    // A project-scoped grant call must not be skipped by the "already loaded" cache — a prior
+    // fetch (root-scoped or for a different project) doesn't tell us about `projectSlug`.
+    if (this.enrichedPersonasLoaded() && !force && !projectSlug) {
       return of(null);
     }
-    return this.http.get<PersonaApiResponse>('/api/user/personas?enriched=true').pipe(
+    const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
+    return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
       catchError(() => of(null)),
       tap((response) => {

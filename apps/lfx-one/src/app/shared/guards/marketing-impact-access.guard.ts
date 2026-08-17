@@ -29,8 +29,9 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
   }
 
   const marketingOpsFgaEnabled = featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)();
+  const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
-  return personaService.refreshEnrichedPersonas().pipe(
+  return personaService.refreshEnrichedPersonas(false, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
     map(() => {
       const allowed = marketingOpsFgaEnabled
         ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
