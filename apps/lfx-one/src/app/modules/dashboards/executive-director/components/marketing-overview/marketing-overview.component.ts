@@ -94,21 +94,9 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     target: 0,
     monthlyData: [],
   },
-  engagedCommunity: {
-    totalMembers: 0,
-    changePercentage: 0,
-    trend: 'up',
-    breakdown: {
-      newsletterSubscribers: 0,
-      communityMembers: 0,
-      workingGroupMembers: 0,
-      certifiedIndividuals: 0,
-      webVisitors: 0,
-      codeContributors: 0,
-      trainingEnrollees: 0,
-    },
-    monthlyData: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact below: 27,831 engaged
+  // individuals rendered as "0" on AAIF when this fell back to a zero-filled response.
+  engagedCommunity: undefined,
   eventGrowth: {
     totalAttendees: 0,
     totalRegistrants: 0,
@@ -144,17 +132,11 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
   // on undefined. A zero-filled summary here would render the card at $0 on a failed
   // request — reporting a fabricated figure as a measured one.
   revenueImpact: undefined,
-  emailCtr: {
-    currentCtr: 0,
-    changePercentage: 0,
-    momChangePercentage: null,
-    trend: 'up' as const,
-    monthlyData: [],
-    monthlyLabels: [],
-    campaignGroups: [],
-    monthlySends: [],
-    monthlyOpens: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact above. This one was reported
+  // from production: the Email card read "0 opens · 0.0% CTR" for a foundation whose March
+  // campaign had 100 opens at a 76.3% CTR, because the zero-filled fallback summed to 0 and
+  // nothing downstream could tell that apart from a month with no email.
+  emailCtr: undefined,
   // Explicitly undefined for the same reason as revenueImpact above — zero spend and
   // 0.0x ROAS are real measurements, so the Paid Media card must not fall back to them.
   paidCampaign: undefined,
@@ -263,7 +245,30 @@ export class MarketingOverviewComponent {
   protected readonly flywheelData = computed<FlywheelConversionResponse>(() => this.edEvolutionData().flywheel);
   protected readonly memberAcquisitionData = computed<MemberAcquisitionResponse>(() => this.edEvolutionData().memberAcquisition);
   protected readonly memberRetentionData = computed<MemberRetentionResponse>(() => this.edEvolutionData().memberRetention);
-  protected readonly engagedCommunityData = computed<EngagedCommunitySizeResponse>(() => this.edEvolutionData().engagedCommunity);
+  /**
+   * Drawer-facing only, exactly like brandReachData below: the Adoption card reads
+   * `edEvolutionData().engagedCommunity` and renders an unavailable state on undefined,
+   * while the drawer takes a non-optional input and length-guards its own collections.
+   * Never source a card value from here — that is what printed "0" for AAIF's 27,831.
+   */
+  protected readonly engagedCommunityData = computed<EngagedCommunitySizeResponse>(
+    () =>
+      this.edEvolutionData().engagedCommunity ?? {
+        totalMembers: 0,
+        changePercentage: 0,
+        trend: 'up',
+        breakdown: {
+          newsletterSubscribers: 0,
+          communityMembers: 0,
+          workingGroupMembers: 0,
+          certifiedIndividuals: 0,
+          webVisitors: 0,
+          codeContributors: 0,
+          trainingEnrollees: 0,
+        },
+        monthlyData: [],
+      }
+  );
   protected readonly eventGrowthData = computed<EventGrowthResponse>(() => this.edEvolutionData().eventGrowth);
   /**
    * Drawer-facing only. The Social and Web cards read `edEvolutionData().brandReach`

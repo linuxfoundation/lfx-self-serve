@@ -3492,7 +3492,13 @@ export interface EdEvolutionData {
   flywheel: FlywheelConversionResponse;
   memberAcquisition: MemberAcquisitionResponse;
   memberRetention: MemberRetentionResponse;
-  engagedCommunity: EngagedCommunitySizeResponse;
+  /**
+   * Adoption card data. undefined means "request failed", not "nobody engaged".
+   *
+   * Same contract as revenueImpact, brandReach and emailCtr. AAIF has 27,831 engaged
+   * individuals and the card read "0" whenever this fell back to a zero-filled response.
+   */
+  engagedCommunity: EngagedCommunitySizeResponse | undefined;
   eventGrowth: EventGrowthResponse;
   /**
    * Social and Web card data. undefined means "request failed", not "no followers".
@@ -3515,7 +3521,14 @@ export interface EdEvolutionData {
    * foundation won nothing". The card renders an explicit unavailable state instead.
    */
   revenueImpact: RevenueImpactResponse | undefined;
-  emailCtr: EmailCtrResponse;
+  /**
+   * Email card data. undefined means "request failed", not "nobody opened anything".
+   *
+   * Same contract as revenueImpact and brandReach. Summing an absent response yields 0, so a
+   * zero-filled fallback rendered "0 opens · 0.0% CTR" for a foundation whose campaign had
+   * 100 opens at a 76.3% CTR — a measurement the reader has no way to distrust.
+   */
+  emailCtr: EmailCtrResponse | undefined;
   /**
    * Paid Media card data. undefined means "request failed", not "zero spend".
    *

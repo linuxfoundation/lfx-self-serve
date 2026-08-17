@@ -867,6 +867,13 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // arm it would otherwise be a nested ternary, which .claude/rules/styling.md forbids.
   const webSessionsSubtitle = brandReach && brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)';
 
+  // Same reason: the Adoption sparkline picks between a real series and a flat placeholder,
+  // and that choice nested inside the engagedCommunity-undefined arm would be a third level.
+  const adoptionSparkline =
+    engagedCommunity && engagedCommunity.monthlyData.length > 0
+      ? monthlyValues(engagedCommunity.monthlyData)
+      : flatSparklineData(engagedCommunity?.totalMembers ?? 0);
+
   // Education totals. edX is counted in enrollments but has no revenue column in
   // COURSE_PURCHASES, so it is intentionally absent from the revenue sum — adding a 0
   // would be harmless here but the omission is deliberate and mirrored in the drawer.
@@ -884,17 +891,19 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     ? education.enrollment.instructorLed + education.enrollment.eLearning + education.enrollment.certExams > 0
     : false;
 
-  // Pre-compute email open rate for the Campaign Performance card
-  const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
-  const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
+  // Pre-compute email open rate for the Campaign Performance card. These stay computable on a
+  // failed request (summing nothing gives 0) — the card guards on `emailCtr` itself rather than
+  // on these totals, because a summed 0 is exactly the fabricated measurement to avoid showing.
+  const emailTotalSends = emailCtr ? emailCtr.monthlySends.reduce((sum, v) => sum + v, 0) : 0;
+  const emailTotalOpens = emailCtr ? emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0) : 0;
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
   // Per-month open RATE, not send volume. Charting sends here would report an
   // improving trend whenever sends grow faster than opens — the opposite of the
   // truth. Months with no sends contribute 0 and are suppressed by the sends
   // activity guard passed alongside.
-  const emailMonthlyOpenRate = emailCtr.monthlyOpens.map((opens, i) => {
-    const sends = emailCtr.monthlySends[i] ?? 0;
+  const emailMonthlyOpenRate = (emailCtr?.monthlyOpens ?? []).map((opens, i) => {
+    const sends = emailCtr?.monthlySends[i] ?? 0;
     return sends > 0 ? (opens / sends) * 100 : 0;
   });
 
@@ -1003,14 +1012,13 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-engaged-community',
       description:
         'Unique individuals active across 7 channels — community, working groups, newsletter, training, code, web, and certified — in the last 90 days.',
-      value: formatNumber(engagedCommunity.totalMembers),
-      changePercentage: formatMomChange(engagedCommunity.changePercentage),
-      trend: normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend),
-      subtitle: trendWindow(engagedCommunity.monthlyData.length),
-      chartData: protoSparkline(
-        engagedCommunity.monthlyData.length > 0 ? monthlyValues(engagedCommunity.monthlyData) : flatSparklineData(engagedCommunity.totalMembers),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that nobody engaged. AAIF has 27,831 engaged
+      // individuals and rendered "0" here when this fell back to a zero-filled response.
+      value: engagedCommunity ? formatNumber(engagedCommunity.totalMembers) : '—',
+      changePercentage: engagedCommunity ? formatMomChange(engagedCommunity.changePercentage) : undefined,
+      trend: engagedCommunity ? normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend) : undefined,
+      subtitle: engagedCommunity ? trendWindow(engagedCommunity.monthlyData.length) : placeholderCaption,
+      chartData: engagedCommunity ? protoSparkline(adoptionSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Unique individuals active across community, working groups, newsletter, training, code, web, and certified in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
@@ -1086,30 +1094,36 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-campaign-performance',
       description: 'Email opens with click-through and open rate, and MoM trend.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          // withPendingPlaceholder overrides value/color while pending, but the label
-          // is built here — embedding the live CTR unconditionally would leave a
-          // fabricated "0.0% CTR" on screen next to an em-dash value.
-          pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
-          formatNumber(emailTotalOpens) + ' opens',
-          emailCtr.monthlyOpens,
-          lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
-          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
-        ),
-        protoDualSignal(
-          `Open rate · 6 mo`,
-          `${emailOpenRate.toFixed(0)}%`,
-          emailMonthlyOpenRate,
-          lfxColors.violet[500],
-          // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
-          // that would otherwise read as a real collapse.
-          seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
-          seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
-        ),
-      ],
-      caption: trendWindow(emailCtr.monthlyOpens.length),
+      // undefined means the request failed, not that nobody opened anything. Summing an
+      // absent response gives 0, so falling through would render "0 opens · 0.0% CTR" as a
+      // measurement — which is exactly what AAIF showed while its March campaign sat at 100
+      // opens and a 76.3% CTR.
+      dualSignals: emailCtr
+        ? [
+            protoDualSignal(
+              // withPendingPlaceholder overrides value/color while pending, but the label
+              // is built here — embedding the live CTR unconditionally would leave a
+              // fabricated "0.0% CTR" on screen next to an em-dash value.
+              pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
+              formatNumber(emailTotalOpens) + ' opens',
+              emailCtr.monthlyOpens,
+              lfxColors.blue[500],
+              seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+              seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
+            ),
+            protoDualSignal(
+              `Open rate · 6 mo`,
+              `${emailOpenRate.toFixed(0)}%`,
+              emailMonthlyOpenRate,
+              lfxColors.violet[500],
+              // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
+              // that would otherwise read as a real collapse.
+              seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
+              seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
+            ),
+          ]
+        : [unavailableDualSignal('Opens', lfxColors.blue[500]), unavailableDualSignal('Open rate · 6 mo', lfxColors.violet[500])],
+      caption: emailCtr ? trendWindow(emailCtr.monthlyOpens.length) : placeholderCaption,
       tooltipText: 'Email opens with click-through rate, plus sends and the six-month open rate.',
       drawerType: DashboardDrawerType.MarketingEmailCtr,
     } as DashboardMetricCard,

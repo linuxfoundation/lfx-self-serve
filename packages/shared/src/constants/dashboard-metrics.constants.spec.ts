@@ -189,6 +189,40 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(social?.subtitle).not.toContain('could not be loaded');
   });
 
+  // The Email card was the one reported from production: AAIF's March campaign had 100 opens
+  // at a 76.3% CTR, and a failed request rendered "0 opens · 0.0% CTR" because summing an
+  // absent response yields 0. Its signals are dual-signal rows rather than a single value.
+  it('says the data is unavailable when the email request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ emailCtr: undefined }));
+
+    const email = card(cards, 'ed-evo-campaign-performance');
+    expect(email?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(email?.dualSignals?.some((row) => String(row.value).includes('0 opens'))).toBe(false);
+    expect(email?.caption).toContain('could not be loaded');
+  });
+
+  // The Adoption card, whose drawer additionally asserts "No community engagement activity
+  // detected" — copy that states a finding rather than an outage. AAIF has 27,831 engaged.
+  it('says the data is unavailable when the engaged-community request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ engagedCommunity: undefined }));
+
+    const adoption = card(cards, 'ed-evo-engaged-community');
+    expect(adoption?.value).toBe('—');
+    expect(adoption?.value).not.toBe('0');
+    expect(adoption?.subtitle).toContain('could not be loaded');
+    expect(adoption?.changePercentage).toBeUndefined();
+  });
+
+  // A foundation that genuinely sent nothing must still read as a measured zero, or the fix
+  // trades one wrong answer for another.
+  it('renders a genuinely empty email month as zero, not as unavailable', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({}));
+
+    const email = card(cards, 'ed-evo-campaign-performance');
+    expect(email?.dualSignals?.[0]?.value).toBe('0 opens');
+    expect(email?.caption).not.toContain('could not be loaded');
+  });
+
   // The other half of the contract: a foundation that genuinely has nothing must still
   // read as zero. Rendering an em dash here would hide a real measurement.
   it('renders a genuine zero as zero, not as unavailable', () => {
