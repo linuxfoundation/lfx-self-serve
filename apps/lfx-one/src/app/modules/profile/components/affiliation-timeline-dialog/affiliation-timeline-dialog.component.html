@@ -71,11 +71,12 @@
                   class="flex flex-wrap items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
                   [attr.data-testid]="'period-row-' + period.id">
-                  <!-- Start label + Start Month/Year, grouped into ONE flex item so flex-wrap on the row
-                       (below) can only move the whole pair to the next line, never orphan the label from
-                       its controls. Below sm the month/year grid keeps them equal-width side by side (2
-                       columns, not stacked); fixed 110px/100px columns at sm and up so w-full resolves to
-                       the original month/year widths instead of shrink-to-fit sizing. -->
+                  <!-- Start label + Start Month/Year, grouped into ONE flex item so flex-wrap on the
+                       enclosing period-row div above can only move the whole pair to the next line, never
+                       orphan the label from its controls. Below sm the month/year grid keeps them
+                       equal-width side by side (2 columns, not stacked); fixed 110px/100px columns at sm
+                       and up so w-full resolves to the original month/year widths instead of shrink-to-fit
+                       sizing. -->
                   <div class="flex items-center gap-2">
                     <span class="text-xs font-medium text-slate-500">Start</span>
                     <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">

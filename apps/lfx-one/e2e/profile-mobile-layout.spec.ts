@@ -223,9 +223,7 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
   }
 
   for (const route of ROUTES) {
-    test(`desktop control: rail is a fixed 300px overlay at 2xl and up @ ${DESKTOP_VIEWPORT.name} (${DESKTOP_VIEWPORT.width}px) ${route}`, async ({
-      page,
-    }) => {
+    test(`desktop control: rail is a fixed 300px overlay at 2xl and up @ ${DESKTOP_VIEWPORT.name} (${DESKTOP_VIEWPORT.width}px) ${route}`, async ({ page }) => {
       await page.setViewportSize({ width: DESKTOP_VIEWPORT.width, height: DESKTOP_VIEWPORT.height });
       await page.goto(route, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
