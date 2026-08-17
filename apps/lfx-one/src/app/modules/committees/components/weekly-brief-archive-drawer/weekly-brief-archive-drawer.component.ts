@@ -41,7 +41,10 @@ export class WeeklyBriefArchiveDrawerComponent {
 
   public constructor() {
     // Lazy fetch: load on first open; clear on close so a reopened drawer always starts fresh.
+    // committeeId() is read here so Angular tracks it — a change while visible re-triggers load()
+    // and cancels any stale in-flight request for the previous committee.
     effect(() => {
+      this.committeeId(); // track as dependency
       if (this.visible()) {
         this.load();
       } else {

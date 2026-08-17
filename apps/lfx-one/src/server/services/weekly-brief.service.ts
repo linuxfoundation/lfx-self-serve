@@ -262,9 +262,12 @@ export class WeeklyBriefService {
   public async listBriefs(req: Request, committeeId: string, query: { limit?: string; page_token?: string } = {}): Promise<PaginatedResponse<WeeklyBrief>> {
     if (!this.isLive(req)) {
       logger.debug(req, 'list_weekly_briefs', 'Returning mock brief archive', { committee_id: committeeId });
+      const isSecondPage = !!query['page_token'];
       return {
-        data: [buildMockWeeklyBrief(committeeId, -1), buildMockWeeklyBrief(committeeId, -2), buildMockWeeklyBrief(committeeId, -3)],
-        page_token: query['page_token'] ? undefined : 'mock-cursor-page-2',
+        data: isSecondPage
+          ? [buildMockWeeklyBrief(committeeId, -4), buildMockWeeklyBrief(committeeId, -5), buildMockWeeklyBrief(committeeId, -6)]
+          : [buildMockWeeklyBrief(committeeId, -1), buildMockWeeklyBrief(committeeId, -2), buildMockWeeklyBrief(committeeId, -3)],
+        page_token: isSecondPage ? undefined : 'mock-cursor-page-2',
       };
     }
 
@@ -276,7 +279,7 @@ export class WeeklyBriefService {
     const params: Record<string, string | undefined> = {
       type: 'group_weekly_brief',
       tags: `committee_uid:${committeeId}`,
-      limit: String(limit),
+      page_size: String(limit),
       ...(query['page_token'] && { page_token: query['page_token'] }),
     };
 
@@ -288,7 +291,9 @@ export class WeeklyBriefService {
       params
     );
 
-    return { data: resources.map((r) => r.data), page_token };
+    // Exclude the current week's brief (window hasn't closed yet) — the card already shows it.
+    const now = new Date();
+    return { data: resources.map((r) => r.data).filter((b) => new Date(b.window_end) < now), page_token };
   }
 
   /**
