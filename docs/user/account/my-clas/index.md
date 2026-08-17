@@ -11,9 +11,9 @@ intercom_collection: Account
 
 These steps apply to any signed-in user on LFX Self Serve.
 
-**CLAs** is a read-only tab under the Profile & Account hub that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. CLAs answers: _which agreements have I signed, and under which projects am I covered?_
+**CLAs** is a read-only tab under the Profile & Account hub that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. The CLAs tab answers: _which agreements have I signed, and under which projects am I covered?_
 
-You cannot sign a CLA from this page. Signing happens outside CLAs, and the signing process may evolve; this page only shows agreements already on file.
+You cannot sign a CLA from this page. Signing happens outside the CLAs tab, and the signing process may evolve; this page only shows agreements already on file.
 
 For broader EasyCLA concepts (what a CLA is, project and corporate consoles, troubleshooting), see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
 
@@ -37,7 +37,7 @@ In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered und
 
 ## What does the CLAs list show?
 
-When agreements are found, CLAs shows a table with four columns:
+When agreements are found, the CLAs tab shows a table with four columns:
 
 | Column       | Contents                                                                                                            |
 | ------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -48,7 +48,7 @@ When agreements are found, CLAs shows a table with four columns:
 
 Only currently valid agreements appear on this list.
 
-### Why does CLAs say I have no CLAs?
+### Why does the CLAs tab say I have no CLAs?
 
 If nothing matches your linked identities, you see:
 
@@ -59,7 +59,7 @@ That does not always mean you never signed — see the next section.
 
 ## Why don't my signed CLAs show up?
 
-CLAs only finds agreements that match an identity linked to your LFX account. Matching today uses your LF username, verified emails, and linked GitHub accounts. A CLA can be missing from the list when:
+The CLAs tab only finds agreements that match an identity linked to your LFX account. Matching today uses your LF username, verified emails, and linked GitHub accounts. A CLA can be missing from the list when:
 
 - The **email** or **GitHub** account you used when signing is **not linked** to this LFX profile
 - You signed under a **work or secondary email** that is not among your verified / linked emails
@@ -81,9 +81,9 @@ Yes for an **ICLA**, when EasyCLA has the signed file — use **Download PDF** i
 
 No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. The Document column shows _Covered by Corporate CLA (CCLA)_.
 
-## Can I sign a CLA from CLAs?
+## Can I sign a CLA from the CLAs tab?
 
-No. CLAs is read-only. Signing happens outside this tab, and the process may evolve. See the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
+No. The CLAs tab is read-only. Signing happens outside this tab, and the process may evolve. See the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
 
 ## Related
 
