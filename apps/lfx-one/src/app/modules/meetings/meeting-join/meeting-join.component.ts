@@ -48,10 +48,10 @@ import {
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
-  Project,
   PublicMeetingOccurrencesResponse,
+  PublicMeetingParentProject,
+  PublicMeetingProject,
   PublicPastMeetingResponse,
-  ROOT_PROJECT_SLUG,
   TagSeverity,
   User,
 } from '@lfx-one/shared';
@@ -63,7 +63,6 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -134,7 +133,6 @@ export class MeetingJoinComponent implements OnInit {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
-  private readonly projectService = inject(ProjectService);
   protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
@@ -147,8 +145,8 @@ export class MeetingJoinComponent implements OnInit {
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
   public joinForm: FormGroup;
-  public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
-  public meeting: Signal<Meeting & { project: Partial<Project> }>;
+  public project: WritableSignal<PublicMeetingProject | null> = signal<PublicMeetingProject | null>(null);
+  public meeting: Signal<Meeting & { project: PublicMeetingProject }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override when
   // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule. NOTE: the
@@ -251,8 +249,9 @@ export class MeetingJoinComponent implements OnInit {
   // Null on the server and until hydration resolves the browser timezone — the badge shows a skeleton while null.
   protected userTimezone = signal<string | null>(null);
   protected drawerPosition = computed(() => (this.isMobileViewport() ? 'bottom' : 'right') as 'bottom' | 'right');
-  // Parent project (foundation) for context display
-  protected parentProject: Signal<Project | null>;
+  // Parent project (foundation) for context display — read straight off the response (LFXV2-3266),
+  // resolved server-side rather than fetched here.
+  protected parentProject: Signal<PublicMeetingParentProject | null>;
   // Registrant list, fetched only when the user is the meeting organizer or invited.
   // Pre-loaded with the meeting so the Show Members drawer renders instantly from cache.
   protected registrants: Signal<MeetingRegistrant[]>;
@@ -684,7 +683,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeMeeting() {
-    return toSignal<Meeting & { project: Partial<Project> }>(
+    return toSignal<Meeting & { project: PublicMeetingProject }>(
       combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
         debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
         switchMap(([params, queryParams]) => {
@@ -705,7 +704,7 @@ export class MeetingJoinComponent implements OnInit {
               }),
               map((res: PublicPastMeetingResponse) => ({
                 meeting: res.meeting,
-                project: res.project as Partial<Project>,
+                project: res.project,
               })),
               catchError((error) => {
                 if ([404, 403, 400].includes(error.status)) {
@@ -729,7 +728,7 @@ export class MeetingJoinComponent implements OnInit {
                   }),
                   map((res: PublicPastMeetingResponse) => ({
                     meeting: res.meeting,
-                    project: res.project as Partial<Project>,
+                    project: res.project,
                   })),
                   catchError(() => {
                     this.router.navigate(['/meetings/not-found']);
@@ -749,7 +748,7 @@ export class MeetingJoinComponent implements OnInit {
           this.project.set(res.project);
         })
       )
-    ) as Signal<Meeting & { project: Partial<Project> }>;
+    ) as Signal<Meeting & { project: PublicMeetingProject }>;
   }
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
@@ -1338,25 +1337,10 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
-  private initializeParentProject(): Signal<Project | null> {
-    return toSignal(
-      toObservable(this.project).pipe(
-        map((p) => p?.parent_uid ?? null),
-        distinctUntilChanged(),
-        switchMap((parentUid) => {
-          if (!parentUid) {
-            // Top-level (or unknown) project — explicitly clear any stale foundation context
-            // instead of suppressing the emission, which would leave the previous parent cached.
-            return of(null);
-          }
-          return this.projectService.getProject(parentUid, false).pipe(
-            map((parent) => (parent?.slug === ROOT_PROJECT_SLUG ? null : parent)),
-            catchError(() => of(null))
-          );
-        })
-      ),
-      { initialValue: null }
-    );
+  // The server resolves the foundation project and maps root-level projects to null (LFXV2-3266) —
+  // no client fetch needed here anymore.
+  private initializeParentProject(): Signal<PublicMeetingParentProject | null> {
+    return computed(() => this.project()?.parent ?? null);
   }
 
   // PlausibleService defers the auto-pageview for /meetings/:id — fire it here once context lands.
@@ -1364,27 +1348,11 @@ export class MeetingJoinComponent implements OnInit {
     if (isPlatformServer(this.platformId)) {
       return;
     }
-    // Caps the parent foundation fetch so ROOT_PROJECT_SLUG → null (mapped in initializeParentProject)
-    // doesn't block the pageview forever. Sub-projects whose parent doesn't land in time record
-    // project_* correctly and leave foundation_* empty (see buildPageviewContext callsite below).
-    const PARENT_FETCH_TIMEOUT_MS = 2000;
-    // Created here (injection context) rather than inside the switchMap below — toObservable()
-    // calls inject() internally and throws NG0203 when invoked from an async stream callback.
-    const parentProject$ = toObservable(this.parentProject);
+    // The parent (foundation) now arrives in the same payload as the project (LFXV2-3266), so no
+    // race against a separate fetch is needed here anymore — just wait for the project itself.
     const pageviewContext$ = toObservable(this.project).pipe(
-      filter((p): p is Partial<Project> => !!p?.slug),
-      switchMap((project) => {
-        if (!project.parent_uid) {
-          return of({ project, parent: null as Project | null });
-        }
-        return merge(
-          parentProject$.pipe(
-            filter((parent): parent is Project => !!parent),
-            map((parent) => ({ project, parent: parent as Project | null }))
-          ),
-          timer(PARENT_FETCH_TIMEOUT_MS).pipe(map(() => ({ project, parent: null as Project | null })))
-        );
-      }),
+      filter((p): p is PublicMeetingProject => !!p?.slug),
+      map((project) => ({ project, parent: project.parent })),
       take(1)
     );
     // trackPage() silently drops calls made before the Plausible script executes, and this route's
