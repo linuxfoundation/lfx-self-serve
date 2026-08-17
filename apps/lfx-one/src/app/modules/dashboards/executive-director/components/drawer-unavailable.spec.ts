@@ -43,7 +43,7 @@ describe('ED drill-down drawers — a failed request must not read as no activit
     // A NON-zero shape for the same drawer, plus a figure that must not survive on screen.
     // Zero-filled fixtures alone cannot tell a suppressed body from one rendering zeros —
     // that blind spot let two drawers ship their stats above the "unavailable" banner.
-    nonZero?: { inputs: Record<string, unknown>; staleFigure: string };
+    nonZero?: { inputs: Record<string, unknown>; staleFigures: string[] };
   }[] = [
     {
       name: 'Sentiment',
@@ -150,7 +150,9 @@ describe('ED drill-down drawers — a failed request must not read as no activit
         // cannot produce.
       },
       nonZero: {
-        staleFigure: '1,234',
+        // Every live figure in the drawer, not just the headline: the first fix guarded the
+        // stat block alone and left retention stats, insight blocks and charts rendering.
+        staleFigures: ['1,234', '92.5', '104.2'],
         inputs: {
           data: {
             totalMembers: 1234,
@@ -174,6 +176,11 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       },
     },
     {
+      // NOT RENDERED ANYWHERE TODAY. MemberRetentionDrawerComponent is referenced by no
+      // template — retention reaches the user through member-acquisition-drawer's
+      // `retentionData` input instead. These two cases therefore do not cover the live
+      // retention path; they keep the orphaned component consistent with its five siblings
+      // so it does not ship the old defect if it is ever wired up.
       name: 'Retention',
       component: MemberRetentionDrawerComponent,
       measuredCopy: 'No retention activity detected',
@@ -181,7 +188,7 @@ describe('ED drill-down drawers — a failed request must not read as no activit
         data: { renewalRate: 0, netRevenueRetention: 0, changePercentage: 0, trend: 'up', target: 0, monthlyData: [] },
       },
       nonZero: {
-        staleFigure: '92.5',
+        staleFigures: ['92.5', '104.2'],
         inputs: {
           data: {
             renewalRate: 92.5,
@@ -301,7 +308,9 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       const text = document.body.textContent ?? '';
 
       expect(text).toContain(DRAWER_UNAVAILABLE_HEADING);
-      expect(text).not.toContain(nonZero!.staleFigure);
+      for (const figure of nonZero!.staleFigures) {
+        expect(text).not.toContain(figure);
+      }
 
       fixture.destroy();
       TestBed.resetTestingModule();

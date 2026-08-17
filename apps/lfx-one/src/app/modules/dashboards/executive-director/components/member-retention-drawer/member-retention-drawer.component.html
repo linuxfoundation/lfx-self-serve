@@ -64,7 +64,7 @@
     }
 
     <!-- FIRST FOLD: Needs Your Attention -->
-    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+    @if (!unavailable() && (attentionActions().length > 0 || attentionInsights().length > 0)) {
       <div
         class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
         data-testid="member-retention-drawer-attention">
@@ -97,7 +97,7 @@
     }
 
     <!-- SECOND FOLD: Performing Well -->
-    @if (performingActions().length > 0 || performingInsights().length > 0) {
+    @if (!unavailable() && (performingActions().length > 0 || performingInsights().length > 0)) {
       <div
         class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
         data-testid="member-retention-drawer-performing">

@@ -225,13 +225,15 @@
 <lfx-event-growth-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarEventGrowth"
   [data]="eventGrowthData()"
-  (visibleChange)="handleDrawerClose()"></lfx-event-growth-drawer>
+  (visibleChange)="handleDrawerClose()"
+  [unavailable]="!edEvolutionData().eventGrowth"></lfx-event-growth-drawer>
 
 <!-- Brand Drawers -->
 <lfx-brand-reach-drawer
   [visible]="activeDrawer() === DashboardDrawerType.BrandReach"
   [data]="brandReachData()"
-  (visibleChange)="handleDrawerClose()"></lfx-brand-reach-drawer>
+  (visibleChange)="handleDrawerClose()"
+  [unavailable]="!edEvolutionData().brandReach"></lfx-brand-reach-drawer>
 
 <lfx-brand-health-drawer
   [visible]="activeDrawer() === DashboardDrawerType.BrandHealth"

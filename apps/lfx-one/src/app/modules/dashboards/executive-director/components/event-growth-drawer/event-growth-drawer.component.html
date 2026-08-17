@@ -182,7 +182,7 @@
         </div>
       } @else {
         <div class="flex items-center justify-center h-[120px] text-sm text-gray-400" data-testid="event-growth-drawer-monthly-empty">
-          Quarterly trend data not yet available
+          {{ unavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Quarterly trend data not yet available' }}
         </div>
       }
     </div>

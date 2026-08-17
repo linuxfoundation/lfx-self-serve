@@ -143,7 +143,7 @@
         </div>
       } @else {
         <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-platforms-empty">
-          Social platform data not yet available
+          {{ unavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Social platform data not yet available' }}
         </div>
       }
     </div>
@@ -165,7 +165,7 @@
         </div>
       } @else {
         <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-domains-empty">
-          Website domain data not yet available
+          {{ unavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Website domain data not yet available' }}
         </div>
       }
     </div>
