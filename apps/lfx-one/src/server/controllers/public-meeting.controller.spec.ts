@@ -724,7 +724,11 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, req.body);
+    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(
+      req,
+      MEETING_ID,
+      expect.objectContaining({ meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', host: false })
+    );
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
   });
@@ -807,5 +811,31 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(req.bearerToken).toBe('user-token');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // `host` grants "access to host key for the meeting" upstream, and `committee_uid` claims committee
+  // membership. Neither is the caller's to assert about themselves, so `toSelfRegistration` drops both
+  // before the body reaches the meeting service.
+  it('does not let a caller grant itself host access or claim a committee', async () => {
+    const { req, res, next } = buildRegisterReq(true, { host: true, committee_uid: 'committee-1' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
+    expect(forwarded.host).toBe(false);
+    expect(forwarded).not.toHaveProperty('committee_uid');
+  });
+
+  it('drops any other field the caller invents', async () => {
+    const { req, res, next } = buildRegisterReq(true, { username: 'someone-else', uid: 'reg-hijack', type: 'committee' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
+    for (const key of ['username', 'uid', 'type']) {
+      expect(forwarded).not.toHaveProperty(key);
+    }
   });
 });

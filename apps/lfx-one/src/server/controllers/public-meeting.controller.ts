@@ -481,7 +481,7 @@ export class PublicMeetingController {
    * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const registrantData: CreateMeetingRegistrantRequest = req.body;
+    const registrantData = this.toSelfRegistration(req.body);
     const meetingId = registrantData.meeting_id;
 
     const startTime = logger.startOperation(req, 'register_for_public_meeting', {
@@ -592,6 +592,32 @@ export class PublicMeetingController {
       uid: project.uid,
       parent_uid: project.parent_uid,
       parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug } : null,
+    };
+  }
+
+  /**
+   * Narrows an anonymous request body to the fields a person may set about themselves.
+   *
+   * This endpoint takes no session and forwards upstream under an M2M token, so whatever survives
+   * this function is written with application-level credentials and no user to attribute it to. The
+   * body used to be assigned wholesale, which let an anonymous caller set `host: true` — upstream
+   * documents that as "access to host key for the meeting" — or claim membership of a committee by
+   * passing `committee_uid`. Neither is the caller's to decide, so both are dropped here rather than
+   * left to upstream's discretion.
+   *
+   * An allowlist rather than a denylist: a field added to `CreateMeetingRegistrantRequest` later
+   * should have to be opted in to the public path deliberately, not inherit it.
+   */
+  private toSelfRegistration(body: CreateMeetingRegistrantRequest): CreateMeetingRegistrantRequest {
+    return {
+      meeting_id: body?.meeting_id,
+      email: body?.email,
+      first_name: body?.first_name,
+      last_name: body?.last_name,
+      host: false,
+      ...(body?.job_title ? { job_title: body.job_title } : {}),
+      ...(body?.org_name ? { org_name: body.org_name } : {}),
+      ...(body?.occurrence_id ? { occurrence_id: body.occurrence_id } : {}),
     };
   }
 
