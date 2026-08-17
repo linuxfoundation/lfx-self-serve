@@ -340,6 +340,56 @@ describe('WeeklyBriefController', () => {
     });
   });
 
+  describe('shareBrief (LFXV2-2914 / LFXV2-3093)', () => {
+    it('rejects a missing revision', async () => {
+      const next = vi.fn();
+
+      await controller.shareBrief(buildReq({}), buildRes(), next);
+
+      expect(weeklyBriefSvc.shareBrief).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    });
+
+    it('accepts a valid body and forwards the revision to the service', async () => {
+      weeklyBriefSvc.shareBrief.mockResolvedValue({ committee_name: 'Test Committee', total_recipients: 5 });
+
+      await controller.shareBrief(buildReq({ revision: 3 }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.shareBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 3);
+    });
+
+    it('checks committee read access before sharing — the service enforces the real (LFXV2-3093: real-identity) project-writer boundary', async () => {
+      weeklyBriefSvc.shareBrief.mockResolvedValue({ committee_name: 'Test Committee', total_recipients: 5 });
+
+      await controller.shareBrief(buildReq({ revision: 1 }), buildRes(), vi.fn());
+
+      expect(assertCommitteeRead).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, 'share_weekly_brief');
+      const accessOrder = assertCommitteeRead.mock.invocationCallOrder[0];
+      const shareOrder = weeklyBriefSvc.shareBrief.mock.invocationCallOrder[0];
+      expect(accessOrder).toBeLessThan(shareOrder);
+    });
+
+    it('propagates a service error via next instead of swallowing it (e.g. 403 NOT_PROJECT_WRITER)', async () => {
+      const upstreamError = Object.assign(new Error('not a writer'), { statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+      weeklyBriefSvc.shareBrief.mockRejectedValue(upstreamError);
+      const next = vi.fn();
+
+      await controller.shareBrief(buildReq({ revision: 1 }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(upstreamError);
+    });
+
+    it('returns the service result as JSON', async () => {
+      const result = { committee_name: 'Test Committee', total_recipients: 5 };
+      weeklyBriefSvc.shareBrief.mockResolvedValue(result);
+      const res = buildRes();
+
+      await controller.shareBrief(buildReq({ revision: 1 }), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith(result);
+    });
+  });
+
   describe('shareToSlack (LFXV2-3080) — request body validation', () => {
     it('rejects a missing revision', async () => {
       const next = vi.fn();
@@ -359,8 +409,19 @@ describe('WeeklyBriefController', () => {
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     });
 
+    it('rejects a non-integer, non-positive, or unsafe-integer revision — same bound as validateRateBriefBody/validateClearRatingBody, since this now crosses the wire as the committee-service share-to-chat body (UInt64, Minimum(1))', async () => {
+      for (const badRevision of [0, -1, 1.5, 1e20]) {
+        const next = vi.fn();
+
+        await controller.shareToSlack(buildReq({ revision: badRevision }), buildRes(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      }
+      expect(weeklyBriefSvc.shareToSlack).not.toHaveBeenCalled();
+    });
+
     it('accepts a valid body and forwards the revision to the service', async () => {
-      weeklyBriefSvc.shareToSlack.mockResolvedValue({ committee_name: 'Test Committee' });
+      weeklyBriefSvc.shareToSlack.mockResolvedValue({});
 
       await controller.shareToSlack(buildReq({ revision: 3 }), buildRes(), vi.fn());
 
@@ -370,7 +431,7 @@ describe('WeeklyBriefController', () => {
 
   describe('shareToSlack (LFXV2-3080) — read access gate', () => {
     it('checks committee read access before sharing — same gate shape as shareBrief: the service enforces the real project-writer boundary', async () => {
-      weeklyBriefSvc.shareToSlack.mockResolvedValue({ committee_name: 'Test Committee' });
+      weeklyBriefSvc.shareToSlack.mockResolvedValue({});
 
       await controller.shareToSlack(buildReq({ revision: 1 }), buildRes(), vi.fn());
 
@@ -415,7 +476,7 @@ describe('WeeklyBriefController', () => {
     });
 
     it('returns the service result as JSON', async () => {
-      const result = { committee_name: 'Test Committee' };
+      const result = {};
       weeklyBriefSvc.shareToSlack.mockResolvedValue(result);
       const res = buildRes();
 

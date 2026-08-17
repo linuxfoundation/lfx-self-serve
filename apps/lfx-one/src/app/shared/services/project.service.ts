@@ -66,11 +66,16 @@ export class ProjectService {
     );
   }
 
-  public getProject(slug: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
-    const cacheKey = `${slug}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
+  /**
+   * Fetches a project by slug OR uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs and
+   * resolves them via getProjectById, so callers holding either identifier can use this method.
+   * Note the two identifiers cache under separate keys for the same project.
+   */
+  public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
-      const project$ = this.http.get<Project>(`/api/projects/${slug}`, { params }).pipe(
+      const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);
@@ -86,6 +91,16 @@ export class ProjectService {
       this.projectCache.set(cacheKey, project$);
     }
     return this.projectCache.get(cacheKey)!;
+  }
+
+  /**
+   * Slug lookup that propagates HTTP failures instead of mapping them to null,
+   * for callers that must distinguish a missing project (400/404) from an
+   * upstream outage (5xx) — e.g. the newsletter reader's SSR 404 signaling.
+   * Uncached and side-effect free (does not touch the active-project state).
+   */
+  public getProjectStrict(slug: string): Observable<Project> {
+    return this.http.get<Project>(`/api/projects/${encodeURIComponent(slug)}`);
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {

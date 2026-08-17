@@ -16,14 +16,37 @@
           <p class="text-xs text-slate-500">{{ headerSubtitle() }}</p>
         }
       </div>
-      <button
-        type="button"
-        (click)="onClose()"
-        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-        data-testid="newsletter-preview-drawer-close"
-        aria-label="Close panel">
-        <i class="fa-light fa-xmark text-xl"></i>
-      </button>
+      <div class="flex items-center gap-2">
+        @if (shareUrl()) {
+          <a
+            [href]="shareUrl()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors no-underline"
+            title="Open in new tab"
+            aria-label="Open newsletter in a new tab"
+            data-testid="newsletter-preview-drawer-open-new-tab">
+            <i class="fa-light fa-arrow-up-right-from-square text-xl"></i>
+          </a>
+          <button
+            type="button"
+            (click)="onCopyLink()"
+            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+            title="Copy link"
+            aria-label="Copy link"
+            data-testid="newsletter-preview-drawer-copy-link">
+            <i class="fa-light fa-link text-xl"></i>
+          </button>
+        }
+        <button
+          type="button"
+          (click)="onClose()"
+          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+          data-testid="newsletter-preview-drawer-close"
+          aria-label="Close panel">
+          <i class="fa-light fa-xmark text-xl"></i>
+        </button>
+      </div>
     </div>
   </ng-template>
 

@@ -18,11 +18,12 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
-import {
+import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingOccurrenceRoute,
@@ -659,6 +660,21 @@ export function buildMeetingOccurrenceRoute(
 }
 
 /**
+ * Builds the canonical Angular router commands for a meeting's edit page, prefixing the path with
+ * the MEETING's own project tier (`is_foundation`) rather than the viewer's transient active lens:
+ * foundation-owned meetings edit under `/foundation/meetings/{id}/edit`, all other projects under
+ * `/project/meetings/{id}/edit`. Returns null when `is_foundation` is absent (unenriched payload)
+ * so callers can fall back to the flat `/meetings/{id}/edit` path handled by `lensRedirectGuard`.
+ */
+export function getMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] | null {
+  if (meeting.is_foundation === undefined) {
+    return null;
+  }
+
+  return ['/', meeting.is_foundation ? 'foundation' : 'project', 'meetings', meeting.id, 'edit'];
+}
+
+/**
  * Sorts past meetings most-recent-first (descending by `scheduled_start_time`, falling back to
  * `start_time` when absent).
  *
@@ -1249,4 +1265,32 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
     return rankDelta;
   }
   return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+}
+
+/**
+ * Drops null/blank committee entries from a meeting payload.
+ *
+ * PrimeNG MultiSelect builds its trigger label with `label += getLabelByValue(...)`.
+ * Unmatched values return JS `null`, and `'' + null === 'null'`, so a committees
+ * array of `[null]` / `{ uid: null }` renders the literal label "null" instead of
+ * the empty placeholder (GH-1430).
+ */
+export function sanitizeMeetingCommittees(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): MeetingCommittee[] {
+  if (!Array.isArray(committees) || committees.length === 0) {
+    return [];
+  }
+
+  return committees.filter((committee): committee is MeetingCommittee => Boolean(committee?.uid?.trim()));
+}
+
+/**
+ * Drops null/blank committee UIDs from a MultiSelect form value so the control
+ * stays `[]` rather than `[null]` / `[undefined]`.
+ */
+export function sanitizeMeetingCommitteeUids(uids: ReadonlyArray<string | null | undefined> | null | undefined): string[] {
+  if (!Array.isArray(uids) || uids.length === 0) {
+    return [];
+  }
+
+  return uids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0);
 }

@@ -9,6 +9,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
 import { CombinedProfile, Project } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
+import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
@@ -26,6 +27,7 @@ import { MenuComponent } from '../menu/menu.component';
 })
 export class HeaderComponent {
   private readonly router = inject(Router);
+  private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
   private readonly appService = inject(AppService);
   public readonly userService = inject(UserService);
@@ -141,6 +143,11 @@ export class HeaderComponent {
 
   protected toggleMobileSidebar(): void {
     this.appService.toggleMobileSidebar();
+  }
+
+  protected navigateToMyMeetings(): void {
+    this.lensService.setLens('me');
+    void this.router.navigate(['/meetings']);
   }
 
   private initializeUserProfile(): Signal<CombinedProfile | null> {

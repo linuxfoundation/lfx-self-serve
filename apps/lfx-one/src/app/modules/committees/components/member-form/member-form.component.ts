@@ -316,7 +316,7 @@ export class MemberFormComponent {
         voting_status_start: new FormControl(null),
         voting_status_end: new FormControl(null),
         permission: new FormControl<CommitteePermissionLevel>('member'),
-        send_notification: new FormControl<boolean>(true, { nonNullable: true }),
+        send_notification: new FormControl<boolean>(false, { nonNullable: true }),
       },
       {
         validators: this.committee?.enable_voting

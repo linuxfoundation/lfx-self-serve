@@ -7,6 +7,19 @@
 
 export type CampaignPlatform = 'google-ads' | 'microsoft-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
 
+/**
+ * Any platform a campaign can dispatch to — the paid ad channels plus the email channel.
+ *
+ * `'hubspot'` is spelled out here rather than added to `CampaignPlatform`. Upstream the two are
+ * interchangeable (`docs/api-catalog.md` records the platform enum as `"hubspot"`, and `campaigns`
+ * is unique on `(brief_id, platform)`), but here they are not: `CampaignPlatform`'s members are
+ * enumerated by `CAMPAIGN_PLATFORMS`, which renders the paid Ad Channels picker
+ * (`planning-tab.component.ts:96`). Widening that union would offer HubSpot as an ad channel a
+ * paid brief could select — email is not an ad channel, it is a different delivery type that
+ * happens to dispatch through one.
+ */
+export type CampaignAnyPlatform = CampaignPlatform | 'hubspot';
+
 export type CampaignPhase = 'planning' | 'implementation' | 'insights' | 'optimization';
 
 export type LinkedInTargetingProfile = 'cloud-native' | 'mcp' | 'custom';
@@ -119,6 +132,15 @@ export type CampaignSSEEventType =
 export interface CampaignBriefRequest {
   url: string;
   platforms?: CampaignPlatform[];
+  /**
+   * Which delivery channel the brief is for. Absent means `paid-marketing`.
+   *
+   * Explicit rather than inferred from `platforms` being absent. That inference does not work:
+   * the generator treats an absent platform list as the paid DEFAULT (`['google-ads']`), so
+   * "no platforms" and "the caller did not say" are the same value on the wire and cannot mean
+   * two different things. This field is what distinguishes them.
+   */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -257,6 +279,83 @@ export interface CampaignBriefPersistenceState {
    * brief is stored but not yet usable.
    */
   message: string | null;
+
+  /**
+   * Is the stored brief APPROVED, and therefore usable for campaign creation?
+   *
+   * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
+   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * approved before creating campaigns" — so the Implementation tab has to know, and matching on
+   * banner prose to find out would break the first time the copy is edited.
+   *
+   * Load-bearing on `saved` AND on `off`-with-a-briefId, which is the RESTORE state. An earlier
+   * version of this line said "meaningful only on `saved`; `false` elsewhere, where there is no
+   * stored brief to approve" — every clause of that became false once restore began carrying the
+   * stored brief's own approval through (`onRestoreSavedBrief` → `onProceedToImplementation`).
+   *
+   * So the two states that gate creation on it are:
+   *   `saved`            — this session wrote the brief; `approved` is that write's approval.
+   *   `off` + a briefId  — a brief was RESTORED; `approved` is the stored row's.
+   *
+   * `off` with a NULL briefId is the genuinely-not-applicable case (cutover dark, or nothing
+   * saved yet), and `false` there means "no opinion", not "unapproved". The Implementation tab
+   * reads it exactly that way — see `canSubmit`, which checks the brief id before the flag.
+   */
+  approved: boolean;
+}
+
+/**
+ * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
+ *
+ * `ImplementationTabComponent` lives inside a structural `@switch`, so leaving the tab destroys
+ * it and everything it owns locally. LFXV2-3202 (PR #1437, not yet merged) proposes keeping the
+ * planner mounted for the Plan tab, but the same treatment is wrong here: this component fetches
+ * the LinkedIn ad-account list in `ngOnInit`, so mounting it eagerly would issue that request on
+ * every page load for a tab the user may never open. Lifting the edits out instead keeps the
+ * component cheap to destroy while the user's typing survives (LFXV2-3229).
+ *
+ * Deliberately a SNAPSHOT of the fields a user TYPES, not the whole component state. Anything
+ * re-derived from a fetch (results, progress, the LinkedIn account list) is left to re-derive —
+ * restoring those would be restoring a cache, and a stale one.
+ *
+ * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
+ * against the brief on screen so one event's edits cannot replay onto another's.
+ *
+ * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
+ * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
+ * user-editable and are still discarded, because they live in signals rather than this form and
+ * would need their own plumbing. The Google copy and budget carried here are the highest-volume
+ * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
+ *
+ * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
+ * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
+ * field, and replaying that over a freshly generated brief would erase it.
+ */
+export interface CampaignImplementationDraft {
+  /**
+   * Event identity as edited. All three are plain text inputs the user types into, and
+   * `registrationUrl` carries `Validators.required` — it is where the paid traffic lands, so a
+   * silently reverted one sends spend at a stale scraped URL.
+   */
+  eventName: string;
+  countryCode: string;
+  registrationUrl: string;
+  /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
+  headlines: string[];
+  descriptions: string[];
+  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  budgetUsd: number;
+  searchBudgetPct: number;
+  startDate: string;
+  endDate: string;
+  includeSearch: boolean;
+  includeDemandGen: boolean;
+  /**
+   * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
+   * Without it, generating a brief for event B and opening Implement would restore event A's
+   * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
+   */
+  eventSlug: string;
 }
 
 /**
@@ -570,12 +669,39 @@ export interface CampaignBriefRefineRequest {
   feedback: string;
   eventDetails?: CampaignEventDetails | null;
   platforms?: CampaignPlatform[];
+  /** See `CampaignBriefRequest.deliveryType`. Refine re-runs the same generators. */
+  deliveryType?: CampaignDeliveryType;
   programType?: CampaignProgramType;
 }
 
 // ---------------------------------------------------------------------------
 // Campaign Creation (Implementation Phase)
 // ---------------------------------------------------------------------------
+
+/**
+ * The email channel's per-platform config, typed to what campaign-service's `hubspotConfig`
+ * actually reads (`internal/dispatch/hubspot.go:47-56`) rather than to the legacy request shape
+ * the ad platforms carry.
+ *
+ * Deliberately just these two fields. The rest of what the HubSpot dispatcher needs — the send
+ * list, its suppressions — is NOT config: it resolves the brief's BUILT audience by `brief.ID`
+ * (`hubspot.go:293`), so passing an audience here would be a second, divergent source of truth
+ * for something the service already owns.
+ */
+export interface HubSpotCampaignCreateRequest {
+  /**
+   * The HubSpot marketing-email id to clone. REQUIRED upstream — there is no default template,
+   * and `hubspot.go:281-283` refuses the dispatch when it is blank. Sourced from the template
+   * picker that `searchHubSpotEmails` feeds.
+   */
+  sourceEmailId: string;
+  /**
+   * Optional override for the `utm_campaign` applied to the email's links. When unset the service
+   * derives one from the deterministic email name, so links stay attributable either way — set it
+   * only to roll several briefs' emails up to one campaign in reporting.
+   */
+  utmCampaign?: string;
+}
 
 export interface CampaignCreateRequest {
   eventName: string;
@@ -598,10 +724,46 @@ export interface CampaignCreateRequest {
   geoTargets: string[];
   project?: string;
   driveFolderUrl?: string;
-  platforms?: CampaignPlatform[];
+  /**
+   * Widened to `CampaignAnyPlatform` — this is the ONE request where the email channel is a legal
+   * platform, because it is the only one that dispatches. The planning/refine requests keep the
+   * narrow `CampaignPlatform[]`: those drive ad-copy and keyword generation, which email does not
+   * use, so accepting `hubspot` there would type-check a request the generators cannot serve.
+   */
+  platforms?: CampaignAnyPlatform[];
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+  hubspotConfig?: HubSpotCampaignCreateRequest;
+}
+
+/**
+ * The INTERNAL result of `CampaignServiceClient.createCampaigns` — not a wire shape.
+ *
+ * `POST /api/campaigns/create` never sends this. The controller translates it: `{ jobId }` on
+ * success, `{ jobId: '', error }` on refusal, and on `enabled: false` it falls through to the
+ * legacy path and answers with that path's response instead. `enabled` is a routing signal
+ * between these two layers and is stripped before anything reaches the client, so a client coded
+ * against it would read `undefined` forever.
+ *
+ * Deliberately NOT the legacy `{ jobId, result?, error? }` shape. The legacy path inline-waits up
+ * to 45s and can return a finished `result`; campaign-service answers 202 with a job id and
+ * nothing else, because dispatch is genuinely asynchronous there — the platforms are called by a
+ * dispatcher the request does not wait for.
+ *
+ * `enabled: false` is a first-class outcome, not a failure: it is the steady state everywhere the
+ * cutover is dark, and the caller must fall through to the legacy path rather than showing an
+ * error.
+ */
+export interface CampaignServiceCreateResult {
+  enabled: boolean;
+  /** The campaign-service job id (a UUID). Poll it through the existing job-status route. */
+  jobId: string | null;
+  /**
+   * Why the cutover could not be used for this request, when `enabled` is true but `jobId` is
+   * null. Never a raw upstream error — the caller renders this.
+   */
+  error: string | null;
 }
 
 export interface CampaignCreateResult {
@@ -1016,6 +1178,97 @@ export interface RedditMonitorResponse {
   campaigns: RedditCampaignMetrics[];
   accountTotals: RedditAccountTotals;
   actionItems: RedditActionItem[];
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot Email Templates
+// ---------------------------------------------------------------------------
+
+/**
+ * One HubSpot marketing email, as the template picker lists it.
+ *
+ * `id` is the only field campaign-service guarantees, and it is the one that matters: it is what
+ * `hubspotConfig.sourceEmailId` takes, and that field is REQUIRED with no default — staging an
+ * email clones a template, so without a choice here the email channel cannot dispatch at all.
+ *
+ * `state` is worth rendering. A template can be a DRAFT, and cloning one is legitimate but worth
+ * seeing first. Note it can never say ARCHIVED: HubSpot models archival as a separate flag rather
+ * than a lifecycle state, and this search does not request archived rows, so they are absent from
+ * the result entirely rather than present with a different `state`.
+ *
+ * `updatedAt` earns its place because two templates routinely share a name — the date is what
+ * tells them apart. The service already returns the list most-recently-updated first.
+ */
+export interface HubSpotMarketingEmail {
+  /**
+   * Never empty in practice — the service declares it Required — but a row that somehow arrives
+   * without one is not selectable, because this is the value `sourceEmailId` takes. Callers
+   * should drop such a row rather than render it as a choice that cannot be made.
+   */
+  id: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updatedAt?: string;
+}
+
+/**
+ * What the template search returns.
+ *
+ * `enabled: false` is a first-class outcome rather than a failure, matching the other
+ * campaign-service reads: it means **no HubSpot connection resolved for this project id**, which
+ * is the steady state until someone connects one. The picker renders a "connect HubSpot" empty
+ * state for it, not an error.
+ *
+ * It does NOT isolate "not connected yet". campaign-service reaches that typed 404 whenever the
+ * connection row is absent, and a project id that does not exist has no row either — so a
+ * mistyped slug produces the same answer as an unconfigured project. The empty state should name
+ * the project it queried, so a typo is visible rather than reported as a missing integration.
+ * A bad or undecryptable credential is a DIFFERENT status (400/500/503) and is not swallowed
+ * here.
+ *
+ * **An empty query returns a BOUNDED first screen, not the whole portal.** campaign-service caps
+ * an unfiltered listing at 500 because an empty needle matches every row, and it takes the first
+ * N in SERVER order before sorting them — so the screen is "recent emails to pick from", NOT a
+ * guarantee of the newest in the portal. `possiblyTruncated` says when that cap may have bitten,
+ * because the wire result carries no pagination field and a capped 500 is byte-identical to a
+ * complete 500.
+ *
+ * A FILTERED search is exempt from that 500-row cap — truncating one would report an email that
+ * exists as absent — but it is NOT unbounded, which an earlier version of this comment claimed.
+ * campaign-service walks at most `maxListPages = 200` and returns an error on exhausting them
+ * rather than a partial list, so a filtered search is COMPLETE-OR-ERROR: it either matched across
+ * every page or it failed. That is why `possiblyTruncated` is always false for one.
+ *
+ * The cost is latency: `q` never reaches HubSpot — its list endpoint cannot be queried by name or
+ * subject — so campaign-service walks the pages and matches name-or-subject case-insensitively
+ * in-process. On a large portal a typed query is a slow call, which is why the picker must
+ * debounce rather than search per keystroke, and why callers should not assume unlimited
+ * traversal time.
+ */
+export interface HubSpotEmailSearchResult {
+  enabled: boolean;
+  emails: HubSpotMarketingEmail[];
+  /**
+   * Whether this list may have been cut off by the unfiltered cap.
+   *
+   * True only for an EMPTY query that came back exactly at the cap — the one case where a
+   * complete portal listing and a truncated first screen are indistinguishable on the wire.
+   *
+   * A filtered search is COMPLETE-OR-ERROR rather than truncatable: campaign-service's walk is
+   * capped at 200 pages and returns an error on exhausting it, never a partial list. So this is
+   * always false for a filtered search — not because the walk is unbounded, but because a partial
+   * one fails instead of answering.
+   *
+   * The picker should say "showing the first 500 — type to search the rest" rather than
+   * presenting the list as everything. NOT "the 500 most recent": the service takes the first 500
+   * rows in server order and sorts them AFTER truncating, so the set is not the portal's newest
+   * 500 and telling the user otherwise would be a second falsehood on top of the first.
+   */
+  possiblyTruncated: boolean;
+
+  /** Why the search could not run, when `enabled` is true but the list is empty for a reason. */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------

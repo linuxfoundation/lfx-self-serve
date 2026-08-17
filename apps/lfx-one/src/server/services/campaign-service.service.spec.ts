@@ -6,10 +6,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
 // `@lfx-one/shared/interfaces` are type-only, so esbuild elides them.
-const { proxyRequest, proxyRequestWithResponse, logger } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, logger, isServerFeatureEnabled } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
+  // Typed as taking the flag, matching the real isServerFeatureEnabled(flag). Declared as
+  // `vi.fn(() => false)` the mock accepted NO argument, so a per-flag mockImplementation
+  // could not typecheck against it -- and only `yarn build` caught that, since check-types
+  // skips spec files. The type is declared on the mock rather than as a named parameter so
+  // there is no unused binding for no-unused-vars to reject.
+  isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
+}));
+
+vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isServerFeatureEnabled,
 }));
 
 vi.mock('./microservice-proxy.service', () => ({
@@ -30,6 +41,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
 const req = {} as unknown as Request;
@@ -180,18 +192,31 @@ describe('CampaignServiceClient.getJobStatus', () => {
   // (`Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`, which a UUID fails) and stores exactly that string;
   // `GetJob` then scopes with an EXACT `b.project_id = $2`. Polling under the project's uid
   // would look more canonical and never find the job.
-  it('scopes the request to the tlf slug, not to a resolved uid', async () => {
+  // Was "scopes the request to the tlf slug". The slug is now the CALLER'S, because creation
+  // through campaign-service makes UUID jobs real and a hardcoded 'tlf' would poll another
+  // foundation's scope — `GetJob` joins `b.project_id` with an exact comparison, so it would
+  // answer `not_found` for a running job, and `not_found` is terminal for the poller (LFXV2-3195).
+  it("scopes the request to the CALLER's project slug, not a hardcoded one", async () => {
     proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({ status: 'running' });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'cncf')).resolves.toEqual({ status: 'running' });
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/jobs/j1', 'GET');
+  });
+
+  // Still a SLUG on the wire, never a resolved uid: campaign_briefs.project_id stores the exact
+  // string the create was made with.
+  it('sends the slug verbatim rather than resolving it', async () => {
+    proxyRequest.mockResolvedValue({ job_id: 'j1', status: 'queued' });
+
+    await new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf');
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/j1', 'GET');
   });
 
-  it('encodes the job id into the path', async () => {
+  it('encodes both the job id and the slug into the path', async () => {
     proxyRequest.mockResolvedValue({ job_id: 'a/b', status: 'running' });
 
-    await new CampaignServiceClient().getJobStatus(req, 'a/b');
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/jobs/a%2Fb', 'GET');
+    await new CampaignServiceClient().getJobStatus(req, 'a/b', 'a/b');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%2Fb/jobs/a%2Fb', 'GET');
   });
 
   // The flag-off path returns a `not_found` STATUS for an unknown job, and the poller has an
@@ -200,7 +225,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   it('translates campaign-service own typed 404 into the not_found status the in-process path returns', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'the resource was not found' } }));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).resolves.toEqual({
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).resolves.toEqual({
       status: 'not_found',
       error: JOB_LOST_MESSAGE,
     });
@@ -217,7 +242,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   ])('rethrows %s rather than reporting the job lost', async (_label, errorBody) => {
     proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode: 404 });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
   });
 
   // Only 404. Anything else means the status is UNKNOWN, and reporting unknown as `not_found`
@@ -225,7 +250,7 @@ describe('CampaignServiceClient.getJobStatus', () => {
   it.each([401, 500, 503])('rethrows a %i rather than reporting the job lost', async (statusCode) => {
     proxyRequest.mockRejectedValue(new MicroserviceError('upstream', statusCode, 'ERR'));
 
-    await expect(new CampaignServiceClient().getJobStatus(req, 'j1')).rejects.toMatchObject({ statusCode });
+    await expect(new CampaignServiceClient().getJobStatus(req, 'j1', 'tlf')).rejects.toMatchObject({ statusCode });
   });
 });
 
@@ -856,6 +881,22 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
+  it('does not reconcile a save whose request NEVER LEFT this process', async () => {
+    // The transport twin of the 4xx case above, and the one `requestNeverLeft` guards inside
+    // `reconcileLostWrite`. A connect-time failure means the POST never reached the service, so
+    // there is no lost write to find — spending reconciliation reads on it can only surface
+    // someone else's row, and the delay between attempts makes the user wait to be told nothing.
+    //
+    // Every other transport test drives `createCampaigns`, which returns early at its own
+    // `requestNeverLeft` guard and never reaches `reconcileLostWrite`, so this arm was
+    // unexercised: deleting its `return null;` left the suite green.
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockRejectedValueOnce(new MicroserviceError('connect ECONNREFUSED', 500, 'ECONNREFUSED', {}));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('ECONNREFUSED');
+    // find + POST only: no reconciliation read, exactly as for the 4xx refusal.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses a replace when the caller cannot say which version it last saw', async () => {
     // Two reasons produce a missing validator and they need opposite treatment. This is the
     // UNKNOWN one: the caller's previous write returned no ETag, or its approval outcome was
@@ -1377,5 +1418,686 @@ describe('CampaignServiceClient.loadBrief', () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+/**
+ * The create path's CONTRACT with campaign-service, which nothing else in this repo checks.
+ *
+ * Both defects these tests pin shipped in a branch whose build, lint and full server suite were
+ * green: an envelope passed in the wrong argument position sends no request body at all, and a
+ * flag pair that is half-set answers `enabled: true` on a path the controller may not fall
+ * through. Neither is visible to a type checker — `proxyRequestWithResponse` takes `any` for both
+ * `query` and `data` — so an assertion on the call shape is the only thing that can catch them.
+ */
+describe('CampaignServiceClient.createCampaigns', () => {
+  const bothFlagsOn = () => isServerFeatureEnabled.mockReturnValue(true);
+
+  /**
+   * Cutover flags ON but the Demand Gen capability flag OFF — the state a deployment is in
+   * when campaign-service predates LFXV2-3257 and does not understand
+   * `googleAdsConfig.channel`.
+   */
+  const demandGenUnsupported = () => isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceDemandGen);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(false);
+  });
+
+  it('is dark when the create flag is off', async () => {
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('is dark when CREATE is on but its JOBS prerequisite is off', async () => {
+    // Creation mints a UUID job id, and only the JOBS flag routes UUIDs to campaign-service.
+    // With JOBS off the poll takes the in-process branch, which holds no such job — the user is
+    // told the campaign is lost while it is running and spending. Strictly worse than not
+    // cutting over, and the id-shape backstop cannot help: it tells a UUID from a `job_...` id,
+    // it cannot conjure the flag.
+    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS');
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('is dark when CREATE is on but its BRIEFS prerequisite is off', async () => {
+    // Not merely "one flag of two": creation posts to /briefs/{id}/campaigns, and only BRIEFS
+    // stores a brief to post against. Reporting `enabled: true` here would refuse every request
+    // on a branch the controller must NOT fall through, so creation would stop working rather
+    // than staying quietly on the legacy path.
+    // Only BRIEFS off, so this fails for the brief-id reason and not incidentally via JOBS.
+    isServerFeatureEnabled.mockImplementation((...args: unknown[]) => args[0] !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS');
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res).toEqual({ enabled: false, jobId: null, error: null });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('sends the envelope as the request BODY, not as query parameters', async () => {
+    // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
+    // fifth serialises it into the query string and sends no body, which campaign-service
+    // rejects — every create would fail before a job existed.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
+
+    const config = { googleAdsConfig: { budget: 600 } };
+    await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], config);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns');
+    expect(call[3]).toBe('POST');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ input: { platforms: ['google-ads'], config } });
+  });
+
+  it('reports the job id from a 202', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budgetUsd: 50 } });
+
+    expect(res).toEqual({ enabled: true, jobId: 'a3f1c2d4-0000-4000-8000-000000000001', error: null });
+  });
+
+  it('refuses rather than posting when the brief id or project slug is missing', async () => {
+    // An empty segment makes `/projects//briefs//campaigns`, a different route that 404s at the
+    // gateway — which is not campaign-service saying "no such brief".
+    bothFlagsOn();
+
+    const noBrief = await new CampaignServiceClient().createCampaigns(req, '', 'tlf', ['google-ads'], {});
+    const noSlug = await new CampaignServiceClient().createCampaigns(req, 'b-1', '', ['google-ads'], {});
+
+    expect(noBrief.enabled).toBe(true);
+    expect(noBrief.jobId).toBeNull();
+    expect(noBrief.error).toBeTruthy();
+    expect(noSlug.jobId).toBeNull();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The retry wording is safety-critical, not cosmetic.
+   *
+   * This endpoint answers 202 and dispatches work the request does not wait for, and declares no
+   * idempotency key — so on an INDETERMINATE failure the POST may already have committed and real
+   * ad spend may already be running. "Please try again" there is an instruction to double-spend.
+   * A definite 4xx is different: campaign-service decided, nothing committed, retrying is safe.
+   */
+  it('tells the user to retry only when the failure is a definite refusal', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('rejected', 400, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('nothing was created');
+    expect(res.error).toContain('try again');
+  });
+
+  it('does NOT tell the user to retry after an indeterminate failure', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream exploded', 502, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('check the ad platforms');
+    // The whole point: no bare retry instruction on a request that may already be spending.
+    expect(res.error).not.toContain('Please try again');
+  });
+
+  it('treats a client-side timeout as indeterminate, not as a refusal', async () => {
+    // The api client synthesises `MicroserviceError(408, 'TIMEOUT')` for a timeout. It is a 4xx by
+    // status but tells us NOTHING about whether the POST committed — the same carve-out
+    // `reconcileLostWrite` makes. Reading it as a definite refusal would restore the retry advice
+    // on the single most likely double-spend path.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('TIMEOUT', 408, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.error).toContain('check the ad platforms');
+    expect(res.error).not.toContain('Please try again');
+  });
+
+  it('treats a non-HTTP throw as indeterminate', async () => {
+    // A connection reset never becomes a MicroserviceError at all. It must not fall into the
+    // "definitely rejected" branch by default.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('socket hang up'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.error).toContain('check the ad platforms');
+  });
+
+  /**
+   * A selected platform with no config in the envelope is refused before dispatch.
+   *
+   * Not a harmless omission upstream: `unmarshalPlatformConfig` in campaign-service returns nil
+   * for an absent key ("no per-platform config supplied; zero value is fine"), so the dispatcher
+   * proceeds with a ZERO-VALUE config and calls Google Ads with budget 0 and no headlines.
+   *
+   * This lives at the SERVICE layer, not the controller, so it is gated by the cutover flags —
+   * an earlier revision put it in the controller where it ran with the flags off and broke
+   * demand-gen-only Google creation on the legacy path, which needs no envelope at all.
+   */
+  it('refuses to post when a selected platform has no config in the envelope', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], {});
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    // `enabled: true` with an error, so the controller does NOT fall through to the legacy path —
+    // a refusal must not become a duplicate create.
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('google-ads');
+  });
+
+  it('refuses the whole create when only one platform of several is unconfigured', async () => {
+    // A silent partial success is the bug this cutover exists to prevent: the user asked for
+    // Google and LinkedIn, and would get LinkedIn only with nothing saying so.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads', 'linkedin-ads'], {
+      linkedInConfig: { budgetUsd: 100 },
+    });
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.error).toContain('google-ads');
+    expect(res.error).not.toContain('linkedin-ads');
+  });
+
+  it('posts when every selected platform is configured', async () => {
+    // The contrast. Without it the two tests above would pass on a client that refused everything.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000009' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000009');
+  });
+
+  /**
+   * A transport failure means the bytes never left this process, so nothing upstream can have
+   * started — as definite as a 4xx, and safer to retry than one.
+   *
+   * Observed 2026-08-13 with campaign-service stopped: the create answered "could not be
+   * confirmed — check the ad platforms before retrying" for a request that was never sent. The
+   * `definitelyRejected` predicate could not catch it, because a connection failure is not a
+   * `MicroserviceError` at all — the proxy only wraps errors carrying `.status` and `.code`.
+   *
+   * Asserts the message does NOT tell the user to go check the ad platforms. Asserting only that
+   * some error came back would pass on the old wording.
+   */
+  it.each([['ECONNREFUSED'], ['ENOTFOUND'], ['EAI_AGAIN'], ['EHOSTUNREACH'], ['ENETUNREACH']])(
+    'reports a %s create as definitely-not-created rather than unconfirmed',
+    async (code) => {
+      bothFlagsOn();
+      // The PRODUCTION shape, not a raw Error: `ApiClientService.executeRequest` wraps a Node
+      // fetch failure as `MicroserviceError(500, cause.code)` before this service sees it
+      // (`api-client.service.ts:313-320`). An earlier revision of this test rejected with a raw
+      // `Error` carrying a top-level `code` — a shape this client never throws — so it passed
+      // against a `requestNeverLeft` that returned false for every MicroserviceError and fixed
+      // nothing in production.
+      const transportError = new MicroserviceError('Request failed: fetch failed', 500, code, {
+        operation: 'api_client_network_error',
+        service: 'api_client_service',
+      });
+      proxyRequestWithResponse.mockRejectedValueOnce(transportError);
+
+      const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+      expect(res.enabled).toBe(true);
+      expect(res.jobId).toBeNull();
+      expect(res.error).toContain('nothing was created');
+      expect(res.error).not.toContain('may have started');
+      expect(res.error).not.toContain('check the ad platforms');
+    }
+  );
+
+  /**
+   * `ECONNRESET` must stay INDETERMINATE, even though it is a transport error. Node reports it
+   * for a reset at any point, and nothing here distinguishes a connect-time reset from one that
+   * arrives after the request was sent and processed — where the create may have landed and only
+   * the reply was lost.
+   *
+   * This is the direction that costs money: on a path with no idempotency key, telling the user
+   * "nothing was created" invites the retry that duplicates a paid campaign. An earlier revision
+   * of this fix had ECONNRESET in the definite set; the sibling approve-path test caught it.
+   */
+  it('keeps an ECONNRESET create unconfirmed, because the reset may have followed a commit', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('Request failed: socket hang up', 500, 'ECONNRESET', { service: 'api_client_service' })
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+    expect(res.error).toContain('could not be confirmed');
+    expect(res.error).not.toContain('nothing was created');
+  });
+
+  /**
+   * The contrast, and the load-bearing half: a 5xx IS genuinely indeterminate — the request
+   * reached campaign-service and the outcome is unknown — so it must keep the "may have started"
+   * wording. Without this test the fix above could be satisfied by making every failure read as
+   * definite, which is the dangerous direction: it would invite exactly the duplicate-create
+   * retry the cutover exists to prevent.
+   */
+  it('still reports a 5xx create as unconfirmed, because the request did reach the service', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream boom', 502, 'INTERNAL_ERROR', { operation: 'create' }));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['linkedin-ads'], { linkedInConfig: { budgetUsd: 100 } });
+
+    expect(res.error).toContain('could not be confirmed');
+  });
+
+  /**
+   * LFXV2-3256 — the mapping that unblocks the email channel. Before it, `hubspot` fell to
+   * `requiredKey[platform] === undefined` and was refused here, so an email campaign could never
+   * reach the dispatcher no matter what the envelope carried.
+   *
+   * Both directions, because the guard's value is that it fails LOUDLY: mapping `hubspot` without
+   * a config builder would be the regression it exists to catch, and dropping the mapping would
+   * restore the block this ticket removed. One test alone cannot tell those apart.
+   */
+  it('dispatches an email campaign once hubspotConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000e' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], {
+      hubspotConfig: { sourceEmailId: 'email-123' },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000e');
+    expect(res.error).toBeNull();
+  });
+
+  it('still refuses an email campaign whose hubspotConfig is missing', async () => {
+    // The envelope is non-empty but carries the WRONG key, which is the shape a half-built config
+    // builder produces. `unmarshalPlatformConfig` would read the absent `hubspotConfig` as a zero
+    // value and dispatch a clone of email id "" — so this must never reach the wire.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], { hsToken: 'tok' });
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('hubspot');
+  });
+
+  /**
+   * campaign-service DOES have a Demand Gen path as of #130, and the slot key is
+   * `(brief_id, platform, variant)` — so a brief can hold a Search row and a Demand Gen row at
+   * once and the database does not forbid the pair. What is refused here is a MIXED selection,
+   * and the reason is this BFF: `buildGoogleAdsConfig` emits one config with one channel.
+   *
+   * The mixed selection is the dangerous one because it looks like success: the config carries
+   * only the SEARCH budget share, so the create would succeed having silently dropped half the
+   * request and half the budget.
+   */
+  it('refuses a mixed search + demand-gen create rather than silently dropping the demand-gen half', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Demand Gen');
+  });
+
+  /**
+   * The half this refusal must NOT cover, since LFXV2-3257 ported Demand Gen into
+   * campaign-service. Demand-gen-only is now servable — one channel, one campaign row, which the
+   * `(brief_id, platform, variant)` slot key holds fine (#130 widened it from the two-column
+   * form; a demand-gen retry on a brief that already has Search needs that third column). Only
+   * the PAIR is refused, and by THIS service's one-config envelope rather than by the schema.
+   *
+   * Without this test the guard could be widened back to `includes('demand-gen')` and every
+   * sibling would stay green, silently re-blocking the capability this work added.
+   */
+  it('dispatches a demand-gen-only create rather than refusing it', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000d' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000d');
+    expect(res.error).toBeNull();
+  });
+
+  it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
+    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
+    // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
+    // LinkedIn-only create arrives carrying `demand-gen`, and refusing on the type alone gave a
+    // Google error for a request Google was never part of.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000c' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['search', 'demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000c');
+  });
+
+  /**
+   * The silent-Search hazard, and the reason this guard exists rather than a comment.
+   *
+   * Go's JSON decoder ignores unknown keys, so a campaign-service that predates LFXV2-3257
+   * DROPS `googleAdsConfig.channel` and builds its default SEARCH campaign: real budget, no
+   * keywords, and per its own docs it "can never serve". Nothing errors — the job reports
+   * success and the wrong campaign is found later in Google Ads.
+   *
+   * Refusing costs one create. The alternative costs money.
+   */
+  it('refuses a demand-gen create when the deployed service cannot understand the channel', async () => {
+    demandGenUnsupported();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Demand Gen');
+  });
+
+  /**
+   * The guard must be scoped to the request that is actually at risk. A Search-only create
+   * carries no `channel` an older service could drop, so gating it on the same flag would
+   * refuse the platform's most common create for no reason.
+   */
+  it('still allows a search-only create when demand gen is unsupported', async () => {
+    demandGenUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000f' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000f');
+    expect(res.error).toBeNull();
+  });
+
+  /**
+   * And a non-Google create must not be caught by it: `campaignTypes` is a Google concept the
+   * Implementation tab sends unconditionally, so a LinkedIn-only create arrives carrying
+   * `demand-gen` with no Google campaign in it at all.
+   */
+  it('does not refuse a non-google create when demand gen is unsupported', async () => {
+    demandGenUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000010' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000010');
+  });
+
+  it('still creates a search-only google campaign', async () => {
+    // The contrast: without it the test above would pass on a client that refused every Google
+    // create outright.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000b' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000b');
+  });
+
+  it('refuses a platform it has no config mapping for', async () => {
+    // An earlier revision waved unmapped platforms through, reasoning this should not police the
+    // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is
+    // `disabled: true` in the UI constants, but that is a CLIENT guarantee, and the upstream
+    // contract accepts twitter/microsoft/hubspot. This service builds no config for any of them,
+    // so waving them through queued a job whose dispatcher reads an absent key as a zero value.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {});
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('twitter-ads');
+  });
+
+  it('treats a 202 carrying no job id as unusable rather than a success', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toBeTruthy();
+  });
+});
+
+/**
+ * The HubSpot template search, which is what makes the email channel usable at all:
+ * `hubspotConfig.sourceEmailId` is required with no default, so a user who cannot pick a template
+ * cannot stage an email.
+ *
+ * The argument-position assertions are the point. `proxyRequestWithResponse` takes `query` fifth
+ * and `data` sixth, both typed `any`, so passing the query sixth compiles fine and sends it as a
+ * body — which a GET discards, silently returning the UNFILTERED list. That failure looks like a
+ * working search that ignores what the user typed, and no type checker can catch it.
+ */
+describe('CampaignServiceClient.searchHubSpotEmails', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends the query as a query PARAM, not a body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [] } });
+
+    await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', 'kubecon');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/connection-hubspot/emails');
+    expect(call[3]).toBe('GET');
+    expect(call[4]).toEqual({ q: 'kubecon' });
+  });
+
+  it('omits the query entirely when it is empty, rather than sending q=""', async () => {
+    // An empty `q` is not the same request as no `q`: the service treats absent as "list the most
+    // recent", which is the useful default before a user knows what to search for.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [] } });
+
+    await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    // Both positions, because the failure this guards against is the param moving rather than
+    // vanishing: `undefined` fifth with `{ q: '' }` sixth would send it as a discarded body.
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('maps the wire shape onto the shared interface', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({
+      data: { emails: [{ id: '112233', name: 'KubeCon promo', subject: 'Join us', state: 'PUBLISHED', updated_at: '2026-08-01T00:00:00Z' }] },
+    });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    // snake_case on the wire, camelCase in the app.
+    expect(result.emails[0]).toEqual({
+      id: '112233',
+      name: 'KubeCon promo',
+      subject: 'Join us',
+      state: 'PUBLISHED',
+      updatedAt: '2026-08-01T00:00:00Z',
+    });
+  });
+
+  it('reports a project with no HubSpot connection as disabled, not as an error', async () => {
+    // The steady state everywhere the channel is not set up. Rendering it as a failure would put
+    // an error in front of every project that has simply not connected HubSpot yet.
+    // campaign-service's OWN typed not-found: "no HubSpot connection configured for this
+    // project". The body is what distinguishes it from a gateway 404 — see the test below.
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { code: '404', message: 'no HubSpot connection configured for this project' } })
+    );
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result).toEqual({ enabled: false, emails: [], error: null, possiblyTruncated: false });
+  });
+
+  it('refuses a missing project rather than requesting an empty path segment', async () => {
+    // `/projects//connection-hubspot/emails` is a DIFFERENT route that 404s at the gateway, and a
+    // gateway 404 is not the service saying "no such project".
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, '', 'kubecon');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('treats a BARE 404 as a failure, not as an unconfigured channel', async () => {
+    // A gateway 404 is not the service's 404. An empty path segment, a routing change or an
+    // ingress miss all produce one, and reporting those as "no connection" would tell the user to
+    // connect something already connected while hiding a real outage. campaign-service's own
+    // not-found carries a typed body; this one does not.
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: { nope: true } }));
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('flags a capped first screen so a picker cannot present it as the whole portal', async () => {
+    // The wire cannot express this: campaign-service returns no pagination field, so a capped 500
+    // and a complete 500 are the same bytes. Only an EMPTY query is capped.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: Array.from({ length: 500 }, (_, i) => ({ id: String(i) })) } });
+
+    const capped = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+    expect(capped.possiblyTruncated).toBe(true);
+
+    // A FILTERED search is exempt from the 500-row cap and is COMPLETE-OR-ERROR within its
+    // 200-page bound — it either matched across every page or it failed, never a partial list. So
+    // it is never truncated, and flagging it would tell the user to narrow a search that already
+    // returned everything matching. (Not "unbounded": the walk does stop, it just fails loudly
+    // rather than answering with a subset.)
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: Array.from({ length: 500 }, (_, i) => ({ id: String(i) })) } });
+    const filtered = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', 'kubecon');
+    expect(filtered.possiblyTruncated).toBe(false);
+  });
+
+  /**
+   * Truncation is a property of what campaign-service SENT, not of what survived our id filter.
+   *
+   * A genuinely capped 500 carrying one id-less row filters to 499 rows, and a post-filter
+   * comparison (`499 >= 500`) reports a truncated listing as complete — the precise falsehood the
+   * flag exists to prevent, and the case that makes it worth reading the wire count.
+   */
+  /**
+   * A 200 with no `emails` ARRAY is malformed, not an empty portal — and reporting it as
+   * `enabled: true` with zero templates is indistinguishable from a portal that genuinely has
+   * none. That false absence is the exact failure this whole search is built to avoid.
+   *
+   * campaign-service draws the same line one layer up: `SearchEmails` treats a nil results array
+   * as a decode error, because a genuinely empty portal returns `[]` rather than nothing.
+   */
+  it('reports a 2xx with no emails array as a failure, not as an empty portal', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.enabled).toBe(true);
+    expect(result.emails).toEqual([]);
+    // The error is what separates it from a genuinely empty portal, which returns a null error.
+    expect(result.error).toBeTruthy();
+  });
+
+  it('flags a capped screen even when a row is dropped for having no id', async () => {
+    const wire = Array.from({ length: 500 }, (_, i) => ({ id: String(i) }));
+    wire[0] = { id: '' } as (typeof wire)[number];
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: wire } });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.emails).toHaveLength(499);
+    expect(result.possiblyTruncated).toBe(true);
+  });
+
+  it('drops a row with no id rather than offering an unselectable template', async () => {
+    // `id` is what `hubspotConfig.sourceEmailId` takes, and that field is required — so a row
+    // without one is a choice the user cannot make. Rendering it would offer a template that
+    // fails on submit.
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [{ name: 'No id here' }, { id: '99', name: 'Real' }] } });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    expect(result.emails).toHaveLength(1);
+    expect(result.emails[0].id).toBe('99');
+  });
+
+  it('reports an upstream failure without claiming the channel is unconfigured', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('boom', 503, 'UNAVAILABLE', {}));
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '');
+
+    // `enabled` stays true: HubSpot IS connected, the read just failed. Reporting `false` would
+    // tell the user to connect something they already connected.
+    expect(result.enabled).toBe(true);
+    expect(result.emails).toEqual([]);
+    expect(result.error).toBeTruthy();
   });
 });

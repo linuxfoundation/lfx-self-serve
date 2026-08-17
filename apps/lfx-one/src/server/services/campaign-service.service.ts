@@ -5,8 +5,11 @@ import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/s
 import type {
   ApiResponse,
   CampaignBriefLoadResult,
+  CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  HubSpotEmailSearchResult,
+  HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
   CampaignJobStatus,
@@ -24,8 +27,21 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+
+/**
+ * The 202 body from `POST /projects/{slug}/briefs/{brief_id}/campaigns`.
+ *
+ * Declared locally rather than in `@lfx-one/shared` for the same reason as its siblings below:
+ * this is campaign-service's WIRE shape, which no browser code touches. Promoting it would
+ * publish an upstream contract into the client bundle.
+ */
+interface CampaignServiceJobCreateResponse {
+  job_id?: string;
+  status?: string;
+}
 
 /**
  * `job-poll-response` as lfx-v2-campaign-service publishes it (`design/brief.go`).
@@ -114,31 +130,6 @@ interface CampaignServiceBriefEnvelope {
 }
 
 /**
- * The canonical slug for The Linux Foundation's own project row.
- *
- * Used ONLY by `getJobStatus`, and only because campaign-creation has not been cut over yet.
- * An earlier revision of this comment claimed `/foundation/campaigns` is "a fixed route with no
- * project or slug segment", LF-scoped by construction. That is wrong: the route carries
- * `projectQueryParamGuard` and the sidebar preserves `?project=<slug>`, so an ED of any
- * foundation reaches the page with their own foundation selected. Anything that WRITES must
- * take the slug from that context — see `saveBrief` — or it files a CNCF ED's work under TLF.
- *
- * The job poll keeps the constant because it is currently unreachable with a real id:
- * `isCampaignServiceJobId` only routes UUIDs here, and no UUID job can exist until creation
- * goes through campaign-service. Phase 3 cuts creation over and must thread the slug through
- * both the create and the poll in the same change, at which point this constant goes away.
- *
- * Not 'the-linux-foundation' — 'tlf' is the canonical form; the longer spelling resolves to
- * nothing. It goes on the wire AS THE SLUG, deliberately un-resolved: campaign-service's
- * `create-brief` accepts a slug ONLY — its `project_id` carries `Pattern(^[a-z0-9]+(-[a-z0-9]+)*$)`,
- * which a UUID fails — and it stores exactly that string in `campaign_briefs.project_id`.
- * `GetJob` then scopes by joining `b.project_id = $2` with an EXACT comparison, so a job
- * written under `tlf` is invisible to a poll made under the project's uid. Resolving the slug
- * to a uid here would look more canonical and find nothing.
- */
-const LF_PROJECT_SLUG = 'tlf';
-
-/**
  * True when `jobId` is a job campaign-service could possibly know about.
  *
  * The flag alone is not a safe router, and this is the reason. Campaign CREATION has not been
@@ -156,6 +147,132 @@ const LF_PROJECT_SLUG = 'tlf';
  */
 export function isCampaignServiceJobId(jobId: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
+}
+
+/**
+ * Does the envelope carry the config this platform needs to dispatch?
+ *
+ * The mapping is the dispatcher's, not ours: each `<platform>Dispatcher.Dispatch` in
+ * campaign-service reads exactly one envelope key, and `unmarshalPlatformConfig` treats an absent
+ * key as a zero value rather than an error — which is why the check has to happen on this side.
+ *
+ * An unmapped platform is REFUSED, not waved through.
+ *
+ * The first version returned true for anything unmapped, reasoning that this should not police the
+ * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
+ * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
+ * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
+ * service builds no `twitterConfig` or `microsoftConfig`, so waving those through queued a job
+ * whose dispatcher reads an absent key as a zero value — exactly the defect the mapped platforms
+ * are protected from.
+ *
+ * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
+ * guard is designed to enforce: map a platform only once something builds its config. Note that a
+ * mapped `hubspot` is necessary but NOT sufficient to stage an email — the dispatcher also needs
+ * the brief's audience to be BUILT (`hubspot.go:432-456`), which it resolves by `brief.ID` rather
+ * than from this envelope, so that failure surfaces upstream and not here.
+ *
+ * The cost of refusing is a clear error when a platform is enabled before its config builder
+ * exists, which is the failure you want. The cost of allowing was a dispatched, unusable job.
+ */
+function hasPlatformConfig(platform: string, envelope: Record<string, unknown>): boolean {
+  const requiredKey: Record<string, string> = {
+    'google-ads': 'googleAdsConfig',
+    'linkedin-ads': 'linkedInConfig',
+    'reddit-ads': 'redditConfig',
+    'meta-ads': 'metaConfig',
+    hubspot: 'hubspotConfig',
+  };
+  const key = requiredKey[platform];
+  if (key === undefined) return false;
+  return envelope[key] !== undefined;
+}
+
+/**
+ * Did the request definitively never reach campaign-service?
+ *
+ * Only CONNECT-time failures qualify: the connection was never established, so the bytes never
+ * left this process and nothing upstream can have started. That is as DEFINITE as a 4xx refusal,
+ * and safer to retry than one.
+ *
+ * `ECONNRESET` is deliberately EXCLUDED even though it is a transport error. Node reports it for
+ * a reset at any point, and this code cannot tell a connect-time reset from one that arrives
+ * after the request was sent and processed — where the write may well have committed and only
+ * the reply was lost. Calling that "nothing was created" on a path with no idempotency key is
+ * the one wrong answer worth avoiding, because it invites the retry that duplicates a paid
+ * campaign. The sibling approve path pins the same distinction (see its `definitelyRejected`).
+ *
+ * It needs its own check because a MicroserviceError alone does not distinguish a response from
+ * a failure to reach the service at all: `ApiClientService.executeRequest` wraps a Node fetch
+ * failure as `MicroserviceError(500, cause.code)`, so an unreachable service and a genuine 500
+ * arrive as the same class. Only the `code` tells them apart — a syscall name versus an HTTP-ish
+ * one — which is what `requestNeverLeft` below keys on.
+ *
+ * Observed 2026-08-13: with campaign-service stopped, a create answered "could not be confirmed —
+ * check the ad platforms before retrying" for a request that was never sent. That is the exact
+ * harm those predicates exist to prevent, told to a user who then has to go read an ad account to
+ * rule out a campaign that could not exist.
+ *
+ * Deliberately NOT keyed on the message text, which is not a contract. `code` is the documented
+ * Node.js system-error field, and an unrecognised code stays indeterminate — this widens what
+ * counts as definite, and a wrong guess in that direction is the dangerous one.
+ */
+const NEVER_SENT_ERROR_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function requestNeverLeft(error: unknown): boolean {
+  // A MicroserviceError is NOT automatically a response. `ApiClientService.executeRequest`
+  // (`api-client.service.ts:313-320`) wraps a Node fetch failure as
+  // `MicroserviceError(500, cause.code)` — so the production shape of an unreachable service is a
+  // 500 whose `code` is `ECONNREFUSED`, not a raw Error. An earlier revision returned false for
+  // every MicroserviceError and therefore fixed nothing in production; the tests passed only
+  // because they mocked a raw Error, which this client never throws. Both bots caught it.
+  //
+  // A REAL 500 from campaign-service carries an HTTP-ish code (`INTERNAL_ERROR`), never a
+  // syscall name, so keying on the code rather than the class keeps the two apart.
+  const code = error instanceof MicroserviceError ? error.code : (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NEVER_SENT_ERROR_CODES.has(code);
+}
+
+/** The wire shape campaign-service returns for one marketing email (snake_case timestamps). */
+interface CampaignServiceMarketingEmail {
+  id?: string;
+  name?: string;
+  subject?: string;
+  state?: string;
+  updated_at?: string;
+}
+
+/**
+ * The number of emails campaign-service returns for an UNFILTERED listing.
+ *
+ * Mirrors `hubspot.maxUnfilteredEmails` in campaign-service. Duplicated rather than fetched
+ * because the wire result carries no pagination field at all — a capped 500 and a complete 500
+ * are byte-identical — so the only way a caller can flag truncation is to know the cap.
+ *
+ * KNOWN GAP (LFXV2-3255): the two services deploy independently, so this constant can drift from
+ * the one it mirrors, in EITHER direction. A raised cap under-reports (a 600-email portal
+ * returning 600 is not flagged, failing toward silence); a LOWERED cap over-reports the opposite
+ * way, calling a genuinely capped list complete — which is the false absence this flag exists to
+ * prevent. The real fix is upstream returning explicit truncation metadata, so a consumer reads
+ * the fact instead of re-deriving it. Not a live defect: the constants agree today.
+ */
+const UNFILTERED_EMAIL_CAP = 500;
+
+/**
+ * One wire email onto the shared interface.
+ *
+ * Only `id` is guaranteed by the service's design, so everything else is optional here rather
+ * than defaulted to `''` — an empty string would render as a nameless row that looks like data,
+ * where an absent field lets the template show what it actually knows.
+ */
+function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarketingEmail {
+  return {
+    id: email.id ?? '',
+    name: email.name,
+    subject: email.subject,
+    state: email.state,
+    updatedAt: email.updated_at,
+  };
 }
 
 /**
@@ -221,13 +338,29 @@ export class CampaignServiceClient {
    * their campaign creation was lost when it may be running perfectly well. Note the asymmetry is
    * deliberate: if campaign-service ever changes that body shape, a real expired job surfaces as
    * an error rather than as a false "lost" — loud instead of quietly wrong.
+   *
+   * ## Scoped to the project that owns the job
+   *
+   * `projectSlug` is a REQUIRED parameter rather than a module constant, and that change is the
+   * other half of the creation cutover rather than a tidy-up. The constant was `'tlf'`, and its
+   * comment said exactly why it was survivable: `isCampaignServiceJobId` only routes UUIDs here,
+   * and no UUID job could exist until creation went through campaign-service. Creating through
+   * campaign-service is precisely what makes UUID jobs real, so a CNCF user's poll would have
+   * been issued under TLF's scope — and `GetJob` joins `b.project_id = $2` with an EXACT
+   * comparison, so it would answer `not_found` for a job that exists and is running.
+   *
+   * `not_found` is TERMINAL for the poller, so that would be reported to the user as a lost
+   * campaign. Hence both halves in one change (LFXV2-3195).
+   *
+   * Still a SLUG on the wire, never a uid: `campaign_briefs.project_id` stores the slug the
+   * create was made with, and the poll's join is an exact string comparison.
    */
-  public async getJobStatus(req: Request, jobId: string): Promise<CampaignJobStatus> {
+  public async getJobStatus(req: Request, jobId: string, projectSlug: string): Promise<CampaignJobStatus> {
     try {
       const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `/projects/${encodeURIComponent(LF_PROJECT_SLUG)}/jobs/${encodeURIComponent(jobId)}`,
+        `/projects/${encodeURIComponent(projectSlug)}/jobs/${encodeURIComponent(jobId)}`,
         'GET'
       );
       return adaptJobPollResponse(response);
@@ -431,6 +564,334 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Ask campaign-service to create campaigns for a brief it already stores.
+   *
+   * Returns the job id and NOTHING else, because that is all a 202 carries. The legacy path
+   * inline-waits up to 45s and can hand back a finished `result`; this one cannot, and pretending
+   * otherwise would mean waiting on a dispatcher the request has no relationship with.
+   *
+   * `briefId` is REQUIRED and comes from the save that preceded this call. The route is
+   * `/projects/{slug}/briefs/{brief_id}/campaigns` — there is no create-without-a-brief path, by
+   * design: the brief is what the dispatcher reads the copy and targeting from, so a campaign
+   * with no stored brief would have nothing to dispatch.
+   *
+   * `projectSlug` must be the SLUG, never a UUID. The design says why in two places at once: the
+   * project id is stamped into the campaign name upstream, and it is the exact-match key for the
+   * dispatch connection lookup. A UUID produces a campaign named after a UUID AND fails to find
+   * the project's ad-platform credentials, so the failure is both cosmetic and total.
+   */
+  public async createCampaigns(
+    req: Request,
+    briefId: string,
+    projectSlug: string,
+    platforms: string[],
+    config: Record<string, unknown>,
+    // Named-optional rather than a sixth positional string[], which would sit next to `platforms`
+    // and be silently swappable with it — both are string arrays, so a transposition would type-
+    // check and only surface as a wrong refusal. Read only for the Demand Gen check below.
+    opts: { campaignTypes?: string[] } = {}
+  ): Promise<CampaignServiceCreateResult> {
+    const campaignTypes = opts.campaignTypes;
+    // CREATE has TWO prerequisites, and neither is an independent switch. Treating them as
+    // independent is the difference between a dark cutover and a broken page, because a
+    // half-set pair answers `enabled: true` — the one result the controller may NOT fall
+    // through on — so creation stops working rather than quietly staying on the legacy path.
+    //
+    // BRIEFS, because creation posts to `/briefs/{id}/campaigns` and only that flag stores a
+    // brief to post against; without it there is never a brief id and every request takes the
+    // refusal below.
+    //
+    // JOBS, because creation mints a UUID job id and only that flag routes UUIDs to
+    // campaign-service. With JOBS off the poll takes the in-process branch, which holds no such
+    // job, so the user is told the campaign is lost while it is in fact running and spending —
+    // strictly worse than not cutting over. There is no id-shape backstop in that direction:
+    // the shape check tells a UUID from a `job_...` id, it cannot conjure the flag.
+    //
+    // Reporting either as `enabled: false` keeps a partial flag set equivalent to "cutover off".
+    const enabled =
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+      isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+    if (!enabled) {
+      return { enabled: false, jobId: null, error: null };
+    }
+    // Both are the caller's to get right, but a missing one must not reach the wire as an empty
+    // path segment: `/projects//briefs//campaigns` is a DIFFERENT route that would 404 from the
+    // gateway, and a gateway 404 is not the service saying "no such brief".
+    if (briefId === '' || projectSlug === '') {
+      return { enabled: true, jobId: null, error: 'This campaign could not be created because its brief has not been saved yet.' };
+    }
+    if (platforms.length === 0) {
+      return { enabled: true, jobId: null, error: 'Select at least one platform before creating campaigns.' };
+    }
+
+    // A selected platform with no config in the envelope is refused, rather than dispatched.
+    //
+    // Not a cosmetic omission upstream: `unmarshalPlatformConfig` in campaign-service returns nil
+    // for an absent key — "no per-platform config supplied; zero value is fine" — so the
+    // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
+    // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
+    //
+    // The reachable case is google-ads selected with NEITHER supported campaign type: the
+    // builder returns null only when it can name no channel at all. Demand-Gen-only no longer
+    // reaches it — since LFXV2-3257 `buildGoogleAdsConfig` returns a full-budget
+    // `{budget, channel: 'demand-gen'}` config for that selection.
+    //
+    // This check belongs HERE and not in the controller. It tests for a campaign-service envelope
+    // key, so it must only apply once the cutover is on — the legacy path needs no
+    // `googleAdsConfig` at all (its `includeGoogle` gates on platform membership alone) and
+    // creates demand-gen campaigns perfectly well. An earlier revision put it in the controller
+    // above this call, where it ran with the flags OFF and broke that legacy capability.
+    //
+    // Refusing the whole create rather than filtering the platform out: a silent partial success
+    // is the same class of bug this cutover exists to prevent — the user asked for Google, would
+    // get no Google, and nothing would say so. Returning `enabled: true` with an error also blocks
+    // the controller's legacy fall-through, so a refusal cannot become a duplicate create.
+    const unconfigured = platforms.filter((p) => !hasPlatformConfig(p, config));
+    if (unconfigured.length > 0) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: `No configuration was built for: ${unconfigured.join(', ')}. Check the campaign types selected for each platform.`,
+      };
+    }
+
+    // Search + Demand Gen TOGETHER is refused. Demand Gen alone is not — that changed with
+    // LFXV2-3257, which ported the legacy `createDemandGenCampaign` into campaign-service and
+    // gave `googleAdsConfig` a `channel` field to select it.
+    //
+    // What still cannot be served is BOTH in one create, and the reason is THIS SERVICE, not
+    // the schema. campaign-service #130 widened the slot key to
+    // `(brief_id, platform, variant)`, so a brief CAN hold a Search row and a Demand Gen row
+    // simultaneously — the database no longer forbids the pair.
+    //
+    // The limit is here: `buildGoogleAdsConfig` emits ONE `googleAdsConfig` with ONE `channel`,
+    // so a create carrying both types would dispatch a single campaign and silently drop the
+    // other. Stating the real constraint matters — someone reading the old rationale after the
+    // migration landed would remove this guard as obsolete and reintroduce the silent partial
+    // create. Serving the pair needs this BFF to send two configs, not a schema change.
+    //
+    // Letting the pair through is the dangerous option, because it LOOKS like success: the
+    // config carries one channel, so the create would succeed having silently dropped half of
+    // what the user asked for and half their budget. Refusing keeps them on a path that can
+    // actually serve the request until this BFF can send both channels in one envelope.
+    //
+    // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
+    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
+    // defaults to true in the form and nothing clears it when Google is deselected — so a
+    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
+    // creates that have no Google campaign in them at all.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
+      return {
+        enabled: true,
+        jobId: null,
+        // Names BOTH escapes now, because either one works: Search alone and Demand Gen alone
+        // are each servable, and only the pair is not. The previous wording said "Deselect
+        // Demand Gen", which was the only option when Demand Gen could not be created at all
+        // and would now send a user who wants Demand Gen to the one channel they did not ask
+        // for. No internal vocabulary — "campaign-service" and "the cutover" name controls the
+        // reader does not have.
+        // Does NOT promise that creating them one after another works, which an earlier
+        // wording did. Whether a second Google campaign can be added to the same brief
+        // depends on the campaign-service version deployed: the widened
+        // (brief_id, platform, variant) slot key ships with LFXV2-3257, and against an older
+        // deployment the second create is refused by the narrower (brief_id, platform)
+        // uniqueness AFTER the first has already spent budget. Telling a user to retry into
+        // that is worse than telling them nothing.
+        error: 'Search and Demand Gen cannot be created together. Deselect one and create it; adding the second to the same brief may not be supported yet.',
+      };
+    }
+
+    // Demand Gen requires a campaign-service that understands `googleAdsConfig.channel`
+    // (LFXV2-3257). Against an older deployment the field is silently DROPPED — Go's decoder
+    // ignores unknown keys — and the dispatcher builds its default SEARCH campaign instead:
+    // real budget, no keywords, and per `googleAdsConfig.Keywords` it "can never serve".
+    //
+    // That is the worst outcome available here. It is not a visible failure the user can
+    // react to; it is a paid campaign created under the wrong channel with the wrong budget,
+    // reported as success. Refusing costs a user one create; the alternative costs money and
+    // is discovered later in Google Ads.
+    //
+    // Gated on the CAPABILITY flag rather than a version probe: the service exposes no
+    // version endpoint, and inferring support from a successful create is exactly the
+    // ambiguity that makes the silent-Search case dangerous.
+    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen)) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Demand Gen campaigns are not available yet. Select Search instead, or ask an administrator to enable Demand Gen support.',
+      };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;
+    try {
+      // `undefined` for the fifth argument, NOT the envelope: `proxyRequestWithResponse` takes
+      // `query` fifth and `data` sixth. Passing the envelope fifth serialises it into the query
+      // string and sends NO body, which campaign-service rejects — every create would fail
+      // before a job existed. `saveBrief` above has the same shape; keep the two aligned.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        { input: { platforms, config } }
+      );
+      const jobId = response.data?.job_id ?? '';
+      if (jobId === '') {
+        // A 202 with no job id is unusable: the caller has no way to poll, and reporting success
+        // would leave a dispatch running that nothing can observe. Say so rather than returning
+        // an empty id the poller would treat as a legacy in-process job.
+        return { enabled: true, jobId: null, error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.' };
+      }
+      return { enabled: true, jobId, error: null };
+    } catch (error: unknown) {
+      logger.warning(req, 'campaign_service_create', 'campaign-service refused the campaign-create request', {
+        briefId,
+        projectSlug,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Deliberately generic about the CAUSE. The upstream message can name a connection, an
+      // account id or a platform error body, none of which the user can act on and some of which
+      // should not be rendered at all.
+      //
+      // But it must NOT be generic about whether retrying is safe. This endpoint answers 202 and
+      // dispatches work the request does not wait for, and neither it nor `/campaigns` declares
+      // an idempotency key — the same reason `saveBrief` reconciles instead of retrying. So on an
+      // indeterminate failure the POST may already have committed and real ad spend may already
+      // be running. Telling the user to "try again" there is an instruction to double-spend,
+      // which is the exact outcome this cutover exists to prevent.
+      //
+      // Same predicate as `reconcileLostWrite`, deliberately: a 4xx that is not 408 is a definite
+      // refusal — campaign-service decided, nothing was committed, and retrying is safe. Anything
+      // else (5xx, connection reset, and the 408 the client synthesises for a timeout) is
+      // indeterminate, and gets the non-retry wording the 202-no-job branch above already uses.
+      //
+      // Wording rather than reconciliation: a reconcile needs a lookup keyed by brief that would
+      // tell us whether a job exists, and the create endpoints expose no such route today. That
+      // is the better fix and belongs with an idempotency key on the service side; this stops the
+      // active harm of instructing the retry.
+      // A request that never left this process is definite too — see `requestNeverLeft`. Without
+      // it, campaign-service simply being unreachable answered "it may have started, check the ad
+      // platforms", which is the retry-inducing wording this branch exists to avoid.
+      if (requestNeverLeft(error)) {
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Could not reach the campaign service, so nothing was created. Please try again.',
+        };
+      }
+      const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
+      if (definitelyRejected) {
+        return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
+      }
+      return {
+        enabled: true,
+        jobId: null,
+        error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
+      };
+    }
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
+   *
+   * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
+   * REQUIRED with no default, and staging clones a template, so a user who cannot choose one
+   * cannot stage anything.
+   *
+   * A SEARCH rather than a dropdown, deliberately. campaign-service caps an unfiltered listing at
+   * 500 and the wire result has no pagination field, so a portal with more would show a truncated
+   * list indistinguishable from a complete one — the exact shape of falsehood a picker must not
+   * have. `possiblyTruncated` below is how the caller can tell.
+   *
+   * `q` does NOT reach HubSpot. Its list endpoint cannot be queried by name or subject, so
+   * campaign-service walks every page and matches in-process. Do not describe this as server-side
+   * search: the service's own design warns that reading it that way invites optimising the walk
+   * away, reintroducing the false absence the cap exists to prevent.
+   *
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
+   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
+   * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
+   * filtered search either sees every page or fails; it never quietly returns a subset. That is
+   * why `possiblyTruncated` is only meaningful for the EMPTY query — the capped screen is the one
+   * case where a partial result is returned as if complete.
+   *
+   * `enabled: false` for a project with no usable HubSpot connection, matching `saveBrief` and
+   * `createCampaigns`: an absent connection is the steady state everywhere the channel is not set
+   * up, so it must not surface as an error. The caller renders "connect HubSpot" for it.
+   */
+  public async searchHubSpotEmails(req: Request, projectSlug: string, query: string): Promise<HubSpotEmailSearchResult> {
+    if (projectSlug === '') {
+      // Refused rather than defaulted, for the reason `loadBrief` refuses: `/projects//…` is a
+      // DIFFERENT route that 404s at the gateway, and a gateway 404 is not the service saying
+      // "no such project".
+      return { enabled: true, emails: [], error: 'A HubSpot template search requires the project it is scoped to.', possiblyTruncated: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/emails`;
+    try {
+      // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
+      // method, query, data)` — passing them sixth would send them as a body, which a GET
+      // discards, and the search would silently return the unfiltered list.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<{ emails?: CampaignServiceMarketingEmail[] }>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'GET',
+        query === '' ? undefined : { q: query }
+      );
+      // Rows without an id are DROPPED, not mapped to `id: ''`. This is the value the staging
+      // config's required `sourceEmailId` takes, so an id-less row is a choice the user cannot
+      // make — rendering it would offer a template that fails on submit.
+      // A 200 with no `emails` ARRAY is malformed, not an empty portal, and the difference is the
+      // whole point of this component. `?? []` reported it as `enabled: true` with zero templates
+      // — indistinguishable from a portal that genuinely has none, which is the false absence this
+      // search exists to avoid. campaign-service draws the same line one layer up: `SearchEmails`
+      // treats a nil results array as a decode error precisely because a genuinely empty portal
+      // returns `[]`, not nothing. Thrown so the catch below reports a read failure.
+      const wire = response.data?.emails;
+      if (!Array.isArray(wire)) {
+        throw new Error('campaign-service returned a 2xx with no emails array');
+      }
+
+      // The WIRE count, taken BEFORE the id filter below. Truncation is a property of what
+      // campaign-service sent, not of what survived our filtering: a genuinely capped 500 carrying
+      // one id-less row filters to 499, and `499 >= 500` would report a truncated listing as
+      // complete — the precise falsehood this flag exists to prevent.
+      const wireCount = wire.length;
+      const emails = wire.filter((email) => typeof email.id === 'string' && email.id !== '').map(fromMarketingEmail);
+      // Derived here because the wire cannot express it: a capped 500 and a complete 500 are the
+      // same bytes. Only an EMPTY query is capped, so a filtered search is never flagged.
+      return { enabled: true, emails, error: null, possiblyTruncated: query === '' && wireCount >= UNFILTERED_EMAIL_CAP };
+    } catch (error) {
+      // A missing connection is not a failure of this request: campaign-service answers its own
+      // typed 404 — "no HubSpot connection configured for this project" — which is exactly the
+      // state the picker should render as "connect HubSpot".
+      //
+      // The BODY is checked, not just the status, and that is the same distinction `findBrief`
+      // draws: a gateway 404 is not the service's 404. `/projects//connection-hubspot/emails`
+      // with an empty slug, a routing change, or an ingress miss all produce a bare 404 too, and
+      // reporting those as "no connection" would tell the user to connect something that is
+      // already connected while hiding a real outage.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return { enabled: false, emails: [], error: null, possiblyTruncated: false };
+      }
+      logger.warning(req, 'hubspot_email_search', 'campaign-service refused the HubSpot template search', {
+        projectSlug,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        enabled: true,
+        emails: [],
+        error: 'HubSpot templates could not be loaded. Try again, or check the HubSpot connection.',
+        possiblyTruncated: false,
+      };
+    }
+  }
+
+  /**
    * After an ambiguous create failure, find out whether the POST actually committed.
    *
    * Returns the row when it is provably THIS request's, and `null` when the create did not happen
@@ -480,6 +941,12 @@ export class CampaignServiceClient {
     error: unknown,
     versionIsAcceptable: (version: number) => boolean
   ): Promise<ApiResponse<CampaignServiceBrief> | null> {
+    // A request that never left this process cannot have committed, so there is nothing to
+    // reconcile — skip the reads rather than spending them proving a negative. Same class as the
+    // `definitelyRejected` case below; see `requestNeverLeft`.
+    if (requestNeverLeft(error)) {
+      return null;
+    }
     const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
     if (definitelyRejected) {
       return null;
@@ -750,6 +1217,13 @@ export class CampaignServiceClient {
       // is stored now may not be theirs. The distinction between "someone replaced it" and
       // "someone removed it" changes nothing they can act on.
       const removedAfterWrite = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      // Deliberately NOT widened with `requestNeverLeft` the way the create path is. The two
+      // look alike and are not: this arm runs after the write already SUCCEEDED, on the
+      // follow-up approve. `ECONNRESET` here means the approve was sent and its reply was lost —
+      // campaign-service may have committed it and bumped the version — so the outcome is
+      // genuinely unknown, which is what the sibling test at "reports no validator when the
+      // approval outcome is unknown" pins. `requestNeverLeft` answers "did the bytes leave", and
+      // only a connect-time failure makes that a proof; a mid-flight reset does not.
       const definitelyRejected =
         error instanceof MicroserviceError &&
         error.statusCode >= 400 &&
@@ -1014,6 +1488,18 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
 
   // Narrowed against the union rather than passed through: an unknown platform id reaches a
   // template that indexes icon and label maps by it, and renders blank rather than erroring.
+  //
+  // Narrowed to `CampaignPlatform`, NOT `CampaignAnyPlatform`, deliberately: this feeds the PAID
+  // planner's channel selection, and `hubspot` is not one of its channels. That means a stored
+  // email brief's `hubspot` is filtered out here and — because of the guard below — would read as
+  // UNREADABLE rather than as an email brief.
+  //
+  // No client sends such a brief TODAY (the email planner omits `platforms`), but that is a client
+  // guarantee and this is a server reading whatever campaign-service stored, so it does not bound
+  // what can arrive — the same reasoning `campaign-proxy.service.ts` applies to its own inputs.
+  // The case is deferred rather than dismissed: restoring an email brief needs a different shape,
+  // not a wider filter here, and widening this one would hand `hubspot` to a paid channel picker
+  // that has no such channel. That is LFXV2-3224's to solve deliberately.
   const selectedPlatforms = (found.platforms ?? []).filter((p): p is CampaignPlatform => CAMPAIGN_PLATFORMS.some((o) => o.id === p));
 
   // A stored brief that names platforms, none of which this build recognises, is UNREADABLE —

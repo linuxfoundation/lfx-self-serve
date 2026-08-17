@@ -19,6 +19,7 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 
 function buildOrgsRouter(): Router {
   const router = Router();
@@ -44,6 +45,13 @@ function buildOrgsRouter(): Router {
   router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+
+  // Org-membership read gate for the whole lens family. Previously only the meetings, ROI and
+  // groups handlers called `assertOrgLensRead`; every other route let the caller-supplied `:orgUid`
+  // both select and authorize the data, which is the ADR-0038 failure. Mounting it on the shared
+  // prefix covers each existing route and any future one by default. Some routes below name the
+  // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
+  router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
   // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
   // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).

@@ -133,7 +133,9 @@ export class MeetingController {
         return;
       }
 
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting');
+      // includeProject: enrich with project_slug/project_name/is_foundation so clients can
+      // reconcile project context from the meeting payload itself.
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true, includeProject: true });
 
       // Log the success
       logger.success(req, 'get_meeting_by_id', startTime, {
@@ -438,7 +440,7 @@ export class MeetingController {
 
       // Step 1: Get the meeting with access check to determine organizer status
       logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details with access check', { meeting_id: uid });
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', true);
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
       if (!meeting) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,

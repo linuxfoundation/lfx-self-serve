@@ -4,7 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
+import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -479,21 +479,34 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     impersonating: !!auth.impersonating,
   });
 
+  // Mutable per-request context — a not-found view sets `notFound` during SSR (via REQUEST_CONTEXT,
+  // the same object reference) so we emit a real 404 at the originally-requested path (no redirect).
+  const renderContext: ServerRequestContext = {
+    auth,
+    runtimeConfig,
+    notFound: false,
+    providers: [
+      { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
+      { provide: REQUEST, useValue: req },
+    ],
+  };
+
   angularApp
-    .handle(req, {
-      auth,
-      runtimeConfig,
-      providers: [
-        { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
-        { provide: REQUEST, useValue: req },
-      ],
-    })
-    .then((response) => {
-      if (response) {
-        return writeResponseToNodeResponse(response, res);
+    .handle(req, renderContext)
+    .then(async (response) => {
+      if (!response) {
+        return next();
       }
 
-      return next();
+      // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
+      // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
+      if (renderContext.notFound && response.status === 200) {
+        const body = await response.text();
+        const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
+        return writeResponseToNodeResponse(finalResponse, res);
+      }
+
+      return writeResponseToNodeResponse(response, res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {

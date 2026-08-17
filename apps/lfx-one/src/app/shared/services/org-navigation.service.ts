@@ -12,6 +12,7 @@ import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, mer
 
 import { AccountContextService } from './account-context.service';
 import { LensService } from './lens.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Client state machine for the org-selector — single-state mirror of NavigationService (research.md D-002) with generation race-guard + uid dedup on scroll. */
 @Injectable({
@@ -23,6 +24,7 @@ export class OrgNavigationService {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
 
   private readonly state: OrgListState = this.createOrgListState();
 
@@ -33,6 +35,7 @@ export class OrgNavigationService {
   public readonly loading: Signal<boolean> = this.state.loading;
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
+  public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -62,12 +65,13 @@ export class OrgNavigationService {
     const loading = signal<boolean>(false);
     const loaded = signal<boolean>(false);
     const nextPageToken = signal<string | null>(null);
+    const upstreamFailed = signal<boolean>(false);
     const pendingDefaultSelection = signal<boolean>(false);
     const generation = signal<number>(0);
     const loadMore$ = new Subject<string>();
     const reload$ = new Subject<void>();
 
-    const items = this.initItems(searchTerm, loading, loaded, nextPageToken, pendingDefaultSelection, generation, loadMore$, reload$);
+    const items = this.initItems(searchTerm, loading, loaded, nextPageToken, upstreamFailed, pendingDefaultSelection, generation, loadMore$, reload$);
     const hasMore = computed(() => nextPageToken() !== null);
 
     return {
@@ -77,6 +81,7 @@ export class OrgNavigationService {
       loaded,
       nextPageToken,
       hasMore,
+      upstreamFailed,
       pendingDefaultSelection,
       generation,
       loadMore$,
@@ -89,6 +94,7 @@ export class OrgNavigationService {
     loading: WritableSignal<boolean>,
     loaded: WritableSignal<boolean>,
     nextPageToken: WritableSignal<string | null>,
+    upstreamFailed: WritableSignal<boolean>,
     pendingDefaultSelection: WritableSignal<boolean>,
     generation: WritableSignal<number>,
     loadMore$: Subject<string>,
@@ -133,10 +139,30 @@ export class OrgNavigationService {
         filter(({ generation: pageGen }) => pageGen === generation()),
         map(({ page }) => page),
         tap((page) => {
+          // The cursor this page was fetched with (nextPageToken() still holds it — it's only
+          // overwritten below). Comparing it against the cursor this page hands back is how the
+          // auto-follow loop tells "the catalogue has more to walk" apart from "upstream is stuck".
+          const requestedToken = nextPageToken();
           nextPageToken.set(page.nextPageToken);
+          upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
+          }
+          // A catalogue page can dedupe to zero rows while still carrying a live cursor — the BFF's
+          // own skip-ahead has a cap, and the caller-visible page beyond it is empty. No new row means
+          // the viewport sentinel is never recreated (it keys off item count), so nothing would ever
+          // ask for the next page; paging has to drive itself here instead of waiting on a scroll
+          // event that can't happen.
+          //
+          // Follows as long as the cursor keeps advancing — bounded by the catalogue's finite size,
+          // same as manual scrolling would be — and stops only when upstream hands back the exact
+          // cursor it was just given, the one case that would otherwise spin forever.
+          // A reset page (new search) has no "requested cursor" of its own to compare against —
+          // whatever nextPageToken still held was the previous search's leftover, not this one's input.
+          const cursorAdvanced = page.reset || page.nextPageToken !== requestedToken;
+          if (page.items.length === 0 && page.nextPageToken && !page.upstreamFailed && cursorAdvanced) {
+            this.loadNextPage();
           }
         }),
         // Dedupe by uid when appending pages — an injected selected row can also appear in a later page.
@@ -210,6 +236,16 @@ export class OrgNavigationService {
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
     if (page.items.length === 0) {
+      // For staff an empty list is never a loss of access, so the "No access" toast + cleared
+      // selection + redirect would be wrong: it reads as being signed out, and it navigates away from
+      // the search box that is the way in. Deliberately not conditioned on the search term being
+      // blank: a search typed before the bootstrap response lands can be the response that resolves
+      // the pending selection, and an empty result for it would otherwise sign the caller out. A
+      // search that matched nothing is reported by the list's own empty state instead. Narrow enough
+      // that a genuine upstream failure still reports.
+      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed) {
+        return;
+      }
       this.handleEmptyOrgResponse(page);
       return;
     }

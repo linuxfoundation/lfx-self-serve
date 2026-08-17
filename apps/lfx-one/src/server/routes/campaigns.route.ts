@@ -14,6 +14,9 @@ router.post('/brief/persist', (req, res, next) => campaignController.persistBrie
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
+// The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
+// the paths do not overlap.
+router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
 router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
