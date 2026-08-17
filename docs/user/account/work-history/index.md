@@ -1,5 +1,5 @@
 ---
-title: Work History & Affiliations
+title: Work history & Affiliations
 description: Manage your work history and see how your project affiliations and contribution attribution are calculated in LFX Self Serve
 audience: [all]
 product_area: Account
@@ -30,10 +30,10 @@ Your employment history determines which organization your contributions are att
 ### Add a work experience
 
 1. Select **Add work experience**.
-2. Fill in the fields:
-   - **Organization** (required) — search and pick your employer (for example, `Google`, `Red Hat`).
+2. Fill in the fields (only **Role** is required):
+   - **Organization** — search and pick your employer (for example, `Google`, `Red Hat`).
    - **Role** (required) — your job title (for example, `Senior Software Engineer`).
-   - **Start Date** (required) — month and year.
+   - **Start Date** — month and year.
    - **End Date** — month and year, or select **I currently work here** to mark it as your current role (this hides the end date).
 3. Select **Add experience**.
 

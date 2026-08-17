@@ -34,11 +34,11 @@ LFX Self Serve does not currently include a notification preferences section. Em
 
 ## How do I add or edit my work history?
 
-Go to [**Profile & Account**](/profile) and use the **Work history & Affiliations** tab (`/profile/attributions`, the default tab). Select **Add work experience**, enter the organization, role, and dates (or mark **I currently work here**), then select **Add experience**. Use the actions menu on an entry to **Edit** or **Delete** it. Your work history also populates the **Organization** choices in the Edit Profile drawer. See [Work History & Affiliations](../work-history/).
+Go to [**Profile & Account**](/profile) and use the **Work history & Affiliations** tab (`/profile/attributions`, the default tab). Select **Add work experience**, enter the organization, role, and dates (or mark **I currently work here**), then select **Add experience**. Use the actions menu on an entry to **Edit** or **Delete** it. Your work history also populates the **Organization** choices in the Edit Profile drawer. See [Work history & Affiliations](../work-history/).
 
 ## What are affiliations, and how are my contributions attributed?
 
-Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work History & Affiliations](../work-history/).
+Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
 
 ## How do I link a GitHub or social account?
 

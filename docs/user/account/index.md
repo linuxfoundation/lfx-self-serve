@@ -31,7 +31,7 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 
 | Tab                         | Route                            | Description                                                    | Documentation                                     |
 | --------------------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     | [Work History & Affiliations](./work-history/)    |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     | [Work history & Affiliations](./work-history/)    |
 | Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work    | [Identities](./identities/)                       |
 | Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan       | [Individual Enrollment](./individual-enrollment/) |
 | My CLAs                     | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) | [My CLAs](./my-clas/)                             |
@@ -43,7 +43,7 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 ## Related sections
 
 - [Profile](../profile/) — your name, photo, About Me, primary email, and location (Edit Profile drawer)
-- [Work History & Affiliations](./work-history/) — record your employment history and review how contributions are attributed
+- [Work history & Affiliations](./work-history/) — record your employment history and review how contributions are attributed
 - [Identities](./identities/) — link, verify, and remove GitHub, social, and email identities, and claim a Linux.com alias
 - [Individual Enrollment](./individual-enrollment/) — enroll in an Individual Supporter membership and manage auto-renew
 - [My CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage

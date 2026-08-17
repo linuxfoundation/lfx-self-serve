@@ -57,7 +57,7 @@ To reject an unverified identity instead, use **This is not me** on its row (see
 
 > **Note:** Removing an identity can't be undone. As the removal dialog notes, identity information may be retained to help improve our services and support project insights — see the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for what data is kept and why.
 
-## Your linux.com email alias
+## Your Linux.com email alias
 
 The **Linux.com email** section, at the bottom of the Identities tab, lets Individual Supporters set up a personal `@linux.com` address that forwards to an inbox you choose. The Lifetime Linux.com Email Alias is a one-time add-on.
 
