@@ -3494,7 +3494,15 @@ export interface EdEvolutionData {
   memberRetention: MemberRetentionResponse;
   engagedCommunity: EngagedCommunitySizeResponse;
   eventGrowth: EventGrowthResponse;
-  brandReach: BrandReachResponse;
+  /**
+   * Social and Web card data. undefined means "request failed", not "no followers".
+   *
+   * Same contract as revenueImpact below, and required-but-undefinable for the same
+   * forkJoin reason. A foundation with 17,269 followers rendered "0 · 0 platforms" on a
+   * cold load when this fell back to a zero-filled response — a live outage reported as
+   * a measured absence, on the two cards that read it.
+   */
+  brandReach: BrandReachResponse | undefined;
   brandHealth: BrandHealthResponse;
   /**
    * Attribution card data. undefined means "request failed", not "zero revenue".

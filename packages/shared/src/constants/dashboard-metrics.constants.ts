@@ -863,6 +863,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // else reports a failure during the initial in-flight window.
   const placeholderCaption = data.pending ? DATA_LOADING_CAPTION : DATA_UNAVAILABLE_CAPTION;
 
+  // Lifted out of the Web card's subtitle binding: combined with the brandReach-undefined
+  // arm it would otherwise be a nested ternary, which .claude/rules/styling.md forbids.
+  const webSessionsSubtitle = brandReach && brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)';
+
   // Education totals. edX is counted in enrollments but has no revenue column in
   // COURSE_PURCHASES, so it is intentionally absent from the revenue sum — adding a 0
   // would be harmless here but the omission is deliberate and mirrored in the drawer.
@@ -1020,15 +1024,17 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'brand',
       testId: 'ed-evo-brand-reach',
       description: 'Social followers across all platforms.',
-      value: formatNumber(brandReach.totalSocialFollowers),
-      changePercentage: formatMomChange(brandReach.changePercentage),
-      trend: normalizeTrend(brandReach.changePercentage, brandReach.trend),
-      subtitle: `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}`,
+      // undefined means the request failed, not that the foundation has no followers —
+      // "0 · 0 platforms" would report an outage as a measurement.
+      value: brandReach ? formatNumber(brandReach.totalSocialFollowers) : '—',
+      changePercentage: brandReach ? formatMomChange(brandReach.changePercentage) : undefined,
+      trend: brandReach ? normalizeTrend(brandReach.changePercentage, brandReach.trend) : undefined,
+      subtitle: brandReach ? `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}` : placeholderCaption,
       // No historical follower series available. flatSparklineData renders a nearly
       // flat line at the current total (a constant array collapses Chart.js's Y range
       // and hides the line entirely) — it is a placeholder, not a trend. Website
       // sessions are deliberately not reused here: different metric, different card.
-      chartData: protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]),
+      chartData: brandReach ? protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Social followers across all platforms, with month-over-month change.',
       drawerType: DashboardDrawerType.BrandReach,
@@ -1045,20 +1051,24 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'brand',
       testId: 'ed-evo-web-sessions',
       description: 'Rolling 30-day sessions across foundation web properties.',
-      value: formatNumber(brandReach.totalMonthlySessions),
-      changePercentage: formatMomChange(brandReach.sessionMomChangePct),
-      trend: normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down'),
+      // Shares brandReach with the Social card above, so it shares the same contract:
+      // undefined is a failed request, and zero sessions is a real measurement.
+      value: brandReach ? formatNumber(brandReach.totalMonthlySessions) : '—',
+      changePercentage: brandReach ? formatMomChange(brandReach.sessionMomChangePct) : undefined,
+      trend: brandReach ? normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down') : undefined,
       // The value is a rolling 30-day total; the sparkline is a separate weekly series
       // over a fixed six-month range. Label them separately so the 30-day figure is not
       // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
       // length is not the reporting window and the window is labeled directly.
       // When weeklyTrend is empty, flatSparklineData renders a placeholder at the
       // current total (see the Social card above), not a trend.
-      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
-      chartData: protoSparkline(
-        brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
-        lfxColors.violet[500]
-      ),
+      subtitle: brandReach ? webSessionsSubtitle : placeholderCaption,
+      chartData: brandReach
+        ? protoSparkline(
+            brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
+            lfxColors.violet[500]
+          )
+        : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Rolling 30-day website sessions across foundation web properties, with month-over-month change.',
       drawerType: DashboardDrawerType.MarketingWebsiteVisits,

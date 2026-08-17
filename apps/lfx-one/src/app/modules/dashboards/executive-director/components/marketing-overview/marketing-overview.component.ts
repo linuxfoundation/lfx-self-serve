@@ -122,17 +122,12 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     monthlyData: [],
     topEvents: [],
   },
-  brandReach: {
-    totalSocialFollowers: 0,
-    totalMonthlySessions: 0,
-    activePlatforms: 0,
-    changePercentage: 0,
-    sessionMomChangePct: 0,
-    trend: 'up',
-    socialPlatforms: [],
-    websiteDomains: [],
-    weeklyTrend: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact below: zero followers and
+  // zero sessions are legitimate measurements, so the Social and Web cards must not fall
+  // back to them. AAIF has 17,269 followers across 2 platforms and rendered "0 · 0
+  // platforms" on a cold load when brand-reach failed inside the dashboard's request
+  // burst — an outage presented as a measured absence.
+  brandReach: undefined,
   brandHealth: {
     totalMentions: 0,
     sentiment: { positive: 0, neutral: 0, negative: 0 },
@@ -270,7 +265,28 @@ export class MarketingOverviewComponent {
   protected readonly memberRetentionData = computed<MemberRetentionResponse>(() => this.edEvolutionData().memberRetention);
   protected readonly engagedCommunityData = computed<EngagedCommunitySizeResponse>(() => this.edEvolutionData().engagedCommunity);
   protected readonly eventGrowthData = computed<EventGrowthResponse>(() => this.edEvolutionData().eventGrowth);
-  protected readonly brandReachData = computed<BrandReachResponse>(() => this.edEvolutionData().brandReach);
+  /**
+   * Drawer-facing only. The Social and Web cards read `edEvolutionData().brandReach`
+   * directly and render an unavailable state when it is undefined; the drawers take a
+   * non-optional input and already render their own "not yet available" copy for empty
+   * collections, so an empty shape here is the smaller change and says the same thing.
+   * It must never be used to source a card value — that is what printed "0 · 0 platforms"
+   * for a foundation with 17,269 followers.
+   */
+  protected readonly brandReachData = computed<BrandReachResponse>(
+    () =>
+      this.edEvolutionData().brandReach ?? {
+        totalSocialFollowers: 0,
+        totalMonthlySessions: 0,
+        activePlatforms: 0,
+        changePercentage: 0,
+        sessionMomChangePct: 0,
+        trend: 'up',
+        socialPlatforms: [],
+        websiteDomains: [],
+        weeklyTrend: [],
+      }
+  );
   protected readonly brandHealthData = computed<BrandHealthResponse>(() => {
     const base = this.edEvolutionData().brandHealth;
     const mentions = this.brandHealthMentions();
