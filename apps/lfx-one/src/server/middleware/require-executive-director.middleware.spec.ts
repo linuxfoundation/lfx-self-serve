@@ -126,6 +126,27 @@ describe('requireExecutiveDirector', () => {
     expect(verdict(next)).toBe('allow');
   });
 
+  // A request with both `foundationSlug` and `project` naming different foundations is rejected:
+  // the middleware cannot simultaneously authorize one scope while the handler reads the other.
+  it('denies a request that supplies conflicting foundationSlug and project params', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf', 'cncf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'tlf', project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  // Same values in both params is unambiguous — treat it as a single scope.
+  it('allows a request where foundationSlug and project are the same value', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'tlf', project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
   // With no slug there is nothing to scope against; rejecting a missing required parameter is
   // the handler's job, and ED endpoints that take no foundation stay reachable.
   it('allows an ED when the request names no foundation', async () => {

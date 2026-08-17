@@ -22,15 +22,15 @@ import { PersonaService } from '../services/persona.service';
  * access, only the Social Listening tab the component itself restricts them to.
  *
  * LaunchDarkly is browser-only (see `feature-flag.provider.ts`) — its provider never initializes
- * server-side, so reading the flag there always yields `false`, which would permanently deny a
- * non-ED FGA marketing auditor via a real SSR redirect before the client ever gets a chance to
- * check. On the server this treats the flag as off (the legacy ED/LF-Staff path below doesn't
- * depend on it) and defers the FGA branch to the client-side rerun of this guard, which awaits
- * `providerReady` before reading it.
+ * server-side, so reading the flag there always yields `false`. If the FGA branch ran on the
+ * server it would emit `false`, fall through to the legacy path, and issue a real SSR redirect
+ * for a non-ED `marketing_auditor` before the client ever gets a chance to re-evaluate the guard
+ * — permanently locking them out. On the server this returns `true` directly (matching
+ * `executiveDirectorGuard`) and defers the full flag + FGA evaluation to the client-side rerun,
+ * which awaits `providerReady` before reading it (LFXV2-2236).
  */
 export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
-  const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
   const platformId = inject(PLATFORM_ID);
 
@@ -38,6 +38,11 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
     return true;
   }
 
+  if (!isPlatformBrowser(platformId)) {
+    return true;
+  }
+
+  const featureFlagService = inject(FeatureFlagService);
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
   const providerReady$: Observable<boolean> = featureFlagService.providerReady()
@@ -48,11 +53,8 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
         catchError(() => of(false))
       );
 
-  const marketingOpsFgaEnabled$: Observable<boolean> = isPlatformBrowser(platformId)
-    ? providerReady$.pipe(map((ready) => ready && featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)()))
-    : of(false);
-
-  return marketingOpsFgaEnabled$.pipe(
+  return providerReady$.pipe(
+    map((ready) => ready && featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)()),
     switchMap((marketingOpsFgaEnabled) => {
       // Force a refetch unless we already know the caller is a marketing auditor — the "already
       // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
