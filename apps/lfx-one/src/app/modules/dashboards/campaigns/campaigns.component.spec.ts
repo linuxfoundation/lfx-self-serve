@@ -6,6 +6,7 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -1749,6 +1750,8 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
 describe('CampaignsComponent — HubSpot template picker', () => {
   let fixture: ComponentFixture<CampaignsComponent>;
   let httpMock: HttpTestingController;
+  // A writable context signal so a foundation SWITCH can be driven, not just its absence.
+  let ctx: WritableSignal<ProjectContext | null>;
 
   interface PickerInternals {
     emailTemplates: WritableSignal<HubSpotMarketingEmail[] | null>;
@@ -1762,16 +1765,19 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
   beforeEach(async () => {
+    ctx = signal<ProjectContext | null>({ uid: 'u1', name: 'The Linux Foundation', slug: 'tlf', logoUrl: '' } as ProjectContext);
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: ctx, activeContextUid: computed(() => ctx()?.uid ?? '') } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
-    // The component reads the foundation from ProjectContextService; without a slug the search
-    // refuses before issuing a request, which is its own test below.
-    (fixture.componentInstance as unknown as { activeFoundationSlug: () => string }).activeFoundationSlug = () => 'tlf';
   });
 
   function respond(body: { enabled: boolean; error: string | null; possiblyTruncated: boolean; emails: HubSpotMarketingEmail[] }): void {
@@ -1849,12 +1855,106 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   });
 
   it('refuses to search without a foundation rather than listing another portal', () => {
-    (fixture.componentInstance as unknown as { activeFoundationSlug: () => string }).activeFoundationSlug = () => '';
+    ctx.set(null);
+    fixture.detectChanges();
 
     picker().searchEmailTemplates('kubecon');
 
     httpMock.expectNone((r) => r.url === '/api/campaigns/hubspot/emails');
     expect(picker().emailTemplatesError()).toContain('foundation');
+  });
+
+  // The four states are pinned in the COMPONENT above and were entirely unpinned in the UI that
+  // expresses them: a reviewer deleted all four rendering blocks and every test still passed. The
+  // defect class this whole picker guards against could therefore reappear in the template with a
+  // green suite. These assert the DOM, one state at a time, using the testids already present.
+  interface PanelNav {
+    selectorForm: { controls: { deliveryType: { setValue(v: string): void } } };
+    selectTab(tab: string, owner: string): void;
+  }
+  function panel(): HTMLElement {
+    const nav = fixture.componentInstance as unknown as PanelNav;
+    nav.selectorForm.controls.deliveryType.setValue('email');
+    nav.selectTab('implementation', 'email');
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('renders the connect-HubSpot state and nothing else when the channel is off', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
+
+    const el = panel();
+    expect(el.querySelector('[data-testid="campaigns-email-not-connected"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="campaigns-email-templates-error"]')).toBeNull();
+    expect(el.querySelector('[data-testid="campaigns-email-templates-empty"]')).toBeNull();
+    expect(el.querySelector('[data-testid="campaigns-email-template-list"]')).toBeNull();
+  });
+
+  it('renders the error state, not an empty portal, when the search failed', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: 'HubSpot refused the request', possiblyTruncated: false, emails: [] });
+
+    const el = panel();
+    expect(el.querySelector('[data-testid="campaigns-email-templates-error"]')).not.toBeNull();
+    // The claim that must never render over a failure.
+    expect(el.querySelector('[data-testid="campaigns-email-templates-empty"]')).toBeNull();
+  });
+
+  it('names the query in the empty state, so it reads as being about the search', () => {
+    picker().searchEmailTemplates('nothing-matches');
+    respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+
+    const empty = panel().querySelector('[data-testid="campaigns-email-templates-empty"]');
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toContain('nothing-matches');
+  });
+
+  it('renders a row per template with an accessible name', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '1', name: 'KubeCon promo' }] });
+
+    const row = panel().querySelector('[data-testid="campaigns-email-template-1"]');
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute('aria-label')).toContain('KubeCon promo');
+  });
+
+  // The input was one-way, so the signal only changed INSIDE searchEmailTemplates. Typing
+  // "kubecon" then clicking Search re-ran the previous query — empty on arrival — returning the
+  // full listing while the box still read "kubecon", so the user concludes their search matched
+  // everything.
+  it('searches what is typed, not the previous query', () => {
+    const el = panel();
+    const input = el.querySelector('[data-testid="campaigns-email-template-search"]') as HTMLInputElement;
+    input.value = 'kubecon';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    (el.querySelector('[data-testid="campaigns-email-template-search-button"]') as HTMLButtonElement).click();
+
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    expect(req.request.params.get('q')).toBe('kubecon');
+    req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+  });
+
+  // A CHANGED foundation is the same hazard as a missing one, and searchEmailTemplates' own
+  // guard cannot see it: the results are already on screen, now labelled with whichever
+  // foundation is selected. selectedEmailTemplateId is the one that must not survive — it becomes
+  // hubspotConfig.sourceEmailId on create, so a stale selection stages a send that clones
+  // foundation A's email into foundation B's portal.
+  it('clears the picker when the foundation changes', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: null, possiblyTruncated: true, emails: [{ id: '1', name: 'A-only template' }] });
+    picker().onSelectEmailTemplate('1');
+    expect(picker().selectedEmailTemplateId()).toBe('1');
+
+    ctx.set({ uid: 'u2', name: 'Other Foundation', slug: 'other', logoUrl: '' } as ProjectContext);
+    fixture.detectChanges();
+
+    expect(picker().selectedEmailTemplateId()).toBe('');
+    expect(picker().emailTemplates()).toBeNull();
+    expect(picker().emailChannelEnabled()).toBeNull();
+    expect(picker().emailTemplatesTruncated()).toBe(false);
   });
 
   it('records the chosen template id, which is what sourceEmailId takes', () => {

@@ -181,7 +181,8 @@
               <input
                 type="search"
                 [value]="emailTemplateQuery()"
-                (keyup.enter)="searchEmailTemplates($any($event.target).value)"
+                (input)="onEmailTemplateQueryInput($any($event.target).value)"
+                (keyup.enter)="searchEmailTemplates(emailTemplateQuery())"
                 placeholder="Search by name or subject"
                 aria-label="Search HubSpot marketing emails"
                 class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
@@ -226,9 +227,7 @@
                     first screen are indistinguishable. Telling someone to narrow an already
                     exhaustive search would send them hunting for a template that does not exist.
                   -->
-                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">
-                    Showing the most recently updated templates. Search to narrow the list.
-                  </p>
+                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">Showing a partial list. Search to narrow it.</p>
                 }
                 <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
                   @for (template of templates; track template.id) {

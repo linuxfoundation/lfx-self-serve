@@ -458,6 +458,22 @@ export class CampaignsComponent {
         // nothing, which is exactly the distinction that counter exists to draw.
         this.briefPersistenceGeneration++;
         this.briefPersistence.set(this.idlePersistence);
+
+        // The picker is per-FOUNDATION and must not survive a switch. `searchEmailTemplates`
+        // already refuses a MISSING slug so one portal's templates cannot stand in for another's
+        // — but a CHANGED slug is the same hazard and that guard does not see it: the results are
+        // already on screen, labelled with whichever foundation is now selected.
+        //
+        // `selectedEmailTemplateId` is the one that must not be missed. It becomes
+        // `hubspotConfig.sourceEmailId` on create, so a stale selection stages a send that clones
+        // foundation A's email into foundation B's portal — 404 if the user cannot reach it, and
+        // silently wrong if they can.
+        this.emailTemplates.set(null);
+        this.emailTemplateQuery.set('');
+        this.emailTemplatesTruncated.set(false);
+        this.emailChannelEnabled.set(null);
+        this.emailTemplatesError.set(null);
+        this.selectedEmailTemplateId.set('');
       });
 
     // Mirror the program control into the signal. A program switch changes the whole
@@ -679,6 +695,19 @@ export class CampaignsComponent {
           this.emailTemplatesError.set('Could not load templates. Try again.');
         },
       });
+  }
+
+  /**
+   * Track what is TYPED, not only what was last searched.
+   *
+   * Without this the input is one-way and `emailTemplateQuery` only changes inside
+   * `searchEmailTemplates` — so typing "kubecon" and clicking Search re-ran the PREVIOUS query
+   * (empty on arrival), returning the full listing while the box still read "kubecon". The user
+   * concludes their search matched everything. It also let the empty-state copy name a different
+   * string than the box held.
+   */
+  protected onEmailTemplateQueryInput(value: string): void {
+    this.emailTemplateQuery.set(value);
   }
 
   protected onSelectEmailTemplate(id: string): void {
