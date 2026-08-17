@@ -4,6 +4,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Mirrors of the real `@lfx-one/shared/constants` values — the barrel is stubbed below, so these
+// are what the controller under test actually reads.
+const MEETING_AGENDA_MAX_LENGTH = 2000;
+const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
+
 const MEETING_ID = 'meeting-1111';
 const V2_COMMITTEE_UID = 'cmte-v2-aaaa';
 const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
@@ -23,7 +28,9 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock } = v
 // imports as types — stub the barrels so their runtime module graphs never load.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/enums', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({}));
+// Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
+// module-level bindings. Kept in sync with `MEETING_AGENDA_*` in the shared constants barrel.
+vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000 }));
 vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -95,8 +102,8 @@ describe('MeetingController', () => {
       aiSvc.generateMeetingAgenda.mockResolvedValue({ agenda: 'Roll call', estimatedDuration: 30 });
     });
 
-    // GH-1464: the composer surfaces the helper from any section and from Quick create, so it can
-    // be invoked before a title / type / project exist. Those must not be hard requirements.
+    // GH-1464: the composer's section rail can jump to Agenda & Resources before Details & Access
+    // is filled in, so a title / type / project may not exist yet. Those must not be requirements.
     it('generates from a free-text goal alone, with no title, type, or project', async () => {
       const req = buildReq({ body: { context: 'Plan the Q3 release' } });
 
@@ -123,11 +130,46 @@ describe('MeetingController', () => {
       expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
     });
 
+    it('rejects a whitespace-only title and goal rather than prompting on blanks', async () => {
+      await controller.generateAgenda(buildReq({ body: { title: '   ', context: '\n\t' } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+    });
+
+    it('trims the descriptors it forwards, since both land verbatim in the prompt', async () => {
+      await controller.generateAgenda(buildReq({ body: { title: '  TAC Monthly  ', context: ' Plan Q3 ' } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'TAC Monthly', context: 'Plan Q3' }));
+    });
+
+    // An over-long goal is dropped, not truncated — half a sentence is a worse prompt than none.
+    it('drops a goal that exceeds the prompt budget', async () => {
+      const req = buildReq({ body: { title: 'TAC Monthly', context: 'x'.repeat(MEETING_AGENDA_PROMPT_MAX_LENGTH + 1) } });
+
+      await controller.generateAgenda(req, buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ context: undefined }));
+    });
+
     // The controller used to drop maxCharacters, so the client's agenda cap never reached the model.
     it('forwards the caller-supplied maxCharacters cap', async () => {
       await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', maxCharacters: 1200 } }), buildRes(), next);
 
       expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxCharacters: 1200 }));
+    });
+
+    // maxCharacters reaches the model twice — as the response schema's maxLength and inside the
+    // prompt — so an unvalidated body value would surface as an opaque upstream failure.
+    it.each([
+      ['a non-numeric value', 'abc', MEETING_AGENDA_MAX_LENGTH],
+      ['an absent value', undefined, MEETING_AGENDA_MAX_LENGTH],
+      ['a value above the agenda cap', MEETING_AGENDA_MAX_LENGTH + 500, MEETING_AGENDA_MAX_LENGTH],
+      ['a negative value', -1, 1],
+    ])('clamps %s to a usable agenda cap', async (_label, supplied, expected) => {
+      await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', maxCharacters: supplied } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxCharacters: expected }));
     });
   });
 
@@ -185,6 +227,16 @@ describe('MeetingController', () => {
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
 
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_role: 'Chair', committee_category: 'Technical' })]);
+    });
+
+    // Upstream stores the v1 SFID, but every client-side comparison (and the create path) works in
+    // v2 UIDs — handing back the SFID would make one field mean two things by direction.
+    it('normalizes the enriched committee_uid from the v1 SFID back to the v2 UID', async () => {
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_uid: V2_COMMITTEE_UID })]);
     });
 
     it('leaves registrants unenriched by default, without fetching the meeting', async () => {

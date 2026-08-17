@@ -128,19 +128,20 @@ export class ComposerAgendaResourcesComponent {
 
   protected onGenerateAgenda(): void {
     const form = this.form();
-    const context = form.get('aiPrompt')?.value as string | null;
-    const title = form.get('title')?.value as string | null;
+    const context = (form.get('aiPrompt')?.value as string | null)?.trim() || null;
+    const title = (form.get('title')?.value as string | null)?.trim() || null;
     const meetingType = this.meetingType();
     const project = this.projectContextService.activeContext();
 
-    // Only a goal is strictly required — the helper is reachable from any section (and from Quick
-    // create), so the title, type, and project may legitimately not be filled in yet. The backend
-    // drops the missing descriptors from the prompt rather than rejecting the request.
-    if (!context) {
+    // A title or a goal — whichever the organizer has — is enough. The section rail can jump here
+    // before Details & Access is filled in, so the type and project may legitimately be missing;
+    // the backend drops absent descriptors from the prompt rather than rejecting the request. This
+    // guard deliberately mirrors the server's `!title && !context` contract.
+    if (!context && !title) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Missing information',
-        detail: 'Describe what the meeting is for before generating an agenda.',
+        detail: 'Add a meeting title, or describe what the meeting is for, before generating an agenda.',
       });
       return;
     }
@@ -149,7 +150,7 @@ export class ComposerAgendaResourcesComponent {
       ...(meetingType ? { meetingType } : {}),
       ...(title ? { title } : {}),
       ...(project ? { projectName: project.name } : {}),
-      context,
+      ...(context ? { context } : {}),
       maxCharacters: MEETING_AGENDA_MAX_LENGTH,
     };
 
