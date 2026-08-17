@@ -5,7 +5,6 @@ import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
 import { requireExecutiveDashboardAccess } from '../middleware/require-executive-dashboard-access.middleware';
-import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 
 const router = Router();
 
@@ -205,8 +204,11 @@ router.get('/brand-health', requireExecutiveDashboardAccess, (req, res, next) =>
 router.get('/revenue-impact', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
 router.get('/marketing-attribution', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
-// Multi-foundation summary endpoint (multi-foundation dashboard) — ED-only, same rationale as above.
-router.get('/multi-foundation-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
+// Multi-foundation summary endpoint (multi-foundation dashboard) — any authenticated user viewing
+// their own multi-persona foundations. Authorization is enforced server-side by
+// filterSlugsToPersonaScope, which validates each requested slug against the caller's
+// complete persona-derived project scope (all personas, not just ED).
+router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
 
 // Org Lens — bootstrap account context (display attrs + cdev mapping + tier)
 router.get('/org-lens-account-context', (req, res, next) => analyticsController.getOrgLensAccountContext(req, res, next));

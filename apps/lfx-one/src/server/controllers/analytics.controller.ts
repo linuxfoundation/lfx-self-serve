@@ -3089,7 +3089,8 @@ export class AnalyticsController {
 
   /**
    * Filter caller-supplied foundation slugs down to the ones the caller is authorized for.
-   * Root writers and LF Staff bypass scoping; scoped EDs only get their own persona-held slugs.
+   * Root writers and LF Staff bypass scoping; other users get only slugs from their
+   * persona-held projects (aggregated across all personas: ED, board member, maintainer, contributor, etc.).
    */
   private async filterSlugsToPersonaScope(req: Request, slugs: string[]): Promise<string[]> {
     const persona = await personaDetectionService.getPersonas(req);
@@ -3098,8 +3099,17 @@ export class AnalyticsController {
       return slugs;
     }
 
-    const edSlugs = new Set((persona.personaProjects?.['executive-director'] ?? []).map((project) => project.projectSlug));
-    const scoped = slugs.filter((slug) => edSlugs.has(slug));
+    // Aggregate all persona project slugs (all personas, not just ED)
+    const allPersonaSlugs = new Set<string>();
+    if (persona.personaProjects) {
+      for (const personaProjects of Object.values(persona.personaProjects)) {
+        for (const project of personaProjects) {
+          allPersonaSlugs.add(project.projectSlug);
+        }
+      }
+    }
+
+    const scoped = slugs.filter((slug) => allPersonaSlugs.has(slug));
 
     if (scoped.length === 0) {
       throw ServiceValidationError.forField('slugs', 'None of the requested foundation slugs are within your persona scope', {

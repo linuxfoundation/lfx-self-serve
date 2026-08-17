@@ -10,16 +10,17 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for LFXV2-3294: the marketing/ED-dashboard endpoints on this router must
- * be gated by `requireExecutiveDirector`, including the `foundationSlug` scope check. The
- * middleware has its own unit tests, but those call it directly — they would keep passing if a
- * route's `requireExecutiveDirector` argument were dropped. This drives real HTTP requests through
- * the assembled router so a missing gate shows up as a non-403 response instead of silently
- * passing.
+ * Router-level coverage for LFXV2-3294: the marketing/ED-dashboard endpoints gated by
+ * `requireExecutiveDirector` (ED-or-LF-Staff) must enforce authorization. The middleware has its
+ * own unit tests, but those call it directly — they would keep passing if a route's
+ * `requireExecutiveDirector` argument were dropped. This drives real HTTP requests through the
+ * assembled router so a missing gate shows up as a non-403 response instead of silently passing.
+ * Also covers multi-foundation-summary (ungated at route level but authorized server-side by
+ * filterSlugsToPersonaScope to verify scope validation across all personas).
  *
- * Only the gate is asserted. An admitted request only has to get past the gate — whatever the
- * (unstubbed) controller does next with no upstream services configured is irrelevant here, same
- * rationale as orgs.route.spec.ts.
+ * Only the gate/scope validation is asserted. An admitted request only has to get past the gate —
+ * whatever the (unstubbed) controller does next with no upstream services configured is irrelevant
+ * here, same rationale as orgs.route.spec.ts.
  */
 
 const getPersonas = vi.fn();
@@ -76,10 +77,10 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
   };
 }
 
-// Every endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff) — the full
-// registration list, so a missing/deleted gate on any one of them shows up here rather than
-// only in a sample. Middleware branching itself is covered by
-// require-executive-dashboard-access.middleware.spec.ts.
+// Every endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff, no service-level
+// scope validation for multi-persona users) — the full registration list, so a missing/deleted
+// gate on any one of them shows up here rather than only in a sample. Middleware branching
+// itself is covered by require-executive-dashboard-access.middleware.spec.ts.
 const DASHBOARD_ACCESS_GATED = [
   '/web-activities-summary',
   '/email-ctr',
@@ -97,12 +98,9 @@ const DASHBOARD_ACCESS_GATED = [
   '/marketing-attribution',
 ];
 
-// Endpoints gated by requireExecutiveDirector (ED-only, no LF-Staff bypass).
-const ED_ONLY_GATED = ['/multi-foundation-summary'];
+const GATED_SAMPLE = [...DASHBOARD_ACCESS_GATED];
 
-const GATED_SAMPLE = [...DASHBOARD_ACCESS_GATED, ...ED_ONLY_GATED];
-
-describe('analytics router — ED gate on marketing/dashboard endpoints', () => {
+describe('analytics router — authorization on marketing/dashboard endpoints', () => {
   it.each(GATED_SAMPLE)('refuses %s for a non-ED caller', async (path) => {
     getPersonas.mockResolvedValue(NON_ED);
 
@@ -162,12 +160,40 @@ describe('analytics router — ED gate on marketing/dashboard endpoints', () => 
     expect(res.status).not.toBe(403);
   });
 
-  it('refuses LF staff without the ED persona on an ED-only endpoint', async () => {
-    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
+  // multi-foundation-summary is ungated at the route level; authorization is enforced server-side
+  // by filterSlugsToPersonaScope. Non-ED users are allowed through if they have the requested
+  // slugs in their persona projects.
+  it('admits a non-ED user with board-member persona for their own foundations', async () => {
+    const boardMember = {
+      personas: ['board-member'],
+      personaProjects: {
+        'board-member': [{ projectUid: 'uid-cncf', projectSlug: 'cncf', projectName: 'CNCF' }],
+      },
+      isRootWriter: false,
+      isLFStaff: false,
+    };
+    getPersonas.mockResolvedValue(boardMember);
 
-    const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=cncf`);
 
-    expect(res.status).toBe(403);
+    expect(res.status).not.toBe(403);
+    expect(getPersonas).toHaveBeenCalled();
+  });
+
+  it('refuses a non-ED user for foundations outside their persona scope', async () => {
+    const boardMember = {
+      personas: ['board-member'],
+      personaProjects: {
+        'board-member': [{ projectUid: 'uid-cncf', projectSlug: 'cncf', projectName: 'CNCF' }],
+      },
+      isRootWriter: false,
+      isLFStaff: false,
+    };
+    getPersonas.mockResolvedValue(boardMember);
+
+    const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=tlf`);
+
+    expect(res.status).toBe(400); // ServiceValidationError from filterSlugsToPersonaScope
   });
 
   // Regression guard: these endpoints were never in scope for ED gating (personal/org analytics,
