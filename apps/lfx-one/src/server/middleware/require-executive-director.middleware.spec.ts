@@ -145,6 +145,26 @@ describe('requireExecutiveDirector', () => {
     expect(verdict(next)).toBe('allow');
   });
 
+  // A caller sending both params with different values would otherwise be validated against
+  // whichever came first while the handler reads the other — that ambiguity must be rejected.
+  it('denies a request with conflicting foundationSlug and project values', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf', 'cncf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'tlf', project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('allows matching foundationSlug and project values for the same foundation', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'tlf', project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
   it('denies an ED whose scoped project list is missing entirely', async () => {
     getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: false, isLFStaff: false });
     const next = vi.fn();
