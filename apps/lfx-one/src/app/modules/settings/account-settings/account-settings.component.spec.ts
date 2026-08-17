@@ -325,7 +325,10 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     fixture.componentInstance.setMeetingInvite(ALT_EMAIL);
 
     expect(fixture.componentInstance.meetingInviteError()).toBeNull();
-    expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'try again later' }));
+    // The 503's own body is deliberately dropped in favour of the caller's fallback: `extractErrorMessage`
+    // stopped reading 5xx bodies because they are overwhelmingly the envelope's "Internal server error"
+    // or a Go-service string forwarded verbatim, neither of which names the action that failed.
+    expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Failed to update meeting invitation email' }));
   });
 
   it('fails closed and skips the delete flow entirely when the invite lookup itself failed', async () => {

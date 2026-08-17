@@ -55,13 +55,14 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
 // but the default empty resolveCreatedByForMeetings map keeps enrichment a pass-through.
-vi.mock('@lfx-one/shared/utils', () => ({
+vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
-  // Real implementation, not a stub: the rejection messages this suite asserts on are built by it, so a
-  // stub would make those assertions test the mock's wording rather than the controller's.
-  joinAsSentenceList: (labels: readonly string[]) =>
-    labels.length < 2 ? (labels[0] ?? '') : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`,
+  // The real function rather than a hand-copy, so a change to its wording fails these assertions
+  // instead of leaving them green against a stale duplicate. Imported by relative path (the idiom
+  // `meeting.controller.spec.ts` already uses for `truncateToUtf16Units`): `string.utils.ts` has no
+  // imports of its own, so this pulls in none of the aliased barrel graph the mock exists to avoid.
+  joinAsSentenceList: (await import('../../../../../packages/shared/src/utils/string.utils')).joinAsSentenceList,
 }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
