@@ -103,12 +103,12 @@ export class CommitteeSettingsTabComponent {
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
 
   // Dark-launch gate for the whole Slack webhook card — mirrors committee-overview.component.ts's
-  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag: the upstream
-  // committee-service has no chat_webhook_url field yet (see committee.service.ts's
-  // updateCommittee/getSlackWebhookUrlStrict comments), so every save deterministically fails
-  // with 409 SLACK_WEBHOOK_NOT_PERSISTED today. Rendering the card unconditionally would show
-  // every user a dead end; this keeps it hidden until the upstream schema change lands and the
-  // flag is flipped on.
+  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag. Purely a UI-visibility
+  // gate: the real enforcement boundary is the server-side kill switch
+  // (ServerFeatureFlag.WeeklyBriefSlack, committee.service.ts's updateCommittee — env-var only,
+  // defaults off, this OpenFeature/GrowthBook flag can't reach it). Both must be on for a save to
+  // actually succeed; this flag alone controls whether the card renders at all, so it stays off
+  // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
@@ -139,9 +139,7 @@ export class CommitteeSettingsTabComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((c) => {
-        // A dirty chat_webhook_url means the user has an unsaved edit in progress (including
-        // "saved everything except the webhook" — see saveSettings' SLACK_WEBHOOK_NOT_PERSISTED
-        // branch, which emits committeeUpdated without resetting this control). Preserve it
+        // A dirty chat_webhook_url means the user has an unsaved edit in progress. Preserve it
         // across the resulting refresh instead of silently discarding what they typed; a
         // successful save already reset the control itself (see saveSettings' next handler), so
         // this only ever preserves a genuinely unsaved value.
@@ -343,26 +341,7 @@ export class CommitteeSettingsTabComponent {
           const code = err?.error?.code;
           const status = err?.status;
           let detail = 'Failed to save settings';
-          if (status === 409 && code === 'SLACK_WEBHOOK_NOT_PERSISTED') {
-            detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook could not be stored.';
-            // Everything else the user set did persist (see committee.service.ts's
-            // updateCommittee — this check runs last, after the core PUT and settings update), so
-            // still emit to refresh the rest of the page (e.g. the committee header's public/
-            // voting-enabled indicators) from that saved state. chat_webhook_url is deliberately
-            // left dirty here (not reset) — the constructor's committee-refresh subscription
-            // preserves a dirty control's current value instead of nulling it, so the URL the
-            // user just typed survives this refresh instead of vanishing before they can read
-            // the error.
-            this.committeeUpdated.emit();
-          } else if (status === 409 && code === 'SLACK_WEBHOOK_UNVERIFIED') {
-            // Same rationale as SLACK_WEBHOOK_NOT_PERSISTED above: everything the user set did
-            // persist (this check only runs after the core PUT and settings update both already
-            // succeeded), the webhook's status just couldn't be confirmed — e.g. a transient
-            // upstream outage on the confirmation read, not a real rejection. Still emit + leave
-            // the control dirty for the same reasons as that branch.
-            detail = err.error.error ?? 'Your other changes were saved, but the Slack webhook status could not be confirmed.';
-            this.committeeUpdated.emit();
-          } else if (status === 403 && code === 'IMPERSONATION_READ_ONLY') {
+          if (status === 403 && code === 'IMPERSONATION_READ_ONLY') {
             // Backstop only — the control is already disabled during impersonation (see the
             // constructor's combineLatest subscription), so this path shouldn't normally be
             // reachable from this form. Kept for direct-API-caller parity with the server guard.
