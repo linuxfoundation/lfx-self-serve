@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-11
+last_updated: 2026-08-17
 intercom_collection: Account
 ---
 
@@ -32,9 +32,33 @@ Account settings (email, password, API token) are tied to your LFX account and a
 
 LFX Self Serve does not currently include a notification preferences section. Email and password settings are managed in the **Settings** tab (`/profile/settings`).
 
-## What are affiliations?
+## How do I add or edit my work history?
 
-Affiliations are the Linux Foundation projects and companies you are associated with. They appear on your profile and may affect your persona and the lenses available to you. Go to [**Profile & Account**](/profile) and select the **Work history & Affiliations** tab (`/profile/attributions`) to view and manage them.
+Go to [**Profile & Account**](/profile) and use the **Work history & Affiliations** tab (`/profile/attributions`, the default tab). Select **Add work experience**, enter the organization, role, and dates (or mark **I currently work here**), then select **Add experience**. Use the actions menu on an entry to **Edit** or **Delete** it. Your work history also populates the **Organization** choices in the Edit Profile drawer. See [Work History & Affiliations](../work-history/).
+
+## What are affiliations, and how are my contributions attributed?
+
+Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work History & Affiliations](../work-history/).
+
+## How do I link a GitHub or social account?
+
+Go to [**Profile & Account**](/profile) and open the **Identities** tab (`/profile/identities`). Select **Add identity**, then **Continue with _[provider]_** for a social account, or **Add email** to link and verify an email address. Linked identities attribute your contributions across projects. See [Identities](../identities/).
+
+## What is an unverified identity, and how do I verify it?
+
+An unverified identity is an account connected to your profile that hasn't been confirmed yet. On the **Identities** tab, find it under **Unverified identities** and select **Verify** (or **This is not me** if it isn't yours). Verifying keeps your project affiliations and work history accurate. See [Identities](../identities/).
+
+## What is the Linux.com email alias?
+
+The Linux.com email alias is a one-time add-on for Individual Supporters that gives you a personal `@linux.com` address forwarding to an inbox you choose. Manage it in the **Linux.com email** section of the [Identities](../identities/) tab — purchase, then claim an alias and a forward-to address. The alias can't be changed after claiming.
+
+## How do I enroll as an Individual Supporter?
+
+Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll**. See [Individual Enrollment](../individual-enrollment/).
+
+## How do I turn off auto-renew or stop my membership?
+
+On the **Individual Enrollment** tab, select **Disable auto-renew** and confirm. Your membership stays active until its expiration date, then lapses — there is no separate immediate-cancel step. See [Individual Enrollment](../individual-enrollment/).
 
 ## Where do I find My CLAs?
 
