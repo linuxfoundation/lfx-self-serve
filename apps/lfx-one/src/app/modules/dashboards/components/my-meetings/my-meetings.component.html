@@ -41,7 +41,8 @@
           cardLabel="LAST MEETING"
           cardVariant="neutral"
           viewAllRouterLink="/meetings"
-          [viewAllQueryParams]="{ time: 'past' }" />
+          [viewAllQueryParams]="{ time: 'past' }"
+          [pastMeeting]="true" />
       } @else {
         <div
           class="rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"

@@ -158,6 +158,17 @@ export enum ServerFeatureFlag {
    * API caller with ordinary project-writer access could configure or use Slack sharing while the
    * UI still hides it. OFF by default, same as the UI flag, so both must be turned on for the
    * feature to actually be reachable.
+   *
+   * DO NOT ENABLE until lfx-v2-committee-service escapes Slack mrkdwn control characters
+   * (`&`, `<`, `>`) in `brief_text` before sending — as of this writing (LFXV2-3080's
+   * backend-send-ownership migration) it does not: `internal/infrastructure/slack/webhook_sender.go`
+   * posts `brief.BriefText` to Slack verbatim. This BFF used to escape it before every send
+   * (`escapeSlackMrkdwn`, removed when the send moved server-side) specifically because
+   * AI-generated brief text is sourced from meeting/document titles — content editable by a
+   * broader set of users than project writers — so an unescaped `<!channel>`/`<!here>` would page
+   * the entire channel, and `<https://evil.example|label>` would render as a deceptive hyperlink.
+   * That mitigation has no server-side equivalent today. File/track the upstream fix before
+   * flipping this on in any environment that isn't fully trusted content end-to-end.
    */
   WeeklyBriefSlack = 'LFX_WEEKLY_BRIEF_SLACK_ENABLED',
 

@@ -7,7 +7,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { MessageService } from 'primeng/api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
 
@@ -61,7 +62,13 @@ describe('ImplementationTabComponent submit gate', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ImplementationTabComponent);
