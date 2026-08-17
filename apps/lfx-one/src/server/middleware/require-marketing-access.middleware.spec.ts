@@ -110,14 +110,62 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
   });
 
   describe('flag on — persona bypass', () => {
-    it('allows an ED without needing an FGA check', async () => {
-      getPersonas.mockResolvedValue({ personas: ['executive-director'], isRootWriter: false, isLFStaff: false });
+    it('allows an ED scoped to the requested foundation without needing an FGA check', async () => {
+      getPersonas.mockResolvedValue({
+        personas: ['executive-director'],
+        personaProjects: { 'executive-director': [{ projectUid: 'uid-tlf', projectSlug: 'tlf', projectName: 'tlf' }] },
+        isRootWriter: false,
+        isLFStaff: false,
+      });
       const next = vi.fn();
 
       await requireMarketingAuditor(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
       expect(verdict(next)).toBe('allow');
       expect(checkRootMarketingAuditor).not.toHaveBeenCalled();
+    });
+
+    it('allows an ED without needing an FGA check when the request names no foundation', async () => {
+      getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: false, isLFStaff: false });
+      const next = vi.fn();
+
+      await requireMarketingAuditor(buildReq(), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+      expect(checkRootMarketingAuditor).not.toHaveBeenCalled();
+    });
+
+    it('does not hard-deny an ED out of scope for the requested foundation — falls through to a root FGA grant', async () => {
+      getPersonas.mockResolvedValue({
+        personas: ['executive-director'],
+        personaProjects: { 'executive-director': [{ projectUid: 'uid-other', projectSlug: 'other-foundation', projectName: 'other' }] },
+        isRootWriter: false,
+        isLFStaff: false,
+      });
+      checkRootMarketingAuditor.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireMarketingAuditor(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+      expect(checkRootMarketingAuditor).toHaveBeenCalled();
+    });
+
+    it('denies an ED out of scope for the requested foundation when no FGA grant exists either', async () => {
+      getPersonas.mockResolvedValue({
+        personas: ['executive-director'],
+        personaProjects: { 'executive-director': [{ projectUid: 'uid-other', projectSlug: 'other-foundation', projectName: 'other' }] },
+        isRootWriter: false,
+        isLFStaff: false,
+      });
+      checkRootMarketingAuditor.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-tlf', slug: 'tlf', exists: true });
+      checkSingleAccess.mockResolvedValue(false);
+      const next = vi.fn();
+
+      await requireMarketingAuditor(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('deny');
     });
 
     it('allows a root writer', async () => {

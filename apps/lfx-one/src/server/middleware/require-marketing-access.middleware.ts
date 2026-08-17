@@ -25,10 +25,12 @@ const projectService = new ProjectService();
  *
  * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates unchanged to
  * `requireExecutiveDirector` — the ED-only gate LFXV2-3294 already shipped on these routes. When
- * the flag is ON, ED / root-writer / LF-staff still bypass (consistent with
- * `requireExecutiveDirector`), and a non-ED caller is authorized only via an actual FGA relation:
- * either a ROOT-scoped grant (cascades to every project) or a grant scoped to the specific
- * foundation/project the request names.
+ * the flag is ON: root-writer / LF-staff bypass unconditionally; ED bypasses only for foundations
+ * it actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
+ * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it
+ * falls through to the FGA checks below. A caller without ED/root/staff status is authorized only
+ * via an actual FGA relation: either a ROOT-scoped grant (cascades to every project) or a grant
+ * scoped to the specific foundation/project the request names.
  *
  * Deliberately never a single all-or-nothing check: a caller can pass via ED persona OR root FGA
  * grant OR per-project FGA grant, and a transient failure on any one path denies only that path,
@@ -45,9 +47,30 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
       }
 
       const result = await personaDetectionService.getPersonas(req);
-      if (result.personas.includes(ED) || result.isRootWriter || result.isLFStaff) {
+      if (result.isRootWriter || result.isLFStaff) {
         next();
         return;
+      }
+
+      // The two route files this middleware gates name the foundation/project differently
+      // (`analytics.route.ts` reads `foundationSlug`, `campaign.controller.ts` reads `project`);
+      // each caller lists its own primary param first purely for logging clarity — in practice a
+      // request only ever sets one of the two, so the fallback order never has to arbitrate.
+      const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
+
+      // ED is scoped to the foundations it's actually held for (mirrors `requireExecutiveDirector`)
+      // — an ED for foundation A must not read foundation B just by passing B's slug. A request
+      // with no slug has nothing to scope against, so an ED passes unconditionally, matching the
+      // unscoped-endpoint behavior in `requireExecutiveDirector`. An ED who IS out of scope for the
+      // requested slug does not get hard-denied here: they fall through to the root/project FGA
+      // checks below, preserving the "never a single all-or-nothing check" design (see file doc
+      // comment) — a scoped-out ED can still pass via an actual FGA grant on that project.
+      if (result.personas.includes(ED)) {
+        const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug);
+        if (!requestedSlug || edSlugs.includes(requestedSlug)) {
+          next();
+          return;
+        }
       }
 
       const hasRootAccess =
@@ -58,12 +81,6 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
         next();
         return;
       }
-
-      // The two route files this middleware gates name the foundation/project differently
-      // (`analytics.route.ts` reads `foundationSlug`, `campaign.controller.ts` reads `project`);
-      // each caller lists its own primary param first purely for logging clarity — in practice a
-      // request only ever sets one of the two, so the fallback order never has to arbitrate.
-      const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
 
       // No slug to scope against — the route handler is responsible for rejecting a missing
       // required parameter. Without ED/root access there is nothing left to authorize on.
