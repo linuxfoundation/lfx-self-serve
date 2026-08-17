@@ -1316,6 +1316,15 @@ export interface CampaignIndexDoc {
   campaign_name: string;
   status: string;
   version: number;
+  /**
+   * The `If-Match` validator for a write against this campaign, DERIVED from `version`.
+   *
+   * Not an indexed field — the index stores `version` alone. campaign-service's ETag is exactly
+   * `"<version>"`, quotes included (`briefETag`), so the server derives it once here rather than
+   * leaving every caller to re-derive a wire format they would have to read Go source to learn.
+   * A caller that quoted it differently would get a 412 that looks like a concurrent edit.
+   */
+  etag?: string;
 }
 
 /**

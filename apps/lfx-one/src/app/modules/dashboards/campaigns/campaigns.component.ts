@@ -13,13 +13,14 @@ import type {
   CampaignImplementationDraft,
   CampaignBriefPersistResult,
   CampaignDeliveryType,
+  CampaignIndexDoc,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip } from 'rxjs';
+import { firstValueFrom, skip, take } from 'rxjs';
 
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -334,7 +335,29 @@ export class CampaignsComponent {
    * generation counter: a `saved` banner naming a brief in one foundation's table must not be
    * left sitting under another one, whether the response landed before the switch or after it.
    */
-  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
+   * The campaigns this brief created, as the platform's index currently reports them.
+   *
+   * Loaded rather than derived, because the create job's per-platform results only exist in the
+   * session that ran it — a reload leaves the page with no handle on the campaigns it just made.
+   * This is what gives the Optimize tab something to name (LFXV2-3099).
+   *
+   * `null` means NOT LOADED, which is deliberately distinct from an empty array. The Optimize tab
+   * renders nothing at all for `null` and an explicit empty state for `[]`, because "we have not
+   * asked yet" and "the brief has no campaigns" want opposite treatment on screen.
+   */
+  protected readonly briefCampaigns = signal<CampaignIndexDoc[] | null>(null);
+
+  /**
+   * Whether an empty `briefCampaigns` may simply not be indexed yet.
+   *
+   * Passed down rather than dropped: indexing is asynchronous, so an empty list moments after a
+   * create means "not visible yet", not "nothing was created". Rendering a bare "no campaigns"
+   * over that window would tell someone their spend does not exist.
+   */
+  protected readonly briefCampaignsStale = signal(false);
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -480,6 +503,13 @@ export class CampaignsComponent {
       return;
     }
     this.selectedTab.set(tab);
+    if (tab === 'optimization') {
+      // Loaded on ENTRY rather than eagerly: the list is only meaningful once someone is looking
+      // at per-campaign controls, and the read costs a query-service round trip. Re-fetched on
+      // every entry rather than cached, because a campaign paused in another tab — or indexed
+      // since the last look — must not render with a stale status the user then acts on.
+      this.loadBriefCampaigns();
+    }
   }
 
   /**
@@ -646,6 +676,42 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
+   *
+   * Silent on failure BY DESIGN, and this is the one judgement worth stating. A failed list means
+   * the tab shows no campaigns — which is the same thing it shows before anything is created — so
+   * an error banner here would fire on the ordinary empty case too. What must NOT happen is the
+   * opposite error: rendering a confident "no campaigns" over a failed read. `briefCampaigns`
+   * stays `null` on failure, which the tab renders as "not loaded" rather than as emptiness.
+   */
+  private loadBriefCampaigns(): void {
+    const projectSlug = this.activeFoundationSlug();
+    const briefId = this.briefPersistence().briefId;
+    if (projectSlug === '' || briefId === null || briefId === '') {
+      // No brief id means nothing was persisted this session and no restore supplied one, so
+      // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
+      // instead of asserting the brief has no campaigns.
+      this.briefCampaigns.set(null);
+      this.briefCampaignsStale.set(false);
+      return;
+    }
+
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.briefCampaigns.set(result.campaigns);
+          this.briefCampaignsStale.set(result.possiblyStale);
+        },
+        error: () => {
+          this.briefCampaigns.set(null);
+          this.briefCampaignsStale.set(false);
+        },
+      });
   }
 
   /**

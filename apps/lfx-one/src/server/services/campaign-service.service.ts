@@ -369,7 +369,12 @@ export class CampaignServiceClient {
       { failOnPartial: true }
     );
 
-    const campaigns = docs.filter((d) => d?.brief_id === briefId);
+    // Derive the ETag here, where the wire contract lives. The index stores `version` only, but a
+    // write against a campaign needs `If-Match`, and campaign-service's ETag is exactly
+    // `"<version>"` — quotes included (`briefETag` in internal/service/brief.go). Deriving it once
+    // beats leaving each caller to rediscover a quoting rule that only Go source states; a caller
+    // that got it wrong would see a 412 and read it as someone else's concurrent edit.
+    const campaigns = docs.filter((d) => d?.brief_id === briefId).map((d) => ({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
     if (campaigns.length !== docs.length) {
       // The filter matched rows this brief does not own — the field is analysed, not a term, or
       // the contract moved. Report it loudly: the rows are dropped here, but every other consumer

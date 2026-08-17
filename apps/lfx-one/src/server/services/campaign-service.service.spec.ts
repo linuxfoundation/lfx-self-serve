@@ -2267,6 +2267,17 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(result).toEqual({ campaigns: [], possiblyStale: true });
   });
 
+  // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
+  // `"<version>"` WITH quotes (briefETag), and a caller that quoted it differently would get a 412
+  // and read it as someone else's concurrent edit rather than as a format bug.
+  it('derives the quoted etag from the indexed version', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc({ version: 7 }) }] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].etag).toBe('"7"');
+  });
+
   it('does not mark a populated result stale', async () => {
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
 

@@ -327,7 +327,12 @@
       }
       @case ('optimization') {
         <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
-          <lfx-optimization-tab data-testid="campaigns-optimization-tab" />
+          <lfx-optimization-tab
+            data-testid="campaigns-optimization-tab"
+            [briefCampaigns]="briefCampaigns()"
+            [campaignsPossiblyStale]="briefCampaignsStale()"
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''" />
         </div>
       }
     }

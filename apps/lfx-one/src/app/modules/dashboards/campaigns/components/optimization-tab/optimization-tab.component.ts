@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type {
+  CampaignIndexDoc,
   CampaignMonitorResponse,
+  CampaignPlatform,
+  CampaignToggleStatus,
   DateRangeOption,
   KeywordActionType,
   KeywordMetrics,
@@ -34,6 +37,53 @@ import type { Subscription } from 'rxjs';
 export class OptimizationTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+
+  /**
+   * The campaigns this brief created, or `null` when the list has not been loaded.
+   *
+   * `null` and `[]` are deliberately different and must stay so: `null` is "we have not asked, or
+   * the read failed", `[]` is "the index says this brief has none". Collapsing them would render
+   * a confident "no campaigns" over a failed read — for campaigns that may be live and spending.
+   *
+   * NOT `campaigns`: that name is taken by the Google Ads monitor's own list on this component,
+   * which is a different set from a different source. Two lists of campaigns under one name would
+   * be a real ambiguity, not a naming nit.
+   */
+  public readonly briefCampaigns = input<CampaignIndexDoc[] | null>(null);
+
+  /** True when an empty list may simply not be indexed yet, rather than genuinely empty. */
+  public readonly campaignsPossiblyStale = input(false);
+
+  /** The project the campaigns belong to; the toggle is addressed per-project upstream. */
+  public readonly projectSlug = input('');
+
+  /** The brief the campaigns belong to; part of the campaign's upstream address. */
+  public readonly briefId = input('');
+
+  /**
+   * Per-campaign toggle state, keyed by campaign id.
+   *
+   * Keyed rather than a single flag because each row toggles independently: a single in-flight
+   * boolean would disable every button while one request is out, and worse, an error on one row
+   * would render against another.
+   */
+  protected readonly togglePending = signal<Record<string, boolean>>({});
+  protected readonly toggleError = signal<Record<string, string>>({});
+
+  /**
+   * The status each campaign holds after any toggle this session, keyed by campaign id.
+   *
+   * Overlays the indexed status rather than replacing it. The index is asynchronous, so a row
+   * re-read moments after a pause still reports the old status — showing that back to someone who
+   * just paused a campaign reads as the pause having failed. The overlay is what the row renders
+   * when present, and it is only ever set from a CONFIRMED response.
+   */
+  protected readonly toggledStatus = signal<Record<string, string>>({});
+
+  /** The status to display for a row: what we confirmed this session, else what the index says. */
+
+  /** Whether this row is currently running, and therefore offers PAUSE rather than RESUME. */
+
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
@@ -99,6 +149,7 @@ export class OptimizationTabComponent implements OnInit {
 
   // Meta optimization
   private metaSub: Subscription | null = null;
+
   protected readonly metaAccountOptions = signal<MetaAccountOption[]>([]);
   protected readonly selectedMetaAccountKey = signal<string>('');
   protected readonly metaLoading = signal(false);
@@ -157,6 +208,76 @@ export class OptimizationTabComponent implements OnInit {
         error: (err: unknown) => {
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+        },
+      });
+  }
+
+  protected displayStatus(campaign: CampaignIndexDoc): string {
+    return this.toggledStatus()[campaign.id] ?? campaign.status;
+  }
+
+  protected isRunning(campaign: CampaignIndexDoc): boolean {
+    const status = this.displayStatus(campaign).toLowerCase();
+    return status === 'created' || status === 'active' || status === 'enabled';
+  }
+
+  /**
+   * Pause or resume one campaign on its ad platform.
+   *
+   * The write this whole tab exists to reach. It changes money-affecting state on a third party:
+   * a success means the ad platform itself moved, not that a row was updated.
+   *
+   * The ETag is taken from the row the user is looking at, never cached from an earlier render —
+   * the server sends it as `If-Match`, and a 412 means someone else moved this campaign since the
+   * list was read. That refusal is the point: it stops a pause being applied on the strength of a
+   * stale view.
+   */
+  protected toggleCampaign(campaign: CampaignIndexDoc): void {
+    if (this.togglePending()[campaign.id]) {
+      return;
+    }
+    const etag = campaign.etag ?? '';
+    if (etag === '') {
+      // No validator means the server would answer 428. Say so here rather than spending a round
+      // trip to be told, and name the cause — a row indexed before etags were carried.
+      this.toggleError.update((e) => ({ ...e, [campaign.id]: 'This campaign cannot be changed until it is re-indexed.' }));
+      return;
+    }
+
+    const status: CampaignToggleStatus = this.isRunning(campaign) ? 'PAUSED' : 'ACTIVE';
+    this.togglePending.update((p) => ({ ...p, [campaign.id]: true }));
+    this.toggleError.update((e) => {
+      const next = { ...e };
+      delete next[campaign.id];
+      return next;
+    });
+
+    this.campaignService
+      .updateCampaignStatus({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: campaign.id,
+        platform: campaign.platform as CampaignPlatform,
+        status,
+        etag,
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
+          // `serviceStatus` is what the SERVICE reports, which is not always what was requested:
+          // pausing a `created_degraded` campaign pauses it upstream while deliberately leaving
+          // the row's status unchanged. Rendering the request back would claim a transition the
+          // service declined to record.
+          this.toggledStatus.update((t) => ({ ...t, [campaign.id]: result.serviceStatus ?? result.newStatus }));
+        },
+        error: () => {
+          this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
+          // Deliberately NOT optimistic: nothing about the row's status is changed on failure, so
+          // the button still offers the action that did not happen. Claiming the pause landed
+          // would be the expensive lie here — someone would stop watching a campaign that is
+          // still spending.
+          this.toggleError.update((e) => ({ ...e, [campaign.id]: 'Could not change this campaign. It has not been paused — try again.' }));
         },
       });
   }
