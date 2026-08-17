@@ -601,6 +601,20 @@ export interface CreateMeetingRegistrantRequest {
  * @description Data required for PUT request to update an existing registrant
  */
 export interface UpdateMeetingRegistrantRequest {
+  /*
+   * The PUT reuses `CreateItxRegistrantRequestBody`, so the BFF renames `org_name`, `avatar_url` and
+   * `occurrence_id` on the way out (see `MeetingService.toUpstreamRegistrantBody`).
+   *
+   * Two known gaps, both pre-dating that rename:
+   *
+   * - `null` does not erase. Every target is declared non-nullable, and `MeetingService.getChangedFields`
+   *   nulls each of these whenever it's blank, so the BFF omits a `null` rather than sending one.
+   *   Clearing a stored organization therefore doesn't take effect. Fixing it needs upstream to say how
+   *   these fields are erased — don't guess between `null` and `''`; `occurrence` already gives blank
+   *   its own meaning ("blank = all occurrences").
+   * - `linkedin_profile` is not declared upstream at all, under this or any other name, so Goa discards
+   *   it. The registrant form still validates it and still reports success. Tracked separately.
+   */
   /** UUID of the meeting (required) */
   meeting_id: string;
   /** User's email address (required) */

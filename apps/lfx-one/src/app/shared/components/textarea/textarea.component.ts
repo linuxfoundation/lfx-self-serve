@@ -29,7 +29,7 @@ export class TextareaComponent {
    * a validator to the caller's control and make the whole `FormGroup` invalid — invisible to a
    * caller that only wanted the browser to stop typing at the cap. Callers that want the value
    * gated declare `Validators.maxLength` on the control themselves — the composer's agenda, the
-   * settings description and the org-profile description all do. The rest rely on the native cap
+   * crowdfunding initiative settings description and the org-profile description all do. The rest rely on the native cap
    * alone, which holds for typing and pasting but not for a value written programmatically with
    * `setValue`.
    */

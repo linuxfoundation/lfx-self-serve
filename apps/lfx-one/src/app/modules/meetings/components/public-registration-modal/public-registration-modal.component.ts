@@ -73,8 +73,9 @@ export class PublicRegistrationModalComponent {
           first_name: formValue.first_name,
           last_name: formValue.last_name,
           // Omitted when blank rather than sent as `null` — see the note on
-          // `CreateMeetingRegistrantRequest`. This is the path with no user session, so the BFF's
-          // null-drop is the only thing between this form and upstream; don't lean on it.
+          // `CreateMeetingRegistrantRequest`. There is no null-laundering anywhere on this path: the
+          // BFF's one such drop is `committee_uid`-specific and this endpoint doesn't send one, so a
+          // `null` here would reach upstream verbatim, onto a field it declares non-nullable.
           ...(formValue.job_title ? { job_title: formValue.job_title } : {}),
           ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })

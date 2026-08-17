@@ -734,7 +734,7 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
@@ -743,7 +743,7 @@ export class MeetingService {
       this.toUpstreamRegistrantBody(registrantData)
     );
 
-    return newRegistrant;
+    return this.fromUpstreamRegistrant(newRegistrant);
   }
 
   /**
@@ -758,7 +758,7 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    const updatedRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
@@ -767,7 +767,7 @@ export class MeetingService {
       this.toUpstreamRegistrantBody(updateData)
     );
 
-    return updatedRegistrant;
+    return this.fromUpstreamRegistrant(updatedRegistrant);
   }
 
   /**
@@ -1654,15 +1654,16 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
       'POST',
       undefined,
-      registrantData,
+      this.toUpstreamRegistrantBody(registrantData),
       { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
     );
+    const newRegistrant = this.fromUpstreamRegistrant(upstreamRegistrant);
 
     logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
       meeting_id: registrantData.meeting_id,
@@ -1780,21 +1781,64 @@ export class MeetingService {
    * `meeting_id` is dropped for the same reason it isn't declared: it's the path parameter, and the
    * caller has already used it to build the URL.
    *
-   * Values pass through untouched, including the `null`s the update body uses to erase a stored value.
+   * A `null` is omitted rather than renamed. `UpdateMeetingRegistrantRequest` uses `null` to erase a
+   * stored value, but all three targets are declared as non-nullable `type: string`, and
+   * `getChangedFields` sends `null` for every one of them whenever the value is blank — which is
+   * always, for the two that have no form control. Renaming those nulls would newly plant an
+   * off-contract value on a declared field on ordinary registrant edits, where before this rename Goa
+   * discarded the whole key as undeclared. Omitting keeps that outcome exactly.
+   *
+   * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
+   * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
+   * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
+   * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
   private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
-    const { org_name, avatar_url, occurrence_id } = body as UpdateMeetingRegistrantRequest;
+    const { org_name, avatar_url, occurrence_id } = body;
     const upstream: Record<string, unknown> = { ...body };
 
-    for (const appOnlyKey of ['meeting_id', 'org_name', 'avatar_url', 'occurrence_id']) {
+    // Typed so a rename on either request interface fails the build here rather than silently
+    // re-introducing the drop this method exists to prevent.
+    const appOnlyKeys: (keyof CreateMeetingRegistrantRequest | keyof UpdateMeetingRegistrantRequest)[] = [
+      'meeting_id',
+      'org_name',
+      'avatar_url',
+      'occurrence_id',
+    ];
+
+    for (const appOnlyKey of appOnlyKeys) {
       delete upstream[appOnlyKey];
     }
 
     return {
       ...upstream,
-      ...(org_name === undefined ? {} : { org: org_name }),
-      ...(avatar_url === undefined ? {} : { profile_picture: avatar_url }),
-      ...(occurrence_id === undefined ? {} : { occurrence: occurrence_id }),
+      ...(org_name == null ? {} : { org: org_name }),
+      ...(avatar_url == null ? {} : { profile_picture: avatar_url }),
+      ...(occurrence_id == null ? {} : { occurrence: occurrence_id }),
     };
+  }
+
+  /**
+   * Inverse of {@link toUpstreamRegistrantBody}, for the body ITX returns from a registrant write.
+   *
+   * The POST and PUT both respond with `ITXZoomMeetingRegistrant`, which spells the three fields the
+   * same way the request body does — `org`, `profile_picture`, `occurrence`. Both write methods used
+   * to declare the response as `MeetingRegistrant` and hand it straight back, so the object the
+   * registrant modal renders after a successful save had `org_name` and `avatar_url` undefined no
+   * matter what was stored. Renaming on the way out is what makes that declared type true.
+   *
+   * Only these three are remapped: every other field the app reads off a write response already
+   * shares its upstream name. The read paths need no equivalent, because they come from the v1
+   * query-service index, which already uses the app's spelling.
+   */
+  private fromUpstreamRegistrant(upstream: Record<string, unknown>): MeetingRegistrant {
+    const { org, profile_picture, occurrence, ...rest } = upstream;
+
+    return {
+      ...rest,
+      ...(org === undefined ? {} : { org_name: org }),
+      ...(profile_picture === undefined ? {} : { avatar_url: profile_picture }),
+      ...(occurrence === undefined ? {} : { occurrence_id: occurrence }),
+    } as MeetingRegistrant;
   }
 }

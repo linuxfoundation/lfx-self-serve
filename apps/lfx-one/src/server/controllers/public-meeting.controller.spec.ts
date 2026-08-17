@@ -35,6 +35,7 @@ const {
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
+    addMeetingRegistrantWithM2M: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -422,5 +423,75 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
     expect(req.bearerToken).toBe('m2m-token');
+  });
+});
+
+/**
+ * This endpoint takes no session and writes upstream under an M2M token, so the request body is the
+ * only thing describing who the registrant is — and an anonymous caller controls all of it.
+ */
+describe('PublicMeetingController.registerForPublicMeeting', () => {
+  let controller: PublicMeetingController;
+
+  const validBody = { meeting_id: MEETING_ID, email: 'a@example.com', first_name: 'A', last_name: 'B' };
+
+  function buildRegisterReqRes(body: Record<string, unknown>) {
+    const req = { body, params: {}, query: {}, headers: {}, path: '/public/api/meetings/register', log: {} } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    return { req, res, next: vi.fn() };
+  }
+
+  const forwardedBody = () => meetingSvc.addMeetingRegistrantWithM2M.mock.calls[0][1];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.addMeetingRegistrantWithM2M.mockResolvedValue({ uid: 'reg-1' });
+  });
+
+  it('forwards the fields a registrant may state about themselves', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, job_title: 'Dev', org_name: 'Acme' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody()).toMatchObject({ ...validBody, job_title: 'Dev', org_name: 'Acme' });
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  // `host` grants "access to host key for the meeting" upstream, and `committee_uid` claims committee
+  // membership. Neither is an anonymous caller's to assert, and the M2M token means upstream has no
+  // way to tell that the claim came from the public form.
+  it('does not let an anonymous caller grant itself host access or claim a committee', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, host: true, committee_uid: 'committee-1' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody().host).toBe(false);
+    expect(forwardedBody()).not.toHaveProperty('committee_uid');
+  });
+
+  it('drops any other field the caller invents', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, username: 'someone-else', uid: 'reg-hijack', type: 'committee' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    for (const key of ['username', 'uid', 'type']) {
+      expect(forwardedBody()).not.toHaveProperty(key);
+    }
+  });
+
+  it('still rejects a non-public meeting before writing anything', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE }));
+    const { req, res, next } = buildRegisterReqRes(validBody);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });
