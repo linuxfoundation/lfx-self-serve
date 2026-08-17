@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
@@ -18,6 +19,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1290,37 +1292,26 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(internals().selectedEmailTab()).toBe('planning');
   });
 
-  it('does not claim a brief is ready when none has been generated', () => {
-    // The Implement tab is directly clickable — no disabled binding — so this panel is reachable
-    // before anything has been generated, and "Your brief is ready" is then simply false, told to
-    // someone who has not started. The rest of the panel explains what is missing from the
-    // channel, which is true either way.
+  it('renders the template picker rather than a not-wired-up notice', () => {
+    // REPLACES a test that pinned the old pending panel ("Email staging is not wired up yet" /
+    // "Staging an email clones ... an endpoint that is still in review"). That copy was false by
+    // the time it was read: /hubspot/emails has been live on main since #1439, and the config
+    // builder since #1546. LFXV2-3198 is what removes it.
+    //
+    // The original test's real concern survives here: the Implement tab is directly clickable, so
+    // this panel is reachable before anything has been generated, and it must not claim progress
+    // the user has not made. The picker states nothing about the brief at all, which is the
+    // strongest form of not-lying available.
     internals().selectorForm.controls.deliveryType.setValue('email');
     internals().selectTab('implementation', 'email');
     fixture.detectChanges();
 
-    const pending = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-implementation-pending"]');
-    expect(pending, 'the pending panel must render').not.toBeNull();
-    expect(pending?.textContent).not.toContain('Your brief is ready');
-    expect(pending?.textContent).toContain('Staging an email clones');
-
-    internals().onEmailProceedToImplementation({ eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput);
-    internals().selectTab('implementation', 'email');
-    fixture.detectChanges();
-
-    const withBrief = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-implementation-pending"]');
-    expect(withBrief?.textContent).toContain('Your brief is ready');
-    // The two sentences must stay separated — a review round raised `preserveWhitespaces: false`
-    // collapsing the separator between the `@if` block and the following text into
-    // `ready.Staging`.
-    //
-    // It does not happen: Angular keeps a space at that boundary. Stated plainly, this assertion
-    // was NOT binding as originally written (`not.toContain('ready.Staging')`) — the compiler
-    // normalizes the join either way, so it could not fail. In a suite whose whole purpose is
-    // pinning behaviours one line away from silently regressing, an unfailable assertion is worse
-    // than none: the next person copies it believing the separation is protected. Asserting the
-    // separator POSITIVELY does bind.
-    expect(withBrief?.textContent).toMatch(/ready\.\s+Staging an email/);
+    const panel = fixture.nativeElement as HTMLElement;
+    expect(panel.querySelector('[data-testid="campaigns-email-implementation"]'), 'the picker must render').not.toBeNull();
+    expect(panel.querySelector('[data-testid="campaigns-email-implementation-pending"]'), 'the stale pending panel must be gone').toBeNull();
+    expect(panel.textContent).not.toContain('not wired up yet');
+    expect(panel.textContent).not.toContain('still in review');
+    expect(panel.textContent).not.toContain('Your brief is ready');
   });
 
   // `fixture.nativeElement` is typed `any`, so without the cast the annotation below would be
@@ -1739,5 +1730,135 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
 
     // Event B's own generated copy stands.
     expect(headlineInput()?.value).toBe('Generated A');
+  });
+});
+
+/**
+ * The HubSpot template picker (LFXV2-3198).
+ *
+ * Staging an email CLONES one of the project's marketing emails and `sourceEmailId` has no
+ * default, so choosing one is the whole gate on this channel. These tests pin the four states the
+ * picker must keep distinct, because collapsing any pair states something false:
+ *
+ *   not connected · search failed · searched-and-empty · results
+ *
+ * The dangerous collapse is failure into emptiness: "this portal has no marketing emails" is a
+ * claim only a completed search can support, and it sends someone to go create one they may
+ * already have.
+ */
+describe('CampaignsComponent — HubSpot template picker', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+  let httpMock: HttpTestingController;
+
+  interface PickerInternals {
+    emailTemplates: WritableSignal<HubSpotMarketingEmail[] | null>;
+    emailTemplatesError: WritableSignal<string | null>;
+    emailTemplatesTruncated: WritableSignal<boolean>;
+    emailChannelEnabled: WritableSignal<boolean | null>;
+    selectedEmailTemplateId: WritableSignal<string>;
+    searchEmailTemplates(query: string): void;
+    onSelectEmailTemplate(id: string): void;
+  }
+  const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    // The component reads the foundation from ProjectContextService; without a slug the search
+    // refuses before issuing a request, which is its own test below.
+    (fixture.componentInstance as unknown as { activeFoundationSlug: () => string }).activeFoundationSlug = () => 'tlf';
+  });
+
+  function respond(body: { enabled: boolean; error: string | null; possiblyTruncated: boolean; emails: HubSpotMarketingEmail[] }): void {
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    req.flush(body);
+    fixture.detectChanges();
+  }
+
+  it('lists the templates a search returned, dropping any row with no id', () => {
+    picker().searchEmailTemplates('');
+    respond({
+      enabled: true,
+      error: null,
+      possiblyTruncated: false,
+      // The id is what `sourceEmailId` takes, so a row without one is not a choice that can be
+      // made. Rendering it would offer a button that cannot work.
+      emails: [
+        { id: '1', name: 'KubeCon promo' },
+        { id: '', name: 'broken row' },
+      ],
+    });
+
+    expect(
+      picker()
+        .emailTemplates()
+        ?.map((e) => e.id)
+    ).toEqual(['1']);
+  });
+
+  // The collapse that matters. An empty array asserts the portal holds nothing; only a completed
+  // search can support that.
+  it('leaves the list NULL when the search fails, rather than empty', () => {
+    picker().searchEmailTemplates('kubecon');
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    req.flush({ message: 'boom' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    expect(picker().emailTemplates()).toBeNull();
+    expect(picker().emailTemplatesError()).toBeTruthy();
+  });
+
+  it('leaves the list NULL when the service reports an upstream error', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: 'HubSpot refused the request', possiblyTruncated: false, emails: [] });
+
+    expect(picker().emailTemplates()).toBeNull();
+    expect(picker().emailTemplatesError()).toBe('HubSpot refused the request');
+  });
+
+  // Not an error: the steady state wherever HubSpot is not connected for the foundation.
+  it('reports a disconnected channel without rendering it as a failure', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
+
+    expect(picker().emailChannelEnabled()).toBe(false);
+    expect(picker().emailTemplatesError()).toBeNull();
+    expect(picker().emailTemplates()).toBeNull();
+  });
+
+  it('distinguishes a successful empty search from a failure', () => {
+    picker().searchEmailTemplates('nothing-matches');
+    respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+
+    expect(picker().emailTemplates()).toEqual([]);
+    expect(picker().emailTemplatesError()).toBeNull();
+  });
+
+  // possiblyTruncated is only meaningful for an EMPTY query. Telling someone to narrow a search
+  // that was already exhaustive sends them hunting for a template that does not exist.
+  it('carries the truncation warning through', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: null, possiblyTruncated: true, emails: [{ id: '1', name: 'One' }] });
+
+    expect(picker().emailTemplatesTruncated()).toBe(true);
+  });
+
+  it('refuses to search without a foundation rather than listing another portal', () => {
+    (fixture.componentInstance as unknown as { activeFoundationSlug: () => string }).activeFoundationSlug = () => '';
+
+    picker().searchEmailTemplates('kubecon');
+
+    httpMock.expectNone((r) => r.url === '/api/campaigns/hubspot/emails');
+    expect(picker().emailTemplatesError()).toContain('foundation');
+  });
+
+  it('records the chosen template id, which is what sourceEmailId takes', () => {
+    picker().onSelectEmailTemplate('123');
+    expect(picker().selectedEmailTemplateId()).toBe('123');
   });
 });

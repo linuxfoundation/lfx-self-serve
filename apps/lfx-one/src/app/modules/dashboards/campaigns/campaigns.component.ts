@@ -16,10 +16,11 @@ import type {
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
+  HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip } from 'rxjs';
+import { firstValueFrom, skip, take } from 'rxjs';
 
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -356,6 +357,41 @@ export class CampaignsComponent {
    */
   protected readonly emailBriefOutput = signal<CampaignBriefOutput | null>(null);
 
+  /**
+   * The HubSpot marketing emails a user can clone as the template for this send.
+   *
+   * `null` means NOT SEARCHED, which is distinct from `[]` (searched, portal returned nothing)
+   * for the same reason it is on the campaign list: an empty array asserts the portal has no
+   * matching templates, and only a completed search can support that claim. A failed search must
+   * not be rendered as an empty portal.
+   */
+  protected readonly emailTemplates = signal<HubSpotMarketingEmail[] | null>(null);
+  protected readonly emailTemplateQuery = signal('');
+  protected readonly emailTemplatesLoading = signal(false);
+  protected readonly emailTemplatesError = signal<string | null>(null);
+
+  /**
+   * Whether the listing may have been cut off by the service's unfiltered cap.
+   *
+   * Only ever true for an EMPTY query, where a complete portal listing and a truncated first
+   * screen are indistinguishable on the wire. A filtered search is complete-or-error, so this
+   * stays false there — telling someone to narrow a search that was already exhaustive would
+   * send them looking for a template that does not exist.
+   */
+  protected readonly emailTemplatesTruncated = signal(false);
+
+  /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
+  protected readonly selectedEmailTemplateId = signal<string>('');
+
+  /**
+   * Whether the channel is usable at all for this project.
+   *
+   * `enabled: false` is the steady state wherever HubSpot is not connected, not a failure, so it
+   * renders as "connect HubSpot" rather than an error. Starts null meaning UNKNOWN — only a
+   * response can settle it, and rendering either answer before one arrives would be a guess.
+   */
+  protected readonly emailChannelEnabled = signal<boolean | null>(null);
+
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
@@ -584,6 +620,69 @@ export class CampaignsComponent {
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
     this.selectedEmailTab.set('implementation');
+    // Load the picker's options on ARRIVAL rather than on first keystroke, so the tab opens with
+    // the portal's most recently updated templates already listed. Someone staging a send usually
+    // wants a recent one, and an empty box with no options reads as a broken channel.
+    this.searchEmailTemplates('');
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails for one to clone.
+   *
+   * Debounce is deliberately absent: this is called on ARRIVAL and on an explicit Search press,
+   * not per keystroke. campaign-service walks every page and matches in-process, so a filtered
+   * search is genuinely expensive — firing one per character would be the wrong trade.
+   */
+  protected searchEmailTemplates(query: string): void {
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '') {
+      // The page is reachable by an ED of any foundation and templates are per-project, so a
+      // missing slug must not fall back to some other portal's templates.
+      this.emailTemplates.set(null);
+      this.emailTemplatesError.set('Select a foundation before searching for a template.');
+      return;
+    }
+
+    this.emailTemplateQuery.set(query);
+    this.emailTemplatesLoading.set(true);
+    this.emailTemplatesError.set(null);
+
+    this.campaignService
+      .searchHubSpotEmails(projectSlug, query)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.emailTemplatesLoading.set(false);
+          this.emailChannelEnabled.set(result.enabled);
+          if (!result.enabled) {
+            // Not an error: HubSpot simply is not connected for this project, which is the steady
+            // state everywhere the channel is not set up.
+            this.emailTemplates.set(null);
+            return;
+          }
+          if (result.error) {
+            // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
+            // empty — an empty list would claim the portal has no templates.
+            this.emailTemplates.set(null);
+            this.emailTemplatesError.set(result.error);
+            return;
+          }
+          // A row with no id cannot be selected — `sourceEmailId` takes that value — so it is
+          // dropped rather than rendered as a choice that cannot be made.
+          this.emailTemplates.set(result.emails.filter((e) => !!e?.id));
+          this.emailTemplatesTruncated.set(result.possiblyTruncated);
+        },
+        error: () => {
+          this.emailTemplatesLoading.set(false);
+          // NULL, not []. A failed search says nothing about what the portal holds.
+          this.emailTemplates.set(null);
+          this.emailTemplatesError.set('Could not load templates. Try again.');
+        },
+      });
+  }
+
+  protected onSelectEmailTemplate(id: string): void {
+    this.selectedEmailTemplateId.set(id);
   }
 
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
