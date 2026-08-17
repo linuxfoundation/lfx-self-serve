@@ -82,8 +82,8 @@ const TWO_XL_BREAKPOINT = 1440;
 const CONTENT_MAX = 1024;
 
 // Sub-2xl matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), a landscape-phone
-// band between 393 and the sm breakpoint (see MAX_MD_WIDTH below — this is the one viewport where
-// the panel's own max-w-md cap is load-bearing; regressed and reinstated twice on this branch
+// band between 393 and the sm breakpoint (see the max-w-md cap assertion below — this is the one
+// viewport where the panel's own cap is load-bearing; regressed and reinstated twice on this branch
 // without a dedicated assertion before this entry was added), the tablet band, iPad landscape, a
 // split-screen laptop window, and just under the 2xl breakpoint itself — every band the inline-card
 // layout now needs to hold up across.
@@ -98,13 +98,16 @@ const VIEWPORTS = [
   { name: 'desktop-narrow', width: 1439, height: 900 },
 ] as const;
 
-// The panel's own max-w-md cap (below sm only) — sm:max-w-none removes it from sm up. The cap's
-// pixel value is read off the element's computed style at assertion time (see below) rather than
-// hard-coded here: apps/lfx-one/src/styles.scss sets `html { font-size: 14px }`, so max-w-md
-// (28rem) actually renders at 392px in this app, not the browser-default-root 448px a naive
-// rem-to-px conversion would suggest — a hard-coded constant would silently drift from the real
-// cap on any root-font-size or Tailwind maxWidth change.
 const SM_BREAKPOINT = 640;
+
+// max-w-md is 28rem. apps/lfx-one/src/styles.scss sets `html { font-size: 14px }`, so it renders at
+// 392px in this app, not the browser-default-root 448px a naive rem-to-px conversion would suggest.
+// The expected cap below is computed from this rem value times the *actual* root font-size read at
+// assertion time (immune to a root-font-size change), not read off the tested element's own computed
+// max-width — reading the "expected" value off the same element being asserted on would make the
+// check tautological (box-sizing: border-box guarantees a rendered width can never exceed its own
+// max-width, so that assertion could never fail regardless of which class were actually applied).
+const MAX_MD_REM = 28;
 
 // Desktop control: at and above 2xl, the rail must be the fixed overlay again — the regression
 // guard for the rail disappearing entirely rather than just moving breakpoints. Requested a margin
@@ -211,18 +214,25 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
 
         // Below sm, the rail wrapper is capped at max-w-md so it stays a proportioned stacked card
         // instead of stretching wide while its internals are still fully stacked (the content column
-        // can exceed the cap below the 640px sm breakpoint once page padding is this small — this app
-        // renders max-w-md at 392px, not the naive 448px, because of the 14px root font-size noted
-        // above). This regression was introduced and reverted twice on this branch before this
-        // assertion existed. Gated on clientWidth, not vp.width, for the same scrollbar reason as the
-        // md/lg checks above — a classic desktop scrollbar can put clientWidth on the other side of
-        // SM_BREAKPOINT from vp.width.
+        // can exceed the cap below the 640px sm breakpoint once page padding is this small). This
+        // regression was introduced and reverted twice on this branch before this assertion existed.
+        // Gated on clientWidth, not vp.width, for the same scrollbar reason as the md/lg checks above
+        // — a classic desktop scrollbar can put clientWidth on the other side of SM_BREAKPOINT from
+        // vp.width.
         if (overflow.clientWidth < SM_BREAKPOINT) {
           const railBox = await panelRail.boundingBox();
           expect(railBox, 'profile panel rail should have a bounding box').not.toBeNull();
-          const capPx = await panelRail.evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
-          expect(capPx, `profile panel rail max-width at ${vp.width}px should be a real px cap, not "none"`).toBeGreaterThan(0);
-          expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md (${capPx}px)`).toBeLessThanOrEqual(capPx + 1);
+
+          // Expected cap is derived independently of the tested element (MAX_MD_REM x the actual root
+          // font-size), not read off panelRail's own computed max-width — reading the expectation off
+          // the same element being measured would make the assertion tautological (box-sizing: border-
+          // box guarantees a rendered width can never exceed its own max-width, so that comparison
+          // could never fail regardless of which class were actually applied).
+          const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+          const expectedCapPx = MAX_MD_REM * rootFontSize;
+          expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md (${expectedCapPx}px)`).toBeLessThanOrEqual(
+            expectedCapPx + 1
+          );
         }
 
         // Inline placement: the panel should be left-aligned with the content column (both children of

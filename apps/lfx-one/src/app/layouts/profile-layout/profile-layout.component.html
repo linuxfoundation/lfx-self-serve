@@ -36,10 +36,12 @@
       </div>
 
       <!-- Profile panel — capped at max-w-md below sm (stacked card, matches the design's "stacked
-           card below sm" state — the content column can exceed 448px there, e.g. ~510px at a 550px
-           viewport, so without the cap the card would stretch wide while still fully stacked
-           internally); full width from sm up to 2xl (reflows internally); fixed full-height right
-           rail at 2xl and up (out of normal flow). -->
+           card below sm" state — the content column can exceed the cap there, e.g. ~515px at a 550px
+           viewport against a 392px cap (this app sets html { font-size: 14px } in styles.scss, so
+           max-w-md's 28rem renders at 392px here, not the browser-default-root 448px), so without the
+           cap the card would stretch wide while still fully stacked internally); full width from sm
+           up to 2xl (reflows internally); fixed full-height right rail at 2xl and up (out of normal
+           flow). -->
       <div
         class="max-w-md sm:max-w-none 2xl:fixed 2xl:bottom-0 2xl:right-0 2xl:z-40 2xl:w-[300px]"
         [ngClass]="{ '2xl:top-12': impersonating(), '2xl:top-0': !impersonating() }"
