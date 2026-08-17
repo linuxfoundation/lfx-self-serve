@@ -81,18 +81,26 @@ const TWO_XL_BREAKPOINT = 1440;
 // column stops growing here even once the sidebar's 348px and the page padding are accounted for.
 const CONTENT_MAX = 1024;
 
-// Sub-2xl matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), the tablet band,
-// iPad landscape, a split-screen laptop window, and just under the 2xl breakpoint itself — every
-// band the inline-card layout now needs to hold up across.
+// Sub-2xl matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), a landscape-phone
+// band between 393 and the sm breakpoint (see MAX_MD_WIDTH below — this is the one viewport where
+// the panel's own max-w-md cap is load-bearing; regressed and reinstated twice on this branch
+// without a dedicated assertion before this entry was added), the tablet band, iPad landscape, a
+// split-screen laptop window, and just under the 2xl breakpoint itself — every band the inline-card
+// layout now needs to hold up across.
 const VIEWPORTS = [
   { name: 'mobile-narrow', width: 360, height: 640 },
   { name: 'mobile', width: 393, height: 727 },
+  { name: 'mobile-landscape', width: 550, height: 400 },
   { name: 'tablet', width: 768, height: 1024 },
   { name: 'tablet-lg', width: 1023, height: 768 },
   { name: 'tablet-landscape', width: 1194, height: 834 },
   { name: 'laptop-split', width: 1280, height: 800 },
   { name: 'desktop-narrow', width: 1439, height: 900 },
 ] as const;
+
+// The panel's own max-w-md cap (below sm only) — sm:max-w-none removes it from sm up.
+const SM_BREAKPOINT = 640;
+const MAX_MD_WIDTH = 448;
 
 // Desktop control: at and above 2xl, the rail must be the fixed overlay again — the regression
 // guard for the rail disappearing entirely rather than just moving breakpoints. Requested a margin
@@ -196,6 +204,17 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         await expect(panelRail, 'profile panel rail wrapper should render').toBeVisible({ timeout: LOAD_TIMEOUT });
         const wrapperPosition = await panelRail.evaluate((el) => getComputedStyle(el).position);
         expect(wrapperPosition, `profile panel rail position at ${vp.width}px should not be fixed`).not.toBe('fixed');
+
+        // Below sm, the rail wrapper is capped at max-w-md (448px) so it stays a proportioned stacked
+        // card instead of stretching wide while its internals are still fully stacked (a content
+        // column can exceed 448px below the 640px sm breakpoint once page padding is this small, e.g.
+        // ~510px at a 550px viewport). This regression was introduced and reverted twice on this
+        // branch before this assertion existed.
+        if (vp.width < SM_BREAKPOINT) {
+          const railBox = await panelRail.boundingBox();
+          expect(railBox, 'profile panel rail should have a bounding box').not.toBeNull();
+          expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md`).toBeLessThanOrEqual(MAX_MD_WIDTH + 1);
+        }
 
         // Inline placement: the panel should be left-aligned with the content column (both children of
         // the same padded container) rather than offset toward the right edge like a fixed rail would be.
