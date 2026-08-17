@@ -2,11 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Presentational summary card. Below 2xl it renders inline in the content column, full width, as a
-  standalone card (rounded, bordered, own padding) — its internal layout reflows across three
-  states: a single stacked column below sm, a full-width horizontal layout (header row + 2/3-col
-  metadata grid + side-by-side social rows) from sm up to just under 2xl, so it doesn't sit as a
-  narrow left-aligned card with blank space beside it. At 2xl and up the layout wraps this in a
+  Presentational summary card. Below 2xl it renders inline in the content column as a standalone
+  card (rounded, bordered, own padding) — capped at max-w-md below sm (parent wrapper, see
+  profile-layout.component.html) and full width from sm up. Its own internal layout reflows across
+  three states: a single stacked column below sm, a full-width horizontal layout (header row +
+  2/3-col metadata grid + side-by-side social rows) from sm up to just under 2xl, so it doesn't sit
+  as a narrow left-aligned card with blank space beside it. At 2xl and up the layout wraps this in a
   fixed full-height right rail, and every sm:/md: reflow class collapses back to the original
   single-column layout there; we fill that rail (h-full) with a flush surface and a left border
   mirroring the left menu, scrolling its own content independently (overflow-y-auto) when the
@@ -26,8 +27,9 @@
          panel is full width in that band, not a narrow rail); back to stacked block flow at 2xl,
          matching the fixed rail's narrow column. -->
     <div class="sm:flex sm:items-start sm:gap-5 2xl:block">
-      <!-- Avatar + edit-pencil badge (rounded, not circle) -->
-      <div class="relative mb-3.5 w-24">
+      <!-- Avatar + edit-pencil badge (rounded, not circle). mb-3.5 only applies below sm and at 2xl
+           (stacked states) — in the sm-2xl row it would leave 14px of dead space under the avatar. -->
+      <div class="relative mb-3.5 w-24 sm:mb-0 2xl:mb-3.5">
         <div
           class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-xl font-semibold text-white"
           data-testid="profile-avatar">
@@ -60,17 +62,21 @@
         </span>
       </div>
 
-      <!-- Name + handle -->
-      <div>
-        <p class="text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
+      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width in
+           the sm-2xl row (the flex default is min-width: auto, which would instead force the row to
+           overflow if displayName() falls back to a long, unbreakable username); break-words lets a
+           long name wrap instead of pushing the fixed-width pills container past the card edge. -->
+      <div class="min-w-0">
+        <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
         @if (username()) {
-          <p class="mb-4 text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
+          <p class="mb-4 break-words text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
         }
       </div>
 
       <!-- Action pills — pushed to the row's trailing edge at sm+ (ml-auto), fixed-width so they don't
-           stretch to fill the row; back to full-width stacked at 2xl. -->
-      <div class="sm:ml-auto sm:flex sm:w-auto sm:flex-col sm:gap-2.5 2xl:ml-0 2xl:w-full">
+           stretch to fill the row; sm:shrink-0 keeps them at their full sm:w-56 even if the name above
+           is long enough to want the space; back to full-width stacked at 2xl. -->
+      <div class="sm:ml-auto sm:flex sm:flex-col sm:shrink-0 sm:gap-2.5 2xl:ml-0 2xl:w-full">
         <!-- Edit profile pill -->
         <button
           type="button"
@@ -105,7 +111,7 @@
          to fit the fixed rail's width. -->
     <div class="flex flex-col gap-5 sm:grid sm:grid-cols-2 sm:gap-x-8 sm:gap-y-5 md:grid-cols-3 2xl:flex 2xl:flex-col">
       @if (aboutMe()) {
-        <div class="sm:col-span-2 md:col-span-3 2xl:col-span-1" data-testid="profile-panel-about">
+        <div class="sm:col-span-2 md:col-span-3" data-testid="profile-panel-about">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-file-lines"></i>
             <span>About me</span>
