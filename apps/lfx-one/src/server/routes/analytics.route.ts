@@ -155,12 +155,14 @@ router.get('/email-ctr', requireExecutiveDashboardAccess, (req, res, next) => an
 // Social reach endpoint (marketing dashboard)
 router.get('/social-reach', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
-// Keyword performance endpoint (marketing dashboard)
-router.get('/keyword-performance', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+// Keyword performance endpoint (marketing dashboard) — only reachable from the ED-only
+// Performance Marketing tab; LF Staff never see this tab, so it stays ED-only.
+router.get('/keyword-performance', requireExecutiveDirector, (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
 
-// Social media endpoints (marketing dashboard)
-router.get('/social-media', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
-router.get('/social-media/monthly', requireExecutiveDashboardAccess, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
+// Social media endpoints (marketing dashboard) — only reachable from the ED-only Social
+// Accounts tab; LF Staff never see this tab, so these stay ED-only.
+router.get('/social-media', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
