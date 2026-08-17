@@ -297,8 +297,25 @@ export class CommitteeOverviewComponent {
   });
 
   public lastMeeting: Signal<PastMeeting | null> = computed(() => {
-    const past = [...this.pastMeetings()].sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''));
-    return past[0] ?? null;
+    // v1_past_meeting includes meetings as soon as they START, so filter to truly ended
+    // records before returning — same guard used in my-meetings.component.ts.
+    const now = Date.now();
+    return (
+      [...this.pastMeetings()]
+        .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
+        .find((meeting) => {
+          if (meeting.scheduled_end_time) {
+            const scheduledEnd = new Date(meeting.scheduled_end_time).getTime();
+            if (!Number.isNaN(scheduledEnd)) return scheduledEnd < now;
+          }
+          const startIso = meeting.scheduled_start_time ?? meeting.start_time;
+          if (!startIso) return false;
+          const startMs = new Date(startIso).getTime();
+          const duration = Number(meeting.duration);
+          if (Number.isNaN(startMs) || Number.isNaN(duration)) return false;
+          return startMs + duration * 60 * 1000 < now;
+        }) ?? null
+    );
   });
 
   public constructor() {
