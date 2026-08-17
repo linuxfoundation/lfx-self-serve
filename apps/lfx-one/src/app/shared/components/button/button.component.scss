@@ -6,6 +6,18 @@
     display: none;
   }
 
+  /* Icon-only buttons are sized and clipped for a single icon; a badge child gets cut off. Overlay it on the corner instead. */
+  .p-button-icon-only:has(.p-badge) {
+    overflow: visible;
+
+    .p-badge {
+      position: absolute;
+      top: -0.375rem;
+      right: -0.375rem;
+      margin: 0;
+    }
+  }
+
   /* Button Styling - Secondary variant for card actions */
   .p-button:not([class*='p-button-text']).p-button-secondary {
     @apply bg-white border border-gray-300 text-gray-900;

@@ -9,7 +9,7 @@
     }
 
     <!-- Left: text content -->
-    <div class="min-w-0 flex-1">
+    <div class="flex min-w-0 flex-1 flex-col">
       <!-- Header -->
       <div class="mb-2 flex flex-wrap items-center gap-1.5 text-sm text-gray-900">
         <i [class]="platformConfig().icon + ' ' + platformConfig().colorClass" class="text-base" aria-hidden="true"></i>
@@ -58,8 +58,8 @@
         </div>
       }
 
-      <!-- Pills row -->
-      <div class="flex flex-wrap items-center gap-2">
+      <!-- Pills row (mt-auto keeps it flush with the card bottom, aligned with the pinned open-original icon) -->
+      <div class="mt-auto flex flex-wrap items-center gap-2">
         <lfx-tag [value]="sentimentConfig().label" [icon]="sentimentConfig().icon" [severity]="sentimentConfig().severity" [rounded]="true" />
         <lfx-tag [value]="relevanceConfig().label + ' Relevance'" [severity]="relevanceConfig().severity" [rounded]="true" />
         @for (tag of mention.tags; track tag) {
@@ -98,9 +98,24 @@
           [alt]="mention.title || 'Mention image'"
           loading="lazy"
           (error)="onImageError()"
-          class="max-h-36 w-48 rounded-lg object-cover"
+          class="mb-8 max-h-36 w-48 rounded-lg object-cover"
           data-testid="mention-card-image" />
       }
     </div>
+
+    <!-- Pinned to the card's bottom-right corner regardless of content height -->
+    @if (mention.originalUrl) {
+      <a
+        [href]="mention.originalUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="icon-btn absolute right-5 bottom-5 z-10"
+        pTooltip="Open original post"
+        tooltipPosition="top"
+        aria-label="Open original post in a new tab"
+        data-testid="mention-card-open-original">
+        <i class="fa-light fa-arrow-up-right-from-square text-base"></i>
+      </a>
+    }
   </div>
 }
