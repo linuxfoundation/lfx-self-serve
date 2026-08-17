@@ -143,6 +143,8 @@ export class WeeklyBriefService {
    * errors itself and surfaces a retry affordance.
    */
   public listWeeklyBriefs(committeeId: string, params?: { limit?: number; page_token?: string }): Observable<PaginatedResponse<WeeklyBrief>> {
-    return this.http.get<PaginatedResponse<WeeklyBrief>>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs`, { params: { ...(params ?? {}) } });
+    return this.http
+      .get<PaginatedResponse<WeeklyBrief>>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs`, { params: { ...(params ?? {}) } })
+      .pipe(take(1));
   }
 }

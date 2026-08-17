@@ -16,6 +16,7 @@ import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_SHAREABLE_STATES,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
@@ -585,7 +586,8 @@ export class WeeklyBriefCardComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((response) => {
-        this.hasArchiveBriefs.set((response?.data?.length ?? 0) > 0);
+        const shareable = (response?.data ?? []).filter((b) => WEEKLY_BRIEF_SHAREABLE_STATES.includes(b.state));
+        this.hasArchiveBriefs.set(shareable.length > 0);
       });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(

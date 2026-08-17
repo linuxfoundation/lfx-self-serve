@@ -253,13 +253,13 @@ export class WeeklyBriefService {
    * GET /committees/:committeeId/weekly-briefs (paginated archive list)
    *
    * Live mode: queries the query-service `group_weekly_brief` index filtered by
-   * `committee_uid` tag. The query-service enforces the same `committee:{uid}#viewer`
-   * access check that `getCurrentBrief` relies on upstream — no separate FGA call needed.
+   * `committee_uid` tag. Access is gated at the controller layer via `assertCommitteeRead`
+   * before this method is called — do not invoke without a prior access check.
    *
    * Mock mode: returns three canned past briefs (previous three weeks) so the archive
    * drawer is fully exercisable locally without standing up the upstream index.
    */
-  public async listBriefs(req: Request, committeeId: string, query: Record<string, string> = {}): Promise<PaginatedResponse<WeeklyBrief>> {
+  public async listBriefs(req: Request, committeeId: string, query: { limit?: string; page_token?: string } = {}): Promise<PaginatedResponse<WeeklyBrief>> {
     if (!this.isLive(req)) {
       logger.debug(req, 'list_weekly_briefs', 'Returning mock brief archive', { committee_id: committeeId });
       return {
@@ -269,10 +269,13 @@ export class WeeklyBriefService {
 
     logger.debug(req, 'list_weekly_briefs', 'Querying group_weekly_brief index', { committee_id: committeeId });
 
+    const rawLimit = parseInt(query['limit'] ?? '', 10);
+    const limit = !isNaN(rawLimit) && rawLimit > 0 ? String(Math.min(rawLimit, 50)) : undefined;
+
     const params: Record<string, string | undefined> = {
       type: 'group_weekly_brief',
       tags: `committee_uid:${committeeId}`,
-      ...(query['limit'] && { limit: query['limit'] }),
+      ...(limit && { limit }),
       ...(query['page_token'] && { page_token: query['page_token'] }),
     };
 

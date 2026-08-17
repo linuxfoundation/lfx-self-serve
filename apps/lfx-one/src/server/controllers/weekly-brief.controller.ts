@@ -217,7 +217,12 @@ export class WeeklyBriefController {
 
       await assertCommitteeRead(req, committeeId, 'list_weekly_briefs');
 
-      const { data, page_token } = await this.weeklyBriefService.listBriefs(req, committeeId, req.query as Record<string, string>);
+      const limit = typeof req.query['limit'] === 'string' ? req.query['limit'] : undefined;
+      const pageToken = typeof req.query['page_token'] === 'string' ? req.query['page_token'] : undefined;
+      const { data, page_token } = await this.weeklyBriefService.listBriefs(req, committeeId, {
+        ...(limit && { limit }),
+        ...(pageToken && { page_token: pageToken }),
+      });
 
       logger.success(req, 'list_weekly_briefs', startTime, {
         committee_id: committeeId,

@@ -5,15 +5,13 @@ import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { WEEKLY_BRIEF_SHAREABLE_STATES } from '@lfx-one/shared/constants';
+import { WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE, WEEKLY_BRIEF_SHAREABLE_STATES } from '@lfx-one/shared/constants';
 import { WeeklyBrief } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { finalize } from 'rxjs';
-
-const ARCHIVE_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-weekly-brief-archive-drawer',
@@ -64,7 +62,7 @@ export class WeeklyBriefArchiveDrawerComponent {
     if (this.loadingMore() || !this.hasMore()) return;
     this.loadingMore.set(true);
     this.weeklyBriefService
-      .listWeeklyBriefs(this.committeeId(), { limit: ARCHIVE_PAGE_SIZE, page_token: this.nextCursor })
+      .listWeeklyBriefs(this.committeeId(), { limit: WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE, page_token: this.nextCursor })
       .pipe(
         finalize(() => this.loadingMore.set(false)),
         takeUntilDestroyed(this.destroyRef)
@@ -113,7 +111,7 @@ export class WeeklyBriefArchiveDrawerComponent {
     this.reset();
     this.loading.set(true);
     this.weeklyBriefService
-      .listWeeklyBriefs(this.committeeId(), { limit: ARCHIVE_PAGE_SIZE })
+      .listWeeklyBriefs(this.committeeId(), { limit: WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE })
       .pipe(
         finalize(() => this.loading.set(false)),
         takeUntilDestroyed(this.destroyRef)
