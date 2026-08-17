@@ -177,13 +177,16 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
       expect(verdict(next)).toBe('allow');
     });
 
-    it('allows LF staff', async () => {
+    it('does not bypass for LF staff without a marketing grant', async () => {
       getPersonas.mockResolvedValue(nonEd({ isLFStaff: true }));
+      checkRootCampaignManager.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-tlf', slug: 'tlf', exists: true });
+      checkSingleAccess.mockResolvedValue(false);
       const next = vi.fn();
 
       await requireCampaignManager(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
-      expect(verdict(next)).toBe('allow');
+      expect(verdict(next)).toBe('deny');
     });
   });
 

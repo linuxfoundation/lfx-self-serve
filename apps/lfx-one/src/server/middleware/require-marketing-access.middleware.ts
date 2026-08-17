@@ -25,10 +25,12 @@ const projectService = new ProjectService();
  *
  * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates unchanged to
  * `requireExecutiveDirector` — the ED-only gate LFXV2-3294 already shipped on these routes. When
- * the flag is ON: root-writer / LF-staff bypass unconditionally; ED bypasses only for foundations
- * it actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
+ * the flag is ON: root-writer bypasses unconditionally; ED bypasses only for foundations it
+ * actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
  * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it
- * falls through to the FGA checks below. A caller without ED/root/staff status is authorized only
+ * falls through to the FGA checks below. LF Staff get no bypass here — they stay UI-scoped to
+ * Social Listening and need an actual marketing_auditor/campaign_manager grant (or ED) to pass
+ * this middleware, matching what the UI shows them. A caller without ED/root status is authorized only
  * via an actual FGA relation: either a ROOT-scoped grant (cascades to every project) or a grant
  * scoped to the specific foundation/project the request names.
  *
@@ -47,7 +49,7 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
       }
 
       const result = await personaDetectionService.getPersonas(req);
-      if (result.isRootWriter || result.isLFStaff) {
+      if (result.isRootWriter) {
         next();
         return;
       }
