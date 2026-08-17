@@ -49,6 +49,14 @@ describe('buildConsoleHandoffUrl', () => {
     expect(url).toContain('https://easycla.dev.communitybridge.org/#/cla/project/');
   });
 
+  it('trims a pathological run of trailing slashes', () => {
+    // Trimming is index-based, not /\/+$/, which CodeQL flags as polynomial ReDoS. CodeQL guards
+    // the regex regression; this guards the behaviour, so a rewrite cannot quietly change it.
+    const url = buildConsoleHandoffUrl(`https://easycla.dev.communitybridge.org${'/'.repeat(10_000)}`, CLA_GROUP, CLA_USER, RETURN_URL);
+
+    expect(url).toContain('https://easycla.dev.communitybridge.org/#/cla/project/');
+  });
+
   it('works against the production Console base', () => {
     const url = buildConsoleHandoffUrl('https://contributor.easycla.lfx.linuxfoundation.org/', CLA_GROUP, CLA_USER, 'https://app.lfx.dev/profile/clas');
 
