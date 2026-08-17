@@ -8,6 +8,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink } from '@angular/router';
 import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyClasService } from '@services/my-clas.service';
@@ -113,10 +114,14 @@ describe('ProfileClasComponent', () => {
 
     const emptyState = fixture.debugElement.query(By.css('[data-testid="my-clas-empty-state"]'));
     expect(emptyState).toBeTruthy();
-    const link = emptyState.query(By.directive(RouterLink));
-    if (!link) throw new Error('empty state rendered no RouterLink');
-    const urlTree = link.injector.get(RouterLink).urlTree;
-    expect(urlTree && TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
+    // Scoped to the `lfx-button` host rather than `By.directive(RouterLink)`: the wrapped `<p-button>`
+    // also matches `[routerLink]`, so an unscoped query would depend on DOM traversal order between
+    // the two RouterLink instances.
+    const ctaButton = emptyState.query(By.directive(ButtonComponent));
+    if (!ctaButton) throw new Error('empty state rendered no lfx-button CTA');
+    const urlTree = ctaButton.injector.get(RouterLink).urlTree;
+    if (!urlTree) throw new Error('empty state CTA resolved no urlTree');
+    expect(TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {
