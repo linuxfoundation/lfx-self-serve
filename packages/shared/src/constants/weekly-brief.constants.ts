@@ -65,5 +65,5 @@ export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new S
  */
 export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;
 
-/** Number of past briefs fetched per page in the archive drawer (LFXV2-3046). */
+/** Number of past briefs fetched per page in the archive drawer (LFXV2-3046). The BFF caps all limit values at 50. */
 export const WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE = 10;

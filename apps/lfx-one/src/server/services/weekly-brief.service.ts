@@ -264,18 +264,19 @@ export class WeeklyBriefService {
       logger.debug(req, 'list_weekly_briefs', 'Returning mock brief archive', { committee_id: committeeId });
       return {
         data: [buildMockWeeklyBrief(committeeId, -1), buildMockWeeklyBrief(committeeId, -2), buildMockWeeklyBrief(committeeId, -3)],
+        page_token: query['page_token'] ? undefined : 'mock-cursor-page-2',
       };
     }
 
     logger.debug(req, 'list_weekly_briefs', 'Querying group_weekly_brief index', { committee_id: committeeId });
 
     const rawLimit = parseInt(query['limit'] ?? '', 10);
-    const limit = !isNaN(rawLimit) && rawLimit > 0 ? String(Math.min(rawLimit, 50)) : undefined;
+    const limit = !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 20;
 
     const params: Record<string, string | undefined> = {
       type: 'group_weekly_brief',
       tags: `committee_uid:${committeeId}`,
-      ...(limit && { limit }),
+      limit: String(limit),
       ...(query['page_token'] && { page_token: query['page_token'] }),
     };
 

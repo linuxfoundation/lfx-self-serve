@@ -75,8 +75,10 @@ export class WeeklyBriefArchiveDrawerComponent {
           this.hasMore.set(!!response.page_token);
         },
         error: () => {
-          // A load-more failure only surfaces via the console — the existing briefs remain visible.
+          // A load-more failure hides the button so the user is not left in a retry loop.
+          // The existing briefs remain visible.
           console.error('[weekly-brief-archive-drawer] failed to load more briefs');
+          this.hasMore.set(false);
         },
       });
   }
