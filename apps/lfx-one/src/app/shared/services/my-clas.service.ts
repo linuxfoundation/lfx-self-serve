@@ -9,7 +9,7 @@ import { map, Observable, take } from 'rxjs';
 
 import { environment } from '@environments/environment';
 
-/** Client for the read-only "My CLAs" server endpoints (Me lens → Profile tab). */
+/** Client for the read-only "CLAs" server endpoints (Me lens → Profile tab). */
 @Injectable({
   providedIn: 'root',
 })

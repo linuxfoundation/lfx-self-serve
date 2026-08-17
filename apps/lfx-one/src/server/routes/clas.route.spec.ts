@@ -18,7 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * would keep passing if the middleware were dropped from the route — which is the regression that
  * matters, because the failure mode is a signature recorded against the wrong person.
  *
- * The read routes are asserted alongside it: impersonated *viewing* of My CLAs must keep working,
+ * The read routes are asserted alongside it: impersonated *viewing* of CLAs must keep working,
  * so a blanket `router.use` would be a bug, not a safer default.
  */
 
