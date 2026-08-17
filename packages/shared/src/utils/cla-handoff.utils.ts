@@ -21,7 +21,12 @@
  */
 export function buildConsoleHandoffUrl(consoleBaseUrl: string, claGroupId: string, claUserId: string, redirectUrl: string): string {
   // All four configured bases end with a slash today; normalize rather than depend on that.
-  const base = consoleBaseUrl.replace(/\/+$/, '');
+  // Trimmed by index rather than /\/+$/, which backtracks quadratically on a long run of slashes.
+  let end = consoleBaseUrl.length;
+  while (end > 0 && consoleBaseUrl[end - 1] === '/') {
+    end--;
+  }
+  const base = consoleBaseUrl.slice(0, end);
 
   return `${base}/#/cla/project/${encodeURIComponent(claGroupId)}/user/${encodeURIComponent(claUserId)}?redirect=${encodeURIComponent(redirectUrl)}`;
 }
