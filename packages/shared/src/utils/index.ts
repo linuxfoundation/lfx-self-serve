@@ -51,6 +51,7 @@ export * from './persona.utils';
 export * from './metric-trend.utils';
 export * from './org-meetings-insights.utils';
 export * from './cla-view.utils';
+export * from './cla-handoff.utils';
 export * from './committee-engagement-classifier.utils';
 export * from './committee-engagement-display.utils';
 export * from './committee-engagement-freshness.utils';

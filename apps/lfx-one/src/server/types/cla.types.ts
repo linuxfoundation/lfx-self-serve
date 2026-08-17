@@ -76,6 +76,15 @@ export interface EasyClaMyClaPdf {
 }
 
 /**
+ * Response for `GET /v2/user-from-token` — the legacy backend returns the raw DynamoDB user item,
+ * hence snake_case keys rather than v4's camelCase model. Only the field the hand-off needs.
+ */
+export interface EasyClaUserFromTokenV2 {
+  /** The user's internal EasyCLA UUID — what the Console decision screen is keyed by. */
+  user_id?: string;
+}
+
+/**
  * Session-derived identity keys, resolved per request and never client-supplied.
  * Passed as query params to `GET /v4/my-clas`, which re-verifies each key belongs
  * to the authenticated user before searching (the SS server sources the keys from

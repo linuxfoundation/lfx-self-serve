@@ -28,6 +28,7 @@ export * from './analytics.constants';
 export * from './plausible.constants';
 export * from './chart.constants';
 export * from './chart-options.constants';
+export * from './cla.constants';
 export * from './cookie.constants';
 export * from './impersonation.constants';
 export * from './mailing-list.constants';

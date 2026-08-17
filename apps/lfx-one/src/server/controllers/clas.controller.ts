@@ -10,6 +10,8 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { getStringQueryParam } from '../helpers/validation.helper';
+import { listClaGroupOptions } from '../services/cla-group-search.stub';
 import { ClaService } from '../services/cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -63,6 +65,48 @@ export class ClasController {
 
       logger.success(req, 'get_cla_pdf_url', startTime, { signature_id: signatureId });
       res.json(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/me/clas/sign-options
+  // Stubbed CLA-Group selection (#1251); #1250 replaces the stub behind this same route.
+  public async getClaGroupOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_cla_group_options');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_cla_group_options' });
+      }
+
+      const query = getStringQueryParam(req, 'q') ?? '';
+      const options = listClaGroupOptions(query);
+
+      logger.success(req, 'get_cla_group_options', startTime, { option_count: options.length, queried: query.length > 0 });
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/me/clas/sign-handoff
+  // Server-owned halves of the Contributor Console URL. Blocked during impersonation at the
+  // route (signing is a write), so this handler has no impersonation branch of its own.
+  public async getSignHandoff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_cla_sign_handoff');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_cla_sign_handoff' });
+      }
+
+      // Nothing is read from the query or body: whose CLA is being signed is a property of the
+      // session, never of request input (FR-003).
+      const handoff = await this.claService.getSignHandoff(req);
+
+      logger.success(req, 'get_cla_sign_handoff', startTime);
+      res.json(handoff);
     } catch (error) {
       next(error);
     }

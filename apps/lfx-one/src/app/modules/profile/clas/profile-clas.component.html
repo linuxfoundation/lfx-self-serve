@@ -7,9 +7,26 @@ SPDX-License-Identifier: MIT
 
 <section class="flex flex-col gap-4" data-testid="my-clas">
   <!-- Header -->
-  <div>
+  <div class="flex items-start justify-between gap-4">
     <h2 class="text-lg font-semibold text-slate-800">My CLAs</h2>
+
+    <!-- Page-level, not per-row: signing a new CLA has no row to act on yet. -->
+    @if (canSign()) {
+      <lfx-button label="Sign CLA" icon="fa-light fa-file-signature" size="small" data-testid="sign-cla-action" (onClick)="openSignDialog()" />
+    }
   </div>
+
+  @if (canSign()) {
+    <lfx-cla-group-select
+      [(visible)]="selectVisible"
+      [options]="claGroupOptions()"
+      [loading]="optionsLoading()"
+      [error]="optionsError()"
+      [starting]="starting()"
+      (search)="onClaGroupSearch($event)"
+      (confirmed)="onClaGroupConfirmed($event)"
+      (retry)="onClaGroupSearch('')" />
+  }
 
   @if (error()) {
     <div role="alert" data-testid="my-clas-error">

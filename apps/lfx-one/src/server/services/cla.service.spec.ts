@@ -35,9 +35,14 @@ import type { Request } from 'express';
 
 import type { EasyClaMyCla, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
-import { ClaService, claServiceBaseUrl, collectClaEmails, normalizeGithubId, toMyClaAgreement } from './cla.service';
+import { ClaService, claReturnUrl, claServiceBaseUrl, collectClaEmails, normalizeGithubId, toMyClaAgreement } from './cla.service';
 
 const req = {} as unknown as Request;
+
+/** Request stub exposing only what `claReturnUrl` reads. */
+function reqWithHost(host: string | undefined, protocol = 'https'): Request {
+  return { protocol, get: (name: string) => (name === 'host' ? host : undefined) } as unknown as Request;
+}
 
 /** Minimal ICLA record from `/v4/my-clas`. */
 function icla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
@@ -94,6 +99,33 @@ describe('claServiceBaseUrl', () => {
   it('throws when API_GW_AUDIENCE is not configured', () => {
     delete process.env['API_GW_AUDIENCE'];
     expect(() => claServiceBaseUrl()).toThrow(MicroserviceError);
+  });
+});
+
+describe('claReturnUrl', () => {
+  it('builds an absolute URL to the CLAs view from the request origin', () => {
+    expect(claReturnUrl(reqWithHost('app.dev.lfx.dev'))).toBe('https://app.dev.lfx.dev/profile/clas');
+  });
+
+  it('is absolute, never relative — the final hop is a redirect issued by the CLA API', () => {
+    const url = claReturnUrl(reqWithHost('app.dev.lfx.dev'));
+
+    expect(url.startsWith('https://')).toBe(true);
+    expect(url.startsWith('/')).toBe(false);
+  });
+
+  it('uses the forwarded protocol rather than assuming https (trust proxy is set)', () => {
+    expect(claReturnUrl(reqWithHost('localhost:4200', 'http'))).toBe('http://localhost:4200/profile/clas');
+  });
+
+  it('keeps a non-default port, so local and preview hosts stay reachable', () => {
+    expect(claReturnUrl(reqWithHost('ui-pr-1440.dev.v2.cluster.linuxfound.info:8443'))).toBe(
+      'https://ui-pr-1440.dev.v2.cluster.linuxfound.info:8443/profile/clas'
+    );
+  });
+
+  it('throws rather than emitting a host-less URL when the Host header is missing', () => {
+    expect(() => claReturnUrl(reqWithHost(undefined))).toThrow(MicroserviceError);
   });
 });
 
@@ -521,5 +553,152 @@ describe('ClaService.getPdfUrl', () => {
       expect.stringContaining('/v4/my-clas/sig-1/pdf?'),
       expect.objectContaining({ bearerToken: 'target-token' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveContributorId — userIds from /v4/my-clas (Sign CLA hand-off, #1251)
+// ---------------------------------------------------------------------------
+
+describe('ClaService.resolveContributorId', () => {
+  /** Rejects the /v2/user-from-token probe so the userIds bridge behind it is exercised. */
+  function probeUnavailable(): void {
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('probe rejected', 401, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+  }
+
+  it('prefers the resolve-or-create endpoint when it accepts our token', async () => {
+    gatewayFetch.mockResolvedValueOnce({ user_id: 'u-created' });
+
+    // Preferred because it mints a record for a first-time signer, which the bridge cannot.
+    expect(await new ClaService().resolveContributorId(req)).toBe('u-created');
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the snake_case user_id the legacy backend returns', async () => {
+    // /v2 returns the raw DynamoDB item, not v4's camelCase model — userID would read as absent.
+    gatewayFetch.mockResolvedValueOnce({ userID: 'wrong-case' });
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['from-bridge'] });
+
+    expect(await new ClaService().resolveContributorId(req)).toBe('from-bridge');
+  });
+
+  it('falls back to the bridge when the probe is rejected', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['from-bridge'] });
+
+    // A rejected probe must not break the hand-off for a contributor who already has a record.
+    expect(await new ClaService().resolveContributorId(req)).toBe('from-bridge');
+  });
+
+  it('resolves the EasyCLA user UUID from the identity search', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['40dc8def-e014-11ec-8750-4225fa2d71d7'] });
+
+    expect(await new ClaService().resolveContributorId(req)).toBe('40dc8def-e014-11ec-8750-4225fa2d71d7');
+  });
+
+  it('reads the fallback from /v4/my-clas, never /v4/user-from-token', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'] });
+
+    await new ClaService().resolveContributorId(req);
+
+    // The v4 namesake is an unauthenticated passthrough on the gateway, so it never receives the
+    // X-ACL header the CLA backend's security scheme is keyed on and always 401s.
+    const urls = gatewayFetch.mock.calls.map((call) => (call as [unknown, string])[1]);
+    expect(urls.some((url) => url.includes('/v4/my-clas'))).toBe(true);
+    expect(urls.some((url) => url.includes('/v4/user-from-token'))).toBe(false);
+  });
+
+  it('runs on the default gateway token', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'] });
+
+    await new ClaService().resolveContributorId(req);
+
+    // apiGatewayToken already carries the signed-in contributor (their own refresh token
+    // exchanged for the gateway audience). Overriding it would resolve someone else.
+    for (const call of gatewayFetch.mock.calls) {
+      const [, , opts] = call as [unknown, string, { bearerToken?: string }];
+      expect(opts.bearerToken).toBeUndefined();
+    }
+  });
+
+  it('refuses to hand off when no record matches the session', async () => {
+    // A first-time signer has no EasyCLA record yet, and with the probe unavailable there is
+    // nothing to mint one. The Console renders "invalid user ID in the URL" for an absent id, so
+    // this must fail here rather than dead-end there (FR-009).
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: [] });
+
+    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+  });
+
+  it('refuses when the field is missing entirely', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ resultCount: 0 });
+
+    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+  });
+
+  it('refuses when the upstream returns no body', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce(null);
+
+    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+  });
+
+  it('ignores blank identifiers rather than handing one off', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['  ', ''] });
+
+    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+  });
+
+  it('trims a padded identifier', async () => {
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['  u-1  '] });
+
+    expect(await new ClaService().resolveContributorId(req)).toBe('u-1');
+  });
+
+  it('takes the first of several matched records rather than failing', async () => {
+    // An identity can match several EasyCLA records and nothing here can tell which one a
+    // signature belongs against. Refusing a returning contributor helps nobody; the ambiguity is
+    // logged instead, and the resolve-or-create endpoint returns one record.
+    probeUnavailable();
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1', 'u-2', 'u-3'] });
+
+    expect(await new ClaService().resolveContributorId(req)).toBe('u-1');
+  });
+
+  it('propagates a failure of the fallback itself', async () => {
+    probeUnavailable();
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('boom', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+
+    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSignHandoff — server-owned halves of the Console URL (#1251)
+// ---------------------------------------------------------------------------
+
+describe('ClaService.getSignHandoff', () => {
+  const handoffReq = { protocol: 'https', get: (n: string) => (n === 'host' ? 'app.dev.lfx.dev' : undefined) } as unknown as Request;
+
+  it('returns the resolved identifier and an absolute return URL', async () => {
+    gatewayFetch.mockResolvedValueOnce({ user_id: 'u-1' });
+
+    expect(await new ClaService().getSignHandoff(handoffReq)).toEqual({
+      claUserId: 'u-1',
+      redirectUrl: 'https://app.dev.lfx.dev/profile/clas',
+    });
+  });
+
+  it('does not resolve an identifier when the return URL cannot be derived', async () => {
+    const hostless = { protocol: 'https', get: () => undefined } as unknown as Request;
+
+    await expect(new ClaService().getSignHandoff(hostless)).rejects.toThrow(MicroserviceError);
   });
 });

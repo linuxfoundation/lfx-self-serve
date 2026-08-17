@@ -1,19 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DOCUMENT } from '@angular/common';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyClasService } from '@services/my-clas.service';
-import { MenuItem } from 'primeng/api';
-import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { UserService } from '@services/user.service';
+import { MenuItem, MessageService } from 'primeng/api';
+import { Observable, of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileClasComponent } from './profile-clas.component';
+
+/** Comfortably past the component's 250 ms search debounce. */
+const SEARCH_SETTLE_MS = 400;
 
 describe('ProfileClasComponent', () => {
   const agreement = (overrides: Partial<MyClaAgreement> = {}): MyClaAgreement => ({
@@ -37,7 +43,14 @@ describe('ProfileClasComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ProfileClasComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn() } }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn() } },
+        // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
+        // service would drag HttpClient into a TestBed that has no reason to make requests.
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ProfileClasComponent);
@@ -178,5 +191,208 @@ describe('ProfileClasComponent', () => {
 
     const labels = ['s-icla', 's-ecla', 's-inv'].flatMap((id) => menuItems(id).map((item) => item.label ?? ''));
     expect(labels.some((label) => /invalidate|request approval/i.test(label))).toBe(false);
+  });
+});
+
+/**
+ * Covers the Sign CLA hand-off entry point (#1251).
+ *
+ * The template is rendered rather than overridden, because two of the three behaviours here —
+ * whether the action is offered at all, and whether the dialog opens — are template conditions.
+ * Asserting them on the class alone would keep passing if the binding were dropped.
+ */
+describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
+  const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test' };
+  const EMPTY_CLAS: MyClasResponse = { agreements: [], identity: { matchedUserIds: 1, unmatched: false, githubLinked: true } };
+
+  let location: { href: string };
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let getSignUrl: ReturnType<typeof vi.fn>;
+  let getClaGroupOptions: ReturnType<typeof vi.fn>;
+
+  async function setup(options: { impersonating?: boolean; signUrl?: () => Observable<string> } = {}): Promise<ComponentFixture<ProfileClasComponent>> {
+    location = { href: 'https://app.dev.lfx.dev/profile/clas' };
+    messageAdd = vi.fn();
+    getClaGroupOptions = vi.fn(() => of([CLA_GROUP]));
+    getSignUrl = vi.fn(options.signUrl ?? (() => of('https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc')));
+
+    TestBed.configureTestingModule({
+      imports: [ProfileClasComponent],
+      providers: [
+        provideRouter([]),
+        // PrimeNG's message/dialog use synthetic animations; the app provides them at bootstrap.
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        // Only `location` is swapped. TestBed renders through DOCUMENT, so replacing it wholesale
+        // breaks the fixture; jsdom also refuses a direct `document.location` assignment. Methods
+        // are bound to the real document — called on the proxy they would fail on internal slots.
+        {
+          provide: DOCUMENT,
+          useFactory: () =>
+            new Proxy(globalThis.document, {
+              get: (target, prop) => {
+                if (prop === 'location') return location;
+                const value = Reflect.get(target, prop);
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            }),
+        },
+        { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
+        {
+          provide: MyClasService,
+          useValue: { getMyClas: vi.fn(() => of(EMPTY_CLAS)), getPdfUrl: vi.fn(), getClaGroupOptions, getSignUrl },
+        },
+      ],
+    });
+    TestBed.overrideProvider(MessageService, { useValue: { add: messageAdd, addAll: vi.fn(), clear: vi.fn(), messageObserver: of(), clearObserver: of() } });
+
+    const fixture = TestBed.createComponent(ProfileClasComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  function query(fixture: ComponentFixture<ProfileClasComponent>, testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  /** Types into the picker and waits out the debounce so the query actually reaches the server. */
+  async function searchPicker(fixture: ComponentFixture<ProfileClasComponent>, queryText: string): Promise<void> {
+    (fixture.componentInstance as any).onClaGroupSearch(queryText);
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_SETTLE_MS));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('offers the Sign CLA action in a normal session', async () => {
+    const fixture = await setup();
+
+    expect(query(fixture, 'sign-cla-action')).not.toBeNull();
+  });
+
+  it('withholds the action while impersonating, since the server refuses the hand-off', async () => {
+    const fixture = await setup({ impersonating: true });
+
+    expect(query(fixture, 'sign-cla-action')).toBeNull();
+    // The dialog must not be reachable either — hiding only the button would leave the
+    // hand-off one stray binding away from being offered.
+    expect(query(fixture, 'cla-group-select-dialog')).toBeNull();
+  });
+
+  it('loads the selectable projects when the picker is searched', async () => {
+    const fixture = await setup();
+
+    await searchPicker(fixture, '');
+
+    expect(getClaGroupOptions).toHaveBeenCalledWith('');
+    expect((fixture.componentInstance as any).claGroupOptions()).toEqual([CLA_GROUP]);
+  });
+
+  it('sends the query upstream instead of filtering the fetched list', async () => {
+    const fixture = await setup();
+
+    await searchPicker(fixture, 'venus');
+
+    // #1250 replaces the route's stub with the real four-source search. That swap only stays
+    // invisible to this page if the query was never resolved in the browser.
+    expect(getClaGroupOptions).toHaveBeenCalledWith('venus');
+  });
+
+  it('coalesces keystrokes into a single query', async () => {
+    const fixture = await setup();
+
+    (fixture.componentInstance as any).onClaGroupSearch('v');
+    (fixture.componentInstance as any).onClaGroupSearch('ve');
+    await searchPicker(fixture, 'ven');
+
+    expect(getClaGroupOptions).toHaveBeenCalledTimes(1);
+    expect(getClaGroupOptions).toHaveBeenCalledWith('ven');
+  });
+
+  it('navigates to the resolved Console URL in the same tab', async () => {
+    const fixture = await setup();
+
+    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    await fixture.whenStable();
+
+    expect(getSignUrl).toHaveBeenCalledWith('cg-1');
+    // Same tab, not a new one: the Console returns the contributor here afterwards.
+    expect(location.href).toBe('https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc');
+  });
+
+  it('never composes the URL client-side from a guessed identifier', async () => {
+    const fixture = await setup();
+
+    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    await fixture.whenStable();
+
+    // The only source of the contributor id is the server round trip.
+    expect(getSignUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays on the page and reports failure when the hand-off cannot be resolved', async () => {
+    const fixture = await setup({ signUrl: () => throwError(() => new Error('resolution failed')) });
+
+    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    await fixture.whenStable();
+
+    // A failed resolution must not navigate to a half-built URL — the Console would show
+    // "invalid user ID", which reads as a broken product rather than a failed lookup.
+    expect(location.href).toBe('https://app.dev.lfx.dev/profile/clas');
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  it('ignores a second selection while one hand-off is already resolving', async () => {
+    const pending = new Subject<string>();
+    const fixture = await setup({ signUrl: () => pending.asObservable() });
+
+    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+    (fixture.componentInstance as any).onClaGroupConfirmed(CLA_GROUP);
+
+    expect(getSignUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a failure to load projects without closing the dialog', async () => {
+    const fixture = await setup();
+    getClaGroupOptions.mockReturnValue(throwError(() => new Error('boom')));
+
+    (fixture.componentInstance as any).openSignDialog();
+    await searchPicker(fixture, '');
+
+    expect((fixture.componentInstance as any).optionsError()).toBe(true);
+    expect((fixture.componentInstance as any).selectVisible()).toBe(true);
+  });
+
+  it('can search again after a failure', async () => {
+    const fixture = await setup();
+    getClaGroupOptions.mockReturnValueOnce(throwError(() => new Error('boom')));
+
+    await searchPicker(fixture, '');
+    // Retry re-issues the same empty query. A stream that dropped repeats would strand the
+    // picker on its error state with no way back.
+    await searchPicker(fixture, '');
+
+    expect((fixture.componentInstance as any).optionsError()).toBe(false);
+    expect((fixture.componentInstance as any).claGroupOptions()).toEqual([CLA_GROUP]);
+  });
+
+  it('reopens the picker clean after a failed search', async () => {
+    const fixture = await setup();
+    getClaGroupOptions.mockReturnValue(throwError(() => new Error('boom')));
+
+    (fixture.componentInstance as any).openSignDialog();
+    await searchPicker(fixture, '');
+    expect((fixture.componentInstance as any).optionsError()).toBe(true);
+
+    // Reopening must not greet the contributor with the previous attempt's error before any
+    // new request has run.
+    (fixture.componentInstance as any).openSignDialog();
+
+    expect((fixture.componentInstance as any).optionsError()).toBe(false);
+    expect((fixture.componentInstance as any).optionsLoading()).toBe(false);
   });
 });
