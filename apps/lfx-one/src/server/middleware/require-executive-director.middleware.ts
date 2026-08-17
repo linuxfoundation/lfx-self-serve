@@ -42,7 +42,10 @@ export async function requireExecutiveDirector(req: Request, res: Response, next
       return;
     }
 
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    // Callers name the foundation/project differently (`foundationSlug` on most ED-only routes,
+    // `project` on Campaigns) — check both so scoping isn't silently skipped for either shape.
+    const requestedSlug =
+      ['foundationSlug', 'project'].map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0) ?? '';
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped ED endpoints stay allowed.

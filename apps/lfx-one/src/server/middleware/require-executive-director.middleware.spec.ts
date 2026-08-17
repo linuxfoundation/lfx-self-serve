@@ -80,6 +80,17 @@ describe('requireExecutiveDirector', () => {
     expect(verdict(next)).toBe('deny');
   });
 
+  // Campaigns routes name the foundation via `project`, not `foundationSlug` — scoping must
+  // still apply, or an ED could manage another foundation's campaigns by passing its slug there.
+  it('scopes on the `project` query param the same as `foundationSlug`', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
   // Same message and code as the non-ED denial: a distinct "not your foundation" error would
   // confirm the foundation exists, turning the endpoint into an existence oracle.
   it('denies out-of-scope with the same error as a non-ED denial', async () => {
