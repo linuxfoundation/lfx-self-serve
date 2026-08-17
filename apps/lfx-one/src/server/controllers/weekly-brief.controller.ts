@@ -81,14 +81,17 @@ function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWe
  * fed a local equality comparison, but shareToSlack's now also crosses the wire as the
  * committee-service share-to-chat request body, which declares it `UInt64, Minimum(1)` — a
  * malformed value here should fail loudly at this boundary with a clear 400, not ride into an
- * upstream Goa validation error.
+ * upstream Goa validation error. `isSafeInteger`, not just `isInteger`: a value beyond
+ * `Number.MAX_SAFE_INTEGER` (e.g. `1e20`) still passes `isInteger` but can't faithfully
+ * represent a `UInt64` — same failure mode as an out-of-range value, just one `isInteger` alone
+ * wouldn't catch.
  */
 function validateShareBriefBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
   if (!body || typeof body !== 'object') {
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
-  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+  if (typeof b['revision'] !== 'number' || !Number.isSafeInteger(b['revision']) || b['revision'] < 1) {
     return { ok: false, fieldErrors: { revision: 'revision is required and must be an integer of at least 1' } };
   }
   return { ok: true, value: { revision: b['revision'] as number } };

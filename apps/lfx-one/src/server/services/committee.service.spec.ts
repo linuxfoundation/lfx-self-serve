@@ -618,6 +618,23 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       );
     });
 
+    it('never echoes has_chat_webhook (upstream read-only computed field) back in the settings PUT body, even though it rides in via the current-settings fetch', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' });
+      fetchWithETag.mockResolvedValueOnce({
+        data: { business_email_required: false, has_chat_webhook: true },
+        etag: 'settings-etag-1',
+      });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      await service.updateCommittee(req, COMMITTEE_UID, { chat_webhook_url: VALID_WEBHOOK_URL });
+
+      const settingsPutBody = updateWithETag.mock.calls[0][4];
+      expect('has_chat_webhook' in settingsPutBody).toBe(false);
+      // Confirms the strip targets only has_chat_webhook — a real current setting alongside it
+      // must still survive into the PUT body unchanged.
+      expect(settingsPutBody.business_email_required).toBe(false);
+    });
+
     it('accepts a combined core-field + webhook change, PUTting the core fields to the base resource and chat_webhook_url to settings', async () => {
       // The production UI (committee-settings-tab.component.ts) always sends chat_channel/
       // join_mode/website alongside chat_webhook_url in one save — this is the actual happy path

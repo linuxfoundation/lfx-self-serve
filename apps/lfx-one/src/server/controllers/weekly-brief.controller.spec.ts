@@ -409,8 +409,8 @@ describe('WeeklyBriefController', () => {
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     });
 
-    it('rejects a non-integer or non-positive revision — same bound as validateRateBriefBody/validateClearRatingBody, since this now crosses the wire as the committee-service share-to-chat body (UInt64, Minimum(1))', async () => {
-      for (const badRevision of [0, -1, 1.5]) {
+    it('rejects a non-integer, non-positive, or unsafe-integer revision — same bound as validateRateBriefBody/validateClearRatingBody, since this now crosses the wire as the committee-service share-to-chat body (UInt64, Minimum(1))', async () => {
+      for (const badRevision of [0, -1, 1.5, 1e20]) {
         const next = vi.fn();
 
         await controller.shareToSlack(buildReq({ revision: badRevision }), buildRes(), next);

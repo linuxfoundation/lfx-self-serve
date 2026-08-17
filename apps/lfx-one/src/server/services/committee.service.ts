@@ -2153,9 +2153,16 @@ export class CommitteeService {
       'update_committee_settings'
     );
 
+    // has_chat_webhook is upstream's read-only computed field (GET/PUT .../settings response
+    // only) — excluded here so it doesn't ride back out in the PUT body alongside the rest of
+    // the unchanged current settings, which is otherwise a field the write contract never
+    // declares.
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const { has_chat_webhook: _hasChatWebhook, ...currentSettingsForWrite } = currentSettings;
+
     // Merge provided fields over current settings
     const settingsData = {
-      ...currentSettings,
+      ...currentSettingsForWrite,
       ...(settings.business_email_required !== undefined && { business_email_required: settings.business_email_required }),
       ...(settings.is_audit_enabled !== undefined && { is_audit_enabled: settings.is_audit_enabled }),
       ...(settings.show_meeting_attendees !== undefined && { show_meeting_attendees: settings.show_meeting_attendees }),

@@ -819,6 +819,13 @@ export class WeeklyBriefService {
    * project writer, `WEEKLY_BRIEF_BACKEND=live`) — those checks stay local so a disabled/mock
    * environment and a stale revision fail the same way they always have, before any upstream
    * call.
+   *
+   * Known behavior change from the pre-LFXV2-3080-migration send: the posted message is
+   * `brief_text` alone — as of this writing, committee-service's `WebhookSender` does not add
+   * back the `*Weekly Brief — {committee}* ({date range})` heading this BFF used to prepend
+   * before composing moved server-side. Flag to product/upstream if that context is missed in a
+   * channel receiving briefs from more than one committee; not addressed in this BFF, since it no
+   * longer composes the message at all.
    */
   public async shareToSlack(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefToSlackResult> {
     // Same server-side kill switch as committee.service.ts's updateCommittee, and for the same
