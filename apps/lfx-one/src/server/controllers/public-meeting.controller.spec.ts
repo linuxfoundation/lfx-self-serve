@@ -58,6 +58,13 @@ vi.mock('@lfx-one/shared/constants', () => ({
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
+  PUBLIC_REGISTRATION_FIELD_LABELS: {
+    meeting_id: 'Meeting ID',
+    occurrence_id: 'Occurrence ID',
+    email: 'Email address',
+    first_name: 'First name',
+    last_name: 'Last name',
+  },
 }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 
@@ -560,13 +567,14 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
   // address, or a registration scoped to the wrong occurrence.
   //
   // Both the field array and the top-level message are asserted. The array alone isn't enough: the
-  // modal renders `error.message` and discards `errors[]`, so a generic message there would leave the
-  // registrant with nothing to act on — which is exactly what the old "Email is required" path did.
+  // modal shows the top-level message — serialized as the body's `error` key — and discards
+  // `errors[]`, so a generic message there would leave the registrant with nothing to act on, which is
+  // exactly what the old "Registration data validation failed" path did.
   it.each([
-    ['email', { email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com` }],
-    ['meeting_id', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
-    ['occurrence_id', { occurrence_id: '1'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
-  ])('rejects an over-length %s by name rather than truncating it', async (field, overrides) => {
+    ['email', 'Email address', { email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com` }],
+    ['meeting_id', 'Meeting ID', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+    ['occurrence_id', 'Occurrence ID', { occurrence_id: '1'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+  ])('rejects an over-length %s by name rather than truncating it', async (field, label, overrides) => {
     const { req, res, next } = buildRegisterReqRes({ ...validBody, ...overrides });
 
     await controller.registerForPublicMeeting(req, res, next);
@@ -576,8 +584,45 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     const error = next.mock.calls[0][0] as ServiceValidationError;
 
+    // `errors[]` keeps the wire key; the message a person reads gets the label.
     expect(error.validationErrors).toEqual([expect.objectContaining({ field, message: expect.stringContaining(`${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH}`) })]);
-    expect(error.message).toBe(`${field} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`);
+    expect(error.message).toBe(`${label} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`);
+  });
+
+  // Two at once, because the join is what a single-field case can't catch: an `and`-joined message has
+  // to still read as one sentence, and both fields have to survive into `errors[]`.
+  it('names every over-length identifier in one message', async () => {
+    const { req, res, next } = buildRegisterReqRes({
+      ...validBody,
+      meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1),
+      email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com`,
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors.map((entry) => entry.field)).toEqual(['meeting_id', 'email']);
+    expect(error.message).toBe(`Meeting ID and Email address must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`);
+  });
+
+  // The required-field path had the same defect the length path was fixed for: its top-level message
+  // was a generic "Registration data validation failed", so the registrant saw nothing actionable.
+  it.each([
+    ['email', { email: '' }, 'Email address is required.'],
+    ['first_name', { first_name: '  ' }, 'First name is required.'],
+    ['meeting_id', { meeting_id: '' }, 'Meeting ID is required.'],
+  ])('names a missing %s in the message the registrant sees', async (field, overrides, expected) => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, ...overrides });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors.map((entry) => entry.field)).toEqual([field]);
+    expect(error.message).toBe(expected);
   });
 
   // Which occurrences the registration covers is part of what a registrant states about their own

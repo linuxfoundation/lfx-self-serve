@@ -5,11 +5,55 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { isTransientHttpError, retryTransientHttpError } from './http-error.utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
 }
+
+describe('extractErrorMessage', () => {
+  // `error` and not `message` is the key that matters: `BaseApiError.toResponse()` emits
+  // `{ error, code }`, so a reader that only knows `message` shows the fallback on every server
+  // validation failure — which is what it did before this was the util in use.
+  it('reads the `error` key this server actually sends', () => {
+    const error = new HttpErrorResponse({ status: 400, error: { error: 'Email address is required.', code: 'VALIDATION_ERROR' } });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Email address is required.');
+  });
+
+  it('still reads a `message` key, for upstream bodies that use it', () => {
+    const error = new HttpErrorResponse({ status: 400, error: { message: 'Upstream said no' } });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Upstream said no');
+  });
+
+  // Angular populates `HttpErrorResponse.message` for every failure with a string built for a
+  // console — "Http failure response for /api/thing: 0 Unknown Error". Preferring it would put a URL
+  // and a status code in front of a user on exactly the failures with no body to read.
+  it('prefers the caller fallback over Angular internal message text', () => {
+    const detail = extractErrorMessage(httpError(0), 'Could not reach the server. Please try again.');
+
+    expect(detail).toBe('Could not reach the server. Please try again.');
+    expect(detail).not.toContain('Http failure');
+  });
+
+  it('falls back when the body is an object with no usable string', () => {
+    const error = new HttpErrorResponse({ status: 500, error: { code: 'BOOM' } });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('fallback');
+  });
+
+  it('uses a plain-string body as the message', () => {
+    const error = new HttpErrorResponse({ status: 502, error: 'Bad gateway' });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Bad gateway');
+  });
+
+  it('reads a thrown Error message, and falls back for anything else', () => {
+    expect(extractErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
+    expect(extractErrorMessage(null, 'fallback')).toBe('fallback');
+  });
+});
 
 describe('isTransientHttpError', () => {
   // Each status is named rather than looped so a failure says WHICH class of

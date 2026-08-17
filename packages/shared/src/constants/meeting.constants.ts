@@ -699,6 +699,26 @@ export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
  */
 export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
 
+/**
+ * Human labels for the public-registration fields the route rejects by name.
+ *
+ * The rejection's top-level message is the one string the registration modal shows, so it is read by
+ * someone filling in a form, not by someone reading a request body — `email` there says "Email
+ * address", not the wire key. `errors[]` stays keyed by the wire name for anything reading the
+ * fields programmatically.
+ *
+ * `meeting_id` and `occurrence_id` are in the map even though no form field corresponds to them:
+ * they can only be wrong if a caller built the request itself, and that caller is still better served
+ * by a name it can recognize than by silence.
+ */
+export const PUBLIC_REGISTRATION_FIELD_LABELS = {
+  meeting_id: 'Meeting ID',
+  occurrence_id: 'Occurrence ID',
+  email: 'Email address',
+  first_name: 'First name',
+  last_name: 'Last name',
+} as const;
+
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 

@@ -34,6 +34,16 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  * a thrown Error, or any other value. Used by components that catch errors
  * from `firstValueFrom(...)` or RxJS `catchError` and need to surface a
  * single string to the UI.
+ *
+ * `body.error` is read as well as `body.message` because that is the key this server's error
+ * envelope actually uses — `BaseApiError.toResponse()` emits `{ error, code }` and no `message`.
+ *
+ * When the body yields nothing, the caller's `fallback` wins over `HttpErrorResponse.message`.
+ * Angular fills that property in for every failure with a string built for a developer reading a
+ * console — "Http failure response for /public/api/...: 0 Unknown Error" — so preferring it would
+ * put a URL and a status code in front of a user on exactly the failures where the body is empty:
+ * a network drop, or a 500 with no envelope. Every call site passes a written-for-a-human fallback;
+ * that is the one to show.
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
@@ -43,7 +53,7 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
       const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
       if (candidate) return candidate;
     }
-    return error.message || fallback;
+    return fallback;
   }
 
   if (error instanceof Error && error.message) return error.message;
