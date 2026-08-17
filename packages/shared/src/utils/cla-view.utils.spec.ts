@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PROFILE_TABS } from '../constants/profile.constants';
-import { MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   buildProfileTabs,
   claKindSeverity,
@@ -104,9 +104,18 @@ describe('claStatusLabel', () => {
   it('maps each status to its label', () => {
     expect(claStatusLabel('valid')).toBe('Valid');
     expect(claStatusLabel('needs_attention')).toBe('Needs attention');
-    expect(claStatusLabel('invalidated')).toBe('Invalidated');
+    // The wire token is `invalidated`; the reviewed user-facing copy is Revoked.
+    expect(claStatusLabel('invalidated')).toBe('Revoked');
     expect(claStatusLabel('unknown')).toBe('—');
     expect(claStatusLabel('superseded')).toBe('Superseded');
+  });
+
+  // The wording was reviewed, and the retired terms are the ones a rename is most likely to
+  // reintroduce — the wire token is still `invalidated`, so the old copy stays one edit away.
+  it('never labels a status with the retired self-serve wording', () => {
+    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'invalidated', 'unknown', 'superseded'];
+
+    expect(statuses.map(claStatusLabel).some((label) => /invalid|cancel/i.test(label))).toBe(false);
   });
 });
 

@@ -11,7 +11,10 @@ export type ClaKind = 'ICLA' | 'ECLA';
  * Agreement status shown in the UI:
  * - `valid`           — currently valid per EasyCLA's computed `valid` flag.
  * - `needs_attention` — approved, but no longer covered (ECLA only; ICLA never produces this).
- * - `invalidated`     — the stored signature-approval flag is false or absent.
+ * - `invalidated`     — the stored signature-approval flag is false or absent. Shown to the
+ *                       contributor as **Revoked**: self-invalidation was withdrawn, so this
+ *                       is now always a system revocation. The token keeps the producer's
+ *                       spelling; `claStatusLabel` owns the copy.
  * - `unknown`         — coverage could not be evaluated (ECLA only; ICLA never produces this).
  *                       Rendered as plain-text "—", not a fourth named pill.
  * - `superseded`      — reserved: an older document version than the CLA group's current.
