@@ -61,13 +61,14 @@ export class AiService {
     });
 
     try {
-      // Resolved once: the same cap is asked of the model (in the schema and the prompt) and enforced
-      // on the way back out, so the three can't disagree. Floored at 1 because `maxCharacters` is a
-      // plain optional number on the request — the app's only caller pre-validates it, but nothing in
-      // this service's contract says so, and a negative would make the clamp's `slice` chop the tail
-      // off the agenda instead of capping it.
-      const agendaMaxCharacters = Math.max(1, request.maxCharacters || MEETING_AGENDA_MAX_LENGTH);
-      const prompt = this.buildPrompt(request);
+      // Resolved once and then used everywhere: the same cap is asked of the model (in the schema and
+      // in the prompt) and enforced on the way back out, so the three can't disagree. A non-positive
+      // `maxCharacters` falls back to the default rather than being floored at 1, matching the policy
+      // `resolveAgendaMaxCharacters` already states at the HTTP boundary — a cap of 1 is honoured
+      // nonsense that guarantees a useless completion. `maxCharacters` is a plain optional number on
+      // the request, so this service defends itself rather than trusting its callers to pre-validate.
+      const agendaMaxCharacters = request.maxCharacters && request.maxCharacters > 0 ? request.maxCharacters : MEETING_AGENDA_MAX_LENGTH;
+      const prompt = this.buildPrompt({ ...request, maxCharacters: agendaMaxCharacters });
       const chatRequest: OpenAIChatRequest = {
         model: this.model,
         messages: [

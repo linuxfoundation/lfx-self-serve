@@ -740,7 +740,7 @@ export class MeetingService {
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
       'POST',
       undefined,
-      registrantData
+      this.toUpstreamRegistrantBody(registrantData)
     );
 
     return newRegistrant;
@@ -764,7 +764,7 @@ export class MeetingService {
       `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
       'PUT',
       undefined,
-      updateData
+      this.toUpstreamRegistrantBody(updateData)
     );
 
     return updatedRegistrant;
@@ -1766,5 +1766,35 @@ export class MeetingService {
       recurrence_type: recurrence.type,
     });
     return { ...recurrence, end_date_time: neverEndDate };
+  }
+
+  /**
+   * Renames the three registrant fields whose app-side names differ from the upstream ITX contract.
+   *
+   * `CreateItxRegistrantRequestBody` (reused verbatim for the PUT) declares `org`, `profile_picture`
+   * and `occurrence`; the app's read model — which comes from the v1 query-service index, not from
+   * ITX — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa silently ignores body keys it
+   * doesn't declare, so without this rename the organization an organizer types, the avatar, and a
+   * single-occurrence invite were all dropped on the way upstream, behind a 201.
+   *
+   * `meeting_id` is dropped for the same reason it isn't declared: it's the path parameter, and the
+   * caller has already used it to build the URL.
+   *
+   * Values pass through untouched, including the `null`s the update body uses to erase a stored value.
+   */
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+    const { org_name, avatar_url, occurrence_id } = body as UpdateMeetingRegistrantRequest;
+    const upstream: Record<string, unknown> = { ...body };
+
+    for (const appOnlyKey of ['meeting_id', 'org_name', 'avatar_url', 'occurrence_id']) {
+      delete upstream[appOnlyKey];
+    }
+
+    return {
+      ...upstream,
+      ...(org_name === undefined ? {} : { org: org_name }),
+      ...(avatar_url === undefined ? {} : { profile_picture: avatar_url }),
+      ...(occurrence_id === undefined ? {} : { occurrence: occurrence_id }),
+    };
   }
 }

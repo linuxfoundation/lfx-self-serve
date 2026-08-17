@@ -17,6 +17,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock } = v
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
+    getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
@@ -291,6 +292,40 @@ describe('MeetingController', () => {
       const res = buildRes();
 
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([registrant]);
+    });
+  });
+
+  describe('getMyMeetingRegistrants', () => {
+    const registrant = { uid: 'reg-1', email: 'a@example.com', committee_uid: V1_COMMITTEE_SFID };
+
+    beforeEach(() => {
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, committees: [{ uid: V2_COMMITTEE_UID }] });
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self', email: 'user@example.com' }]);
+      meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
+      resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
+      committeeSvc.getCommitteeMembers.mockResolvedValue([{ email: 'a@example.com', role: { name: 'Chair' }, voting: { status: 'Voting Rep' } }]);
+    });
+
+    it('enriches committee metadata for a registrant of the meeting', async () => {
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_uid: V2_COMMITTEE_UID })]);
+    });
+
+    // Group attribution is decoration; the guest list is not. The v2 → v1 mapping goes over NATS, so a
+    // transient committee-service problem must not turn this listing into a 500 — and this is the
+    // degradation `MeetingRegistrant.committee_uid`'s docstring promises on both read paths.
+    it('degrades to unenriched rows when the committee mapping lookup fails', async () => {
+      resolveCommitteeV2UidsToV1IdsMock.mockRejectedValue(new Error('nats timeout'));
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq(), res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);

@@ -533,10 +533,10 @@ export class MeetingService {
    *
    * Every optional string is omitted when empty rather than sent as `null`: upstream declares
    * `committee_uid`, `job_title` and `org` alike as non-nullable optional `string`s
-   * (`CreateItxRegistrantRequestBody`). The BFF drops a stray `null` anyway, but relying on that
-   * would mean shipping an off-contract body and trusting the proxy to launder it. The create body
-   * has nothing to clear, so omission loses no meaning — unlike {@link getChangedFields}, where
-   * `null` is how an update erases a stored value.
+   * (`CreateItxRegistrantRequestBody`). Nothing downstream launders a stray `null` — the BFF's only
+   * such drop is `committee_uid`-specific, on the v2 → v1 resolution path — so a `null` here reaches
+   * upstream verbatim. The create body has nothing to clear, so omission loses no meaning — unlike
+   * {@link getChangedFields}, where `null` is how an update erases a stored value.
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {

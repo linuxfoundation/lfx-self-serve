@@ -554,6 +554,19 @@ export interface MeetingRegistrant {
  * @description Data required to add a new registrant to a meeting
  */
 export interface CreateMeetingRegistrantRequest {
+  /*
+   * Every optional field is typed without `| null`: upstream declares them all as non-nullable
+   * optional `string`s in `CreateItxRegistrantRequestBody`, and nothing between here and there
+   * launders a `null` — the BFF's one such drop is `committee_uid`-specific — so a `null` would reach
+   * upstream verbatim. Keeping it out of the type is what makes omission enforceable at compile time
+   * rather than a convention each caller has to remember. A create has nothing to clear, so omission
+   * loses no meaning — unlike `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a
+   * stored value.
+   *
+   * Note that three of these names differ from the wire: the BFF renames `org_name` → `org`,
+   * `avatar_url` → `profile_picture` and `occurrence_id` → `occurrence` before proxying, so this
+   * interface follows the app's read model (the v1 query-service index) rather than the ITX body.
+   */
   /** UUID of the meeting */
   meeting_id: string;
   /** User's email address */
@@ -565,22 +578,20 @@ export interface CreateMeetingRegistrantRequest {
   /** Whether user should have host access */
   host?: boolean;
   /** User's job title */
-  job_title?: string | null;
+  job_title?: string;
   /** User's organization */
-  org_name?: string | null;
+  org_name?: string;
   /** Specific occurrence ID to invite to (blank = all occurrences) */
-  occurrence_id?: string | null;
+  occurrence_id?: string;
   /** User's avatar URL */
-  avatar_url?: string | null;
+  avatar_url?: string;
   /** User's LFID */
-  username?: string | null;
+  username?: string;
   /**
    * Committee this registrant was added from, as a **v2** committee UID.
    * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
-   * resolves v2 → v1 before proxying. Omit for a directly-added guest: upstream declares the field a
-   * non-nullable optional `string`, so `null` is off-contract and the BFF drops the key rather than
-   * forwarding it. Typed without `| null` so that's enforceable at compile time for internal callers —
-   * the BFF's runtime drop stays as a guard for bodies it doesn't build itself.
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest, as for every other optional
+   * field on this body.
    */
   committee_uid?: string;
 }

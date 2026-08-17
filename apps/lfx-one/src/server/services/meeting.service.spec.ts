@@ -278,3 +278,68 @@ describe('MeetingService.getPastOccurrencesForMeeting', () => {
     expect(result).toEqual([]);
   });
 });
+
+/**
+ * The ITX registrant contract (`CreateItxRegistrantRequestBody`, reused verbatim for the PUT) declares
+ * `org`, `profile_picture` and `occurrence`; the app's read model — sourced from the v1 query-service
+ * index — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa ignores undeclared body keys,
+ * so without the rename these three were dropped upstream behind a 200.
+ */
+describe('MeetingService registrant write payloads', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue({});
+    service = new MeetingService();
+  });
+
+  const bodyOf = (): Record<string, unknown> => proxyRequest.mock.calls[0][5] as Record<string, unknown>;
+
+  it('renames org_name, avatar_url and occurrence_id on create', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+    });
+
+    expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+    expect(bodyOf()).not.toHaveProperty('org_name');
+    expect(bodyOf()).not.toHaveProperty('avatar_url');
+    expect(bodyOf()).not.toHaveProperty('occurrence_id');
+  });
+
+  it('drops meeting_id from the create body, since it is the path parameter', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants');
+    expect(bodyOf()).not.toHaveProperty('meeting_id');
+  });
+
+  it('omits the renamed keys entirely when the caller omitted them', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+
+    expect(bodyOf()).toEqual({ email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+  });
+
+  // The update body uses `null` to erase a stored value, so the rename has to preserve it rather than
+  // treat it like an omission.
+  it('renames on update and preserves an explicit null', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: null,
+      avatar_url: null,
+      occurrence_id: null,
+    });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
+    expect(bodyOf()).toMatchObject({ org: null, profile_picture: null, occurrence: null });
+  });
+});
