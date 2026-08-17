@@ -692,10 +692,10 @@ export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
  * bounds and small enough that nothing unbounded reaches upstream or the logs.
  *
  * Two rules, both keyed off this one number. The free-text fields — first/last name, job title,
- * organization, occurrence ID — are truncated at the cap. The identity keys, `email` and `meeting_id`,
+ * organization — are truncated at the cap. The identifiers, `meeting_id`, `email` and `occurrence_id`,
  * are rejected with a validation error instead, since truncating one would turn an unusable value into
- * a different, valid-looking one: an invite sent to the wrong address, or a lookup against the wrong
- * meeting.
+ * a different, valid-looking one: a lookup against the wrong meeting, an invite sent to the wrong
+ * address, or a registration scoped to the wrong occurrence.
  */
 export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
 

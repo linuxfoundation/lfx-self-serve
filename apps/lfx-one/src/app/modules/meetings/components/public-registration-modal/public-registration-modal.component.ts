@@ -9,6 +9,7 @@ import { OrganizationSearchComponent } from '@components/organization-search/org
 import { MeetingRegistrant, User } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -90,9 +91,13 @@ export class PublicRegistrationModalComponent {
             });
             this.ref.close({ registered: true, registrant });
           },
-          error: (error: any) => {
+          error: (error: unknown) => {
             this.submitting.set(false);
-            const errorMessage = error?.error?.message || 'Failed to register for this meeting';
+            // `error?.error?.message` never matched: the server's error body is `{ error, code }` with
+            // no `message` key (`BaseApiError.toResponse`), so every failure showed the fallback and a
+            // registrant was never told which field was wrong. `extractErrorMessage` reads `message`
+            // then `error`, so a validation message reaches the toast.
+            const errorMessage = extractErrorMessage(error, 'Failed to register for this meeting');
             this.messageService.add({
               severity: 'error',
               summary: 'Registration Failed',

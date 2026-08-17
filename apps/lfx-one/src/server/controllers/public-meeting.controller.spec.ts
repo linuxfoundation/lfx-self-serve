@@ -546,7 +546,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(forwardedBody()).toMatchObject({ email: 'a@example.com', first_name: 'A', org_name: 'Acme' });
   });
 
-  it.each(['first_name', 'last_name', 'job_title', 'org_name', 'occurrence_id'])('caps %s so nothing unbounded reaches upstream', async (field) => {
+  it.each(['first_name', 'last_name', 'job_title', 'org_name'])('caps %s so nothing unbounded reaches upstream', async (field) => {
     const { req, res, next } = buildRegisterReqRes({ ...validBody, [field]: 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH * 2) });
 
     await controller.registerForPublicMeeting(req, res, next);
@@ -555,13 +555,17 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(forwardedBody()[field]).toHaveLength(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
   });
 
-  // The two identity keys are rejected rather than capped: truncating one would turn an unusable value
-  // into a different, valid-looking one — an invite to the wrong address, or a lookup against the wrong
-  // meeting. The error has to name the field, or a caller that did send an email is told it was
-  // missing.
+  // The three identifiers are rejected rather than capped: truncating one would turn an unusable value
+  // into a different, valid-looking one — a lookup against the wrong meeting, an invite to the wrong
+  // address, or a registration scoped to the wrong occurrence.
+  //
+  // Both the field array and the top-level message are asserted. The array alone isn't enough: the
+  // modal renders `error.message` and discards `errors[]`, so a generic message there would leave the
+  // registrant with nothing to act on — which is exactly what the old "Email is required" path did.
   it.each([
     ['email', { email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com` }],
     ['meeting_id', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+    ['occurrence_id', { occurrence_id: '1'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
   ])('rejects an over-length %s by name rather than truncating it', async (field, overrides) => {
     const { req, res, next } = buildRegisterReqRes({ ...validBody, ...overrides });
 
@@ -573,6 +577,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     const error = next.mock.calls[0][0] as ServiceValidationError;
 
     expect(error.validationErrors).toEqual([expect.objectContaining({ field, message: expect.stringContaining(`${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH}`) })]);
+    expect(error.message).toBe(`${field} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`);
   });
 
   // Which occurrences the registration covers is part of what a registrant states about their own

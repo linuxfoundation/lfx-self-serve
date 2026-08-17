@@ -506,24 +506,35 @@ export class PublicMeetingController {
     const registrantData = this.toSelfRegistration(req, req.body);
     const meetingId = registrantData.meeting_id;
 
-    // Reject an over-length identity key rather than truncating it. `toSelfRegistration` caps the
-    // free-text fields, but truncating a meeting UID or an email address would turn an unusable value
-    // into a different, valid-looking one — a lookup against the wrong meeting, or an invite sent to an
-    // address nobody asked for. Rejected by name so the caller isn't told a field it did send was
-    // missing.
+    // Reject an over-length identifier rather than truncating it. `toSelfRegistration` caps the
+    // free-text fields, but truncating one of these three would turn an unusable value into a
+    // different, valid-looking one: a lookup against the wrong meeting, an invite sent to an address
+    // nobody asked for, or a registration scoped to the wrong occurrence. Rejected by name so the
+    // caller isn't told a field it did send was missing.
     //
-    // Ahead of `startOperation`, because these two are the only fields that reach it untruncated and it
+    // Ahead of `startOperation`, because these are the only fields that reach it untruncated and it
     // logs `meeting_id` verbatim — checking after would put an unbounded value in the logs, which is
     // exactly what the cap exists to prevent. `apiErrorHandler` logs the rejection centrally.
-    const overLength = Object.entries({ meeting_id: meetingId, email: registrantData.email }).filter(
-      ([, value]) => value.length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH
-    );
+    //
+    // Length is measured on the stored form rather than the submitted one — `email` is already
+    // lowercased here, and lowercasing can lengthen a value for a handful of Unicode code points. The
+    // stored form is what has to fit, so that's what's checked.
+    const overLength = Object.entries({
+      meeting_id: meetingId,
+      email: registrantData.email,
+      occurrence_id: registrantData.occurrence_id ?? '',
+    }).filter(([, value]) => value.length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
 
     if (overLength.length > 0) {
+      const fields = overLength.map(([field]) => field);
+
       return next(
         ServiceValidationError.fromFieldErrors(
-          Object.fromEntries(overLength.map(([field]) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
-          'Registration data validation failed',
+          Object.fromEntries(fields.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
+          // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
+          // endpoint renders `error.message` and discards the field array, so a generic "validation
+          // failed" here would leave the registrant with no idea which field to shorten.
+          `${fields.join(', ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
@@ -645,9 +656,10 @@ export class PublicMeetingController {
    * for in the first place. `email` is lowercased for the same reason, since query-service matching is
    * case-sensitive and every read path lowercases.
    *
-   * `email` and `meeting_id` are trimmed but not truncated, unlike the free-text fields — truncating
-   * an identity key would turn an unusable value into a different, valid-looking one. The caller
-   * rejects an over-length one by name instead, so the response says what was actually wrong.
+   * The three identifiers — `meeting_id`, `email` and `occurrence_id` — are trimmed but not truncated,
+   * unlike the free-text fields, because truncating one would turn an unusable value into a different,
+   * valid-looking one. The caller rejects an over-length one by name instead, so the response says
+   * what was actually wrong.
    *
    * What this doesn't close: `email` is the one field here that can't be self-asserted, so anyone can
    * register a third party's address for a public meeting and trigger an invite to it — and when the
@@ -658,14 +670,14 @@ export class PublicMeetingController {
   private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;
     const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '');
-    // Identity keys are narrowed and trimmed but never truncated — see the length branch in
+    // Identifiers are narrowed and trimmed but never truncated — see the length branch in
     // `registerForPublicMeeting`, which rejects them by name instead.
     const identity = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
     const sessionUsername = getEffectiveUsername(req);
     const username = sessionUsername ? stripAuthPrefix(sessionUsername) : '';
     const jobTitle = text('job_title');
     const orgName = text('org_name');
-    const occurrenceId = text('occurrence_id');
+    const occurrenceId = identity('occurrence_id');
 
     return {
       meeting_id: identity('meeting_id'),
