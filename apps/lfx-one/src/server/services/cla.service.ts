@@ -151,12 +151,32 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
   return [...emails].slice(0, MAX_CLA_EMAILS);
 }
 
+// Every `ClaStatus` the UI can label. `superseded` is declared but unproduced today; it is
+// accepted here so that shipping it upstream needs no consumer change. Anything else is a
+// contract break on the producer's side and must not reach the template, where the label and
+// severity helpers are exhaustive switches with no fallthrough — an unrecognised value would
+// render an unlabelled, severity-less pill.
+const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'invalidated', 'unknown', 'superseded']);
+
+/** Narrows the wire `status` to `ClaStatus`, or null when it is absent or out of contract. */
+function asClaStatus(status: string | undefined): ClaStatus | null {
+  return status !== undefined && KNOWN_CLA_STATUSES.has(status) ? (status as ClaStatus) : null;
+}
+
 /**
  * Maps an upstream `my-cla` record to the UI view model.
  *
- * Status and reason are copied from the producer. Do not recompute from
- * `approved`/`valid`. An ICLA never surfaces `needs_attention` or `unknown`
- * even if a spurious reason is present on the wire.
+ * `status` and `statusReason` are the producer's: neither is derived from
+ * `approved`/`valid` for a record that honours the contract. Two out-of-contract
+ * inputs are corrected rather than forwarded:
+ *
+ * - An ICLA carries no coverage dimension, so `needs_attention` / `unknown`
+ *   cannot describe one. Such a row collapses to the binary ICLA standing —
+ *   `valid` when `approved`, else `invalidated` — and drops its reason. This is
+ *   the one place `approved` is consulted, and only for a row the producer
+ *   should never have emitted.
+ * - A `status` outside `ClaStatus` becomes `unknown`, which the UI renders as
+ *   an em dash rather than an unlabelled pill, and its reason is dropped with it.
  */
 export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
   const isIcla = cla.claType === 'icla';
@@ -166,8 +186,12 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
       ? `${cla.documentMajorVersion}${cla.documentMinorVersion !== undefined ? `.${cla.documentMinorVersion}` : ''}`
       : undefined;
 
-  let status: ClaStatus = cla.status as ClaStatus;
-  let statusReason = cla.statusReason;
+  const wireStatus = asClaStatus(cla.status);
+
+  let status: ClaStatus = wireStatus ?? 'unknown';
+  // A reason qualifies the status it shipped with, so an out-of-contract status invalidates it too;
+  // keeping it would pair an em dash with a sentence explaining a coverage miss.
+  let statusReason = wireStatus === null ? undefined : cla.statusReason;
   if (isIcla) {
     statusReason = undefined;
     if (status === 'needs_attention' || status === 'unknown') {
