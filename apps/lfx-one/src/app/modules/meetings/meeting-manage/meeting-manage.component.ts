@@ -965,6 +965,9 @@ export class MeetingManageComponent {
         return { context, isFoundation: meeting.is_foundation === true };
       }),
       catchError((error) => {
+        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
+        // NavigationEnd re-apply can attempt the fresh fetch again.
+        this.contextFallbackRetried.delete(entity.uid);
         console.warn(`Unable to resolve project context for meeting ${entity.uid}:`, error);
         return of(null);
       })

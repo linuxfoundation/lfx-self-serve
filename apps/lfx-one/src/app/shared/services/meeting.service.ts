@@ -207,7 +207,10 @@ export class MeetingService {
    * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
    * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
    * write (updateMeeting/deleteMeeting). Pass `skipCache` to force a fresh fetch when a caller
-   * needs enrichment that a cached payload may predate.
+   * needs enrichment that a cached payload may predate. `skipCache` replaces the cache entry with
+   * the new `request$` rather than invalidating — callers already subscribed to the prior
+   * `shareReplay(1)` observable continue to completion with the old payload, so racing
+   * `skipCache` callers can still observe a stale result.
    */
   public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
