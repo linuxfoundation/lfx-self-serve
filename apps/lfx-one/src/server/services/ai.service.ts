@@ -365,9 +365,23 @@ export class AiService {
     }
   }
 
+  /**
+   * Every descriptor beyond the meeting type is optional — the composer can invoke the helper from
+   * any section (and from Quick create) before a title or project is set, so each clause is only
+   * appended when there's something to say.
+   */
   private buildPrompt(request: GenerateAgendaRequest): string {
     let prompt = `Generate a meeting agenda for a ${this.getMeetingTypeDescription(request.meetingType)} meeting`;
-    prompt += ` titled "${request.title}" for the ${request.projectName} project.`;
+
+    if (request.title) {
+      prompt += ` titled "${request.title}"`;
+    }
+
+    if (request.projectName) {
+      prompt += ` for the ${request.projectName} project`;
+    }
+
+    prompt += '.';
 
     if (request.context) {
       prompt += ` Additional context: ${request.context}`;
@@ -382,7 +396,8 @@ export class AiService {
     return prompt;
   }
 
-  private getMeetingTypeDescription(meetingType: MeetingType): string {
+  /** `default` also covers an unset type — the helper is reachable before one is chosen. */
+  private getMeetingTypeDescription(meetingType?: MeetingType): string {
     switch (meetingType) {
       case MeetingType.BOARD:
         return 'board governance';

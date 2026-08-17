@@ -90,6 +90,47 @@ describe('MeetingController', () => {
     next = vi.fn();
   });
 
+  describe('generateAgenda', () => {
+    beforeEach(() => {
+      aiSvc.generateMeetingAgenda.mockResolvedValue({ agenda: 'Roll call', estimatedDuration: 30 });
+    });
+
+    // GH-1464: the composer surfaces the helper from any section and from Quick create, so it can
+    // be invoked before a title / type / project exist. Those must not be hard requirements.
+    it('generates from a free-text goal alone, with no title, type, or project', async () => {
+      const req = buildReq({ body: { context: 'Plan the Q3 release' } });
+
+      await controller.generateAgenda(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ context: 'Plan the Q3 release', title: undefined, meetingType: undefined, projectName: undefined })
+      );
+    });
+
+    it('generates from a title alone, with no goal', async () => {
+      await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly' } }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'TAC Monthly' }));
+    });
+
+    it('rejects only when neither a title nor a goal is provided', async () => {
+      await controller.generateAgenda(buildReq({ body: { projectName: 'ASWF' } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+    });
+
+    // The controller used to drop maxCharacters, so the client's agenda cap never reached the model.
+    it('forwards the caller-supplied maxCharacters cap', async () => {
+      await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', maxCharacters: 1200 } }), buildRes(), next);
+
+      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxCharacters: 1200 }));
+    });
+  });
+
   describe('addMeetingRegistrants', () => {
     beforeEach(() => {
       meetingSvc.addMeetingRegistrant.mockImplementation((_req: Request, registrant: Record<string, unknown>) => Promise.resolve(registrant));

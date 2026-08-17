@@ -1493,15 +1493,16 @@ export class MeetingController {
     });
 
     try {
-      const { meetingType, title, projectName, context } = req.body;
+      const { meetingType, title, projectName, context, maxCharacters } = req.body;
 
-      // Validate required fields
-      if (!meetingType || !title || !projectName) {
+      // The composer reaches this helper from any section and from Quick create, so title / type /
+      // project are not guaranteed to be filled in yet. Only require enough signal to write a
+      // useful agenda — a title or a free-text context — and let the prompt builder omit the rest.
+      if (!title && !context) {
         const validationError = ServiceValidationError.fromFieldErrors(
           {
-            meetingType: !meetingType ? 'Meeting type is required' : [],
-            title: !title ? 'Title is required' : [],
-            projectName: !projectName ? 'Project name is required' : [],
+            title: 'Provide a meeting title or describe what the meeting is for',
+            context: 'Provide a meeting title or describe what the meeting is for',
           },
           'Agenda generation validation failed',
           {
@@ -1519,10 +1520,18 @@ export class MeetingController {
         title,
         projectName,
         context,
+        maxCharacters,
       });
 
+      // Usage telemetry: the helper is far more discoverable in the composer than it was in the
+      // wizard, so track how it's actually being invoked (and how much it costs) per request.
       logger.success(req, 'generate_agenda', startTime, {
         estimated_duration: response.estimatedDuration,
+        meeting_type: meetingType || null,
+        has_title: !!title,
+        has_project_name: !!projectName,
+        has_context: !!context,
+        agenda_length: response.agenda.length,
       });
 
       res.json(response);

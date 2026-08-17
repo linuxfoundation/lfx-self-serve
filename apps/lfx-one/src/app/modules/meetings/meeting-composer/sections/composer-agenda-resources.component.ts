@@ -133,16 +133,25 @@ export class ComposerAgendaResourcesComponent {
     const meetingType = this.meetingType();
     const project = this.projectContextService.activeContext();
 
-    if (!project || !title || !meetingType || !context) {
+    // Only a goal is strictly required — the helper is reachable from any section (and from Quick
+    // create), so the title, type, and project may legitimately not be filled in yet. The backend
+    // drops the missing descriptors from the prompt rather than rejecting the request.
+    if (!context) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Missing information',
-        detail: 'Add the meeting title and type, and describe the goal, before generating an agenda.',
+        detail: 'Describe what the meeting is for before generating an agenda.',
       });
       return;
     }
 
-    const request: GenerateAgendaRequest = { meetingType, title, projectName: project.name, context, maxCharacters: MEETING_AGENDA_MAX_LENGTH };
+    const request: GenerateAgendaRequest = {
+      ...(meetingType ? { meetingType } : {}),
+      ...(title ? { title } : {}),
+      ...(project ? { projectName: project.name } : {}),
+      context,
+      maxCharacters: MEETING_AGENDA_MAX_LENGTH,
+    };
 
     this.isGeneratingAgenda.set(true);
     this.meetingService

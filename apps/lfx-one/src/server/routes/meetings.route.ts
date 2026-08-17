@@ -4,6 +4,7 @@
 import express, { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
+import { aiRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -73,7 +74,9 @@ router.put('/:uid/attachments/:attachmentId', (req, res, next) => meetingControl
 
 router.delete('/:uid/attachments/:attachmentId', (req, res, next) => meetingController.deleteMeetingAttachment(req, res, next));
 
-// AI agenda generation endpoint
-router.post('/generate-agenda', (req, res, next) => meetingController.generateAgenda(req, res, next));
+// AI agenda generation endpoint. The composer surfaces this helper from every section and from
+// Quick create, so it's reachable far more often than the old wizard's single Details step —
+// rate-limited per user on top of the global /api limiter.
+router.post('/generate-agenda', aiRateLimiter, (req, res, next) => meetingController.generateAgenda(req, res, next));
 
 export default router;
