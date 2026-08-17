@@ -117,7 +117,7 @@ describe('clas router — Sign CLA hand-off during impersonation', () => {
   });
 
   it.each([
-    ['My CLAs list', '/api/me/clas'],
+    ['CLAs list', '/api/me/clas'],
     ['PDF URL', '/api/me/clas/sig-1/pdf-url'],
     ['CLA group options', '/api/me/clas/sign-options'],
   ])('keeps %s readable while impersonating', async (_label, path) => {
