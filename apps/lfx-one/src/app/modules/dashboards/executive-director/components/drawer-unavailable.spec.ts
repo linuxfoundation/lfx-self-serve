@@ -35,7 +35,16 @@ describe('ED drill-down drawers — a failed request must not read as no activit
   // Each drawer's own zero-filled empty shape, i.e. exactly what the parent passes when
   // the response is undefined. The assertions below turn ONLY `unavailable` on and off,
   // so any difference in output is attributable to that input alone.
-  const drawers: { name: string; component: Type<unknown>; inputs: Record<string, unknown>; measuredCopy: string }[] = [
+  const drawers: {
+    name: string;
+    component: Type<unknown>;
+    inputs: Record<string, unknown>;
+    measuredCopy: string;
+    // A NON-zero shape for the same drawer, plus a figure that must not survive on screen.
+    // Zero-filled fixtures alone cannot tell a suppressed body from one rendering zeros —
+    // that blind spot let two drawers ship their stats above the "unavailable" banner.
+    nonZero?: { inputs: Record<string, unknown>; staleFigure: string };
+  }[] = [
     {
       name: 'Sentiment',
       component: BrandHealthDrawerComponent,
@@ -140,6 +149,29 @@ describe('ED drill-down drawers — a failed request must not read as no activit
         // own zero-filled default, and passing undefined would exercise a state the parent
         // cannot produce.
       },
+      nonZero: {
+        staleFigure: '1,234',
+        inputs: {
+          data: {
+            totalMembers: 1234,
+            totalMembersMonthlyData: [1234],
+            totalMembersMonthlyLabels: ['Jan'],
+            newMembersThisQuarter: 12,
+            newMemberRevenue: 500000,
+            changePercentage: 8,
+            trend: 'up',
+            quarterlyData: [{ quarter: 'Q1', newMembers: 12, revenue: 500000 }],
+          },
+          retentionData: {
+            renewalRate: 92.5,
+            netRevenueRetention: 104.2,
+            changePercentage: 3,
+            trend: 'up',
+            target: 90,
+            monthlyData: [{ label: 'Jan', value: 92.5 }],
+          },
+        },
+      },
     },
     {
       name: 'Retention',
@@ -147,6 +179,19 @@ describe('ED drill-down drawers — a failed request must not read as no activit
       measuredCopy: 'No retention activity detected',
       inputs: {
         data: { renewalRate: 0, netRevenueRetention: 0, changePercentage: 0, trend: 'up', target: 0, monthlyData: [] },
+      },
+      nonZero: {
+        staleFigure: '92.5',
+        inputs: {
+          data: {
+            renewalRate: 92.5,
+            netRevenueRetention: 104.2,
+            changePercentage: 3,
+            trend: 'up',
+            target: 90,
+            monthlyData: [{ label: 'Jan', value: 92.5 }],
+          },
+        },
       },
     },
   ];
@@ -244,6 +289,24 @@ describe('ED drill-down drawers — a failed request must not read as no activit
     fixture.destroy();
     TestBed.resetTestingModule();
   });
+
+  // The case the zero-filled fixtures structurally cannot make: real figures in the drawer
+  // while `unavailable` is true. Two drawers rendered their summary stats ABOVE the
+  // "Data unavailable" banner — "0.0% retention" and "0 members" in 2xl type beside copy
+  // saying the data could not be loaded — and every zero-filled assertion still passed,
+  // because a suppressed body and a body full of zeros contain no distinguishing text.
+  for (const { name, component, nonZero } of drawers.filter((d) => d.nonZero)) {
+    it(`${name}: suppresses the stat body, not just the caption, when the request failed`, async () => {
+      const fixture = await render(component, nonZero!.inputs, true);
+      const text = document.body.textContent ?? '';
+
+      expect(text).toContain(DRAWER_UNAVAILABLE_HEADING);
+      expect(text).not.toContain(nonZero!.staleFigure);
+
+      fixture.destroy();
+      TestBed.resetTestingModule();
+    });
+  }
 
   for (const { name, component, inputs, measuredCopy } of drawers) {
     it(`${name}: says the data could not be loaded when the request failed`, async () => {

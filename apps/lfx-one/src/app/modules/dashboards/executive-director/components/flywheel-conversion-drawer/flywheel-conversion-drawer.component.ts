@@ -7,7 +7,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DASHBOARD_TOOLTIP_CONFIG, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, createHorizontalBarChartOptions, createLineChartOptions, lfxColors } from '@lfx-one/shared/constants';
+import {
+  DASHBOARD_TOOLTIP_CONFIG,
+  DRAWER_UNAVAILABLE_BODY,
+  DRAWER_UNAVAILABLE_HEADING,
+  createHorizontalBarChartOptions,
+  createLineChartOptions,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import {
   buildFlywheelKeyInsights,
   buildFlywheelRecommendedActions,

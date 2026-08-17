@@ -430,7 +430,16 @@ export class MarketingOverviewComponent {
       foundation$.pipe(
         switchMap((slug) =>
           forkJoin({
-            flywheel: safe('flywheel', this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? EMPTY_ED_EVOLUTION_DATA.flywheel))),
+            // getFlywheelConversion is the one service here that swallows its own HTTP error
+            // into of(null), so safe()'s catchError never fires for it and this map is the
+            // real failure path. Coalesce to undefined explicitly rather than through
+            // EMPTY_ED_EVOLUTION_DATA.flywheel — that now IS undefined, which hides the
+            // dependency and lets a later "cleanup" put null into a field typed
+            // FlywheelConversionResponse | undefined.
+            flywheel: safe<FlywheelConversionResponse | undefined>(
+              'flywheel',
+              this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? undefined))
+            ),
             memberAcquisition: safe('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
             memberRetention: safe('memberRetention', this.analyticsService.getMemberRetention(slug)),
             engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),

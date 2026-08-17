@@ -210,7 +210,7 @@
 <lfx-member-acquisition-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberAcquisition"
   [data]="memberAcquisitionData()"
-  [unavailable]="!edEvolutionData().memberAcquisition"
+  [unavailable]="!edEvolutionData().memberAcquisition || !edEvolutionData().memberRetention"
   [retentionData]="memberRetentionData()"
   [revenueImpactData]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-member-acquisition-drawer>

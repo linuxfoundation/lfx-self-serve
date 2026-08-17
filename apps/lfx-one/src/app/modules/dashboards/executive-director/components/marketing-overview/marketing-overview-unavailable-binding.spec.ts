@@ -25,34 +25,15 @@ import { EngagedCommunityDrawerComponent } from '../engaged-community-drawer/eng
  * failable drawers in the real template use this identical shape.
  */
 @Component({
+  selector: 'lfx-unavailable-binding-host',
   imports: [EngagedCommunityDrawerComponent],
-  template: `<lfx-engaged-community-drawer
-    [visible]="true"
-    [data]="data()"
-    [brandReachData]="brandReach"
-    [unavailable]="!response()"></lfx-engaged-community-drawer>`,
+  template: `<lfx-engaged-community-drawer [visible]="true" [data]="data()" [brandReachData]="brandReach" [unavailable]="!response()" />`,
 })
 class BindingHostComponent {
   // Mirrors the parent: `response` is the raw `| undefined` field off EdEvolutionData, and
   // `data` is the drawer-facing computed that substitutes an empty shape for the drawer's
   // non-optional input. The drawer therefore CANNOT infer the failure from `data` alone.
   public readonly response = signal<EngagedCommunitySizeResponse | undefined>(undefined);
-  public readonly data = (): EngagedCommunitySizeResponse =>
-    this.response() ?? {
-      totalMembers: 0,
-      changePercentage: 0,
-      trend: 'up',
-      breakdown: {
-        newsletterSubscribers: 0,
-        communityMembers: 0,
-        workingGroupMembers: 0,
-        certifiedIndividuals: 0,
-        webVisitors: 0,
-        codeContributors: 0,
-        trainingEnrollees: 0,
-      },
-      monthlyData: [],
-    };
   public readonly brandReach = {
     totalSocialFollowers: 0,
     totalMonthlySessions: 0,
@@ -64,6 +45,26 @@ class BindingHostComponent {
     websiteDomains: [],
     weeklyTrend: [],
   };
+
+  public data(): EngagedCommunitySizeResponse {
+    return (
+      this.response() ?? {
+        totalMembers: 0,
+        changePercentage: 0,
+        trend: 'up',
+        breakdown: {
+          newsletterSubscribers: 0,
+          communityMembers: 0,
+          workingGroupMembers: 0,
+          certifiedIndividuals: 0,
+          webVisitors: 0,
+          codeContributors: 0,
+          trainingEnrollees: 0,
+        },
+        monthlyData: [],
+      }
+    );
+  }
 }
 
 describe('Marketing Overview — the unavailable binding carries a failed response to the drawer', () => {

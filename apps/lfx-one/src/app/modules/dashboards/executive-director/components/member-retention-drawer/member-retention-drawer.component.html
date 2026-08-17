@@ -28,36 +28,40 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="member-retention-drawer-content">
-    <!-- Summary Stats -->
-    <div class="flex gap-4" data-testid="member-retention-drawer-stats">
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Renewal Rate</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ data().renewalRate | number: '1.1-1' }}%</span>
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Net Revenue Retention</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ data().netRevenueRetention | number: '1.1-1' }}%</span>
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Growth</span>
-          @if (data().changePercentage !== 0) {
-            <div class="flex items-center gap-2">
-              <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage | number: '1.1-1' }}%
-              </span>
-              <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
-            </div>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-500">0%</span>
-          }
-        </div>
-      </lfx-card>
-    </div>
+    <!-- Summary Stats — suppressed when the request failed: these render from the parent's
+         zero-filled fallback, so leaving them visible puts "0.0% retention" in 2xl type above
+         the banner saying the data could not be loaded. -->
+    @if (!unavailable()) {
+      <div class="flex gap-4" data-testid="member-retention-drawer-stats">
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Renewal Rate</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ data().renewalRate | number: '1.1-1' }}%</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Net Revenue Retention</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ data().netRevenueRetention | number: '1.1-1' }}%</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Growth</span>
+            @if (data().changePercentage !== 0) {
+              <div class="flex items-center gap-2">
+                <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                  {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage | number: '1.1-1' }}%
+                </span>
+                <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+              </div>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-500">0%</span>
+            }
+          </div>
+        </lfx-card>
+      </div>
+    }
 
     <!-- FIRST FOLD: Needs Your Attention -->
     @if (attentionActions().length > 0 || attentionInsights().length > 0) {
