@@ -85,7 +85,7 @@
                       optionLabel="label"
                       optionValue="value"
                       placeholder="Month"
-                      ariaLabel="Start month"
+                      [ariaLabel]="'Start month, ' + org.organization + ' period ' + ($index + 1)"
                       styleClass="w-full"
                       size="small"
                       appendTo="body"
@@ -98,7 +98,7 @@
                       optionLabel="label"
                       optionValue="value"
                       placeholder="Year"
-                      ariaLabel="Start year"
+                      [ariaLabel]="'Start year, ' + org.organization + ' period ' + ($index + 1)"
                       styleClass="w-full"
                       size="small"
                       appendTo="body"
@@ -123,7 +123,7 @@
                         optionLabel="label"
                         optionValue="value"
                         placeholder="Month"
-                        ariaLabel="End month"
+                        [ariaLabel]="'End month, ' + org.organization + ' period ' + ($index + 1)"
                         styleClass="w-full"
                         size="small"
                         appendTo="body"
@@ -136,7 +136,7 @@
                         optionLabel="label"
                         optionValue="value"
                         placeholder="Year"
-                        ariaLabel="End year"
+                        [ariaLabel]="'End year, ' + org.organization + ' period ' + ($index + 1)"
                         styleClass="w-full"
                         size="small"
                         appendTo="body"
@@ -150,6 +150,7 @@
                       [ngModel]="period.isPresent"
                       (ngModelChange)="updatePeriodField(org.organization, period.id, 'isPresent', $event)"
                       [binary]="true"
+                      [ariaLabel]="'Currently affiliated (present), ' + org.organization + ' period ' + ($index + 1)"
                       [attr.data-testid]="'period-present-' + period.id" />
                     <span class="text-xs font-medium text-slate-600">Present</span>
                   </div>
@@ -159,8 +160,9 @@
                     <button
                       class="ml-auto flex h-7 w-7 cursor-pointer items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                       (click)="removePeriod(org.organization, period.id)"
+                      [attr.aria-label]="'Remove period, ' + org.organization + ' period ' + ($index + 1)"
                       [attr.data-testid]="'period-remove-' + period.id">
-                      <i class="fa-light fa-trash-can text-xs"></i>
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
                     </button>
                   }
                 </div>
