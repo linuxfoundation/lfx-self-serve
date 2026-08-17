@@ -59,18 +59,22 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
         return;
       }
 
+      // The two route files this middleware gates name the foundation/project differently
+      // (`analytics.route.ts` reads `foundationSlug`, `campaign.controller.ts` reads `project`);
+      // each caller lists its own primary param first purely for logging clarity — in practice a
+      // request only ever sets one of the two, so the fallback order never has to arbitrate.
       const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
 
       // No slug to scope against — the route handler is responsible for rejecting a missing
       // required parameter. Without ED/root access there is nothing left to authorize on.
       if (!requestedSlug) {
-        denyMarketingAccess(req, next, operation, access);
+        denyMarketingAccess(req, next, operation, access, 'no_slug');
         return;
       }
 
       const { uid, exists } = await projectService.getProjectIdBySlug(req, requestedSlug);
       if (!exists) {
-        denyMarketingAccess(req, next, operation, access);
+        denyMarketingAccess(req, next, operation, access, 'project_not_found');
         return;
       }
 
@@ -80,16 +84,21 @@ function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryP
         return;
       }
 
-      denyMarketingAccess(req, next, operation, access);
+      denyMarketingAccess(req, next, operation, access, 'no_grant');
     } catch (error) {
       next(error);
     }
   };
 }
 
-function denyMarketingAccess(req: Request, next: NextFunction, operation: string, access: MarketingAccessType): void {
-  logger.warning(req, operation, `User denied marketing-ops access (${access})`, {
+type DenyReason = 'no_slug' | 'project_not_found' | 'no_grant';
+
+// `apiErrorHandler` logs every rejected request centrally (ADR 0002); this only adds the
+// triage detail — which of the three deny paths fired — that the generic error log can't carry.
+function denyMarketingAccess(req: Request, next: NextFunction, operation: string, access: MarketingAccessType, reason: DenyReason): void {
+  logger.debug(req, operation, `Denying marketing-ops access (${access})`, {
     path: req.path,
+    reason,
   });
 
   next(
