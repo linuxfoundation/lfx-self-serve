@@ -85,7 +85,7 @@ describe('ProfileClasComponent', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>).map((th) => th.textContent?.trim() ?? '');
   }
 
-  it('renders Valid / Needs attention / Invalidated with the matching severities', async () => {
+  it('renders Valid / Needs attention / Revoked with the matching severities', async () => {
     await render([
       agreement({ id: 's-valid', status: 'valid' }),
       agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', pdfAvailable: false, companyName: 'Acme' }),
@@ -96,7 +96,8 @@ describe('ProfileClasComponent', () => {
     expect(statusTag('s-valid').severity()).toBe('success');
     expect(statusTag('s-attn').value()).toBe('Needs attention');
     expect(statusTag('s-attn').severity()).toBe('warn');
-    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    // Wire token `invalidated`, reviewed copy "Revoked".
+    expect(statusTag('s-inv').value()).toBe('Revoked');
     expect(statusTag('s-inv').severity()).toBe('danger');
   });
 
@@ -154,7 +155,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     expect(statusTag('s-icla').value()).toBe('Valid');
-    expect(statusTag('s-inv').value()).toBe('Invalidated');
+    expect(statusTag('s-inv').value()).toBe('Revoked');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent).not.toContain('Needs attention');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent?.trim()).not.toBe('—');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-icla"]')).toBeNull();

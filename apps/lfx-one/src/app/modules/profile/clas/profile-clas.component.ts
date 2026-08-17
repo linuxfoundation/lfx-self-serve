@@ -52,7 +52,7 @@ interface ClaRow {
 
 /**
  * "My CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
- * from `/v4/my-clas` with a status column (Valid / Needs attention / Invalidated /
+ * from `/v4/my-clas` with a status column (Valid / Needs attention / Revoked /
  * unknown as plain-text —) and a per-row actions menu. Status and reason are
  * copied from the producer; this component does not derive standing from
  * `approved`/`valid`.

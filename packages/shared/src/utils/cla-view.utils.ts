@@ -51,7 +51,14 @@ export function claKindSeverity(kind: MyClaAgreement['kind']): BadgeSeverity {
   return kind === 'ICLA' ? 'info' : 'secondary';
 }
 
-/** Human-readable status label. Exhaustive — a new ClaStatus member fails the build. */
+/**
+ * Human-readable status label. Exhaustive — a new ClaStatus member fails the build.
+ *
+ * `invalidated` reads as "Revoked": once contributors lost the ability to invalidate their own
+ * signature, every `approved = false` row is a system revocation (sanctions/OFAC screening), and
+ * the reviewed copy for that is Revoked — explicitly not "Invalidated", "Canceled" or "Invalid".
+ * The token stays `invalidated` because that is what `GET /v4/my-clas` sends.
+ */
 export function claStatusLabel(status: ClaStatus): string {
   switch (status) {
     case 'valid':
@@ -59,7 +66,7 @@ export function claStatusLabel(status: ClaStatus): string {
     case 'needs_attention':
       return 'Needs attention';
     case 'invalidated':
-      return 'Invalidated';
+      return 'Revoked';
     case 'unknown':
       return '—';
     case 'superseded':
