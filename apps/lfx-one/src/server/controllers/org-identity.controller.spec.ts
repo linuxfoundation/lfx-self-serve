@@ -3,11 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
+const { proxyRequest, proxyRequestWithResponse } = vi.hoisted(() => ({ proxyRequest: vi.fn(), proxyRequestWithResponse: vi.fn() }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
@@ -29,6 +30,7 @@ const rawOrg = { uid: VALID_UID, name: 'Acme', logo_url: 'https://cdn.example.co
 
 beforeEach(() => {
   vi.clearAllMocks();
+  proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: { etag: 'W/"etag-1"' } });
 });
 
 describe('OrgIdentityController.uploadLogo', () => {
@@ -38,6 +40,7 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
@@ -49,6 +52,7 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
@@ -59,11 +63,12 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     await new OrgIdentityController().uploadLogo(req, buildRes(), next);
 
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 
-  it('proxies the raw buffer with a stripped content-type and returns the canonical record', async () => {
+  it('fetches a fresh ETag before uploading and forwards it as If-Match, returning the canonical record', async () => {
     proxyRequest.mockResolvedValue(rawOrg);
     const res = buildRes();
     const body = Buffer.from('binary-image-bytes');
@@ -71,7 +76,11 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     await new OrgIdentityController().uploadLogo(req, res, vi.fn());
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/b2b_orgs/${VALID_UID}/logo`, 'POST', undefined, body, { 'Content-Type': 'image/png' });
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/b2b_orgs/${VALID_UID}`, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/b2b_orgs/${VALID_UID}/logo`, 'POST', undefined, body, {
+      'Content-Type': 'image/png',
+      'If-Match': 'W/"etag-1"',
+    });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ uid: VALID_UID, logoUrl: rawOrg.logo_url }));
   });
@@ -107,6 +116,29 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.json).toHaveBeenCalledWith({ error: 'Unable to upload logo. Please try again.' });
+  });
+
+  it('maps a 412 upstream rejection (org changed since the pre-upload fetch) to a 409 conflict', async () => {
+    proxyRequest.mockRejectedValue(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED', { service: 'member_service' }));
+    const res = buildRes();
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+
+    await new OrgIdentityController().uploadLogo(req, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+  });
+
+  it('maps a 404 from the pre-upload ETag fetch to a 404, without attempting the upload', async () => {
+    proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'member_service' }));
+    const res = buildRes();
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+
+    await new OrgIdentityController().uploadLogo(req, res, vi.fn());
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
   });
 
   it('maps a 408 upstream timeout to a 502', async () => {

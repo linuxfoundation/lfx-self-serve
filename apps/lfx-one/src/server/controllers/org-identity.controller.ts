@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_ORG_LOGO_MIME_TYPES, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, HTTP_HEADERS, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -189,6 +189,17 @@ export class OrgIdentityController {
         });
       }
 
+      // member-service's upload-b2b-org-logo requires If-Match (unlike the sibling org-update
+      // endpoint) so it can detect a concurrent write before it repoints Logo_URL__c — fetch a
+      // fresh ETag immediately beforehand so this request always carries a current one.
+      const { headers: orgHeaders } = await this.microserviceProxy.proxyRequestWithResponse<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(uid)}`,
+        'GET'
+      );
+      const ifMatch = orgHeaders[HTTP_HEADERS.ETAG.toLowerCase()];
+
       const raw = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgResponse>(
         req,
         'LFX_V2_SERVICE',
@@ -196,7 +207,7 @@ export class OrgIdentityController {
         'POST',
         undefined,
         buffer,
-        { 'Content-Type': contentType }
+        { [HTTP_HEADERS.CONTENT_TYPE]: contentType, [HTTP_HEADERS.IF_MATCH]: ifMatch }
       );
 
       const response = this.toCanonicalRecord(raw);
@@ -216,6 +227,11 @@ export class OrgIdentityController {
       }
       if (error instanceof MicroserviceError && error.statusCode === 404) {
         res.status(404).json({ error: 'Organization not found' });
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 412) {
+        logger.warning(req, 'upload_org_logo', 'Upstream rejected with 412 (org changed since the pre-upload fetch)', { err: error });
+        res.status(409).json({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
         return;
       }
       if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {

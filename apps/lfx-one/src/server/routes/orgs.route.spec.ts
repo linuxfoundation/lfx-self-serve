@@ -25,6 +25,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const getAccessAwareOrgs = vi.fn();
 const proxyRequest = vi.fn();
+const proxyRequestWithResponse = vi.fn();
 
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
@@ -34,6 +35,7 @@ vi.mock('../services/org-role-grants.service', () => ({
 vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra' }));
@@ -128,6 +130,7 @@ describe('orgs router — POST /uid/:uid/logo', () => {
   const rawOrg = { uid: UID, name: 'Acme', logo_url: 'https://cdn.example.com/logo.png?v=1' };
 
   it('parses an allowed content type as a raw buffer and proxies it', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: { etag: 'W/"etag-1"' } });
     proxyRequest.mockResolvedValue(rawOrg);
     const body = Buffer.from('fake-png-bytes');
 
@@ -140,6 +143,7 @@ describe('orgs router — POST /uid/:uid/logo', () => {
     expect(res.status).toBe(200);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${UID}/logo`, 'POST', undefined, expect.any(Buffer), {
       'Content-Type': 'image/png',
+      'If-Match': 'W/"etag-1"',
     });
   });
 
