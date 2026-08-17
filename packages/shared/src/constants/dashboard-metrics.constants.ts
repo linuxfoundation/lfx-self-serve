@@ -735,11 +735,17 @@ function attributionCaption(revenueImpact: RevenueImpactResponse): string {
  * Overrides a single-value or dual-signal card's value-bearing fields with the same
  * em-dash placeholder used by unavailableDualSignal, while pending is true.
  *
- * Only Paid Media and Attribution carry an `undefined` sentinel for a failed/pending
- * request — every other card's source field is a non-optional zero-filled object, so
- * without this the pending window renders each of their real-looking values (member
- * counts, session totals, mention counts, etc.) as if they were measured zeros for the
- * newly-selected foundation, the exact defect this PR exists to remove elsewhere.
+ * Now largely redundant, and kept as defence in depth rather than for a known live case.
+ * Every response field on EdEvolutionData is `| undefined`; each card guards on its own
+ * field and renders `placeholderCaption`, which already resolves to "Loading…" while
+ * pending. The pending emission itself (PENDING_ED_EVOLUTION_DATA) carries every field
+ * as undefined and is re-emitted synchronously on each foundation switch, so no card can
+ * be holding a resolved value when pending is true.
+ *
+ * It stays because it is the only enforcement point that does not depend on each card
+ * remembering to consult `pending`: a future card that reads a field without routing its
+ * caption through `placeholderCaption` is still blanked here. Do not narrow it to a list
+ * of card names — that list is what went stale last time.
  */
 function withPendingPlaceholder(card: DashboardMetricCard, pending: boolean): DashboardMetricCard {
   if (!pending) return card;
@@ -940,10 +946,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // unavailable state in that case and never reads this.
   const paidActivity = paidCampaign ? paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0)) : [];
 
-  // Paid Media and Attribution already carry their own undefined-sentinel pending
-  // handling above (paidCampaign/revenueImpact), so they're excluded here to avoid
-  // double-applying the placeholder — everything else has no such sentinel and would
-  // otherwise render its zero-filled PENDING_ED_EVOLUTION_DATA fields as measured data.
+  // Paid Media and Attribution build their pending copy inline rather than through a
+  // shared placeholder, so running withPendingPlaceholder over them would overwrite it.
+  // Every other card tolerates the override because it writes the same em dash and
+  // "Loading…" caption those cards already render for an absent field.
   const selfGuardedDrawerTypes = new Set([DashboardDrawerType.MarketingPaidSocialReach, DashboardDrawerType.RevenueImpact]);
 
   return [
