@@ -4,8 +4,8 @@
 @if (mention(); as mention) {
   <div class="mention-card flex gap-5 p-5" data-testid="mention-card">
     <!-- Stretched link: covers the whole card, sits below the interactive elements -->
-    @if (mention.originalUrl) {
-      <a [href]="mention.originalUrl" target="_blank" rel="noopener noreferrer" class="card-link" aria-label="Open mention" tabindex="0"></a>
+    @if (mention.originalUrl | validExternalUrl; as url) {
+      <a [href]="url" target="_blank" rel="noopener noreferrer" class="card-link" aria-label="Open mention" tabindex="0"></a>
     }
 
     <!-- Left: text content -->
@@ -20,18 +20,20 @@
         <span class="text-gray-300">&middot;</span>
         <span class="text-gray-400">{{ timeAgo() }}</span>
         <span class="text-gray-300">&middot;</span>
-        @if (mention.authorProfileLink) {
-          <a [href]="mention.authorProfileLink" target="_blank" rel="noopener noreferrer" class="card-interactive font-medium text-gray-900 hover:underline">{{
+        @if (mention.authorProfileLink | validExternalUrl; as profileUrl) {
+          <a [href]="profileUrl" target="_blank" rel="noopener noreferrer" class="card-interactive font-medium text-gray-900 hover:underline">{{
             mention.authorName
           }}</a>
         } @else {
           <span class="font-medium text-gray-900">{{ mention.authorName }}</span>
         }
         @if (isReddit() && mention.subreddit) {
-          <span>in</span>
-          <a [href]="mention.originalUrl" target="_blank" rel="noopener noreferrer" class="card-interactive text-gray-500 hover:underline"
-            >r/{{ mention.subreddit }}</a
-          >
+          @if (mention.originalUrl | validExternalUrl; as subredditUrl) {
+            <span>in</span>
+            <a [href]="subredditUrl" target="_blank" rel="noopener noreferrer" class="card-interactive text-gray-500 hover:underline"
+              >r/{{ mention.subreddit }}</a
+            >
+          }
         }
       </div>
 
@@ -103,19 +105,13 @@
       }
     </div>
 
-    <!-- Pinned to the card's bottom-right corner regardless of content height -->
-    @if (mention.originalUrl) {
-      <a
-        [href]="mention.originalUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="icon-btn absolute right-5 bottom-5 z-10"
-        pTooltip="Open original post"
-        tooltipPosition="top"
-        aria-label="Open original post in a new tab"
-        data-testid="mention-card-open-original">
+    <!-- Decorative "open original" affordance pinned to the card's bottom-right corner.
+         pointer-events-none lets clicks fall through to the stretched .card-link above;
+         aria-hidden keeps it out of the a11y tree so the stretched link is the sole tab stop. -->
+    @if (mention.originalUrl | validExternalUrl) {
+      <span class="icon-btn pointer-events-none absolute right-5 bottom-5 z-10" aria-hidden="true" data-testid="mention-card-open-original">
         <i class="fa-light fa-arrow-up-right-from-square text-base"></i>
-      </a>
+      </span>
     }
   </div>
 }

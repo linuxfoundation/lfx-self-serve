@@ -9,6 +9,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { MENTION_FORWARD_EMAIL_BODY_MAX_CHARS, MENTION_PLATFORM_CONFIG, MENTION_RELEVANCE_CONFIG, MENTION_SENTIMENT_CONFIG } from '@lfx-one/shared/constants';
 import { capitalizeFirst, isValidUrl, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
 import { FormatTagPipe } from '@pipes/format-tag.pipe';
+import { ValidExternalUrlPipe } from '@pipes/valid-external-url.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
 import type { Mention, MentionPlatformConfigEntry, MentionRelevanceConfigEntry, MentionSentimentConfigEntry } from '@lfx-one/shared/interfaces';
@@ -26,7 +27,7 @@ const COPIED_STATE_MS = 1000;
  */
 @Component({
   selector: 'lfx-mention-card',
-  imports: [ExpandableTextComponent, MarkdownRendererComponent, TagComponent, FormatTagPipe, TooltipModule],
+  imports: [ExpandableTextComponent, MarkdownRendererComponent, TagComponent, FormatTagPipe, ValidExternalUrlPipe, TooltipModule],
   templateUrl: './mention-card.component.html',
   styleUrl: './mention-card.component.scss',
 })
