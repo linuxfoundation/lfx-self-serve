@@ -63,12 +63,22 @@ describe('ProfileClasComponent', () => {
     return el.componentInstance as TagComponent;
   }
 
-  function menuItems(id: string): MenuItem[] {
+  /** Null when the row deliberately renders no menu at all (nothing to offer). */
+  function rowMenu(id: string): MenuComponent | null {
     const row = fixture.debugElement.query(By.css(`[data-testid="agreement-row-${id}"]`));
     if (!row) throw new Error(`no row rendered for ${id}`);
     const menu = row.query(By.directive(MenuComponent));
+    return menu ? (menu.componentInstance as MenuComponent) : null;
+  }
+
+  function menuItems(id: string): MenuItem[] {
+    const menu = rowMenu(id);
     if (!menu) throw new Error(`no row menu rendered for ${id}`);
-    return (menu.componentInstance as MenuComponent).model() ?? [];
+    return menu.model() ?? [];
+  }
+
+  function actionsTrigger(id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="agreement-row-actions-${id}"]`);
   }
 
   function headers(): string[] {
@@ -188,8 +198,26 @@ describe('ProfileClasComponent', () => {
       agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false }),
     ]);
 
-    const labels = ['s-icla', 's-ecla', 's-inv'].flatMap((id) => menuItems(id).map((item) => item.label ?? ''));
+    const labels = ['s-icla', 's-ecla', 's-inv'].flatMap((id) => (rowMenu(id)?.model() ?? []).map((item) => item.label ?? ''));
     expect(labels.some((label) => /invalidate|request approval/i.test(label))).toBe(false);
+  });
+
+  it('renders no actions trigger on an ICLA row with no retrievable document', async () => {
+    await render([
+      agreement({ id: 's-no-pdf', kind: 'ICLA', pdfAvailable: false }),
+      agreement({ id: 's-pdf', kind: 'ICLA', pdfAvailable: true }),
+      agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    // The row still lists; only its ⋮ is withheld. An always-rendered trigger is clickable and
+    // opens an empty overlay, which reads as a broken menu rather than "nothing to offer here".
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-no-pdf"]')).toBeTruthy();
+    expect(actionsTrigger('s-no-pdf')).toBeNull();
+    expect(rowMenu('s-no-pdf')).toBeNull();
+
+    // Rows that do have an item keep the trigger — including the ECLA explanation item.
+    expect(actionsTrigger('s-pdf')).not.toBeNull();
+    expect(actionsTrigger('s-ecla')).not.toBeNull();
   });
 });
 
