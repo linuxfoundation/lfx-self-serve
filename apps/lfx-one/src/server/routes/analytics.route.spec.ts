@@ -87,18 +87,16 @@ const ED_ONLY_GATED = [
   '/keyword-performance',
   '/social-media',
   '/social-media/monthly',
-  '/event-growth',
   '/events-overview-summary',
   '/event-roster',
   '/event-detail',
-  '/brand-reach',
-  '/revenue-impact',
-  '/marketing-attribution',
 ];
 
-// Endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff):
-// Social Listening only, visible to both personas in marketing-impact.component.html
-const ED_OR_LF_STAFF_GATED = ['/brand-health'];
+// Endpoints gated by requireExecutiveDashboardAccess (ED-or-LF-Staff):
+// event-growth, brand-reach, revenue-impact, and marketing-attribution back the LF-Staff-visible
+// executive dashboard (MarketingOverviewComponent + RevenueImpactDrawerComponent).
+// brand-health backs the Social Listening tab, also LF-Staff-visible.
+const ED_OR_LF_STAFF_GATED = ['/event-growth', '/brand-reach', '/revenue-impact', '/marketing-attribution', '/brand-health'];
 
 const GATED_SAMPLE = [...ED_ONLY_GATED, ...ED_OR_LF_STAFF_GATED];
 
@@ -114,7 +112,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits an ED reading their own foundation', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf']));
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=tlf`);
+    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=tlf`);
 
     expect(res.status).not.toBe(403);
     expect(getPersonas).toHaveBeenCalled();
@@ -123,7 +121,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('refuses an ED requesting a foundation outside their scope', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf']));
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
 
     expect(res.status).toBe(403);
   });
@@ -133,7 +131,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits an ED root writer for a foundation outside their scoped project list', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
@@ -141,15 +139,15 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits ED LF staff for a foundation outside their scoped project list', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isLFStaff: true }));
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
 
-  it('refuses a root writer without the ED persona', async () => {
+  it('refuses a root writer without the ED persona on ED-only routes', async () => {
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: true, isLFStaff: false });
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).toBe(403);
   });
@@ -157,15 +155,15 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('refuses LF staff without the ED persona on ED-only routes', async () => {
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).toBe(403);
   });
 
-  it('admits LF staff without the ED persona on ED-or-LF-Staff endpoints (social listening only)', async () => {
+  it('admits LF staff without the ED persona on ED-or-LF-Staff endpoints', async () => {
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
 
-    const res = await fetch(`${baseUrl}/api/analytics/brand-health?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
