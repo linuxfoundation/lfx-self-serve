@@ -380,34 +380,41 @@ export class SidebarNavService {
     }
 
     // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
-    // on, a root/project-scoped marketing_auditor grant also unlocks it. LF Staff see the section
-    // via canViewExecutiveDashboards() the same as Metrics, but are restricted to the Social
-    // Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+    // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
+    // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
+    // independently and the section itself only appears once it has at least one item. LF Staff see
+    // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
+    // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
     // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
     this.marketingPersonaSlug();
-    const canSeeMarketing = this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
-    if (canSeeMarketing) {
-      const marketingItems: SidebarMenuItem[] = [
-        {
-          label: 'Campaign Impact',
-          icon: 'fa-light fa-bullhorn',
-          routerLink: '/foundation/marketing-impact',
-          testId: 'sidebar-marketing-impact',
-        },
-      ];
+    const marketingItems: SidebarMenuItem[] = [];
 
-      // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
-      const canSeeCampaigns =
-        this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
-      if (canSeeCampaigns) {
-        marketingItems.push({
-          label: 'Campaigns',
-          icon: 'fa-light fa-megaphone',
-          routerLink: '/foundation/campaigns',
-          testId: 'sidebar-marketing-campaigns',
-        });
-      }
+    const canSeeMarketingImpact =
+      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
+    if (canSeeMarketingImpact) {
+      marketingItems.push({
+        label: 'Campaign Impact',
+        icon: 'fa-light fa-bullhorn',
+        routerLink: '/foundation/marketing-impact',
+        testId: 'sidebar-marketing-impact',
+      });
+    }
 
+    // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
+    // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
+    // item, so it cannot be nested inside the Campaign Impact check above.
+    const canSeeCampaigns =
+      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+    if (canSeeCampaigns) {
+      marketingItems.push({
+        label: 'Campaigns',
+        icon: 'fa-light fa-megaphone',
+        routerLink: '/foundation/campaigns',
+        testId: 'sidebar-marketing-campaigns',
+      });
+    }
+
+    if (marketingItems.length > 0) {
       items.push({
         label: 'Marketing',
         isSection: true,

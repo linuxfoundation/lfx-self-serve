@@ -57,7 +57,9 @@ export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnaps
       // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
       return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
         map(() => {
-          if (personaService.isCampaignManager()) {
+          // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of
+          // this refetch, and an ED without an explicit campaign_manager grant must still pass.
+          if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
             return true;
           }
           return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });

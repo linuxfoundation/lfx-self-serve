@@ -90,6 +90,8 @@ export class MarketingImpactComponent {
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
   protected readonly hasFullMarketingAccess: Signal<boolean> = this.initHasFullMarketingAccess();
+  /** Gates the Social-Listening-only fallback — must not render for a viewer who is merely not full-access (LFXV2-2236). */
+  protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
   /** True when the selected Campaign Type has no dashboard content built yet. */
   protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
   /**
