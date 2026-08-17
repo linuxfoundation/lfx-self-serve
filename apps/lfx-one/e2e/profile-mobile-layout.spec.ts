@@ -65,11 +65,16 @@ test.setTimeout(60_000);
 const LOAD_TIMEOUT = 20_000;
 
 // The breakpoint at which the page container's own horizontal padding steps up (px-5 -> md:px-8,
-// see main-layout.component.html), used to derive the width-slack tolerance. In rem, not px — like
-// MAX_MD_REM below, this app's html { font-size: 14px } (styles.scss) means a naive 16px-root
-// rem-to-px conversion (px-5 -> 40px, md:px-8 -> 64px) would be wrong; the actual px value is
-// derived from the root font-size read at assertion time.
+// see main-layout.component.html). This is px, not rem — apps/lfx-one/tailwind.config.js defines
+// theme.screens as px literals, and even where a breakpoint were expressed in rem, a media query's
+// rem always resolves against the browser's initial 16px root, never this app's 14px html font-size.
 const MD_BREAKPOINT = 768;
+
+// The page padding itself, unlike the breakpoint above, IS rem-denominated (px-5 / md:px-8 are
+// Tailwind spacing utilities, which do resolve against the in-page root font-size) — like MAX_MD_REM
+// below, this app's html { font-size: 14px } (styles.scss) means a naive 16px-root rem-to-px
+// conversion (px-5 -> 40px, md:px-8 -> 64px) would be wrong; the actual px value is derived from the
+// root font-size read at assertion time.
 const PAGE_PADDING_REM_BELOW_MD = 2.5; // px-5 = 1.25rem per side x 2
 const PAGE_PADDING_REM_AT_MD = 4; // md:px-8 = 2rem per side x 2
 
@@ -250,6 +255,13 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
           expect(railBox!.width, `profile panel rail width at ${vp.width}px should be capped at max-w-md (${expectedCapPx}px)`).toBeLessThanOrEqual(
             expectedCapPx + 1
           );
+        } else {
+          // Mirror of the cap-existence check above: sm:max-w-none must actually lift the cap at and
+          // above sm, or the rail would stay pinned at ~392px all the way to 2xl with nothing else in
+          // this matrix catching it — the width-only assertion above only runs below sm, and left-
+          // alignment/no-overlap still pass for a narrow-but-left-aligned panel.
+          const capPx = await panelRail.evaluate((el) => getComputedStyle(el).maxWidth);
+          expect(capPx, `profile panel rail max-width at ${vp.width}px should be lifted by sm:max-w-none`).toBe('none');
         }
 
         // Inline placement: the panel should be left-aligned with the content column (both children of
