@@ -6,7 +6,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, RouterLink } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -111,9 +111,10 @@ describe('ProfileClasComponent', () => {
   it('empty state CTA routes to the CLAs docs article, not the pre-rename slug', async () => {
     await render([]);
 
-    expect(fixture.nativeElement.querySelector('[data-testid="my-clas-empty-state"]')).toBeTruthy();
-    const link = fixture.debugElement.query(By.directive(RouterLink));
-    expect(link.injector.get(RouterLink).routerLink).toEqual(['/docs', 'account', 'my-clas']);
+    const emptyState = fixture.debugElement.query(By.css('[data-testid="my-clas-empty-state"]'));
+    expect(emptyState).toBeTruthy();
+    const cta = emptyState.query(By.css('a[href]'));
+    expect(cta.nativeElement.getAttribute('href')).toBe('/docs/account/my-clas');
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {
