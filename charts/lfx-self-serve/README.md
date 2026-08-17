@@ -261,29 +261,6 @@ all.
 To roll back, reverse it: turn **CREATE** off first, and keep **JOBS** on until every outstanding
 UUID job has drained.
 
-#### Marketing Ops FGA Enforcement
-
-| Parameter                                   | Description                                                                                    | Required | Default |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
-
-Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
-default) keeps the `executive_director`-only gate shipped by LFXV2-3294 byte-for-byte. ON adds an
-ED/root-writer/LF-staff fast path plus a root- or project-scoped `marketing_auditor` /
-`campaign_manager` FGA grant as additional ways to pass — it never removes the existing ED path.
-
-This flag is deliberately independent of the client-side `marketing-ops-fga-enabled` OpenFeature
-flag: the Web SDK never runs server-side, so a direct API caller with an FGA marketing relation
-could not reach these routes on server flag alone until the client flag also turns on the
-corresponding UI guards. Both must be enabled for the feature to actually work end-to-end.
-
-OFF by default is a hard requirement here, not a convenience default — the reverted PR #1112
-caused a **total lockout for all users** when its UI guards shipped with no kill switch
-(LFXV2-2231 gap-analysis G2). This flag lets a bad rollout be reverted with a value change, not a
-revert PR. Unlike the campaign-service cutover flags, an overlapping rollout is harmless: the
-ED/root-writer/LF-staff fast path and the `executive_director`-only fallback are both reachable
-regardless of which pod (flag-on or flag-off) answers a given request.
-
 The reason is the id-shape backstop. A poll reaches campaign-service only when the job id is a
 UUID, which is the shape campaign-service mints; the legacy path mints `job_<epoch>_<rand>`. A pod
 with JOBS **off** does not apply that check and sends the poll to its in-process map, where a UUID
@@ -312,6 +289,29 @@ than producing a pod that silently bypasses the gateway. Declaring the key with 
 still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
 deployment that genuinely needs a direct address should drop the variable from that list in a
 reviewed chart commit — a values override is invisible to review, a chart change is not.
+
+#### Marketing Ops FGA Enforcement
+
+| Parameter                                   | Description                                                                                    | Required | Default |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
+
+Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
+default) keeps the `executive_director`-only gate shipped by LFXV2-3294 byte-for-byte. ON adds an
+ED/root-writer/LF-staff fast path plus a root- or project-scoped `marketing_auditor` /
+`campaign_manager` FGA grant as additional ways to pass — it never removes the existing ED path.
+
+This flag is deliberately independent of the client-side `marketing-ops-fga-enabled` OpenFeature
+flag: the Web SDK never runs server-side, so a direct API caller with an FGA marketing relation
+could not reach these routes on server flag alone until the client flag also turns on the
+corresponding UI guards. Both must be enabled for the feature to actually work end-to-end.
+
+OFF by default is a hard requirement here, not a convenience default — the reverted PR #1112
+caused a **total lockout for all users** when its UI guards shipped with no kill switch
+(LFXV2-2231 gap-analysis G2). This flag lets a bad rollout be reverted with a value change, not a
+revert PR. Unlike the campaign-service cutover flags, an overlapping rollout is harmless: the
+ED/root-writer/LF-staff fast path and the `executive_director`-only fallback are both reachable
+regardless of which pod (flag-on or flag-off) answers a given request.
 
 #### AI Service Configuration
 

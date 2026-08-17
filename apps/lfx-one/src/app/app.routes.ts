@@ -54,7 +54,7 @@ export const routes: Routes = [
         canActivate: [marketingImpactAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
-      // Foundation Lens — Campaigns page (ED-only)
+      // Foundation Lens — Campaigns page (ED always; campaign_manager when marketing-ops-fga-enabled is on)
       {
         path: 'foundation/campaigns',
         data: { lens: 'foundation' },

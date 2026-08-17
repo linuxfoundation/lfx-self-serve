@@ -34,7 +34,9 @@ export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnaps
 
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
-  return personaService.refreshEnrichedPersonas(false, projectSlug).pipe(
+  // Force a refetch unless we already know the caller is a campaign manager — the "already
+  // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
+  return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
     map(() => {
       if (personaService.isCampaignManager()) {
         return true;

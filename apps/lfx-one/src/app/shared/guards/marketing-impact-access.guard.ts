@@ -31,7 +31,11 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
   const marketingOpsFgaEnabled = featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)();
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
-  return personaService.refreshEnrichedPersonas(false, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
+  // Force a refetch unless we already know the caller is a marketing auditor — the "already
+  // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
+  const force = marketingOpsFgaEnabled && !personaService.isMarketingAuditor();
+
+  return personaService.refreshEnrichedPersonas(force, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
     map(() => {
       const allowed = marketingOpsFgaEnabled
         ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
