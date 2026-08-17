@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
 import { Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -97,7 +98,13 @@ describe('PlanningTabComponent brief read-back', () => {
       imports: [PlanningTabComponent],
       // Real CampaignService against HTTP testing backend, with only `loadBrief` spied.
       // Other methods stay pending, representing the "loading" state.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     campaignService = { loadBrief: vi.fn() };
@@ -679,7 +686,13 @@ describe('PlanningTabComponent delivery-type mode', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [PlanningTabComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     // Never completes: generate() stays in flight, so the request argument is observable without
