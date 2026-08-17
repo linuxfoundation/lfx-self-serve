@@ -1000,8 +1000,11 @@ export class CampaignController {
     // The allowlist is per-PATH because reach genuinely differs, and collapsing the two would be
     // wrong in both directions. The legacy path is a switch over meta/reddit whose default arm
     // throws, so widening it would turn a clear refusal into a confusing platform error;
-    // campaign-service wires six dispatchers, so keeping it at two would refuse platforms the
-    // service supports. HubSpot is in NEITHER set — an email send has no run state to pause.
+    // keeping the campaign-service set at two would refuse Google Ads and LinkedIn, which this app
+    // does offer. Note these are two different counts and must not be conflated: campaign-service
+    // implements SIX toggle dispatchers upstream, while this set is the FOUR non-disabled entries
+    // of CAMPAIGN_PLATFORMS — Microsoft and X are dispatchable but not offered here. HubSpot is in
+    // NEITHER set — an email send has no run state to pause.
     const supportedPlatforms = viaCampaignService ? CAMPAIGN_SERVICE_STATUS_PLATFORMS : SUPPORTED_STATUS_PLATFORMS;
     if (!body.platform || !supportedPlatforms.has(body.platform)) {
       next(

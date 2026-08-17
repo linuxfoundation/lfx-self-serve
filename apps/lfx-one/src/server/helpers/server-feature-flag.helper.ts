@@ -156,10 +156,16 @@ export enum ServerFeatureFlag {
    * byte-for-byte.
    *
    * This flag buys REACH, not just a different backend. The legacy path is a `switch` over
-   * `meta-ads` and `reddit-ads` whose `default` arm throws, so pause is unavailable for the
-   * other four platforms no matter what the allowlist says. campaign-service wires six
-   * dispatchers, so turning this on is what makes Google Ads and LinkedIn pausable at all —
-   * and pause is the primary cost-control lever on a mis-targeted campaign.
+   * `meta-ads` and `reddit-ads` whose `default` arm throws, so pause is unavailable for every
+   * other platform no matter what the allowlist says. Turning this on is what makes Google Ads
+   * and LinkedIn pausable at all — and pause is the primary cost-control lever on a mis-targeted
+   * campaign.
+   *
+   * Two counts live here and conflating them invites deleting a guard that is doing its job:
+   * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
+   * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are
+   * dispatchable upstream and simply not offered by this app. See
+   * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
    * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
