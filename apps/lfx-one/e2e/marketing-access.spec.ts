@@ -116,8 +116,8 @@ async function stubPersona(page: Page, personas: string[], options: StubPersonaO
 async function stubNavLensItems(page: Page, items: LensItem[] = [MOCK_FOUNDATION_ITEM]): Promise<void> {
   await page.route('**/api/nav/lens-items*', (route) => {
     const url = route.request().url();
-    if (!url.includes('lens=foundation')) {
-      const requestedLens = new URL(url).searchParams.get('lens') ?? 'foundation';
+    const requestedLens = new URL(url).searchParams.get('lens') ?? 'foundation';
+    if (requestedLens !== 'foundation') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
