@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-11
+last_updated: 2026-08-17
 intercom_collection: Account
 ---
 
@@ -74,8 +74,8 @@ You can only see your own transactions. Other users and project administrators c
 
 ## I was charged incorrectly. Who do I contact?
 
-Contact LFX support through the Help Center. Include the transaction date, amount, and item name so the support team can investigate.
+Contact LFX support via in-app messaging. Include the transaction date, amount, and item name so the support team can investigate.
 
 ## Who do I contact if a setting isn't working?
 
-Contact LFX support through the Help Center. Describe the setting you changed and the behavior you expected.
+Contact LFX support via in-app messaging. Describe the setting you changed and the behavior you expected.

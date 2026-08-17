@@ -5,7 +5,7 @@ audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-17
 intercom_collection: Events
 ---
 
@@ -35,4 +35,4 @@ Check the My Events page regularly for new events. Contact your project administ
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support through the Help Center.
+Contact the event organizer listed on the event detail page, or reach out to LFX support via in-app messaging.
