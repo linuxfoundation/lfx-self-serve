@@ -902,6 +902,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // The Members card is the only one reading two responses: the value comes from
   // memberAcquisition and the caption from memberRetention, so either failing makes the card
   // no longer a measurement.
+  // Note the Members DRAWER binds `unavailable` on either response failing, which is stricter
+  // than this card. That is deliberate, not drift: the drawer renders renewalRate and NRR as
+  // 2xl headline figures, whereas here retention appears only as caption text beside a member
+  // count that is still genuinely measured. Same data, different exposure.
   const membersLoaded = memberAcquisition && memberRetention;
   const membersSubtitle = !membersLoaded
     ? ''

@@ -207,6 +207,11 @@
   [unavailable]="!edEvolutionData().flywheel"
   (visibleChange)="handleDrawerClose()"></lfx-flywheel-conversion-drawer>
 
+<!-- The [unavailable] binding below is deliberately stricter than the Members CARD, which keeps
+     its measured member count and only drops the retention clause from its caption. This drawer
+     renders renewalRate and NRR as 2xl headline figures rather than caption text, so a
+     retention-only failure would put two fabricated percentages on screen at full size.
+     Same data, different exposure. -->
 <lfx-member-acquisition-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberAcquisition"
   [data]="memberAcquisitionData()"
