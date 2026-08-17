@@ -94,8 +94,13 @@ const VIEWPORTS = [
 ] as const;
 
 // Desktop control: at and above 2xl, the rail must be the fixed overlay again — the regression
-// guard for the rail disappearing entirely rather than just moving breakpoints.
-const DESKTOP_VIEWPORT = { name: 'desktop-2xl', width: 1440, height: 900 } as const;
+// guard for the rail disappearing entirely rather than just moving breakpoints. Requested a margin
+// above TWO_XL_BREAKPOINT (not exactly 1440) — desktop projects (chromium/firefox) render a classic
+// scrollbar, and CSS min-width media queries evaluate against the layout viewport (clientWidth),
+// which that scrollbar shrinks below the requested device width. Right at 1440 that can drop below
+// the breakpoint and make the 2xl: styles never apply. The test also asserts this precondition
+// explicitly below rather than assuming the margin is always enough.
+const DESKTOP_VIEWPORT = { name: 'desktop-2xl', width: TWO_XL_BREAKPOINT + 40, height: 900 } as const;
 
 const ROUTES = ['/profile', '/profile/settings'] as const;
 
@@ -170,8 +175,11 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         // fixed overlay. Page padding is px-5 (40px total) below md, md:px-8 (64px total) at md and up.
         // Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px sidebar
         // also reserves space, and the content column stops growing past max-w-[1024px] regardless.
-        const pagePadding = vp.width >= MD_BREAKPOINT ? 64 : 40;
-        const sidebar = vp.width >= LG_BREAKPOINT ? SIDEBAR_WIDTH : 0;
+        // Both breakpoint checks key off clientWidth, not vp.width — the media queries the app
+        // actually evaluates run against the layout viewport, which a classic desktop scrollbar
+        // shrinks below the requested device width (same reasoning as the scrollWidth check above).
+        const pagePadding = overflow.clientWidth >= MD_BREAKPOINT ? 64 : 40;
+        const sidebar = overflow.clientWidth >= LG_BREAKPOINT ? SIDEBAR_WIDTH : 0;
         const expectedContentWidth = Math.min(CONTENT_MAX, overflow.clientWidth - sidebar - pagePadding);
         const contentBox = await content.boundingBox();
         expect(contentBox, 'content column should have a bounding box').not.toBeNull();
@@ -223,6 +231,14 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
 
       const panelRail = page.getByTestId('profile-panel-rail');
       await expect(panelRail, 'profile panel rail wrapper should render').toBeVisible({ timeout: LOAD_TIMEOUT });
+
+      // Precondition: confirm the layout viewport actually cleared the 2xl breakpoint before
+      // asserting on it — a classic desktop scrollbar can shrink clientWidth below the requested
+      // device width, and DESKTOP_VIEWPORT's margin over TWO_XL_BREAKPOINT is only a heuristic.
+      // Failing loudly here beats a confusing "position should be fixed but got static" failure
+      // that actually means the viewport never cleared the breakpoint at all.
+      const layoutWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      expect(layoutWidth, 'layout viewport must clear the 2xl breakpoint for this control to be meaningful').toBeGreaterThanOrEqual(TWO_XL_BREAKPOINT);
 
       // Regression guard for the rail disappearing entirely (as opposed to the breakpoint just
       // moving) — the opposite assertion from the main matrix above.

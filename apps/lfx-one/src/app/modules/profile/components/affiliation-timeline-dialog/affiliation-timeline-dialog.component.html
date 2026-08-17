@@ -71,38 +71,40 @@
                   class="flex flex-wrap items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
                   [attr.data-testid]="'period-row-' + period.id">
-                  <!-- Start label — unconditional (not sm-gated), so the pair stays identifiable regardless of
-                       whether flex-wrap kicks in from the true viewport or from the dialog's own rendered width -->
-                  <span class="text-xs font-medium text-slate-500">Start</span>
-                  <!-- Start Month/Year — equal-width grid below sm so the pair wraps to two rows instead of
-                       overflowing; fixed 110px/100px columns at sm and up so w-full resolves to the original
-                       month/year widths instead of shrink-to-fit sizing -->
-                  <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
-                    <p-select
-                      [options]="monthOptions"
-                      [ngModel]="period.startMonth"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Month"
-                      [ariaLabel]="'Start month, ' + org.organization + ' period ' + ($index + 1)"
-                      styleClass="w-full"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-start-month-' + period.id" />
+                  <!-- Start label + Start Month/Year, grouped into ONE flex item so flex-wrap on the row
+                       (below) can only move the whole pair to the next line, never orphan the label from
+                       its controls. Below sm the month/year grid keeps them equal-width side by side (2
+                       columns, not stacked); fixed 110px/100px columns at sm and up so w-full resolves to
+                       the original month/year widths instead of shrink-to-fit sizing. -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium text-slate-500">Start</span>
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
+                      <p-select
+                        [options]="monthOptions"
+                        [ngModel]="period.startMonth"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Month"
+                        [ariaLabel]="'Start month, ' + org.organization + ' period ' + ($index + 1)"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-start-month-' + period.id" />
 
-                    <p-select
-                      [options]="periodYearOptions"
-                      [ngModel]="period.startYear"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Year"
-                      [ariaLabel]="'Start year, ' + org.organization + ' period ' + ($index + 1)"
-                      styleClass="w-full"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-start-year-' + period.id" />
+                      <p-select
+                        [options]="periodYearOptions"
+                        [ngModel]="period.startYear"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Year"
+                        [ariaLabel]="'Start year, ' + org.organization + ' period ' + ($index + 1)"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-start-year-' + period.id" />
+                    </div>
                   </div>
 
                   <!-- Hidden below sm — reads as a stray dash between wrapped start/end pairs there -->
@@ -112,35 +114,37 @@
                   @if (period.isPresent) {
                     <span class="text-xs font-medium text-slate-500">End: Present</span>
                   } @else {
-                    <!-- End label — unconditional, see Start label comment above -->
-                    <span class="text-xs font-medium text-slate-500">End</span>
-                    <!-- End Month/Year — same equal-width-below-sm / fixed-columns-at-sm pattern as the start pair -->
-                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
-                      <p-select
-                        [options]="monthOptions"
-                        [ngModel]="period.endMonth"
-                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
-                        optionLabel="label"
-                        optionValue="value"
-                        placeholder="Month"
-                        [ariaLabel]="'End month, ' + org.organization + ' period ' + ($index + 1)"
-                        styleClass="w-full"
-                        size="small"
-                        appendTo="body"
-                        [attr.data-testid]="'period-end-month-' + period.id" />
+                    <!-- End label + End Month/Year, grouped into ONE flex item — see Start pair comment
+                         above (same flex-wrap-orphan concern, same fixed-column pattern). -->
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-medium text-slate-500">End</span>
+                      <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
+                        <p-select
+                          [options]="monthOptions"
+                          [ngModel]="period.endMonth"
+                          (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Month"
+                          [ariaLabel]="'End month, ' + org.organization + ' period ' + ($index + 1)"
+                          styleClass="w-full"
+                          size="small"
+                          appendTo="body"
+                          [attr.data-testid]="'period-end-month-' + period.id" />
 
-                      <p-select
-                        [options]="periodYearOptions"
-                        [ngModel]="period.endYear"
-                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
-                        optionLabel="label"
-                        optionValue="value"
-                        placeholder="Year"
-                        [ariaLabel]="'End year, ' + org.organization + ' period ' + ($index + 1)"
-                        styleClass="w-full"
-                        size="small"
-                        appendTo="body"
-                        [attr.data-testid]="'period-end-year-' + period.id" />
+                        <p-select
+                          [options]="periodYearOptions"
+                          [ngModel]="period.endYear"
+                          (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Year"
+                          [ariaLabel]="'End year, ' + org.organization + ' period ' + ($index + 1)"
+                          styleClass="w-full"
+                          size="small"
+                          appendTo="body"
+                          [attr.data-testid]="'period-end-year-' + period.id" />
+                      </div>
                     </div>
                   }
 
