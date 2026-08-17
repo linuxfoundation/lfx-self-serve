@@ -315,13 +315,13 @@ export class AddMemberDialogComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
-        error: () => {
+        error: (error: unknown) => {
           this.importing.set(false);
           this.importSummary.set(null);
           this.messageService.add({
             severity: 'warn',
             summary: 'Import Failed',
-            detail: 'Could not load registrants for that meeting. Please try again.',
+            detail: extractErrorMessage(error, 'Could not load registrants for that meeting. Please try again.'),
             life: 5000,
           });
         },

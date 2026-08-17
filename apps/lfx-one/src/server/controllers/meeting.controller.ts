@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
@@ -434,6 +435,18 @@ export class MeetingController {
 
       // Get the meeting registrants
       const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+
+      // A sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
+      // partial-failure states — refuse rather than hand the caller a roster it can't safely act
+      // on. Only applies to the import flow (failOnPartial); the 3 partial-tolerant callers render
+      // whatever loaded and are unaffected.
+      if (failOnPartial && registrants.length > IMPORT_REGISTRANTS_MAX) {
+        throw ServiceValidationError.forField(
+          'registrants',
+          `This meeting has ${registrants.length} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
+          { operation: 'get_meeting_registrants', service: 'meeting_controller' }
+        );
+      }
 
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,

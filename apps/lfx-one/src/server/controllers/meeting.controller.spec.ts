@@ -168,4 +168,18 @@ describe('MeetingController.getMeetingRegistrants — completeness authorization
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('rejects an authorized import once the roster exceeds the size cap', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    meetingSvc.getMeetingRegistrants.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ uid: `r${i}`, email: `r${i}@example.com` })));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
 });
