@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import type { ClaGroupOption, ClaStatus, MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
+import type { ClaGroupOption, ClaStatus, MyClaAgreement, MyClasState, TagSeverity } from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -23,6 +23,32 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
+
+/** Precomputed status cell for one row. */
+interface ClaRowStatus {
+  /** True for `unknown`, which renders as a plain-text em dash rather than a fourth named pill. */
+  plainText: boolean;
+  label: string;
+  severity: TagSeverity;
+  icon: string;
+  /** Explanatory sentence beneath the pill; absent on every row that has nothing to explain. */
+  note?: string;
+}
+
+/**
+ * One My CLAs table row, fully resolved before the template sees it. The template binds these
+ * fields and calls nothing — per the frontend checklist's no-template-functions rule
+ * (`docs/reviews/frontend-checklist.md`), which a per-cell `claStatusLabel(...)` /
+ * `statusNote(...)` call would re-run on every change-detection pass.
+ */
+interface ClaRow {
+  id: string;
+  agreement: MyClaAgreement;
+  status: ClaRowStatus;
+  menuItems: MenuItem[];
+  /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
+  hasActions: boolean;
+}
 
 /**
  * "My CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
@@ -91,10 +117,30 @@ export class ProfileClasComponent {
 
   protected readonly agreements = computed<MyClaAgreement[]>(() => this.state().data?.agreements ?? []);
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
-  protected readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
-  protected readonly claStatusLabel = claStatusLabel;
-  protected readonly claStatusSeverity = claStatusSeverity;
+  /**
+   * The table's only binding source. Recomputes when the agreement list changes and not
+   * otherwise, which is also what keeps each row's `MenuItem[]` referentially stable —
+   * a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
+   */
+  protected readonly rows = computed<ClaRow[]>(() =>
+    this.agreements().map((agreement) => {
+      const menuItems = this.buildRowMenuItems(agreement);
+      return {
+        id: agreement.id,
+        agreement,
+        status: {
+          plainText: agreement.status === 'unknown',
+          label: claStatusLabel(agreement.status),
+          severity: claStatusSeverity(agreement.status),
+          icon: this.statusIcon(agreement.status),
+          note: this.statusNote(agreement),
+        },
+        menuItems,
+        hasActions: menuItems.length > 0,
+      };
+    })
+  );
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
@@ -111,36 +157,6 @@ export class ProfileClasComponent {
 
   protected retry(): void {
     this.refresh$.next();
-  }
-
-  /** Per-state leading icon for the status pill. Exhaustive against ClaStatus. */
-  protected statusIcon(status: ClaStatus): string {
-    switch (status) {
-      case 'valid':
-        return 'fa-light fa-circle-check';
-      case 'needs_attention':
-        return 'fa-light fa-triangle-exclamation';
-      case 'invalidated':
-        return 'fa-light fa-circle-xmark';
-      case 'unknown':
-        return 'fa-light fa-minus';
-      case 'superseded':
-        return 'fa-light fa-clock-rotate-left';
-    }
-  }
-
-  /**
-   * Explanatory note beneath the status pill. Only a completed Approved List
-   * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
-   */
-  protected statusNote(agreement: MyClaAgreement): string | undefined {
-    if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
-      return undefined;
-    }
-    if (agreement.companyName) {
-      return `No longer matches ${agreement.companyName}'s approval criteria.`;
-    }
-    return 'No longer matches the approval criteria.';
   }
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
@@ -225,20 +241,41 @@ export class ProfileClasComponent {
       });
   }
 
-  /**
-   * Stable per-row menu models. Binding a fresh `MenuItem[]` from the template on every
-   * change-detection pass makes the PrimeNG popup overlay miss the first click.
-   */
-  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
-    return computed(() => {
-      const map = new Map<string, MenuItem[]>();
-      for (const agreement of this.agreements()) {
-        map.set(agreement.id, this.buildRowMenuItems(agreement));
-      }
-      return map;
-    });
+  /** Per-state leading icon for the status pill. Exhaustive against ClaStatus. */
+  private statusIcon(status: ClaStatus): string {
+    switch (status) {
+      case 'valid':
+        return 'fa-light fa-circle-check';
+      case 'needs_attention':
+        return 'fa-light fa-triangle-exclamation';
+      case 'invalidated':
+        return 'fa-light fa-circle-xmark';
+      case 'unknown':
+        return 'fa-light fa-minus';
+      case 'superseded':
+        return 'fa-light fa-clock-rotate-left';
+    }
   }
 
+  /**
+   * Explanatory note beneath the status pill. Only a completed Approved List
+   * miss (`not_on_approval_list`) gets copy; unknown and omitted reasons do not.
+   */
+  private statusNote(agreement: MyClaAgreement): string | undefined {
+    if (agreement.kind === 'ICLA' || agreement.statusReason !== 'not_on_approval_list') {
+      return undefined;
+    }
+    if (agreement.companyName) {
+      return `No longer matches ${agreement.companyName}'s approval criteria.`;
+    }
+    return 'No longer matches the approval criteria.';
+  }
+
+  /**
+   * An ICLA with no retrievable document yields no items — the row then renders no ⋮ trigger,
+   * rather than one that opens an empty overlay (`contracts/my-clas-row-actions.md`: nothing is
+   * offered on such a row).
+   */
   private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
     if (agreement.pdfAvailable) {
       return [

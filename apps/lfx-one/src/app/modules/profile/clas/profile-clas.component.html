@@ -50,7 +50,7 @@ SPDX-License-Identifier: MIT
         data-testid="my-clas-empty-state" />
     } @else {
       <lfx-table
-        [value]="agreements()"
+        [value]="rows()"
         [loading]="loading()"
         [skeletonRows]="3"
         dataKey="id"
@@ -66,42 +66,42 @@ SPDX-License-Identifier: MIT
           </tr>
         </ng-template>
 
-        <ng-template #body let-agreement let-rowIndex="rowIndex">
+        <ng-template #body let-row let-rowIndex="rowIndex">
           <tr
             class="transition-colors hover:bg-slate-50/60"
-            [class.border-b]="rowIndex < agreements().length - 1"
-            [class.border-slate-100]="rowIndex < agreements().length - 1"
+            [class.border-b]="rowIndex < rows().length - 1"
+            [class.border-slate-100]="rowIndex < rows().length - 1"
             [attr.data-row-index]="rowIndex"
-            [attr.data-testid]="'agreement-row-' + agreement.id">
+            [attr.data-testid]="'agreement-row-' + row.id">
             <td class="px-5 py-3.5">
               <div class="flex min-w-0 items-center gap-3">
                 <div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm">
-                  @if (agreement.projectLogo) {
+                  @if (row.agreement.projectLogo) {
                     <img
-                      [src]="agreement.projectLogo"
-                      [alt]="(agreement.projectName || agreement.claGroupName) + ' logo'"
+                      [src]="row.agreement.projectLogo"
+                      [alt]="(row.agreement.projectName || row.agreement.claGroupName) + ' logo'"
                       loading="lazy"
                       class="h-full w-full object-contain"
-                      [attr.data-testid]="'agreement-logo-' + agreement.id" />
+                      [attr.data-testid]="'agreement-logo-' + row.id" />
                   } @else {
                     <i class="fa-light fa-file-signature text-sm text-slate-400"></i>
                   }
                 </div>
                 <div class="flex min-w-0 flex-col">
-                  <span class="truncate text-sm font-semibold text-slate-900" [attr.data-testid]="'agreement-project-' + agreement.id">
-                    {{ agreement.projectName || agreement.claGroupName }}
+                  <span class="truncate text-sm font-semibold text-slate-900" [attr.data-testid]="'agreement-project-' + row.id">
+                    {{ row.agreement.projectName || row.agreement.claGroupName }}
                   </span>
-                  @if (agreement.projectName && agreement.claGroupName) {
-                    <span class="truncate text-xs text-slate-500" [attr.data-testid]="'agreement-cla-group-' + agreement.id">{{ agreement.claGroupName }}</span>
+                  @if (row.agreement.projectName && row.agreement.claGroupName) {
+                    <span class="truncate text-xs text-slate-500" [attr.data-testid]="'agreement-cla-group-' + row.id">{{ row.agreement.claGroupName }}</span>
                   }
                 </div>
               </div>
             </td>
 
             <td class="px-5 py-3.5">
-              @if (agreement.kind === 'ECLA') {
+              @if (row.agreement.kind === 'ECLA') {
                 <lfx-badge
-                  [value]="agreement.companyName ? 'ECLA · ' + agreement.companyName : 'ECLA'"
+                  [value]="row.agreement.companyName ? 'ECLA · ' + row.agreement.companyName : 'ECLA'"
                   severity="secondary"
                   styleClass="!bg-purple-100 !text-purple-800" />
               } @else {
@@ -111,38 +111,40 @@ SPDX-License-Identifier: MIT
 
             <td class="px-5 py-3.5">
               <div class="flex flex-col items-start gap-1">
-                @if (agreement.status === 'unknown') {
-                  <span class="text-sm text-slate-600" [attr.data-testid]="'agreement-status-' + agreement.id">{{ claStatusLabel('unknown') }}</span>
+                @if (row.status.plainText) {
+                  <span class="text-sm text-slate-600" [attr.data-testid]="'agreement-status-' + row.id">{{ row.status.label }}</span>
                 } @else {
                   <lfx-tag
-                    [value]="claStatusLabel(agreement.status)"
-                    [severity]="claStatusSeverity(agreement.status)"
-                    [icon]="statusIcon(agreement.status)"
+                    [value]="row.status.label"
+                    [severity]="row.status.severity"
+                    [icon]="row.status.icon"
                     [rounded]="true"
-                    [attr.data-testid]="'agreement-status-' + agreement.id" />
+                    [attr.data-testid]="'agreement-status-' + row.id" />
                 }
-                @if (statusNote(agreement); as note) {
-                  <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + agreement.id">{{ note }}</p>
+                @if (row.status.note) {
+                  <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + row.id">{{ row.status.note }}</p>
                 }
               </div>
             </td>
 
             <td class="px-5 py-3.5">
-              <span class="text-sm text-slate-600">{{ agreement.signedOn ? (agreement.signedOn | date: 'mediumDate' : 'UTC') : '—' }}</span>
+              <span class="text-sm text-slate-600">{{ row.agreement.signedOn ? (row.agreement.signedOn | date: 'mediumDate' : 'UTC') : '—' }}</span>
             </td>
 
             <td class="relative px-5 py-3.5 text-right">
-              <lfx-button
-                [icon]="downloadingId() === agreement.id ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
-                [text]="true"
-                [rounded]="true"
-                size="small"
-                severity="secondary"
-                [disabled]="downloadingId() === agreement.id"
-                [ariaLabel]="'Actions for ' + (agreement.projectName || agreement.claGroupName)"
-                (onClick)="toggleRowMenu($event, rowMenu)"
-                [attr.data-testid]="'agreement-row-actions-' + agreement.id" />
-              <lfx-menu #rowMenu [model]="menuItemsMap().get(agreement.id) ?? []" [popup]="true" appendTo="body"></lfx-menu>
+              @if (row.hasActions) {
+                <lfx-button
+                  [icon]="downloadingId() === row.id ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
+                  [text]="true"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  [disabled]="downloadingId() === row.id"
+                  [ariaLabel]="'Actions for ' + (row.agreement.projectName || row.agreement.claGroupName)"
+                  (onClick)="toggleRowMenu($event, rowMenu)"
+                  [attr.data-testid]="'agreement-row-actions-' + row.id" />
+                <lfx-menu #rowMenu [model]="row.menuItems" [popup]="true" appendTo="body"></lfx-menu>
+              }
             </td>
           </tr>
         </ng-template>
