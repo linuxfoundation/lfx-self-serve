@@ -3489,9 +3489,21 @@ export interface FunnelAggregates {
  * Used by buildEdEvolutionMetrics() to convert API data into card UI models.
  */
 export interface EdEvolutionData {
-  flywheel: FlywheelConversionResponse;
-  memberAcquisition: MemberAcquisitionResponse;
-  memberRetention: MemberRetentionResponse;
+  /**
+   * `undefined` when the request failed, so the Flywheel card renders "—" rather than a 0.0% conversion rate.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  flywheel: FlywheelConversionResponse | undefined;
+  /**
+   * `undefined` when the request failed, so the Members card renders "—" rather than 0 paying members.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  memberAcquisition: MemberAcquisitionResponse | undefined;
+  /**
+   * `undefined` when the request failed, so the Members caption renders the unavailable placeholder rather than 0.0% retention.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  memberRetention: MemberRetentionResponse | undefined;
   /**
    * Adoption card data. undefined means "request failed", not "nobody engaged".
    *
@@ -3499,7 +3511,11 @@ export interface EdEvolutionData {
    * individuals and the card read "0" whenever this fell back to a zero-filled response.
    */
   engagedCommunity: EngagedCommunitySizeResponse | undefined;
-  eventGrowth: EventGrowthResponse;
+  /**
+   * `undefined` when the request failed, so the Events card renders "—" rather than 0 registrants.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  eventGrowth: EventGrowthResponse | undefined;
   /**
    * Social and Web card data. undefined means "request failed", not "no followers".
    *
@@ -3509,7 +3525,14 @@ export interface EdEvolutionData {
    * a measured absence, on the two cards that read it.
    */
   brandReach: BrandReachResponse | undefined;
-  brandHealth: BrandHealthResponse;
+  /**
+   * Sentiment card data. undefined means "request failed", not "nobody mentioned us".
+   *
+   * Same contract as revenueImpact, brandReach, emailCtr and engagedCommunity. AAIF has
+   * 80,799 mentions; the card read "0" and its drawer asserted "No brand mention activity
+   * detected" whenever this fell back to a zero-filled response.
+   */
+  brandHealth: BrandHealthResponse | undefined;
   /**
    * Attribution card data. undefined means "request failed", not "zero revenue".
    *

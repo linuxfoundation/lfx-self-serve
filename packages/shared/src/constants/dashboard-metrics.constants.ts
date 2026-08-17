@@ -867,6 +867,34 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // arm it would otherwise be a nested ternary, which .claude/rules/styling.md forbids.
   const webSessionsSubtitle = brandReach && brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)';
 
+  // Same reason for these three: each already branches on whether a real series exists, so
+  // nesting that inside the undefined arm would add a second level.
+  const eventsSubtitle = !eventGrowth
+    ? ''
+    : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD${eventGrowth.monthlyData.length > 0 ? ' · Trend: quarterly, 3 yrs + upcoming' : ''}`;
+  const eventsSparkline =
+    eventGrowth && eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth?.totalRegistrants ?? 0);
+  // The Members card is the only one reading two responses: the value comes from
+  // memberAcquisition and the caption from memberRetention, so either failing makes the card
+  // no longer a measurement.
+  const membersLoaded = memberAcquisition && memberRetention;
+  const membersSubtitle = !membersLoaded
+    ? ''
+    : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%${memberAcquisition.totalMembersMonthlyData.length > 0 ? ' · Last 12 months' : ''}`;
+  const membersSparkline =
+    memberAcquisition && memberAcquisition.totalMembersMonthlyData.length > 0
+      ? memberAcquisition.totalMembersMonthlyData
+      : flatSparklineData(memberAcquisition?.totalMembers ?? 0);
+  const flywheelSubtitle = flywheel && flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM';
+  const flywheelSparkline =
+    flywheel && flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel?.reengagement.reengagementRate ?? 0);
+
+  // Same reason again: the Sentiment caption already branches on whether a trend window
+  // exists, so nesting it inside the brandHealth-undefined arm would be a second level.
+  const brandHealthCaption = !brandHealth
+    ? ''
+    : `${formatNumber(brandHealth.totalMentions)} mentions (30d)${brandHealth.monthlyMentions.length > 0 ? ' · trend last 6 months' : ''}`;
+
   // Same reason: the Adoption sparkline picks between a real series and a flat placeholder,
   // and that choice nested inside the engagedCommunity-undefined arm would be a third level.
   const adoptionSparkline =
@@ -939,17 +967,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-event-growth',
       description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
-      value: formatNumber(eventGrowth.totalRegistrants),
-      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
-      trend: trendFromChange(eventGrowth.registrantYoyChange),
-      subtitle:
-        eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
-          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
-      chartData: protoSparkline(
-        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that the foundation ran no events.
+      value: eventGrowth ? formatNumber(eventGrowth.totalRegistrants) : '—',
+      changePercentage: eventGrowth ? formatYoyChange(eventGrowth.registrantYoyChange) : undefined,
+      trend: eventGrowth ? trendFromChange(eventGrowth.registrantYoyChange) : undefined,
+      subtitle: eventGrowth ? eventsSubtitle : placeholderCaption,
+      chartData: eventGrowth ? protoSparkline(eventsSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Year-to-date event registrants and YoY change.',
       drawerType: DashboardDrawerType.NorthStarEventGrowth,
@@ -989,17 +1012,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-member-growth',
       description: 'Total paying corporate members with quarterly net new count and associated revenue.',
-      value: formatNumber(memberAcquisition.totalMembers),
-      changePercentage: formatMomChange(memberAcquisition.changePercentage),
-      trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
-      subtitle:
-        memberAcquisition.totalMembersMonthlyData.length > 0
-          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 12 months`
-          : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%`,
-      chartData: protoSparkline(
-        memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that the foundation has no paying members.
+      value: memberAcquisition ? formatNumber(memberAcquisition.totalMembers) : '—',
+      changePercentage: memberAcquisition ? formatMomChange(memberAcquisition.changePercentage) : undefined,
+      trend: memberAcquisition ? normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend) : undefined,
+      subtitle: membersLoaded ? membersSubtitle : placeholderCaption,
+      chartData: memberAcquisition ? protoSparkline(membersSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Total paying corporate members with monthly net new over the last 12 months.',
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
@@ -1216,26 +1234,28 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-brand-health',
       description: 'Total brand mentions with sentiment breakdown.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          'Mentions',
-          formatNumber(brandHealth.totalMentions),
-          brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
-          lfxColors.blue[500],
-          // null (no genuine MoM available) renders the same as a flat month:
-          // hidden delta, neutral trend.
-          formatMomChange(brandHealth.mentionMomChangePct ?? 0),
-          normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
-        ),
-        protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
-      ],
+      // undefined means the request failed, not that nobody mentioned the foundation. AAIF
+      // has 80,799 mentions; a zero-filled fallback rendered "0" here, and the drawer went
+      // further and asserted "No brand mention activity detected".
+      dualSignals: brandHealth
+        ? [
+            protoDualSignal(
+              'Mentions',
+              formatNumber(brandHealth.totalMentions),
+              brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
+              lfxColors.blue[500],
+              // null (no genuine MoM available) renders the same as a flat month:
+              // hidden delta, neutral trend.
+              formatMomChange(brandHealth.mentionMomChangePct ?? 0),
+              normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
+            ),
+            protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
+          ]
+        : [unavailableDualSignal('Mentions', lfxColors.blue[500]), unavailableDualSignal('Positive Sentiment', lfxColors.violet[500])],
       // monthlyMentions only holds months WITH rows, so its length is not the
       // reporting window — the ED caller always requests last-6, so the trend
       // window is labeled directly rather than derived from row count.
-      caption:
-        brandHealth.monthlyMentions.length > 0
-          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend last 6 months`
-          : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
+      caption: brandHealth ? brandHealthCaption : placeholderCaption,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
@@ -1248,14 +1268,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-flywheel-conversion',
       description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
-      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
-      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
-      chartData: protoSparkline(
-        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not a 0.0% conversion rate.
+      value: flywheel ? `${flywheel.reengagement.reengagementRate.toFixed(1)}%` : '—',
+      changePercentage: flywheel ? formatPpMomChange(flywheel.reengagement.reengagementMomChange) : undefined,
+      trend: flywheel ? trendFromChange(flywheel.reengagement.reengagementMomChange) : undefined,
+      subtitle: flywheel ? flywheelSubtitle : placeholderCaption,
+      chartData: flywheel ? protoSparkline(flywheelSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText:
         'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',

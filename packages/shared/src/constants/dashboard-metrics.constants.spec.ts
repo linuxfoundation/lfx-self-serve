@@ -223,6 +223,50 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(email?.caption).not.toContain('could not be loaded');
   });
 
+  it('says the data is unavailable when the event-growth request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ eventGrowth: undefined }));
+
+    const events = card(cards, 'ed-evo-event-growth');
+    expect(events?.value).toBe('—');
+    expect(events?.value).not.toBe('0');
+    expect(events?.subtitle).toContain('could not be loaded');
+    expect(events?.changePercentage).toBeUndefined();
+    expect(events?.trend).toBeUndefined();
+  });
+
+  it('says the data is unavailable when the flywheel request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ flywheel: undefined }));
+
+    const conversion = card(cards, 'ed-evo-flywheel-conversion');
+    expect(conversion?.value).toBe('—');
+    // The failure mode this replaces: a zero-filled response rendered a plausible rate.
+    expect(conversion?.value).not.toBe('0.0%');
+    expect(conversion?.subtitle).toContain('could not be loaded');
+    expect(conversion?.changePercentage).toBeUndefined();
+  });
+
+  it('says the data is unavailable when the member-acquisition request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ memberAcquisition: undefined }));
+
+    const members = card(cards, 'ed-evo-member-growth');
+    expect(members?.value).toBe('—');
+    expect(members?.value).not.toBe('0');
+    expect(members?.subtitle).toContain('could not be loaded');
+    expect(members?.changePercentage).toBeUndefined();
+  });
+
+  // The Members card is the only one reading two responses. Retention supplies the caption
+  // alone, so its failure leaves the value measured while the caption must stop claiming a
+  // retention rate it never received.
+  it('drops the retention caption when only the retention request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ memberRetention: undefined }));
+
+    const members = card(cards, 'ed-evo-member-growth');
+    expect(members?.value).toBe('0');
+    expect(members?.subtitle).toContain('could not be loaded');
+    expect(members?.subtitle).not.toContain('retention');
+  });
+
   // The other half of the contract: a foundation that genuinely has nothing must still
   // read as zero. Rendering an em dash here would hide a real measurement.
   it('renders a genuine zero as zero, not as unavailable', () => {
@@ -246,5 +290,19 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(social?.value).toBe('0');
     expect(social?.subtitle).toBe('0 platforms');
     expect(social?.subtitle).not.toContain('could not be loaded');
+  });
+
+  // The same half of the contract for the four cards guarded above. The base fixture is
+  // all-zeros and every response present, which is exactly a foundation that ran nothing —
+  // so each of these must read as a measurement, not as an outage.
+  it('renders genuine zeros as measurements on the events, members, and flywheel cards', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({}));
+
+    expect(card(cards, 'ed-evo-event-growth')?.value).toBe('0');
+    expect(card(cards, 'ed-evo-member-growth')?.value).toBe('0');
+    expect(card(cards, 'ed-evo-flywheel-conversion')?.value).toBe('0.0%');
+    for (const testId of ['ed-evo-event-growth', 'ed-evo-member-growth', 'ed-evo-flywheel-conversion']) {
+      expect(card(cards, testId)?.subtitle).not.toContain('could not be loaded');
+    }
   });
 });

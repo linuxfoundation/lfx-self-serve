@@ -50,83 +50,32 @@ import { RevenueImpactDrawerComponent } from '../revenue-impact-drawer/revenue-i
 import { WebsiteVisitsDrawerComponent } from '../website-visits-drawer/website-visits-drawer.component';
 
 const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
-  flywheel: {
-    conversionRate: 0,
-    changePercentage: 0,
-    trend: 'up',
-    funnel: {
-      eventAttendees: 0,
-      convertedToNewsletter: 0,
-      convertedToCommunity: 0,
-      convertedToWorkingGroup: 0,
-      convertedToTraining: 0,
-      convertedToCode: 0,
-      convertedToWeb: 0,
-    },
-    reengagement: {
-      totalReengaged: 0,
-      reengagementRate: 0,
-      reengagementMomChange: 0,
-      reengagedToNewsletter: 0,
-      reengagedToCommunity: 0,
-      reengagedToWorkingGroup: 0,
-      reengagedToTraining: 0,
-      reengagedToCode: 0,
-      reengagedToWeb: 0,
-    },
-    monthlyData: [],
-  },
-  memberAcquisition: {
-    totalMembers: 0,
-    totalMembersMonthlyData: [],
-    totalMembersMonthlyLabels: [],
-    newMembersThisQuarter: 0,
-    newMemberRevenue: 0,
-    changePercentage: 0,
-    trend: 'up',
-    quarterlyData: [],
-  },
-  memberRetention: {
-    renewalRate: 0,
-    netRevenueRetention: 0,
-    changePercentage: 0,
-    trend: 'up',
-    target: 0,
-    monthlyData: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact below: a zero-filled response
+  // renders "0.0%" on the Flywheel card, which reads as a measured conversion rate rather
+  // than a failed request.
+  flywheel: undefined,
+  // Explicitly undefined for the same reason as revenueImpact below: zero paying members is
+  // a legitimate measurement, so the Members card must not fall back to it.
+  memberAcquisition: undefined,
+  // Explicitly undefined for the same reason as memberAcquisition above — this response
+  // supplies the Members caption, so a zero-filled fallback reports "0.0% retention · NRR
+  // 0.0%" as if measured.
+  memberRetention: undefined,
   // Explicitly undefined for the same reason as revenueImpact below: 27,831 engaged
   // individuals rendered as "0" on AAIF when this fell back to a zero-filled response.
   engagedCommunity: undefined,
-  eventGrowth: {
-    totalAttendees: 0,
-    totalRegistrants: 0,
-    totalEvents: 0,
-    totalRevenue: 0,
-    revenuePerAttendee: 0,
-    attendeeYoyChange: 0,
-    registrantYoyChange: 0,
-    revenueYoyChange: 0,
-    trend: 'up',
-    monthlyData: [],
-    topEvents: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact below: a zero-filled response
+  // renders "0" registrants, indistinguishable from a foundation that genuinely ran no events.
+  eventGrowth: undefined,
   // Explicitly undefined for the same reason as revenueImpact below: zero followers and
   // zero sessions are legitimate measurements, so the Social and Web cards must not fall
   // back to them. AAIF has 17,269 followers across 2 platforms and rendered "0 · 0
   // platforms" on a cold load when brand-reach failed inside the dashboard's request
   // burst — an outage presented as a measured absence.
   brandReach: undefined,
-  brandHealth: {
-    totalMentions: 0,
-    sentiment: { positive: 0, neutral: 0, negative: 0 },
-    sentimentMomChangePp: 0,
-    mentionMomChangePct: null,
-    trend: 'up',
-    monthlyMentions: [],
-    topProjects: [],
-    topPositiveMentions: [],
-    topNegativeMentions: [],
-  },
+  // Explicitly undefined for the same reason as revenueImpact below: AAIF has 80,799
+  // mentions and the card read "0" when this fell back to a zero-filled response.
+  brandHealth: undefined,
   // Explicitly undefined rather than zero-filled: safe() reads EMPTY_ED_EVOLUTION_DATA[key]
   // as the per-call error fallback, and the Attribution card renders an unavailable state
   // on undefined. A zero-filled summary here would render the card at $0 on a failed
@@ -242,9 +191,69 @@ export class MarketingOverviewComponent {
     this.initBrandHealthMentions();
   protected readonly edEvolutionData: Signal<EdEvolutionData> = this.initEdEvolutionData();
 
-  protected readonly flywheelData = computed<FlywheelConversionResponse>(() => this.edEvolutionData().flywheel);
-  protected readonly memberAcquisitionData = computed<MemberAcquisitionResponse>(() => this.edEvolutionData().memberAcquisition);
-  protected readonly memberRetentionData = computed<MemberRetentionResponse>(() => this.edEvolutionData().memberRetention);
+  /**
+   * Drawer-facing only, exactly like engagedCommunityData below: the Flywheel card reads
+   * `edEvolutionData().flywheel` directly and renders an unavailable state on undefined,
+   * while the drawer takes a non-optional input and length-guards its own collections.
+   * Never source a card value from here — an empty shape here reads as a measured zero.
+   */
+  protected readonly flywheelData = computed<FlywheelConversionResponse>(
+    () =>
+      this.edEvolutionData().flywheel ?? {
+        conversionRate: 0,
+        changePercentage: 0,
+        trend: 'up',
+        funnel: {
+          eventAttendees: 0,
+          convertedToNewsletter: 0,
+          convertedToCommunity: 0,
+          convertedToWorkingGroup: 0,
+          convertedToTraining: 0,
+          convertedToCode: 0,
+          convertedToWeb: 0,
+        },
+        reengagement: {
+          totalReengaged: 0,
+          reengagementRate: 0,
+          reengagementMomChange: 0,
+          reengagedToNewsletter: 0,
+          reengagedToCommunity: 0,
+          reengagedToWorkingGroup: 0,
+          reengagedToTraining: 0,
+          reengagedToCode: 0,
+          reengagedToWeb: 0,
+        },
+        monthlyData: [],
+      }
+  );
+  /**
+   * Drawer-facing only, exactly like engagedCommunityData below: the Members card reads
+   * `edEvolutionData().memberAcquisition` directly and renders an unavailable state on undefined,
+   * while the drawer takes a non-optional input and length-guards its own collections.
+   * Never source a card value from here — an empty shape here reads as a measured zero.
+   */
+  protected readonly memberAcquisitionData = computed<MemberAcquisitionResponse>(
+    () =>
+      this.edEvolutionData().memberAcquisition ?? {
+        totalMembers: 0,
+        totalMembersMonthlyData: [],
+        totalMembersMonthlyLabels: [],
+        newMembersThisQuarter: 0,
+        newMemberRevenue: 0,
+        changePercentage: 0,
+        trend: 'up',
+        quarterlyData: [],
+      }
+  );
+  /**
+   * Drawer-facing only, exactly like engagedCommunityData below: the Members card reads
+   * `edEvolutionData().memberRetention` directly and renders an unavailable state on undefined,
+   * while the drawer takes a non-optional input and length-guards its own collections.
+   * Never source a card value from here — an empty shape here reads as a measured zero.
+   */
+  protected readonly memberRetentionData = computed<MemberRetentionResponse>(
+    () => this.edEvolutionData().memberRetention ?? { renewalRate: 0, netRevenueRetention: 0, changePercentage: 0, trend: 'up', target: 0, monthlyData: [] }
+  );
   /**
    * Drawer-facing only, exactly like brandReachData below: the Adoption card reads
    * `edEvolutionData().engagedCommunity` and renders an unavailable state on undefined,
@@ -269,7 +278,28 @@ export class MarketingOverviewComponent {
         monthlyData: [],
       }
   );
-  protected readonly eventGrowthData = computed<EventGrowthResponse>(() => this.edEvolutionData().eventGrowth);
+  /**
+   * Drawer-facing only, exactly like engagedCommunityData below: the Events card reads
+   * `edEvolutionData().eventGrowth` directly and renders an unavailable state on undefined,
+   * while the drawer takes a non-optional input and length-guards its own collections.
+   * Never source a card value from here — an empty shape here reads as a measured zero.
+   */
+  protected readonly eventGrowthData = computed<EventGrowthResponse>(
+    () =>
+      this.edEvolutionData().eventGrowth ?? {
+        totalAttendees: 0,
+        totalRegistrants: 0,
+        totalEvents: 0,
+        totalRevenue: 0,
+        revenuePerAttendee: 0,
+        attendeeYoyChange: 0,
+        registrantYoyChange: 0,
+        revenueYoyChange: 0,
+        trend: 'up',
+        monthlyData: [],
+        topEvents: [],
+      }
+  );
   /**
    * Drawer-facing only. The Social and Web cards read `edEvolutionData().brandReach`
    * directly and render an unavailable state when it is undefined; the drawers take a
@@ -292,8 +322,23 @@ export class MarketingOverviewComponent {
         weeklyTrend: [],
       }
   );
+  /**
+   * Drawer-facing only, like brandReachData and engagedCommunityData: the Sentiment card
+   * reads `edEvolutionData().brandHealth` and renders an unavailable state on undefined.
+   * Never source a card value from here — that printed "0" for AAIF's 80,799 mentions.
+   */
   protected readonly brandHealthData = computed<BrandHealthResponse>(() => {
-    const base = this.edEvolutionData().brandHealth;
+    const base = this.edEvolutionData().brandHealth ?? {
+      totalMentions: 0,
+      sentiment: { positive: 0, neutral: 0, negative: 0 },
+      sentimentMomChangePp: 0,
+      mentionMomChangePct: null,
+      trend: 'up' as const,
+      monthlyMentions: [],
+      topProjects: [],
+      topPositiveMentions: [],
+      topNegativeMentions: [],
+    };
     const mentions = this.brandHealthMentions();
     return mentions ? { ...base, ...mentions } : base;
   });
