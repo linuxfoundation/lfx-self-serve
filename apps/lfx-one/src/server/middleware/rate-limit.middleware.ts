@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
  * App-wide rate limiter for API routes.
@@ -27,6 +27,22 @@ export const publicApiRateLimiter = rateLimit({
   max: 100, // limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+/**
+ * Rate limiter for AI generation endpoints.
+ *
+ * Applied per-route to endpoints that call out to the LiteLLM proxy. Those calls are far more
+ * expensive than a normal proxy read, and the global `apiRateLimiter` (500/min) is nowhere near
+ * tight enough to bound them. Keyed on the authenticated user where available so one user on a
+ * shared egress IP can't exhaust the budget for everyone behind it.
+ */
+export const aiRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 10, // limit each user (or IP, when anonymous) to 10 AI generations per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 
 /**
