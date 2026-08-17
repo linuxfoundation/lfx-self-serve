@@ -115,8 +115,9 @@ describe('ProfileClasComponent', () => {
     const emptyState = fixture.debugElement.query(By.css('[data-testid="my-clas-empty-state"]'));
     expect(emptyState).toBeTruthy();
     // Scoped to the `lfx-button` host rather than `By.directive(RouterLink)`: the wrapped `<p-button>`
-    // also matches `[routerLink]`, so an unscoped query would depend on DOM traversal order between
-    // the two RouterLink instances.
+    // also matches `[routerLink]`, so an unscoped query is ambiguous about which of the two instances
+    // it means, even though preorder traversal happens to resolve the host one today. Querying the
+    // host directly says which instance we mean and survives a change in nesting.
     const ctaButton = emptyState.query(By.directive(ButtonComponent));
     if (!ctaButton) throw new Error('empty state rendered no lfx-button CTA');
     const urlTree = ctaButton.injector.get(RouterLink).urlTree;
