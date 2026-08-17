@@ -12,6 +12,7 @@ import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
+import { personaDetectionService } from '../utils/persona-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
@@ -3043,7 +3044,8 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_multi_foundation_summary');
 
     try {
-      const slugs = this.parseAndValidateSlugs(req);
+      const requestedSlugs = this.parseAndValidateSlugs(req);
+      const slugs = await this.filterSlugsToPersonaScope(req, requestedSlugs);
 
       const response = await this.projectService.getMultiFoundationSummary(req, slugs);
 
@@ -3083,6 +3085,29 @@ export class AnalyticsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Filter caller-supplied foundation slugs down to the ones the caller is authorized for.
+   * Root writers and LF Staff bypass scoping; scoped EDs only get their own persona-held slugs.
+   */
+  private async filterSlugsToPersonaScope(req: Request, slugs: string[]): Promise<string[]> {
+    const persona = await personaDetectionService.getPersonas(req);
+
+    if (persona.isRootWriter || persona.isLFStaff) {
+      return slugs;
+    }
+
+    const edSlugs = new Set((persona.personaProjects?.['executive-director'] ?? []).map((project) => project.projectSlug));
+    const scoped = slugs.filter((slug) => edSlugs.has(slug));
+
+    if (scoped.length === 0) {
+      throw ServiceValidationError.forField('slugs', 'None of the requested foundation slugs are within your persona scope', {
+        operation: 'get_multi_foundation_summary',
+      });
+    }
+
+    return scoped;
   }
 
   /**

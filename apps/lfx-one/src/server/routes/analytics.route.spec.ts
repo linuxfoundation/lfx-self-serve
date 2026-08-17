@@ -76,10 +76,31 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
   };
 }
 
-// A representative sample of the newly-gated marketing/ED-dashboard endpoints — not the full
-// list, since the point is to catch a missing/deleted gate on the registration, not to re-test
-// the middleware's own branching (covered by require-executive-director.middleware.spec.ts).
-const GATED_SAMPLE = ['/web-activities-summary', '/brand-reach', '/event-growth', '/multi-foundation-summary'];
+// Every endpoint gated by requireExecutiveDashboardAccess (ED-or-LF-Staff) — the full
+// registration list, so a missing/deleted gate on any one of them shows up here rather than
+// only in a sample. Middleware branching itself is covered by
+// require-executive-dashboard-access.middleware.spec.ts.
+const DASHBOARD_ACCESS_GATED = [
+  '/web-activities-summary',
+  '/email-ctr',
+  '/social-reach',
+  '/keyword-performance',
+  '/social-media',
+  '/social-media/monthly',
+  '/event-growth',
+  '/events-overview-summary',
+  '/event-roster',
+  '/event-detail',
+  '/brand-reach',
+  '/brand-health',
+  '/revenue-impact',
+  '/marketing-attribution',
+];
+
+// Endpoints gated by requireExecutiveDirector (ED-only, no LF-Staff bypass).
+const ED_ONLY_GATED = ['/multi-foundation-summary'];
+
+const GATED_SAMPLE = [...DASHBOARD_ACCESS_GATED, ...ED_ONLY_GATED];
 
 describe('analytics router — ED gate on marketing/dashboard endpoints', () => {
   it.each(GATED_SAMPLE)('refuses %s for a non-ED caller', async (path) => {
@@ -129,6 +150,22 @@ describe('analytics router — ED gate on marketing/dashboard endpoints', () => 
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: true, isLFStaff: false });
 
     const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('admits LF staff without the ED persona on an ED-or-LF-Staff dashboard endpoint', async () => {
+    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
+
+    const res = await fetch(`${baseUrl}/api/analytics/brand-reach?foundationSlug=cncf`);
+
+    expect(res.status).not.toBe(403);
+  });
+
+  it('refuses LF staff without the ED persona on an ED-only endpoint', async () => {
+    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
+
+    const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?foundationSlug=cncf`);
 
     expect(res.status).toBe(403);
   });

@@ -66,14 +66,29 @@ const NON_ED = { personas: ['contributor'], personaProjects: {}, isRootWriter: f
 const ED = { personas: ['executive-director'], personaProjects: {}, isRootWriter: false, isLFStaff: false };
 
 describe('campaigns router — ED gate', () => {
-  // A representative sample across the file, including a write and a param route — not all 20,
-  // since the point is to catch a missing/deleted gate on the registration, not to re-test the
-  // middleware's own branching (covered by require-executive-director.middleware.spec.ts).
+  // Every route on this router, so a missing/deleted gate on any one of them shows up here rather
+  // than only in a sample. Middleware branching itself is covered by
+  // require-executive-director.middleware.spec.ts.
   it.each([
     ['brief generate (write)', 'post', '/brief/generate'],
+    ['brief refine (write)', 'post', '/brief/refine'],
+    ['brief persist (write)', 'post', '/brief/persist'],
+    ['brief load (read)', 'get', '/brief'],
     ['create (write)', 'post', '/create'],
+    ['job status (read, param route)', 'get', '/jobs/some-job-id'],
+    ['hubspot emails (read)', 'get', '/hubspot/emails'],
+    ['hubspot utm lookup (read)', 'get', '/hubspot/utm'],
+    ['hubspot utm create (write)', 'post', '/hubspot/utm/create'],
     ['monitor (read)', 'get', '/monitor'],
+    ['linkedin accounts (read)', 'get', '/linkedin/accounts'],
+    ['linkedin monitor (read)', 'get', '/linkedin/monitor'],
+    ['reddit accounts (read)', 'get', '/reddit/accounts'],
+    ['reddit monitor (read)', 'get', '/reddit/monitor'],
+    ['meta accounts (read)', 'get', '/meta/accounts'],
+    ['meta monitor (read)', 'get', '/meta/monitor'],
     ['keywords (read)', 'get', '/keywords'],
+    ['audience (read)', 'get', '/audience'],
+    ['keyword actions (write)', 'post', '/keywords/actions'],
     ['status update (write, param route)', 'patch', '/some-campaign-id/status'],
   ])('refuses %s for a non-ED caller', async (_label, method, path) => {
     getPersonas.mockResolvedValue(NON_ED);

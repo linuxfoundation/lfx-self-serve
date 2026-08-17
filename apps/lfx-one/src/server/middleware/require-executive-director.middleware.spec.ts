@@ -126,6 +126,25 @@ describe('requireExecutiveDirector', () => {
     expect(verdict(next)).toBe('allow');
   });
 
+  // Campaigns routes scope by `project`, not `foundationSlug` — both must be checked.
+  it('scopes against the `project` query param when `foundationSlug` is absent', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ project: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('allows an ED to read their own foundation via the `project` query param', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
   it('denies an ED whose scoped project list is missing entirely', async () => {
     getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: false, isLFStaff: false });
     const next = vi.fn();
