@@ -5,20 +5,29 @@
  * Profile & Account hub — mobile layout E2E — LFXV2-3285.
  *
  * Regression coverage for the mobile-viewport layout fix: below the `lg` breakpoint the profile
- * rail must render inline in the content column (not as a `position: fixed` 300px overlay), and
- * the content column must reclaim the full available width instead of reserving a gutter for a
- * rail that no longer floats there. The pre-fix bug left a 390px viewport with ~50px of usable
- * content width (390 - 300px gutter - 40px page padding).
+ * rail's wrapper must resolve to a non-`fixed` CSS position (in normal document flow, left-aligned
+ * with the content column) instead of a `position: fixed` 300px overlay, and the content column
+ * must reclaim the full available width instead of reserving a gutter for a rail that no longer
+ * floats there. The pre-fix bug left a 390px viewport with ~50px of usable content width
+ * (390 - 300px gutter - 40px page padding).
  *
  * The existing profile specs (profile-edit-drawer.spec.ts, profile-visibility-drawer.spec.ts) pass
  * under the mobile-chrome project today purely because they assert `toBeVisible()` on the panel —
  * the fixed-width rail was technically "visible" even when it starved the content column, and
  * because the content was compressed rather than overflowing, no overflow-based check caught it
- * either. This spec asserts the actual geometry instead.
+ * either. This spec asserts the actual geometry and the underlying CSS mechanism instead.
  *
- * Runs meaningfully only under the mobile-chrome project (393x727, per playwright.config.ts) — the
- * whole file skips itself at the `lg` breakpoint (1024px) and up, since the layout it covers is
- * identical to the (already-covered) desktop fixed-rail behavior there.
+ * Verified this spec actually discriminates the bug: bounding-box "renders above the subtab nav" /
+ * "does not overlap the content column" checks alone do NOT catch the pre-fix layout at a narrow
+ * viewport — a fixed rail pinned to the right edge still sits above the nav and, once the content
+ * column is squeezed thin enough, its box no longer geometrically overlaps the rail's box either.
+ * The content-width assertion and the direct `position !== 'fixed'` / left-alignment checks below
+ * are the ones that actually fail against the pre-fix template.
+ *
+ * Drives an explicit viewport matrix (mirrors e2e/docs/responsive.spec.ts) covering mobile and
+ * tablet widths up to just under the `lg` breakpoint, rather than relying on whichever project
+ * happens to run it — so the tablet band (768-1023px) is exercised too, not just mobile-chrome's
+ * fixed 393px.
  *
  * Prerequisites (mirrors profile-edit-drawer.spec.ts):
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -31,10 +40,18 @@ test.setTimeout(60_000);
 
 const LOAD_TIMEOUT = 20_000;
 
-const LG_BREAKPOINT = 1024;
-// px-5 page padding (40px total) plus slack for mobile chrome — matches the tolerance implied by
-// the original bug report (390px viewport - 300px gutter - 40px padding = ~50px of content).
-const WIDTH_SLACK = 80;
+// The breakpoint at which the page container's own horizontal padding steps up
+// (px-5 -> md:px-8, see main-layout.component.html), used to derive the width-slack tolerance.
+const MD_BREAKPOINT = 768;
+
+// Sub-lg matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), and both ends of
+// the tablet band up to just under the lg breakpoint (1024px) the layout fix keys off.
+const VIEWPORTS = [
+  { name: 'mobile-narrow', width: 360, height: 640 },
+  { name: 'mobile', width: 393, height: 727 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'tablet-lg', width: 1023, height: 768 },
+] as const;
 
 const ROUTES = ['/profile', '/profile/settings'] as const;
 
@@ -48,16 +65,6 @@ function skipWhenAuthMissing(page: Page): void {
     }
   } catch {
     // Malformed URL — keep running; a failure here is useful signal, not noise.
-  }
-}
-
-// This spec only covers the below-lg layout LFXV2-3285 fixed; skip entirely at lg and up rather
-// than hard-coding a project name, so it stays correct if the project list changes (mirrors
-// skipOnMobileViewport in me-profile-nav.spec.ts, inverted).
-function skipAtOrAboveLgViewport(page: Page): void {
-  const viewport = page.viewportSize();
-  if (!viewport || viewport.width >= LG_BREAKPOINT) {
-    test.skip(true, 'Mobile/tablet-only layout regression coverage — see playwright.config.ts mobile-chrome project');
   }
 }
 
@@ -85,56 +92,71 @@ async function suppressCookieBanner(page: Page): Promise<void> {
 
 test.describe('Profile & Account hub — mobile layout (LFXV2-3285)', () => {
   test.beforeEach(async ({ page }) => {
-    skipAtOrAboveLgViewport(page);
     await suppressCookieBanner(page);
   });
 
-  for (const route of ROUTES) {
-    test(`content column reclaims full width and the panel renders inline @ ${route}`, async ({ page }) => {
-      await page.goto(route, { waitUntil: 'domcontentloaded' });
-      skipWhenAuthMissing(page);
+  for (const vp of VIEWPORTS) {
+    for (const route of ROUTES) {
+      test(`content column reclaims full width and the panel renders inline @ ${vp.name} (${vp.width}px) ${route}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(route, { waitUntil: 'domcontentloaded' });
+        skipWhenAuthMissing(page);
 
-      const panel = page.getByTestId('profile-panel');
-      const content = page.getByTestId('profile-content');
-      const tabs = page.getByTestId('profile-tabs-desktop');
+        const panel = page.getByTestId('profile-panel');
+        const content = page.getByTestId('profile-content');
+        const tabs = page.getByTestId('profile-tabs-desktop');
 
-      await expect(panel, 'profile panel should render').toBeVisible({ timeout: LOAD_TIMEOUT });
-      await expect(content, 'profile content column should render').toBeVisible({ timeout: LOAD_TIMEOUT });
-      await expect(tabs, 'subtab nav should render').toBeVisible({ timeout: LOAD_TIMEOUT });
+        await expect(panel, 'profile panel should render').toBeVisible({ timeout: LOAD_TIMEOUT });
+        await expect(content, 'profile content column should render').toBeVisible({ timeout: LOAD_TIMEOUT });
+        await expect(tabs, 'subtab nav should render').toBeVisible({ timeout: LOAD_TIMEOUT });
 
-      const viewport = page.viewportSize();
-      if (!viewport) {
-        throw new Error('viewport size unavailable');
-      }
+        // The content column must reclaim (close to) the full viewport width — not be squeezed by an
+        // unconditional right gutter reserved for a rail that, below lg, no longer renders as a fixed
+        // overlay. Page padding is px-5 (40px total) below md, md:px-8 (64px total) at md and up.
+        const pagePadding = vp.width >= MD_BREAKPOINT ? 64 : 40;
+        const contentBox = await content.boundingBox();
+        expect(contentBox, 'content column should have a bounding box').not.toBeNull();
+        expect(contentBox!.width, `content column width at ${vp.width}px viewport`).toBeGreaterThanOrEqual(vp.width - pagePadding - 8);
 
-      // The content column must reclaim (close to) the full viewport width — not be squeezed by an
-      // unconditional right gutter reserved for a rail that, below lg, no longer renders as a fixed
-      // overlay.
-      const contentBox = await content.boundingBox();
-      expect(contentBox, 'content column should have a bounding box').not.toBeNull();
-      expect(contentBox!.width, `content column width at ${viewport.width}px viewport`).toBeGreaterThanOrEqual(viewport.width - WIDTH_SLACK);
+        // No horizontal page scroll — the classic symptom of a fixed-width element bleeding past the
+        // viewport (1px fudge factor mirrors docs/responsive.spec.ts).
+        const overflow = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+        }));
+        expect(overflow.scrollWidth, `document scrollWidth at ${vp.width}px`).toBeLessThanOrEqual(overflow.clientWidth + 1);
 
-      // No horizontal page scroll — the classic symptom of a fixed-width element bleeding past the
-      // viewport (1px fudge factor mirrors docs/responsive.spec.ts).
-      const overflow = await page.evaluate(() => ({
-        scrollWidth: document.documentElement.scrollWidth,
-        clientWidth: document.documentElement.clientWidth,
-      }));
-      expect(overflow.scrollWidth, `document scrollWidth at ${viewport.width}px`).toBeLessThanOrEqual(overflow.clientWidth + 1);
+        // Direct mechanism check: the element two levels up from the `profile-panel` testid (the
+        // <aside>) is the wrapper <div> carrying `lg:fixed` in profile-layout.component.html. Below lg
+        // it must NOT resolve to position: fixed — this is what actually distinguishes "inline in
+        // normal flow" from "fixed overlay pinned to the viewport"; bounding-box comparisons alone
+        // don't, since a fixed rail still sits above the nav and (once the content column is squeezed
+        // thin enough) may not geometrically overlap it either.
+        const wrapperPosition = await panel.evaluate((el) => getComputedStyle(el.parentElement!.parentElement!).position);
+        expect(wrapperPosition, `profile panel wrapper position at ${vp.width}px should not be fixed`).not.toBe('fixed');
 
-      // The panel must render above the subtab nav, proving it's inline in normal flow rather than
-      // a `position: fixed` overlay pinned to the right edge (the pre-fix behavior at every width).
-      const panelBox = await panel.boundingBox();
-      const tabsBox = await tabs.boundingBox();
-      expect(panelBox, 'profile panel should have a bounding box').not.toBeNull();
-      expect(tabsBox, 'subtab nav should have a bounding box').not.toBeNull();
-      expect(panelBox!.y, 'profile panel should render above the subtab nav').toBeLessThan(tabsBox!.y);
+        // Inline placement: the panel should be left-aligned with the content column (both children of
+        // the same padded container) rather than offset toward the right edge like a fixed rail would be.
+        const panelBox = await panel.boundingBox();
+        expect(panelBox, 'profile panel should have a bounding box').not.toBeNull();
+        expect(Math.abs(panelBox!.x - contentBox!.x), `panel should be left-aligned with the content column at ${vp.width}px`).toBeLessThanOrEqual(1);
 
-      // The panel must not overlap the content column — if it did, it would still be acting as a
-      // fixed overlay laid on top of the page rather than a participant in normal flow.
-      const overlapsHorizontally = panelBox!.x < contentBox!.x + contentBox!.width && panelBox!.x + panelBox!.width > contentBox!.x;
-      const overlapsVertically = panelBox!.y < contentBox!.y + contentBox!.height && panelBox!.y + panelBox!.height > contentBox!.y;
-      expect(overlapsHorizontally && overlapsVertically, 'profile panel should not overlap the content column').toBe(false);
-    });
+        // The panel should still render above the subtab nav in the content flow.
+        const tabsBox = await tabs.boundingBox();
+        expect(tabsBox, 'subtab nav should have a bounding box').not.toBeNull();
+        expect(panelBox!.y, 'profile panel should render above the subtab nav').toBeLessThan(tabsBox!.y);
+
+        // The panel should not overlap the content column — a true 2D bounding-box intersection
+        // requires overlap on BOTH axes; checking each axis independently would misfire on any two
+        // elements that merely share a vertical range while sitting side by side.
+        const overlapsHorizontally = panelBox!.x < contentBox!.x + contentBox!.width && panelBox!.x + panelBox!.width > contentBox!.x;
+        const overlapsVertically = panelBox!.y < contentBox!.y + contentBox!.height && panelBox!.y + panelBox!.height > contentBox!.y;
+        expect(
+          overlapsHorizontally && overlapsVertically,
+          `profile panel (x:${panelBox!.x},y:${panelBox!.y},w:${panelBox!.width},h:${panelBox!.height}) should not overlap the content column ` +
+            `(x:${contentBox!.x},y:${contentBox!.y},w:${contentBox!.width},h:${contentBox!.height}) at ${vp.width}px`
+        ).toBe(false);
+      });
+    }
   }
 });
