@@ -126,6 +126,35 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent.trim()).toContain(label);
   });
 
+  // The visible text is just "Pause", which is unambiguous beside its row and useless out of
+  // context: a screen-reader user moving button-to-button hears "Pause" N times with no way to
+  // tell the campaigns apart. The label must NAME the campaign and CONTAIN the visible word, so
+  // speech input ("click Pause") still matches.
+  it('names the campaign in the accessible label, keeping the visible word', () => {
+    render([doc({ campaign_name: 'KubeCon EU', status: 'created' }), doc({ id: 'c-2', campaign_name: 'KubeCon NA', status: 'paused' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').getAttribute('aria-label')).toBe('Pause KubeCon EU');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').getAttribute('aria-label')).toBe('Resume KubeCon NA');
+  });
+
+  // A dangling aria-describedby is worse than none: it points assistive tech at an element that
+  // does not render. The row's error only exists after a failure, so the reference must appear
+  // with it and not before.
+  it('associates the error with its button only once an error exists', () => {
+    render([doc({ etag: undefined })]);
+    const button = () => fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+
+    expect(button().getAttribute('aria-describedby')).toBeNull();
+
+    button().click();
+    fixture.detectChanges();
+
+    const described = button().getAttribute('aria-describedby');
+    expect(described).toBe('campaign-error-c-1');
+    // The referenced element must actually be in the DOM — that is what makes it not dangling.
+    expect(fixture.nativeElement.querySelector(`#${described}`)).not.toBeNull();
+  });
+
   it('sends the row etag as the validator, not one cached elsewhere', () => {
     render([doc({ version: 9, etag: '"9"' })]);
 

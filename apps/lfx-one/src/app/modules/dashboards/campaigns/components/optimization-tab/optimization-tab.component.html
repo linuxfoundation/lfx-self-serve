@@ -66,13 +66,31 @@
                 <span class="truncate text-sm font-medium text-gray-900">{{ campaign.campaign_name }}</span>
                 <span class="text-xs text-gray-500">{{ campaign.platform }} · {{ displayStatus(campaign) }}</span>
                 @if (toggleError()[campaign.id]; as message) {
-                  <span class="text-xs text-red-600" role="alert" [attr.data-testid]="'optimization-campaign-error-' + campaign.id">{{ message }}</span>
+                  <span
+                    class="text-xs text-red-600"
+                    role="alert"
+                    [id]="'campaign-error-' + campaign.id"
+                    [attr.data-testid]="'optimization-campaign-error-' + campaign.id"
+                    >{{ message }}</span
+                  >
                 }
               </div>
+              <!--
+                The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
+                unambiguous beside its row and useless out of context — a screen-reader user moving
+                by button hears "Pause" N times with no way to tell the rows apart. The label
+                CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
+                still matches.
+
+                `aria-describedby` points at the row's error only when one exists; a dangling
+                reference to an element that renders conditionally is worse than none.
+              -->
               <button
                 type="button"
                 (click)="toggleCampaign(campaign)"
                 [disabled]="togglePending()[campaign.id]"
+                [attr.aria-label]="(isRunning(campaign) ? 'Pause ' : 'Resume ') + campaign.campaign_name"
+                [attr.aria-describedby]="toggleError()[campaign.id] ? 'campaign-error-' + campaign.id : null"
                 class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 [attr.data-testid]="'optimization-campaign-toggle-' + campaign.id">
                 @if (togglePending()[campaign.id]) {
