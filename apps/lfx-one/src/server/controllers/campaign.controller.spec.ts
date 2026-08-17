@@ -560,6 +560,8 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 1000,
+      // Named explicitly since LFXV2-3257 — see buildGoogleAdsConfig.
+      channel: 'search',
       headlines: ['H1'],
       descriptions: ['D1'],
       // `text`, not `term`, and an upper-case enum: the service's keyword shape.
@@ -607,16 +609,25 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budgetUsd']).toBe(100);
   });
 
-  it('omits googleAdsConfig when only demand-gen is selected', async () => {
-    // There is no Search campaign to fund, and the dispatcher would otherwise run a demand-gen
-    // request as Search. The REFUSAL that makes this omission safe lives in `createCampaigns`
-    // (see its spec) — deliberately not here, so it is gated by the cutover flags.
+  /**
+   * SUPERSEDED by LFXV2-3257, which is why this now asserts the opposite of what it once did.
+   *
+   * The old contract omitted `googleAdsConfig` entirely for a demand-gen-only create, because
+   * "the dispatcher would otherwise run a demand-gen request as Search" — true when the config
+   * had no way to name a channel. campaign-service now takes `channel`, so the config is sent
+   * and names it. Omitting it today would mark the platform UNCONFIGURED and refuse a create the
+   * service can serve.
+   */
+  it('sends a demand-gen googleAdsConfig rather than omitting it', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(envelopeFor(createCampaigns)).not.toHaveProperty('googleAdsConfig');
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 1000,
+      channel: 'demand-gen',
+    });
   });
 
   /**
@@ -637,6 +648,66 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(legacyCreate).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_dg_1' });
+  });
+
+  /**
+   * Demand-gen-only is the one mixed-type case the cutover can serve today (LFXV2-3257).
+   * Before this, `buildGoogleAdsConfig` returned null whenever Search was unselected, so the
+   * platform read as UNCONFIGURED and the whole create was refused — Demand Gen was
+   * unreachable through campaign-service even after the Go client existed.
+   */
+  it('sends the demand-gen channel when only demand gen is selected', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('demand-gen');
+  });
+
+  /**
+   * The WHOLE budget, not the search share. `searchBudgetPct` splits a budget between two
+   * campaigns; with no Search campaign to fund there is nothing to split, and sending 70% would
+   * silently underfund the only campaign being created.
+   */
+  it('gives a demand-gen-only create the whole budget', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // Pinned WHOLE, like the search branch above. Asserting only `budget` would pass a builder
+    // that leaked a stray field into the demand-gen envelope — headlines or keywords copied
+    // across from the search branch, say — which campaign-service would then receive on a
+    // channel that has no use for them.
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+      budget: 500,
+      channel: 'demand-gen',
+    });
+  });
+
+  /**
+   * Search keeps its channel explicitly, and keeps the SPLIT budget. The contrast matters: without
+   * it the two tests above would pass on a builder that sent demand-gen for everything.
+   */
+  it('keeps sending the search channel and the split budget for a mixed selection', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['search', 'demand-gen'], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('search');
+    expect(sent['budget']).toBe(350);
   });
 
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
