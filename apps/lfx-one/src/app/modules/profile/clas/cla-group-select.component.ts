@@ -1,84 +1,102 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, effect, input, model, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { CLA_GROUP_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type { ClaGroupOption } from '@lfx-one/shared/interfaces';
-import { DialogModule } from 'primeng/dialog';
+import { MyClasService } from '@services/my-clas.service';
+import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, debounceTime, of, Subject, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 /**
- * "Sign a CLA" picker for the hand-off (#1251), following the approved M2 prototype: search,
- * pick from the results, confirm the selection, then continue.
+ * "Sign a CLA" picker, opened via DialogService (#1251), following the approved M2 prototype:
+ * search, pick from the results, confirm the selection, then continue.
  *
  * The two-step shape is the prototype's, not an embellishment — the contributor confirms *which*
  * project they are about to sign for before leaving the application, because the next screen is
  * a different product and a legal act.
  *
- * Purely presentational. The query is emitted rather than filtered here, so the results always
- * come from the server route; when #1250 lands the real four-source search behind that route,
- * this component does not change.
+ * Closes with the chosen `ClaGroupOption`, or `null` if the contributor backs out; the caller
+ * resolves the hand-off URL. Searching happens here and upstream rather than by filtering a
+ * fetched list, so #1250 can put the real four-source search behind the same route untouched.
  */
 @Component({
   selector: 'lfx-cla-group-select',
-  imports: [DialogModule, ReactiveFormsModule, ButtonComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent],
   templateUrl: './cla-group-select.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ClaGroupSelectComponent {
-  public readonly options = input<ClaGroupOption[]>([]);
-  public readonly loading = input<boolean>(false);
-  public readonly error = input<boolean>(false);
-
-  /** True while the hand-off URL is being resolved — keeps the CTA busy and blocks a second click. */
-  public readonly starting = input<boolean>(false);
-
-  public readonly visible = model<boolean>(false);
-
-  public readonly search = output<string>();
-  public readonly confirmed = output<ClaGroupOption>();
-  public readonly retry = output<void>();
+  private readonly ref = inject(DynamicDialogRef);
+  private readonly myClasService = inject(MyClasService);
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),
   });
 
+  protected readonly options = signal<ClaGroupOption[]>([]);
+  protected readonly loading = signal(false);
+  protected readonly error = signal(false);
   protected readonly selected = signal<ClaGroupOption | null>(null);
   protected readonly resultsOpen = signal(false);
+
+  private readonly search$ = new Subject<string>();
 
   /** Set while writing the chosen project's name back into the field, so it is not re-searched. */
   private suppressNextEmit = false;
 
   public constructor() {
-    // Every open starts clean. A selection left over from last time would sit above a stale
-    // result list, and the CTA would be armed for a project the contributor never re-picked.
-    effect(() => {
-      if (this.visible()) this.reset();
-    });
+    this.search$
+      .pipe(
+        debounceTime(CLA_GROUP_SEARCH_DEBOUNCE_MS),
+        tap(() => {
+          this.loading.set(true);
+          this.error.set(false);
+        }),
+        switchMap((query) =>
+          this.myClasService.getClaGroupOptions(query).pipe(
+            catchError(() => {
+              this.error.set(true);
+              return of<ClaGroupOption[] | null>(null);
+            })
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe((options) => {
+        this.loading.set(false);
+        if (options) this.options.set(options);
+      });
 
     this.searchForm
       .get('query')!
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value) => {
-        // A typed character invalidates the confirmed choice: the summary and CTA must never
-        // describe a project the text no longer matches.
         if (this.suppressNextEmit) {
           this.suppressNextEmit = false;
           return;
         }
 
+        // A typed character invalidates the confirmed choice: the summary and CTA must never
+        // describe a project the text no longer matches.
         this.selected.set(null);
         this.resultsOpen.set(true);
-        this.search.emit(value ?? '');
+        this.search$.next(value ?? '');
       });
   }
 
   protected onFocus(): void {
     this.resultsOpen.set(true);
-    if (!this.selected()) this.search.emit(this.searchForm.get('query')?.value ?? '');
+    if (!this.selected()) this.search$.next(this.searchForm.get('query')?.value ?? '');
+  }
+
+  protected retry(): void {
+    this.search$.next(this.searchForm.get('query')?.value ?? '');
   }
 
   protected onSelect(option: ClaGroupOption): void {
@@ -92,18 +110,11 @@ export class ClaGroupSelectComponent {
 
   protected onContinue(): void {
     const option = this.selected();
-    if (!option || this.starting()) return;
-    this.confirmed.emit(option);
+    if (!option) return;
+    this.ref.close(option);
   }
 
   protected onCancel(): void {
-    this.visible.set(false);
-  }
-
-  private reset(): void {
-    this.suppressNextEmit = true;
-    this.searchForm.get('query')?.setValue('');
-    this.selected.set(null);
-    this.resultsOpen.set(false);
+    this.ref.close(null);
   }
 }

@@ -5,12 +5,12 @@ import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { CLA_GROUP_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type { ClaGroupOption, ClaStatus, MyClaAgreement, MyClasState } from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, debounceTime, of, Subject, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, of, switchMap, take } from 'rxjs';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -42,7 +42,6 @@ import { ClaGroupSelectComponent } from './cla-group-select.component';
     RouterLink,
     BadgeComponent,
     ButtonComponent,
-    ClaGroupSelectComponent,
     EmptyStateComponent,
     MenuComponent,
     MessageComponent,
@@ -50,7 +49,7 @@ import { ClaGroupSelectComponent } from './cla-group-select.component';
     TagComponent,
     ToastModule,
   ],
-  providers: [MessageService],
+  providers: [MessageService, DialogService],
   templateUrl: './profile-clas.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -61,6 +60,7 @@ export class ProfileClasComponent {
   private readonly userService = inject(UserService);
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
@@ -106,41 +106,8 @@ export class ProfileClasComponent {
    */
   protected readonly canSign = computed(() => !this.userService.impersonating());
 
-  protected readonly selectVisible = signal(false);
-  protected readonly claGroupOptions = signal<ClaGroupOption[]>([]);
-  protected readonly optionsLoading = signal(false);
-  protected readonly optionsError = signal(false);
-
   /** True while the chosen group's hand-off URL is being resolved; also guards a double hand-off. */
   protected readonly starting = signal(false);
-
-  private readonly search$ = new Subject<string>();
-
-  public constructor() {
-    // Searching upstream (rather than filtering the fetched list here) is what lets #1250 replace
-    // the route's stub with the real four-source search without touching this page.
-    this.search$
-      .pipe(
-        debounceTime(CLA_GROUP_SEARCH_DEBOUNCE_MS),
-        tap(() => {
-          this.optionsLoading.set(true);
-          this.optionsError.set(false);
-        }),
-        switchMap((query) =>
-          this.myClasService.getClaGroupOptions(query).pipe(
-            catchError(() => {
-              this.optionsError.set(true);
-              return of<ClaGroupOption[] | null>(null);
-            })
-          )
-        ),
-        takeUntilDestroyed()
-      )
-      .subscribe((options) => {
-        this.optionsLoading.set(false);
-        if (options) this.claGroupOptions.set(options);
-      });
-  }
 
   protected retry(): void {
     this.refresh$.next();
@@ -181,46 +148,24 @@ export class ProfileClasComponent {
     menu.toggle(event);
   }
 
-  protected openSignDialog(): void {
-    this.claGroupOptions.set([]);
-    this.optionsError.set(false);
-    this.optionsLoading.set(false);
-    this.selectVisible.set(true);
-  }
-
-  protected onClaGroupSearch(query: string): void {
-    this.search$.next(query);
-  }
-
   /**
-   * Resolves the Console URL for the chosen project and leaves the page.
+   * Opens the picker, then hands off to whatever it closes with.
    *
-   * A full navigation, not a new tab: the Console returns the contributor here afterwards, which
-   * only reads as one continuous flow if they never left this tab.
+   * A dynamic dialog rather than a `<p-dialog>` in this template, per the frontend checklist's
+   * dialog rule and the sibling profile tabs.
    */
-  protected onClaGroupConfirmed(option: ClaGroupOption): void {
-    if (this.starting()) return;
+  protected openSignDialog(): void {
+    const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
+      header: 'Sign a CLA',
+      width: '32rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
 
-    this.starting.set(true);
-
-    this.myClasService
-      .getSignUrl(option.claGroupId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (url) => {
-          this.starting.set(false);
-          this.selectVisible.set(false);
-          this.document.location.href = url;
-        },
-        error: () => {
-          this.starting.set(false);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Could not start signing',
-            detail: 'We could not open the CLA signing page. Please try again.',
-          });
-        },
-      });
+    dialogRef.onClose.pipe(take(1)).subscribe((option: ClaGroupOption | null | undefined) => {
+      if (option) this.handOffToConsole(option);
+    });
   }
 
   /**
@@ -248,6 +193,36 @@ export class ProfileClasComponent {
         });
       },
     });
+  }
+
+  /**
+   * Resolves the Console URL for the chosen project and leaves the page.
+   *
+   * A full navigation, not a new tab: the Console returns the contributor here afterwards, which
+   * only reads as one continuous flow if they never left this tab.
+   */
+  private handOffToConsole(option: ClaGroupOption): void {
+    if (this.starting()) return;
+
+    this.starting.set(true);
+
+    this.myClasService
+      .getSignUrl(option.claGroupId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (url) => {
+          this.starting.set(false);
+          this.document.location.href = url;
+        },
+        error: () => {
+          this.starting.set(false);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not start signing',
+            detail: 'We could not open the CLA signing page. Please try again.',
+          });
+        },
+      });
   }
 
   /**

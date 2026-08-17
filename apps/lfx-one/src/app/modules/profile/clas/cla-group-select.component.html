@@ -3,15 +3,7 @@ Copyright The Linux Foundation and each contributor to LFX.
 SPDX-License-Identifier: MIT
 -->
 
-<p-dialog
-  [(visible)]="visible"
-  [modal]="true"
-  [draggable]="false"
-  [resizable]="false"
-  [dismissableMask]="true"
-  [style]="{ width: '32rem' }"
-  header="Sign a CLA"
-  data-testid="cla-group-select-dialog">
+<div class="flex flex-col" data-testid="cla-group-select-dialog">
   <p class="mb-4 text-sm text-slate-600">Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit), for which you want to sign a CLA.</p>
 
   <div class="relative" (focusin)="onFocus()">
@@ -36,7 +28,7 @@ SPDX-License-Identifier: MIT
         @if (error()) {
           <div role="alert" class="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-600" data-testid="cla-group-select-error">
             <span>Couldn't load projects.</span>
-            <lfx-button label="Retry" size="small" [text]="true" icon="fa-light fa-arrow-rotate-left" (onClick)="retry.emit()" />
+            <lfx-button label="Retry" size="small" [text]="true" icon="fa-light fa-arrow-rotate-left" (onClick)="retry()" />
           </div>
         } @else if (loading()) {
           <div class="flex items-center gap-2 px-4 py-3 text-sm text-slate-500" data-testid="cla-group-select-loading">
@@ -80,13 +72,12 @@ SPDX-License-Identifier: MIT
   }
 
   <div class="mt-4 flex justify-end gap-2.5">
-    <lfx-button label="Cancel" [text]="true" [disabled]="starting()" (onClick)="onCancel()" data-testid="cla-group-select-cancel" />
+    <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="cla-group-select-cancel" />
     <lfx-button
       label="Continue to sign"
       icon="fa-light fa-arrow-right"
       iconPos="right"
       [disabled]="!selected()"
-      [loading]="starting()"
       (onClick)="onContinue()"
       data-testid="cla-group-select-continue" />
   </div>
@@ -96,4 +87,4 @@ SPDX-License-Identifier: MIT
       You'll be asked to authorize the account you want to use (GitHub or GitLab) before EasyCLA opens.
     </p>
   }
-</p-dialog>
+</div>

@@ -12,21 +12,15 @@ SPDX-License-Identifier: MIT
 
     <!-- Page-level, not per-row: signing a new CLA has no row to act on yet. -->
     @if (canSign()) {
-      <lfx-button label="Sign CLA" icon="fa-light fa-file-signature" size="small" data-testid="sign-cla-action" (onClick)="openSignDialog()" />
+      <lfx-button
+        label="Sign CLA"
+        icon="fa-light fa-file-signature"
+        size="small"
+        [loading]="starting()"
+        data-testid="sign-cla-action"
+        (onClick)="openSignDialog()" />
     }
   </div>
-
-  @if (canSign()) {
-    <lfx-cla-group-select
-      [(visible)]="selectVisible"
-      [options]="claGroupOptions()"
-      [loading]="optionsLoading()"
-      [error]="optionsError()"
-      [starting]="starting()"
-      (search)="onClaGroupSearch($event)"
-      (confirmed)="onClaGroupConfirmed($event)"
-      (retry)="onClaGroupSearch('')" />
-  }
 
   @if (error()) {
     <div role="alert" data-testid="my-clas-error">
