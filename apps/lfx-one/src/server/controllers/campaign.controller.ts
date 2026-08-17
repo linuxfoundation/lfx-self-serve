@@ -1083,10 +1083,24 @@ export class CampaignController {
    * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
    * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
    *
-   * Budget is the SEARCH share, not the whole request budget. The dispatcher composes a
-   * `"Search Campaign"` name and creates exactly one Search campaign, so handing it the combined
-   * budget would spend the demand-gen half on Search. When only demand-gen is selected there is
-   * no Search campaign to fund, so this returns null.
+   * Budget depends on WHICH channel this config is for, and the two cases differ.
+   *
+   * For a SEARCH create, budget is the Search SHARE rather than the whole request budget: the
+   * dispatcher creates exactly one Search campaign, so handing it the combined figure would
+   * spend the demand-gen half on Search.
+   *
+   * For a DEMAND-GEN-ONLY selection this returns a config carrying the FULL budget and
+   * `channel: "demand-gen"` — not null, which is what an earlier version of this comment said
+   * and what the code did before LFXV2-3257 ported `createDemandGenCampaign` into
+   * campaign-service. There is no Search campaign to split the budget with, so the whole amount
+   * funds the one campaign being created.
+   *
+   * A MIXED selection is refused DOWNSTREAM, not before this point: the controller builds the
+   * envelope (line ~304) and only then calls `createCampaigns` (line ~346), where the
+   * Search+Demand-Gen guard lives. So a mixed selection DOES reach this builder and produces a
+   * search-shaped config, which `createCampaigns` then refuses — see the inline comment below
+   * for why one-config-one-channel is a limit of this builder rather than of campaign-service's
+   * schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
    * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
@@ -1099,9 +1113,34 @@ export class CampaignController {
 
     const types = body.campaignTypes ?? [];
     const includesSearch = types.includes('search');
-    if (!includesSearch) return null;
+    const includesDemandGen = types.includes('demand-gen');
 
-    const pct = types.includes('demand-gen') ? (body.searchBudgetPct ?? 100) : 100;
+    // Neither type selected: nothing to build. Returning null marks the platform
+    // UNCONFIGURED, and `hasPlatformConfig` refuses the create rather than dispatching
+    // a zero-value config.
+    if (!includesSearch && !includesDemandGen) return null;
+
+    // DEMAND-GEN-ONLY is the one mixed-type case the cutover can serve today, and it
+    // gets the WHOLE budget: there is no Search campaign to fund, so the split does not
+    // apply. campaign-service creates a Demand Gen campaign with no ad and no keywords
+    // (LFXV2-3257), which is why headlines/keywords below are harmless to send — the
+    // Demand Gen path ignores them.
+    //
+    // Search + Demand Gen together is refused DOWNSTREAM in `createCampaigns`, not before this
+    // builder runs, deliberately — and the
+    // reason is THIS function, not campaign-service's schema. #130 widened the slot key to
+    // (brief_id, platform, variant), so a brief can now hold a Search row and a Demand Gen row
+    // at once; the database does not forbid the pair.
+    //
+    // What forbids it is that this builder returns ONE config with ONE channel. A mixed create
+    // would dispatch a single campaign and silently drop the other half — and half the budget.
+    // Serving the pair means emitting two configs, which is a change here rather than a schema
+    // decision. Until then a loud refusal beats a silent partial create.
+    if (!includesSearch && includesDemandGen) {
+      return { budget: body.budgetUsd ?? 0, channel: 'demand-gen' };
+    }
+
+    const pct = includesDemandGen ? (body.searchBudgetPct ?? 100) : 100;
     // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
     //
     // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of
@@ -1122,6 +1161,10 @@ export class CampaignController {
 
     return {
       budget,
+      // Explicit rather than relying on the upstream default. Absent means Search there
+      // too, but naming it keeps the two branches of this function symmetrical and makes
+      // a future default change unable to repoint this one silently.
+      channel: 'search',
       headlines: body.headlines ?? [],
       descriptions: body.descriptions ?? [],
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
