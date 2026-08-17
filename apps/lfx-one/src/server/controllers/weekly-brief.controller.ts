@@ -193,6 +193,45 @@ export class WeeklyBriefController {
   }
 
   /**
+   * GET /api/committees/:committeeId/weekly-briefs
+   *
+   * Paginated archive list of past briefs for the committee, sourced from the query-service
+   * `group_weekly_brief` index. Gated by `assertCommitteeRead` — same access contract as
+   * getCurrentBrief (committee#auditor). Returns `{ data: WeeklyBrief[], page_token? }`.
+   */
+  public async listBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'list_weekly_briefs', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'list_weekly_briefs',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'list_weekly_briefs');
+
+      const { data, page_token } = await this.weeklyBriefService.listBriefs(req, committeeId, req.query as Record<string, string>);
+
+      logger.success(req, 'list_weekly_briefs', startTime, {
+        committee_id: committeeId,
+        count: data.length,
+        has_more_pages: !!page_token,
+      });
+
+      res.json({ data, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/committees/:committeeId/weekly-briefs/action-items
    *
    * Gated by `assertCommitteeRead` (committee#auditor) — same gate as getCurrentBrief, since

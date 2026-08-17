@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
@@ -21,6 +22,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   Committee,
+  PaginatedResponse,
   ShareWeeklyBriefResult,
   ValidationError,
   WeeklyBrief,
@@ -61,7 +63,16 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule, TagComponent],
+  imports: [
+    CardComponent,
+    ButtonComponent,
+    SkeletonModule,
+    ReactiveFormsModule,
+    TextareaComponent,
+    ConfirmDialogModule,
+    TagComponent,
+    WeeklyBriefArchiveDrawerComponent,
+  ],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -126,6 +137,14 @@ export class WeeklyBriefCardComponent {
   // racing the first before the optimistic state has settled.
   public readonly ratingPending = signal(false);
 
+  // Archive drawer visibility and availability signals.
+  // `hasArchiveBriefs` starts false and is set by a limit=1 preflight that fires once
+  // the current brief becomes available — avoids showing a "Past Briefs" button that
+  // opens to an empty drawer (LFXV2-3046 requirement: hide the affordance when < 2 briefs
+  // total exist, i.e. no archived past weeks).
+  public readonly archiveVisible = signal(false);
+  public readonly hasArchiveBriefs = signal(false);
+
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
@@ -154,6 +173,10 @@ export class WeeklyBriefCardComponent {
   // a fresh, never-cleaned-up effect (Angular releases it only on component destroy) on
   // every single generate/regenerate/load-into-generating call, not just once.
   private readonly committee$ = toObservable(this.committee);
+
+  // Observable mirror of briefResponse for use in reactive pipelines that need to react
+  // to the brief loading (e.g. the archive-available preflight).
+  private readonly briefResponse$ = toObservable(this.briefResponse);
 
   // Guards against starting a second concurrent poll — pollUntilTerminal is reachable
   // both from onGenerate and from the initial-load pipeline (a page load / navigation
@@ -226,6 +249,10 @@ export class WeeklyBriefCardComponent {
   }
 
   // Public actions
+  public onOpenArchive(): void {
+    this.archiveVisible.set(true);
+  }
+
   public onGenerate(): void {
     if (this.generating()) return;
     const committeeUid = this.committee()?.uid;
@@ -536,7 +563,30 @@ export class WeeklyBriefCardComponent {
       this.editForm.reset({ briefText: '' });
       this.ratingPending.set(false);
       this.optimisticRating.set(null);
+      // Reset archive state when navigating between committees.
+      this.hasArchiveBriefs.set(false);
+      this.archiveVisible.set(false);
     });
+
+    // Archive preflight — fires once per committee when the current brief first becomes
+    // available. A limit=1 fetch confirms at least one past brief exists before the
+    // "Past Briefs" button is shown, per LFXV2-3046's "< 2 total → hide affordance" rule.
+    committeeUid$
+      .pipe(
+        switchMap((uid) =>
+          this.briefResponse$.pipe(
+            filter((r): r is WeeklyBriefCurrentResponse => !!r?.brief),
+            take(1),
+            switchMap(() =>
+              this.weeklyBriefService.listWeeklyBriefs(uid, { limit: 1 }).pipe(catchError(() => of(null as PaginatedResponse<WeeklyBrief> | null)))
+            )
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        this.hasArchiveBriefs.set((response?.data?.length ?? 0) > 0);
+      });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(
         switchMap(([uid]) => {
