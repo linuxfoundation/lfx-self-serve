@@ -4,9 +4,15 @@
 import { Router } from 'express';
 
 import { CampaignController } from '../controllers/campaign.controller';
+import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
+
+// Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
+// no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
+// server flag is off.
+router.use(requireCampaignManager);
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));

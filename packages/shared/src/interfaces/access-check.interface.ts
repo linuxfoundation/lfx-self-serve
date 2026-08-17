@@ -43,4 +43,13 @@ export type AccessCheckResourceType =
   | 'groupsio_mailing_list'
   | 'groupsio_member'
   | 'team';
-export type AccessCheckAccessType = 'writer' | 'viewer' | 'auditor' | 'organizer' | 'meeting_coordinator' | 'host' | 'member';
+export type AccessCheckAccessType =
+  | 'writer'
+  | 'viewer'
+  | 'auditor'
+  | 'organizer'
+  | 'meeting_coordinator'
+  | 'host'
+  | 'member'
+  | 'marketing_auditor'
+  | 'campaign_manager';

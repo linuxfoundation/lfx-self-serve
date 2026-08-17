@@ -1,0 +1,109 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { AccessCheckAccessType, PersonaType } from '@lfx-one/shared/interfaces';
+import { NextFunction, Request, Response } from 'express';
+
+import { AuthorizationError } from '../errors';
+import { ServerFeatureFlag, isServerFeatureEnabled } from '../helpers/server-feature-flag.helper';
+import { AccessCheckService } from '../services/access-check.service';
+import { logger } from '../services/logger.service';
+import { ProjectService } from '../services/project.service';
+import { personaDetectionService } from '../utils/persona-helper';
+import { requireExecutiveDirector } from './require-executive-director.middleware';
+
+const ED: PersonaType = 'executive-director';
+
+type MarketingAccessType = Extract<AccessCheckAccessType, 'marketing_auditor' | 'campaign_manager'>;
+
+const accessCheckService = new AccessCheckService();
+const projectService = new ProjectService();
+
+/**
+ * Marketing-ops FGA authorization for the Campaigns (`campaign_manager`) and marketing analytics
+ * (`marketing_auditor`) routes. LFXV2-2235.
+ *
+ * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates unchanged to
+ * `requireExecutiveDirector` — the ED-only gate LFXV2-3294 already shipped on these routes. When
+ * the flag is ON, ED / root-writer / LF-staff still bypass (consistent with
+ * `requireExecutiveDirector`), and a non-ED caller is authorized only via an actual FGA relation:
+ * either a ROOT-scoped grant (cascades to every project) or a grant scoped to the specific
+ * foundation/project the request names.
+ *
+ * Deliberately never a single all-or-nothing check: a caller can pass via ED persona OR root FGA
+ * grant OR per-project FGA grant, and a transient failure on any one path denies only that path,
+ * not the whole request. This is a direct response to the #1112 post-mortem, which found that PR
+ * shipped a single async guard with no synchronous fast path — see the LFXV2-2231 gap-analysis
+ * G2 finding.
+ */
+function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryParams: string[], operation: string) {
+  return async function requireMarketingAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga)) {
+        await requireExecutiveDirector(req, res, next);
+        return;
+      }
+
+      const result = await personaDetectionService.getPersonas(req);
+      if (result.personas.includes(ED) || result.isRootWriter || result.isLFStaff) {
+        next();
+        return;
+      }
+
+      const hasRootAccess =
+        access === 'marketing_auditor'
+          ? await personaDetectionService.checkRootMarketingAuditor(req)
+          : await personaDetectionService.checkRootCampaignManager(req);
+      if (hasRootAccess) {
+        next();
+        return;
+      }
+
+      const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
+
+      // No slug to scope against — the route handler is responsible for rejecting a missing
+      // required parameter. Without ED/root access there is nothing left to authorize on.
+      if (!requestedSlug) {
+        denyMarketingAccess(req, next, operation, access);
+        return;
+      }
+
+      const { uid, exists } = await projectService.getProjectIdBySlug(req, requestedSlug);
+      if (!exists) {
+        denyMarketingAccess(req, next, operation, access);
+        return;
+      }
+
+      const hasProjectAccess = await accessCheckService.checkSingleAccess(req, { resource: 'project', id: uid, access });
+      if (hasProjectAccess) {
+        next();
+        return;
+      }
+
+      denyMarketingAccess(req, next, operation, access);
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+function denyMarketingAccess(req: Request, next: NextFunction, operation: string, access: MarketingAccessType): void {
+  logger.warning(req, operation, `User denied marketing-ops access (${access})`, {
+    path: req.path,
+  });
+
+  next(
+    new AuthorizationError(`${access} access required for this resource`, {
+      operation,
+      service: 'authorization',
+      path: req.path,
+      code: 'MARKETING_ACCESS_REQUIRED',
+    })
+  );
+}
+
+/** Marketing Impact and other read-only marketing analytics endpoints. */
+export const requireMarketingAuditor = createMarketingAccessMiddleware('marketing_auditor', ['foundationSlug', 'project'], 'require_marketing_auditor');
+
+/** Campaigns endpoints — read and write. */
+export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');

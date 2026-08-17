@@ -43,6 +43,8 @@ export class PersonaDetectionService {
   private readonly personasCache = new Map<string, PersonaApiResponseCacheEntry>();
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
   private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
@@ -148,6 +150,47 @@ export class PersonaDetectionService {
       return false;
     });
     this.lfStaffRequestCache.set(req, promise);
+    return promise;
+  }
+
+  /**
+   * Checks whether the current user holds `marketing_auditor` on the tenant ROOT project. A ROOT
+   * grant cascades to every sub-project, so this signal lets a non-ED marketing user's request
+   * pass a foundation-scoped check without a per-project tuple. Mirrors {@link checkRootWriter}:
+   * request-cached, resolves the ROOT uid via NATS, and fails closed to `false` so transient
+   * errors never widen access.
+   */
+  public async checkRootMarketingAuditor(req: Request): Promise<boolean> {
+    return this.checkRootAccess(req, this.rootMarketingAuditorRequestCache, 'marketing_auditor', 'check_root_marketing_auditor');
+  }
+
+  /**
+   * Checks whether the current user holds `campaign_manager` on the tenant ROOT project. See
+   * {@link checkRootMarketingAuditor} — same cascade rationale, different relation.
+   */
+  public async checkRootCampaignManager(req: Request): Promise<boolean> {
+    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'campaign_manager', 'check_root_campaign_manager');
+  }
+
+  private async checkRootAccess(
+    req: Request,
+    cache: WeakMap<Request, Promise<boolean>>,
+    access: 'marketing_auditor' | 'campaign_manager',
+    operation: string
+  ): Promise<boolean> {
+    const cached = cache.get(req);
+    if (cached) return cached;
+
+    const promise = this.resolveRootUid(req)
+      .then((rootUid) => {
+        if (!rootUid) return false;
+        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
+      })
+      .catch((error) => {
+        logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
+        return false;
+      });
+    cache.set(req, promise);
     return promise;
   }
 
