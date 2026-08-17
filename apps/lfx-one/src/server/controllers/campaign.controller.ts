@@ -691,16 +691,6 @@ export class CampaignController {
   }
 
   /**
-   * Search the project's HubSpot marketing emails for the template picker.
-   *
-   * `?project=` is required rather than defaulted, for the same reason every other
-   * campaign-service read here requires it: a HubSpot connection is per-project, and guessing the
-   * project would list one foundation's templates to another.
-   *
-   * `?q=` is optional — an empty query lists the most recently updated templates, which is the
-   * useful default when a user does not yet know what they are looking for.
-   */
-  /**
    * List the campaigns a brief created, so a later session can address them.
    *
    * This is the read that makes every per-campaign operation reachable after the creating tab is
@@ -748,6 +738,16 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Search the project's HubSpot marketing emails for the template picker.
+   *
+   * `?project=` is required rather than defaulted, for the same reason every other
+   * campaign-service read here requires it: a HubSpot connection is per-project, and guessing the
+   * project would list one foundation's templates to another.
+   *
+   * `?q=` is optional — an empty query lists the most recently updated templates, which is the
+   * useful default when a user does not yet know what they are looking for.
+   */
   public async searchHubSpotEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
     if (projectSlug === '') {

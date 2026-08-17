@@ -2191,6 +2191,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     const result = await new CampaignServiceClient().listBriefCampaigns(req, slug, brief);
 
     expect(proxyRequest).not.toHaveBeenCalled();
-    expect(result).toEqual({ campaigns: [], possiblyStale: false });
+    // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
+    // that the brief has no campaigns.
+    expect(result).toEqual({ campaigns: [], possiblyStale: true });
   });
 });
