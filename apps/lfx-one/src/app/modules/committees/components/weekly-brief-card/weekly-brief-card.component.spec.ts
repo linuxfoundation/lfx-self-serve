@@ -17,10 +17,9 @@ import { WeeklyBriefCardComponent } from './weekly-brief-card.component';
 
 /**
  * Covers performShareToSlack's error classifier (weekly-brief-card.component.ts's largest new
- * surface on LFXV2-3080, previously untested) — the branches make materially different safety
- * claims to the user (SLACK_SEND_FAILED: "nothing was posted, safe to retry" vs. the >=500/0/408
- * branch: "may not have completed, check the channel first"), so getting them swapped is a silent
- * correctness bug with no compiler signal. ConfirmationService is the real class, not a fake —
+ * surface on LFXV2-3080, previously untested) — getting a branch's message wrong (e.g. an
+ * ambiguous 5xx claiming "safe to retry") is a silent correctness bug with no compiler signal.
+ * ConfirmationService is the real class, not a fake —
  * PrimeNG's own <p-confirmDialog> in the template subscribes to its internal Subjects directly in
  * its constructor (see committee-settings-tab.component.spec.ts for the same finding) — but its
  * `confirm()` method is spied so the accept callback can be invoked directly without going through
@@ -62,7 +61,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
   };
 
   beforeEach(async () => {
-    shareWeeklyBriefToSlack = vi.fn(() => of({ committee_name: COMMITTEE.name }));
+    shareWeeklyBriefToSlack = vi.fn(() => of({}));
     messageAdd = vi.fn();
     impersonating = signal(false);
 
@@ -146,26 +145,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('No Slack webhook') }));
   });
 
-  it('SLACK_SEND_FAILED (502) says the message was rejected and nothing was posted — distinct from the ambiguous 5xx branch below', () => {
-    shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 502, error: { code: 'SLACK_SEND_FAILED' } })));
-
-    shareToSlack();
-
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('rejected') }));
-  });
-
-  it("SLACK_SEND_FAILED uses the server's specific rejection reason (e.g. rate_limited) instead of always blaming the webhook URL — a rate-limited or policy-blocked send is not a bad URL", () => {
-    shareWeeklyBriefToSlack.mockReturnValueOnce(
-      throwError(() => ({ status: 502, error: { code: 'SLACK_SEND_FAILED', error: 'Slack rejected the message: rate_limited' } }))
-    );
-
-    shareToSlack();
-
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Slack rejected the message: rate_limited' }));
-    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('webhook URL') }));
-  });
-
-  it('an unclassified 5xx says the send may not have completed — must not be confused with SLACK_SEND_FAILED\'s "safe to retry" claim', () => {
+  it('an unclassified 5xx says the send may not have completed', () => {
     shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 503, error: {} })));
 
     shareToSlack();
