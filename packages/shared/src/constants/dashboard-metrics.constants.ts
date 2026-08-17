@@ -710,6 +710,25 @@ const DATA_UNAVAILABLE_CAPTION = 'Data unavailable — could not be loaded';
 const DATA_LOADING_CAPTION = 'Loading…';
 
 /**
+ * Drawer empty-state copy for a FAILED request, as opposed to a measured absence.
+ *
+ * Each ED drill-down drawer's existing empty state asserts a finding ("No brand mention
+ * activity detected") and advises acting on it ("Engage with marketing ops…"). That copy
+ * is correct for a foundation that genuinely has no activity and wrong for one whose
+ * request failed — it reports an outage as a measurement and then recommends work based
+ * on it. The drawers pick between the two on their `unavailable` input.
+ *
+ * Deliberately terse: this is an executive dashboard, and the failure needs to be honest
+ * rather than loud. The body is a retry instruction and NOT a cause — the failure is
+ * intermittent under the dashboard's concurrent request burst, but that has not been
+ * confirmed as the mechanism, and naming an unproven cause in the UI would repeat the
+ * original defect one level up. The drawer suppresses its own advice paragraph in this
+ * state: advice derived from data that never arrived is the defect, not just its wording.
+ */
+export const DRAWER_UNAVAILABLE_HEADING = 'Data unavailable';
+export const DRAWER_UNAVAILABLE_BODY = 'Please try again.';
+
+/**
  * A dual-signal row for a card whose data could not be fetched.
  *
  * Renders an em-dash instead of a number, with no sparkline and no trend pill, so a

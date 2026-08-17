@@ -204,11 +204,13 @@
 <lfx-flywheel-conversion-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarFlywheelConversion"
   [data]="flywheelData()"
+  [unavailable]="!edEvolutionData().flywheel"
   (visibleChange)="handleDrawerClose()"></lfx-flywheel-conversion-drawer>
 
 <lfx-member-acquisition-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberAcquisition"
   [data]="memberAcquisitionData()"
+  [unavailable]="!edEvolutionData().memberAcquisition"
   [retentionData]="memberRetentionData()"
   [revenueImpactData]="revenueImpactData()"
   (visibleChange)="handleDrawerClose()"></lfx-member-acquisition-drawer>
@@ -216,6 +218,7 @@
 <lfx-engaged-community-drawer
   [visible]="activeDrawer() === DashboardDrawerType.NorthStarEngagedCommunity"
   [data]="engagedCommunityData()"
+  [unavailable]="!edEvolutionData().engagedCommunity"
   [brandReachData]="brandReachData()"
   (visibleChange)="handleDrawerClose()"></lfx-engaged-community-drawer>
 
@@ -233,6 +236,7 @@
 <lfx-brand-health-drawer
   [visible]="activeDrawer() === DashboardDrawerType.BrandHealth"
   [data]="brandHealthData()"
+  [unavailable]="!edEvolutionData().brandHealth"
   (visibleChange)="handleDrawerClose()"></lfx-brand-health-drawer>
 
 <!-- Influence Drawer -->

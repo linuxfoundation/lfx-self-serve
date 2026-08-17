@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { DASHBOARD_TOOLTIP_CONFIG, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, createHorizontalBarChartOptions, createLineChartOptions, lfxColors } from '@lfx-one/shared/constants';
 import {
   buildFlywheelKeyInsights,
   buildFlywheelRecommendedActions,
@@ -64,6 +64,15 @@ export class FlywheelConversionDrawerComponent {
   // === Computed Signals ===
   protected readonly formattedEventAttendees: Signal<string> = computed(() => formatNumber(this.data().funnel.eventAttendees));
   protected readonly reengagement: Signal<NonNullable<FlywheelConversionResponse['reengagement']>> = computed(() => getFlywheelReengagement(this.data()));
+  /**
+   * True when the source request FAILED, as opposed to returning a measured zero. The
+   * parent passes the undefined-ness of its response through; the empty state then says
+   * the data could not be loaded instead of asserting there was no activity.
+   */
+  public readonly unavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly reengagementRate: Signal<string> = computed(() => `${this.reengagement().reengagementRate.toFixed(1)}%`);
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = computed(() => buildFlywheelRecommendedActions(this.data()));
@@ -154,6 +163,7 @@ export class FlywheelConversionDrawerComponent {
   // === Private Initializers ===
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) return true;
       const { conversionRate, funnel, monthlyData } = this.data();
       return conversionRate === 0 && funnel.eventAttendees === 0 && monthlyData.length === 0;
     });

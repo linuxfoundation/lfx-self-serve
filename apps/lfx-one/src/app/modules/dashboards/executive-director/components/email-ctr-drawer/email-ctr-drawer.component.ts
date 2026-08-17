@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -47,6 +48,15 @@ export class EmailCtrDrawerComponent {
   // True once all three data sources have resolved (not still loading)
   private readonly dataResolved: Signal<boolean> = computed(() => !this.drawerLoading());
 
+  /**
+   * Set when this drawer's own request fails. Unlike the parent-fed drawers there is no
+   * `unavailable` input here: the fetch lives in this component and catchError resolves
+   * to a zero-filled default, which would otherwise render as "No email activity
+   * detected" — an outage stated as a measurement.
+   */
+  protected readonly unavailable = signal(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
 
   protected readonly expandedTypes = signal<Set<string>>(new Set());
@@ -109,6 +119,9 @@ export class EmailCtrDrawerComponent {
 
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) {
+        return true;
+      }
       if (!this.dataResolved()) {
         return false;
       }
@@ -137,12 +150,16 @@ export class EmailCtrDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        tap(() => this.drawerLoading.set(true)),
+        tap(() => {
+          this.drawerLoading.set(true);
+          this.unavailable.set(false);
+        }),
         switchMap((foundationSlug) =>
           this.analyticsService.getEmailCtr(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
+              this.unavailable.set(true);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',

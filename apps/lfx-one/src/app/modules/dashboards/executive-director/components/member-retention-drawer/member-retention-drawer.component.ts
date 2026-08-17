@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { formatPercent, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
+import { DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING } from '@lfx-one/shared/constants';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { MarketingKeyInsight, MarketingRecommendedAction, MemberRetentionResponse } from '@lfx-one/shared/interfaces';
@@ -44,6 +45,15 @@ export class MemberRetentionDrawerComponent {
   protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
+  /**
+   * True when the source request FAILED, as opposed to returning a measured zero. The
+   * parent passes the undefined-ness of its response through; the empty state then says
+   * the data could not be loaded instead of asserting there was no activity.
+   */
+  public readonly unavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
 
   // === Protected Methods ===
@@ -54,6 +64,7 @@ export class MemberRetentionDrawerComponent {
   // === Private Initializers ===
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) return true;
       const { renewalRate, netRevenueRetention, monthlyData } = this.data();
       return renewalRate === 0 && netRevenueRetention === 0 && (monthlyData.length === 0 || monthlyData.every((m) => m.value === 0));
     });

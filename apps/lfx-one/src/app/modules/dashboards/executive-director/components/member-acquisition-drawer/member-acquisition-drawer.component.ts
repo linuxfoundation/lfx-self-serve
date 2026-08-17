@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { createBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { DASHBOARD_TOOLTIP_CONFIG, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, createBarChartOptions, createLineChartOptions, lfxColors } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber, formatPercent, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { FormatMoneyPipe } from '@pipes/format-money.pipe';
 import { DrawerModule } from 'primeng/drawer';
@@ -82,6 +82,15 @@ export class MemberAcquisitionDrawerComponent {
   protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().attentionInsights);
   protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
+  /**
+   * True when the source request FAILED, as opposed to returning a measured zero. The
+   * parent passes the undefined-ness of its response through; the empty state then says
+   * the data could not be loaded instead of asserting there was no activity.
+   */
+  public readonly unavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly acquisitionChartData: Signal<ChartData<'bar'>> = this.initAcquisitionChartData();
 
@@ -137,6 +146,7 @@ export class MemberAcquisitionDrawerComponent {
   // === Private Initializers ===
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) return true;
       const { totalMembers, newMembersThisQuarter, quarterlyData } = this.data();
       const { renewalRate, netRevenueRetention, monthlyData } = this.retentionData();
       const hasQuarterlyActivity = quarterlyData.some((q) => q.newMembers > 0 || q.revenue > 0);
