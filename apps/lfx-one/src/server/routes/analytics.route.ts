@@ -192,7 +192,10 @@ router.get('/code-contribution-summary', (req, res, next) => analyticsController
 router.get('/board-meeting-participation-summary', (req, res, next) => analyticsController.getBoardMeetingParticipationSummary(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
-router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
+// ED-gated: backs the ED-only marketing-overview event growth drawer. The marketing-impact page
+// hides this from non-EDs client-side only, so authorization is enforced here with
+// server-verified persona detection rather than trusting the UI guard.
+router.get('/event-growth', requireExecutiveDirector, (req, res, next) => analyticsController.getEventGrowth(req, res, next));
 // ED-gated: returns per-event sponsorship and registration figures. The marketing-impact
 // page hides these from non-EDs client-side only, so authorization is enforced here with
 // server-verified persona detection rather than trusting the UI guard.
