@@ -39,6 +39,24 @@ export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnaps
   const featureFlagService = inject(FeatureFlagService);
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
+  // Check for a local flag override first, before waiting for provider readiness.
+  // This ensures E2E tests with pinned overrides don't timeout waiting for LaunchDarkly.
+  const override = featureFlagService.getFlagOverride(MARKETING_OPS_FGA_ENABLED_FLAG);
+  if (override !== undefined) {
+    if (!override) {
+      return router.parseUrl('/foundation/overview');
+    }
+    // Override says flag is on; continue to FGA check below.
+    return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
+      map(() => {
+        if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
+          return true;
+        }
+        return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
+      })
+    );
+  }
+
   const providerReady$ = featureFlagService.providerReady()
     ? of(true)
     : toObservable(featureFlagService.providerReady).pipe(

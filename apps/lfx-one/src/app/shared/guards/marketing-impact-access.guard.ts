@@ -45,6 +45,25 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
   const featureFlagService = inject(FeatureFlagService);
   const projectSlug = route.queryParamMap.get('project') ?? undefined;
 
+  // Check for a local flag override first, before waiting for provider readiness.
+  // This ensures E2E tests with pinned overrides don't timeout waiting for LaunchDarkly.
+  const override = featureFlagService.getFlagOverride(MARKETING_OPS_FGA_ENABLED_FLAG);
+  if (override !== undefined) {
+    // Force a refetch unless we already know the caller is a marketing auditor.
+    const force = override && !personaService.isMarketingAuditor();
+    return personaService.refreshEnrichedPersonas(force, override ? projectSlug : undefined).pipe(
+      map(() => {
+        const allowed = override
+          ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
+          : personaService.canViewExecutiveDashboards();
+        if (allowed) {
+          return true;
+        }
+        return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
+      })
+    );
+  }
+
   const providerReady$: Observable<boolean> = featureFlagService.providerReady()
     ? of(true)
     : toObservable(featureFlagService.providerReady).pipe(

@@ -190,7 +190,10 @@ router.get('/code-contribution-summary', (req, res, next) => analyticsController
 router.get('/board-meeting-participation-summary', (req, res, next) => analyticsController.getBoardMeetingParticipationSummary(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
-router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
+// Authorization is enforced server-side with ED/FGA detection. `requireMarketingAuditor`
+// falls back to ED-only while its server flag is off.
+router.get('/event-growth', requireMarketingAuditor, (req, res, next) => analyticsController.getEventGrowth(req, res, next));
 // Marketing-ops gated (LFXV2-2235): returns per-event sponsorship and registration figures.
 // The marketing-impact page hides these from unauthorized users client-side only, so
 // authorization is enforced here with server-verified ED/FGA detection rather than trusting
@@ -203,10 +206,20 @@ router.get('/event-roster', requireMarketingAuditor, (req, res, next) => analyti
 // against goal, plus the per-tier sponsorship breakdown and CFP status. See note above on
 // `requireMarketingAuditor`.
 router.get('/event-detail', requireMarketingAuditor, (req, res, next) => analyticsController.getEventDetail(req, res, next));
-router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns brand reach and engagement metrics across
+// social channels. Requires ED or FGA marketing grant; full-access users only (LF Staff
+// do not get the detailed brand reach view). See note above on `requireMarketingAuditor`.
+router.get('/brand-reach', requireMarketingAuditor, (req, res, next) => analyticsController.getBrandReach(req, res, next));
+// Social listening view backs both unrestricted (ED/marketing_auditor) and LF Staff-only
+// views, so it needs a separate authorization that admits LF Staff.
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
-router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
-router.get('/marketing-attribution', (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns revenue impact and attribution by channel.
+// Requires ED or FGA marketing grant; full-access users only. See note above on `requireMarketingAuditor`.
+router.get('/revenue-impact', requireMarketingAuditor, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns marketing attribution and performance by
+// campaign and channel. Requires ED or FGA marketing grant; full-access users only.
+// See note above on `requireMarketingAuditor`.
+router.get('/marketing-attribution', requireMarketingAuditor, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
 // Multi-foundation summary endpoint (multi-foundation dashboard)
 router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
