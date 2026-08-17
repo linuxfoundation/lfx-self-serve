@@ -8,6 +8,7 @@ import {
   AI_NEWSLETTER_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
+  MEETING_AGENDA_MAX_LENGTH,
   NEWSLETTER_AI_MAX_TOKENS,
   WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
   WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
@@ -86,8 +87,8 @@ export class AiService {
                   type: 'string',
                   description:
                     'Well-structured meeting agenda with time allocations and clear objectives. ' +
-                    `Must not exceed ${request.maxCharacters || 2000} characters.`,
-                  maxLength: request.maxCharacters || 2000,
+                    `Must not exceed ${request.maxCharacters || MEETING_AGENDA_MAX_LENGTH} characters.`,
+                  maxLength: request.maxCharacters || MEETING_AGENDA_MAX_LENGTH,
                 },
                 duration: {
                   type: 'number',
@@ -366,10 +367,10 @@ export class AiService {
   }
 
   /**
-   * Every descriptor is optional, including the meeting type — the composer's section rail lets the
-   * organizer reach Agenda & Resources before Details & Access is filled in, so a title, type, or
-   * project may legitimately not exist yet. Each clause is only appended when there's something to
-   * say; the controller guarantees at least a title or a goal.
+   * Every descriptor is optional, including the meeting type — in edit mode the composer's rail
+   * imposes no section locking, so the organizer can ask for an agenda with the title cleared, and the
+   * client's project context resolves asynchronously. Each clause is only appended when there's
+   * something to say; the controller guarantees at least a title or a goal.
    */
   private buildPrompt(request: GenerateAgendaRequest): string {
     let prompt = `Generate a meeting agenda for a ${this.getMeetingTypeDescription(request.meetingType)} meeting`;

@@ -306,10 +306,14 @@ export class MeetingRegistrantsDisplayComponent {
               // available (non-recurring meetings). See LFXV2-2864.
               const meeting = this.meeting() as Meeting;
               const occurrenceId = resolveRsvpOccurrenceId(meeting);
-              // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
+              // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views.
+              // The organizer branch asks for committee enrichment because the group filter compares
+              // `registrant.committee_uid` against `meeting.committees[].uid` (v2) — unenriched, the field
+              // still holds the upstream v1 SFID and no option would ever match. The `/my` endpoint
+              // enriches unconditionally, so it needs no flag.
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId)
-                : this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId);
+                : this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId, true);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),

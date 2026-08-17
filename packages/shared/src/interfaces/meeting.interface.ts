@@ -521,8 +521,10 @@ export interface MeetingRegistrant {
   type: 'direct' | 'committee';
   /**
    * Committee this registrant was added from (present when `type` is `committee`).
-   * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID during
-   * `include_committee` enrichment so the field means the same thing in both directions.
+   * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
+   * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
+   * thing in both directions. Two carve-outs: an unenriched read returns the raw SFID, and an SFID with
+   * no v2 counterpart is passed through unchanged even on an enriched response.
    */
   committee_uid?: string | null;
   /** Committee name (resolved from committee_uid) - response only */
@@ -571,7 +573,8 @@ export interface CreateMeetingRegistrantRequest {
   /**
    * Committee this registrant was added from, as a **v2** committee UID.
    * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
-   * resolves v2 → v1 before proxying. Send `null` (or omit) for a directly-added guest.
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest — upstream declares the field a
+   * non-nullable optional `string`, so the BFF drops the key rather than forwarding a `null`.
    */
   committee_uid?: string | null;
 }

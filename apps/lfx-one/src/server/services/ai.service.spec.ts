@@ -25,6 +25,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     AI_NEWSLETTER_SYSTEM_PROMPT: 'newsletter prompt',
     AI_REQUEST_CONFIG: actual.AI_REQUEST_CONFIG,
     DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
+    // Mirrors `MEETING_AGENDA_MAX_LENGTH` in the shared constants barrel; a literal because the
+    // meeting constants module can't be pulled in here without loading its own dependency graph.
+    MEETING_AGENDA_MAX_LENGTH: 2000,
     NEWSLETTER_AI_MAX_TOKENS: 12_000,
     WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
     WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH: 300,

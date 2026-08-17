@@ -102,8 +102,9 @@ describe('MeetingController', () => {
       aiSvc.generateMeetingAgenda.mockResolvedValue({ agenda: 'Roll call', estimatedDuration: 30 });
     });
 
-    // GH-1464: the composer's section rail can jump to Agenda & Resources before Details & Access
-    // is filled in, so a title / type / project may not exist yet. Those must not be requirements.
+    // GH-1464: in edit mode the rail imposes no section locking, so the organizer can reach Agenda &
+    // Resources with the title cleared; the project context also resolves asynchronously. A title /
+    // type / project must therefore not be requirements.
     it('generates from a free-text goal alone, with no title, type, or project', async () => {
       const req = buildReq({ body: { context: 'Plan the Q3 release' } });
 
@@ -149,7 +150,11 @@ describe('MeetingController', () => {
 
       await controller.generateAgenda(req, buildRes(), next);
 
-      expect(aiSvc.generateMeetingAgenda).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ context: undefined }));
+      // Asserted on the actual argument rather than `objectContaining({ context: undefined })`,
+      // which would also pass if the key were present with a real value stripped elsewhere.
+      const [, request] = aiSvc.generateMeetingAgenda.mock.calls[0];
+      expect(request.context).toBeUndefined();
+      expect(request.title).toBe('TAC Monthly');
     });
 
     // The controller used to drop maxCharacters, so the client's agenda cap never reached the model.
@@ -165,7 +170,9 @@ describe('MeetingController', () => {
       ['a non-numeric value', 'abc', MEETING_AGENDA_MAX_LENGTH],
       ['an absent value', undefined, MEETING_AGENDA_MAX_LENGTH],
       ['a value above the agenda cap', MEETING_AGENDA_MAX_LENGTH + 500, MEETING_AGENDA_MAX_LENGTH],
-      ['a negative value', -1, 1],
+      ['a negative value', -1, MEETING_AGENDA_MAX_LENGTH],
+      ['a zero cap', 0, MEETING_AGENDA_MAX_LENGTH],
+      ['a fractional value', 900.7, 900],
     ])('clamps %s to a usable agenda cap', async (_label, supplied, expected) => {
       await controller.generateAgenda(buildReq({ body: { title: 'TAC Monthly', maxCharacters: supplied } }), buildRes(), next);
 
@@ -189,13 +196,25 @@ describe('MeetingController', () => {
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
     });
 
+    // The key is deleted, not nulled: upstream declares `committee_uid` a non-nullable optional
+    // `string`, so omission is on-contract and an explicit `null` is not.
     it('strips an unresolvable committee_uid rather than forwarding a v2 UID upstream', async () => {
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map());
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: null }));
+      const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
+      expect(forwarded).not.toHaveProperty('committee_uid');
+    });
+
+    it('drops a client-sent null committee_uid instead of proxying it upstream', async () => {
+      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: null }] });
+
+      await controller.addMeetingRegistrants(req, buildRes(), next);
+
+      const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
+      expect(forwarded).not.toHaveProperty('committee_uid');
     });
 
     it('skips the mapping lookup entirely for directly-added guests', async () => {

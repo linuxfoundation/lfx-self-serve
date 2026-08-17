@@ -1494,14 +1494,30 @@ export class MeetingController {
     });
 
     try {
-      const { meetingType, projectName, maxCharacters } = req.body;
-      // The composer's section rail lets the organizer reach Agenda & Resources before Details &
-      // Access is filled in, so a title / type / project are not guaranteed to exist yet. Only
-      // require enough signal to write a useful agenda — a title or a free-text goal — and let the
-      // prompt builder omit the rest. Both are trimmed first: whitespace is not signal, and both
-      // land verbatim in the model prompt.
-      const title = MeetingController.readPromptField(req.body['title']);
-      const context = MeetingController.readPromptField(req.body['context']);
+      const { meetingType, projectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
+      // A title / type / project are not guaranteed to exist: edit mode drops the rail's section
+      // locking, so the organizer can request an agenda having just cleared the title, and the
+      // client's project context resolves asynchronously. Only require enough signal to write a
+      // useful agenda — a title or a free-text goal — and let the prompt builder omit the rest.
+      // Both are trimmed first: whitespace is not signal, and both land verbatim in the model
+      // prompt, which is also why both are capped.
+      const title = MeetingController.readPromptField(rawTitle);
+      const context = MeetingController.readPromptField(rawContext);
+
+      // A dropped over-budget descriptor is otherwise invisible: the request still succeeds on the
+      // remaining one, so the organizer sees a generated agenda that ignored what they typed. Log the
+      // discard (lengths only — the values themselves are user content) so it's at least diagnosable.
+      const overBudget = [['title', rawTitle] as const, ['context', rawContext] as const].filter(
+        ([, raw]) => typeof raw === 'string' && raw.trim().length > MEETING_AGENDA_PROMPT_MAX_LENGTH
+      );
+
+      if (overBudget.length > 0) {
+        logger.warning(req, 'generate_agenda', 'Dropped an over-budget prompt descriptor', {
+          dropped_fields: overBudget.map(([field]) => field),
+          lengths: overBudget.map(([, raw]) => (raw as string).trim().length),
+          limit: MEETING_AGENDA_PROMPT_MAX_LENGTH,
+        });
+      }
 
       if (!title && !context) {
         const validationError = ServiceValidationError.fromFieldErrors(
@@ -1815,16 +1831,17 @@ export class MeetingController {
    * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
    *
    * An unresolvable UID is stripped rather than forwarded — a v2 UID upstream would be stored as a
-   * bogus committee reference, which is worse than the guest landing as `direct`.
+   * bogus committee reference, which is worse than the guest landing as `direct`. Stripped means the
+   * key is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid`
+   * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
+   * is fine. A `null` arriving from the client is dropped for the same reason.
    */
   private async resolveRegistrantCommitteeUids(req: Request, registrants: CreateMeetingRegistrantRequest[]): Promise<CreateMeetingRegistrantRequest[]> {
     const v2Uids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
 
-    if (v2Uids.length === 0) {
-      return registrants;
-    }
-
-    const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2Uids);
+    // Still fall through to the map when there's nothing to resolve — a client that sent an explicit
+    // `committee_uid: null` needs the key dropped, and only the map below does that.
+    const v2ToV1Map = v2Uids.length > 0 ? await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2Uids) : new Map<string, string>();
 
     if (v2ToV1Map.size < v2Uids.length) {
       logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs could not be resolved to v1 SFIDs', {
@@ -1834,11 +1851,15 @@ export class MeetingController {
     }
 
     return registrants.map((registrant) => {
-      if (!registrant.committee_uid) {
-        return registrant;
+      const v1Sfid = registrant.committee_uid ? v2ToV1Map.get(registrant.committee_uid) : undefined;
+
+      if (v1Sfid) {
+        return { ...registrant, committee_uid: v1Sfid };
       }
 
-      return { ...registrant, committee_uid: v2ToV1Map.get(registrant.committee_uid) ?? null };
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { committee_uid: _dropped, ...withoutCommittee } = registrant;
+      return withoutCommittee;
     });
   }
 
@@ -1862,14 +1883,18 @@ export class MeetingController {
    * The value reaches the model twice — as `maxLength` in the response schema and interpolated into
    * the prompt — so an unvalidated `-1` / `"abc"` / `{}` off the request body would either produce an
    * opaque upstream 500 or let a caller ask for an agenda the `description` control can't hold.
+   * Out-of-range values fall back to the default rather than being pinned to the nearest bound: a cap
+   * of 1 is honoured nonsense that guarantees a useless completion, and the caller still pays for it.
    */
   private static clampAgendaMaxCharacters(value: unknown): number {
     const parsed = typeof value === 'number' ? value : Number.NaN;
 
-    if (!Number.isFinite(parsed)) {
+    const floored = Math.floor(parsed);
+
+    if (!Number.isFinite(parsed) || floored < 1 || floored > MEETING_AGENDA_MAX_LENGTH) {
       return MEETING_AGENDA_MAX_LENGTH;
     }
 
-    return Math.min(Math.max(Math.floor(parsed), 1), MEETING_AGENDA_MAX_LENGTH);
+    return floored;
   }
 }
