@@ -18,7 +18,7 @@ import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/
  */
 export function buildProfileTabs(myClasEnabled: boolean): ProfileTab[] {
   if (!myClasEnabled) return PROFILE_TABS;
-  const clasTab: ProfileTab = { id: 'clas', label: 'My CLAs', route: 'clas' };
+  const clasTab: ProfileTab = { id: 'clas', label: 'CLAs', route: 'clas' };
   const insertAt = PROFILE_TABS.findIndex((t) => t.id === 'transactions');
   if (insertAt === -1) return [...PROFILE_TABS, clasTab];
   return [...PROFILE_TABS.slice(0, insertAt), clasTab, ...PROFILE_TABS.slice(insertAt)];
