@@ -161,6 +161,11 @@ export enum ServerFeatureFlag {
    * and LinkedIn pausable at all — and pause is the primary cost-control lever on a mis-targeted
    * campaign.
    *
+   * REACH THE API GAINS, not a control the product grows. Turning this on exposes the server path
+   * only: no component calls `CampaignService.updateCampaignStatus`, because pausing needs a
+   * campaign UUID, brief id and ETag and nothing in the UI can obtain them until LFXV2-3099 lands.
+   * Said here as well as in the chart because this doc is what a reader reaches from the code.
+   *
    * Two counts live here and conflating them invites deleting a guard that is doing its job:
    * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
    * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are

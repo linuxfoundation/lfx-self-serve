@@ -228,6 +228,13 @@ Meta and Reddit whose default arm throws, so pause was unavailable for every oth
 matter what the allowlist said. Since pause is the primary cost-control lever on a mis-targeted or
 overspending campaign, "cannot pause Google Ads from the product" meant logging into Google Ads.
 
+**Turning it on does NOT give users a pause button.** It enables the SERVER path only. The app
+cannot call it yet — pausing a campaign-service campaign needs its UUID, brief id and ETag, and
+nothing in the UI can obtain any of them until the campaign read lands (LFXV2-3099). So the reach
+above is reach the API gains, not a control the product grows. An operator flipping this expecting
+a working pause control would find nothing changed on screen. Enable it when the UI half ships, or
+earlier if you want the endpoint reachable for direct API use.
+
 An overlapping rollout is SAFE here, and it is worth saying why, because the hazard recorded for
 `LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing runs a campaign-id SHAPE
 check BEFORE and INDEPENDENTLY of this flag — that is the actual safety property. The two id
