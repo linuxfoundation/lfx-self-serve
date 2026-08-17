@@ -52,7 +52,7 @@ This section shows your role and organizational affiliation for each open-source
 
 Your contributions are attributed based on three inputs (see the **How affiliations work** dialog on the tab):
 
-- **Verified identities** — your connected GitHub, GitLab, and email accounts link activity to you.
+- **Verified identities** — your connected accounts (such as GitHub) and verified email addresses link activity to you.
 - **Work experience** — tells us which organization you represented during each time period.
 - **Contribution timestamp overlap** — matching when you contributed against your employment dates attributes each contribution to the right organization.
 
