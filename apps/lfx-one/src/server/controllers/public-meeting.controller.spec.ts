@@ -6,6 +6,8 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ServiceValidationError } from '../errors/service-validation.error';
+
 const MEETING_ID = 'meeting-1111';
 const PROJECT_UID = 'project-2222';
 
@@ -544,7 +546,7 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(forwardedBody()).toMatchObject({ email: 'a@example.com', first_name: 'A', org_name: 'Acme' });
   });
 
-  it.each(['first_name', 'last_name', 'job_title', 'org_name'])('caps %s so nothing unbounded reaches upstream', async (field) => {
+  it.each(['first_name', 'last_name', 'job_title', 'org_name', 'occurrence_id'])('caps %s so nothing unbounded reaches upstream', async (field) => {
     const { req, res, next } = buildRegisterReqRes({ ...validBody, [field]: 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH * 2) });
 
     await controller.registerForPublicMeeting(req, res, next);
@@ -553,16 +555,24 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(forwardedBody()[field]).toHaveLength(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
   });
 
-  // Truncating the record's identity key would turn a too-long address into a different, valid-looking
-  // one and send an invite there — so it's rejected instead of capped.
-  it('rejects an over-length email rather than truncating it', async () => {
-    const local = 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
-    const { req, res, next } = buildRegisterReqRes({ ...validBody, email: `${local}@example.com` });
+  // The two identity keys are rejected rather than capped: truncating one would turn an unusable value
+  // into a different, valid-looking one — an invite to the wrong address, or a lookup against the wrong
+  // meeting. The error has to name the field, or a caller that did send an email is told it was
+  // missing.
+  it.each([
+    ['email', { email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com` }],
+    ['meeting_id', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+  ])('rejects an over-length %s by name rather than truncating it', async (field, overrides) => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, ...overrides });
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors).toEqual([expect.objectContaining({ field, message: expect.stringContaining(`${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH}`) })]);
   });
 
   // Which occurrences the registration covers is part of what a registrant states about their own

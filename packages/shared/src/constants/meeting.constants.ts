@@ -689,11 +689,13 @@ export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
  * and it always forwards upstream under an M2M token. Without a ceiling here the only bound on a name
  * or organization is `express.json`'s body limit —
  * megabytes, applied to the whole body rather than per field. 255 is generous for every field it
- * covers — the meeting UID, email, first/last name, job title, organization and occurrence ID — and
- * small enough that nothing unbounded reaches upstream or the logs.
+ * bounds and small enough that nothing unbounded reaches upstream or the logs.
  *
- * Free-text fields are truncated at the cap; `email` is dropped instead, since truncating the record's
- * identity key would produce a different, valid-looking address to invite.
+ * Two rules, both keyed off this one number. The free-text fields — first/last name, job title,
+ * organization, occurrence ID — are truncated at the cap. The identity keys, `email` and `meeting_id`,
+ * are rejected with a validation error instead, since truncating one would turn an unusable value into
+ * a different, valid-looking one: an invite sent to the wrong address, or a lookup against the wrong
+ * meeting.
  */
 export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
 

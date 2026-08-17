@@ -912,7 +912,8 @@ export class ProjectController {
     }
 
     try {
-      // Public route has no session — obtain M2M token so meeting service calls succeed.
+      // `/public/api` is optional-auth, so a session may or may not exist. Fall back to an M2M token
+      // when there's no user bearer token, so meeting service calls succeed either way.
       if (!req.bearerToken) {
         req.bearerToken = await generateM2MToken(req);
       }
