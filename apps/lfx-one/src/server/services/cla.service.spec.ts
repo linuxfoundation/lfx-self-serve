@@ -258,6 +258,34 @@ describe('toMyClaAgreement', () => {
     expect(unknown.statusReason).toBeUndefined();
   });
 
+  // The wire type declares the four producer values, so an out-of-contract status can only arrive
+  // from a producer that broke the contract. It still has to be survivable: `claStatusLabel` and
+  // `claStatusSeverity` are exhaustive switches with no default, so an unrecognised value reaching
+  // the template renders a pill with no label and no severity.
+  it('degrades an out-of-contract status to unknown and drops the reason it shipped with', () => {
+    const bogus = toMyClaAgreement(ecla({ status: 'retired' as EasyClaMyCla['status'], statusReason: 'not_on_approval_list', approved: true, valid: false }));
+
+    expect(bogus.status).toBe('unknown');
+    // Otherwise the row pairs an em dash with a sentence explaining a coverage miss.
+    expect(bogus.statusReason).toBeUndefined();
+  });
+
+  it('degrades an absent or empty status to unknown', () => {
+    expect(toMyClaAgreement(ecla({ status: undefined as unknown as EasyClaMyCla['status'] })).status).toBe('unknown');
+    expect(toMyClaAgreement(ecla({ status: '' as EasyClaMyCla['status'] })).status).toBe('unknown');
+  });
+
+  it('collapses an out-of-contract ICLA status to the binary ICLA standing', () => {
+    expect(toMyClaAgreement(icla({ status: 'retired' as EasyClaMyCla['status'], approved: true })).status).toBe('valid');
+    expect(toMyClaAgreement(icla({ status: 'retired' as EasyClaMyCla['status'], approved: false })).status).toBe('invalidated');
+  });
+
+  // Declared in ClaStatus but not produced today; accepted so the producer can ship it without a
+  // consumer change, and specifically NOT degraded to unknown.
+  it('passes superseded through untouched on an ECLA', () => {
+    expect(toMyClaAgreement(ecla({ status: 'superseded' as EasyClaMyCla['status'] })).status).toBe('superseded');
+  });
+
   it('maps an ECLA with company name and no pdf', () => {
     const a = toMyClaAgreement(ecla({ signingEntityName: 'Acme Inc' }));
     expect(a).toMatchObject({ kind: 'ECLA', companyName: 'Acme Inc', pdfAvailable: false });
