@@ -263,8 +263,8 @@ UUID job has drained.
 
 #### Marketing Ops FGA Enforcement
 
-| Parameter                                   | Description                                                                                     | Required | Default |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------- | ------- |
+| Parameter                                   | Description                                                                                    | Required | Default |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
 | `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
 
 Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
