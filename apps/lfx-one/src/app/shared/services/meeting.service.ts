@@ -359,10 +359,24 @@ export class MeetingService {
     );
   }
 
-  public getMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+  /**
+   * `includeCommittee` opts into committee enrichment (`committee_name`, `committee_role`,
+   * `committee_category`, `committee_voting_status`, `committee_appointed_by`). It costs a
+   * per-committee fan-out upstream, so it stays opt-in for the callers that actually render group
+   * attribution — the composer's Guests list.
+   */
+  public getMeetingRegistrants(
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    includeCommittee: boolean = false
+  ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
+    }
+    if (includeCommittee) {
+      params = params.set('include_committee', 'true');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
@@ -509,7 +523,12 @@ export class MeetingService {
   }
 
   /**
-   * Strips metadata from MeetingRegistrantWithState to create CreateMeetingRegistrantRequest
+   * Strips metadata from MeetingRegistrantWithState to create CreateMeetingRegistrantRequest.
+   *
+   * `committee_uid` is forwarded (as the v2 UID the picker works in) so a guest added from a group
+   * is persisted as `type: 'committee'` upstream instead of collapsing to `direct`. The BFF resolves
+   * it to the v1 SFID upstream expects; the other `committee_*` fields are response-only enrichment
+   * and are deliberately dropped.
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
@@ -520,6 +539,7 @@ export class MeetingService {
       host: registrant.host || false,
       job_title: registrant.job_title || null,
       org_name: registrant.org_name || null,
+      committee_uid: registrant.committee_uid || null,
     };
   }
 

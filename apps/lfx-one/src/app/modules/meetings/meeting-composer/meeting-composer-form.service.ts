@@ -779,7 +779,9 @@ export class MeetingComposerFormService {
     this.guestsLoadFailed.set(false);
 
     this.meetingService
-      .getMeetingRegistrants(meetingUid, false)
+      // include_committee: the Guests rows render a "via [Group]" chip, which needs the committee
+      // metadata the plain projection omits.
+      .getMeetingRegistrants(meetingUid, false, undefined, true)
       .pipe(
         take(1),
         catchError((error: unknown) => {
