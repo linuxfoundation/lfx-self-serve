@@ -20,7 +20,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -593,14 +593,14 @@ export class PublicMeetingController {
   }
 
   /**
-   * Narrows an anonymous request body to the fields a person may set about themselves.
+   * Narrows a self-registration request body to the fields a person may state about themselves.
    *
-   * This endpoint takes no session and forwards upstream under an M2M token, so whatever survives
-   * this function is written with application-level credentials and no user to attribute it to. The
-   * body used to be assigned wholesale, which let an anonymous caller set `host: true` — upstream
-   * documents that as "access to host key for the meeting" — or claim membership of a committee by
-   * passing `committee_uid`. Neither is the caller's to decide, so both are dropped here rather than
-   * left to upstream's discretion.
+   * `/public/api` is `auth: 'optional'`, so this runs both with and without a session — but it always
+   * forwards upstream under an M2M token, so whatever survives this function is written with
+   * application-level credentials. The body used to be assigned wholesale, which let a caller set
+   * `host: true` — upstream documents that as "access to host key for the meeting" — or claim
+   * membership of a committee by passing `committee_uid`. Neither is the caller's to decide, so both
+   * are dropped here rather than left to upstream's discretion.
    *
    * An allowlist rather than a denylist: a field added to `CreateMeetingRegistrantRequest` later
    * should have to be opted in to the public path deliberately, not inherit it.
@@ -612,29 +612,43 @@ export class PublicMeetingController {
    *
    * `username` is taken from the session when there is one and never from the body — a signed-in
    * registrant keeps their LFID attribution on a record written with application credentials, and a
-   * forged one still can't get in. `email` is lowercased because query-service tag matching is
-   * case-sensitive and every read path lowercases; a mixed-case registration would otherwise be
-   * indexed under a tag no later lookup matches.
+   * forged one still can't get in. It's stripped of any provider prefix because a registrant record
+   * stores the plain LFID: every read path strips before matching (`getMeetingRegistrantsByUsername`),
+   * so an `auth0|`-prefixed row would be invisible to the join-URL lookup that the username is stamped
+   * for in the first place. `email` is lowercased for the same reason, since query-service matching is
+   * case-sensitive and every read path lowercases.
    *
-   * One thing this doesn't close: `email` is the one field here that can't be self-asserted on a
-   * session-less route, so anyone can register a third party's address for a public meeting and
-   * trigger an invite to it. `publicApiRateLimiter` caps the volume, not the primitive.
+   * An over-length `email` is dropped rather than truncated, unlike the free-text fields — truncating
+   * the record's identity key would turn a too-long address into a different, valid-looking one and
+   * send an invite there.
+   *
+   * What this doesn't close: `email` is the one field here that can't be self-asserted, so anyone can
+   * register a third party's address for a public meeting and trigger an invite to it — and when the
+   * caller is signed in, the resulting row also carries their LFID against an address they don't own,
+   * which `getMeetingRegistrantsForUser`'s email-OR-username query matches for both parties.
+   * `publicApiRateLimiter` caps the volume, not the primitive.
    */
   private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;
     const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '');
-    const username = getEffectiveUsername(req);
+    const rawEmail = typeof raw['email'] === 'string' ? raw['email'].trim() : '';
+    const sessionUsername = getEffectiveUsername(req);
+    const username = sessionUsername ? stripAuthPrefix(sessionUsername) : '';
     const jobTitle = text('job_title');
     const orgName = text('org_name');
+    const occurrenceId = text('occurrence_id');
 
     return {
       meeting_id: text('meeting_id'),
-      email: text('email').toLowerCase(),
+      email: rawEmail.length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH ? '' : rawEmail.toLowerCase(),
       first_name: text('first_name'),
       last_name: text('last_name'),
       host: false,
       ...(jobTitle ? { job_title: jobTitle } : {}),
       ...(orgName ? { org_name: orgName } : {}),
+      // Which occurrences the registration covers is part of what a registrant states about their own
+      // attendance, so it stays allowlisted even though no in-app caller sends it yet.
+      ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
       ...(username ? { username } : {}),
     };
   }

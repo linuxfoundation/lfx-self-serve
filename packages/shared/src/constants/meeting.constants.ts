@@ -682,14 +682,18 @@ export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
 
 /**
- * Character ceiling for each free-text field an anonymous caller may set on itself when registering
- * for a public meeting (`POST /public/api/meetings/register`).
+ * Character ceiling for each free-text field a caller may set on itself when registering for a public
+ * meeting (`POST /public/api/meetings/register`).
  *
- * That route has no express-validator and no session, and forwards upstream under an M2M token, so
- * without a ceiling here the only bound on a name or organization is `express.json`'s body limit —
+ * That route has no express-validator and is optional-auth — so it runs with or without a session —
+ * and it always forwards upstream under an M2M token. Without a ceiling here the only bound on a name
+ * or organization is `express.json`'s body limit —
  * megabytes, applied to the whole body rather than per field. 255 is generous for every field it
- * covers (email, first/last name, job title, organization) and small enough that nothing unbounded
- * reaches upstream or the logs.
+ * covers — the meeting UID, email, first/last name, job title, organization and occurrence ID — and
+ * small enough that nothing unbounded reaches upstream or the logs.
+ *
+ * Free-text fields are truncated at the cap; `email` is dropped instead, since truncating the record's
+ * identity key would produce a different, valid-looking address to invite.
  */
 export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
 

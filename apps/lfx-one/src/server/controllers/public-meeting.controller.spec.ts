@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,11 +89,19 @@ vi.mock('../services/logger.service', () => ({
     info: vi.fn(),
   },
 }));
-vi.mock('../utils/auth-helper', () => ({
-  getEffectiveEmail: getEffectiveEmailMock,
-  getEffectiveUsername: getEffectiveUsernameMock,
-  getUsernameFromAuth: vi.fn(),
-}));
+// `stripAuthPrefix` is kept real rather than stubbed: the controller's prefix stripping only matters
+// because it has to agree with what the read paths do, and a stand-in here would assert agreement with
+// the stand-in instead.
+vi.mock('../utils/auth-helper', async () => {
+  const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
+
+  return {
+    getEffectiveEmail: getEffectiveEmailMock,
+    getEffectiveUsername: getEffectiveUsernameMock,
+    getUsernameFromAuth: vi.fn(),
+    stripAuthPrefix: actual.stripAuthPrefix,
+  };
+});
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../utils/security.util', () => ({ validatePassword: validatePasswordMock }));
 
@@ -432,8 +441,9 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 });
 
 /**
- * This endpoint takes no session and writes upstream under an M2M token, so the request body is the
- * only thing describing who the registrant is — and an anonymous caller controls all of it.
+ * This endpoint is optional-auth and always writes upstream under an M2M token, so apart from the
+ * username it reads off a session when one exists, the request body is the only thing describing who
+ * the registrant is — and the caller controls all of it.
  */
 describe('PublicMeetingController.registerForPublicMeeting', () => {
   let controller: PublicMeetingController;
@@ -534,19 +544,44 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     expect(forwardedBody()).toMatchObject({ email: 'a@example.com', first_name: 'A', org_name: 'Acme' });
   });
 
-  it('caps each free-text field so nothing unbounded reaches upstream', async () => {
-    const { req, res, next } = buildRegisterReqRes({ ...validBody, org_name: 'x'.repeat(400) });
+  it.each(['first_name', 'last_name', 'job_title', 'org_name'])('caps %s so nothing unbounded reaches upstream', async (field) => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, [field]: 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH * 2) });
 
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(forwardedBody().org_name).toHaveLength(255);
+    expect(forwardedBody()[field]).toHaveLength(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
+  });
+
+  // Truncating the record's identity key would turn a too-long address into a different, valid-looking
+  // one and send an invite there — so it's rejected instead of capped.
+  it('rejects an over-length email rather than truncating it', async () => {
+    const local = 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, email: `${local}@example.com` });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantWithM2M).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Which occurrences the registration covers is part of what a registrant states about their own
+  // attendance. No in-app caller sends it yet, so only this test keeps it from falling out again.
+  it('still forwards a single-occurrence scope', async () => {
+    const { req, res, next } = buildRegisterReqRes({ ...validBody, occurrence_id: '1666848600' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(forwardedBody().occurrence_id).toBe('1666848600');
   });
 
   // Derived from the session, never from the body: a signed-in registrant keeps their LFID on a
-  // record written with application credentials, and a forged `username` still can't get in.
-  it('takes username from the session and ignores the one in the body', async () => {
-    getEffectiveUsernameMock.mockReturnValue('realuser');
+  // record written with application credentials, and a forged `username` still can't get in. The
+  // provider prefix is stripped because a registrant record stores the plain LFID — every read path
+  // strips before matching, so a prefixed row would be invisible to the join-URL lookup.
+  it('takes username from the session, strips its provider prefix, and ignores the body', async () => {
+    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
     const { req, res, next } = buildRegisterReqRes({ ...validBody, username: 'someone-else' });
 
     await controller.registerForPublicMeeting(req, res, next);

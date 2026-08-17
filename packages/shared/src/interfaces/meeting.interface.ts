@@ -561,11 +561,11 @@ export interface CreateMeetingRegistrantRequest {
    * create has nothing to clear, so omission loses no meaning — unlike
    * `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a stored value.
    *
-   * The BFF does drop a nullish `org_name`, `avatar_url` or `occurrence_id` on the way out
-   * (`MeetingService.toUpstreamRegistrantBody`), and drops a blank one again on the public
-   * self-registration path (`PublicMeetingController.toSelfRegistration`) — but both exist to serve
-   * the rename and the public trust boundary, not to launder this type, and neither covers
-   * `job_title`, `username` or `committee_uid`. Treat the type as the guard.
+   * `MeetingService.toUpstreamRegistrantBody` does drop a nullish `org_name`, `avatar_url` or
+   * `occurrence_id` on the way out — but it exists to serve the rename, not to launder this type, and
+   * it doesn't cover `job_title`, `username` or `committee_uid`. (The public self-registration path
+   * narrows harder still, but only because it's a trust boundary; nothing else shares that treatment.)
+   * Treat the type as the guard.
    *
    * Note that three of these names differ from the wire: the BFF renames `org_name` → `org`,
    * `avatar_url` → `profile_picture` and `occurrence_id` → `occurrence` before proxying, so this
