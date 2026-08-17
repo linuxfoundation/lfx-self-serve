@@ -19,6 +19,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
+import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
@@ -577,8 +578,20 @@ export class MeetingController {
           registrant_count: registrants.length,
         });
 
-        // Enrich committee registrant data with committee details and member info
-        const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+        // Enrich committee registrant data with committee details and member info. Degrades to
+        // unenriched rows rather than failing the listing, matching `getMeetingRegistrants` — group
+        // attribution is decoration, and `resolveV2ToV1CommitteeMappings` goes over NATS, so a
+        // transient committee-service problem shouldn't cost the organizer the guest list. The
+        // interface docstring on `MeetingRegistrant.committee_uid` promises this on both paths.
+        let enrichedRegistrants = registrants;
+        try {
+          enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+        } catch (error) {
+          logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
 
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
@@ -1516,12 +1529,18 @@ export class MeetingController {
       // written against a shortened descriptor — so log it. Derived by comparing what arrived against
       // what `readPromptField` kept rather than re-testing the budget here, so the threshold lives in
       // exactly one place. Lengths only: the values themselves are user content.
+      // One flatMap rather than filter-then-map so the narrowing survives into the payload — the
+      // separated form needs a cast and an optional chain for facts the filter already established.
       const truncated = [
         { field: 'title', raw: rawTitle, kept: title },
         { field: 'context', raw: rawContext, kept: context },
-      ]
-        .filter(({ raw, kept }) => typeof raw === 'string' && kept !== undefined && raw.trim().length > kept.length)
-        .map(({ field, raw, kept }) => ({ field, from: (raw as string).trim().length, to: kept?.length }));
+      ].flatMap(({ field, raw, kept }) => {
+        if (typeof raw !== 'string' || kept === undefined) {
+          return [];
+        }
+        const from = raw.trim().length;
+        return from > kept.length ? [{ field, from, to: kept.length }] : [];
+      });
 
       if (truncated.length > 0) {
         logger.warning(req, 'generate_agenda', 'Truncated an over-budget prompt descriptor', {
@@ -1897,7 +1916,7 @@ export class MeetingController {
       return undefined;
     }
 
-    return trimmed.length > MEETING_AGENDA_PROMPT_MAX_LENGTH ? trimmed.slice(0, MEETING_AGENDA_PROMPT_MAX_LENGTH) : trimmed;
+    return truncateToUtf16Units(trimmed, MEETING_AGENDA_PROMPT_MAX_LENGTH);
   }
 
   /**

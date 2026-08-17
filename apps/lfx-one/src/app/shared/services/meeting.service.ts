@@ -531,9 +531,12 @@ export class MeetingService {
    * it to the v1 SFID upstream expects; the other `committee_*` fields are response-only enrichment
    * and are deliberately dropped.
    *
-   * A direct guest omits the key rather than sending `null` — upstream declares the field a
-   * non-nullable optional `string`. The BFF drops a stray `null` anyway, but relying on that would
-   * mean shipping an off-contract body and trusting the proxy to launder it.
+   * Every optional string is omitted when empty rather than sent as `null`: upstream declares
+   * `committee_uid`, `job_title` and `org` alike as non-nullable optional `string`s
+   * (`CreateItxRegistrantRequestBody`). The BFF drops a stray `null` anyway, but relying on that
+   * would mean shipping an off-contract body and trusting the proxy to launder it. The create body
+   * has nothing to clear, so omission loses no meaning — unlike {@link getChangedFields}, where
+   * `null` is how an update erases a stored value.
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
@@ -542,8 +545,8 @@ export class MeetingService {
       first_name: registrant.first_name,
       last_name: registrant.last_name,
       host: registrant.host || false,
-      job_title: registrant.job_title || null,
-      org_name: registrant.org_name || null,
+      ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
+      ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
       ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
     };
   }

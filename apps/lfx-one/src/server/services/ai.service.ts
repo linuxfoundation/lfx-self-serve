@@ -25,6 +25,7 @@ import {
   OpenAIChatRequest,
   OpenAIChatResponse,
 } from '@lfx-one/shared/interfaces';
+import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -61,8 +62,11 @@ export class AiService {
 
     try {
       // Resolved once: the same cap is asked of the model (in the schema and the prompt) and enforced
-      // on the way back out, so the three can't disagree.
-      const agendaMaxCharacters = request.maxCharacters || MEETING_AGENDA_MAX_LENGTH;
+      // on the way back out, so the three can't disagree. Floored at 1 because `maxCharacters` is a
+      // plain optional number on the request — the app's only caller pre-validates it, but nothing in
+      // this service's contract says so, and a negative would make the clamp's `slice` chop the tail
+      // off the agenda instead of capping it.
+      const agendaMaxCharacters = Math.max(1, request.maxCharacters || MEETING_AGENDA_MAX_LENGTH);
       const prompt = this.buildPrompt(request);
       const chatRequest: OpenAIChatRequest = {
         model: this.model,
@@ -532,6 +536,6 @@ export class AiService {
       source,
     });
 
-    return agenda.slice(0, maxCharacters);
+    return truncateToUtf16Units(agenda, maxCharacters);
   }
 }

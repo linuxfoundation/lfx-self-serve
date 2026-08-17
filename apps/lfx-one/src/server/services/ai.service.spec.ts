@@ -40,6 +40,11 @@ vi.mock('@lfx-one/shared/enums', () => ({
   MeetingType: { BOARD: 'board', MAINTAINERS: 'maintainers', MARKETING: 'marketing', TECHNICAL: 'technical', LEGAL: 'legal', OTHER: 'other', NONE: 'none' },
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// Real implementation, not a stub: the clamping tests below assert on the agenda string the service
+// returns, so a stubbed truncator would test the stub. `string.utils` imports nothing of its own.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+}));
 
 import { AI_REQUEST_CONFIG } from '@lfx-one/shared/constants';
 import type { Request } from 'express';

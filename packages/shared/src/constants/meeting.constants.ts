@@ -678,6 +678,9 @@ export const MEETING_AGENDA_WARNING_LENGTH = 1800;
  */
 export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 
+/** Prompt length at which the character counter turns amber — same 90% of cap as the agenda's */
+export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
+
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 
