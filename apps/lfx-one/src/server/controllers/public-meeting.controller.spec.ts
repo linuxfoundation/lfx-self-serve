@@ -59,6 +59,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
   ROOT_PROJECT_SLUG: 'ROOT',
 }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
@@ -716,6 +717,9 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
+    // `clearAllMocks` leaves return values from earlier suites in place, so pin the session username
+    // rather than inherit one.
+    getEffectiveUsernameMock.mockReturnValue(null);
   });
 
   it('calls addMeetingRegistrantSelf with user token and returns 201', async () => {
@@ -837,5 +841,59 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     for (const key of ['username', 'uid', 'type']) {
       expect(forwarded).not.toHaveProperty(key);
     }
+  });
+
+  // The route mounts the handler with no express-validator, so a non-string is what actually gets to
+  // choose whether it clears the required-field gate. Narrowing to a string is the only thing that
+  // stops an object or array being forwarded upstream.
+  it.each([[{ nested: 'x' }], [['Alice']], [42], [null]])('rejects a non-string first_name (%j) instead of forwarding it', async (firstName) => {
+    const { req, res, next } = buildRegisterReq(true, { first_name: firstName });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw on a missing body', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    req.body = undefined;
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Query-service tag matching is case-sensitive and every read path lowercases, so a mixed-case
+  // registration would be indexed under a tag no later invited-status lookup matches.
+  it('lowercases and trims the fields it forwards', async () => {
+    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM ', first_name: ' Alice ', org_name: ' Acme ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).toMatchObject({ email: 'a@example.com', first_name: 'Alice', org_name: 'Acme' });
+  });
+
+  it('caps each free-text field so nothing unbounded reaches upstream', async () => {
+    const { req, res, next } = buildRegisterReq(true, { org_name: 'x'.repeat(400) });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].org_name).toHaveLength(255);
+  });
+
+  // Derived from the session, never from the body: a registrant keeps their own LFID attribution and
+  // a forged `username` still can't get in.
+  it('takes username from the session and ignores the one in the body', async () => {
+    getEffectiveUsernameMock.mockReturnValue('realuser');
+    const { req, res, next } = buildRegisterReq(true, { username: 'someone-else' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].username).toBe('realuser');
   });
 });
