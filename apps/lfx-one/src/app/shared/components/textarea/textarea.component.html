@@ -12,7 +12,7 @@
     [readonly]="readonly()"
     [class]="styleClass()"
     [autoResize]="autoResize()"
-    [maxlength]="maxlength() || null"
+    [attr.maxlength]="maxlength() || null"
     [attr.aria-describedby]="describedBy() || null"
     [attr.aria-invalid]="invalid() ? true : null"
     [attr.aria-required]="required() ? true : null"
