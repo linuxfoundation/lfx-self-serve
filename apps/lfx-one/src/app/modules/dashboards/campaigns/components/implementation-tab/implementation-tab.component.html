@@ -383,6 +383,88 @@
             </div>
           </div>
 
+          <!-- Objective -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="meta-objective">Objective</label>
+              <select
+                id="meta-objective"
+                [value]="metaObjective()"
+                (change)="onMetaObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-meta-objective">
+                @for (objective of metaObjectiveOptions; track objective) {
+                  <option [value]="objective">{{ metaObjectiveLabels[objective] }}</option>
+                }
+              </select>
+            </div>
+
+            <!--
+              Shown only under `conversions`, which is the only objective whose promoted object is
+              a pixel. Under the others campaign-service promotes a page id or nothing, so the
+              field would be collected and then ignored.
+            -->
+            @if (metaRequiresPixel()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-pixel-id">Meta Pixel ID</label>
+                <input
+                  id="meta-pixel-id"
+                  type="text"
+                  inputmode="numeric"
+                  [value]="metaPixelId()"
+                  (input)="onMetaPixelIdInput($event)"
+                  placeholder="e.g. 123456789012345"
+                  [attr.aria-invalid]="metaPixelValid() ? null : 'true'"
+                  [attr.aria-describedby]="metaPixelValid() ? null : 'meta-pixel-id-error'"
+                  class="rounded-md border px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1"
+                  [class.border-gray-300]="metaPixelValid()"
+                  [class.focus:border-blue-500]="metaPixelValid()"
+                  [class.focus:ring-blue-500]="metaPixelValid()"
+                  [class.border-red-400]="!metaPixelValid()"
+                  [class.focus:border-red-500]="!metaPixelValid()"
+                  [class.focus:ring-red-500]="!metaPixelValid()"
+                  data-testid="implementation-meta-pixel-id" />
+                @if (!metaPixelValid()) {
+                  <p id="meta-pixel-id-error" class="text-xs text-red-600" data-testid="implementation-meta-pixel-error">
+                    A numeric Meta Pixel ID is required for the Conversions objective.
+                  </p>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Placements -->
+          <div class="mb-4">
+            <span class="mb-2 block text-xs font-medium text-gray-700">Placements</span>
+            <div class="flex flex-wrap gap-x-4 gap-y-2">
+              @for (placement of metaSelectablePlacements; track placement) {
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    [checked]="metaPlacements()[placement]"
+                    (change)="onMetaPlacementChange(placement, $event)"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-meta-placement-' + placement" />
+                  {{ metaPlacementLabels[placement] }}
+                </label>
+              }
+              <!--
+                Rendered disabled rather than omitted, so the absence of a placement someone
+                expects to find reads as a deliberate answer instead of a missing feature. It is
+                bound to nothing: `metaSelectablePlacements` excludes the key, and the change
+                handler refuses it, so no interaction can put `messengerInbox: true` on the wire.
+              -->
+              <label class="flex cursor-not-allowed items-center gap-2 text-sm text-gray-400" [title]="metaMessengerInboxReason">
+                <input type="checkbox" disabled class="rounded border-gray-200" data-testid="implementation-meta-placement-messengerInbox" />
+                {{ metaPlacementLabels.messengerInbox }}
+                <span class="text-xs italic">({{ metaMessengerInboxReason }})</span>
+              </label>
+            </div>
+            @if (!metaHasPlacement()) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-meta-placement-error">At least one placement must be enabled.</p>
+            }
+          </div>
+
           <!-- Geo Targets -->
           <div class="mb-4">
             <label class="mb-2 block text-xs font-medium text-gray-700" for="meta-geo-add">Geo Targets (AI-recommended)</label>

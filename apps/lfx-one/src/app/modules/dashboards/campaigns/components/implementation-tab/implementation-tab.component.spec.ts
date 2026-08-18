@@ -5,9 +5,12 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { META_OBJECTIVE_LABELS } from '@lfx-one/shared/constants';
 import type { CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -393,5 +396,295 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     await fixture.whenStable();
 
     expect(metaGeoTargets()).toEqual(['FR']);
+  });
+});
+
+/**
+ * Meta objective, placements and pixel id (LFXV2-3228).
+ *
+ * The shared interface has accepted all three for some time and `buildMetaConfig` spreads them
+ * straight through, so the only thing that was missing was the form ever putting them on the
+ * wire. These tests therefore assert on the REQUEST OBJECT rather than on the signals: a
+ * collected-but-unsent field is precisely the defect being fixed, and a signal assertion would
+ * pass while it persisted.
+ *
+ * The guards mirror campaign-service's `buildPlacementTargeting` and `buildPromotedObject`, both
+ * of which run before any mutating call. Client-side validation therefore changes no outcome —
+ * it changes only whether the user hears about it before or after a round trip.
+ */
+describe('ImplementationTabComponent Meta objective, placements and pixel', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let createCampaign: ReturnType<typeof vi.fn>;
+
+  function component(): Record<string, any> {
+    return fixture.componentInstance as unknown as Record<string, any>;
+  }
+
+  function canSubmit(): boolean {
+    return component()['canSubmit']();
+  }
+
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  /** Read a rendered element, asserting presence before the cast. */
+  function require<T extends HTMLElement>(testId: string): T {
+    const el = query(testId);
+    expect(el).not.toBeNull();
+    return el as T;
+  }
+
+  /** Fill everything Meta's half of `canSubmit` needs, so one field at a time is the variable. */
+  async function makeMetaValid(): Promise<void> {
+    const c = component();
+    c['selectedPlatforms'].set(['meta-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['metaVariants'].set([{ primaryText: 'Join us', headline: 'KubeCon EU', description: 'September' }]);
+    await fixture.whenStable();
+  }
+
+  /** Submit and return the `metaConfig` the service was actually called with. */
+  async function submittedMetaConfig(): Promise<Record<string, any>> {
+    component()['submit']();
+    await fixture.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0].metaConfig;
+  }
+
+  async function selectObjective(value: string): Promise<void> {
+    const select = require<HTMLSelectElement>('implementation-meta-objective');
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+  }
+
+  async function togglePlacement(key: string, enabled: boolean): Promise<void> {
+    const box = require<HTMLInputElement>(`implementation-meta-placement-${key}`);
+    box.checked = enabled;
+    box.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+  }
+
+  async function typePixelId(value: string): Promise<void> {
+    const input = require<HTMLInputElement>('implementation-meta-pixel-id');
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // `getLinkedInAccounts` is stubbed because `ngOnInit` calls it unconditionally, even with
+        // only Meta selected; without it the component throws before any Meta assertion runs.
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await makeMetaValid();
+  });
+
+  // === Objective ===
+
+  it('renders every objective the shared labels define', () => {
+    const select = require<HTMLSelectElement>('implementation-meta-objective');
+    const rendered = Array.from(select.options).map((o) => o.value);
+
+    expect(rendered).toEqual(Object.keys(META_OBJECTIVE_LABELS));
+  });
+
+  /**
+   * `traffic` matches what campaign-service assumes when `objective` is absent, so switching the
+   * selector on cannot change the campaign an existing user would have got.
+   */
+  it('sends traffic as the default objective', async () => {
+    expect((await submittedMetaConfig())['objective']).toBe('traffic');
+  });
+
+  it('sends the objective the user picked', async () => {
+    await selectObjective('awareness');
+
+    expect((await submittedMetaConfig())['objective']).toBe('awareness');
+  });
+
+  // === Placements ===
+
+  /**
+   * Only the entries that differ from `META_DEFAULT_PLACEMENTS` are sent. Upstream merges the
+   * override map field-by-field over those same defaults, so an untouched form must put no
+   * placement keys on the wire at all.
+   */
+  it('sends no placement overrides when the defaults are untouched', async () => {
+    expect((await submittedMetaConfig())['placements']).toEqual({});
+  });
+
+  it('sends only the placements that differ from the defaults', async () => {
+    await togglePlacement('reels', true);
+
+    expect((await submittedMetaConfig())['placements']).toEqual({ reels: true });
+  });
+
+  it('sends a disabled default placement as an explicit false', async () => {
+    await togglePlacement('facebookFeed', false);
+
+    expect((await submittedMetaConfig())['placements']).toEqual({ facebookFeed: false });
+  });
+
+  /**
+   * Rule 3. `buildPlacementTargeting` refuses a request whose `publisher_platforms` list comes out
+   * empty, and it does so at the ad-set call — after the campaign, a paid resource, exists.
+   */
+  it('blocks submit when every selectable placement is off', async () => {
+    expect(canSubmit()).toBe(true);
+
+    await togglePlacement('facebookFeed', false);
+    await togglePlacement('instagramFeed', false);
+
+    expect(canSubmit()).toBe(false);
+    expect(query('implementation-meta-placement-error')).not.toBeNull();
+  });
+
+  it('re-enables submit when a placement is turned back on', async () => {
+    await togglePlacement('facebookFeed', false);
+    await togglePlacement('instagramFeed', false);
+    expect(canSubmit()).toBe(false);
+
+    await togglePlacement('reels', true);
+
+    expect(canSubmit()).toBe(true);
+  });
+
+  /**
+   * Rule 2. Meta removed Messenger Inbox in November 2025 and campaign-service rejects the
+   * placement outright. The toggle renders so its absence is not read as a missing feature, but
+   * it must be inert.
+   */
+  it('renders the messengerInbox placement disabled', () => {
+    const box = require<HTMLInputElement>('implementation-meta-placement-messengerInbox');
+
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+  });
+
+  /**
+   * The disabled attribute is a presentation guarantee, not a state one. The handler refuses the
+   * key independently, so even a direct call — a future template change binding a live control —
+   * cannot put `messengerInbox: true` on the wire.
+   */
+  it('refuses a messengerInbox toggle even when the handler is called directly', async () => {
+    component()['onMetaPlacementChange']('messengerInbox', { target: { checked: true } } as unknown as Event);
+    await fixture.whenStable();
+
+    expect(component()['metaPlacements']()['messengerInbox']).toBe(false);
+    expect((await submittedMetaConfig())['placements']).toEqual({});
+  });
+
+  /** Enabling every selectable placement must still never introduce the retired key. */
+  it('never sends messengerInbox even with every other placement enabled', async () => {
+    await togglePlacement('stories', true);
+    await togglePlacement('reels', true);
+    await togglePlacement('audienceNetwork', true);
+
+    const placements = (await submittedMetaConfig())['placements'];
+
+    expect(placements).not.toHaveProperty('messengerInbox');
+    expect(placements).toEqual({ stories: true, reels: true, audienceNetwork: true });
+  });
+
+  // === Pixel id ===
+
+  /**
+   * Only `conversions` promotes a pixel object. Under the other objectives campaign-service
+   * promotes a page id or nothing, so collecting a pixel would be collecting a field it ignores.
+   */
+  it('hides the pixel field unless the objective is conversions', async () => {
+    expect(query('implementation-meta-pixel-id')).toBeNull();
+
+    await selectObjective('conversions');
+
+    expect(query('implementation-meta-pixel-id')).not.toBeNull();
+  });
+
+  it('omits pixelId from the payload under a non-conversions objective', async () => {
+    await selectObjective('engagement');
+
+    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
+  });
+
+  it('blocks submit when conversions is selected with no pixel id', async () => {
+    expect(canSubmit()).toBe(true);
+
+    await selectObjective('conversions');
+
+    expect(canSubmit()).toBe(false);
+    expect(query('implementation-meta-pixel-error')).not.toBeNull();
+  });
+
+  /**
+   * The check `buildPromotedObject` makes that an empty-only test would miss. "PIX9" is
+   * non-empty, so a truthiness guard passes it; Meta Pixel ids are numeric and upstream rejects
+   * it on `numericIDRE`.
+   */
+  it('blocks submit for a non-empty but malformed pixel id', async () => {
+    await selectObjective('conversions');
+
+    await typePixelId('PIX9');
+
+    expect(canSubmit()).toBe(false);
+  });
+
+  /** Upstream trims before both checks, so a whitespace-only id must read as empty here too. */
+  it('blocks submit for a whitespace-only pixel id', async () => {
+    await selectObjective('conversions');
+
+    await typePixelId('   ');
+
+    expect(canSubmit()).toBe(false);
+  });
+
+  it('allows submit and sends the pixel id once it is numeric', async () => {
+    await selectObjective('conversions');
+    await typePixelId('123456789012345');
+
+    expect(canSubmit()).toBe(true);
+    expect((await submittedMetaConfig())['pixelId']).toBe('123456789012345');
+  });
+
+  it('trims the pixel id it sends', async () => {
+    await selectObjective('conversions');
+    await typePixelId('  123456789012345  ');
+
+    expect(canSubmit()).toBe(true);
+    expect((await submittedMetaConfig())['pixelId']).toBe('123456789012345');
+  });
+
+  /**
+   * A stale id left in the box after switching away from `conversions` must neither block submit
+   * nor reach the wire — the field no longer applies, so it is neither validated nor sent.
+   */
+  it('drops a stale pixel id after switching away from conversions', async () => {
+    await selectObjective('conversions');
+    await typePixelId('PIX9');
+    expect(canSubmit()).toBe(false);
+
+    await selectObjective('traffic');
+
+    expect(canSubmit()).toBe(true);
+    expect(await submittedMetaConfig()).not.toHaveProperty('pixelId');
   });
 });

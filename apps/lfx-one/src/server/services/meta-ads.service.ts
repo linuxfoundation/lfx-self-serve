@@ -15,7 +15,7 @@ import type {
   MetaPlacement,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_PACING_THRESHOLDS, META_DEFAULT_PLACEMENTS, META_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, META_DEFAULT_PLACEMENTS, META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -178,18 +178,10 @@ function resolveRegion(geoTargets: string[]): string {
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
 
-const OBJECTIVE_LABELS = {
-  awareness: 'Awareness',
-  traffic: 'Traffic',
-  engagement: 'Engagement',
-  leads: 'Leads',
-  conversions: 'Conversions',
-} as const satisfies Record<MetaObjective, string>;
-
 function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
-  const objective = OBJECTIVE_LABELS[config.objective ?? 'traffic'];
+  const objective = META_OBJECTIVE_LABELS[config.objective ?? 'traffic'];
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | MoFU`;
 }
@@ -295,11 +287,11 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   });
   const campaignId = campaignResp.id;
   if (!campaignId) throw new Error('Meta campaign creation succeeded but returned no campaign ID');
-  steps.push(`Campaign created: ${campaignId} (${OBJECTIVE_LABELS[objective]}, PAUSED)`);
+  steps.push(`Campaign created: ${campaignId} (${META_OBJECTIVE_LABELS[objective]}, PAUSED)`);
 
   // Step 3: Create ad set with budget, schedule, geo targeting, and placements
   const budgetCents = Math.round(config.budgetUsd * 100);
-  const adSetName = `${config.eventName} - ${OBJECTIVE_LABELS[objective]}`;
+  const adSetName = `${config.eventName} - ${META_OBJECTIVE_LABELS[objective]}`;
   const placementTargeting = buildPlacementTargeting(config.placements ?? {});
 
   const adSetBody: Record<string, unknown> = {

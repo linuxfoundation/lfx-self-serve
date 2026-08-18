@@ -195,6 +195,47 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   messengerInbox: false,
 } as const;
 
+/** Display labels for the Meta campaign objectives, in the order the objective selector renders them. */
+export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  engagement: 'Engagement',
+  leads: 'Leads',
+  conversions: 'Conversions',
+} as const;
+
+/**
+ * The placements a user may actually toggle.
+ *
+ * `messengerInbox` is deliberately absent. Meta removed Messenger Inbox as an ad placement in
+ * November 2025, and campaign-service's `buildPlacementTargeting` refuses any request that
+ * enables it outright rather than letting the ad-set call fail after the campaign — a paid
+ * resource — already exists. Excluding the key here means the UI cannot construct that request:
+ * the toggle is rendered permanently disabled from this list's complement, never bound to a
+ * control that could send `true`.
+ *
+ * Derived lists (the selector, the "at least one enabled" guard) MUST read this rather than
+ * re-listing the members, so a future placement added to `MetaPlacement` is a compile-time
+ * decision here instead of a silent omission there.
+ */
+export const META_SELECTABLE_PLACEMENTS: readonly (keyof MetaPlacement)[] = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork'] as const;
+
+/** Display labels for every Meta placement, including the retired one the UI renders disabled. */
+export const META_PLACEMENT_LABELS: Readonly<Record<keyof MetaPlacement, string>> = {
+  facebookFeed: 'Facebook Feed',
+  instagramFeed: 'Instagram Feed',
+  stories: 'Stories',
+  reels: 'Reels',
+  audienceNetwork: 'Audience Network',
+  messengerInbox: 'Messenger Inbox',
+} as const;
+
+/** Why `messengerInbox` is not selectable — rendered beside the disabled toggle. */
+export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 2025';
+
+/** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
+export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
+
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
 

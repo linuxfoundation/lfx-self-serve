@@ -13,6 +13,12 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
+  META_DEFAULT_PLACEMENTS,
+  META_MESSENGER_INBOX_RETIRED_REASON,
+  META_NUMERIC_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_PLACEMENT_LABELS,
+  META_SELECTABLE_PLACEMENTS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -34,6 +40,8 @@ import type {
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   MetaAdVariant,
+  MetaObjective,
+  MetaPlacement,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -155,6 +163,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
+  protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
+  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
+  protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
+  protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -259,12 +272,81 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
   protected readonly metaLifetimeBudget = signal(false);
+  /**
+   * Meta campaign objective. Defaults to `traffic`, matching what campaign-service assumes when
+   * the field is absent, so turning the selector on does not silently change any existing
+   * caller's campaign.
+   */
+  protected readonly metaObjective = signal<MetaObjective>('traffic');
+  /**
+   * Placement toggles, seeded from the shared defaults so the initial state is the one the
+   * service would have applied anyway.
+   *
+   * Typed `MetaPlacement` (complete), not `Partial`, because the UI holds a definite answer for
+   * every key it renders. Only the entries that DIFFER from the defaults are sent — placements
+   * merge per-field upstream, so an override-only payload is both correct and smaller.
+   */
+  protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
+  /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
+  protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
+
+  /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
+  protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
+
+  /**
+   * Whether at least one SELECTABLE placement is on.
+   *
+   * Mirrors campaign-service's `buildPlacementTargeting`, which refuses a request whose
+   * `publisher_platforms` list comes out empty. `messengerInbox` is excluded from the count
+   * because it cannot contribute a platform there either — it is rejected outright before the
+   * emptiness check is even reached — so counting it would let the UI pass a config the service
+   * fails twice over.
+   */
+  protected readonly metaHasPlacement = computed(() => {
+    const placements = this.metaPlacements();
+    return this.metaSelectablePlacements.some((key) => placements[key]);
+  });
+
+  /**
+   * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
+   * needs to carry: campaign-service merges the override map field-by-field over the same
+   * defaults, so an omitted key and a key repeating the default are indistinguishable upstream.
+   *
+   * `messengerInbox` can never appear. It is `false` in the defaults and no code path sets it
+   * `true`, so the difference filter drops it — the payload cannot carry the one value the
+   * service rejects outright.
+   */
+  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => {
+    const placements = this.metaPlacements();
+    const overrides: Partial<MetaPlacement> = {};
+    for (const key of Object.keys(placements) as (keyof MetaPlacement)[]) {
+      if (placements[key] !== META_DEFAULT_PLACEMENTS[key]) overrides[key] = placements[key];
+    }
+    return overrides;
+  });
+
+  /**
+   * Whether the pixel id is acceptable for the CURRENT objective.
+   *
+   * True whenever no pixel is required, because a stale value left in the box after switching
+   * away from `conversions` is not sent and cannot fail. Under `conversions` the id must be
+   * non-empty AND numeric: campaign-service's `buildPromotedObject` applies exactly these two
+   * checks, and it applies them BEFORE any mutating call — so catching a malformed id here
+   * changes nothing about the outcome, only about whether the user waits for a round trip to
+   * hear it. Trimmed first because upstream trims before both checks, so `' '` must read as
+   * empty here too rather than passing a truthiness test locally and being refused there.
+   */
+  protected readonly metaPixelValid = computed(() => {
+    if (!this.metaRequiresPixel()) return true;
+    const trimmed = this.metaPixelId().trim();
+    return trimmed !== '' && META_NUMERIC_ID_PATTERN.test(trimmed);
+  });
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -289,6 +371,8 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+    if (metaSelected && !this.metaHasPlacement()) return false;
+    if (metaSelected && !this.metaPixelValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -520,6 +604,27 @@ export class ImplementationTabComponent implements OnInit {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onMetaObjectiveChange(event: Event): void {
+    this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
+  }
+
+  /**
+   * Toggle one placement.
+   *
+   * Refuses any key outside `META_SELECTABLE_PLACEMENTS`, which is what keeps `messengerInbox`
+   * unsettable even if a future template change bound a live control to it. The template renders
+   * that toggle disabled, but a disabled input is a presentation guarantee, not a state one.
+   */
+  protected onMetaPlacementChange(key: keyof MetaPlacement, event: Event): void {
+    if (!this.metaSelectablePlacements.includes(key)) return;
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
+  }
+
+  protected onMetaPixelIdInput(event: Event): void {
+    this.metaPixelId.set((event.target as HTMLInputElement).value);
+  }
+
   protected removeMetaGeoTarget(index: number): void {
     this.metaGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
   }
@@ -639,6 +744,13 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
               variants: this.metaVariants(),
+              objective: this.metaObjective(),
+              placements: this.metaPlacementOverrides(),
+              // Sent only under `conversions`. Under every other objective the promoted object is
+              // a page id or nothing at all, so an id left in the box from an earlier selection
+              // would be a field the service ignores — and one a reader of the payload would
+              // reasonably take as meaningful. Trimmed to match the upstream trim.
+              ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
