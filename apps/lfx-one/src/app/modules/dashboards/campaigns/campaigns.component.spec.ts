@@ -1962,6 +1962,22 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(labels[0]).toContain('Join us');
   });
 
+  it('treats a whitespace-only query as the unfiltered search the server actually runs', () => {
+    // The controller trims `q` before calling upstream, so "   " is an UNFILTERED portal
+    // search. Storing it raw made the empty state claim `No templates match "   "` about a
+    // search that had no filter at all.
+    picker().searchEmailTemplates('   ');
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    // An empty query omits the param entirely rather than sending `q=`, which is the same
+    // unfiltered request the server would have made after trimming.
+    expect(req.request.params.get('q')).toBeNull();
+    req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+    fixture.detectChanges();
+
+    const empty = panel().querySelector('[data-testid="campaigns-email-templates-empty"]');
+    expect(empty?.textContent).toContain('no marketing emails yet');
+  });
+
   it('keeps the empty state naming the query that ran, not what is being typed', () => {
     picker().searchEmailTemplates('alpha');
     respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });

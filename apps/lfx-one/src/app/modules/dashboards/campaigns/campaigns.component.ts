@@ -732,7 +732,12 @@ export class CampaignsComponent {
    * search is genuinely expensive — firing one per character would be the wrong trade.
    */
 
-  protected searchEmailTemplates(query: string): void {
+  protected searchEmailTemplates(rawQuery: string): void {
+    // Trimmed to match what the SERVER actually searches: the controller trims `q` before
+    // calling upstream, so a whitespace-only input runs the UNFILTERED portal search. Storing
+    // it raw made the empty state read `No templates match "   "` about a search that had no
+    // filter at all — the same class of lie as naming the draft query, one boundary further in.
+    const query = rawQuery.trim();
     const projectSlug = this.activeFoundationSlug();
     if (projectSlug === '') {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
