@@ -24,7 +24,6 @@ const {
   buildWeeklyBriefRatingCacheKeyMock,
   extractBriefActionItems,
   buildCacheKey,
-  getCommitteeForSlackShareMock,
   checkSingleAccessStrictMock,
   getCommitteeByIdMock,
   hasMailingListStrictMock,
@@ -72,11 +71,8 @@ const {
     buildCacheKey: vi.fn(
       (committeeId: string, briefUid: string, revision: number): string | null => `weekly-brief-action-items:${committeeId}:${briefUid}:${revision}`
     ),
-    // shareToSlack's (LFXV2-3080) collaborators — controlled per-test below via
-    // mockResolvedValue in the 'shareToSlack' describe block's own beforeEach; other describe
-    // blocks in this file never call them, since shareBrief/shareToSlack are the only methods
-    // that touch committeeService/accessCheckService.
-    getCommitteeForSlackShareMock: vi.fn(),
+    // shareBrief's / shareToSlack's shared access-check collaborator — controlled per-test in
+    // their respective describe blocks below.
     checkSingleAccessStrictMock: vi.fn(),
     // shareBrief's (LFXV2-2914 / LFXV2-3093) own committee + newsletter collaborators —
     // controlled per-test in the 'shareBrief' describe block below.
@@ -95,12 +91,6 @@ vi.mock('@lfx-one/shared/constants', () => ({
   WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
-  SLACK_WEBHOOK_POST_TIMEOUT_MS: 10_000,
-  SLACK_MESSAGE_TEXT_MAX_LENGTH: 40_000,
-  SLACK_ERROR_BODY_MAX_LENGTH: 500,
-  SLACK_ERROR_TOKEN_PATTERN: /^[a-z_]{1,64}$/,
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
-  SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN: /https:\/\/hooks\.slack\.com\/services\/\S*/g,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
 }));
@@ -122,14 +112,13 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
-// shareBrief's / shareToSlack's collaborators — getCommitteeForSlackShare / checkSingleAccessStrict
-// back shareToSlack's (LFXV2-3080) precondition chain (see the 'shareToSlack' describe block
-// below); getCommitteeById / hasMailingListStrict / createNewsletter / sendNewsletter /
-// deleteNewsletter back shareBrief's (LFXV2-2914 / LFXV2-3093) precondition + send chain (see the
-// 'shareBrief' describe block below).
+// shareBrief's own committee collaborator (shareToSlack no longer calls committeeService at
+// all — it needs only project_uid, fetched directly via a plain proxyRequest GET, same as any
+// other upstream call in this file). getCommitteeById / hasMailingListStrict / createNewsletter /
+// sendNewsletter / deleteNewsletter back shareBrief's (LFXV2-2914 / LFXV2-3093) precondition +
+// send chain (see the 'shareBrief' describe block below).
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
-    public getCommitteeForSlackShare = getCommitteeForSlackShareMock;
     public getCommitteeById = getCommitteeByIdMock;
     public hasMailingListStrict = hasMailingListStrictMock;
   },
@@ -161,7 +150,6 @@ vi.mock('./valkey.service', () => ({
   valkeyService: valkeyServiceMock,
 }));
 
-import { SLACK_ERROR_BODY_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
@@ -893,41 +881,12 @@ describe('WeeklyBriefService', () => {
   });
 
   describe('shareToSlack (LFXV2-3080)', () => {
-    /** Builds a minimal fetch Response stand-in with the given status and text body. */
-    function mockResponse(status: number, body: string): Response {
-      return {
-        ok: status >= 200 && status < 300,
-        status,
-        statusText: `status ${status}`,
-        text: async () => body,
-        body: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(body));
-            controller.close();
-          },
-        }),
-      } as unknown as Response;
-    }
-
-    let fetchMock: ReturnType<typeof vi.fn>;
-
     beforeEach(() => {
       process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
       // On by default here — the dedicated FEATURE_DISABLED test below covers it off; every other
       // test in this block exercises what happens once the kill switch is enabled.
       process.env[ServerFeatureFlag.WeeklyBriefSlack] = 'true';
-      getCommitteeForSlackShareMock.mockResolvedValue({
-        name: 'Test Committee',
-        project_uid: 'project-1',
-        chat_webhook_url: 'https://hooks.slack.com/services/T000/B000/XXXX',
-      });
       checkSingleAccessStrictMock.mockResolvedValue(true);
-      fetchMock = vi.fn();
-      vi.stubGlobal('fetch', fetchMock);
-    });
-
-    afterEach(() => {
-      vi.unstubAllGlobals();
     });
 
     /** A brief in a shareable state, queued up for the getCurrentBrief call shareToSlack makes internally. */
@@ -946,182 +905,86 @@ describe('WeeklyBriefService', () => {
       });
     }
 
+    /** The plain committee GET shareToSlack makes for project_uid — queued up right after mockShareableBrief. */
+    function mockCommittee(overrides: Record<string, unknown> = {}): void {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', ...overrides });
+    }
+
     it('throws 409 FEATURE_DISABLED before any upstream call when the server-side kill switch is off, independent of WG_WEEKLY_BRIEF_SLACK_FLAG which never reaches this method', async () => {
       delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'FEATURE_DISABLED' });
 
       expect(proxyRequest).not.toHaveBeenCalled();
-      expect(getCommitteeForSlackShareMock).not.toHaveBeenCalled();
-      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('throws 404 when there is no brief to share', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(proxyRequest).toHaveBeenCalledOnce();
     });
 
     it('throws 404 when the brief is not in a shareable state', async () => {
       mockShareableBrief({ state: 'generating' });
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(proxyRequest).toHaveBeenCalledOnce();
     });
 
     it('throws 409 REVISION_MISMATCH when the caller-supplied revision is stale', async () => {
       mockShareableBrief({ revision: 2 });
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'REVISION_MISMATCH' });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(proxyRequest).toHaveBeenCalledOnce();
     });
 
-    it('throws 403 NOT_PROJECT_WRITER when the caller is not a project writer', async () => {
+    it('throws 404 when the committee no longer exists, before running the project-writer check', async () => {
       mockShareableBrief();
+      proxyRequest.mockResolvedValueOnce(null);
+
+      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
+      expect(checkSingleAccessStrictMock).not.toHaveBeenCalled();
+    });
+
+    it("throws 403 NOT_PROJECT_WRITER when the caller is not a project writer — this repo's own boundary, stricter than Heimdall's committee-writer enforcement on the upstream endpoint itself", async () => {
+      mockShareableBrief();
+      mockCommittee();
       checkSingleAccessStrictMock.mockResolvedValue(false);
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
     });
 
-    it('throws 409 NO_SLACK_WEBHOOK when the committee has no webhook configured', async () => {
-      mockShareableBrief();
-      getCommitteeForSlackShareMock.mockResolvedValue({ name: 'Test Committee', project_uid: 'project-1', chat_webhook_url: null });
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'NO_SLACK_WEBHOOK' });
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('throws 409 NO_SLACK_WEBHOOK — not a raw POST — when the stored URL fails the allowlist, even though a value is configured (defense-in-depth: the BFF is not the only writer of chat_webhook_url upstream), and logs (not returns) the distinction for operators', async () => {
-      mockShareableBrief();
-      getCommitteeForSlackShareMock.mockResolvedValue({
-        name: 'Test Committee',
-        project_uid: 'project-1',
-        chat_webhook_url: 'https://evil.example.com/exfiltrate',
-      });
-
-      // The response body must stay byte-identical to the "genuinely unconfigured" case — no
-      // `metadata` (BaseApiError.toResponse() serializes `metadata` straight into the client
-      // response, which would leak "something is stored" vs. "nothing configured" per committee).
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 409,
-        code: 'NO_SLACK_WEBHOOK',
-        metadata: undefined,
-      });
-      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
-        req,
-        'share_weekly_brief_slack',
-        expect.stringContaining('failed the Slack allowlist'),
-        expect.objectContaining({ committee_id: 'committee-1' })
-      );
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other precondition passes', async () => {
+    it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other local precondition passes, before the committee-service call', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      mockShareableBrief();
+      // getCurrentBrief is itself gated on isLive() and returns a canned mock brief (revision 1,
+      // 'generated') without calling proxyRequest when not live — so mockShareableBrief() isn't
+      // used here. The committee GET below is NOT gated on isLive() (it's a real precondition
+      // check, enforced "regardless of backend mode" per this method's own doc comment), so it's
+      // still the one and only real proxyRequest call in this scenario.
+      mockCommittee();
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 409, code: 'BACKEND_NOT_LIVE' });
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(proxyRequest).toHaveBeenCalledOnce();
     });
 
-    it("throws 400 when the composed message exceeds SLACK_MESSAGE_TEXT_MAX_LENGTH, before ever POSTing (mirrors shareBrief's NEWSLETTER_BODY_MAX_LENGTH guard)", async () => {
-      mockShareableBrief({ brief_text: 'x'.repeat(40_001) });
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 400 });
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('rejects an astral-plane-heavy brief whose UTF-16 length exceeds the limit even though its code-point count does not — the guard counts UTF-16 units, not code points', async () => {
-      // Each 😀 is 1 code point but 2 UTF-16 units — 25,000 of them is 25,000 code points
-      // (under SLACK_MESSAGE_TEXT_MAX_LENGTH) but 50,000 UTF-16 units (over it). Since Slack's own
-      // "40,000 characters" limit doesn't specify an encoding, the guard deliberately uses
-      // text.length (UTF-16 units, always >= the code-point count) rather than the smaller
-      // code-point count — a pre-flight check should err toward rejecting too early, not toward
-      // letting something through that Slack itself then 502s on.
-      mockShareableBrief({ brief_text: '😀'.repeat(25_000) });
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 400 });
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('does not reject a brief whose code-point count and UTF-16 length both sit under the limit', async () => {
-      mockShareableBrief({ brief_text: 'x'.repeat(1000) });
-      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({ committee_name: 'Test Committee' });
-      expect(fetchMock).toHaveBeenCalledOnce();
-    });
-
-    it('POSTs the brief text to the stored webhook URL and resolves on a 200 from Slack', async () => {
+    it('POSTs { revision } to the committee-service share-to-chat endpoint and resolves on a 204', async () => {
       mockShareableBrief();
-      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      mockCommittee();
+      proxyRequest.mockResolvedValueOnce(undefined);
 
-      const result = await service.shareToSlack(req, 'committee-1', 1);
+      await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({});
 
-      expect(result).toEqual({ committee_name: 'Test Committee' });
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://hooks.slack.com/services/T000/B000/XXXX',
-        expect.objectContaining({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // A redirect could relocate the POST body off hooks.slack.com — must reject outright,
-          // not follow it.
-          redirect: 'error',
-        })
-      );
-      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-      expect(body.text).toContain('Hello committee');
-    });
-
-    it('drains (cancels) the success-response body instead of leaving it unconsumed', async () => {
-      mockShareableBrief();
-      let cancelled = false;
-      const stream = new ReadableStream<Uint8Array>({
-        // Enqueuing (not just closing) matters: per the Streams spec, cancel() on an
-        // already-"closed" stream short-circuits without invoking the underlying source's
-        // cancel algorithm. controller.close() with a pending enqueued chunk defers the
-        // closed transition, so the stream is still "readable" — and cancel() therefore
-        // still reaches this callback — at the moment the service calls it.
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('ok'));
-          controller.close();
-        },
-        cancel() {
-          cancelled = true;
-        },
+      expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/share-to-chat', 'POST', undefined, {
+        revision: 1,
       });
-      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, statusText: 'status 200', body: stream } as unknown as Response);
-
-      await service.shareToSlack(req, 'committee-1', 1);
-
-      expect(cancelled).toBe(true);
     });
 
-    it('still resolves successfully (and still logs the send) even if draining the success-response body itself rejects', async () => {
+    it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the committee-service call carries no caller identity of its own beyond the bearer token, so this is the only record of who shared it', async () => {
       mockShareableBrief();
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('ok'));
-          controller.close();
-        },
-        // Rejects rather than throws synchronously — undici's real cancel() is async and rejects
-        // on failure, so this models the actual failure mode .catch() below guards against
-        // instead of depending on the Streams spec's sync-throw-to-rejection conversion.
-        cancel() {
-          return Promise.reject(new Error('cancel failed'));
-        },
-      });
-      fetchMock.mockResolvedValueOnce({ ok: true, status: 200, statusText: 'status 200', body: stream } as unknown as Response);
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).resolves.toEqual({ committee_name: 'Test Committee' });
-      expect(logger.info).toHaveBeenCalledWith(req, 'share_weekly_brief_slack_sent', expect.any(String), expect.any(Object));
-    });
-
-    it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the webhook POST body itself carries no caller identity, so this is the only record of who shared it', async () => {
-      mockShareableBrief();
-      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
+      mockCommittee();
+      proxyRequest.mockResolvedValueOnce(undefined);
 
       await service.shareToSlack(userReq, 'committee-1', 1);
 
@@ -1131,134 +994,63 @@ describe('WeeklyBriefService', () => {
       });
     });
 
-    it("escapes Slack mrkdwn control characters in brief_text and the committee name, so an AI-generated brief can't trigger @channel/@here or a deceptive link", async () => {
-      mockShareableBrief({ brief_text: 'Ping <!channel> and see <https://evil.example|this link>' });
-      getCommitteeForSlackShareMock.mockResolvedValue({
-        name: 'A & B Committee',
-        project_uid: 'project-1',
-        chat_webhook_url: 'https://hooks.slack.com/services/T000/B000/XXXX',
+    describe('committee-service response mapping', () => {
+      beforeEach(() => {
+        mockShareableBrief();
+        mockCommittee();
       });
-      fetchMock.mockResolvedValueOnce(mockResponse(200, 'ok'));
 
-      await service.shareToSlack(req, 'committee-1', 1);
+      it('maps a 400 (brief not shareable) to a 404 — a race between the local shareable-state check and this call landing, not the primary path', async () => {
+        proxyRequest.mockRejectedValueOnce(new MicroserviceError('Brief is not in a shareable state', 400, 'BAD_REQUEST'));
 
-      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-      expect(body.text).not.toContain('<!channel>');
-      expect(body.text).not.toContain('<https://evil.example|this link>');
-      expect(body.text).toContain('&lt;!channel&gt;');
-      expect(body.text).toContain('A &amp; B Committee');
-    });
-
-    it("throws 502 SLACK_SEND_FAILED with Slack's error text when Slack rejects the message", async () => {
-      mockShareableBrief();
-      fetchMock.mockResolvedValueOnce(mockResponse(400, 'invalid_payload'));
-
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        message: expect.stringContaining('invalid_payload'),
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
       });
-    });
 
-    it('does not reflect a non-token-shaped Slack response body into the client-facing message, but still keeps the full text in errorBody.reason for operators', async () => {
-      mockShareableBrief();
-      const htmlBody = '<html><body>502 Bad Gateway</body></html>';
-      fetchMock.mockResolvedValueOnce(mockResponse(502, htmlBody));
+      it('maps a 403 to NOT_PROJECT_WRITER — defense-in-depth beyond the local strict check above', async () => {
+        proxyRequest.mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        message: 'Slack rejected the message',
-        errorBody: { status: 502, reason: htmlBody },
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
       });
-    });
 
-    it('still echoes a legitimate Slack token into the client message even with a trailing newline, while errorBody.reason keeps the untrimmed body', async () => {
-      mockShareableBrief();
-      fetchMock.mockResolvedValueOnce(mockResponse(400, 'invalid_payload\n'));
+      it('maps a 404 straight through to a 404', async () => {
+        proxyRequest.mockRejectedValueOnce(new MicroserviceError('Not found', 404, 'NOT_FOUND'));
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        message: 'Slack rejected the message: invalid_payload',
-        errorBody: { status: 400, reason: 'invalid_payload\n' },
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 404 });
       });
-    });
 
-    it('truncates an oversized Slack error body to SLACK_ERROR_BODY_MAX_LENGTH', async () => {
-      mockShareableBrief();
-      fetchMock.mockResolvedValueOnce(mockResponse(400, 'x'.repeat(10_000)));
+      it('maps a 409 to REVISION_MISMATCH, with the same client-facing message the local revision check uses', async () => {
+        proxyRequest.mockRejectedValueOnce(new MicroserviceError('stale revision', 409, 'REVISION_CONFLICT'));
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        errorBody: { status: 400, reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+          statusCode: 409,
+          code: 'REVISION_MISMATCH',
+          message: 'The brief has been updated since you last viewed it. Reload to review the latest version before sharing.',
+        });
       });
-    });
 
-    it('stops reading the stream once SLACK_ERROR_BODY_MAX_LENGTH is reached, instead of pulling every chunk of an oversized body', async () => {
-      mockShareableBrief();
-      // A single mockResponse() enqueue-then-close body would satisfy this same assertion under
-      // the OLD response.text() implementation too, since text() also buffers everything before
-      // slicing — that's the case this test is guarding against. A chunked, pull-driven stream is
-      // required to actually exercise (and prove) the early-cancel behavior: SLACK_ERROR_BODY_MAX_LENGTH
-      // is 500 and each chunk is 100 chars, so the default ReadableStream queuing strategy
-      // (highWaterMark: 1) should hit the bound and cancel after ~5 pulls, not all 1000.
-      let pullCount = 0;
-      let cancelled = false;
-      const chunk = 'x'.repeat(100);
-      const stream = new ReadableStream<Uint8Array>({
-        pull(controller) {
-          pullCount++;
-          if (pullCount > 1000) {
-            controller.close();
-            return;
-          }
-          controller.enqueue(new TextEncoder().encode(chunk));
-        },
-        cancel() {
-          cancelled = true;
-        },
+      it('maps a 422 to NO_SLACK_WEBHOOK — the Settings-tab "not configured" UX depends on this exact code', async () => {
+        proxyRequest.mockRejectedValueOnce(new MicroserviceError('no webhook', 422, 'UNPROCESSABLE_ENTITY'));
+
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
+          statusCode: 409,
+          code: 'NO_SLACK_WEBHOOK',
+          message: 'Committee has no Slack webhook configured',
+        });
       });
-      fetchMock.mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        statusText: 'status 400',
-        body: stream,
-      } as unknown as Response);
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({
-        statusCode: 502,
-        code: 'SLACK_SEND_FAILED',
-        errorBody: { reason: 'x'.repeat(SLACK_ERROR_BODY_MAX_LENGTH) },
+      it('passes a 500/503 MicroserviceError through unchanged rather than reshaping it', async () => {
+        const upstreamError = new MicroserviceError('Internal server error', 500, 'INTERNAL_SERVER_ERROR');
+        proxyRequest.mockRejectedValueOnce(upstreamError);
+
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toBe(upstreamError);
       });
-      // ~5 pulls expected (500 / 100); a small margin allows for queuing-strategy prefetch
-      // without loosening the bound so much a near-full-buffer regression could still pass.
-      expect(pullCount).toBeLessThanOrEqual(10);
-      expect(cancelled).toBe(true);
-    });
 
-    it('throws 502 SLACK_UNREACHABLE instead of letting a raw network error escape', async () => {
-      mockShareableBrief();
-      fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+      it('rethrows a non-MicroserviceError as-is instead of trying to map a status code off it', async () => {
+        const genericError = new Error('network blip');
+        proxyRequest.mockRejectedValueOnce(genericError);
 
-      await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 502, code: 'SLACK_UNREACHABLE' });
-    });
-
-    it('redacts an embedded webhook URL from the caught fetch error before it becomes originalError — getLogContext() logs original_error unsanitized (SENSITIVE_FIELDS does not cover it), so a future fetch/undici version that puts the request URL in its error message must not leak the credential', async () => {
-      mockShareableBrief();
-      fetchMock.mockRejectedValueOnce(new TypeError('fetch failed: https://hooks.slack.com/services/T000/B000/XXXX unreachable'));
-
-      let caught: MicroserviceError | undefined;
-      try {
-        await service.shareToSlack(req, 'committee-1', 1);
-      } catch (error) {
-        caught = error as MicroserviceError;
-      }
-
-      const originalError = caught?.getLogContext()['original_error'] as string | undefined;
-      expect(originalError).toContain('[redacted-url]');
-      expect(originalError).not.toContain('hooks.slack.com');
+        await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toBe(genericError);
+      });
     });
   });
 

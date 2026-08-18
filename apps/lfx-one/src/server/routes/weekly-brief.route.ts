@@ -10,6 +10,11 @@ const router = Router();
 
 const weeklyBriefController = new WeeklyBriefController();
 
+// GET /committees/:committeeId/weekly-briefs - paginated archive list via query-service
+// Registered before /current so any future /:committeeId/weekly-briefs/:subpath routes
+// are not shadowed by a later-added wildcard route at this depth.
+router.get('/:committeeId/weekly-briefs', (req, res, next) => weeklyBriefController.listBriefs(req, res, next));
+
 // GET /committees/:committeeId/weekly-briefs/current - get the current WG weekly brief
 router.get('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.getCurrentBrief(req, res, next));
 

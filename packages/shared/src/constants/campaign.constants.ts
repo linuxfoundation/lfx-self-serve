@@ -127,6 +127,20 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
 
 export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
 
+/**
+ * The indexed campaign statuses that mean "running upstream", and therefore offer PAUSE.
+ *
+ * `created_degraded` belongs here even though it reads like a failure: it records that the
+ * campaign's wiring was never verified, NOT that the campaign is stopped. Such a campaign is live
+ * and spending, campaign-service accepts a pause for it, and it REFUSES a resume with 409. Leaving
+ * it out is therefore the expensive mistake in both directions — the UI would offer the one action
+ * upstream rejects, on exactly the campaign where an operator most needs the pause lever.
+ *
+ * Compared case-insensitively against `CampaignIndexDoc.status`, which is a free string sourced
+ * from the index rather than a closed enum.
+ */
+export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'created_degraded', 'active', 'enabled']);
+
 export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
   2: 'enabled',
   3: 'paused',

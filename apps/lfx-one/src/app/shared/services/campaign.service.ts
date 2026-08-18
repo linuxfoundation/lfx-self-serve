@@ -242,7 +242,6 @@ export class CampaignService {
   }
 
   /**
-  /**
    * Pause or resume a campaign on its ad platform.
    *
    * This is the only write in this service that changes money-affecting state on a third party:

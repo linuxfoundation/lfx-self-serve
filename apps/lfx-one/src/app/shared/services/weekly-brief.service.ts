@@ -7,6 +7,7 @@ import {
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
   GetWeeklyBriefActionItemsResponse,
+  PaginatedResponse,
   RateWeeklyBriefRequest,
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
@@ -131,6 +132,19 @@ export class WeeklyBriefService {
   public clearWeeklyBriefRating(committeeId: string, briefUid: string, revision: number): Observable<void> {
     return this.http
       .delete<void>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/${encodeURIComponent(briefUid)}/rating`, { body: { revision } })
+      .pipe(take(1));
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs
+   *
+   * Paginated archive list of past briefs for the committee, sourced from the
+   * query-service `group_weekly_brief` index. No `catchError` — the drawer classifies
+   * errors itself and surfaces a retry affordance.
+   */
+  public listWeeklyBriefs(committeeId: string, params?: { limit?: number; page_token?: string }): Observable<PaginatedResponse<WeeklyBrief>> {
+    return this.http
+      .get<PaginatedResponse<WeeklyBrief>>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs`, { params: { ...(params ?? {}) } })
       .pipe(take(1));
   }
 }

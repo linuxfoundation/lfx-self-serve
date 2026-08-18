@@ -26,7 +26,6 @@ import { OptimizationTabComponent } from './optimization-tab.component';
  */
 describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   let fixture: ComponentFixture<OptimizationTabComponent>;
-  let component: OptimizationTabComponent;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
@@ -71,7 +70,6 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(OptimizationTabComponent);
-    component = fixture.componentInstance;
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('briefId', 'b-1');
   });
@@ -188,7 +186,67 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
     fixture.detectChanges();
 
-    expect(component['displayStatus'](doc())).toBe('created_degraded');
+    // Asserted through what the ROW RENDERS, not a private method: the claim under test is what
+    // the user is told, and a component that computed this correctly but rendered something else
+    // would still be lying.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-controls"]').textContent).toContain('created_degraded');
+  });
+
+  // The blocking defect dealako found (#1586). campaign-service bumps the row's version on a
+  // successful toggle, so the etag the row was READ with dies the moment the first pause commits.
+  // Replaying it earns a 412 that surfaces as a generic failure reading like a concurrent edit —
+  // and pause-then-resume is the entire two-step interaction this feature exists to enable.
+  it('chains the FRESH etag into a second toggle of the same row', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"10"' })
+    );
+    render([doc({ version: 9, etag: '"9"' })]);
+
+    const button = () => fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    button().click();
+    fixture.detectChanges();
+
+    // The row now offers Resume, which is the second half of the interaction.
+    expect(button().textContent).toContain('Resume');
+
+    button().click();
+
+    expect(updateCampaignStatus).toHaveBeenCalledTimes(2);
+    // The SECOND call must carry the etag the FIRST one returned. Asserting the value rather than
+    // the key: `expect.objectContaining({ etag: expect.anything() })` would pass on the stale one.
+    expect(updateCampaignStatus.mock.calls[1][0]).toEqual(expect.objectContaining({ etag: '"10"', status: 'ACTIVE' }));
+  });
+
+  // A toggle that returns no etag (the legacy per-platform path has no row) must fall back to the
+  // INDEXED etag, not to '' — the latter would trip the pre-flight refusal on a row that has a
+  // perfectly good validator.
+  it('falls back to the indexed etag when a toggle returns none', () => {
+    updateCampaignStatus.mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused' }));
+    render([doc({ version: 9, etag: '"9"' })]);
+
+    const button = () => fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    button().click();
+    fixture.detectChanges();
+    button().click();
+
+    expect(updateCampaignStatus).toHaveBeenCalledTimes(2);
+    expect(updateCampaignStatus.mock.calls[1][0]).toEqual(expect.objectContaining({ etag: '"9"' }));
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+  });
+
+  // The minor finding: `created_degraded` is LIVE AND SPENDING, and upstream refuses to resume it
+  // with 409. Classifying it as stopped offers the one action that cannot succeed, on exactly the
+  // campaign where an operator most needs the pause lever.
+  it('offers PAUSE for a campaign indexed as created_degraded', () => {
+    render([doc({ status: 'created_degraded' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.textContent).toContain('Pause');
+    expect(button.getAttribute('aria-label')).toBe('Pause KubeCon EU');
+
+    button.click();
+
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'PAUSED' }));
   });
 
   // The most expensive lie available to this component: reporting a pause that did not happen

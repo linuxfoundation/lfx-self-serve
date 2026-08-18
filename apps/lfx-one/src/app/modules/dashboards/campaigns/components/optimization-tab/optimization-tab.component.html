@@ -37,11 +37,11 @@
   </div>
 
   <!--
-    Per-campaign pause/resume. `briefCampaigns()` is null until the list loads OR when the read
+    Per-campaign pause/resume. `campaignRows()` is null until the list loads OR when the read
     failed, and the section renders nothing at all for that — an empty state here would assert the
     brief has no campaigns, which is a claim a failed read cannot support.
   -->
-  @if (briefCampaigns(); as rows) {
+  @if (campaignRows(); as rows) {
     <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="optimization-campaign-controls">
       <h3 class="text-sm font-semibold text-gray-900">Campaigns</h3>
 
@@ -60,17 +60,17 @@
         </p>
       } @else {
         <ul class="flex flex-col gap-2">
-          @for (campaign of rows; track campaign.id) {
+          @for (row of rows; track row.campaign.id) {
             <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
               <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate text-sm font-medium text-gray-900">{{ campaign.campaign_name }}</span>
-                <span class="text-xs text-gray-500">{{ campaign.platform }} · {{ displayStatus(campaign) }}</span>
-                @if (toggleError()[campaign.id]; as message) {
+                <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                @if (toggleError()[row.campaign.id]; as message) {
                   <span
                     class="text-xs text-red-600"
                     role="alert"
-                    [id]="'campaign-error-' + campaign.id"
-                    [attr.data-testid]="'optimization-campaign-error-' + campaign.id"
+                    [id]="'campaign-error-' + row.campaign.id"
+                    [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
                     >{{ message }}</span
                   >
                 }
@@ -87,17 +87,17 @@
               -->
               <button
                 type="button"
-                (click)="toggleCampaign(campaign)"
-                [disabled]="togglePending()[campaign.id]"
-                [attr.aria-label]="(isRunning(campaign) ? 'Pause ' : 'Resume ') + campaign.campaign_name"
-                [attr.aria-describedby]="toggleError()[campaign.id] ? 'campaign-error-' + campaign.id : null"
+                (click)="toggleCampaign(row)"
+                [disabled]="togglePending()[row.campaign.id]"
+                [attr.aria-label]="(row.isRunning ? 'Pause ' : 'Resume ') + row.campaign.campaign_name"
+                [attr.aria-describedby]="toggleError()[row.campaign.id] ? 'campaign-error-' + row.campaign.id : null"
                 class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                [attr.data-testid]="'optimization-campaign-toggle-' + campaign.id">
-                @if (togglePending()[campaign.id]) {
+                [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                @if (togglePending()[row.campaign.id]) {
                   <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
                   Working
                 } @else {
-                  {{ isRunning(campaign) ? 'Pause' : 'Resume' }}
+                  {{ row.isRunning ? 'Pause' : 'Resume' }}
                 }
               </button>
             </li>

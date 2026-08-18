@@ -1328,6 +1328,28 @@ export interface CampaignIndexDoc {
 }
 
 /**
+ * One campaign as the Optimize tab's row renders it: the indexed document plus what the UI has
+ * CONFIRMED about it this session.
+ *
+ * `status` is not `campaign.status`. The index is asynchronous, so a row re-read moments after a
+ * pause still reports the old status; showing that back to whoever just paused a campaign reads as
+ * the pause having failed. The overlay wins when present, and it is only ever set from a confirmed
+ * response.
+ */
+export interface CampaignRow {
+  campaign: CampaignIndexDoc;
+  /** What the row displays: this session's confirmed status, else the indexed one. */
+  status: string;
+  /**
+   * Whether the campaign is running upstream, and so offers PAUSE rather than RESUME.
+   *
+   * Derived from `status` via `RUNNING_CAMPAIGN_STATUSES`, which counts `created_degraded` as
+   * running — it is spending, and upstream refuses to resume it.
+   */
+  isRunning: boolean;
+}
+
+/**
  * What `GET /api/campaigns/list` reports back.
  *
  * `campaigns` is what the index currently holds for the brief. That is NOT the same as what

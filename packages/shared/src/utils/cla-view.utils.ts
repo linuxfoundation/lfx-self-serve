@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pure presentation helpers for the read-only "My CLAs" view. Kept framework-free so the
+// Pure presentation helpers for the read-only "CLAs" view. Kept framework-free so the
 // branching logic (ICLA/ECLA split, empty/CTA rules, status labels) is unit-testable without
 // an Angular component-test harness.
 
@@ -11,14 +11,14 @@ import { ProfileTab } from '../interfaces';
 import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 
 /**
- * Profile subtab list, with the read-only "My CLAs" tab appended (before Transactions)
+ * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
  * when `my-clas-enabled` is on. Shared by both profile-hub nav entry points — the layout
  * subtab strip and the sidebar me-lens ⋯ menu — so they never disagree on whether the tab
  * is present. Returns the static PROFILE_TABS reference unchanged when the flag is off.
  */
 export function buildProfileTabs(myClasEnabled: boolean): ProfileTab[] {
   if (!myClasEnabled) return PROFILE_TABS;
-  const clasTab: ProfileTab = { id: 'clas', label: 'My CLAs', route: 'clas' };
+  const clasTab: ProfileTab = { id: 'clas', label: 'CLAs', route: 'clas' };
   const insertAt = PROFILE_TABS.findIndex((t) => t.id === 'transactions');
   if (insertAt === -1) return [...PROFILE_TABS, clasTab];
   return [...PROFILE_TABS.slice(0, insertAt), clasTab, ...PROFILE_TABS.slice(insertAt)];

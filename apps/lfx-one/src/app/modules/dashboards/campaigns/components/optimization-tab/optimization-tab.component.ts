@@ -8,6 +8,7 @@ import type {
   CampaignIndexDoc,
   CampaignMonitorResponse,
   CampaignPlatform,
+  CampaignRow,
   CampaignToggleStatus,
   DateRangeOption,
   KeywordActionType,
@@ -23,7 +24,7 @@ import type {
   RedditActionItem,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
-import { PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { PLATFORM_BRAND_COLORS, RUNNING_CAMPAIGN_STATUSES } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
@@ -80,9 +81,19 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly toggledStatus = signal<Record<string, string>>({});
 
-  /** The status to display for a row: what we confirmed this session, else what the index says. */
-
-  /** Whether this row is currently running, and therefore offers PAUSE rather than RESUME. */
+  /**
+   * The FRESH etag each campaign returned from its last toggle this session, keyed by campaign id.
+   *
+   * Required for a second toggle of the same row to work at all. The row the user is looking at is
+   * an immutable input carrying the etag as READ, which the first toggle invalidates the moment it
+   * commits — campaign-service bumps the version and answers a replayed `If-Match` with 412. That
+   * 412 surfaces as a generic failure that reads like a concurrent edit, so pause-then-resume, the
+   * two-step interaction this feature exists for, would fail with a misleading cause.
+   *
+   * Only ever set from a CONFIRMED response, and only ever preferred over the row's own etag when
+   * present — a toggle that returned no etag falls back to the indexed one rather than to ''.
+   */
+  protected readonly toggledEtag = signal<Record<string, string>>({});
 
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
@@ -125,6 +136,32 @@ export class OptimizationTabComponent implements OnInit {
       .filter((c) => !c.adFormat.toLowerCase().includes('search'))
       .sort((a, b) => a.ctr - b.ctr)
       .map((c) => ({ ...c, displayPacingPct: Math.min(c.pacingPct, 100) }));
+  });
+
+  /**
+   * The brief's campaigns as the row renders them: indexed facts overlaid with what this session
+   * CONFIRMED. `null` stays `null` — see `briefCampaigns` for why that must not become `[]`.
+   *
+   * A computed rather than template methods, because a template may only read signals, computed
+   * values and pipes (frontend-checklist §4). `displayStatus(campaign)`/`isRunning(campaign)` also
+   * re-ran on every change detection pass for every row; this recomputes only when a toggle lands.
+   */
+  protected readonly campaignRows = computed<CampaignRow[] | null>(() => {
+    const rows = this.briefCampaigns();
+    if (rows === null) {
+      return null;
+    }
+    const toggled = this.toggledStatus();
+    return rows.map((campaign) => {
+      const status = toggled[campaign.id] ?? campaign.status;
+      return {
+        campaign,
+        status,
+        // `created_degraded` counts as running: it is live and spending, and upstream refuses a
+        // resume for it with 409. See RUNNING_CAMPAIGN_STATUSES.
+        isRunning: RUNNING_CAMPAIGN_STATUSES.has(status.toLowerCase()),
+      };
+    });
   });
 
   protected readonly hasWastedKeywords = computed(() => this.wastedKeywords().length > 0);
@@ -212,15 +249,6 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
-  protected displayStatus(campaign: CampaignIndexDoc): string {
-    return this.toggledStatus()[campaign.id] ?? campaign.status;
-  }
-
-  protected isRunning(campaign: CampaignIndexDoc): boolean {
-    const status = this.displayStatus(campaign).toLowerCase();
-    return status === 'created' || status === 'active' || status === 'enabled';
-  }
-
   /**
    * Pause or resume one campaign on its ad platform.
    *
@@ -232,11 +260,15 @@ export class OptimizationTabComponent implements OnInit {
    * list was read. That refusal is the point: it stops a pause being applied on the strength of a
    * stale view.
    */
-  protected toggleCampaign(campaign: CampaignIndexDoc): void {
+  protected toggleCampaign(row: CampaignRow): void {
+    const campaign = row.campaign;
     if (this.togglePending()[campaign.id]) {
       return;
     }
-    const etag = campaign.etag ?? '';
+    // The FRESH etag first: the row is an immutable input holding the etag as read, which this
+    // session's own earlier toggle already invalidated. Replaying it earns a 412 that reads as
+    // someone else's concurrent edit.
+    const etag = this.toggledEtag()[campaign.id] ?? campaign.etag ?? '';
     if (etag === '') {
       // No validator means the server would answer 428. Say so here rather than spending a round
       // trip to be told, and name the cause — a row indexed before etags were carried.
@@ -244,7 +276,7 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
 
-    const status: CampaignToggleStatus = this.isRunning(campaign) ? 'PAUSED' : 'ACTIVE';
+    const status: CampaignToggleStatus = row.isRunning ? 'PAUSED' : 'ACTIVE';
     this.togglePending.update((p) => ({ ...p, [campaign.id]: true }));
     this.toggleError.update((e) => {
       const next = { ...e };
@@ -270,6 +302,14 @@ export class OptimizationTabComponent implements OnInit {
           // the row's status unchanged. Rendering the request back would claim a transition the
           // service declined to record.
           this.toggledStatus.update((t) => ({ ...t, [campaign.id]: result.serviceStatus ?? result.newStatus }));
+          // The toggle bumped the row's version upstream, so the etag this row was read with is
+          // now stale. Keeping the fresh one is what makes the NEXT toggle possible: without it
+          // pause-then-resume replays a dead validator and fails with a 412 that names the wrong
+          // cause. Absent on the legacy per-platform path, which has no row — fall through to the
+          // indexed etag there rather than storing ''.
+          if (result.etag) {
+            this.toggledEtag.update((e) => ({ ...e, [campaign.id]: result.etag as string }));
+          }
         },
         error: () => {
           this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));

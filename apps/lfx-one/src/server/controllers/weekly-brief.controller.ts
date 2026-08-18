@@ -75,14 +75,24 @@ function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWe
  * dialog shows a specific rendered revision — the caller must send it back so the
  * service can reject a stale approval (another writer saved an edit in between)
  * instead of silently sharing content the caller never actually reviewed.
+ *
+ * Same bound as `validateRateBriefBody`/`validateClearRatingBody` (integer, >= 1), not the
+ * looser finite-number check this used to have (LFXV2-3080): shareBrief's revision only ever
+ * fed a local equality comparison, but shareToSlack's now also crosses the wire as the
+ * committee-service share-to-chat request body, which declares it `UInt64, Minimum(1)` — a
+ * malformed value here should fail loudly at this boundary with a clear 400, not ride into an
+ * upstream Goa validation error. `isSafeInteger`, not just `isInteger`: a value beyond
+ * `Number.MAX_SAFE_INTEGER` (e.g. `1e20`) still passes `isInteger` but can't faithfully
+ * represent a `UInt64` — same failure mode as an out-of-range value, just one `isInteger` alone
+ * wouldn't catch.
  */
 function validateShareBriefBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
   if (!body || typeof body !== 'object') {
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
-  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
-    return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
+  if (typeof b['revision'] !== 'number' || !Number.isSafeInteger(b['revision']) || b['revision'] < 1) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be an integer of at least 1' } };
   }
   return { ok: true, value: { revision: b['revision'] as number } };
 }
@@ -114,9 +124,9 @@ function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBrie
  * Narrow `req.body` to `{ revision: number }` for the clear-rating (DELETE) endpoint. The caller
  * must send back the revision they actually saw so the service can reject a stale clear (PR #1361
  * review) instead of silently deleting whatever revision happens to be current. Same bound as
- * `validateRateBriefBody`'s revision check (integer, >= 1) rather than `validateShareBriefBody`'s
- * looser finite-number check — rate and clear are the same closed pair of endpoints and should
- * share one boundary contract (PR #1361 review, round 2).
+ * `validateRateBriefBody`'s (and now `validateShareBriefBody`'s) revision check (integer, >= 1) —
+ * rate and clear are the same closed pair of endpoints and should share one boundary contract
+ * (PR #1361 review, round 2).
  */
 function validateClearRatingBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
   if (!body || typeof body !== 'object') {
@@ -177,6 +187,51 @@ export class WeeklyBriefController {
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs
+   *
+   * Paginated archive list of past briefs for the committee, sourced from the query-service
+   * `group_weekly_brief` index. Gated by `assertCommitteeRead` — same access contract as
+   * getCurrentBrief (committee#auditor). Returns `{ data: WeeklyBrief[], page_token? }`.
+   */
+  public async listBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'list_weekly_briefs', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'list_weekly_briefs',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'list_weekly_briefs');
+
+      const limit = typeof req.query['limit'] === 'string' ? req.query['limit'] : undefined;
+      const rawPageToken = req.query['page_token'];
+      const pageToken = typeof rawPageToken === 'string' && rawPageToken.length <= 512 ? rawPageToken : undefined;
+      const { data, page_token } = await this.weeklyBriefService.listBriefs(req, committeeId, {
+        ...(limit && { limit }),
+        ...(pageToken && { page_token: pageToken }),
+      });
+
+      logger.success(req, 'list_weekly_briefs', startTime, {
+        committee_id: committeeId,
+        count: data.length,
+        has_more_pages: !!page_token,
+      });
+
+      res.json({ data, page_token });
     } catch (error) {
       next(error);
     }

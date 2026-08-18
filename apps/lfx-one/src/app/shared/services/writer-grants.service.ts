@@ -7,6 +7,7 @@ import { IDLE_SWEEP_FALLBACK_DELAY_MS, IDLE_SWEEP_MIN_DELAY_MS, IDLE_SWEEP_TIMEO
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
 import { finalize, map } from 'rxjs';
 
 /**
@@ -14,6 +15,11 @@ import { finalize, map } from 'rxjs';
  * the same authorization `writerGuard` enforces. The only consumer is {@link LensService}, which
  * OR's these into its allowed-lens set (LFXV2-2754): a `writer` grant is authority over that
  * project, so the lens that reaches it must be available regardless of which persona was detected.
+ *
+ * Gated on `UserService.authenticated()` (LFXV2-3266) — on public/anonymous routes (e.g. a
+ * `/meetings/:id` invite page) there's no session, so both calls would just 401. `authenticated`
+ * is seeded from `TransferState`/`REQUEST_CONTEXT` in `AppComponent`'s constructor, which runs
+ * before `afterNextRender` callbacks fire, so the check below always sees the settled value.
  *
  * Two-phase, kicked off post-hydration in `afterNextRender` (LFXV2-2857):
  *  - **Fast path** — `ProjectService.getWriterSummary()` hits a `filter_grants=direct`-scoped
@@ -45,6 +51,7 @@ import { finalize, map } from 'rxjs';
 })
 export class WriterGrantsService {
   private readonly projectService = inject(ProjectService);
+  private readonly userService = inject(UserService);
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly hasWriterFoundationInternal: WritableSignal<boolean> = signal(false);
@@ -60,6 +67,12 @@ export class WriterGrantsService {
     // Runs browser-only, once the first render is committed — see the class doc for why both
     // calls live here rather than at construction.
     afterNextRender(() => {
+      // Anonymous/public routes have no session — both signals' default `false` is already the
+      // correct answer, so skip the calls rather than let them 401 (LFXV2-3266).
+      if (!this.userService.authenticated()) {
+        return;
+      }
+
       this.projectService
         .getWriterSummary()
         .pipe(

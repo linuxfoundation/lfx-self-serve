@@ -2,9 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
+import { MEETING_PASSWORD_HEADER, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
-import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
+import {
+  CreateMeetingRegistrantRequest,
+  MeetingOccurrenceSummary,
+  MeetingRegistrant,
+  Project,
+  PublicMeetingOccurrencesResponse,
+  PublicMeetingProject,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -84,6 +91,12 @@ export class PublicMeetingController {
           path: `/projects/${meeting.project_uid}`,
         });
       }
+
+      // Resolves the foundation project server-side (LFXV2-3266) so anonymous visitors get
+      // breadcrumb/attribution data without an authenticated /api/projects/:uid call from the
+      // client. m2mToken is still active here — the user-token swap below happens later and is
+      // restored before this response is sent.
+      const parent = await this.resolveParentProject(req, project);
 
       // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
       // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
@@ -172,7 +185,7 @@ export class PublicMeetingController {
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({
           meeting,
-          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+          project: this.toPublicMeetingProject(project, parent),
         });
         return;
       }
@@ -186,7 +199,7 @@ export class PublicMeetingController {
       if (meeting.invited || meeting.organizer) {
         res.json({
           meeting,
-          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+          project: this.toPublicMeetingProject(project, parent),
         });
         return;
       }
@@ -206,7 +219,7 @@ export class PublicMeetingController {
               meeting.invited = true;
               res.json({
                 meeting,
-                project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+                project: this.toPublicMeetingProject(project, parent),
               });
               return;
             }
@@ -226,7 +239,7 @@ export class PublicMeetingController {
       }
 
       // Send the meeting and project data to the client
-      res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid } });
+      res.json({ meeting, project: this.toPublicMeetingProject(project, parent) });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -269,6 +282,9 @@ export class PublicMeetingController {
           path: `/projects/${meeting.project_uid}`,
         });
       }
+
+      // Resolves the foundation project server-side (LFXV2-3266) — see getMeetingById for why.
+      const parent = await this.resolveParentProject(req, project);
 
       // Check organizer status for authenticated users using user token
       let isOrganizer = false;
@@ -349,7 +365,7 @@ export class PublicMeetingController {
 
       res.json({
         meeting: meetingResponse,
-        project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        project: this.toPublicMeetingProject(project, parent),
         full_access: fullAccess,
       });
     } catch (error) {
@@ -581,6 +597,46 @@ export class PublicMeetingController {
       // Error handler will log
       next(error);
     }
+  }
+
+  /**
+   * Resolves a project's foundation (parent) for public meeting responses (LFXV2-3266), so the
+   * client never needs its own authenticated `/api/projects/:uid` call to show it. Root-level
+   * projects have no meaningful parent — `ROOT_PROJECT_SLUG` maps to `null`, mirroring the
+   * client-side rule this replaces. Never throws: a missing/unresolvable parent degrades to
+   * `null` rather than failing the whole meeting response.
+   */
+  private async resolveParentProject(req: Request, project: Pick<Project, 'parent_uid'>): Promise<Project | null> {
+    if (!project.parent_uid) {
+      return null;
+    }
+
+    try {
+      const parent = await this.projectService.getProjectById(req, project.parent_uid, false);
+      return parent?.slug === ROOT_PROJECT_SLUG ? null : parent;
+    } catch (error) {
+      logger.warning(req, 'resolve_parent_project', 'Failed to resolve parent project, continuing without it', {
+        parent_uid: project.parent_uid,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Builds the slim `PublicMeetingProject` payload shared by every public meeting response
+   * branch — kept as one helper so `parent` (LFXV2-3266) can't be added to some call sites and
+   * missed on others.
+   */
+  private toPublicMeetingProject(project: Project, parent: Project | null): PublicMeetingProject {
+    return {
+      name: project.name,
+      slug: project.slug,
+      logo_url: project.logo_url,
+      uid: project.uid,
+      parent_uid: project.parent_uid,
+      parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug } : null,
+    };
   }
 
   /**

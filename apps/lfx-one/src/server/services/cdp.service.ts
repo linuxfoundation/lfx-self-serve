@@ -531,7 +531,7 @@ export class CdpService {
   /**
    * Delete a specific CDP work experience
    */
-  public async deleteWorkExperience(req: Request | undefined, memberId: string, workExperienceId: string): Promise<void> {
+  public async deleteWorkExperience(req: Request | undefined, memberId: string, workExperienceId: string, deletedBy: string): Promise<void> {
     const token = await this.generateToken(req);
     const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${encodeURIComponent(workExperienceId)}`;
     const requestId = randomUUID();
@@ -539,14 +539,17 @@ export class CdpService {
     logger.debug(req, 'delete_cdp_work_experience', 'Deleting CDP work experience', {
       member_id: memberId,
       work_experience_id: workExperienceId,
+      deleted_by: deletedBy,
     });
 
     const response = await fetch(url, {
       method: 'DELETE',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
         'X-LFX-Request-ID': requestId,
       },
+      body: JSON.stringify({ deletedBy }),
       signal: AbortSignal.timeout(10000),
     });
 
@@ -565,7 +568,7 @@ export class CdpService {
    */
   public async deleteWorkExperienceForUser(req: Request | undefined, sub: string, workExperienceId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
-    await this.deleteWorkExperience(req, memberId, workExperienceId);
+    await this.deleteWorkExperience(req, memberId, workExperienceId, sub);
   }
 
   /**

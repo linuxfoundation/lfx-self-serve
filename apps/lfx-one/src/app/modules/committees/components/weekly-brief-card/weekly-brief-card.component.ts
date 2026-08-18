@@ -11,16 +11,19 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_SHAREABLE_STATES,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
 import {
   Committee,
+  PaginatedResponse,
   ShareWeeklyBriefResult,
   ValidationError,
   WeeklyBrief,
@@ -61,7 +64,16 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule, TagComponent],
+  imports: [
+    CardComponent,
+    ButtonComponent,
+    SkeletonModule,
+    ReactiveFormsModule,
+    TextareaComponent,
+    ConfirmDialogModule,
+    TagComponent,
+    WeeklyBriefArchiveDrawerComponent,
+  ],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -97,9 +109,8 @@ export class WeeklyBriefCardComponent {
   public readonly impersonating = this.userService.impersonating;
 
   // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
-  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
-  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
-  // with a hint pointing at settings UI that's itself still flag-hidden.
+  // it, once wg-weekly-brief is on, every user would see a Share to Slack button pointing at
+  // settings UI (the webhook card) that's itself still flag-hidden, with no way to configure it.
   public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
@@ -126,6 +137,13 @@ export class WeeklyBriefCardComponent {
   // True while a rate/clear-rating request is in flight — guards against a second tap
   // racing the first before the optimistic state has settled.
   public readonly ratingPending = signal(false);
+
+  // Archive drawer visibility and availability signals.
+  // `hasArchiveBriefs` starts false and is set by a limit=1 preflight that fires as soon
+  // as the committee is known — avoids showing a "Past Briefs" button that opens to an
+  // empty drawer (LFXV2-3046: hide the affordance when no past briefs exist).
+  public readonly archiveVisible = signal(false);
+  public readonly hasArchiveBriefs = signal(false);
 
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
@@ -227,6 +245,10 @@ export class WeeklyBriefCardComponent {
   }
 
   // Public actions
+  public onOpenArchive(): void {
+    this.archiveVisible.set(true);
+  }
+
   public onGenerate(): void {
     if (this.generating()) return;
     const committeeUid = this.committee()?.uid;
@@ -537,7 +559,25 @@ export class WeeklyBriefCardComponent {
       this.editForm.reset({ briefText: '' });
       this.ratingPending.set(false);
       this.optimisticRating.set(null);
+      // Reset archive state when navigating between committees.
+      this.hasArchiveBriefs.set(false);
+      this.archiveVisible.set(false);
     });
+
+    // Archive preflight — fires once per committee as soon as the uid is known,
+    // independently of the current brief. A limit=1 fetch confirms at least one past
+    // shareable brief exists before the "Past Briefs" button is shown.
+    committeeUid$
+      .pipe(
+        switchMap((uid) =>
+          this.weeklyBriefService.listWeeklyBriefs(uid, { limit: 1 }).pipe(catchError(() => of(null as PaginatedResponse<WeeklyBrief> | null)))
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        const shareable = (response?.data ?? []).filter((b) => WEEKLY_BRIEF_SHAREABLE_STATES.includes(b.state));
+        this.hasArchiveBriefs.set(shareable.length > 0);
+      });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(
         switchMap(([uid]) => {
@@ -818,22 +858,13 @@ export class WeeklyBriefCardComponent {
           } else if (status === 400) {
             const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
-          } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
-            // Slack answered synchronously with a rejection — invalid_payload, channel_not_found,
-            // rate_limited, action_prohibited, etc. (see SLACK_ERROR_TOKEN_PATTERN) — not only a
-            // bad webhook URL, so a single hardcoded "check the webhook URL" message would send a
-            // rate-limited or policy-blocked caller down the wrong troubleshooting path and invite
-            // an immediate retry that just gets rejected again. The server's own message already
-            // embeds the specific reason when it's recognizable (weekly-brief.service.ts's
-            // clientSafeReason); fall back to the generic wording only when it isn't. Either way
-            // the POST was never accepted, so nothing was posted — safe to retry once resolved.
-            detail = err.error?.error ?? 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
-            // Ambiguous, same rationale as performShare's identical status-range branch: this
-            // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)
-            // alongside a dropped connection or gateway timeout talking to our own BFF — in
-            // either case there's no confirmation Slack didn't already receive the POST before
-            // the failure, unlike the SLACK_SEND_FAILED branch above.
+            // committee-service now owns composing and sending the Slack message itself
+            // (LFXV2-3094 / lfx-v2-committee-service PR #178) — this BFF no longer talks to Slack
+            // directly, so there's no BFF-side SLACK_UNREACHABLE/SLACK_SEND_FAILED distinction to
+            // make any more. A 5xx (or a dropped/timed-out connection to our own BFF) here is
+            // ambiguous either way: there's no confirmation the message wasn't already sent before
+            // the failure, same rationale as performShare's identical status-range branch.
             detail = 'The send may not have completed — check the Slack channel before trying again.';
           } else {
             detail = 'Failed to share brief. Please try again.';

@@ -1254,6 +1254,17 @@ export interface UrlMetadataResponse {
 }
 
 /**
+ * Slim parent (foundation) project context nested in {@link PublicMeetingProject} — resolved
+ * server-side (LFXV2-3266) so anonymous visitors on public meeting pages get foundation
+ * attribution without the client needing an authenticated `/api/projects/:uid` call.
+ */
+export type PublicMeetingParentProject = {
+  uid: string;
+  name: string;
+  slug: string;
+};
+
+/**
  * Slim project context returned alongside public meeting endpoints.
  * Only the fields needed for the join page — callers must not assume
  * any other project fields are present.
@@ -1264,6 +1275,8 @@ export type PublicMeetingProject = {
   logo_url: string;
   uid: string;
   parent_uid: string;
+  /** Resolved foundation project, or `null` when top-level or unresolvable (LFXV2-3266). */
+  parent: PublicMeetingParentProject | null;
 };
 
 /**
