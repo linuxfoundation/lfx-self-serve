@@ -398,8 +398,10 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplatesAnnouncement = computed<string>(() => {
     if (this.emailTemplatesLoading()) return 'Searching templates';
-    const error = this.emailTemplatesError();
-    if (error) return error;
+    // The error case is deliberately ABSENT, matching briefPersistenceAnnouncement: the visible
+    // error node already carries role="alert", so returning the same string here would announce
+    // the failure twice.
+    if (this.emailTemplatesError()) return '';
     if (this.emailChannelEnabled() === false) return 'HubSpot is not connected for this foundation.';
     const templates = this.emailTemplates();
     if (templates === null) return '';
@@ -407,7 +409,12 @@ export class CampaignsComponent {
       const q = this.emailTemplateSubmittedQuery();
       return q ? `No templates match ${q}.` : 'This portal has no marketing emails yet.';
     }
-    return `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
+    const count = `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
+    // The truncation cue must carry over, for the same reason the sibling appends its reload
+    // instruction: announcing the count alone gives the reassurance without the instruction, and
+    // the instruction is the part a screen-reader user cannot recover on their own — nothing else
+    // says the list is partial.
+    return this.emailTemplatesTruncated() ? `${count} Showing a partial list. Search to narrow it.` : count;
   });
   protected readonly emailTemplatesLoading = signal(false);
   /**
