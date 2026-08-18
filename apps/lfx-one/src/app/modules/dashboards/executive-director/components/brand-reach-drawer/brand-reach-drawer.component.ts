@@ -30,6 +30,13 @@ export class BrandReachDrawerComponent {
    * data rather than about the request.
    */
   public readonly unavailable = input<boolean>(false);
+  /**
+   * True when only the SOCIAL half of the response failed. getBrandReach keeps serving web data
+   * in that case, so the whole drawer must not be blanked — the sessions and domains below were
+   * measured. Only the social stats and the platform list are suppressed, matching how the
+   * Social card and Web card diverge on the same response.
+   */
+  public readonly socialUnavailable = input<boolean>(false);
   protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
   protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
   protected readonly loadingHeading = DRAWER_LOADING_HEADING;

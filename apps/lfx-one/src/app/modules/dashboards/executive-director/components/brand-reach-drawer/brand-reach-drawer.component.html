@@ -53,7 +53,7 @@
         <lfx-card styleClass="flex-1">
           <div class="flex flex-col gap-1">
             <span class="text-sm text-gray-500">Social Followers</span>
-            @if (data().totalSocialFollowers > 0) {
+            @if (!socialUnavailable() && data().totalSocialFollowers > 0) {
               <span class="text-2xl font-semibold text-gray-900">{{ data().totalSocialFollowers | number }}</span>
             } @else {
               <span class="text-2xl font-semibold text-gray-400">—</span>
@@ -73,7 +73,7 @@
         <lfx-card styleClass="flex-1">
           <div class="flex flex-col gap-1">
             <span class="text-sm text-gray-500">Active Platforms</span>
-            @if (data().activePlatforms > 0) {
+            @if (!socialUnavailable() && data().activePlatforms > 0) {
               <span class="text-2xl font-semibold text-gray-900">{{ data().activePlatforms }}</span>
             } @else {
               <span class="text-2xl font-semibold text-gray-400">—</span>
@@ -163,7 +163,7 @@
           </div>
         } @else {
           <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-reach-drawer-platforms-empty">
-            Social platform data not yet available
+            {{ socialUnavailable() ? unavailableHeading + ' — ' + unavailableBody : 'Social platform data not yet available' }}
           </div>
         }
       </div>

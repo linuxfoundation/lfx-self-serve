@@ -14,6 +14,7 @@ import { throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BrandHealthDrawerComponent } from './brand-health-drawer/brand-health-drawer.component';
+import { BrandReachDrawerComponent } from './brand-reach-drawer/brand-reach-drawer.component';
 import { EmailCtrDrawerComponent } from './email-ctr-drawer/email-ctr-drawer.component';
 import { EngagedCommunityDrawerComponent } from './engaged-community-drawer/engaged-community-drawer.component';
 import { WebsiteVisitsDrawerComponent } from './website-visits-drawer/website-visits-drawer.component';
@@ -454,6 +455,51 @@ describe('ED drill-down drawers — a failed request must not read as no activit
     const text = document.body.textContent ?? '';
     expect(text).toContain(DRAWER_UNAVAILABLE_HEADING);
     expect(text).not.toContain('No website traffic detected');
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  // A social-only failure leaves the response PRESENT, so `unavailable` is false and the drawer
+  // stays open — correctly, because its web half was measured. Only the social parts may be
+  // suppressed. Blanking the whole drawer here would repeat the mistake the card layer avoids.
+  it('Social: suppresses only the social half when just the social query failed', async () => {
+    await TestBed.configureTestingModule({
+      imports: [BrandReachDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([])],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(BrandReachDrawerComponent);
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('unavailable', false);
+    fixture.componentRef.setInput('socialUnavailable', true);
+    fixture.componentRef.setInput('data', {
+      socialUnavailable: true,
+      // Non-zero on purpose: a guard that renders these when socialUnavailable is true would
+      // put a fabricated 17,269 on screen, and a zero fixture could not tell that apart from a
+      // correctly suppressed tile.
+      totalSocialFollowers: 17269,
+      totalMonthlySessions: 3482,
+      activePlatforms: 2,
+      changePercentage: 0,
+      sessionMomChangePct: 4,
+      trend: 'up',
+      socialPlatforms: [],
+      websiteDomains: [{ domain: 'docs.example.org', sessions: 3482 }],
+      weeklyTrend: [],
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = document.body.textContent ?? '';
+    // The social half must not assert a measured absence.
+    expect(text).not.toContain('Social platform data not yet available');
+    expect(text).toContain(DRAWER_UNAVAILABLE_HEADING);
+    // Nor may it render the numbers the failed query left behind.
+    expect(text).not.toContain('17,269');
+    // The web half WAS measured and must survive.
+    expect(text).toContain('3,482');
 
     fixture.destroy();
     TestBed.resetTestingModule();

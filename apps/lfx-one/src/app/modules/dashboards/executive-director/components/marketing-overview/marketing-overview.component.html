@@ -243,6 +243,7 @@
   [data]="brandReachData()"
   (visibleChange)="handleDrawerClose()"
   [unavailable]="!edEvolutionData().pending && !edEvolutionData().brandReach"
+  [socialUnavailable]="!!edEvolutionData().brandReach?.socialUnavailable"
   [pending]="!!edEvolutionData().pending"></lfx-brand-reach-drawer>
 
 <lfx-brand-health-drawer
