@@ -383,6 +383,66 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(query('implementation-meta-geo-add')).not.toBeNull();
   });
 
+  /**
+   * The seed path is the OTHER door into `metaGeoTargets`, and it used to bypass normalisation
+   * entirely: `populateFromBrief` assigned `recommended_geos` raw. A stored `us` then survived as
+   * a lowercase chip, so the add path's `includes` check could not see it as a duplicate of a
+   * typed `US`, and BOTH reached the wire — the server uppercased without de-duping.
+   */
+  async function seedFromBrief(geos: string[], shape: 'structured' | 'typed'): Promise<void> {
+    const brief: Record<string, any> = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://events.example.com/k' },
+      totalBudget: 500,
+      keywords: [],
+      hsUtm: '',
+      driveFolderUrl: '',
+    };
+    if (shape === 'structured') {
+      brief['structuredCopy'] = { meta_ads: { variants: [], recommended_geos: geos } };
+    } else {
+      brief['metaCopy'] = { variants: [], recommendedGeos: geos };
+    }
+    (fixture.componentInstance as unknown as { populateFromBrief(b: unknown): void }).populateFromBrief(brief);
+    await fixture.whenStable();
+  }
+
+  it('normalises geo codes seeded from a structured brief', async () => {
+    await seedFromBrief(['us', ' jp '], 'structured');
+
+    expect(metaGeoTargets()).toEqual(['US', 'JP']);
+  });
+
+  it('de-dupes case-variant geo codes seeded from a structured brief', async () => {
+    await seedFromBrief(['us', 'US', 'JP'], 'structured');
+
+    expect(metaGeoTargets()).toEqual(['US', 'JP']);
+  });
+
+  it('normalises and de-dupes geo codes seeded from a typed brief', async () => {
+    await seedFromBrief(['de', 'DE', ' fr '], 'typed');
+
+    expect(metaGeoTargets()).toEqual(['DE', 'FR']);
+  });
+
+  /** The defect as reported: a stored lowercase code plus a typed uppercase one made two chips. */
+  it('treats a typed code as a duplicate of a lowercase code seeded from the brief', async () => {
+    await seedFromBrief(['us'], 'structured');
+    await selectMeta();
+
+    const input = geoAddInput();
+    input.value = 'US';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US']);
+  });
+
+  it('drops a mis-shaped geo code seeded from the brief', async () => {
+    await seedFromBrief(['us', 'USA', '1', ''], 'structured');
+
+    expect(metaGeoTargets()).toEqual(['US']);
+  });
+
   it('can add a geo target back after removing the last one', async () => {
     await setMetaGeoTargets(['US']);
 
@@ -549,6 +609,19 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * Rule 3. `buildPlacementTargeting` refuses a request whose `publisher_platforms` list comes out
    * empty, and it does so at the ad-set call — after the campaign, a paid resource, exists.
    */
+  /**
+   * The override map is built by DROPPING keys equal to `META_DEFAULT_PLACEMENTS`, so toggling a
+   * default-on placement off and back on must re-collapse to `{}`. The other placement specs only
+   * move one direction, which a `!==`→`!=` slip or a lost shallow copy would still satisfy while
+   * shipping a redundant `facebookFeed: true` override.
+   */
+  it('re-collapses to no overrides when a default placement is toggled off then on', async () => {
+    await togglePlacement('facebookFeed', false);
+    await togglePlacement('facebookFeed', true);
+
+    expect((await submittedMetaConfig())['placements']).toEqual({});
+  });
+
   it('blocks submit when every selectable placement is off', async () => {
     expect(canSubmit()).toBe(true);
 
@@ -662,7 +735,11 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     await typePixelId('123456789012345');
 
     expect(canSubmit()).toBe(true);
-    expect((await submittedMetaConfig())['pixelId']).toBe('123456789012345');
+    // The objective is asserted alongside the id so the pairing is pinned positively: a pixel id
+    // must ship WITH `conversions`, not merely be absent under everything else.
+    const config = await submittedMetaConfig();
+    expect(config['pixelId']).toBe('123456789012345');
+    expect(config['objective']).toBe('conversions');
   });
 
   it('trims the pixel id it sends', async () => {
@@ -670,7 +747,9 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     await typePixelId('  123456789012345  ');
 
     expect(canSubmit()).toBe(true);
-    expect((await submittedMetaConfig())['pixelId']).toBe('123456789012345');
+    const config = await submittedMetaConfig();
+    expect(config['pixelId']).toBe('123456789012345');
+    expect(config['objective']).toBe('conversions');
   });
 
   /**

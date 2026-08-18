@@ -236,6 +236,36 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 /** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
+/** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */
+export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
+
+/**
+ * Normalise a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
+ *
+ * The single owner of geo normalisation. Every entry point — the chip add path, the brief seed
+ * path, and the server's pre-flight validation — routes through this so the same input can never
+ * mean two different things depending on which door it came through. That split is exactly what
+ * let a stored `us` and a typed `US` become two chips AND two wire entries: the add path
+ * normalised, the seed path did not, and the server uppercased without de-duping, so `["us","US"]`
+ * reached Meta as `["US","US"]`.
+ *
+ * De-duping is FIRST-SEEN order, matching campaign-service. Shape only — which COUNTRIES Meta
+ * accepts is the service's call, since it additionally drops sanctioned and regulated markets;
+ * duplicating that list here would only let it drift.
+ */
+export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const code of codes ?? []) {
+    if (typeof code !== 'string') continue;
+    const upper = code.trim().toUpperCase();
+    if (!META_GEO_CODE_PATTERN.test(upper) || seen.has(upper)) continue;
+    seen.add(upper);
+    normalized.push(upper);
+  }
+  return normalized;
+}
+
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
 

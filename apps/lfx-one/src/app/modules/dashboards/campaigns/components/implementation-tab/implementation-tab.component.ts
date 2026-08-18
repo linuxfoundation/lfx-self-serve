@@ -19,6 +19,7 @@ import {
   META_OBJECTIVE_LABELS,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
+  normalizeGeoTargets,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -630,12 +631,12 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Add one Meta geo target, normalised the way campaign-service will normalise it anyway.
+   * Add one Meta geo target, normalised through the shared `normalizeGeoTargets`.
    *
-   * Uppercased and trimmed to match the service's `validateGeoTargets`, which uppercases, trims,
-   * and de-dupes in first-seen order. De-duping here keeps the chip list honest: entering `us`
-   * when `US` is already a chip would otherwise render two chips for one target, since the
-   * service collapses them back into a single entry.
+   * Runs the WHOLE list through the helper rather than just the new code, so an already-seeded
+   * chip list is normalised on first add too. Both the seed path and the server's
+   * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
+   * to one chip and one wire entry no matter which door they came through.
    *
    * Shape is enforced (two letters) but ELIGIBILITY is not, and the split is deliberate. The
    * two-letter shape is fixed by ISO 3166-1 alpha-2 and cannot drift, so rejecting `1` or `x9`
@@ -649,9 +650,7 @@ export class ImplementationTabComponent implements OnInit {
    * usable survives rather than silently falling back to US.
    */
   protected addMetaGeoTarget(code: string): void {
-    const normalized = code.trim().toUpperCase();
-    if (!/^[A-Z]{2}$/.test(normalized)) return;
-    this.metaGeoTargets.update((targets) => (targets.includes(normalized) ? targets : [...targets, normalized]));
+    this.metaGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
   }
 
   protected onMetaGeoTargetAdd(event: Event): void {
@@ -965,10 +964,10 @@ export class ImplementationTabComponent implements OnInit {
         }))
       );
       const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
+      this.metaGeoTargets.set(normalizeGeoTargets(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
     } else if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
+      this.metaGeoTargets.set(normalizeGeoTargets(brief.metaCopy.recommendedGeos));
     }
 
     this.briefKeywords.set(brief.keywords);

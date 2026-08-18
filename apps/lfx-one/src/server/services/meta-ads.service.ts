@@ -15,7 +15,14 @@ import type {
   MetaPlacement,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_PACING_THRESHOLDS, META_DEFAULT_PLACEMENTS, META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_PACING_THRESHOLDS,
+  META_DEFAULT_PLACEMENTS,
+  META_NUMERIC_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_OBJECTIVE_PARAMS,
+  normalizeGeoTargets,
+} from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -75,10 +82,17 @@ function validateRegistrationUrl(url: string): void {
   }
 }
 
-const GEO_CODE_RE = /^[A-Z]{2}$/;
-
+/**
+ * Normalise the requested geo targets, falling back to US when nothing usable survives.
+ *
+ * De-duping is the point of routing through the shared helper rather than mapping inline: the
+ * previous map/filter uppercased without collapsing repeats, so a list carrying both `us` and
+ * `US` — which the UI could produce, because its brief-seed path did not normalise — was sent to
+ * Meta as `["US","US"]`. Sharing one helper with the client keeps the two layers from disagreeing
+ * about what a geo target is.
+ */
 function validateGeoTargets(geoTargets: string[]): string[] {
-  const valid = geoTargets.map((g) => g.trim().toUpperCase()).filter((g) => GEO_CODE_RE.test(g));
+  const valid = normalizeGeoTargets(geoTargets);
   return valid.length > 0 ? valid : ['US'];
 }
 
@@ -93,7 +107,15 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
     if (typeof pixelId !== 'string' || !pixelId.trim()) {
       throw new Error(`pixelId must be a non-empty string for '${objective}' objective`);
     }
-    return { pixel_id: pixelId.trim(), custom_event_type: 'PURCHASE' };
+    // Shape is re-checked here, not just in the form. The component enforces
+    // META_NUMERIC_ID_PATTERN before submit, but this service is reachable by any caller of the
+    // create endpoint, and a malformed id would otherwise be spent discovering that Meta rejects
+    // it AFTER the campaign — a paid resource — already exists.
+    const trimmed = pixelId.trim();
+    if (!META_NUMERIC_ID_PATTERN.test(trimmed)) {
+      throw new Error(`pixelId must be a numeric string for '${objective}' objective`);
+    }
+    return { pixel_id: trimmed, custom_event_type: 'PURCHASE' };
   }
   return null;
 }
