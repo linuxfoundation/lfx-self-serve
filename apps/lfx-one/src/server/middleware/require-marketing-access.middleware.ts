@@ -16,6 +16,10 @@ const ED: PersonaType = 'executive-director';
 
 type MarketingAccessType = Extract<AccessCheckAccessType, 'marketing_auditor' | 'campaign_manager'>;
 
+interface MarketingAccessMiddlewareOptions {
+  allowLfStaff?: boolean;
+}
+
 const accessCheckService = new AccessCheckService();
 const projectService = new ProjectService();
 
@@ -28,11 +32,11 @@ const projectService = new ProjectService();
  * the flag is ON: root-writer bypasses unconditionally; ED bypasses only for foundations it
  * actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
  * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it
- * falls through to the FGA checks below. LF Staff get no bypass here — they stay UI-scoped to
- * Social Listening and need an actual marketing_auditor/campaign_manager grant (or ED) to pass
- * this middleware, matching what the UI shows them. A caller without ED/root status is authorized only
- * via an actual FGA relation: either a ROOT-scoped grant (cascades to every project) or a grant
- * scoped to the specific foundation/project the request names.
+ * falls through to the FGA checks below. LF Staff bypass the entire check only when `allowLfStaff`
+ * is set to true in options; this allows shared endpoints (e.g. marketing analytics used by both
+ * ED and LF Staff) to grant LF Staff access while keeping other endpoints ED/FGA-only. A caller
+ * without ED/root status is authorized only via an actual FGA relation: either a ROOT-scoped grant
+ * (cascades to every project) or a grant scoped to the specific foundation/project the request names.
  *
  * Deliberately never a single all-or-nothing check: a caller can pass via ED persona OR root FGA
  * grant OR per-project FGA grant, and a transient failure on any one path denies only that path,
@@ -40,15 +44,26 @@ const projectService = new ProjectService();
  * shipped a single async guard with no synchronous fast path — see the LFXV2-2231 gap-analysis
  * G2 finding.
  */
-function createMarketingAccessMiddleware(access: MarketingAccessType, slugQueryParams: string[], operation: string) {
+function createMarketingAccessMiddleware(
+  access: MarketingAccessType,
+  slugQueryParams: string[],
+  operation: string,
+  options: MarketingAccessMiddlewareOptions = {}
+) {
   return async function requireMarketingAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const result = await personaDetectionService.getPersonas(req);
+
+      // LF Staff bypass (if enabled) works regardless of flag state — no need to evaluate ED/FGA paths
+      if (options.allowLfStaff && result.isLFStaff) {
+        next();
+        return;
+      }
+
       if (!isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga)) {
         await requireExecutiveDirector(req, res, next);
         return;
       }
-
-      const result = await personaDetectionService.getPersonas(req);
       if (result.isRootWriter) {
         next();
         return;
@@ -140,6 +155,14 @@ function denyMarketingAccess(
 
 /** Marketing Impact and other read-only marketing analytics endpoints. */
 export const requireMarketingAuditor = createMarketingAccessMiddleware('marketing_auditor', ['foundationSlug', 'project'], 'require_marketing_auditor');
+
+/** Marketing analytics endpoints shared with LF Staff (Marketing Overview widget). */
+export const requireMarketingAuditorOrLfStaff = createMarketingAccessMiddleware(
+  'marketing_auditor',
+  ['foundationSlug', 'project'],
+  'require_marketing_auditor_or_lf_staff',
+  { allowLfStaff: true }
+);
 
 /** Campaigns endpoints — read and write. */
 export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');

@@ -37,7 +37,7 @@ vi.mock('../services/project.service', () => ({
   })),
 }));
 
-const { requireMarketingAuditor, requireCampaignManager } = await import('./require-marketing-access.middleware');
+const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff } = await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
   personas: string[];
@@ -288,6 +288,80 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
 
       expect(next).toHaveBeenCalledTimes(1);
       expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+    });
+  });
+
+  describe('requireMarketingAuditorOrLfStaff', () => {
+    describe('LF Staff bypass', () => {
+      it('allows LF staff regardless of FGA grant status', async () => {
+        getPersonas.mockResolvedValue(nonEd({ isLFStaff: true }));
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({}), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('allow');
+        expect(checkRootMarketingAuditor).not.toHaveBeenCalled();
+        expect(getProjectIdBySlug).not.toHaveBeenCalled();
+      });
+
+      it('allows LF staff even when flag is off', async () => {
+        setFlag(false);
+        getPersonas.mockResolvedValue(nonEd({ isLFStaff: true }));
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({}), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('allow');
+      });
+
+      it('does not bypass LF staff without the isLFStaff flag', async () => {
+        getPersonas.mockResolvedValue(nonEd({ isLFStaff: false }));
+        checkRootMarketingAuditor.mockResolvedValue(false);
+        getProjectIdBySlug.mockResolvedValue({ uid: 'uid-tlf', exists: true });
+        checkSingleAccess.mockResolvedValue(false);
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('deny');
+      });
+    });
+
+    describe('non-LF-Staff behavior (identical to requireMarketingAuditor)', () => {
+      it('allows ED for a foundation they hold', async () => {
+        getPersonas.mockResolvedValue({
+          personas: ['executive-director'],
+          personaProjects: { 'executive-director': [{ projectSlug: 'tlf' }] },
+        });
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('allow');
+      });
+
+      it('allows via root FGA grant', async () => {
+        getPersonas.mockResolvedValue(nonEd());
+        checkRootMarketingAuditor.mockResolvedValue(true);
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('allow');
+        expect(getProjectIdBySlug).not.toHaveBeenCalled();
+      });
+
+      it('allows via per-project FGA grant', async () => {
+        getPersonas.mockResolvedValue(nonEd());
+        checkRootMarketingAuditor.mockResolvedValue(false);
+        getProjectIdBySlug.mockResolvedValue({ uid: 'uid-tlf', exists: true });
+        checkSingleAccess.mockResolvedValue(true);
+        const next = vi.fn();
+
+        await requireMarketingAuditorOrLfStaff(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+        expect(verdict(next)).toBe('allow');
+      });
     });
   });
 });
