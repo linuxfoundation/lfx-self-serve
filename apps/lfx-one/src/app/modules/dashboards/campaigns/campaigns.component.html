@@ -254,8 +254,19 @@
                   -->
                   <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">This may be a partial list. Search to narrow it.</p>
                 }
+                @if (emailTemplatesRenderCapped()) {
+                  <!--
+                    Stated as FACT, unlike the `possiblyTruncated` banner above, which hedges
+                    because a capped 500 and a complete 500 are indistinguishable on the wire.
+                    Both numbers here were measured on the list in hand before it was sliced.
+
+                    Both can show at once: an unfiltered search can be cut upstream at 500 and
+                    cut again here at the render limit.
+                  -->
+                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
+                }
                 <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
-                  @for (template of templates; track template.id) {
+                  @for (template of emailTemplatesRendered(); track template.id) {
                     <li>
                       <button
                         type="button"
@@ -268,9 +279,33 @@
                             : 'flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2 text-left hover:bg-gray-50'
                         "
                         [attr.data-testid]="'campaigns-email-template-' + template.id">
-                        <span class="text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
+                        <span class="flex w-full items-center gap-2">
+                          <span class="min-w-0 flex-1 text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
+                          <!--
+                            The non-colour half of the selected state (WCAG 1.4.1): the border and
+                            background above are colour ONLY, so a colour-blind user, or anyone on
+                            a low-contrast display, had nothing to go on. Same treatment as
+                            project-selector and org-selector — an opacity-toggled check rather
+                            than an @if, so the row's width does not shift as the selection moves.
+
+                            aria-hidden while unselected keeps it out of the accessible name;
+                            aria-pressed on the button already tells assistive tech the state, so
+                            the label would otherwise be announced twice.
+                          -->
+                          <i
+                            class="fa-light fa-check shrink-0 text-blue-500 transition-opacity"
+                            [class.opacity-100]="selectedEmailTemplateId() === template.id"
+                            [class.opacity-0]="selectedEmailTemplateId() !== template.id"
+                            [attr.aria-hidden]="selectedEmailTemplateId() !== template.id"
+                            [attr.aria-label]="selectedEmailTemplateId() === template.id ? 'Selected' : null"></i>
+                        </span>
                         <span class="text-xs text-gray-500">
-                          @if (template.subject) {
+                          <!--
+                            Only when it is not ALREADY the primary label above. With no `name`,
+                            the primary falls through to `subject`, and rendering it again here
+                            printed the same string twice on one row.
+                          -->
+                          @if (template.subject && template.name) {
                             {{ template.subject }}
                           }
                           @if (template.state) {

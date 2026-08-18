@@ -6,7 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core'
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
@@ -426,7 +426,12 @@ export class CampaignsComponent {
     // portal holding exactly 500 emails sets the same flag on a complete listing — the shared
     // interface says a capped 500 is byte-identical to a complete one. Asserting a partial list
     // as fact would send someone hunting for a template that does not exist.
-    return this.emailTemplatesTruncated() ? `${count} This may be a partial list. Search to narrow it.` : count;
+    // The render cap must carry over for the same reason the truncation cue does: a
+    // screen-reader user hears "4000 templates found" and then reaches the 100th button with no
+    // way to discover that the rest were never drawn. Stated as fact — unlike the truncation
+    // hedge below, both numbers here are known exactly.
+    const capped = this.emailTemplatesRenderCapped() ? ` ${this.emailTemplatesRenderCapMessage()}` : '';
+    return this.emailTemplatesTruncated() ? `${count}${capped} This may be a partial list. Search to narrow it.` : `${count}${capped}`;
   });
   protected readonly emailTemplatesLoading = signal(false);
   /**
@@ -448,6 +453,44 @@ export class CampaignsComponent {
    * send them looking for a template that does not exist.
    */
   protected readonly emailTemplatesTruncated = signal(false);
+
+  /**
+   * The rows the picker actually DRAWS — the first `HUBSPOT_TEMPLATE_RENDER_LIMIT` of them.
+   *
+   * A computed rather than a slice in the template: `frontend-checklist.md` §4 allows only signal
+   * reads, computed values and pipes in a template, and `templates.slice(...)` there would be a
+   * method call re-run on every change-detection pass.
+   *
+   * The full list is NOT discarded — `emailTemplates` still holds every row, which is what
+   * `emailTemplateRenderTotal` reports. Capping the render without saying so would present a cut
+   * list as a complete one; `emailTemplatesRenderCapped` drives the copy that says otherwise.
+   */
+  protected readonly emailTemplatesRendered = computed<HubSpotMarketingEmail[]>(() => {
+    const templates = this.emailTemplates();
+    if (templates === null) return [];
+    return templates.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? templates.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : templates;
+  });
+
+  /** How many rows the search returned, as opposed to how many are drawn. */
+  protected readonly emailTemplateRenderTotal = computed<number>(() => this.emailTemplates()?.length ?? 0);
+
+  /** Whether the render cap actually bit — i.e. rows were fetched that are not on screen. */
+  protected readonly emailTemplatesRenderCapped = computed<boolean>(() => this.emailTemplateRenderTotal() > HUBSPOT_TEMPLATE_RENDER_LIMIT);
+
+  /**
+   * The "showing the first N of M" line.
+   *
+   * States the cap as FACT, unlike the `possiblyTruncated` banner beside it, which says "may be"
+   * because a capped 500 and a complete 500 are indistinguishable upstream. Here both numbers are
+   * known exactly — the list in hand was measured before slicing — so hedging would understate a
+   * certainty. The two are independent and can both show: an unfiltered search can be cut
+   * upstream at 500 AND cut again here at the render limit.
+   */
+  protected readonly emailTemplatesRenderCapMessage = computed<string>(() =>
+    this.emailTemplatesRenderCapped()
+      ? `Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
+      : ''
+  );
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');

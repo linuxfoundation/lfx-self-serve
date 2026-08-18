@@ -20,6 +20,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -2217,6 +2218,8 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
     selectorForm: { controls: { deliveryType: { setValue(v: CampaignDeliveryType): void } } };
     searchEmailTemplates(query: string): void;
+    onSelectEmailTemplate(id: string): void;
+    emailTemplatesAnnouncement: Signal<string>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -2316,5 +2319,141 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     expect(text).toContain('Aug 14, 2026');
     // A row with no date renders no placeholder — a dash would read as a reported value.
     expect(text).not.toContain('· Updated –');
+  });
+
+  /**
+   * WCAG 1.4.1: the selected row must not be distinguished by colour alone.
+   *
+   * Asserts the RENDERED opacity class on the check icon rather than the presence of the `<i>`,
+   * because the icon is always in the DOM — an existence check passes against a row that renders
+   * it permanently invisible, which is exactly the bug this guards.
+   */
+  it('marks the selected template with a non-colour indicator', () => {
+    openEmailImplementationTab();
+    picker().searchEmailTemplates('');
+    httpMock
+      .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+      .flush({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: '1', name: 'Alpha' },
+          { id: '2', name: 'Beta' },
+        ],
+      });
+    fixture.detectChanges();
+
+    picker().onSelectEmailTemplate('1');
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const iconIn = (id: string): HTMLElement => root.querySelector(`[data-testid="campaigns-email-template-${id}"] i.fa-check`) as HTMLElement;
+
+    // The chosen row shows the check AND exposes it as text to assistive tech.
+    expect(iconIn('1').classList.contains('opacity-100')).toBe(true);
+    expect(iconIn('1').getAttribute('aria-label')).toBe('Selected');
+
+    // The unchosen row hides it and keeps it out of the accessible name.
+    expect(iconIn('2').classList.contains('opacity-0')).toBe(true);
+    expect(iconIn('2').getAttribute('aria-label')).toBeNull();
+    expect(iconIn('2').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  /**
+   * With no `name`, the primary label falls through to `subject` — so the metadata line must not
+   * print it a second time.
+   *
+   * Counts OCCURRENCES of the subject in the row rather than asserting the metadata line is
+   * empty: the line still carries state and date, so an emptiness check would fail against
+   * correct code and a `toContain` check would pass against the duplicate.
+   */
+  it('does not repeat the subject when it is already the primary label', () => {
+    openEmailImplementationTab();
+    picker().searchEmailTemplates('');
+    httpMock
+      .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+      .flush({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'no-name', subject: 'Register for KubeCon', state: 'DRAFT' },
+          { id: 'named', name: 'KubeCon promo', subject: 'Register for KubeCon', state: 'DRAFT' },
+        ],
+      });
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const occurrences = (id: string): number =>
+      ((root.querySelector(`[data-testid="campaigns-email-template-${id}"]`)?.textContent ?? '').match(/Register for KubeCon/g) ?? []).length;
+
+    // Name absent: subject is the primary label, so it appears exactly once.
+    expect(occurrences('no-name')).toBe(1);
+    // Name present: primary label is the NAME, and the subject renders once beneath it as
+    // genuinely extra information. Also once — but for the opposite reason, so both the primary
+    // label and the metadata line are asserted directly rather than inferred from the count.
+    expect(occurrences('named')).toBe(1);
+
+    const named = root.querySelector('[data-testid="campaigns-email-template-named"]') as HTMLElement;
+    // The name is the primary label…
+    expect(named.querySelector('span.font-medium')?.textContent?.trim()).toBe('KubeCon promo');
+    // …and the subject is the metadata line, which is where the one occurrence lives.
+    expect(named.textContent).toContain('Register for KubeCon');
+
+    const unnamed = root.querySelector('[data-testid="campaigns-email-template-no-name"]') as HTMLElement;
+    // Subject IS the primary label here, so the metadata line must not repeat it: what is left
+    // there is the state alone.
+    expect(unnamed.querySelector('span.font-medium')?.textContent?.trim()).toBe('Register for KubeCon');
+    const meta = unnamed.querySelectorAll('span')[unnamed.querySelectorAll('span').length - 1];
+    expect(meta.textContent).not.toContain('Register for KubeCon');
+    expect(meta.textContent).toContain('DRAFT');
+  });
+
+  /**
+   * A filtered search is exempt from the service's 500-row cap, so a broad query can answer with
+   * thousands of rows. The render is capped — and the UI must SAY the render was capped.
+   *
+   * Asserts the exact sentence and both numbers, not merely that a banner exists: a banner
+   * reading "Showing the first 100 of 100" would satisfy an existence check while telling the
+   * user nothing true.
+   */
+  it('caps how many templates it renders and says so, without discarding the rest', () => {
+    openEmailImplementationTab();
+    picker().searchEmailTemplates('a');
+    const emails = Array.from({ length: HUBSPOT_TEMPLATE_RENDER_LIMIT + 37 }, (_, i) => ({ id: `t-${i}`, name: `Template ${i}` }));
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails });
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+
+    // Only the cap is drawn…
+    expect(root.querySelectorAll('[data-testid="campaigns-email-template-list"] > li').length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    // …and the LAST fetched row is genuinely not on screen.
+    expect(root.querySelector(`[data-testid="campaigns-email-template-t-${HUBSPOT_TEMPLATE_RENDER_LIMIT + 36}"]`)).toBeNull();
+
+    // The truth about the cut is stated, with the real total — not the drawn count.
+    const banner = root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')?.textContent?.trim();
+    expect(banner).toBe(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}. Search to narrow the list.`);
+
+    // A screen-reader user cannot see the banner, so the same fact reaches the live region.
+    expect(picker().emailTemplatesAnnouncement()).toContain(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}`);
+
+    // The rows were not thrown away — the cap is a render limit, not a truncation of the result.
+    expect(picker().emailTemplates()?.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT + 37);
+  });
+
+  /** At or under the limit nothing is cut, so claiming a cut would be a fresh falsehood. */
+  it('says nothing about a cap when every fetched template is drawn', () => {
+    openEmailImplementationTab();
+    picker().searchEmailTemplates('a');
+    const emails = Array.from({ length: HUBSPOT_TEMPLATE_RENDER_LIMIT }, (_, i) => ({ id: `t-${i}`, name: `Template ${i}` }));
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails });
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelectorAll('[data-testid="campaigns-email-template-list"] > li').length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    expect(root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')).toBeNull();
+    expect(picker().emailTemplatesAnnouncement()).not.toContain('Showing the first');
   });
 });
