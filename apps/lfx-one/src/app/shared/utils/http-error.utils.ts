@@ -43,7 +43,11 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
       // ServiceValidationError's `errors[].message` (server) carries the specific, actionable
       // detail for the failing field — the top-level message/error is often a generic
       // "Validation failed for <field>" wrapper, so prefer the field-level detail when present.
-      const fieldDetail = body.errors?.find((e): e is { message: string } => typeof e.message === 'string' && e.message.trim().length > 0);
+      // `body` is unknown runtime data cast through a type assertion, not a runtime guarantee —
+      // `errors` could be any shape (e.g. a string), so Array.isArray guards before searching it.
+      const fieldDetail = Array.isArray(body.errors)
+        ? body.errors.find((e): e is { message: string } => !!e && typeof e.message === 'string' && e.message.trim().length > 0)
+        : undefined;
       if (fieldDetail) return fieldDetail.message;
       const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
       if (candidate) return candidate;

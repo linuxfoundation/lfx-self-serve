@@ -122,6 +122,20 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage(error, 'fallback')).toContain('Http failure response');
   });
 
+  it('does not throw when errors is present but not an array — falls back to the top-level message', () => {
+    // body.error is unknown runtime data; a non-ServiceValidationError upstream could shape
+    // `errors` as anything (e.g. a string), not just the expected array of field errors.
+    const error = httpErrorWithBody(400, { message: 'Bad request', errors: 'validation failed' });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Bad request');
+  });
+
+  it('tolerates malformed entries inside a well-formed errors array', () => {
+    const error = httpErrorWithBody(400, { error: 'Validation failed', errors: [null, { field: 'x' }, { message: 'The real detail' }] });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('The real detail');
+  });
+
   it('returns a plain string body directly', () => {
     const error = httpErrorWithBody(500, 'upstream down');
 

@@ -394,8 +394,9 @@ export class MeetingService {
    *   when a later page fails server-side. Callers that rely on the complete list for
    *   correctness (e.g. importing every registrant) should set this.
    * @param committeeUid - Required whenever `failOnPartial` is true. The server verifies the
-   *   caller has writer access on this committee and that it belongs to the same project as the
-   *   meeting before returning a complete roster — see meeting.controller.ts.
+   *   committee belongs to the same project as the meeting, and that the caller either has writer
+   *   access on the committee or is a member of it when the committee is invite_only (mirroring
+   *   canSendMemberInvites() client-side) — see meeting.controller.ts.
    */
   public getMeetingRegistrants(
     meetingUid: string,
