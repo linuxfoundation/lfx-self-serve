@@ -178,6 +178,15 @@
             </div>
 
             <div class="flex items-center gap-2">
+              <!--
+                Search status. Separate from the visible states and always in the DOM: an
+                aria-live element inserted with its text already present is not reliably
+                announced, so the region has to exist first and then have its CONTENTS change.
+                Same reasoning as implementation-tab's brief-status region.
+              -->
+              <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">
+                {{ emailTemplatesAnnouncement() }}
+              </div>
               <input
                 type="search"
                 [value]="emailTemplateQuery()"
@@ -236,7 +245,7 @@
                         type="button"
                         (click)="onSelectEmailTemplate(template.id)"
                         [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
-                        [attr.aria-label]="emailTemplateAccessibleName(template)"
+                        [attr.aria-label]="template | hubspotTemplateLabel"
                         [class]="
                           selectedEmailTemplateId() === template.id
                             ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'

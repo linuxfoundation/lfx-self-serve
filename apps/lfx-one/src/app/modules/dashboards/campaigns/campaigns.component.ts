@@ -18,11 +18,11 @@ import type {
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { formatHubSpotUpdatedAt } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
 
+import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -40,6 +40,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
     MonitoringTabComponent,
     OptimizationTabComponent,
     HubSpotUpdatedAtPipe,
+    HubSpotTemplateLabelPipe,
   ],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
@@ -386,6 +387,28 @@ export class CampaignsComponent {
    * `No templates match "beta"` before any beta request existed.
    */
   protected readonly emailTemplateSubmittedQuery = signal('');
+
+  /**
+   * What a screen reader announces about the template search.
+   *
+   * A computed feeding a PERSISTENT region, matching the pattern in implementation-tab: an
+   * aria-live element inserted with its text already present is not reliably announced, so
+   * the region must exist first and then have its CONTENTS change. Search progress and
+   * results were previously silent — the picker rendered them visually only.
+   */
+  protected readonly emailTemplatesAnnouncement = computed<string>(() => {
+    if (this.emailTemplatesLoading()) return 'Searching templates';
+    const error = this.emailTemplatesError();
+    if (error) return error;
+    if (this.emailChannelEnabled() === false) return 'HubSpot is not connected for this foundation.';
+    const templates = this.emailTemplates();
+    if (templates === null) return '';
+    if (templates.length === 0) {
+      const q = this.emailTemplateSubmittedQuery();
+      return q ? `No templates match ${q}.` : 'This portal has no marketing emails yet.';
+    }
+    return `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
+  });
   protected readonly emailTemplatesLoading = signal(false);
   /**
    * Monotonic id for the in-flight template search.
@@ -872,28 +895,6 @@ export class CampaignsComponent {
    * a channel-off or failed search also leaves `emailTemplates` null, and re-firing on those
    * would retry a refusal on every entry and overwrite the error the operator needs to read.
    */
-  /**
-   * The full accessible name for a template row.
-   *
-   * `aria-label` REPLACES descendant text in the accessible name, so the previous
-   * name-only label meant a screen-reader user heard "Use template KubeCon promo" and
-   * nothing else — no subject, state or date. Those are exactly the fields that exist to
-   * disambiguate: `formatHubSpotUpdatedAt` says so in its own doc comment, because two
-   * templates routinely share a name. Without them the a11y label silently defeated the
-   * feature, and two same-named rows sounded identical.
-   *
-   * A method rather than a template expression because an Angular template cannot pipe
-   * inside a ternary without a parse error, and because the concatenation is long enough
-   * that inlining it obscures what is being announced.
-   */
-  protected emailTemplateAccessibleName(template: HubSpotMarketingEmail): string {
-    const parts = [`Use template ${template.name || template.subject || template.id}`];
-    if (template.subject && template.name) parts.push(`subject ${template.subject}`);
-    if (template.state) parts.push(template.state);
-    const updated = formatHubSpotUpdatedAt(template.updatedAt);
-    if (updated) parts.push(`updated ${updated}`);
-    return parts.join(', ');
-  }
 
   private loadEmailTemplatesIfNeverAnswered(): void {
     if (this.emailTemplates() === null && !this.emailTemplatesLoading() && this.emailChannelEnabled() === null && this.emailTemplatesError() === null) {
