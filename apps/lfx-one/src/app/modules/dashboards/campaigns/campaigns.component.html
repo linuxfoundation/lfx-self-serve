@@ -182,8 +182,16 @@
         <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
           <!--
             The template picker. Staging an email CLONES one of the project's HubSpot marketing
-            emails, and `sourceEmailId` has no default, so choosing one is the whole gate on this
-            channel — the rest is already implemented in campaign-service.
+            emails, and `sourceEmailId` has no default, so a chosen template is REQUIRED before a
+            send can be staged.
+
+            It is not yet SUFFICIENT, and an earlier version of this comment wrongly said it was.
+            There is no create trigger on the email side at all: the only `createCampaign` call
+            site is in the implementation tab, which renders solely under Paid, and
+            `CampaignPlatform` has no `hubspot` member — so the type system forbids this path from
+            reaching create even if a button existed. The selection is threaded through to
+            `hubspotConfig.sourceEmailId` so it flows the moment a trigger lands; wiring that
+            trigger is LFXV2-3201.
 
             Four states, kept distinct because collapsing any pair states something false:
             channel not connected, search failed, searched-and-empty, and results.
