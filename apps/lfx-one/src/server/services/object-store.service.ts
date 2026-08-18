@@ -106,7 +106,20 @@ export class ObjectStoreService {
       logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
       return true;
     } catch (error) {
-      logger.error(req, 'object_store_put_if_absent', startTime, error, { purpose, key });
+      // WARN, not ERROR: this idempotent write is a best-effort primitive whose
+      // failures are recoverable by design — its consumers (Brand Kit
+      // persistence) catch and degrade gracefully, per the graceful-degradation
+      // rule in logging-patterns.md. The recovering caller owns the operational
+      // WARN; an unrecovered rethrow still reaches the centralized
+      // apiErrorHandler, which logs at ERROR. Logging ERROR here as well would
+      // page on every transient outage of a path that returns a successful
+      // response.
+      logger.warning(req, 'object_store_put_if_absent', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+        purpose,
+        key,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }

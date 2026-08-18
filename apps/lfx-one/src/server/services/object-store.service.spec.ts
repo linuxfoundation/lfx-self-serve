@@ -31,6 +31,7 @@ vi.mock('./logger.service', () => ({
 
 import { CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
 
+import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -184,20 +185,37 @@ describe('ObjectStoreService', () => {
       });
     });
 
-    it('rethrows a non-404 HeadObject error instead of treating it as absent', async () => {
+    it('rethrows a non-404 HeadObject error instead of treating it as absent, logging WARN — never ERROR (graceful-degradation rule)', async () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildForbiddenError());
 
       await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
         'Forbidden'
       );
       expect(sendMock).toHaveBeenCalledTimes(2);
+      // The real failure path must not emit ERROR: the recovering caller owns
+      // severity (Brand Kit degrades at WARN), and unrecovered rethrows are
+      // logged centrally by apiErrorHandler.
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_put_if_absent',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'Forbidden' })
+      );
     });
 
-    it('propagates the error when the PUT fails', async () => {
+    it('propagates the error when the PUT fails, logging WARN — never ERROR (graceful-degradation rule)', async () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildNotFoundError()).mockRejectedValueOnce(new Error('put failed'));
 
       await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
         'put failed'
+      );
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_put_if_absent',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'put failed' })
       );
     });
   });
