@@ -247,12 +247,12 @@ describe('ImplementationTabComponent brief restore', () => {
     expect(selectedPlatforms()).toContain('google-ads');
   });
 
-  it('leaves the default standing rather than restoring an all-disabled brief', () => {
+  it('selects nothing for an all-disabled brief rather than substituting a default', () => {
     restore(['reddit-ads']);
 
-    // Filtered to empty, the `length` guard skips the set entirely, so the component keeps its
-    // own default instead of substituting a platform the user never chose.
-    expect(selectedPlatforms()).not.toContain('reddit-ads');
-    expect(selectedPlatforms()).toEqual(['google-ads']);
+    // NOT ['google-ads']. Retaining the default would open a Reddit-only brief as a Google
+    // campaign, and submit() builds its request from this signal — the user would dispatch a
+    // platform they never chose. Empty leaves canSubmit() blocking, which is the honest state.
+    expect(selectedPlatforms()).toEqual([]);
   });
 });

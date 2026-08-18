@@ -767,14 +767,17 @@ export class ImplementationTabComponent implements OnInit {
       // unfiltered would submit that platform's config on brief-derived values they never saw
       // and cannot edit, which is the exact defect disabling the picker exists to prevent.
       //
-      // Filtered to empty, the `?.length` guard below leaves the `google-ads` default standing
-      // rather than substituting silently — the same reason campaign-service.service.ts reports
-      // an all-unrecognised platform list as UNREADABLE instead of defaulting it.
+      // Set the filtered list UNCONDITIONALLY, including when it is empty. Skipping the set on an
+      // empty result would leave the component's own `google-ads` default standing, so a
+      // Reddit-only brief would open as a GOOGLE campaign — the user's real choice silently
+      // replaced by one they never made, and `submit()` builds its request from this signal.
+      // campaign-service.service.ts:1505-1515 rejects exactly that substitution server-side; this
+      // is the same rule applied to the platforms it does still recognise.
+      //
+      // Empty is the honest answer: `canSubmit()` requires at least one selected platform, so the
+      // brief opens blocked rather than dispatching something unchosen.
       const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
-      const restorable = brief.selectedPlatforms.filter((p) => selectable.has(p));
-      if (restorable.length) {
-        this.selectedPlatforms.set(restorable);
-      }
+      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
     const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;

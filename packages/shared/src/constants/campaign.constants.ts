@@ -41,7 +41,9 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   //
   // The picker is not the only gate: implementation-tab.component.ts filters this same `disabled`
   // flag when restoring a saved brief, because a brief stored BEFORE the flag still names the
-  // platform and the disabled tile leaves the user no way to deselect it.
+  // platform and the disabled tile leaves the user no way to deselect it. A brief whose every
+  // platform is disabled restores as an EMPTY selection, not the default — substituting one would
+  // dispatch a platform the user never chose.
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;
