@@ -1065,6 +1065,9 @@ export class CampaignController {
     const metaConfig = this.buildMetaConfig(body);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
+    const microsoftConfig = this.buildMicrosoftConfig(body);
+    if (microsoftConfig) envelope['microsoftConfig'] = microsoftConfig;
+
     const hubspotConfig = this.buildHubSpotConfig(body);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
 
@@ -1233,6 +1236,45 @@ export class CampaignController {
 
     const { budgetUsd, ...rest } = body.metaConfig;
     return { ...rest, budget: budgetUsd };
+  }
+
+  /**
+   * Microsoft's config, translated from `microsoftConfig` on the legacy request.
+   *
+   * Same budget rename as Meta and Google: the request says `budgetUsd`, the dispatcher reads
+   * `budget` (`microsoft.go:39-47`). Passing the object through unchanged leaves `budget` at its
+   * zero value, and `unmarshalPlatformConfig` treats an absent key as a zero rather than an
+   * error — so the campaign would be dispatched with no budget at all.
+   *
+   * An ABSENT or NON-POSITIVE budget returns null — i.e. UNCONFIGURED — rather than an object
+   * carrying a bad number, for the reason `buildHubSpotConfig` gives about blank ids: both paths
+   * end in a refusal, and the difference is where. Null makes `hasPlatformConfig` refuse locally
+   * with "No configuration was built for: microsoft-ads". Sending the bad value instead defers
+   * the same refusal to the Microsoft client, and because CreateCampaigns is ASYNC that arrives
+   * as a failed job the operator has to go and read — not as an error on the request that caused
+   * it. NaN and Infinity are refused for the same reason: `microsoft.go:41-43` documents them as
+   * client-side rejections during dispatch.
+   *
+   * SAME KNOWN CURRENCY GAP as `buildMetaConfig` and `buildGoogleAdsConfig` (LFXV2-3251) — the
+   * rename does not convert the denomination. `microsoft.go:40`: "Budget is whole units of the
+   * account currency (e.g. 2500 = 2500 USD/JPY/…)". On a non-USD account this spends that number
+   * in the account's currency. Not fixable here; see the fuller note on `buildGoogleAdsConfig`.
+   *
+   * `timeZone` is forwarded only when non-blank. It is optional upstream and the client
+   * substitutes its own default when empty, so an empty string would be a non-answer dressed as
+   * a choice — the same reason `buildHubSpotConfig` omits a blank `utmCampaign`.
+   */
+  private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    const config = body?.microsoftConfig;
+    if (!config) return null;
+
+    const budget = config.budgetUsd;
+    if (typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0) return null;
+
+    const built: Record<string, unknown> = { budget };
+    const timeZone = config.timeZone?.trim();
+    if (timeZone) built['timeZone'] = timeZone;
+    return built;
   }
 
   /**

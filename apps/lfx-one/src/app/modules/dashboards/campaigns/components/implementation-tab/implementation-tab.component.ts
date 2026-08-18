@@ -259,12 +259,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
   protected readonly metaLifetimeBudget = signal(false);
+  /**
+   * Microsoft's DAILY budget. There is no lifetime alternative — unlike Meta and LinkedIn, whose
+   * configs carry a `lifetimeBudget` flag — so this figure is spent per day, not per campaign.
+   */
+  protected readonly microsoftBudgetUsd = signal(500);
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
+  protected readonly showMicrosoftSection = computed(() => this.selectedPlatforms().includes('microsoft-ads'));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -276,7 +282,8 @@ export class ImplementationTabComponent implements OnInit {
     const linkedInSelected = platforms.includes('linkedin-ads');
     const redditSelected = platforms.includes('reddit-ads');
     const metaSelected = platforms.includes('meta-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected) return false;
+    const microsoftSelected = platforms.includes('microsoft-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -289,6 +296,9 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+    // Budget only: Microsoft's dispatcher reads nothing else from the config envelope, and the
+    // ad copy comes from the brief rather than per-variant inputs like Meta's and LinkedIn's.
+    if (microsoftSelected && this.microsoftBudgetUsd() < 1) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -516,6 +526,10 @@ export class ImplementationTabComponent implements OnInit {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
   }
 
+  protected onMicrosoftBudgetInput(event: Event): void {
+    this.microsoftBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
@@ -605,6 +619,18 @@ export class ImplementationTabComponent implements OnInit {
               geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
               variants: this.metaVariants(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
+      // Deliberately only the budget. `microsoftConfig` upstream is exactly {budget, timeZone}
+      // (microsoft.go:39-47) — every other field the siblings send would be dropped, and sending
+      // them would imply this platform honours dates, geo targets and variants that it reads from
+      // the brief instead. timeZone is omitted: it is optional and the client substitutes its own
+      // default, so there is no UI input for it yet.
+      ...(platforms.includes('microsoft-ads')
+        ? {
+            microsoftConfig: {
+              budgetUsd: this.microsoftBudgetUsd(),
             },
           }
         : {}),

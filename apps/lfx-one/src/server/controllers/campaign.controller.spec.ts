@@ -725,6 +725,67 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['geoTargets']).toEqual(['US']);
   });
 
+  it('renames Microsoft budgetUsd to the budget key the dispatcher reads', async () => {
+    // Same contract as Meta and Google: microsoft.go:39-47 reads `budget`, and
+    // unmarshalPlatformConfig treats an absent key as a ZERO rather than an error — so passing
+    // the request shape through unchanged dispatches a campaign with no budget at all.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['microsoft-ads'], microsoftConfig: { budgetUsd: 250, timeZone: 'PacificTimeUSCanadaTijuana' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(250);
+    expect(sent).not.toHaveProperty('budgetUsd');
+    expect(sent['timeZone']).toBe('PacificTimeUSCanadaTijuana');
+  });
+
+  /**
+   * A non-positive or non-finite Microsoft budget must read as UNCONFIGURED rather than be sent.
+   *
+   * Both paths end in a refusal — `microsoft.go:41-43` rejects NaN/Inf/non-positive during
+   * dispatch — but the difference is WHERE. Because CreateCampaigns is asynchronous, sending the
+   * bad value defers the refusal into a failed job the operator has to go and read. Omitting the
+   * key makes `hasPlatformConfig` refuse on the request that caused it.
+   */
+  it.each([
+    ['zero', 0],
+    ['negative', -50],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])('omits microsoftConfig when the budget is %s', async (_label, budgetUsd) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq({ platforms: ['microsoft-ads'], microsoftConfig: { budgetUsd } }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
+  it('omits a blank Microsoft timeZone rather than sending an empty string', async () => {
+    // Optional upstream, and the client substitutes its own default when empty — so an empty
+    // string is a non-answer dressed as a choice.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: { budgetUsd: 100, timeZone: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(100);
+    expect(sent).not.toHaveProperty('timeZone');
+  });
+
   /**
    * LFXV2-3256. The envelope key and field names are a CONTRACT with
    * `internal/dispatch/hubspot.go:47-56` — the dispatcher reads `hubspotConfig.sourceEmailId`, and

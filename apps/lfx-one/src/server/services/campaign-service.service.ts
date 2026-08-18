@@ -181,6 +181,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'linkedin-ads': 'linkedInConfig',
     'reddit-ads': 'redditConfig',
     'meta-ads': 'metaConfig',
+    'microsoft-ads': 'microsoftConfig',
     hubspot: 'hubspotConfig',
   };
   const key = requiredKey[platform];

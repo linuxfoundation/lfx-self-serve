@@ -27,9 +27,25 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
   { id: 'optimization', label: 'Optimize', icon: 'fa-light fa-gauge-high' },
 ] as const;
 
+/**
+ * Ad channels offered by the Plan tab's multi-select. `disabled` renders "Coming soon" and is a
+ * UI gate only — it does not track whether campaign-service can dispatch the platform.
+ *
+ * A platform is enabled here only once something builds its `<platform>Config`, because
+ * `hasPlatformConfig` (campaign-service.service.ts) refuses an unmapped platform: the dispatcher
+ * treats an absent config key as a ZERO VALUE rather than an error, so a campaign would otherwise
+ * dispatch with no budget. Microsoft was enabled when `buildMicrosoftConfig` landed.
+ *
+ * X / Twitter stays disabled for a different, harder reason: it has no account DISCOVERY. Its
+ * platform client has no `ListAdAccounts`, so nothing in campaign-service can tell an operator
+ * which account id to use, and a connection made without one fails every dispatch with no way to
+ * recover from inside the API. That is a capability gap, not missing plumbing — see
+ * `accountDiscoveryProviders` in campaign-service's `internal/bootstrap/sysacct.go`, which
+ * documents where each provider stands.
+ */
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
-  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
+  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft' },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },

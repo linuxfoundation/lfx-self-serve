@@ -418,6 +418,33 @@
         </div>
       }
 
+      <!-- Microsoft Ads Section -->
+      @if (showMicrosoftSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-microsoft-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-microsoft text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Microsoft Ads</h3>
+          </div>
+
+          <!-- Microsoft Budget. Only field the dispatcher reads besides the optional time zone;
+               dates, targeting and ad copy all come from the brief. -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label for="microsoft-budget" class="text-xs font-medium text-gray-700">Microsoft Daily Budget (USD)</label>
+              <input
+                id="microsoft-budget"
+                type="number"
+                [value]="microsoftBudgetUsd()"
+                (input)="onMicrosoftBudgetInput($event)"
+                min="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-microsoft-budget" />
+              <p class="text-xs text-gray-500">Spent per day. Charged in the ad account's own currency — no conversion is applied.</p>
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- Submit -->
       <div class="flex items-center gap-3">
         <lfx-button

@@ -734,7 +734,35 @@ export interface CampaignCreateRequest {
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+  microsoftConfig?: MicrosoftCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
+}
+
+/**
+ * Microsoft Ads campaign inputs.
+ *
+ * `budgetUsd` follows the Meta/Google naming on this side and is renamed to `budget` by
+ * `buildMicrosoftConfig`, which is what `microsoftConfig` in campaign-service reads
+ * (`internal/dispatch/microsoft.go:39-47`).
+ *
+ * SAME KNOWN CURRENCY GAP as Meta and Google Ads (LFXV2-3251): the rename does not convert the
+ * denomination. `microsoft.go:40` — "Budget is whole units of the account currency (e.g. 2500 =
+ * 2500 USD/JPY/…)". On a non-USD Microsoft account this spends that number in the account's
+ * currency, not in dollars. Not fixable here: campaign-service does no FX and the account
+ * currency is not exposed to this application.
+ *
+ * It is the DAILY budget, and Microsoft offers no lifetime alternative here — unlike Meta, whose
+ * config carries an explicit `lifetimeBudget` flag selecting between the API's `lifetime_budget`
+ * and `daily_budget` fields. There is no equivalent switch to forget to set, but it does mean a
+ * figure entered as a campaign total is spent per day.
+ *
+ * `timeZone` is optional. Microsoft marks the field deprecated but still requires it on Add, so
+ * the client substitutes its own default when this is empty — do not send an empty string
+ * expecting the API to accept it.
+ */
+export interface MicrosoftCampaignCreateRequest {
+  budgetUsd: number;
+  timeZone?: string;
 }
 
 /**
