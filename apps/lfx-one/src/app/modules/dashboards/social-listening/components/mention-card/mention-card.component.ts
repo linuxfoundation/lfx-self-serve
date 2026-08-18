@@ -125,7 +125,8 @@ export class MentionCardComponent {
     }
 
     const plain = stripMarkdown(content);
-    const raw = plain.slice(0, MENTION_FORWARD_EMAIL_BODY_MAX_CHARS);
+    // Array.from iterates code points, so a supplementary-plane char (emoji, rare CJK) is never split mid-surrogate.
+    const raw = Array.from(plain).slice(0, MENTION_FORWARD_EMAIL_BODY_MAX_CHARS).join('');
     const capped = this.capEncodedLength(raw, encodedBudget - encodeURIComponent('…').length);
     if (!capped) {
       return '';

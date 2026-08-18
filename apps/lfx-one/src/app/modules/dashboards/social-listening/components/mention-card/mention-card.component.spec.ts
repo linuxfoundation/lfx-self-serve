@@ -140,6 +140,17 @@ describe('MentionCardComponent', () => {
     }
   });
 
+  it('does not throw when the raw-char slice boundary splits a surrogate pair', async () => {
+    // 'a😀' is 3 UTF-16 units (1 + 2); repeating 300× gives 900 units, so slice(0, 500) ends mid-surrogate.
+    setMention(baseMention({ content: 'a😀'.repeat(300) }));
+    await fixture.whenStable();
+
+    const href = (querySelector('[data-testid="mention-card-forward-email"]') as HTMLAnchorElement).getAttribute('href') ?? '';
+    expect(href).not.toBe('');
+    const body = href.split('&body=')[1] ?? '';
+    expect(body.length).toBeLessThanOrEqual(MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS);
+  });
+
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {
     setMention(baseMention());
     await fixture.whenStable();
