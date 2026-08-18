@@ -54,6 +54,9 @@ export class NewsletterPublicationListComponent {
     toObservable(this.projectUid)
       .pipe(
         switchMap((uid) => {
+          // Clear the previous context's rows before (re)loading, so a failed or
+          // empty load never leaves the prior project's publications on screen.
+          this.publications.set([]);
           if (!uid) {
             this.loading.set(false);
             return EMPTY;

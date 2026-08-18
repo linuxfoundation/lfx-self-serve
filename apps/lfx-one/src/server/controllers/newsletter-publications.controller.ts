@@ -22,10 +22,12 @@ export class NewsletterPublicationsController {
    * GET /api/projects/:projectUid/newsletter-publications
    */
   public async listPublications(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_publications_list', { project_uid: projectUid });
+    // require* runs inside the try so a bad path param reaches next(error) rather
+    // than rejecting the handler promise (Express 4 does not catch that).
+    const startTime = logger.startOperation(req, 'newsletter_publications_list', { project_uid: req.params['projectUid'] });
 
     try {
+      const projectUid = this.requireProjectUid(req);
       const result = await this.publicationsService.listPublications(req, projectUid);
       logger.success(req, 'newsletter_publications_list', startTime, { count: result.publications.length });
       res.json(result);
@@ -38,10 +40,10 @@ export class NewsletterPublicationsController {
    * POST /api/projects/:projectUid/newsletter-publications
    */
   public async createPublication(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_publication_create', { project_uid: projectUid });
+    const startTime = logger.startOperation(req, 'newsletter_publication_create', { project_uid: req.params['projectUid'] });
 
     try {
+      const projectUid = this.requireProjectUid(req);
       const payload = req.body as CreatePublicationRequest;
       this.validateCreatePublicationPayload(payload, req.path, 'newsletter_publication_create');
 
@@ -57,11 +59,14 @@ export class NewsletterPublicationsController {
    * GET /api/projects/:projectUid/newsletter-publications/:publicationUid
    */
   public async getPublication(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const publicationUid = this.requirePublicationUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_publication_get', { project_uid: projectUid, publication_id: publicationUid });
+    const startTime = logger.startOperation(req, 'newsletter_publication_get', {
+      project_uid: req.params['projectUid'],
+      publication_id: req.params['publicationUid'],
+    });
 
     try {
+      const projectUid = this.requireProjectUid(req);
+      const publicationUid = this.requirePublicationUid(req);
       const publication = await this.publicationsService.getPublication(req, projectUid, publicationUid);
       logger.success(req, 'newsletter_publication_get', startTime, { publication_id: publication.id, version: publication.version });
       res.json(publication);
@@ -74,11 +79,14 @@ export class NewsletterPublicationsController {
    * PUT /api/projects/:projectUid/newsletter-publications/:publicationUid
    */
   public async updatePublication(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const publicationUid = this.requirePublicationUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_publication_update', { project_uid: projectUid, publication_id: publicationUid });
+    const startTime = logger.startOperation(req, 'newsletter_publication_update', {
+      project_uid: req.params['projectUid'],
+      publication_id: req.params['publicationUid'],
+    });
 
     try {
+      const projectUid = this.requireProjectUid(req);
+      const publicationUid = this.requirePublicationUid(req);
       const version = parseIfMatch(req);
       const payload = req.body as UpdatePublicationRequest;
       this.validateUpdatePublicationPayload(payload, req.path, 'newsletter_publication_update');
@@ -138,12 +146,17 @@ export class NewsletterPublicationsController {
   private validateUpdatePublicationPayload(payload: UpdatePublicationRequest, path: string, operation: string): void {
     const fieldErrors: Record<string, string> = {};
 
+    // A JSON `null` (or non-object) body must be a 400, not a 500 from
+    // Object.keys(null) / property access below. Coerce to an empty object so an
+    // empty payload falls through to the "at least one field" error.
+    const p = payload && typeof payload === 'object' ? payload : ({} as UpdatePublicationRequest);
+
     // At least one field should be present for an update
-    if (Object.keys(payload).length === 0) {
+    if (Object.keys(p).length === 0) {
       fieldErrors['payload'] = 'At least one field is required for update';
     }
 
-    if (payload.name !== undefined && (typeof payload.name !== 'string' || payload.name.trim().length === 0)) {
+    if (p.name !== undefined && (typeof p.name !== 'string' || p.name.trim().length === 0)) {
       fieldErrors['name'] = 'name must be a non-empty string';
     }
 

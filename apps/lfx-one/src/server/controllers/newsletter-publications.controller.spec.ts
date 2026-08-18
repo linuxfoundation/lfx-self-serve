@@ -48,20 +48,20 @@ beforeEach(() => {
 });
 
 describe('NewsletterPublicationsController — path-param guards', () => {
-  // The `require*Uid` guards run before the try block, so a missing path param
-  // rejects the handler (the async wrapper on the route forwards it to the error
-  // handler) rather than calling next() directly.
-  it('rejects a missing projectUid', async () => {
-    await expect(new NewsletterPublicationsController().listPublications(buildReq({ projectUid: '  ' }), buildRes(), vi.fn())).rejects.toBeInstanceOf(
-      ServiceValidationError
-    );
+  // The `require*Uid` guards run inside the try block, so a missing path param
+  // reaches next(error) as a ServiceValidationError (Express 4 would not catch a
+  // rejected handler promise).
+  it('routes a missing projectUid to next(error)', async () => {
+    const next = vi.fn();
+    await new NewsletterPublicationsController().listPublications(buildReq({ projectUid: '  ' }), buildRes(), next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(listPublications).not.toHaveBeenCalled();
   });
 
-  it('rejects a missing publicationUid on get', async () => {
-    await expect(
-      new NewsletterPublicationsController().getPublication(buildReq({ projectUid: 'p1', publicationUid: '' }), buildRes(), vi.fn())
-    ).rejects.toBeInstanceOf(ServiceValidationError);
+  it('routes a missing publicationUid on get to next(error)', async () => {
+    const next = vi.fn();
+    await new NewsletterPublicationsController().getPublication(buildReq({ projectUid: 'p1', publicationUid: '' }), buildRes(), next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(getPublication).not.toHaveBeenCalled();
   });
 });
@@ -140,7 +140,8 @@ describe('NewsletterPublicationsController.updatePublication — parseIfMatch + 
   it.each([
     ['empty payload', {}],
     ['blank name', { name: '  ' }],
-  ])('rejects %s after a valid If-Match', async (_label, payload) => {
+    ['null body', null],
+  ])('rejects %s after a valid If-Match (400, not a 500)', async (_label, payload) => {
     const next = vi.fn();
     await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, payload, '1'), buildRes(), next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
