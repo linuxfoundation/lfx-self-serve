@@ -407,7 +407,11 @@ export class CampaignsComponent {
     if (templates === null) return '';
     if (templates.length === 0) {
       const q = this.emailTemplateSubmittedQuery();
-      return q ? `No templates match ${q}.` : 'This portal has no marketing emails yet.';
+      // Quoted to match the visible copy character-for-character. Without the delimiters the
+      // query dissolves into the sentence it sits in: a search for "no templates" announced as
+      // "No templates match no templates." Sighted users get the boundary from the quote marks;
+      // this is the only place the two texts said different things.
+      return q ? `No templates match “${q}”.` : 'This portal has no marketing emails yet.';
     }
     const count = `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
     // The truncation cue must carry over, for the same reason the sibling appends its reload
@@ -594,6 +598,20 @@ export class CampaignsComponent {
         return;
       }
       this.selectedDeliveryType.set(value);
+
+      // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
+      // documents one condition over: resetting a guard's inputs does nothing if nothing runs it.
+      // The switch handler's reload is gated on `selectedDeliveryType()` AS IT READS AT THAT
+      // MOMENT, so a foundation switch made while the user is on Paid clears the picker and
+      // skips the reload — and no later event re-checked it. Coming back to email/Implement then
+      // showed a permanently blank panel: `selectTab` never runs (no tab transition), so nothing
+      // reloaded until the user navigated tabs or searched by hand.
+      //
+      // The same never-answered guard, so a channel-off or failed answer is not retried on every
+      // round-trip and a healthy list is not re-fetched.
+      if (value === 'email' && this.selectedEmailTab() === 'implementation') {
+        this.loadEmailTemplatesIfNeverAnswered();
+      }
     });
   }
 
@@ -806,7 +824,21 @@ export class CampaignsComponent {
           }
           // A row with no id cannot be selected — `sourceEmailId` takes that value — so it is
           // dropped rather than rendered as a choice that cannot be made.
-          this.emailTemplates.set(result.emails.filter((e) => !!e?.id));
+          const selectable = result.emails.filter((e) => !!e?.id);
+          if (selectable.length === 0 && result.emails.length > 0) {
+            // The response CARRIED rows and every one of them was unusable. Reporting that as an
+            // empty list would render "This portal has no marketing emails yet" — a claim about
+            // the portal, made from a response that proves the opposite. The server already drops
+            // id-less rows (campaign-service.service.ts), so reaching here means the contract was
+            // violated somewhere upstream; that is a read failure, not an empty portal.
+            //
+            // NULL rather than [], for the same reason the error arms use null: only a search
+            // that genuinely came back with nothing can support the empty-portal claim.
+            this.emailTemplates.set(null);
+            this.emailTemplatesError.set('Could not load templates. Try again.');
+            return;
+          }
+          this.emailTemplates.set(selectable);
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
         },
         error: () => {
@@ -832,6 +864,27 @@ export class CampaignsComponent {
    */
   protected onEmailTemplateQueryInput(value: string): void {
     this.emailTemplateQuery.set(value);
+  }
+
+  /**
+   * The single entry point for a USER-initiated search — both the button and Enter.
+   *
+   * The gate lives here rather than on the button, because `[disabled]` only ever covered the
+   * button: Enter called `searchEmailTemplates` directly, so holding it down fired a full portal
+   * walk per repeat while the button next to it was visibly disabled. The generation counter
+   * discards the late responses but does NOT cancel the requests — each one still walks every
+   * page server-side (the interface documents `q` as matched in-process, page by page), so the
+   * cost is paid upstream regardless of which answer the UI keeps.
+   *
+   * Refusing while a search is in flight is safe rather than lossy: the request already running
+   * is for whatever the box held when it started, and the operator can search again the moment
+   * it answers.
+   */
+  protected onEmailTemplateSearchSubmit(): void {
+    if (this.emailTemplatesLoading()) {
+      return;
+    }
+    this.searchEmailTemplates(this.emailTemplateQuery());
   }
 
   protected onSelectEmailTemplate(id: string): void {

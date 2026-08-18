@@ -1760,6 +1760,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesTruncated: WritableSignal<boolean>;
     emailChannelEnabled: WritableSignal<boolean | null>;
     selectedEmailTemplateId: WritableSignal<string>;
+    emailTemplatesAnnouncement: Signal<string>;
     searchEmailTemplates(query: string): void;
     onSelectEmailTemplate(id: string): void;
   }
@@ -2055,6 +2056,123 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(picker().emailTemplates()).toBeNull();
     expect(picker().emailChannelEnabled()).toBeNull();
     expect(picker().emailTemplatesTruncated()).toBe(false);
+  });
+
+  // The live region was mounted INSIDE @switch → @case('implementation'), and both entry paths
+  // call searchEmailTemplates synchronously BEFORE that case renders — so the node was inserted
+  // with "Searching templates" already in it, which is not reliably announced. Its own comment
+  // states the rule it broke. Mounted above the @switch it exists before any text changes.
+  it('keeps the search live region mounted before the picker is entered', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const nav = fixture.componentInstance as unknown as PanelNav;
+    nav.selectorForm.controls.deliveryType.setValue('email');
+    fixture.detectChanges();
+
+    // Present while still on Plan — i.e. BEFORE the implementation case has ever rendered.
+    const live = el.querySelector('[data-testid="campaigns-email-templates-live"]');
+    expect(live, 'the region must exist before its contents change').not.toBeNull();
+    expect(live?.textContent?.trim()).toBe('');
+    // It must NOT be inside the implementation panel, or it is destroyed on every tab change.
+    expect(el.querySelector('[data-testid="campaigns-email-implementation-panel"]')?.contains(live as Node)).toBeFalsy();
+
+    nav.selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    // Same node, now carrying the progress text: a CONTENT change, not an insertion.
+    const after = el.querySelector('[data-testid="campaigns-email-templates-live"]');
+    expect(after).toBe(live);
+    expect(after?.textContent).toContain('Searching templates');
+  });
+
+  // The button was [disabled] while loading but Enter called searchEmailTemplates directly, so a
+  // held Enter fired a full portal walk per repeat. The generation counter discards the late
+  // answers; it does not cancel the requests, so the cost is still paid upstream.
+  it('refuses an Enter press while a search is already in flight', () => {
+    const el = panel();
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+    fixture.detectChanges();
+
+    const input = el.querySelector('[data-testid="campaigns-email-template-search"]') as HTMLInputElement;
+    input.value = 'kubecon';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(httpMock.match((r) => r.url === '/api/campaigns/hubspot/emails').length).toBe(1);
+
+    // Held down: every repeat while the first is unanswered must issue nothing.
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    httpMock.expectNone((r) => r.url === '/api/campaigns/hubspot/emails');
+  });
+
+  // The failure-as-measurement class this PR exists to fix. The server drops id-less rows, so a
+  // response carrying ONLY such rows means the contract was violated — not that the portal is
+  // empty. Filtering to [] rendered "This portal has no marketing emails yet" over rows that
+  // proved the opposite.
+  it('does not report a portal as empty when every returned row was unusable', () => {
+    picker().searchEmailTemplates('');
+    respond({
+      enabled: true,
+      error: null,
+      possiblyTruncated: false,
+      emails: [{ id: '', name: 'broken row' }, { id: '' }] as HubSpotMarketingEmail[],
+    });
+
+    expect(picker().emailTemplates(), 'an empty array here claims the portal holds nothing').toBeNull();
+    expect(picker().emailTemplatesError()).toBeTruthy();
+
+    const el = panel();
+    expect(el.querySelector('[data-testid="campaigns-email-templates-empty"]')).toBeNull();
+    expect(el.querySelector('[data-testid="campaigns-email-templates-error"]')).not.toBeNull();
+  });
+
+  // The switch handler's reload reads selectedDeliveryType() AT THAT MOMENT. A foundation switch
+  // made while on Paid therefore cleared the picker and skipped the reload, and nothing
+  // re-checked it — returning to email/Implement showed a permanently blank panel.
+  it('reloads the picker when returning to email after a foundation switch made elsewhere', () => {
+    panel();
+    httpMock
+      .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+      .flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '1', name: 'TLF promo' }] });
+    fixture.detectChanges();
+
+    const nav = fixture.componentInstance as unknown as PanelNav;
+    nav.selectorForm.controls.deliveryType.setValue('paid-marketing');
+    fixture.detectChanges();
+
+    // The switch clears the picker but must not load templates for a hidden panel.
+    ctx.set({ uid: 'u2', name: 'CNCF', slug: 'cncf', logoUrl: '' } as ProjectContext);
+    fixture.detectChanges();
+    httpMock.expectNone((r) => r.url === '/api/campaigns/hubspot/emails');
+
+    nav.selectorForm.controls.deliveryType.setValue('email');
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '9', name: 'CNCF promo' }] });
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('CNCF promo');
+  });
+
+  // The announcement and the visible copy must not say different things. The truncation clause is
+  // the one a screen-reader user cannot recover any other way, so it is compared word-for-word.
+  it('announces the same truncation and empty-state wording the panel shows', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: true, error: null, possiblyTruncated: true, emails: [{ id: '1', name: 'One' }] });
+
+    const banner = panel().querySelector('[data-testid="campaigns-email-templates-truncated"]')?.textContent?.trim();
+    expect(banner).toBe('This may be a partial list. Search to narrow it.');
+    expect(picker().emailTemplatesAnnouncement()).toBe('1 template found. This may be a partial list. Search to narrow it.');
+
+    // The query is quoted in both, so a multi-word query cannot dissolve into the sentence.
+    picker().searchEmailTemplates('no templates');
+    respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+    expect(picker().emailTemplatesAnnouncement()).toBe('No templates match “no templates”.');
+    expect(panel().querySelector('[data-testid="campaigns-email-templates-empty"]')?.textContent?.trim()).toBe('No templates match “no templates”.');
   });
 
   it('records the chosen template id, which is what sourceEmailId takes', () => {

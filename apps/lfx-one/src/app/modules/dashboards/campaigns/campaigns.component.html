@@ -160,6 +160,23 @@
       }
     </div>
 
+    <!--
+      Template-search status, mounted OUTSIDE the @switch below.
+
+      An aria-live element inserted with its text already present is not reliably announced — the
+      region has to exist first and then have its CONTENTS change. Inside the @case this region
+      could never satisfy that rule: BOTH entry paths (`onEmailProceedToImplementation` and
+      `selectTab`) call `searchEmailTemplates` synchronously BEFORE the case renders, so the node
+      was created with "Searching templates" already in it and the first search — the main path —
+      announced nothing at all. Kept here it survives every tab transition, so only its text
+      changes. Same placement as implementation-tab's brief-status region, which sits above its
+      own @switch for exactly this reason.
+
+      It stays in the DOM on the other email tabs, which is harmless: the computed reads signals
+      that are only written by a search, so it is empty unless one is running or has answered.
+    -->
+    <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
+
     @switch (selectedEmailTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
@@ -178,27 +195,18 @@
             </div>
 
             <div class="flex items-center gap-2">
-              <!--
-                Search status. Separate from the visible states and always in the DOM: an
-                aria-live element inserted with its text already present is not reliably
-                announced, so the region has to exist first and then have its CONTENTS change.
-                Same reasoning as implementation-tab's brief-status region.
-              -->
-              <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">
-                {{ emailTemplatesAnnouncement() }}
-              </div>
               <input
                 type="search"
                 [value]="emailTemplateQuery()"
                 (input)="onEmailTemplateQueryInput($any($event.target).value)"
-                (keyup.enter)="searchEmailTemplates(emailTemplateQuery())"
+                (keyup.enter)="onEmailTemplateSearchSubmit()"
                 placeholder="Search by name or subject"
                 aria-label="Search HubSpot marketing emails"
                 class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
                 data-testid="campaigns-email-template-search" />
               <button
                 type="button"
-                (click)="searchEmailTemplates(emailTemplateQuery())"
+                (click)="onEmailTemplateSearchSubmit()"
                 [disabled]="emailTemplatesLoading()"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 data-testid="campaigns-email-template-search-button">
