@@ -1,0 +1,45 @@
+---
+description: Enforce Prettier format, ESLint lint, and unit tests before every commit in lfx-self-serve
+alwaysApply: true
+---
+
+# Pre-commit: format, lint, and unit tests before every commit
+
+Always run all three checks on the changed files before staging and committing. A missed step is the most common cause of a red CI check.
+
+## 1. Format
+
+```bash
+# Format changed files
+npx prettier --write "<path(s) to changed files>"
+
+# Verify formatting passes CI check
+yarn format:check "<path(s) to changed files>"
+```
+
+The CI "Code Quality Checks" job runs `yarn format:check` over all files and fails if any file has Prettier diffs.
+
+## 2. Lint
+
+```bash
+# Lint (repo-wide; use --filter to scope when faster)
+yarn lint
+```
+
+## 3. Unit tests
+
+```bash
+# Full test suite (server vitest + Angular builder)
+yarn test
+```
+
+The CI "Code Quality Checks" job runs `yarn test` across all packages. Always run this locally before committing — the most common test failures are:
+
+- A new method added to a service but **not added to the service mock** in the component spec (causes `TypeError: this.fooService.newMethod is not a function` as an unhandled exception at runtime, which CI counts as a test failure even if the assertion tests all pass)
+- A shared constant renamed without updating the spec that imports it
+
+When adding a method to a service that already has a spec and a mock provider, always add the method to the mock's `useValue` object in the spec.
+
+## Run order
+
+Format → lint → test. If any step fails, fix before committing.

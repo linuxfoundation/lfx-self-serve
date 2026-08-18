@@ -6,8 +6,10 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -466,5 +468,117 @@ describe('ImplementationTabComponent brief restore', () => {
     // GOOGLE campaign, and submit() builds its request from this signal — the user would
     // dispatch a platform they never chose. Empty leaves canSubmit() blocking, which is honest.
     expect(selectedPlatforms()).toEqual([]);
+  });
+});
+
+/**
+ * What the create request actually CARRIES for the email channel.
+ *
+ * The template picker's `selectedEmailTemplateId` was write-only before this: set on click, read
+ * only for `aria-pressed` and row styling, and never placed on a request. These assert the value
+ * reaches `hubspotConfig.sourceEmailId`, which campaign-service requires with no default.
+ */
+describe('ImplementationTabComponent hubspotConfig wiring', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let posted: Record<string, unknown> | null;
+
+  function makeOtherwiseValid(): void {
+    const c = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: {
+        controls: Record<string, { setValue(v: unknown): void }>;
+        get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
+      };
+    };
+    c.selectedPlatforms.set(['google-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['includeSearch'].setValue(true);
+    c.campaignForm.controls['includeDemandGen'].setValue(false);
+    c.campaignForm.get('headlines')?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c.campaignForm.get('descriptions')?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+  }
+
+  /** Drive the real `submit()` and capture the body handed to the service. */
+  function submitAndCapture(): void {
+    (fixture.componentInstance as unknown as { submit(): void }).submit();
+  }
+
+  beforeEach(async () => {
+    posted = null;
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          // Stubbed at the service boundary rather than the HTTP one: the assertion is about the
+          // REQUEST BODY the component builds, and a stub keeps the create from being dispatched
+          // anywhere. Nothing here can reach HubSpot or spend money.
+          provide: CampaignService,
+          useValue: {
+            createCampaign: (request: Record<string, unknown>) => {
+              posted = request;
+              return of({ jobId: '' });
+            },
+            // `ngOnInit` resolves the LinkedIn ad-account list on mount. Stubbed empty because
+            // these tests select google-ads only, so the list is never read.
+            getLinkedInAccounts: () => of([]),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('carries the chosen template id as hubspotConfig.sourceEmailId', () => {
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', 'email-123');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-123' });
+  });
+
+  it('omits hubspotConfig entirely when no template is chosen', () => {
+    // The paid-only path, which is every create today. An empty-but-present config would be a
+    // configured-looking email channel on a campaign that has none.
+    makeOtherwiseValid();
+
+    submitAndCapture();
+
+    expect(posted).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('treats a whitespace-only template id as no selection, matching the server', () => {
+    // `buildHubSpotConfig` trims and returns null (UNCONFIGURED) for a blank id. Sending
+    // `{ sourceEmailId: '   ' }` would claim a template was picked and be refused upstream.
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', '   ');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('trims a padded template id rather than sending the padding', () => {
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', '  email-456  ');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-456' });
   });
 });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Read-only "My CLAs" service (Milestone 1). Resolves the session identity to a
+// Read-only "CLAs" service (Milestone 1). Resolves the session identity to a
 // set of identity keys, then delegates listing, validity computation and PDF
 // retrieval to the EasyCLA `/v4/my-clas` endpoints via lfx-gateway.
 //

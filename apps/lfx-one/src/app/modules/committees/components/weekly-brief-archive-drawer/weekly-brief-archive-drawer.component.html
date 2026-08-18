@@ -1,0 +1,92 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="weekly-brief-archive-drawer">
+  <ng-template #header>
+    <div class="flex items-center justify-between w-full pr-4" data-testid="weekly-brief-archive-drawer-header">
+      <div class="flex flex-col gap-0.5">
+        <h2 class="text-lg font-semibold text-slate-900">Past Briefs</h2>
+        <p class="text-xs text-slate-500">Previously generated weekly briefs for this committee</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+        data-testid="weekly-brief-archive-drawer-close"
+        aria-label="Close panel">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4 py-2" data-testid="weekly-brief-archive-drawer-body">
+    @if (loading()) {
+      <div class="flex flex-col gap-4">
+        @for (n of [1, 2, 3]; track n) {
+          <div class="flex flex-col gap-2 p-4 rounded-lg border border-slate-200">
+            <p-skeleton width="40%" height="1rem" />
+            <p-skeleton width="100%" height="0.875rem" />
+            <p-skeleton width="90%" height="0.875rem" />
+            <p-skeleton width="80%" height="0.875rem" />
+          </div>
+        }
+      </div>
+    } @else if (error()) {
+      <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="weekly-brief-archive-drawer-error">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-slate-400"></i>
+        <span class="text-sm text-slate-600">Failed to load past briefs.</span>
+        <lfx-button
+          label="Retry"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="onRetry()"
+          data-testid="weekly-brief-archive-drawer-retry-button" />
+      </div>
+    } @else if (briefs().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="weekly-brief-archive-drawer-empty">
+        <i class="fa-light fa-clock-rotate-left text-2xl text-slate-400"></i>
+        <span class="text-sm text-slate-600">No past briefs yet.</span>
+      </div>
+    } @else {
+      @for (brief of briefs(); track brief.uid) {
+        <div class="flex flex-col gap-2 p-4 rounded-lg border border-slate-200" [attr.data-testid]="'weekly-brief-archive-entry-' + brief.uid">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-semibold text-slate-800" [attr.data-testid]="'weekly-brief-archive-date-' + brief.uid">
+              {{ formatDateRange(brief.window_start, brief.window_end) }}
+            </span>
+            <lfx-tag [value]="stateLabel(brief.state)" [severity]="stateSeverity(brief.state)" [attr.data-testid]="'weekly-brief-archive-state-' + brief.uid" />
+          </div>
+          <p class="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed m-0" [attr.data-testid]="'weekly-brief-archive-text-' + brief.uid">
+            {{ brief.brief_text }}
+          </p>
+        </div>
+      }
+
+      @if (hasMore()) {
+        <div class="flex justify-center pt-2">
+          <lfx-button
+            label="Load more"
+            severity="secondary"
+            [text]="true"
+            [loading]="loadingMore()"
+            size="small"
+            (onClick)="onLoadMore()"
+            data-testid="weekly-brief-archive-load-more-button" />
+        </div>
+      }
+    }
+  </div>
+
+  <ng-template #footer>
+    <div class="flex items-center justify-end gap-3 w-full px-1 py-3 border-t border-slate-200" data-testid="weekly-brief-archive-drawer-footer">
+      <lfx-button label="Close" severity="secondary" [text]="true" size="small" (onClick)="onClose()" data-testid="weekly-brief-archive-drawer-close-button" />
+    </div>
+  </ng-template>
+</p-drawer>

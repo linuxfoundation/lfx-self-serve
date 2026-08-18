@@ -13,10 +13,11 @@ import type {
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
+  CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_DELIVERY_TYPES, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PLATFORMS, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -31,6 +32,26 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
 const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(['meta-ads', 'reddit-ads']);
+
+/**
+ * Platforms whose status toggle campaign-service can serve.
+ *
+ * DERIVED from `CAMPAIGN_PLATFORMS` rather than listed, because a hardcoded set is a claim that
+ * goes stale silently: enabling a platform in the shared constant would leave pause unreachable
+ * for it with nothing failing. Every paid platform in that constant has a `ToggleStatus`
+ * dispatcher upstream, so the shared list IS the correct source.
+ *
+ * `disabled: true` entries (currently Microsoft and X) are excluded deliberately. Their
+ * dispatchers exist upstream, but disabling a platform means this app does not offer it, and
+ * accepting a toggle for a campaign the UI cannot create is a route to nowhere. They join by
+ * flipping the flag in the shared constant — one edit, not two.
+ *
+ * HubSpot is absent because it is not in `CAMPAIGN_PLATFORMS` at all: `CampaignPlatform` covers
+ * the six paid channels, and an email send has no run state to pause.
+ */
+const CAMPAIGN_SERVICE_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(
+  CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id)
+);
 
 /** Derived from the shared constant so the validation and its error message cannot drift apart. */
 const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
@@ -934,9 +955,31 @@ export class CampaignController {
       );
       return;
     }
-    if (!NUMERIC_ID_RE.test(campaignId)) {
+    // Which backend owns this campaign is decided by the id's SHAPE, not by the flag alone. The
+    // two id spaces are disjoint — campaign-service keys campaigns by UUID, the legacy per-platform
+    // path by the ad platform's own numeric id — so no request can be claimed by both, and a
+    // rolling deploy with mixed flag states cannot misroute one. See the flag's own doc.
+    const viaCampaignService = isCampaignServiceJobId(campaignId);
+
+    if (!viaCampaignService && !NUMERIC_ID_RE.test(campaignId)) {
       next(
-        ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string', {
+        ServiceValidationError.forField('campaignId', 'campaignId must be a numeric string or a campaign UUID', {
+          operation: 'campaign_status_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // A UUID can only be served by campaign-service. Refusing when the flag is off is deliberate:
+    // the alternative is handing a UUID to the legacy `switch`, whose `default` arm throws a
+    // platform error that names the wrong cause entirely. Say which capability is off instead.
+    if (viaCampaignService && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle)) {
+      next(
+        // Filed under `campaignId` because that is the field that made this request unservable —
+        // a UUID names a campaign only campaign-service can address. Lowercase to match every
+        // sibling message in this handler.
+        ServiceValidationError.forField('campaignId', 'campaign status changes are not enabled for this deployment', {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
           path: req.path,
@@ -957,9 +1000,26 @@ export class CampaignController {
 
     const body = req.body as Partial<CampaignStatusUpdateRequest>;
 
-    if (!body.platform || !SUPPORTED_STATUS_PLATFORMS.has(body.platform)) {
+    // The allowlist is per-PATH because reach genuinely differs, and collapsing the two would be
+    // wrong in both directions. The legacy path is a switch over meta/reddit whose default arm
+    // throws, so widening it would turn a clear refusal into a confusing platform error;
+    // keeping the campaign-service set at two would refuse Google Ads and LinkedIn, which this app
+    // does offer. Note these are two different counts and must not be conflated: campaign-service
+    // implements SIX toggle dispatchers upstream, while this set is the FOUR non-disabled entries
+    // of CAMPAIGN_PLATFORMS — Microsoft and X are dispatchable but not offered here. HubSpot is in
+    // NEITHER set — an email send has no run state to pause.
+    //
+    // On the campaign-service path this check is a FAST REJECT, not the policy boundary, and the
+    // distinction is load-bearing. `platform` is caller-supplied and never sent upstream — the
+    // service loads the dispatcher from the campaign ROW — so a caller could label a Microsoft
+    // campaign `google-ads` and pass here. What actually enforces the narrowing is the row check
+    // after the toggle returns; this one exists to refuse an obviously-unsupported request before
+    // spending a round trip. Treating it as the boundary is what made an earlier version of this
+    // comment claim an exclusion the code did not perform.
+    const supportedPlatforms = viaCampaignService ? CAMPAIGN_SERVICE_STATUS_PLATFORMS : SUPPORTED_STATUS_PLATFORMS;
+    if (!body.platform || !supportedPlatforms.has(body.platform)) {
       next(
-        ServiceValidationError.forField('platform', `platform must be one of: ${[...SUPPORTED_STATUS_PLATFORMS].join(', ')}`, {
+        ServiceValidationError.forField('platform', `platform must be one of: ${[...supportedPlatforms].join(', ')}`, {
           operation: 'campaign_status_update',
           service: 'campaign_controller',
         })
@@ -976,9 +1036,120 @@ export class CampaignController {
       return;
     }
 
+    // campaign-service addresses a campaign by (project, brief, campaign) and requires If-Match,
+    // so both are refused here rather than defaulted. There is nothing safe to default them TO:
+    // a guessed brief id addresses a different route that 404s at the gateway, and an absent
+    // If-Match is answered upstream with 428. Failing here names the missing field instead.
+    let briefId = '';
+    let etag = '';
+    let projectSlug = '';
+    if (viaCampaignService) {
+      briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+      etag = typeof body.etag === 'string' ? body.etag.trim() : '';
+      projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+      if (!projectSlug) {
+        next(
+          ServiceValidationError.forField('project', 'project is required', {
+            operation: 'campaign_status_update',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      if (!briefId) {
+        next(
+          ServiceValidationError.forField('briefId', 'briefId is required to change a campaign-service campaign status', {
+            operation: 'campaign_status_update',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      if (!etag) {
+        next(
+          ServiceValidationError.forField('etag', 'etag is required so a concurrent edit cannot be overwritten', {
+            operation: 'campaign_status_update',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+    }
+
     const startTime = logger.startOperation(req, 'campaign_status_update', { campaignId, platform: body.platform, status: body.status });
 
     try {
+      if (viaCampaignService) {
+        const campaign = await this.campaignServiceClient.toggleCampaignStatus(req, {
+          projectSlug,
+          briefId,
+          campaignId,
+          status: body.status as CampaignToggleStatus,
+          etag,
+        });
+        // Observed against the AUTHORITATIVE value. The pre-check above tested the caller's claim;
+        // this reads the row campaign-service actually toggled, which is the only thing that
+        // decides which dispatcher ran.
+        //
+        // Deliberately a LOG, not a refusal, and the reason is the ordering: by this point the
+        // toggle HAS happened upstream — the ad platform moved — so an error here would tell the
+        // caller nothing occurred, which is the false-absence failure this codebase keeps paying
+        // for. Nor can it be moved earlier: the row's platform is not knowable until the toggle
+        // returns it, because nothing in this BFF reads a campaign row (LFXV2-3099). So the honest
+        // options are "log that it happened" or "read the row first", and the second needs an
+        // endpoint that does not exist yet.
+        //
+        // What makes this acceptable rather than a hole: the platform label is cosmetic on this
+        // path. It is never sent upstream, so it cannot cause the wrong dispatcher to run — the
+        // worst a mislabelled request achieves is toggling a campaign the caller could already
+        // toggle by naming it correctly. The response reports the ROW's platform below, so the
+        // caller is not told their label was accepted.
+        const rowPlatform = campaign.platform as CampaignPlatform | undefined;
+        if (rowPlatform && !CAMPAIGN_SERVICE_STATUS_PLATFORMS.has(rowPlatform)) {
+          logger.warning(req, 'campaign_status_update', 'toggled a campaign whose platform this app does not offer', {
+            campaignId,
+            requestedPlatform: body.platform,
+            rowPlatform,
+          });
+        }
+
+        // `previousStatus` is OMITTED, not inferred. The legacy path reports it as a fact — it
+        // GETs the campaign before writing — so filling it here with "the opposite of what was
+        // requested" would put a guess and an observation behind one field name. It would also be
+        // wrong where it matters most: a `created_degraded` campaign is pausable, and its true
+        // prior status is `created_degraded`, not ACTIVE. Absence is the honest answer, and the
+        // caller already holds the row it read.
+        //
+        // `etag` and `serviceStatus` come from the ROW, and dropping them is not cosmetic. The
+        // fresh etag is the only way a caller can chain pause→resume: its own validator went
+        // stale the moment this toggle committed, and a stale If-Match is answered with 412. And
+        // `newStatus` is an echo of the REQUEST, which the `created_degraded` case makes false —
+        // pausing such a campaign pauses it upstream while deliberately leaving the row's status
+        // unchanged, so echoing "PAUSED" would render a transition the service declined to
+        // record. `serviceStatus` is what actually happened; `newStatus` is what was asked.
+        const result: CampaignStatusUpdateResult = {
+          // The ROW's platform, not the caller's. `platform` never reaches campaign-service — the
+          // path is built from (project, brief, campaign) and the service resolves the platform
+          // from the stored row — so echoing the request would let a caller who paused a Reddit
+          // campaign while sending `google-ads` receive a 200 that agrees with them. Same class of
+          // falsehood as the `serviceStatus` case below, in the field beside it.
+          platform: (campaign.platform as CampaignPlatform) ?? body.platform,
+          campaignId,
+          newStatus: body.status as CampaignToggleStatus,
+          success: true,
+          etag: campaign.etag,
+          serviceStatus: campaign.status,
+        };
+        logger.success(req, 'campaign_status_update', startTime, {
+          campaignId,
+          newStatus: result.newStatus,
+          serviceStatus: result.serviceStatus,
+          via: 'campaign-service',
+        });
+        res.json(result);
+        return;
+      }
+
       const result = await this.proxyService.updateCampaignStatus(req, campaignId, {
         platform: body.platform,
         status: body.status as CampaignToggleStatus,

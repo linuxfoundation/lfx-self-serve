@@ -2101,3 +2101,105 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     expect(result.error).toBeTruthy();
   });
 });
+
+/**
+ * The controller's own spec mocks this whole client, so nothing there can catch a regression in
+ * what actually goes on the wire. These tests are the only place the argument POSITIONS, the enum
+ * casing and the If-Match header are checked against `proxyRequestWithResponse`'s real signature.
+ */
+describe('CampaignServiceClient.toggleCampaignStatus', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', status: 'PAUSED' as const, etag: '3' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the nested campaign path with the status as the BODY, not a query', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused' }));
+
+    await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/status');
+    expect(call[3]).toBe('PATCH');
+    // Both positions asserted, because the failure mode is the body SHIFTING rather than
+    // vanishing: `{ status }` in the fifth slot is sent as a query string with no body at all and
+    // no type error, and upstream then reports a missing required `status`.
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ status: 'paused' });
+  });
+
+  // Upstream declares Enum("active", "paused"); the shared client type is uppercase. A mismatch is
+  // a 400 from the design's own decoder, not a dispatch that quietly does nothing.
+  it.each([
+    ['PAUSED', 'paused'],
+    ['ACTIVE', 'active'],
+  ])('lowercases %s to %s on the wire', async (input, wire) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
+
+    await new CampaignServiceClient().toggleCampaignStatus(req, { ...args, status: input as 'ACTIVE' | 'PAUSED' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ status: wire });
+  });
+
+  // Upstream answers a missing If-Match with 428, so sending it is not optional hardening.
+  it('sends the etag as If-Match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
+
+    await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    expect(proxyRequestWithResponse.mock.calls[0][6]).toEqual({ 'If-Match': '3' });
+  });
+
+  it('encodes every path segment so an id cannot escape its position', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
+
+    await new CampaignServiceClient().toggleCampaignStatus(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][2]).toBe('/projects/a%2Fb/briefs/c%20d/campaigns/e%3Ff/status');
+  });
+
+  it('returns the campaign row the service answered with', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused', version: 4, etag: '4' }));
+
+    const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    expect(result).toEqual({ id: 'c-1', status: 'paused', version: 4, etag: '4' });
+  });
+});
+
+describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', status: 'PAUSED' as const, etag: '3' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Pause-then-resume is the interaction this feature exists for, and the second call needs a
+  // FRESH validator: after a successful toggle the caller's etag is stale, and a stale If-Match is
+  // answered upstream with 412. The header is what the response contract guarantees — `etag` is
+  // not in the upstream `Campaign` type's Required list, so the body may carry none.
+  it('carries the ETag header forward so a follow-up toggle has a fresh validator', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'paused', version: 4 }, { etag: '4' }));
+
+    const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    expect(result.etag).toBe('4');
+  });
+
+  it('prefers the header over a body etag when both are present', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: 'stale' }, { etag: '9' }));
+
+    const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    expect(result.etag).toBe('9');
+  });
+
+  it('falls back to the body etag when the response carried no header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '7' }));
+
+    const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
+
+    expect(result.etag).toBe('7');
+  });
+});
