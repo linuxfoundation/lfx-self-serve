@@ -22,6 +22,7 @@ export class AudienceDemographicsComponent {
 
   // === Inputs ===
   public readonly days = input(30);
+  public readonly projectSlug = input('');
 
   // === WritableSignals ===
   protected readonly loading = signal(false);
@@ -38,6 +39,7 @@ export class AudienceDemographicsComponent {
   public constructor() {
     effect(() => {
       const days = this.days();
+      this.projectSlug();
       this.refresh(days);
     });
   }
@@ -48,7 +50,7 @@ export class AudienceDemographicsComponent {
     this.loading.set(true);
     this.error.set(null);
     this.audienceSub = this.campaignService
-      .getAudience(days ?? this.days())
+      .getAudience(this.projectSlug(), days ?? this.days())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {

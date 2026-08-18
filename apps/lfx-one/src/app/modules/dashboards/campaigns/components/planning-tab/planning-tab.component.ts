@@ -482,7 +482,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsCreating.set(true);
     this.hsStatus.set(null);
     this.campaignService
-      .createHubSpotUtm(this.lastLookedUpEvent)
+      .createHubSpotUtm(this.activeFoundationSlug(), this.lastLookedUpEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -932,7 +932,7 @@ export class PlanningTabComponent implements OnInit {
 
     const capturedEvent = eventName;
     this.campaignService
-      .lookupHubSpotUtm(eventName)
+      .lookupHubSpotUtm(this.activeFoundationSlug(), eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {

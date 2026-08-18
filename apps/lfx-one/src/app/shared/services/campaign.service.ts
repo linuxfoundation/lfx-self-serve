@@ -185,40 +185,40 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
+  public getMonitorData(projectSlug: string, days: number = 30): Observable<CampaignMonitorResponse> {
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days } });
   }
 
-  public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
-    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts');
+  public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
-  public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
+  public getLinkedInMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getRedditAccounts(): Observable<RedditAccountOption[]> {
-    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts');
+  public getRedditAccounts(projectSlug: string): Observable<RedditAccountOption[]> {
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { project: projectSlug } });
   }
 
-  public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey } });
+  public getRedditMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getMetaAccounts(): Observable<MetaAccountOption[]> {
-    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts');
+  public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
+    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
   }
 
-  public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey } });
+  public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
-    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days } });
+  public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {
+    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { project: projectSlug, days } });
   }
 
-  public getAudience(days: number = 30): Observable<AudienceDemographics> {
-    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
+  public getAudience(projectSlug: string, days: number = 30): Observable<AudienceDemographics> {
+    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { project: projectSlug, days } });
   }
 
   /**
@@ -240,16 +240,16 @@ export class CampaignService {
     return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
   }
 
-  public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName } });
+  public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { project: projectSlug, event_name: eventName } });
   }
 
-  public createHubSpotUtm(eventName: string): Observable<HubSpotUtmCreateResult> {
-    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName } });
+  public createHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmCreateResult> {
+    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { project: projectSlug, event_name: eventName } });
   }
 
-  public executeKeywordActions(request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
-    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request);
+  public executeKeywordActions(projectSlug: string, request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
+    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request, { params: { project: projectSlug } });
   }
 
   /**
