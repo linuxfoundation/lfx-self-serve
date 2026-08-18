@@ -557,6 +557,25 @@ export class CampaignsComponent {
       // exclusion exists to catch, so it must not be asserted away.
       if (tab !== 'optimization') {
         this.selectedEmailTab.set(tab);
+        // Load on ENTRY, not only on proceed. The only other call site is
+        // `onEmailProceedToImplementation`, so arriving at this tab any other way — clicking
+        // it directly, or returning after a foundation switch cleared the list — left an
+        // empty box, which this file's own comment calls out as reading like a broken
+        // channel. Guarded on `null` so it fires once and does not re-run over a list the
+        // operator is already searching, and skipped while a request is in flight.
+        if (
+          tab === 'implementation' &&
+          this.emailTemplates() === null &&
+          !this.emailTemplatesLoading() &&
+          // A search that already ANSWERED leaves templates null too — when the channel is
+          // off, or when it failed. Re-firing on entry would retry a refusal on every tab
+          // click and overwrite the error the operator needs to read. Only a picker that has
+          // never been answered for this foundation should load.
+          this.emailChannelEnabled() === null &&
+          this.emailTemplatesError() === null
+        ) {
+          this.searchEmailTemplates(this.emailTemplateQuery());
+        }
       }
       return;
     }

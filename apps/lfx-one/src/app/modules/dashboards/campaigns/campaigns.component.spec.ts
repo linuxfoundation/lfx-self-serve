@@ -1787,6 +1787,23 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     fixture.detectChanges();
   }
 
+  it('loads templates when the implementation tab is entered, not only on proceed', () => {
+    // The only other searchEmailTemplates call site is onEmailProceedToImplementation, so
+    // arriving at this tab any other way — clicking it directly, or returning after a
+    // foundation switch cleared the list — used to leave an empty box. This file's own
+    // comment calls that state "a broken channel".
+    const comp = fixture.componentInstance as unknown as { selectTab(t: string, owner: string): void };
+    comp.selectTab('implementation', 'email');
+    fixture.detectChanges();
+
+    // The request itself is the assertion: expectOne throws if entering the tab issued none.
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '1', name: 'KubeCon promo' }] });
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('KubeCon promo');
+  });
+
   it('lists the templates a search returned, dropping any row with no id', () => {
     picker().searchEmailTemplates('');
     respond({
@@ -1926,6 +1943,11 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   // everything.
   it('searches what is typed, not the previous query', () => {
     const el = panel();
+    // Entering the tab issues the initial load (see selectTab). Answer it so the assertion
+    // below is about what the SEARCH sent, not about that first request.
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+    fixture.detectChanges();
+
     const input = el.querySelector('[data-testid="campaigns-email-template-search"]') as HTMLInputElement;
     input.value = 'kubecon';
     input.dispatchEvent(new Event('input'));

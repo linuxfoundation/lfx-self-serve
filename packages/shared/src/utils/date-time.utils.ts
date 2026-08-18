@@ -631,8 +631,20 @@ export function formatIsoDateLabel(iso: string): string {
  */
 export function formatHubSpotUpdatedAt(value: string | undefined): string {
   if (!value) return '';
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
-  const date = new Date(normalized);
+
+  // A date-only value goes through formatIsoDateLabel, which ROUND-TRIPS year/month/day.
+  // Shape-checking alone is not enough: `2026-02-31` matches the pattern, and JS silently
+  // rolls the excess day into the next month, so `isNaN` never fires and the picker renders
+  // a confident "Mar 3, 2026" for a date that does not exist. An operator uses this value to
+  // tell two same-named templates apart, so a fabricated date is worse than none.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const label = formatIsoDateLabel(value);
+    // formatIsoDateLabel returns its input unchanged when it rejects; render nothing rather
+    // than echoing a raw ISO string into a metadata line that reads as a portal value.
+    return label === value ? '' : label;
+  }
+
+  const date = new Date(value);
   if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
