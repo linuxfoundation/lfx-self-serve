@@ -476,6 +476,12 @@ export class CampaignsComponent {
         // `hubspotConfig.sourceEmailId` on create, so a stale selection stages a send that clones
         // foundation A's email into foundation B's portal — 404 if the user cannot reach it, and
         // silently wrong if they can.
+        // Bumping the search generation is what makes the clears below STICK. Clearing the
+        // signals alone cannot stop a request already in flight for the previous foundation:
+        // it resolves afterwards, still passes `isCurrent()`, and repopulates the list under
+        // the new foundation — the cross-portal leak this handler exists to prevent, and the
+        // one `searchEmailTemplates` documents as the hazard its guard cannot see.
+        this.emailSearchGeneration++;
         this.emailTemplates.set(null);
         this.emailTemplateQuery.set('');
         this.emailTemplatesTruncated.set(false);
