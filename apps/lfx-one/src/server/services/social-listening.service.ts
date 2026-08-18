@@ -401,18 +401,18 @@ export class SocialListeningService {
     });
   }
 
-  /** A null or blank upstream sentiment is bucketed as neutral, matching how the feed renders it. */
+  /** Off-list upstream values (null, blank, mixed, unknown) bucket as neutral, matching the feed's normalizeSentiment. */
   public async getAnalyticsSentimentDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningSentimentDistribution[]> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
 
     const sql = `
-      SELECT COALESCE(NULLIF(LOWER(SENTIMENT), ''), 'neutral') AS SENTIMENT,
+      SELECT CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END AS SENTIMENT,
              COUNT(*) AS MENTION_COUNT,
              ROUND(COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)::FLOAT * 100, 1) AS PERCENT_OF_TOTAL
       FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}
-      GROUP BY COALESCE(NULLIF(LOWER(SENTIMENT), ''), 'neutral')
+      GROUP BY CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END
       ORDER BY MENTION_COUNT DESC
     `;
 

@@ -61,6 +61,11 @@ export class MentionCardComponent {
   );
   public readonly displayKeyword = computed(() => capitalizeFirst(this.mention().keyword));
   public readonly isReddit = computed(() => this.mention().platform === 'reddit');
+  /** Subreddit directory link — distinct from the stretched card link, which opens the mention itself. */
+  public readonly subredditUrl = computed(() => {
+    const subreddit = this.mention().subreddit;
+    return subreddit ? `https://www.reddit.com/r/${encodeURIComponent(subreddit)}` : '';
+  });
   public readonly hasTitle = computed(() => !!this.mention().title);
   public readonly timeAgo: Signal<string> = this.initTimeAgo();
   /** Pre-filled share message (subject `{Keyword} - Worth sharing`) for the forward-by-email anchor. */

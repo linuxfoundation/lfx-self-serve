@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { SocialListeningService } from '@services/social-listening.service';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -29,6 +29,7 @@ describe('SocialListeningComponent', () => {
 
   let fixture: ComponentFixture<SocialListeningComponent>;
   let getMentionsFeed: ReturnType<typeof vi.fn>;
+  let getMentionsCount: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let queryParams$: BehaviorSubject<SocialListeningQueryParams>;
   /** What the URL currently holds — the navigate stub writes it, the snapshot getter reads it. */
@@ -89,6 +90,7 @@ describe('SocialListeningComponent', () => {
     queryParams$ = new BehaviorSubject<SocialListeningQueryParams>({});
     navigate = vi.fn(navigateImpl);
     getMentionsFeed = vi.fn((req: SocialListeningFeedRequest) => of(feedResponse(req)));
+    getMentionsCount = vi.fn(() => of({ total: 1000 }));
 
     await TestBed.configureTestingModule({
       imports: [SocialListeningComponent],
@@ -108,7 +110,7 @@ describe('SocialListeningComponent', () => {
           provide: SocialListeningService,
           useValue: {
             getMentionsFeed,
-            getMentionsCount: vi.fn(() => of({ total: 1000 })),
+            getMentionsCount,
             getMentionsProjects: vi.fn(() => of([])),
             getMentionsPlatforms: vi.fn(() => of([])),
             getMentionsLanguages: vi.fn(() => of([])),
@@ -177,6 +179,59 @@ describe('SocialListeningComponent', () => {
       // Window 4 is current (page 20 at rows 20); windows 0 and 1 fell out of the ±2 band.
       expect(cachedWindows()).toEqual([2, 3, 4]);
     });
+
+    it('auto-refetches a window once when its phase-2 fill fails, then serves it complete', async () => {
+      // Window 1's background fill (offset 120) fails on the first attempt only.
+      let failed = false;
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
+        if (req.offset === 120 && !failed) {
+          failed = true;
+          return throwError(() => new Error('phase 2 failed'));
+        }
+        return of(feedResponse(req));
+      });
+
+      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
+      await settle();
+
+      // Failed fill (120) + forced refetch of the window (100 + 120 again).
+      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
+      expect(cachedWindows()).toEqual([0, 1]);
+      expect(mentionIds()[0]).toBe('m100');
+
+      // The recovered window is complete — in-window paging serves it without another fetch.
+      const calls = getMentionsFeed.mock.calls.length;
+      fixture.componentInstance.onPageChange({ page: 6, rows: 20 });
+      await settle();
+      expect(getMentionsFeed).toHaveBeenCalledTimes(calls);
+      expect(mentionIds()[0]).toBe('m120');
+    });
+
+    it('gives up after one auto-refetch when the phase-2 fill keeps failing', async () => {
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
+        req.offset === 120 ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
+      );
+
+      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
+      await settle();
+
+      // One failed fill + one failed refetch, then no further attempts — the window stays evicted.
+      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
+      expect(cachedWindows()).toEqual([0]);
+    });
+  });
+
+  describe('mention count', () => {
+    it('surfaces a count failure as an error instead of masquerading as a zero total', async () => {
+      getMentionsCount.mockReturnValue(throwError(() => new Error('count failed')));
+
+      // Any filter change re-issues the count request against the failing mock.
+      fixture.componentInstance.selectedPlatform.set('reddit');
+      await settle();
+
+      expect(fixture.componentInstance.countError()).toBe('Failed to load the mention count');
+      expect(fixture.componentInstance.totalRecords()).toBe(0);
+    });
   });
 
   describe('query-param sync', () => {
@@ -217,6 +272,22 @@ describe('SocialListeningComponent', () => {
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(currentParams['authors']).toEqual(['Last, First']);
       expect(fixture.componentInstance.selectedAuthors()).toEqual(['Last, First']);
+    });
+
+    it('keeps a deep-linked ?search= in the URL while the debounced query catches up', async () => {
+      currentParams = { search: 'mesh' };
+      queryParams$.next(currentParams);
+      await settle();
+
+      // Inside the 500ms debounce window the URL-write effect must not strip the param.
+      expect(navigate).not.toHaveBeenCalled();
+      expect(currentParams['search']).toBe('mesh');
+
+      // Once the debounce lands, the applied state re-encodes to the same URL — still no write.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await settle();
+      expect(currentParams['search']).toBe('mesh');
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 });

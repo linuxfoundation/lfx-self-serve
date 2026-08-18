@@ -410,6 +410,12 @@ describe('analytics', () => {
     }
   });
 
+  it('buckets off-list sentiment values as neutral so the distribution shares sum to 100%', async () => {
+    await service().getAnalyticsSentimentDistribution(req, SCOPE);
+
+    expect(normalize(lastCall().sql)).toContain("CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END");
+  });
+
   it('filters the tags endpoint too, aliasing the columns so the LATERAL FLATTEN join stays unambiguous', async () => {
     await service().getMentionsTags(req, { ...SCOPE, tags: ['ai'], authors: ['@alice'] });
 

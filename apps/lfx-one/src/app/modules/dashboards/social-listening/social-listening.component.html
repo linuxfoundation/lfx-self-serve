@@ -75,6 +75,10 @@
             <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
           }
 
+          @if (countError(); as countErrorMessage) {
+            <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
+          }
+
           <lfx-mentions-list
             [mentions]="mentions()"
             [loading]="loading()"

@@ -28,7 +28,7 @@
           <span class="font-medium text-gray-900">{{ mention.authorName }}</span>
         }
         @if (isReddit() && mention.subreddit) {
-          @if (mention.originalUrl | validExternalUrl; as subredditUrl) {
+          @if (subredditUrl() | validExternalUrl; as subredditUrl) {
             <span>in</span>
             <a [href]="subredditUrl" target="_blank" rel="noopener noreferrer" class="card-interactive text-gray-500 hover:underline"
               >r/{{ mention.subreddit }}</a

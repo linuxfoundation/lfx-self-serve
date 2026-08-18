@@ -175,7 +175,7 @@ export function stripMarkdown(text: string): string {
     .replace(/#{1,6}\s+/g, '')
     .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, '$2')
     .replace(/~~(.*?)~~/g, '$1')
-    .replace(/`{1,3}[^`]*`{1,3}/g, '')
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
     .replace(/^[\s]*[-*+]\s+/gm, '- ')
     .replace(/^[\s]*\d+\.\s+/gm, '')
     .replace(/^>\s+/gm, '')

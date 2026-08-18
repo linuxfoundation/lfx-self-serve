@@ -138,6 +138,10 @@ export class SocialListeningComponent {
   public readonly rowsPerPageOptions = MENTION_PAGE_SIZE_OPTIONS;
   private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
   private readonly backgroundLoading = signal(false);
+  /** Bumped to force a one-time refetch of a window whose phase-2 fill failed. */
+  private readonly feedRetryTick = signal(0);
+  /** Windows that already consumed their one automatic refetch (reset on scope change). */
+  private readonly retriedWindows = new Set<number>();
 
   // === Filters panel state (LFXV2-3017) ===
   public readonly filtersOpen = signal(false);
@@ -168,7 +172,9 @@ export class SocialListeningComponent {
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
-  public readonly totalRecords: Signal<number> = this.initTotalRecords();
+  private readonly countState: Signal<LoadableState<number>> = this.initTotalRecords();
+  public readonly totalRecords = computed(() => this.countState().data ?? 0);
+  public readonly countError = computed(() => this.countState().error);
   private readonly subProjectsState: Signal<LoadableState<SocialListeningSubProject[]>> = this.initSubProjectsState();
   private readonly platformsState: Signal<LoadableState<SocialListeningPlatform[]>> = this.initPlatformsState();
 
@@ -268,6 +274,9 @@ export class SocialListeningComponent {
     // for owned keys at default so merge removes them. queryParamsEqual prevents write loops.
     effect(() => {
       const target = encodePredicateToQueryParams(this.currentPredicate(), this.currentScope(), this.defaultPeriod);
+      // Don't strip a deep-linked ?search= while the debounced query is still catching up to the input.
+      const pendingSearch = this.searchInput().trim();
+      if (pendingSearch.length >= MENTION_SEARCH_MIN_CHARS && pendingSearch !== this.searchQuery()) return;
       if (queryParamsEqual(target, this.route.snapshot.queryParams)) return;
       untracked(() => {
         void this.router.navigate([], {
@@ -306,6 +315,7 @@ export class SocialListeningComponent {
       untracked(() => {
         this.currentPage.set(0);
         this.windowCache.set(new Map());
+        this.retriedWindows.clear();
       });
     });
 
@@ -461,9 +471,9 @@ export class SocialListeningComponent {
    */
   private initFeedState(): Signal<LoadableState<SocialListeningFeedResponse>> {
     return toSignal(
-      toObservable(this.feedRequest).pipe(
+      toObservable(computed(() => ({ req: this.feedRequest(), tick: this.feedRetryTick() }))).pipe(
         debounceTime(0), // Coalesce synchronous signal changes into one emission
-        switchMap((req) => {
+        switchMap(({ req }) => {
           if (req === null) {
             return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: EMPTY_FEED_RESPONSE });
           }
@@ -499,9 +509,14 @@ export class SocialListeningComponent {
                   });
                 }),
                 ignoreElements(),
-                // Drop the half-filled window so a revisit refetches instead of rendering an empty page.
+                // Drop the half-filled window, then force one refetch — in-window paging never re-emits
+                // feedRequest, so without the tick the window's later pages stay empty until a revisit.
                 catchError(() => {
                   this.evictWindowCache(windowIdx);
+                  if (!this.retriedWindows.has(windowIdx)) {
+                    this.retriedWindows.add(windowIdx);
+                    this.feedRetryTick.update((tick) => tick + 1);
+                  }
                   return EMPTY;
                 }),
                 finalize(() => this.backgroundLoading.set(false))
@@ -520,19 +535,21 @@ export class SocialListeningComponent {
     );
   }
 
-  private initTotalRecords(): Signal<number> {
+  private initTotalRecords(): Signal<LoadableState<number>> {
     return toSignal(
       toObservable(this.countRequest).pipe(
         debounceTime(0), // Coalesce synchronous signal changes into one emission
         switchMap((req) => {
-          if (req === null) return of(0);
+          if (req === null) return of<LoadableState<number>>({ loading: false, error: null, data: 0 });
           return this.socialListeningService.getMentionsCount(req).pipe(
-            map((response) => response.total),
-            catchError(() => of(0))
+            map((response): LoadableState<number> => ({ loading: false, error: null, data: response.total })),
+            // A failed count must not masquerade as a legitimate zero — the template surfaces the error.
+            catchError(() => of<LoadableState<number>>({ loading: false, error: 'Failed to load the mention count', data: 0 })),
+            startWith<LoadableState<number>>({ loading: true, error: null, data: 0 })
           );
         })
       ),
-      { initialValue: 0 }
+      { initialValue: { loading: false, error: null, data: 0 } }
     );
   }
 
