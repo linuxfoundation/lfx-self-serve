@@ -86,7 +86,7 @@
         size="small"
         ariaLabel="Export analytics as PNG"
         [loading]="exporting()"
-        [disabled]="exporting()"
+        [disabled]="exporting() || exportDisabled()"
         (onClick)="exportAnalytics.emit()"
         data-testid="social-listening-analytics-export" />
     }

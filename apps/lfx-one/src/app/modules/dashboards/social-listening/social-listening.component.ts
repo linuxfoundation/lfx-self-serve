@@ -150,6 +150,8 @@ export class SocialListeningComponent {
   // === Analytics export state (LFXV2-3018) — the header emits, the analytics component captures ===
   public readonly exporting = signal(false);
   public readonly exportNonce = signal(0);
+  /** Reported by the analytics child — export stays disabled until no panel renders skeletons. */
+  public readonly analyticsPanelsLoading = signal(false);
 
   /** Shared heartbeat that re-evaluates relative timestamps on rendered cards (one interval per page, not per card). */
   public readonly timeTick = signal(0);
@@ -172,6 +174,7 @@ export class SocialListeningComponent {
   public readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
+  private readonly feedCacheKey: Signal<string | null> = this.initFeedCacheKey();
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
   private readonly countState: Signal<LoadableState<number>> = this.initTotalRecords();
   public readonly totalRecords = computed(() => this.countState().data ?? 0);
@@ -300,11 +303,19 @@ export class SocialListeningComponent {
       untracked(() => this.selectedLanguage.set(DEFAULT_MENTION_PREDICATE.language));
     });
 
-    // Leaving the analytics tab destroys the child mid-export, so its own reset can never land —
-    // the parent owns clearing the header's loading state.
+    // Leaving the analytics tab destroys the child mid-export — the parent owns clearing the header's
+    // loading state and resetting the nonce, or remounting the child replays the last export.
     effect(() => {
       if (this.activeTab() === 'analytics') return;
-      untracked(() => this.exporting.set(false));
+      untracked(() => {
+        this.exporting.set(false);
+        this.exportNonce.set(0);
+      });
+    });
+
+    // Close the panel on tab leave — remounting it on return would steal focus into a dialog the user never reopened.
+    effect(() => {
+      if (this.activeTab() === 'analytics') untracked(() => this.filtersOpen.set(false));
     });
 
     // Any scope/filter change restarts pagination from the first page with a cold window cache.
@@ -466,6 +477,14 @@ export class SocialListeningComponent {
     });
   }
 
+  /** Fingerprint of the live request minus window bounds — identifies the filter set a feed response belongs to. */
+  private initFeedCacheKey(): Signal<string | null> {
+    return computed(() => {
+      const req = this.feedRequest();
+      return req ? JSON.stringify({ ...req, limit: 0, offset: 0 }) : null;
+    });
+  }
+
   /**
    * Two-phase windowed feed fetch (PCC port): phase 1 paints the visible page fast; phase 2 fills
    * the rest of the window in the background as one stream — `switchMap` cancels it on re-entry.
@@ -480,6 +499,7 @@ export class SocialListeningComponent {
           }
 
           const windowIdx = Math.floor((req.offset ?? 0) / this.serverWindowSize);
+          const cacheKey = JSON.stringify({ ...req, limit: 0, offset: 0 });
           // Only a fully filled window can be served from cache — a partial one would strand the rows phase 2 never wrote.
           const cached = this.windowCache().get(windowIdx);
           if (cached?.complete) {
@@ -493,7 +513,7 @@ export class SocialListeningComponent {
             switchMap((phase1Data) => {
               const remaining = this.serverWindowSize - initialLimit;
               const phase1Complete = remaining <= 0 || phase1Data.mentions.length < initialLimit;
-              this.updateWindowCache(windowIdx, { ...phase1Data, complete: phase1Complete });
+              this.updateWindowCache(windowIdx, cacheKey, { ...phase1Data, complete: phase1Complete });
               const phase1State: LoadableState<SocialListeningFeedResponse> = { loading: false, error: null, data: phase1Data };
 
               if (phase1Complete) return of(phase1State);
@@ -503,7 +523,7 @@ export class SocialListeningComponent {
               const phase2$ = this.socialListeningService.getMentionsFeed(backgroundRequest).pipe(
                 tap((backgroundData) => {
                   const previous = this.windowCache().get(windowIdx);
-                  this.updateWindowCache(windowIdx, {
+                  this.updateWindowCache(windowIdx, cacheKey, {
                     mentions: [...(previous?.mentions ?? []), ...backgroundData.mentions],
                     computedAt: backgroundData.computedAt ?? previous?.computedAt ?? null,
                     complete: true,
@@ -512,11 +532,14 @@ export class SocialListeningComponent {
                 ignoreElements(),
                 // Drop the half-filled window, then force one refetch — in-window paging never re-emits
                 // feedRequest, so without the tick the window's later pages stay empty until a revisit.
+                // A stale window's failure must not consume the live filter set's one retry.
                 catchError(() => {
-                  this.evictWindowCache(windowIdx);
-                  if (!this.retriedWindows.has(windowIdx)) {
-                    this.retriedWindows.add(windowIdx);
-                    this.feedRetryTick.update((tick) => tick + 1);
+                  if (cacheKey === untracked(this.feedCacheKey)) {
+                    this.evictWindowCache(windowIdx);
+                    if (!this.retriedWindows.has(windowIdx)) {
+                      this.retriedWindows.add(windowIdx);
+                      this.feedRetryTick.update((tick) => tick + 1);
+                    }
                   }
                   return EMPTY;
                 }),
@@ -704,7 +727,10 @@ export class SocialListeningComponent {
   }
 
   /** Caches a fetched window and prunes entries farther than ±MENTION_MAX_CACHED_WINDOWS from it. */
-  private updateWindowCache(windowIdx: number, data: SocialListeningWindowCacheEntry): void {
+  private updateWindowCache(windowIdx: number, cacheKey: string, data: SocialListeningWindowCacheEntry): void {
+    // An in-flight response from before a scope/filter reset can land after the cache was cleared
+    // (pipeline cancellation lags one macrotask) — drop it instead of serving stale rows.
+    if (cacheKey !== untracked(this.feedCacheKey)) return;
     this.windowCache.update((cache) => {
       const updated = new Map(cache).set(windowIdx, data);
       for (const key of Array.from(updated.keys())) {

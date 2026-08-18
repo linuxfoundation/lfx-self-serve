@@ -29,6 +29,7 @@
           [platformOptions]="platformOptions()"
           [optionsLoading]="optionsLoading()"
           [exporting]="exporting()"
+          [exportDisabled]="analyticsPanelsLoading()"
           (filtersPrefetch)="prefetchFilterOptions()"
           (exportAnalytics)="onExportAnalytics()" />
 
@@ -102,7 +103,8 @@
             [platform]="selectedPlatform()"
             [filters]="currentFilters()"
             [exportNonce]="exportNonce()"
-            [(isExporting)]="exporting" />
+            [(isExporting)]="exporting"
+            [(panelsLoading)]="analyticsPanelsLoading" />
         }
       </div>
     </lfx-card>

@@ -13,6 +13,7 @@ import { ANALYTICS_TOP_PROJECTS_LIMIT, lfxColors } from '@lfx-one/shared/constan
 import { buildAnalyticsDelta, buildOverTimeChartData, buildTagsChartData, mapPlatformDistributionRows, mapSentimentRows } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
+import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
@@ -43,6 +44,7 @@ export class SocialListeningAnalyticsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly socialListeningService = inject(SocialListeningService);
+  private readonly messageService = inject(MessageService);
 
   // === Scope inputs (page-owned signals, propagated down) ===
   public readonly foundationSlug = input('');
@@ -55,6 +57,8 @@ export class SocialListeningAnalyticsComponent {
   // === Export (page-triggered via nonce; progress reported back via model) ===
   public readonly exportNonce = input(0);
   public readonly isExporting = model(false);
+  /** True while any panel is still fetching — the page disables the export trigger so the PNG can't capture skeletons. */
+  public readonly panelsLoading = model(false);
 
   private readonly analyticsContent = viewChild<ElementRef<HTMLElement>>('analyticsContent');
 
@@ -113,6 +117,11 @@ export class SocialListeningAnalyticsComponent {
   public readonly topProjectsLoading = computed(() => this.topProjectsState().loading);
   public readonly topProjectsError = computed(() => this.topProjectsState().error);
 
+  private readonly anyPanelLoading = computed(
+    () =>
+      this.overviewLoading() || this.overTimeLoading() || this.platformLoading() || this.tagsLoading() || this.sentimentLoading() || this.topProjectsLoading()
+  );
+
   // === Chart options — plain class properties, never computed() (rule 7.8) ===
   protected readonly overTimeOptions: ChartOptions<'line'> = {
     responsive: true,
@@ -159,6 +168,9 @@ export class SocialListeningAnalyticsComponent {
       if (!isPlatformBrowser(this.platformId)) return;
       untracked(() => void this.exportAnalytics());
     });
+
+    // Report panel loading to the page so the export trigger stays disabled while skeletons are visible.
+    effect(() => this.panelsLoading.set(this.anyPanelLoading()));
   }
 
   private async exportAnalytics(): Promise<void> {
@@ -170,7 +182,14 @@ export class SocialListeningAnalyticsComponent {
     // main thread with DOM traversal (PCC parity).
     await new Promise((resolve) => requestAnimationFrame(resolve));
     try {
-      await downloadCardAsImage(element, `social-listening-analytics-${this.period() || 'export'}`, { backgroundColor: lfxColors.white });
+      const exported = await downloadCardAsImage(element, `social-listening-analytics-${this.period() || 'export'}`, { backgroundColor: lfxColors.white });
+      if (!exported) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Export Failed',
+          detail: 'The analytics image could not be generated. Please try again.',
+        });
+      }
     } finally {
       // A tab switch destroys this component mid-export; writing the model then throws, and the
       // page clears its own `exporting` on teardown.

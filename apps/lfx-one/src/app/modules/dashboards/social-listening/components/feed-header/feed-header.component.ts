@@ -49,6 +49,8 @@ export class FeedHeaderComponent {
 
   // === Analytics export (LFXV2-3018) — button renders on the Analytics tab only ===
   public readonly exporting = input(false);
+  /** Disabled beyond the in-flight export (e.g. while analytics panels still load). */
+  public readonly exportDisabled = input(false);
   public readonly exportAnalytics = output<void>();
 
   // Neutral defaults — the model→form bridges below populate the real values at construction
