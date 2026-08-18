@@ -520,6 +520,41 @@ export class ImplementationTabComponent implements OnInit {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
 
+  protected removeMetaGeoTarget(index: number): void {
+    this.metaGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+  }
+
+  /**
+   * Add one Meta geo target, normalised the way campaign-service will normalise it anyway.
+   *
+   * Uppercased and trimmed to match the service's `validateGeoTargets`, which uppercases, trims,
+   * and de-dupes in first-seen order. De-duping here keeps the chip list honest: entering `us`
+   * when `US` is already a chip would otherwise render two chips for one target, since the
+   * service collapses them back into a single entry.
+   *
+   * Shape is enforced (two letters) but ELIGIBILITY is not, and the split is deliberate. The
+   * two-letter shape is fixed by ISO 3166-1 alpha-2 and cannot drift, so rejecting `1` or `x9`
+   * here costs nothing and turns a failed campaign into no-op keystrokes. Which COUNTRIES Meta
+   * accepts is a different question and belongs to the service, which additionally drops
+   * sanctioned and regulated markets — duplicating that list locally would only let it drift.
+   *
+   * A well-shaped but ineligible code (say `ZZ`, or a sanctioned one) therefore still reaches the
+   * service, which is the intended division. Note the service treats the two cases differently:
+   * it DROPS ineligible entries from a mixed list, but refuses the create outright when nothing
+   * usable survives rather than silently falling back to US.
+   */
+  protected addMetaGeoTarget(code: string): void {
+    const normalized = code.trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(normalized)) return;
+    this.metaGeoTargets.update((targets) => (targets.includes(normalized) ? targets : [...targets, normalized]));
+  }
+
+  protected onMetaGeoTargetAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMetaGeoTarget(input.value);
+    input.value = '';
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 

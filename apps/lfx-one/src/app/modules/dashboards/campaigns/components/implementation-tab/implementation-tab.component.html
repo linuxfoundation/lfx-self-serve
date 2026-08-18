@@ -384,18 +384,42 @@
           </div>
 
           <!-- Geo Targets -->
-          @if (metaGeoTargets().length > 0) {
-            <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
-              <div class="flex flex-wrap gap-2">
-                @for (geo of metaGeoTargets(); track geo) {
-                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    {{ geo }}
-                  </span>
-                }
-              </div>
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="meta-geo-add">Geo Targets (AI-recommended)</label>
+            <div class="flex flex-wrap items-center gap-2">
+              @for (geo of metaGeoTargets(); track geo; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo }}
+                  <button
+                    type="button"
+                    (click)="removeMetaGeoTarget(i)"
+                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + geo"
+                    [attr.data-testid]="'implementation-meta-geo-remove-' + geo">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              <!--
+                A free-text box rather than LinkedIn's dropdown, because the two platforms take
+                different data. LinkedIn geos are URNs drawn from a fixed resolve map, so a select
+                can enumerate them; Meta takes ISO-2 country codes, and the eligible set is decided
+                by campaign-service (which also drops sanctioned and regulated markets). A select
+                here would need a local country list that could only drift from that.
+              -->
+              <input
+                id="meta-geo-add"
+                type="text"
+                maxlength="2"
+                placeholder="+ ISO code"
+                (change)="onMetaGeoTargetAdd($event)"
+                class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                data-testid="implementation-meta-geo-add" />
+              @if (metaGeoTargets().length === 0) {
+                <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ campaignForm.controls.countryCode.value }}</span>
+              }
             </div>
-          }
+          </div>
 
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {

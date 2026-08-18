@@ -197,3 +197,201 @@ describe('ImplementationTabComponent submit gate', () => {
     expect(canSubmit()).toBe(true);
   });
 });
+
+/**
+ * The Meta geo chips (LFXV2-3227).
+ *
+ * These render in the same pill styling as LinkedIn's editable chips but used to carry no remove
+ * button and no way to add one — a control that LOOKS interactive and is not. Every test here
+ * drives the real DOM (a click on the rendered button, a `change` on the rendered input) rather
+ * than calling the handlers, because a handler that works while its binding is missing is exactly
+ * the defect being fixed.
+ */
+describe('ImplementationTabComponent Meta geo targets', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function metaGeoTargets(): string[] {
+    return (fixture.componentInstance as unknown as { metaGeoTargets(): string[] }).metaGeoTargets();
+  }
+
+  async function setMetaGeoTargets(values: string[]): Promise<void> {
+    (fixture.componentInstance as unknown as { metaGeoTargets: { set(v: string[]): void } }).metaGeoTargets.set(values);
+    await fixture.whenStable();
+  }
+
+  /** Meta's section only renders when the platform is selected. */
+  async function selectMeta(): Promise<void> {
+    (fixture.componentInstance as unknown as { selectedPlatforms: { set(v: string[]): void } }).selectedPlatforms.set(['meta-ads']);
+    await fixture.whenStable();
+  }
+
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  /**
+   * Read the geo add input, asserting it rendered first.
+   *
+   * The bare `query(...) as HTMLInputElement` this replaces turned a missing element into a
+   * silent `null.value = …` TypeError, which reads as an unrelated crash rather than "the DOM
+   * had not flushed". Failing on the expectation names the real cause.
+   */
+  function geoAddInput(): HTMLInputElement {
+    const input = query('implementation-meta-geo-add');
+    expect(input).not.toBeNull();
+    return input as HTMLInputElement;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await selectMeta();
+  });
+
+  it('removes a geo target when its chip remove button is clicked', async () => {
+    await setMetaGeoTargets(['US', 'JP', 'DE']);
+
+    const removeJp = query('implementation-meta-geo-remove-JP');
+    expect(removeJp).not.toBeNull();
+
+    removeJp!.click();
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US', 'DE']);
+  });
+
+  /** Every chip needs its own working button — a single wired chip would pass a one-chip test. */
+  it('renders a remove button for every chip', async () => {
+    await setMetaGeoTargets(['US', 'JP']);
+
+    expect(query('implementation-meta-geo-remove-US')).not.toBeNull();
+    expect(query('implementation-meta-geo-remove-JP')).not.toBeNull();
+  });
+
+  it('adds a geo target typed into the add input', async () => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = 'JP';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US', 'JP']);
+  });
+
+  /** Normalised to match campaign-service's `validateGeoTargets`, which uppercases and trims. */
+  it('uppercases and trims an entered code', async () => {
+    await setMetaGeoTargets([]);
+
+    const input = geoAddInput();
+    input.value = ' jp ';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['JP']);
+  });
+
+  /**
+   * The service de-dupes in first-seen order, so rendering `us` beside `US` would show a
+   * targeting set that never reaches Meta.
+   */
+  it('does not add a duplicate that differs only in case', async () => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = 'us';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US']);
+  });
+
+  /**
+   * Shape only — NOT eligibility. A malformed code cannot be a country, so rejecting it here
+   * turns what would have been a failed campaign create into a no-op keystroke. Which countries
+   * Meta accepts stays the service's call (it drops ineligible entries from a mixed list, and
+   * refuses the create when nothing usable survives).
+   */
+  it.each(['1', '!!', 'x9', 'U', 'USA'])('ignores a malformed code %s', async (bad) => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = bad;
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US']);
+  });
+
+  /** A well-shaped but Meta-ineligible code still reaches the service, which owns that call. */
+  it('accepts a well-shaped code the service may later reject', async () => {
+    await setMetaGeoTargets([]);
+
+    const input = geoAddInput();
+    input.value = 'ZZ';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['ZZ']);
+  });
+
+  it('ignores a blank entry', async () => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = '   ';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US']);
+  });
+
+  it('clears the add input after a successful add', async () => {
+    await setMetaGeoTargets([]);
+
+    const input = geoAddInput();
+    input.value = 'DE';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(input.value).toBe('');
+  });
+
+  /**
+   * The block used to be wrapped in `@if (metaGeoTargets().length > 0)`, so a brief recommending
+   * no geos hid the whole control — the user could neither see that Meta would fall back to the
+   * country code nor change it. Rendering unconditionally is what makes the fallback visible.
+   */
+  it('renders the add control even when there are no geo targets', async () => {
+    await setMetaGeoTargets([]);
+
+    expect(query('implementation-meta-geo-add')).not.toBeNull();
+  });
+
+  it('can add a geo target back after removing the last one', async () => {
+    await setMetaGeoTargets(['US']);
+
+    query('implementation-meta-geo-remove-US')!.click();
+    await fixture.whenStable();
+    expect(metaGeoTargets()).toEqual([]);
+
+    const input = geoAddInput();
+    input.value = 'FR';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['FR']);
+  });
+});
