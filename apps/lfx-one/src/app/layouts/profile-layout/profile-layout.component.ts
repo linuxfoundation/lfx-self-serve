@@ -81,7 +81,7 @@ export class ProfileLayoutComponent {
   // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
   private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
-  // Tab configuration. The read-only "My CLAs" tab is appended (before Transactions/Settings)
+  // Tab configuration. The read-only "CLAs" tab is appended (before Transactions/Settings)
   // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
   private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
   public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
