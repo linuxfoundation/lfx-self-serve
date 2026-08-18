@@ -10,23 +10,24 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the read-only-impersonation gate on the Sign CLA hand-off (#1251).
+ * Router-level coverage for the read-only-impersonation gate on the signing-identity write (#1252).
  *
- * The middleware has its own behaviour; what these tests protect is the *registration*. Signing
- * is a binding legal act with no way to attribute it back to an impersonator, so the hand-off is
- * exactly the class of write `blockDuringImpersonation` exists for. A unit test of the controller
- * would keep passing if the middleware were dropped from the route — which is the regression that
- * matters, because the failure mode is a signature recorded against the wrong person.
+ * The middleware has its own behaviour; what these tests protect is the *registration*. A unit
+ * test of the controller would keep passing if the middleware were dropped from the route — which
+ * is the regression that matters, because the failure mode is a GitHub account recorded onto the
+ * impersonated person's EasyCLA record, attributed to them rather than to the administrator who
+ * caused it, with no in-payload trace of who did.
  *
- * The read routes are asserted alongside it: impersonated *viewing* of CLAs must keep working,
- * so a blanket `router.use` would be a bug, not a safer default.
+ * The read routes are asserted alongside it: impersonated *viewing* of CLAs and of the linked
+ * accounts must keep working, so a blanket `router.use` would be a bug, not a safer default.
  */
 
-const { getMyClas, getPdfUrl, getSignHandoff, getClaGroupOptions } = vi.hoisted(() => ({
+const { getMyClas, getPdfUrl, getClaGroupOptions, getGithubAccounts, bindSigningIdentity } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   getPdfUrl: vi.fn(),
-  getSignHandoff: vi.fn(),
   getClaGroupOptions: vi.fn(),
+  getGithubAccounts: vi.fn(),
+  bindSigningIdentity: vi.fn(),
 }));
 const { isImpersonating } = vi.hoisted(() => ({ isImpersonating: vi.fn<() => boolean>(() => false) }));
 
@@ -34,8 +35,9 @@ vi.mock('../controllers/clas.controller', () => ({
   ClasController: class {
     public getMyClas = getMyClas;
     public getPdfUrl = getPdfUrl;
-    public getSignHandoff = getSignHandoff;
     public getClaGroupOptions = getClaGroupOptions;
+    public getGithubAccounts = getGithubAccounts;
+    public bindSigningIdentity = bindSigningIdentity;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
@@ -85,41 +87,52 @@ beforeEach(() => {
   isImpersonating.mockReturnValue(false);
   getMyClas.mockImplementation(ok);
   getPdfUrl.mockImplementation(ok);
-  getSignHandoff.mockImplementation(ok);
   getClaGroupOptions.mockImplementation(ok);
+  getGithubAccounts.mockImplementation(ok);
+  bindSigningIdentity.mockImplementation(ok);
 });
 
-describe('clas router — Sign CLA hand-off during impersonation', () => {
-  it('refuses the hand-off while impersonating', async () => {
+describe('clas router — signing-identity write during impersonation', () => {
+  /** POST helper — the guarded route is a write, so it cannot be reached with a bare fetch. */
+  function bind(): Promise<Response> {
+    return fetch(`${baseUrl}/api/me/clas/signing-identity`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ githubId: '12345' }),
+    });
+  }
+
+  it('refuses to record an association while impersonating', async () => {
     isImpersonating.mockReturnValue(true);
 
-    const res = await fetch(`${baseUrl}/api/me/clas/sign-handoff`);
+    const res = await bind();
 
     expect(res.status).toBe(403);
     // Asserted together with the status: a downstream failure could also produce 403, so the
     // status alone would not prove the gate produced it.
-    expect(getSignHandoff).not.toHaveBeenCalled();
+    expect(bindSigningIdentity).not.toHaveBeenCalled();
   });
 
   it('reports the read-only impersonation code, so the UI can explain it', async () => {
     isImpersonating.mockReturnValue(true);
 
-    const res = await fetch(`${baseUrl}/api/me/clas/sign-handoff`);
+    const res = await bind();
 
     expect((await res.json()).code).toBe('IMPERSONATION_READ_ONLY');
   });
 
-  it('allows the hand-off in a normal session', async () => {
-    const res = await fetch(`${baseUrl}/api/me/clas/sign-handoff`);
+  it('allows the write in a normal session', async () => {
+    const res = await bind();
 
     expect(res.status).toBe(200);
-    expect(getSignHandoff).toHaveBeenCalled();
+    expect(bindSigningIdentity).toHaveBeenCalled();
   });
 
   it.each([
     ['CLAs list', '/api/me/clas'],
     ['PDF URL', '/api/me/clas/sig-1/pdf-url'],
     ['CLA group options', '/api/me/clas/sign-options'],
+    ['linked GitHub accounts', '/api/me/clas/github-accounts'],
   ])('keeps %s readable while impersonating', async (_label, path) => {
     isImpersonating.mockReturnValue(true);
 

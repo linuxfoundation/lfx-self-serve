@@ -4,8 +4,17 @@
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
-import type { ClaGroupOption, ClaStatus, MyClaAgreement, MyClasState, TagSeverity } from '@lfx-one/shared/interfaces';
+import { Router, RouterLink } from '@angular/router';
+import type {
+  ClaGroupOption,
+  ClaStatus,
+  GithubAccountOption,
+  MyClaAgreement,
+  MyClasState,
+  SigningIdentityRefusal,
+  SigningIdentityResponse,
+  TagSeverity,
+} from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -23,6 +32,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
+import { GithubAccountSelectComponent } from './github-account-select.component';
 
 /** Precomputed status cell for one row. */
 interface ClaRowStatus {
@@ -87,6 +97,7 @@ export class ProfileClasComponent {
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
+  private readonly router = inject(Router);
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
@@ -171,6 +182,12 @@ export class ProfileClasComponent {
    * dialog rule and the sibling profile tabs.
    */
   protected openSignDialog(): void {
+    // Guarded from the moment the picker opens, not from when a group is chosen. `starting` is
+    // only set once the hand-off begins, which leaves the button live for as long as the picker
+    // is open — long enough to open a second one and bind twice.
+    if (this.starting()) return;
+    this.starting.set(true);
+
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
       header: 'Sign a CLA',
       width: '32rem',
@@ -179,8 +196,12 @@ export class ProfileClasComponent {
       dismissableMask: true,
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((option: ClaGroupOption | null | undefined) => {
-      if (option) this.handOffToConsole(option);
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((option: ClaGroupOption | null | undefined) => {
+      if (!option) {
+        this.starting.set(false);
+        return;
+      }
+      this.handOffToConsole(option);
     });
   }
 
@@ -212,30 +233,30 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Resolves the Console URL for the chosen project and leaves the page.
+   * Settles which GitHub account the signature will be recorded against, then leaves for the
+   * Console (#1252).
    *
-   * A full navigation, not a new tab: the Console returns the contributor here afterwards, which
-   * only reads as one continuous flow if they never left this tab.
+   * The account step comes before the hand-off rather than after because the association is
+   * what the Console's signature is recorded against; deciding it afterwards would mean the
+   * contributor had already signed by the time anyone knew as whom.
    */
   private handOffToConsole(option: ClaGroupOption): void {
-    if (this.starting()) return;
-
-    this.starting.set(true);
-
+    // Already flagged as in flight by `openSignDialog`, which owns the guard because the window
+    // worth guarding opens with the picker rather than with this call.
     this.myClasService
-      .getSignUrl(option.claGroupId)
+      .getGithubAccounts()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (url) => {
-          this.starting.set(false);
-          this.document.location.href = url;
-        },
+        next: ({ accounts }) => this.chooseAccountThenSign(option, accounts),
         error: () => {
           this.starting.set(false);
+          // Explicitly not treated as "no accounts linked". The two are indistinguishable in
+          // the payload but not in consequence: sending someone who already linked an account
+          // into account-linking asks them to fix something that is not broken.
           this.messageService.add({
             severity: 'error',
             summary: 'Could not start signing',
-            detail: 'We could not open the CLA signing page. Please try again.',
+            detail: 'We could not check your linked GitHub accounts. Please try again.',
           });
         },
       });
@@ -255,6 +276,155 @@ export class ProfileClasComponent {
       case 'superseded':
         return 'fa-light fa-clock-rotate-left';
     }
+  }
+
+  /**
+   * Routes on how many accounts are linked.
+   *
+   * One account skips the dialog but still binds — the screen is what is unnecessary when
+   * there is nothing to choose between, not the confirmation. Dropping the binding too would
+   * leave exactly the contributors this feature was built for on the old unpredictable path.
+   */
+  private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
+    if (accounts.length === 0) {
+      this.starting.set(false);
+      this.sendToAccountLinking();
+      return;
+    }
+
+    if (accounts.length === 1) {
+      this.bindThenHandOff(option, accounts[0]);
+      return;
+    }
+
+    const dialogRef = this.dialogService.open(GithubAccountSelectComponent, {
+      header: 'Choose a GitHub account',
+      width: '32rem',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { accounts },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((githubId: string | null | undefined) => {
+      if (!githubId) {
+        this.starting.set(false);
+        return;
+      }
+
+      // Resolved from the list the server served rather than taken from the dialog, so the
+      // account submitted is always one of the accounts linked to this session. The upstream
+      // records what it is sent, which is what makes where this value came from matter.
+      const chosen = accounts.find((account) => account.githubId === githubId);
+      if (!chosen) {
+        this.starting.set(false);
+        this.reportRecordedMismatch();
+        return;
+      }
+
+      this.bindThenHandOff(option, chosen);
+    });
+  }
+
+  /**
+   * Records the choice, then navigates with the identifier that came back from it.
+   *
+   * A full navigation, not a new tab: the Console returns the contributor here afterwards, which
+   * only reads as one continuous flow if they never left this tab.
+   */
+  private bindThenHandOff(option: ClaGroupOption, account: GithubAccountOption): void {
+    this.starting.set(true);
+
+    this.myClasService
+      .bindSigningIdentity(account.githubId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (identity: SigningIdentityResponse) => {
+          this.starting.set(false);
+
+          // The account that came back must be the account that went in. Upstream confirms
+          // the record holds the account it was sent, which cannot detect this layer having
+          // sent the wrong one of the contributor's accounts in the first place. This
+          // comparison is the only one that answers "did we sign as the account they
+          // picked", and it is the reason the response carries the account at all.
+          if (identity.githubId !== account.githubId) {
+            this.reportRecordedMismatch();
+            return;
+          }
+
+          this.document.location.href = this.myClasService.buildSignUrlFor(option.claGroupId, identity);
+        },
+        error: (error: unknown) => {
+          this.starting.set(false);
+          this.reportBindingRefusal(error);
+        },
+      });
+  }
+
+  /**
+   * Turns a refusal into the message that fits it.
+   *
+   * Each reason calls for a different response from the contributor, so they are not collapsed
+   * into one failure notice. In particular no refusal is ever recovered from by submitting a
+   * different account — that would record the signature against an account they did not
+   * choose, which is the failure this feature exists to stop.
+   */
+  private reportBindingRefusal(error: unknown): void {
+    const reason = (error as { error?: { upstreamCode?: SigningIdentityRefusal } } | undefined)?.error?.upstreamCode;
+
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: this.refusalDetail(reason),
+    });
+  }
+
+  /**
+   * Stops the hand-off when the recorded account is not the chosen one.
+   *
+   * Deliberately the same message the service's own mismatch refusal produces: from the
+   * contributor's side it is the same event, and the difference — which layer noticed —
+   * belongs in the logs rather than on screen.
+   */
+  private reportRecordedMismatch(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Could not start signing',
+      detail: this.refusalDetail('recorded_mismatch'),
+    });
+  }
+
+  private refusalDetail(reason: SigningIdentityRefusal | undefined): string {
+    switch (reason) {
+      case 'identity_unavailable':
+      case 'identity_mismatch':
+        return 'We could not confirm who is signed in. Please sign in again and retry.';
+      case 'record_conflict':
+      case 'duplicate_github_id':
+      case 'record_unclaimed':
+        // Distinct upstream, deliberately one message here. All three mean an existing CLA
+        // record stands in the way and only a human can say whose it is; the contributor can
+        // do nothing differently, so naming the difference would only ask them to.
+        return 'That GitHub account is already associated with a different CLA record. Please contact support.';
+      case 'lf_record_already_bound':
+        // Kept apart from the three above even though it also ends in support, because it points
+        // the opposite way: there the account belongs to another record, here the contributor's
+        // own record already holds a different account. Only one is recordable at a time.
+        return 'Your CLA record already has a different GitHub account. Signing with a second account is not supported yet — please contact support.';
+      case 'recorded_mismatch':
+        return "We couldn't confirm the account was recorded correctly, so we stopped before signing. Please try again.";
+      default:
+        return 'We could not open the CLA signing page. Please try again.';
+    }
+  }
+
+  private sendToAccountLinking(): void {
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Link a GitHub account',
+      detail: 'Connect the GitHub account you contribute with, then start signing again.',
+    });
+    void this.router.navigate(['/profile/identities']);
   }
 
   /**

@@ -8,12 +8,13 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, resolveIdentity, getPdfUrl, getSignHandoff, searchClaGroups } = vi.hoisted(() => ({
+const { getMyClas, resolveIdentity, getPdfUrl, searchClaGroups, listGithubAccounts, bindSigningIdentity } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   resolveIdentity: vi.fn(),
   getPdfUrl: vi.fn(),
-  getSignHandoff: vi.fn(),
   searchClaGroups: vi.fn(),
+  listGithubAccounts: vi.fn(),
+  bindSigningIdentity: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -22,8 +23,9 @@ vi.mock('../services/cla.service', () => ({
     public getMyClas = getMyClas;
     public resolveIdentity = resolveIdentity;
     public getPdfUrl = getPdfUrl;
-    public getSignHandoff = getSignHandoff;
     public searchClaGroups = searchClaGroups;
+    public listGithubAccounts = listGithubAccounts;
+    public bindSigningIdentity = bindSigningIdentity;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -128,58 +130,6 @@ describe('ClasController.getPdfUrl', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sign CLA hand-off (#1251)
-// ---------------------------------------------------------------------------
-
-describe('ClasController.getSignHandoff', () => {
-  const handoff = { claUserId: 'u-1', redirectUrl: 'https://app.dev.lfx.dev/profile/clas' };
-
-  it('returns the server-resolved identifier and return URL', async () => {
-    getSignHandoff.mockResolvedValue(handoff);
-    const res = buildRes();
-
-    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, res, vi.fn());
-
-    expect(res.json).toHaveBeenCalledWith(handoff);
-  });
-
-  it('ignores a client-supplied identifier — the session is the only source (FR-003)', async () => {
-    getSignHandoff.mockResolvedValue(handoff);
-    const res = buildRes();
-    // An attempt to have the hand-off carry someone else's EasyCLA record.
-    const req = { params: {}, query: { claUserId: 'someone-else' }, body: { claUserId: 'someone-else' } } as any;
-
-    await new ClasController().getSignHandoff(req, res, vi.fn());
-
-    // The service receives only (req) — no identifier is threaded through from input.
-    expect(getSignHandoff).toHaveBeenCalledWith(req);
-    expect(res.json).toHaveBeenCalledWith(handoff);
-    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ claUserId: 'someone-else' }));
-  });
-
-  it('returns 401 (via next) when unauthenticated', async () => {
-    getUsernameFromAuth.mockResolvedValue(null);
-    const next = vi.fn();
-
-    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, buildRes(), next);
-
-    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
-    expect(getSignHandoff).not.toHaveBeenCalled();
-  });
-
-  it('forwards a failed resolution instead of returning a partial payload', async () => {
-    getSignHandoff.mockRejectedValue(new MicroserviceError('no user id', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
-    const res = buildRes();
-    const next = vi.fn();
-
-    await new ClasController().getSignHandoff({ params: {}, query: {}, body: {} } as any, res, next);
-
-    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
-    expect(res.json).not.toHaveBeenCalled();
-  });
-});
-
 describe('ClasController.getClaGroupOptions', () => {
   const envelope = {
     searchTerm: 'cncf',
@@ -269,5 +219,124 @@ describe('ClasController.getClaGroupOptions', () => {
     await new ClasController().getClaGroupOptions({ params: {}, query: {} } as any, buildRes(), next);
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GitHub account selection and binding (#1252)
+// ---------------------------------------------------------------------------
+
+describe('ClasController.getGithubAccounts', () => {
+  const options = { accounts: [{ githubId: '12345', githubUsername: 'octocat' }] };
+
+  it('returns the linked accounts for the picker', async () => {
+    listGithubAccounts.mockResolvedValue(options);
+    const res = buildRes();
+
+    await new ClasController().getGithubAccounts({ params: {}, query: {} } as any, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(options);
+  });
+
+  it('forwards a lookup failure instead of answering with zero accounts', async () => {
+    listGithubAccounts.mockRejectedValue(new MicroserviceError('identity lookup failed', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new ClasController().getGithubAccounts({ params: {}, query: {} } as any, res, next);
+
+    // An empty list routes the contributor into account-linking. A failure reported that way
+    // would send someone who already linked an account to go fix nothing.
+    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 (via next) when unauthenticated', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const next = vi.fn();
+
+    await new ClasController().getGithubAccounts({ params: {}, query: {} } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(listGithubAccounts).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClasController.bindSigningIdentity', () => {
+  const bound = { claUserId: 'u-1', githubId: '12345', githubUsername: 'octocat', redirectUrl: 'https://app.dev.lfx.dev/profile/clas' };
+
+  it('returns the recorded association and the return address', async () => {
+    bindSigningIdentity.mockResolvedValue(bound);
+    const res = buildRes();
+
+    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(bound);
+  });
+
+  it('takes the record identifier from the upstream answer, never from the request', async () => {
+    bindSigningIdentity.mockResolvedValue(bound);
+    const res = buildRes();
+    // An attempt to have the association land on someone else's EasyCLA record.
+    const req = { params: {}, query: { claUserId: 'someone-else' }, body: { githubId: '12345', claUserId: 'someone-else' } } as any;
+
+    await new ClasController().bindSigningIdentity(req, res, vi.fn());
+
+    // Only the chosen account number crosses the boundary. The record identifier is resolved
+    // upstream from the authenticated caller and is never client input.
+    expect(bindSigningIdentity).toHaveBeenCalledWith(req, '12345');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ claUserId: 'u-1' }));
+  });
+
+  it('ignores a handle sent alongside the account number', async () => {
+    bindSigningIdentity.mockResolvedValue(bound);
+
+    // The service reads the handle from the session's own accounts. Accepting one here would
+    // let a caller pair an account number they own with a handle they do not.
+    const withHandle = { params: {}, query: {}, body: { githubId: '12345', githubUsername: 'someone-else' } } as any;
+    await new ClasController().bindSigningIdentity(withHandle, buildRes(), vi.fn());
+
+    expect(bindSigningIdentity).toHaveBeenCalledWith(withHandle, '12345');
+  });
+
+  it.each([undefined, '', '   ', 'abc', '12a', '-1', '0', '1.5'])('rejects %p as an account number', async (githubId) => {
+    const res = buildRes();
+
+    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(bindSigningIdentity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'identity_unavailable',
+    'identity_mismatch',
+    'record_conflict',
+    'record_unclaimed',
+    'duplicate_github_id',
+    'recorded_mismatch',
+  ] as const)('forwards the %s refusal rather than falling back', async (reason) => {
+    bindSigningIdentity.mockRejectedValue(
+      new MicroserviceError(`refused: ${reason}`, 403, 'UPSTREAM_ERROR', { service: 'cla_service', errorBody: { error: reason } })
+    );
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, res, next);
+
+    // No alternative account is chosen on the contributor's behalf. Silently signing as a
+    // different account than the one picked is exactly the outcome this feature removes.
+    expect(next.mock.calls[0][0]).toMatchObject({ errorBody: { error: reason } });
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 (via next) when unauthenticated', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const next = vi.fn();
+
+    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(bindSigningIdentity).not.toHaveBeenCalled();
   });
 });

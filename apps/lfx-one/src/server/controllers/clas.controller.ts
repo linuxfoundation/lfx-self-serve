@@ -101,23 +101,61 @@ export class ClasController {
     }
   }
 
-  // GET /api/me/clas/sign-handoff
-  // Server-owned halves of the Contributor Console URL. Blocked during impersonation at the
-  // route (signing is a write), so this handler has no impersonation branch of its own.
-  public async getSignHandoff(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_cla_sign_handoff');
+  // GET /api/me/clas/github-accounts
+  // The accounts the contributor has already linked, for the selection step (#1252).
+  // A lookup failure surfaces as a failure rather than as an empty list: routing someone
+  // who has a linked account into account-linking is worse than telling them the choice is
+  // unavailable right now.
+  public async getGithubAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_cla_github_accounts');
 
     try {
       if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_cla_sign_handoff' });
+        throw new AuthenticationError('User authentication required', { operation: 'get_cla_github_accounts' });
       }
 
-      // Nothing is read from the query or body: whose CLA is being signed is a property of the
-      // session, never of request input (FR-003).
-      const handoff = await this.claService.getSignHandoff(req);
+      const options = await this.claService.listGithubAccounts(req);
 
-      logger.success(req, 'get_cla_sign_handoff', startTime);
-      res.json(handoff);
+      logger.success(req, 'get_cla_github_accounts', startTime, { account_count: options.accounts.length });
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/me/clas/signing-identity
+  // Forwards the contributor's choice and returns the record identifier the hand-off uses.
+  //
+  // Deliberately performs no resolution, no check of the selection against the list this
+  // controller served, and no fallback on refusal. Those judgements belong to the layer
+  // holding the identity provider's attestation; duplicating them here would mean deciding
+  // on weaker evidence, and the only thing a pre-check could achieve is hiding a refusal
+  // that has to stay visible.
+  //
+  // Blocked during impersonation at the route, so there is no impersonation branch here.
+  public async bindSigningIdentity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'bind_cla_signing_identity');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'bind_cla_signing_identity' });
+      }
+
+      // The account number is the only thing taken from the body. The handle that accompanies
+      // it is read from the session's own accounts by the service, so there is nothing here for
+      // a caller to influence beyond which of their own accounts they name.
+      const body = req.body as { githubId?: unknown } | undefined;
+
+      const githubId = String(body?.githubId ?? '').trim();
+      if (!/^[1-9][0-9]*$/.test(githubId)) {
+        res.status(400).json({ message: 'A GitHub account number is required' });
+        return;
+      }
+
+      const result = await this.claService.bindSigningIdentity(req, githubId);
+
+      logger.success(req, 'bind_cla_signing_identity', startTime);
+      res.json(result);
     } catch (error) {
       next(error);
     }

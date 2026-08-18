@@ -3,9 +3,9 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ClaGroupSearchResponse, ClaSignHandoff, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import { ClaGroupSearchResponse, GithubAccountOptions, MyClasResponse, PdfUrlResponse, SigningIdentityRequest, SigningIdentityResponse } from '@lfx-one/shared/interfaces';
 import { buildConsoleHandoffUrl } from '@lfx-one/shared/utils';
-import { map, Observable, take } from 'rxjs';
+import { Observable, take } from 'rxjs';
 
 import { environment } from '@environments/environment';
 
@@ -40,17 +40,38 @@ export class MyClasService {
   }
 
   /**
-   * Resolves the Contributor Console URL for signing the given CLA Group.
+   * The GitHub accounts the contributor has already linked (#1252).
    *
-   * The URL is composed across the boundary: the server supplies the contributor's EasyCLA
-   * identifier and the absolute return address (neither may be client-influenced), and this
-   * layer adds the Console base, which lives in the Angular environment the server never
-   * imports. Composing it here is what keeps the Console base from becoming a fourth
-   * server-side environment variable.
+   * A failure here is a failure, never an empty list: the caller routes an empty list into
+   * account-linking, and doing that to someone who does have a linked account sends them to
+   * fix something that is not broken.
    */
-  public getSignUrl(claGroupId: string): Observable<string> {
-    return this.http
-      .get<ClaSignHandoff>('/api/me/clas/sign-handoff')
-      .pipe(map((handoff) => buildConsoleHandoffUrl(environment.urls.contributorConsole, claGroupId, handoff.claUserId, handoff.redirectUrl)));
+  public getGithubAccounts(): Observable<GithubAccountOptions> {
+    return this.http.get<GithubAccountOptions>('/api/me/clas/github-accounts').pipe(take(1));
+  }
+
+  /**
+   * Records the contributor's chosen GitHub account, returning the EasyCLA record identifier
+   * the hand-off uses.
+   *
+   * Only the account number is sent. The server matches it against the accounts linked to this
+   * session and reads the handle from the match, so an account that did not come from
+   * `getGithubAccounts` above is refused there rather than recorded.
+   */
+  public bindSigningIdentity(githubId: string): Observable<SigningIdentityResponse> {
+    const body: SigningIdentityRequest = { githubId };
+    return this.http.post<SigningIdentityResponse>('/api/me/clas/signing-identity', body).pipe(take(1));
+  }
+
+  /**
+   * Resolves the Console URL from an association the binding has already confirmed.
+   *
+   * Takes both server-supplied halves from the binding response rather than re-fetching
+   * them, which is what makes it impossible to hand off with an identifier the binding did
+   * not settle on — including the case the older path could not serve at all, a first-time
+   * signer with no record to find yet.
+   */
+  public buildSignUrlFor(claGroupId: string, identity: SigningIdentityResponse): string {
+    return buildConsoleHandoffUrl(environment.urls.contributorConsole, claGroupId, identity.claUserId, identity.redirectUrl);
   }
 }

@@ -14,11 +14,14 @@ import {
   Auth0Identity,
   ClaGroupOption,
   ClaGroupSearchResponse,
-  ClaSignHandoff,
   EmailManagementData,
+  GithubAccountOption,
+  GithubAccountOptions,
   MyClaAgreement,
   MyClasResponse,
   PdfUrlResponse,
+  SigningIdentityRefusal,
+  SigningIdentityResponse,
   type ClaGroupMatchType,
   type ClaGroupOrgSource,
   type ClaStatus,
@@ -32,7 +35,7 @@ import {
   EasyClaSearchList,
   EasyClaSearchOrg,
   EasyClaSearchResult,
-  EasyClaUserFromTokenV2,
+  EasyClaSigningIdentity,
   ResolvedClaIdentity,
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
@@ -292,6 +295,57 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
   };
 }
 
+/**
+ * The refusal reasons the CLA service can answer a binding request with. A closed set, in
+ * the order they are tested — no reason is a substring of another, so a match is exact
+ * even though the search is not anchored.
+ */
+const SIGNING_IDENTITY_REFUSALS: readonly SigningIdentityRefusal[] = [
+  'identity_unavailable',
+  'identity_mismatch',
+  'record_conflict',
+  'record_unclaimed',
+  'duplicate_github_id',
+  'lf_record_already_bound',
+  'recorded_mismatch',
+];
+
+/**
+ * Finds the refusal reason in an upstream error body.
+ *
+ * The reason has to be recovered from the message text because the CLA service's shared
+ * error shape carries only `code`, `message` and a request id, and adding a field to it
+ * would change every endpoint that uses it. Searching a closed set of known reasons keeps
+ * that safe: an unrecognised body yields null and the error passes through untouched,
+ * rather than being guessed into the nearest reason.
+ */
+export function signingIdentityRefusalFrom(errorBody: unknown): SigningIdentityRefusal | null {
+  if (!errorBody) return null;
+  const text = typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody);
+  return SIGNING_IDENTITY_REFUSALS.find((reason) => text.includes(reason)) ?? null;
+}
+
+/**
+ * Re-labels an upstream failure with its refusal reason, so the reason survives to the
+ * browser rather than being flattened into a single "conflict".
+ *
+ * Carried on `errorBody.error`, which the error response already forwards as
+ * `upstreamCode` — the existing route for exactly this, since `code` is derived from the
+ * HTTP status and collapses every 409 together.
+ */
+function withSigningIdentityRefusal(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  const reason = signingIdentityRefusalFrom(error.errorBody);
+  if (!reason) return error;
+
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: 'cla_bind_signing_identity',
+    service: SERVICE,
+    errorBody: { error: reason },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -469,114 +523,121 @@ export class ClaService {
   }
 
   /**
-   * Resolves the contributor's EasyCLA user-record UUID for the Sign CLA hand-off (#1251), from
-   * the `userIds` the identity search already returns.
+   * Lists the GitHub accounts the contributor has already linked, so the picker can render
+   * and so the flow can tell whether a picker is needed at all (#1252).
    *
-   * TEMPORARY BRIDGE. The intended source is a resolve-or-create "current user" endpoint, which
-   * `GET /v4/user-from-token` would be — except it is not reachable authenticated. The CLA
-   * backend's security scheme is an API key on the `X-ACL` header, injected by the platform
-   * gateway on authenticated routes; `/v4/user-from-token` is configured as an unauthenticated
-   * passthrough, so nothing injects it and go-swagger rejects the call before the authenticator
-   * runs. The BFF cannot supply `X-ACL` itself — the backend trusts that header precisely because
-   * only the gateway can set it. `/v4/my-clas` is an authenticated route, so its `userIds` are
-   * the same records, obtained through a door that is actually open.
+   * This list carries no authority. The CLA service re-derives the attested set from the
+   * caller's own token and refuses anything outside it, so a stale or over-broad list here
+   * can only cause a refusal downstream, never an incorrect association. That independence
+   * is what makes it safe to read from the same convenient source the My CLAs page uses.
    *
-   * Two gaps this bridge cannot close, both of which the proper endpoint fixes:
-   *
-   * - It is a pure read. A contributor with no EasyCLA record yet — a first-time signer, the very
-   *   person this feature exists for — resolves to nothing and is refused below.
-   * - It can match several records, and nothing here can tell which one a signature ought to be
-   *   attributed to. We take the first and log the ambiguity rather than fail, because refusing a
-   *   returning contributor helps nobody; the proper endpoint returns one canonical record.
-   *
-   * No impersonation branch, on purpose: the hand-off route is blocked outright while
-   * impersonating, because a signature must never be attributed to the wrong person.
+   * One behaviour differs from that read path on purpose: `resolveIdentity` degrades when
+   * the identity lookup fails, continuing without GitHub keys, which is right for a list
+   * where a partial answer beats an error. It is wrong here, because an empty list is
+   * indistinguishable from "no accounts linked" and would send a contributor who does have
+   * a linked account into an account-linking flow they do not need. A failure surfaces.
    */
-  public async resolveContributorId(req: Request): Promise<string> {
-    const startTime = logger.startOperation(req, 'cla_resolve_contributor_id');
+  public async listGithubAccounts(req: Request): Promise<GithubAccountOptions> {
+    const startTime = logger.startOperation(req, 'cla_list_github_accounts');
 
-    const resolvedOrCreated = await this.tryResolveOrCreateContributor(req);
-    if (resolvedOrCreated) {
-      logger.success(req, 'cla_resolve_contributor_id', startTime);
-      return resolvedOrCreated;
+    const auth0Sub = getEffectiveSub(req);
+    if (!auth0Sub) {
+      throw new MicroserviceError('No identity subject on the session', 401, 'CLA_IDENTITY_UNAVAILABLE', { service: SERVICE });
     }
 
-    const identity = await this.resolveIdentity(req);
-    const list = await this.fetchMyClas(req, identity);
-    const userIds = (list.userIds ?? []).map((id) => id.trim()).filter(Boolean);
+    // Deliberately not wrapped: a rejection here must reach the caller as a failure.
+    const identities = await this.auth0Service.getUserIdentities(req, auth0Sub);
 
-    if (userIds.length === 0) {
-      // Handing off without a real id lands the contributor on the Console's "invalid user ID"
-      // screen, which reads as a broken product rather than a failed lookup — fail here instead.
-      throw new MicroserviceError('No EasyCLA user record matches this session', 502, 'CLA_USER_UNRESOLVED', { service: SERVICE });
-    }
+    const accounts = identities
+      .filter((identity) => identity.provider === 'github')
+      .map((identity) => ({
+        githubId: normalizeGithubId(identity.user_id),
+        githubUsername: identity.profileData?.nickname?.trim() ?? '',
+      }))
+      // An identity whose number cannot be read is dropped rather than refused: it can
+      // never be selected, since the backend would not attest an unreadable account either.
+      .filter((account): account is GithubAccountOption => account.githubId !== null);
 
-    if (userIds.length > 1) {
-      logger.warning(req, 'cla_resolve_contributor_id', 'identity matches several EasyCLA user records; handing off the first', {
-        matched_count: userIds.length,
-      });
-    }
-
-    logger.success(req, 'cla_resolve_contributor_id', startTime);
-    return userIds[0] as string;
+    logger.success(req, 'cla_list_github_accounts', startTime, { account_count: accounts.length });
+    return { accounts };
   }
 
   /**
-   * Builds the two halves of the Console hand-off URL that only the server can produce: the
-   * session-resolved contributor id and the absolute return address.
+   * Submits the contributor's chosen GitHub account and returns the EasyCLA record
+   * identifier the hand-off consumes (#1252).
    *
-   * The client composes the final URL, because the Console base lives in the Angular environment
-   * (`urls.contributorConsole`) which the server layer does not import. Keeping these two here
-   * is what makes the identifier un-spoofable (FR-003) and the return address origin-correct.
+   * This layer is where the account is established as the contributor's, and the check that
+   * establishes it is here rather than in the browser. The CLA service records what it is
+   * sent without re-deriving ownership, so the submitted account is matched against the
+   * accounts the identity provider reports for this session before it is relayed. The picker
+   * makes the same match, but a caller can reach this endpoint without going through it.
+   *
+   * It still decides nothing about the outcome: it does not resolve a record and does not
+   * fall back when the upstream refuses, because what the contributor should do next differs
+   * per refusal and a fallback here could only mask one.
+   *
+   * No `bearerToken` override, unlike the read paths above: the default gateway token is
+   * the contributor's own token exchanged for the gateway audience, which is what makes the
+   * caller identifiable upstream. This route is blocked during impersonation instead.
    */
-  public async getSignHandoff(req: Request): Promise<ClaSignHandoff> {
-    // Derived first: if the origin is unusable there is no point minting a user record upstream.
+  public async bindSigningIdentity(req: Request, githubId: string): Promise<SigningIdentityResponse> {
+    const startTime = logger.startOperation(req, 'cla_bind_signing_identity');
+
+    // Derived before the write, not after. If the origin is unusable the hand-off cannot
+    // proceed anyway, and this endpoint records an identity attribute on a real record —
+    // so failing afterwards would leave that write behind with nothing to show for it.
     const redirectUrl = claReturnUrl(req);
-    const claUserId = await this.resolveContributorId(req);
 
-    return { claUserId, redirectUrl };
-  }
-
-  /**
-   * PROBE — `GET /v2/user-from-token`, the resolve-or-create the bridge below cannot do.
-   *
-   * Unlike its v4 namesake this route is *not* exempted from gateway auth, so it arrives with the
-   * gateway's injected headers, and it calls `get_or_create_user` — meaning it mints a record for a
-   * first-time signer instead of resolving to nothing.
-   *
-   * Whether it accepts *our* token is the open question. Its validator only requires a token
-   * signed by the configured Auth0 domain that carries a username claim; it does not check the
-   * audience, so a gateway-audience token is not disqualified on that ground. But the custom
-   * username claim is added by an Auth0 Action and is not guaranteed on every audience — if it is
-   * absent the validator answers "username claim not found".
-   *
-   * Returns null on any failure so the caller falls back rather than breaking the hand-off. The
-   * outcome is logged either way: this is here to answer the question, not to stay.
-   */
-  private async tryResolveOrCreateContributor(req: Request): Promise<string | null> {
-    try {
-      const user = await gatewayFetch<EasyClaUserFromTokenV2>(req, `${claServiceBaseUrl()}/v2/user-from-token`, {
-        operation: 'cla_probe_user_from_token_v2',
-        service: SERVICE,
-        errorMessage: 'Probe of /v2/user-from-token failed',
-        errorCode: 'UPSTREAM_ERROR',
-      });
-
-      const claUserId = user?.user_id?.trim();
-      if (!claUserId) {
-        logger.warning(req, 'cla_probe_user_from_token_v2', 'probe answered without a user_id; falling back to the userIds bridge');
-        return null;
-      }
-
-      logger.info(req, 'cla_probe_user_from_token_v2', 'probe succeeded — resolve-or-create is reachable with our token');
-      return claUserId;
-    } catch (error) {
-      logger.warning(req, 'cla_probe_user_from_token_v2', 'probe rejected; falling back to the userIds bridge', {
-        probe_status: error instanceof MicroserviceError ? error.statusCode : 'unknown',
-        probe_detail: error instanceof Error ? error.message : String(error),
-      });
-      return null;
+    // Matched on the account number, and the handle taken from the match rather than from the
+    // request: a handle is never matched on upstream, so accepting the submitted one would let
+    // a correct account be recorded under a handle the contributor does not own. A failed
+    // lookup throws out of here rather than yielding an empty list, so this cannot pass by the
+    // session's accounts being unreadable.
+    const { accounts } = await this.listGithubAccounts(req);
+    const chosen = accounts.find((account) => account.githubId === githubId);
+    if (!chosen) {
+      throw new MicroserviceError('The chosen GitHub account is not linked to this session', 403, 'CLA_ACCOUNT_NOT_LINKED', { service: SERVICE });
     }
+
+    let result: EasyClaSigningIdentity | null;
+    try {
+      result = await gatewayFetch<EasyClaSigningIdentity>(req, `${claServiceBaseUrl()}/v4/my-clas/signing-identity`, {
+        operation: 'cla_bind_signing_identity',
+        service: SERVICE,
+        errorMessage: 'Failed to record the signing GitHub identity',
+        errorCode: 'UPSTREAM_ERROR',
+        method: 'POST',
+        // The account is sent as a number: it is stored and queried as one upstream, and the
+        // endpoint's own model types it as an integer. The handle rides along because it
+        // cannot be derived upstream, and a record without one is unmatchable by the
+        // approval lists that are written against handles.
+        body: { githubId: Number(chosen.githubId), ...(chosen.githubUsername ? { githubUsername: chosen.githubUsername } : {}) },
+      });
+    } catch (error) {
+      // Refusals pass through as refusals, each keeping its own reason. Rethrown rather
+      // than handled: what the contributor should do next differs per reason, and only
+      // they can act on it.
+      throw withSigningIdentityRefusal(error);
+    }
+
+    const claUserId = result?.userId?.trim();
+    // `== null` rather than `=== undefined`: a JSON null would otherwise reach String() and be
+    // returned as the literal "null", which no account can equal.
+    if (!claUserId || result?.githubId == null) {
+      throw new MicroserviceError('Upstream did not return a recorded signing identity', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
+    }
+
+    logger.success(req, 'cla_bind_signing_identity', startTime, { outcome: result.outcome ?? 'unknown' });
+    return {
+      claUserId,
+      githubId: String(result.githubId),
+      githubUsername: result.githubUsername,
+      // Returned from the binding rather than fetched by a second call, so the hand-off has
+      // no way to assemble a URL before the association exists. The record this hand-off
+      // belongs to is the one the binding just confirmed — never whichever record an identity
+      // search happens to return first, which is what this endpoint replaced.
+      redirectUrl,
+    };
   }
 
   /** Fetches the composed CLA list for the resolved identity from `GET /v4/my-clas`. */
