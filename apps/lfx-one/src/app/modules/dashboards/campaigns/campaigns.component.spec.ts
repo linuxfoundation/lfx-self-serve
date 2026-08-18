@@ -1962,3 +1962,115 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(picker().selectedEmailTemplateId()).toBe('123');
   });
 });
+
+describe('CampaignsComponent — HubSpot template picker correctness', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+  let httpMock: HttpTestingController;
+  let ctx: WritableSignal<ProjectContext | null>;
+
+  interface PickerInternals {
+    emailTemplates: WritableSignal<HubSpotMarketingEmail[] | null>;
+    emailTemplatesError: WritableSignal<string | null>;
+    emailChannelEnabled: WritableSignal<boolean | null>;
+    selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
+    selectorForm: { controls: { deliveryType: { setValue(v: CampaignDeliveryType): void } } };
+    searchEmailTemplates(query: string): void;
+  }
+  const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
+
+  /**
+   * The picker renders under `@switch (selectedEmailTab())` → `@case ('implementation')`, so a
+   * DOM assertion needs the email delivery type AND that tab selected. Without both, the list is
+   * simply not in the document and a `toContain` check fails against correct code.
+   */
+  function openEmailImplementationTab(): void {
+    picker().selectorForm.controls.deliveryType.setValue('email');
+    picker().selectedEmailTab.set('implementation');
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    ctx = signal<ProjectContext | null>({ uid: 'u1', name: 'The Linux Foundation', slug: 'tlf', logoUrl: '' } as ProjectContext);
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: ctx, activeContextUid: computed(() => ctx()?.uid ?? '') } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  /**
+   * A slow FIRST search must not overwrite a fast SECOND one.
+   *
+   * Each call is an independent subscribe, so without a generation guard the earlier response
+   * lands last and wins — leaving the list from search A on screen while the query box shows B.
+   * Driven by flushing the two requests out of order, which is the only way to reproduce it.
+   */
+  it('ignores a stale response that lands after a newer search', () => {
+    picker().searchEmailTemplates('alpha');
+    picker().searchEmailTemplates('beta');
+
+    const reqs = httpMock.match((r) => r.url === '/api/campaigns/hubspot/emails');
+    expect(reqs.length).toBe(2);
+
+    // The NEWER search answers first…
+    reqs[1].flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'beta-1', name: 'Beta template' }] });
+    fixture.detectChanges();
+    // …then the older one lands.
+    reqs[0].flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'alpha-1', name: 'Alpha template' }] });
+    fixture.detectChanges();
+
+    const listed = picker().emailTemplates();
+    expect(listed?.length).toBe(1);
+    expect(listed?.[0].id, 'the stale first search overwrote the newer result').toBe('beta-1');
+  });
+
+  /**
+   * A transport failure must surface as a failure, not as "HubSpot is not connected".
+   *
+   * The template checks `emailChannelEnabled() === false` BEFORE the error branch, so a stale
+   * false from an earlier response outranks a real error and the operator is told to fix a
+   * connection that is fine.
+   */
+  it('does not report a later failure as a disconnected channel', () => {
+    picker().searchEmailTemplates('one');
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
+    fixture.detectChanges();
+    expect(picker().emailChannelEnabled()).toBe(false);
+
+    // A second search that fails at the transport.
+    picker().searchEmailTemplates('two');
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').error(new ProgressEvent('network'));
+    fixture.detectChanges();
+
+    expect(picker().emailTemplatesError()).toBe('Could not load templates. Try again.');
+    expect(picker().emailChannelEnabled(), 'a stale false outranks the error branch and hides it').not.toBe(false);
+  });
+
+  /** Two templates routinely share a name; the date is what tells them apart. */
+  it('renders each template updated date', () => {
+    openEmailImplementationTab();
+    picker().searchEmailTemplates('');
+    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({
+      enabled: true,
+      error: null,
+      possiblyTruncated: false,
+      emails: [
+        { id: '1', name: 'KubeCon promo', updatedAt: '2026-08-14T10:00:00Z' },
+        { id: '2', name: 'KubeCon promo' },
+      ],
+    });
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Aug 14, 2026');
+    // A row with no date renders no placeholder — a dash would read as a reported value.
+    expect(text).not.toContain('· Updated –');
+  });
+});

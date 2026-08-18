@@ -368,6 +368,33 @@ export class CampaignsComponent {
   protected readonly emailTemplates = signal<HubSpotMarketingEmail[] | null>(null);
   protected readonly emailTemplateQuery = signal('');
   protected readonly emailTemplatesLoading = signal(false);
+  /**
+   * Render a HubSpot `updatedAt` for a template row.
+   *
+   * Two templates routinely share a name — the shared interface says so where `updatedAt` is
+   * declared — so without a date two same-name rows are visually identical and the operator
+   * cannot tell which one they are cloning.
+   *
+   * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on
+   * the interface, and a dash in the metadata line would read as a value the portal reported.
+   * Same normalisation as monitoring-tab's formatDate, which handles HubSpot's date-only form.
+   */
+  protected formatTemplateUpdatedAt(value: string | undefined): string {
+    if (!value) return '';
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  /**
+   * Monotonic id for the in-flight template search.
+   *
+   * Not a signal: nothing renders it, and it must be readable synchronously inside a subscribe
+   * callback to decide whether that response is still the current one. A plain counter is the
+   * whole mechanism — a response whose generation no longer matches writes nothing.
+   */
+  private emailSearchGeneration = 0;
   protected readonly emailTemplatesError = signal<string | null>(null);
 
   /**
@@ -655,6 +682,9 @@ export class CampaignsComponent {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
       // missing slug must not fall back to some other portal's templates.
       this.emailTemplates.set(null);
+      // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
+      // this message, because the template checks the channel flag first.
+      this.emailChannelEnabled.set(null);
       this.emailTemplatesError.set('Select a foundation before searching for a template.');
       return;
     }
@@ -662,12 +692,29 @@ export class CampaignsComponent {
     this.emailTemplateQuery.set(query);
     this.emailTemplatesLoading.set(true);
     this.emailTemplatesError.set(null);
+    // Reset alongside the error, not only on a foundation switch. The template checks
+    // `emailChannelEnabled() === false` BEFORE the error branch, so a stale false from an earlier
+    // response outranks a real failure: after one "not connected" answer, a later transport error
+    // still rendered "Connect HubSpot for this foundation" and the user never saw "Could not load
+    // templates." Null means "not yet known for this search", which is the truth at this point.
+    this.emailChannelEnabled.set(null);
+
+    // Generation guard. Every call is an independent subscribe, so a slow earlier response can
+    // land after a newer one and overwrite the list, truncation flag and error while
+    // `emailTemplateQuery` already shows the later search. The foundation-switch handler clears
+    // these signals but cannot stop an in-flight response from refilling them — under the NEW
+    // foundation — which is the cross-portal leak that handler exists to prevent.
+    const generation = ++this.emailSearchGeneration;
+    const isCurrent = (): boolean => generation === this.emailSearchGeneration;
 
     this.campaignService
       .searchHubSpotEmails(projectSlug, query)
       .pipe(take(1))
       .subscribe({
         next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
           this.emailTemplatesLoading.set(false);
           this.emailChannelEnabled.set(result.enabled);
           if (!result.enabled) {
@@ -689,6 +736,9 @@ export class CampaignsComponent {
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
         },
         error: () => {
+          if (!isCurrent()) {
+            return;
+          }
           this.emailTemplatesLoading.set(false);
           // NULL, not []. A failed search says nothing about what the portal holds.
           this.emailTemplates.set(null);

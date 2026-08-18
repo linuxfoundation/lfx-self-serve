@@ -251,6 +251,9 @@
                           @if (template.state) {
                             · {{ template.state }}
                           }
+                          @if (formatTemplateUpdatedAt(template.updatedAt); as updated) {
+                            · Updated {{ updated }}
+                          }
                         </span>
                       </button>
                     </li>
