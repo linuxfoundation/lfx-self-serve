@@ -9,18 +9,31 @@ import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 import { ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { saveBrief, loadBrief, createCampaigns, legacyCreate, svcGetJobStatus, legacyGetJobStatus, searchHubSpotEmails, isServerFeatureEnabled, logger } =
-  vi.hoisted(() => ({
-    saveBrief: vi.fn(),
-    loadBrief: vi.fn(),
-    createCampaigns: vi.fn(),
-    legacyCreate: vi.fn(),
-    svcGetJobStatus: vi.fn(),
-    legacyGetJobStatus: vi.fn(),
-    searchHubSpotEmails: vi.fn(),
-    isServerFeatureEnabled: vi.fn(),
-    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-  }));
+const {
+  saveBrief,
+  loadBrief,
+  createCampaigns,
+  legacyCreate,
+  svcGetJobStatus,
+  legacyGetJobStatus,
+  searchHubSpotEmails,
+  toggleCampaignStatus,
+  legacyUpdateStatus,
+  isServerFeatureEnabled,
+  logger,
+} = vi.hoisted(() => ({
+  saveBrief: vi.fn(),
+  loadBrief: vi.fn(),
+  createCampaigns: vi.fn(),
+  legacyCreate: vi.fn(),
+  svcGetJobStatus: vi.fn(),
+  legacyGetJobStatus: vi.fn(),
+  searchHubSpotEmails: vi.fn(),
+  toggleCampaignStatus: vi.fn(),
+  legacyUpdateStatus: vi.fn(),
+  isServerFeatureEnabled: vi.fn(),
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+}));
 
 // `deriveEventSlug` is deliberately NOT stubbed. It is the function that decides whether a brief
 // is persistable at all, so a fake would let the slug-refusal test below pass against a controller
@@ -35,6 +48,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public createCampaigns = createCampaigns;
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
+      public toggleCampaignStatus = toggleCampaignStatus;
     },
   };
 });
@@ -46,6 +60,7 @@ vi.mock('../services/campaign-proxy.service', () => ({
   CampaignProxyService: class {
     public createCampaign = legacyCreate;
     public getJobStatus = legacyGetJobStatus;
+    public updateCampaignStatus = legacyUpdateStatus;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -1116,5 +1131,211 @@ describe('CampaignController.refineBrief email refusal', () => {
     expect(next).toHaveBeenCalledTimes(1);
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
+  });
+});
+
+/**
+ * Which backend serves a status toggle is decided by the campaign id's SHAPE, not by the flag
+ * alone. That is the whole safety argument for flipping this flag during a rolling deploy: the
+ * two id spaces are disjoint, so a request cannot be claimed by both paths and a mixed-flag
+ * fleet cannot misroute one. These tests pin that, plus the refusals that keep a money-affecting
+ * dispatch from going out on incomplete or stale information.
+ */
+describe('CampaignController.updateCampaignStatus', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function statusReq(campaignId: string, body: Record<string, unknown>, query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { params: { campaignId }, body, query, path: `/api/campaigns/${campaignId}/status` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 2, etag: '2' });
+    legacyUpdateStatus.mockResolvedValue({ platform: 'meta-ads', campaignId: '123', previousStatus: 'ACTIVE', newStatus: 'PAUSED', success: true });
+  });
+
+  it('sends a UUID id to campaign-service, not the legacy per-platform path', async () => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(toggleCampaignStatus).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      status: 'PAUSED',
+      etag: '1',
+    });
+  });
+
+  // The reach this whole change exists to buy: the legacy switch throws on anything but
+  // meta/reddit, so before this a Google Ads campaign could not be paused from the product at all.
+  it('accepts google-ads, which the legacy path cannot serve', async () => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'google-ads', newStatus: 'PAUSED', success: true }));
+  });
+
+  it('keeps a numeric id on the legacy path even while the flag is on', async () => {
+    await controller.updateCampaignStatus(statusReq('123456', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(legacyUpdateStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // A numeric id cannot address a campaign-service row, so the legacy allowlist must NOT widen —
+  // waving google-ads through here would reach the legacy switch's default arm and throw an error
+  // naming the wrong cause.
+  it('still refuses google-ads on the legacy path', async () => {
+    await controller.updateCampaignStatus(statusReq('123456', { platform: 'google-ads', status: 'PAUSED' }), res, next);
+
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Fail CLOSED rather than handing a UUID to a backend that cannot address it.
+  it('refuses a UUID when the cutover flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Upstream answers a missing If-Match with 428, and a guessed brief id addresses a different
+  // route entirely — so both are refused here, where the message can name the missing field.
+  it.each([
+    ['briefId', { platform: 'google-ads', status: 'PAUSED', etag: '1' }],
+    ['etag', { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1' }],
+  ])('refuses a campaign-service toggle with no %s', async (_field, body) => {
+    await controller.updateCampaignStatus(statusReq(UUID, body), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a campaign-service toggle with no project', async () => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }, {}), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // The assertion whose absence let a real defect through: the client was called without
+  // assignment, so the etag it fetched died one frame later. The service spec asserts the CLIENT's
+  // return value and this spec mocks the whole client, so nothing observed the seam between them —
+  // reverting the client fix broke a test while leaving production behaviour identical.
+  it("propagates the row's fresh etag so a follow-up toggle has a valid If-Match", async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 7, etag: '7' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '6' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ etag: '7' }));
+  });
+
+  // A guess and an observation must not share a field name. The legacy path GETs the campaign
+  // before writing and reports previousStatus as a FACT; campaign-service returns only the
+  // post-toggle row, so there is nothing to observe and the field is omitted. Inferring "the
+  // opposite of what was requested" would be wrong for a created_degraded campaign, whose true
+  // prior status is created_degraded rather than ACTIVE.
+  it('omits previousStatus rather than inferring one it never observed', async () => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('previousStatus');
+  });
+
+  // Pausing a created_degraded campaign pauses it UPSTREAM while deliberately leaving the row's
+  // status unchanged (campaign-service `pauseDegraded`). Echoing the request would render "Paused"
+  // for a transition the service declined to record.
+  it('reports the service status, not the requested one, for a degraded campaign', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'created_degraded', version: 4, etag: '4' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '4' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', serviceStatus: 'created_degraded' }));
+  });
+
+  // Found by mutation: deleting `.filter((p) => !p.disabled)` from
+  // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
+  // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
+  // pinned the one thing it claims to do — this is the test that makes the claim binding.
+  it.each([['microsoft-ads'], ['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+    await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
+  // reaches upstream as `If-Match: " "` and comes back 412 — the very refusal the guard exists to
+  // pre-empt with a named field, arriving instead as an opaque upstream error.
+  it.each([
+    ['briefId', { platform: 'google-ads', status: 'PAUSED', briefId: '   ', etag: '1' }],
+    ['etag', { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '   ' }],
+  ])('refuses a whitespace-only %s rather than sending it upstream', async (_field, body) => {
+    await controller.updateCampaignStatus(statusReq(UUID, body), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // campaign-service resolves the platform from the stored row and never receives the caller's.
+  // Echoing the request would confirm a platform the caller invented.
+  it("reports the row's platform, not the caller's claim", async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'reddit-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'reddit-ads' }));
+  });
+
+  // The pre-check tests the CALLER'S label, which is never sent upstream — campaign-service loads
+  // the dispatcher from the row — so a mislabelled request passes it. The row is only knowable
+  // after the toggle returns, and by then the ad platform has already moved, so this is observed
+  // and logged rather than refused. The response still reports the row's platform, so the caller
+  // is not told their label was accepted.
+  it('logs when the toggled row is a platform this app does not offer', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'microsoft-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'campaign_status_update',
+      expect.stringContaining('does not offer'),
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'microsoft-ads' })
+    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'microsoft-ads' }));
+  });
+
+  it('does not log the platform warning for an offered platform', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'google-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('rejects an id that is neither numeric nor a UUID', async () => {
+    await controller.updateCampaignStatus(statusReq('not-an-id', { platform: 'meta-ads', status: 'PAUSED' }), res, next);
+
+    expect(toggleCampaignStatus).not.toHaveBeenCalled();
+    expect(legacyUpdateStatus).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

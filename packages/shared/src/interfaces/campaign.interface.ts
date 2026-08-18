@@ -1299,12 +1299,94 @@ export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
   status: CampaignToggleStatus;
   accountId?: string;
+  /**
+   * Parent brief, required by campaign-service's toggle route
+   * (`PATCH /projects/{p}/briefs/{brief_id}/campaigns/{c}/status`).
+   *
+   * Optional on this type only because the legacy Meta/Reddit path did not need it. A request
+   * without it cannot address the campaign-service endpoint at all, so the controller refuses it
+   * rather than defaulting — see `updateCampaignStatus`.
+   */
+  briefId?: string;
+  /**
+   * The campaign row's current ETag, sent as `If-Match`.
+   *
+   * campaign-service answers a missing header with 428, so this is required in practice. It is
+   * what makes a pause safe against a concurrent editor: a 412 means the row moved since the
+   * caller read it, and the toggle is refused rather than dispatched to an ad platform on the
+   * strength of a stale view.
+   */
+  etag?: string;
+}
+
+/**
+ * Everything needed to address and authorize one status toggle.
+ *
+ * Named rather than inline because it is an app-facing contract: campaign-service addresses a
+ * campaign by `(project, brief, campaign)` and gates the write on `If-Match`, so a caller that
+ * gets any one of these wrong gets a 404, a 428 or a 412 rather than a type error. Every field
+ * is required — there is nothing safe to default, which is the point.
+ */
+export interface CampaignStatusToggleParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  platform: CampaignPlatform;
+  status: CampaignToggleStatus;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+/**
+ * A campaign row as campaign-service returns it.
+ *
+ * Mirrors the `Campaign` schema in the service's generated OpenAPI contract; `etag` mirrors
+ * `version` and is what a subsequent toggle must send back as `If-Match`.
+ */
+export interface CampaignServiceCampaign {
+  id: string;
+  brief_id: string;
+  project_id: string;
+  platform: string;
+  campaign_name: string;
+  /** Absent until the ad platform confirms the create, so optional per the contract. */
+  platform_campaign_id?: string;
+  status: string;
+  version: number;
+  etag?: string;
 }
 
 export interface CampaignStatusUpdateResult {
   platform: CampaignPlatform;
   campaignId: string;
-  previousStatus: string;
+  /**
+   * The status the campaign held BEFORE this toggle, as OBSERVED — never inferred.
+   *
+   * Present only on the legacy per-platform path, which issues a read before the write and can
+   * therefore report a fact. campaign-service's toggle returns the post-toggle row alone, so on
+   * that path there is nothing to observe and the field is OMITTED rather than guessed. Inferring
+   * it as "the opposite of what was requested" would be wrong exactly where it matters most: a
+   * `created_degraded` campaign is pausable, and its true prior status is `created_degraded`, not
+   * `ACTIVE`. A caller wanting the prior state on that path must read the row before toggling.
+   */
+  previousStatus?: string;
   newStatus: CampaignToggleStatus;
   success: boolean;
+  /**
+   * The campaign row's NEW ETag, for chaining a follow-up toggle.
+   *
+   * Without it, pause-then-resume is impossible: the second call needs a fresh `If-Match`, and
+   * the caller's own etag went stale the moment the first toggle committed. Absent on the legacy
+   * per-platform path, which has no row and no version.
+   */
+  etag?: string;
+  /**
+   * The status the SERVICE reports after the toggle, which is not always the one requested.
+   *
+   * Pausing a `created_degraded` campaign pauses it upstream and deliberately leaves the row's
+   * status unchanged, so `newStatus` — an echo of the request — would claim a transition the
+   * service declined to record. Read this field to render actual state; read `newStatus` only as
+   * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
+   */
+  serviceStatus?: string;
 }
