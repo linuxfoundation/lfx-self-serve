@@ -80,25 +80,15 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
 // Every endpoint gated by requireExecutiveDirector (ED-only) — the full registration list,
 // so a missing/deleted gate on any one of them shows up here rather than only in a sample.
 // Middleware branching itself is covered by require-executive-director.middleware.spec.ts.
-const ED_ONLY_GATED = ['/keyword-performance', '/social-media', '/social-media/monthly', '/events-overview-summary', '/event-roster', '/event-detail'];
+//
+// Note: events-overview-summary, event-roster, event-detail, event-growth, brand-reach,
+// brand-health, revenue-impact, marketing-attribution, web-activities-summary, email-ctr, and
+// social-reach are intentionally NOT gated here — authorization for those routes is owned by
+// LFXV2-2235's marketing-ops-aware middleware (see fix/LFXV2-2235-marketing-ops-bff-guards) to
+// avoid two PRs enforcing conflicting gates on the same routes.
+const ED_ONLY_GATED = ['/keyword-performance', '/social-media', '/social-media/monthly'];
 
-// Endpoints gated by requireExecutiveDashboardAccess (ED-or-LF-Staff):
-// event-growth, brand-reach, revenue-impact, and marketing-attribution back the LF-Staff-visible
-// executive dashboard (MarketingOverviewComponent + RevenueImpactDrawerComponent).
-// brand-health, web-activities-summary, email-ctr, and social-reach back the LF-Staff-visible
-// marketing dashboard (MarketingOverviewComponent for Executive Dashboard, Social Listening tab).
-const ED_OR_LF_STAFF_GATED = [
-  '/event-growth',
-  '/brand-reach',
-  '/revenue-impact',
-  '/marketing-attribution',
-  '/brand-health',
-  '/web-activities-summary',
-  '/email-ctr',
-  '/social-reach',
-];
-
-const GATED_SAMPLE = [...ED_ONLY_GATED, ...ED_OR_LF_STAFF_GATED];
+const GATED_SAMPLE = [...ED_ONLY_GATED];
 
 describe('analytics router — authorization on marketing/dashboard endpoints', () => {
   it.each(GATED_SAMPLE)('refuses %s for a non-ED caller', async (path) => {
@@ -112,7 +102,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits an ED reading their own foundation', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf']));
 
-    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=tlf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=tlf`);
 
     expect(res.status).not.toBe(403);
     expect(getPersonas).toHaveBeenCalled();
@@ -121,7 +111,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('refuses an ED requesting a foundation outside their scope', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf']));
 
-    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).toBe(403);
   });
@@ -131,7 +121,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits an ED root writer for a foundation outside their scoped project list', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
 
-    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
@@ -139,7 +129,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   it('admits ED LF staff for a foundation outside their scoped project list', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isLFStaff: true }));
 
-    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
+    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
   });
@@ -159,25 +149,6 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
 
     expect(res.status).toBe(403);
   });
-
-  it('admits LF staff without the ED persona on ED-or-LF-Staff endpoints', async () => {
-    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
-
-    const res = await fetch(`${baseUrl}/api/analytics/event-growth?foundationSlug=cncf`);
-
-    expect(res.status).not.toBe(403);
-  });
-
-  it.each(['/web-activities-summary', '/email-ctr', '/social-reach'])(
-    'admits LF staff without the ED persona on %s (marketing dashboard route)',
-    async (path) => {
-      getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
-
-      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
-
-      expect(res.status).not.toBe(403);
-    }
-  );
 
   // multi-foundation-summary is ungated at the route level; authorization is enforced server-side
   // by filterSlugsToPersonaScope. Non-ED users are allowed through if they have the requested
@@ -212,7 +183,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
 
     const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=tlf`);
 
-    expect(res.status).toBe(400); // ServiceValidationError from filterSlugsToPersonaScope
+    expect(res.status).toBe(403); // AuthorizationError from filterSlugsToPersonaScope
   });
 
   it('refuses a non-ED user for mixed authorized/unauthorized slugs (prevents partial aggregate)', async () => {
@@ -228,7 +199,7 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
 
     const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=cncf,tlf`);
 
-    expect(res.status).toBe(400); // ServiceValidationError: not authorized for tlf
+    expect(res.status).toBe(403); // AuthorizationError: not authorized for tlf
   });
 
   // Regression guard: these endpoints were never in scope for ED gating (personal/org analytics,
@@ -240,4 +211,18 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
 
     expect(res.status).not.toBe(403);
   });
+
+  // Regression guard: these routes' authorization is intentionally owned by LFXV2-2235's
+  // marketing-ops-aware middleware, not this PR — a future rebase should not silently reintroduce
+  // requireExecutiveDashboardAccess/requireExecutiveDirector here and create a conflicting gate.
+  it.each(['/event-growth', '/events-overview-summary', '/event-roster', '/event-detail', '/brand-reach', '/brand-health', '/revenue-impact', '/marketing-attribution', '/web-activities-summary', '/email-ctr', '/social-reach'])(
+    'leaves %s ungated at this PR (owned by LFXV2-2235)',
+    async (path) => {
+      getPersonas.mockResolvedValue(NON_ED);
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}`);
+
+      expect(res.status).not.toBe(403);
+    }
+  );
 });
