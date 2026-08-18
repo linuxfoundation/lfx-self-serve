@@ -35,3 +35,9 @@ export const ALLOWED_ORG_LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/sv
 
 /** Maximum org logo upload size in bytes (2MB), matching member-service's `MaxB2BOrgLogoSizeBytes`. */
 export const MAX_ORG_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+
+/** Below this width/height (px), the logo warns as likely to look blurry when displayed. Non-blocking — upload proceeds regardless. Not checked for SVG (vector). */
+export const MIN_ORG_LOGO_DIMENSION_PX = 128;
+
+/** Above this width/height (px), member-service downscales the logo server-side, preserving aspect ratio (`MaxLogoDimensionPx` in `pkg/constants/logo.go`). Warned about client-side so the user knows it'll happen; non-blocking, and not checked for SVG (vector, never resized). */
+export const MAX_ORG_LOGO_DIMENSION_PX = 1024;

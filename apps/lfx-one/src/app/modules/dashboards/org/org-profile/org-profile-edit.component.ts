@@ -5,7 +5,15 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, EventEmitter, inject, input, OnInit, Output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ALLOWED_ORG_LOGO_MIME_TYPES, INDUSTRY_OPTIONS, MAX_ORG_LOGO_SIZE_BYTES, ORG_DESCRIPTION_MAX_LENGTH, SECTOR_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_ORG_LOGO_MIME_TYPES,
+  INDUSTRY_OPTIONS,
+  MAX_ORG_LOGO_DIMENSION_PX,
+  MAX_ORG_LOGO_SIZE_BYTES,
+  MIN_ORG_LOGO_DIMENSION_PX,
+  ORG_DESCRIPTION_MAX_LENGTH,
+  SECTOR_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
@@ -239,6 +247,43 @@ export class OrgProfileEditComponent implements OnInit {
       return;
     }
 
+    // Fire concurrently, not sequentially: the dimension check is advisory-only, so the upload
+    // must not wait on it — chaining it in front would turn a "non-blocking" warning into a
+    // delay on every upload. A decode failure here is swallowed; it's just a missed warning.
+    this.warnIfDimensionsOutOfRange(file).catch(() => undefined);
+    this.uploadLogoFile(file);
+  }
+
+  /** Non-blocking dimension warnings (LFXV2-3288): under MIN, may look blurry; over MAX, member-service
+   * will downscale it server-side (`MaxLogoDimensionPx`, `pkg/constants/logo.go`) — told upfront so the
+   * shrink isn't a surprise. SVG is vector (no fixed pixel dimensions), so it's skipped entirely. */
+  private async warnIfDimensionsOutOfRange(file: File): Promise<void> {
+    if (file.type === 'image/svg+xml') return;
+
+    const bitmap = await createImageBitmap(file);
+    const { width, height } = bitmap;
+    bitmap.close();
+
+    if (width < MIN_ORG_LOGO_DIMENSION_PX || height < MIN_ORG_LOGO_DIMENSION_PX) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Small image',
+        detail: `This logo is ${width}×${height}px. Images under ${MIN_ORG_LOGO_DIMENSION_PX}px may look blurry.`,
+        life: 6000,
+      });
+      return;
+    }
+    if (width > MAX_ORG_LOGO_DIMENSION_PX || height > MAX_ORG_LOGO_DIMENSION_PX) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Large image',
+        detail: `This logo is ${width}×${height}px and will be resized down to fit within ${MAX_ORG_LOGO_DIMENSION_PX}px.`,
+        life: 6000,
+      });
+    }
+  }
+
+  private uploadLogoFile(file: File): void {
     this.logoUploading.set(true);
     // No takeUntilDestroyed — same reviewed exception as the avatar-upload precedent: the upload
     // itself is the user-visible operation and shouldn't abort on component destroy.

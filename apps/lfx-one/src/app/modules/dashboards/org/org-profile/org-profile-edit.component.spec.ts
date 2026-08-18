@@ -8,7 +8,7 @@ import type { OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
 import { OrgProfileService } from '@services/org-profile.service';
 import { MessageService } from 'primeng/api';
 import { Observable, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProfileEditComponent } from './org-profile-edit.component';
 
@@ -63,6 +63,10 @@ describe('OrgProfileEditComponent — logo upload', () => {
     // module-level override — spy on the real, component-scoped instance instead.
     toastAdd = vi.spyOn(fixture.debugElement.injector.get(MessageService), 'add');
     await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('seeds logoUrl from the input record on init', () => {
@@ -144,6 +148,52 @@ describe('OrgProfileEditComponent — logo upload', () => {
     await fixture.whenStable();
 
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Upload failed' }));
+  });
+
+  it('warns (non-blocking) when the image is smaller than the minimum dimension, but still uploads', async () => {
+    const bitmap = { width: 64, height: 64, close: vi.fn() };
+    const createImageBitmapMock = vi.fn().mockResolvedValue(bitmap);
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+
+    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Small image' }));
+  });
+
+  it('warns (non-blocking) when the image is larger than the maximum dimension, but still uploads', async () => {
+    const bitmap = { width: 2048, height: 1024, close: vi.fn() };
+    const createImageBitmapMock = vi.fn().mockResolvedValue(bitmap);
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+
+    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Large image' }));
+  });
+
+  it('does not warn or attempt a dimension read for an SVG file', async () => {
+    const createImageBitmapMock = vi.fn();
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+
+    const file = new File([new Uint8Array(10)], 'logo.svg', { type: 'image/svg+xml' });
+    selectFile(file);
+    await fixture.whenStable();
+
+    expect(createImageBitmapMock).not.toHaveBeenCalled();
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+  });
+
+  it('does not block the upload when the dimension read fails', async () => {
+    const createImageBitmapMock = vi.fn().mockRejectedValue(new Error('decode failed'));
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+
+    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
   });
 
   it('ignores a drop while an upload is already in flight', async () => {
