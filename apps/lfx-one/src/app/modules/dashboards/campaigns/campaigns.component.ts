@@ -413,8 +413,13 @@ export class CampaignsComponent {
     // The truncation cue must carry over, for the same reason the sibling appends its reload
     // instruction: announcing the count alone gives the reassurance without the instruction, and
     // the instruction is the part a screen-reader user cannot recover on their own — nothing else
-    // says the list is partial.
-    return this.emailTemplatesTruncated() ? `${count} Showing a partial list. Search to narrow it.` : count;
+    // says the list may be partial.
+    //
+    // "MAY be", not "is": `possiblyTruncated` records when the 500 cap MIGHT have bitten, and a
+    // portal holding exactly 500 emails sets the same flag on a complete listing — the shared
+    // interface says a capped 500 is byte-identical to a complete one. Asserting a partial list
+    // as fact would send someone hunting for a template that does not exist.
+    return this.emailTemplatesTruncated() ? `${count} This may be a partial list. Search to narrow it.` : count;
   });
   protected readonly emailTemplatesLoading = signal(false);
   /**
