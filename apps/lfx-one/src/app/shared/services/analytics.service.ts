@@ -883,7 +883,8 @@ export class AnalyticsService {
    * Get web activities summary grouped by domain category
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable of web activities summary response
+   * @returns Observable of web activities summary response. Errors are NOT caught — a failed
+   * request errors the observable so the caller's guard can distinguish it from a real zero.
    */
   public getWebActivitiesSummary(foundationSlug: string, classification?: string, period?: string): Observable<WebActivitiesSummaryResponse> {
     return this.http.get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', {
@@ -1262,7 +1263,8 @@ export class AnalyticsService {
   /**
    * Get event growth metrics for the ED dashboard.
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting event growth totals, YoY changes, and monthly trend
+   * @returns Observable emitting event growth totals, YoY changes, and monthly trend. Errors
+   * are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getEventGrowth(foundationSlug: string): Observable<EventGrowthResponse> {
     return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } });
@@ -1279,7 +1281,8 @@ export class AnalyticsService {
    * Get brand reach metrics for the ED dashboard (social followers + web sessions).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend
+   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend. Errors
+   * are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getBrandReach(foundationSlug: string, classification?: string): Observable<BrandReachResponse> {
     return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) });
@@ -1295,7 +1298,8 @@ export class AnalyticsService {
   /**
    * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting mention totals, sentiment percentages, and monthly history
+   * @returns Observable emitting mention totals, sentiment percentages, and monthly history.
+   * Errors are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getBrandHealth(foundationSlug: string, includeMentions = false, period?: string): Observable<BrandHealthResponse> {
     const params: Record<string, string> = { foundationSlug, ...(includeMentions && { includeMentions: 'true' }), ...(period && { period }) };
