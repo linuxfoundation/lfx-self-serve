@@ -174,10 +174,6 @@ export class WeeklyBriefCardComponent {
   // every single generate/regenerate/load-into-generating call, not just once.
   private readonly committee$ = toObservable(this.committee);
 
-  // Observable mirror of briefResponse for use in reactive pipelines that need to react
-  // to the brief loading (e.g. the archive-available preflight).
-  private readonly briefResponse$ = toObservable(this.briefResponse);
-
   // Guards against starting a second concurrent poll — pollUntilTerminal is reachable
   // both from onGenerate and from the initial-load pipeline (a page load / navigation
   // landing on an already-`generating` brief).
