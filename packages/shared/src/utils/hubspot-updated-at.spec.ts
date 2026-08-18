@@ -21,6 +21,31 @@ describe('formatHubSpotUpdatedAt', () => {
     expect(formatHubSpotUpdatedAt('2026-08-14T10:00:00Z')).toBe('Aug 14, 2026');
   });
 
+  it('pins timeZone UTC on the formatter itself, so the guard binds on a UTC runner too', () => {
+    // The instant-based test below cannot fail on a UTC host: with no explicit timeZone the
+    // host zone IS UTC, so pinned and unpinned agree. CI commonly runs UTC and the repo pins no
+    // TZ, so that test protects the fix everywhere EXCEPT where it runs.
+    //
+    // Observing the option directly binds on any host. A spy on the prototype sees exactly what
+    // the implementation asked for, independent of what the environment would have defaulted to.
+    const seen: (Intl.DateTimeFormatOptions | undefined)[] = [];
+    const original = Date.prototype.toLocaleDateString;
+    // eslint-disable-next-line no-extend-native
+    Date.prototype.toLocaleDateString = function (locales?: unknown, options?: Intl.DateTimeFormatOptions): string {
+      seen.push(options);
+      return original.call(this, locales as string, options);
+    };
+    try {
+      formatHubSpotUpdatedAt('2026-08-14T23:30:00Z');
+    } finally {
+      // eslint-disable-next-line no-extend-native
+      Date.prototype.toLocaleDateString = original;
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((o) => o?.timeZone === 'UTC')).toBe(true);
+  });
+
   it('formats a timestamp in UTC, so SSR and the browser agree across a midnight boundary', () => {
     // `toContain('2026')` passed in every timezone, so it never covered this: without an explicit
     // `timeZone`, `toLocaleDateString` uses the HOST zone. A timestamp near midnight then renders
