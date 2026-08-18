@@ -36,21 +36,21 @@ LFX Self Serve does not currently include a notification preferences section. Em
 
 Affiliations are the Linux Foundation projects and companies you are associated with. They appear on your profile and may affect your persona and the lenses available to you. Go to [**Profile & Account**](/profile) and select the **Work history & Affiliations** tab (`/profile/attributions`) to view and manage them.
 
-## Where do I find My CLAs?
+## Where do I find CLAs?
 
-Go to [**Profile & Account**](/profile) and open the **My CLAs** tab (`/profile/clas`). For full detail, see [My CLAs](../my-clas/).
+Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/clas`). For full detail, see [CLAs](../my-clas/).
 
 ## What is the difference between an ICLA and an ECLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from My CLAs when available. An **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA) via the company's **Approved List**; My CLAs lists it with the company name and no individual PDF. See [My CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when available. An **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA) via the company's **Approved List**; the CLAs tab lists it with the company name and no individual PDF. See [CLAs](../my-clas/).
 
-## Why don't my signed CLAs show up on My CLAs?
+## Why don't my signed CLAs show up on the CLAs tab?
 
-My CLAs matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **My CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
+The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
 
-## Can I sign a CLA from the My CLAs tab?
+## Can I sign a CLA from the CLAs tab?
 
-No. My CLAs is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [My CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
+No. The CLAs tab is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
 
 ## What purchases appear in my transaction history?
 

@@ -31,7 +31,7 @@ Open [**Profile & Account**](/profile), select **Edit profile**, update your **F
 
 ## Where do I manage my email, password, affiliations, or CLAs?
 
-Those live in the [Account](../../account/) section, not your personal profile. See the [Account FAQ](../../account/faq/) for email and password changes, affiliations, My CLAs, transactions, and developer settings.
+Those live in the [Account](../../account/) section, not your personal profile. See the [Account FAQ](../../account/faq/) for email and password changes, affiliations, CLAs, transactions, and developer settings.
 
 ## Who do I contact if I cannot access my account?
 

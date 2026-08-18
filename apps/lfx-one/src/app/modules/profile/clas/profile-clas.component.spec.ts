@@ -6,8 +6,9 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router, RouterLink } from '@angular/router';
 import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyClasService } from '@services/my-clas.service';
@@ -106,6 +107,22 @@ describe('ProfileClasComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="my-clas-empty-state"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-inv"]')).toBeTruthy();
+  });
+
+  it('empty state CTA routes to the CLAs docs article, not the pre-rename slug', async () => {
+    await render([]);
+
+    const emptyState = fixture.debugElement.query(By.css('[data-testid="my-clas-empty-state"]'));
+    expect(emptyState).toBeTruthy();
+    // Scoped to the `lfx-button` host rather than `By.directive(RouterLink)`: the wrapped `<p-button>`
+    // also matches `[routerLink]`, so an unscoped query is ambiguous about which of the two instances
+    // it means, even though preorder traversal happens to resolve the host one today. Querying the
+    // host directly says which instance we mean and survives a change in nesting.
+    const ctaButton = emptyState.query(By.directive(ButtonComponent));
+    if (!ctaButton) throw new Error('empty state rendered no lfx-button CTA');
+    const urlTree = ctaButton.injector.get(RouterLink).urlTree;
+    if (!urlTree) throw new Error('empty state CTA resolved no urlTree');
+    expect(TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {
