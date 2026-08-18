@@ -7,16 +7,10 @@ const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+const { meetingSvc } = vi.hoisted(() => ({
   meetingSvc: {
     getMeetingRegistrants: vi.fn(),
-    getMeetingById: vi.fn(),
-  },
-  committeeSvc: {
-    getCommitteeById: vi.fn(),
-  },
-  accessCheckSvc: {
-    checkSingleAccess: vi.fn(),
+    getAuthorizedRegistrantsForImport: vi.fn(),
   },
 }));
 
@@ -44,12 +38,12 @@ vi.mock('../services/meeting.service', () => ({
 }));
 vi.mock('../services/committee.service', () => ({
   CommitteeService: vi.fn(function () {
-    return committeeSvc;
+    return {};
   }),
 }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
-    return accessCheckSvc;
+    return {};
   }),
 }));
 vi.mock('../services/ai.service', () => ({
@@ -81,7 +75,11 @@ function buildRes(): any {
   return { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() };
 }
 
-describe('MeetingController.getMeetingRegistrants — completeness authorization gate', () => {
+// Authorization, membership, project-match, and size-cap rules are business logic tested at
+// their source — MeetingService.getAuthorizedRegistrantsForImport (meeting.service.spec.ts) —
+// per the three-file pattern (docs/reviews/backend-checklist.md). This spec covers only the
+// controller's HTTP-layer responsibility: parsing params and delegating to the right service call.
+describe('MeetingController.getMeetingRegistrants — delegation', () => {
   let controller: MeetingController;
 
   beforeEach(() => {
@@ -90,115 +88,51 @@ describe('MeetingController.getMeetingRegistrants — completeness authorization
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
   });
 
-  it('skips the gate for the 3 pre-existing partial-tolerant callers (no fail_on_partial)', async () => {
+  it('calls the partial-tolerant getMeetingRegistrants for the 3 pre-existing callers (no fail_on_partial)', async () => {
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({}), res, next);
 
-    expect(committeeSvc.getCommitteeById).not.toHaveBeenCalled();
-    expect(accessCheckSvc.checkSingleAccess).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false, undefined);
+    expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false);
     expect(res.json).toHaveBeenCalledWith([]);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejects a complete-roster request with no committee_uid', async () => {
+  it('rejects a complete-roster request with no committee_uid, without calling either service method', async () => {
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true' }), res, next);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
   });
 
-  it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'open' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+  it('delegates a complete-roster request to getAuthorizedRegistrantsForImport with the parsed uid and committee_uid', async () => {
+    meetingSvc.getAuthorizedRegistrantsForImport.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
 
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(meetingSvc.getAuthorizedRegistrantsForImport).toHaveBeenCalledWith(expect.anything(), MEETING_UID, COMMITTEE_UID);
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
-  });
-
-  it('passes through for a non-writer *member* on an invite_only committee — mirrors canSendMemberInvites()', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'invite_only', my_role: 'Member' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
-    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
-
-    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(expect.anything(), COMMITTEE_UID, { includeMembership: true });
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-writer, non-member on an invite_only committee — join_mode alone does not prove membership', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'invite_only' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+  it('propagates a rejection from getAuthorizedRegistrantsForImport via next, without responding', async () => {
+    const authError = Object.assign(new Error('Not authorized'), { statusCode: 403 });
+    meetingSvc.getAuthorizedRegistrantsForImport.mockRejectedValue(authError);
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
 
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
-    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
-  });
-
-  it('rejects when the committee and meeting belong to different projects', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-2' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
-
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
-    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
-  });
-
-  it('passes through when the caller is a writer on a same-project committee', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
-    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
-
-    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'committee', id: COMMITTEE_UID, access: 'writer' });
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, 50);
-    expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('rejects an authorized import once the roster exceeds the size cap, bounding the fetch itself', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
-    meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_UID, project_uid: 'project-1' });
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
-    meetingSvc.getMeetingRegistrants.mockResolvedValue(Array.from({ length: 51 }, (_, i) => ({ uid: `r${i}`, email: `r${i}@example.com` })));
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', committee_uid: COMMITTEE_UID }), res, next);
-
-    // maxResults (6th arg) is threaded through so the fetch itself stops early on a large roster,
-    // not just the count check after a full fetch completes.
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, 50);
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
-    const thrownError = next.mock.calls[0][0];
-    expect(thrownError.validationErrors[0].message).toBe('This meeting has more than 50 registrants — imports are limited to 50 per meeting.');
+    expect(next).toHaveBeenCalledWith(authError);
     expect(res.json).not.toHaveBeenCalled();
   });
 });

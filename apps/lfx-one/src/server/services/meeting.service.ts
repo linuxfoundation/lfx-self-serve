@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
@@ -49,11 +50,12 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -63,11 +65,13 @@ import { ProjectService } from './project.service';
  */
 export class MeetingService {
   private accessCheckService: AccessCheckService;
+  private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
+    this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
   }
@@ -668,6 +672,56 @@ export class MeetingService {
           err: error,
         });
       }
+    }
+
+    return registrants;
+  }
+
+  /**
+   * Fetches a meeting's complete registrant roster for the committee "import registrants" flow
+   * (LFXV2-2607), enforcing the authorization and size-cap rules that gate it. Business logic
+   * lives here rather than in the controller per the three-file pattern
+   * (docs/reviews/backend-checklist.md) — this orchestrates two domain resources plus an access
+   * check and a security-critical decision, not just HTTP request/response handling.
+   *
+   * The upstream query-service has no default per-user grant filtering on v1_meeting_registrant,
+   * so `getMeetingRegistrants` with `failOnPartial: true` would otherwise return any meeting's
+   * full registrant PII to any authenticated caller who supplies its uid. Requires the caller to
+   * either have writer access on `committeeUid`, or be a member of it when it's invite_only
+   * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
+   * authorized to send invites for that committee upstream, via their own bearer token, so
+   * letting them populate the invite textarea via import grants no new privilege). Also requires
+   * the committee and meeting to share a project, and refuses rosters over `IMPORT_REGISTRANTS_MAX`
+   * — a sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
+   * partial-failure states (this exact failure mode broke in PCC).
+   *
+   * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
+   */
+  public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
+    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+      this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
+      this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
+      this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+    ]);
+
+    const isCommitteeMember = !!committee.my_role;
+    const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
+    if (!canImport || committee.project_uid !== meeting.project_uid) {
+      throw new AuthorizationError('Not authorized to import registrants for this meeting', {
+        operation: 'get_authorized_registrants_for_import',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrants = await this.getMeetingRegistrants(req, meetingUid, false, undefined, true, IMPORT_REGISTRANTS_MAX);
+
+    if (registrants.length > IMPORT_REGISTRANTS_MAX) {
+      throw ServiceValidationError.forField(
+        'registrants',
+        `This meeting has more than ${IMPORT_REGISTRANTS_MAX} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
+        { operation: 'get_authorized_registrants_for_import', service: 'meeting_service' }
+      );
     }
 
     return registrants;

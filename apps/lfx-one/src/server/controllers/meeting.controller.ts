@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
@@ -398,21 +397,11 @@ export class MeetingController {
         return;
       }
 
-      // The upstream query-service has no default per-user grant filtering on
-      // v1_meeting_registrant (no filter_grants param is set here), so this endpoint returns any
-      // meeting's full registrant PII to any authenticated caller who supplies its uid — there's
-      // no organizer/registrant relationship required, unlike the sibling getMyMeetingRegistrants.
-      // failOnPartial is only ever set by the committee "import registrants" flow, whose caller has
-      // no such relationship to the target meeting either. Require and verify committee access
-      // whenever completeness is requested, so that flow can't be used to bulk-harvest registrant
-      // PII from meetings the caller doesn't manage. Writers always qualify; non-writer members are
-      // also allowed on invite_only committees — mirroring canSendMemberInvites() client-side — since
-      // they're already independently authorized to send invites for that committee (upstream, via
-      // their own bearer token, same as createCommitteeInvite always has been), so letting them
-      // populate the invite textarea via import grants no new privilege. join_mode alone doesn't
-      // prove the caller belongs to the committee, so membership is loaded and checked explicitly —
-      // canSendMemberInvites() requires !isVisitor() (myRole() !== null) client-side; my_role is the
-      // server-side equivalent.
+      // Completeness (failOnPartial) is only ever requested by the committee "import registrants"
+      // flow — that's a privileged, business-logic-heavy path (authorization, size cap), so it's
+      // delegated to MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
+      // (docs/reviews/backend-checklist.md). The 3 partial-tolerant callers are unaffected.
+      let registrants: MeetingRegistrant[];
       if (failOnPartial) {
         if (!committeeUid) {
           throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
@@ -420,44 +409,9 @@ export class MeetingController {
             service: 'meeting_controller',
           });
         }
-
-        const [committee, meeting, isCommitteeWriter] = await Promise.all([
-          this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
-          this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: false }),
-          this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
-        ]);
-
-        const isCommitteeMember = !!committee.my_role;
-        const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
-        if (!canImport || committee.project_uid !== meeting.project_uid) {
-          throw new AuthorizationError('Not authorized to import registrants for this meeting', {
-            operation: 'get_meeting_registrants',
-            service: 'meeting_controller',
-          });
-        }
-      }
-
-      // A sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
-      // partial-failure states — refuse rather than hand the caller a roster it can't safely act
-      // on. Only applies to the import flow (failOnPartial); the 3 partial-tolerant callers render
-      // whatever loaded and are unaffected. Bounding the fetch itself (not just the count check
-      // after it) via maxResults keeps a 500-registrant meeting from paging to completion before
-      // being refused — the exact scenario that broke in PCC.
-      const registrants = await this.meetingService.getMeetingRegistrants(
-        req,
-        uid,
-        includeRsvp,
-        occurrenceId,
-        failOnPartial,
-        failOnPartial ? IMPORT_REGISTRANTS_MAX : undefined
-      );
-
-      if (failOnPartial && registrants.length > IMPORT_REGISTRANTS_MAX) {
-        throw ServiceValidationError.forField(
-          'registrants',
-          `This meeting has more than ${IMPORT_REGISTRANTS_MAX} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
-          { operation: 'get_meeting_registrants', service: 'meeting_controller' }
-        );
+        registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
+      } else {
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
       }
 
       logger.success(req, 'get_meeting_registrants', startTime, {

@@ -8,9 +8,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
+const { proxyRequest, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  committeeSvc: { getCommitteeById: vi.fn() },
+  accessCheckSvc: { checkSingleAccess: vi.fn() },
+}));
 
-vi.mock('@lfx-one/shared/enums', () => ({}));
+vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', () => ({
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
@@ -23,7 +27,16 @@ vi.mock('./microservice-proxy.service', () => ({
     public proxyRequest = proxyRequest;
   },
 }));
-vi.mock('./access-check.service', () => ({ AccessCheckService: class {} }));
+vi.mock('./access-check.service', () => ({
+  AccessCheckService: vi.fn(function () {
+    return accessCheckSvc;
+  }),
+}));
+vi.mock('./committee.service', () => ({
+  CommitteeService: vi.fn(function () {
+    return committeeSvc;
+  }),
+}));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: vi.fn(),
@@ -390,5 +403,85 @@ describe('MeetingService.getMeetingRegistrants', () => {
 
     expect(result).toHaveLength(1);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
+  let service: MeetingService;
+
+  const COMMITTEE_UID = 'committee-1';
+  const MEETING_UID = 'meeting-1';
+
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+  // getMeetingById issues exactly one proxyRequest call (no committees on the fixture, so the
+  // committee-name-map enrichment path is skipped).
+  const meetingResponse = (projectUid: string) => ({ id: MEETING_UID, project_uid: projectUid });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    committeeSvc.getCommitteeById.mockReset();
+    accessCheckSvc.checkSingleAccess.mockReset();
+    service = new MeetingService();
+  });
+
+  it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'open' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('passes through for a non-writer *member* on an invite_only committee — mirrors canSendMemberInvites()', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'invite_only', my_role: 'Member' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1')).mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_UID, { includeMembership: true });
+    expect(result).toHaveLength(1);
+  });
+
+  it('rejects a non-writer, non-member on an invite_only committee — join_mode alone does not prove membership', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1', join_mode: 'invite_only' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('rejects when the committee and meeting belong to different projects', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-2'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('passes through when the caller is a writer on a same-project committee', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1')).mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID);
+
+    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'committee', id: COMMITTEE_UID, access: 'writer' });
+    expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
+  });
+
+  it('rejects an authorized import once the roster exceeds the size cap, bounding the fetch itself', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    const bigPage = { resources: Array.from({ length: 51 }, (_, i) => registrantRecord(`r${i}`)) };
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1')).mockResolvedValueOnce(bigPage);
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({
+      statusCode: 400,
+      validationErrors: [expect.objectContaining({ message: 'This meeting has more than 50 registrants — imports are limited to 50 per meeting.' })],
+    });
+    // maxResults bounds the fetch itself: one page already exceeds the cap, so pagination never
+    // continues even though the fixture's single page doesn't set page_token either way.
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });
