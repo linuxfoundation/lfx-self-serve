@@ -97,9 +97,8 @@ export class WeeklyBriefCardComponent {
   public readonly impersonating = this.userService.impersonating;
 
   // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
-  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
-  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
-  // with a hint pointing at settings UI that's itself still flag-hidden.
+  // it, once wg-weekly-brief is on, every user would see a Share to Slack button pointing at
+  // settings UI (the webhook card) that's itself still flag-hidden, with no way to configure it.
   public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
@@ -818,22 +817,13 @@ export class WeeklyBriefCardComponent {
           } else if (status === 400) {
             const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
-          } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
-            // Slack answered synchronously with a rejection — invalid_payload, channel_not_found,
-            // rate_limited, action_prohibited, etc. (see SLACK_ERROR_TOKEN_PATTERN) — not only a
-            // bad webhook URL, so a single hardcoded "check the webhook URL" message would send a
-            // rate-limited or policy-blocked caller down the wrong troubleshooting path and invite
-            // an immediate retry that just gets rejected again. The server's own message already
-            // embeds the specific reason when it's recognizable (weekly-brief.service.ts's
-            // clientSafeReason); fall back to the generic wording only when it isn't. Either way
-            // the POST was never accepted, so nothing was posted — safe to retry once resolved.
-            detail = err.error?.error ?? 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
-            // Ambiguous, same rationale as performShare's identical status-range branch: this
-            // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)
-            // alongside a dropped connection or gateway timeout talking to our own BFF — in
-            // either case there's no confirmation Slack didn't already receive the POST before
-            // the failure, unlike the SLACK_SEND_FAILED branch above.
+            // committee-service now owns composing and sending the Slack message itself
+            // (LFXV2-3094 / lfx-v2-committee-service PR #178) — this BFF no longer talks to Slack
+            // directly, so there's no BFF-side SLACK_UNREACHABLE/SLACK_SEND_FAILED distinction to
+            // make any more. A 5xx (or a dropped/timed-out connection to our own BFF) here is
+            // ambiguous either way: there's no confirmation the message wasn't already sent before
+            // the failure, same rationale as performShare's identical status-range branch.
             detail = 'The send may not have completed — check the Slack channel before trying again.';
           } else {
             detail = 'Failed to share brief. Please try again.';
