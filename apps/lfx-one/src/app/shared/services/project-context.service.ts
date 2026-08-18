@@ -76,23 +76,23 @@ export class ProjectContextService {
     this.projectSelection.set(this.loadFromCookie(this.projectStorageKey));
   }
 
+  // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
+  // selection must still be corrected when the incoming selection already matches the current one.
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
-    if (isSameProjectContext(this.foundationSelection(), foundation)) {
-      return;
+    if (!isSameProjectContext(this.foundationSelection(), foundation)) {
+      this.foundationSelection.set(foundation);
+      this.persistToCookie(this.foundationStorageKey, foundation);
     }
-    this.foundationSelection.set(foundation);
-    this.persistToCookie(this.foundationStorageKey, foundation);
     if (syncUrl) {
       this.syncProjectQueryParam(foundation.slug);
     }
   }
 
   public setProject(project: ProjectContext, syncUrl = true): void {
-    if (isSameProjectContext(this.projectSelection(), project)) {
-      return;
+    if (!isSameProjectContext(this.projectSelection(), project)) {
+      this.projectSelection.set(project);
+      this.persistToCookie(this.projectStorageKey, project);
     }
-    this.projectSelection.set(project);
-    this.persistToCookie(this.projectStorageKey, project);
     if (syncUrl) {
       this.syncProjectQueryParam(project.slug);
     }
