@@ -482,16 +482,6 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInTargetingProfile.set(profile);
   }
 
-  protected setLinkedInLifetimeBudget(value: boolean): void {
-    this.linkedInLifetimeBudget.set(value);
-    this.emitDraft();
-  }
-
-  protected setLinkedInBudget(value: number): void {
-    this.linkedInBudgetUsd.set(value);
-    this.emitDraft();
-  }
-
   protected setLinkedInAccount(accountId: string): void {
     this.linkedInAccountId.set(accountId);
   }

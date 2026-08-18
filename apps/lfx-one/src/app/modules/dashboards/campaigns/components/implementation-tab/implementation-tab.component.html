@@ -327,7 +327,8 @@
                   type="checkbox"
                   [checked]="linkedInLifetimeBudget()"
                   (change)="onLinkedInLifetimeBudgetChange($event)"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  data-testid="implementation-linkedin-lifetime-budget" />
                 Lifetime budget
               </label>
             </div>
@@ -377,7 +378,8 @@
                   type="checkbox"
                   [checked]="metaLifetimeBudget()"
                   (change)="onMetaLifetimeBudgetChange($event)"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  data-testid="implementation-meta-lifetime-budget" />
                 Lifetime budget
               </label>
             </div>

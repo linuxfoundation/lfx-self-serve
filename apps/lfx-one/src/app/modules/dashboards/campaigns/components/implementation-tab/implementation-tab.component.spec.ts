@@ -264,6 +264,70 @@ describe('ImplementationTabComponent budget round-trip across a tab switch', () 
     }).compileComponents();
   });
 
+  /**
+   * Drives each bound control through the DOM, one per test case.
+   *
+   * The sibling test calls the handlers directly, which pins only the handler body. That left
+   * five of the six `emitDraft()` calls able to be deleted with the whole suite still green —
+   * including three bound to real money controls. A DOM-driven edit is the only shape that
+   * proves the binding, the handler AND the emission all work together.
+   *
+   * No `detectChanges()` between the edit and the assertion: it re-runs the brief effect, whose
+   * trailing `emitDraft()` re-snapshots the already-updated signal and masks a missing emit.
+   */
+  it.each([
+    {
+      name: 'linkedin budget',
+      selector: 'input[data-testid="implementation-linkedin-budget"]',
+      kind: 'input' as const,
+      value: '2500',
+      read: (d: CampaignImplementationDraft) => d.linkedInBudgetUsd,
+      want: 2500,
+    },
+    {
+      name: 'linkedin lifetime',
+      selector: 'input[data-testid="implementation-linkedin-lifetime-budget"]',
+      kind: 'check' as const,
+      value: '',
+      read: (d: CampaignImplementationDraft) => d.linkedInLifetimeBudget,
+      want: true,
+    },
+    {
+      name: 'meta budget',
+      selector: 'input[data-testid="implementation-meta-budget"]',
+      kind: 'input' as const,
+      value: '3200',
+      read: (d: CampaignImplementationDraft) => d.metaBudgetUsd,
+      want: 3200,
+    },
+    {
+      name: 'meta lifetime',
+      selector: 'input[data-testid="implementation-meta-lifetime-budget"]',
+      kind: 'check' as const,
+      value: '',
+      read: (d: CampaignImplementationDraft) => d.metaLifetimeBudget,
+      want: true,
+    },
+  ])('emits the draft when $name is edited through the DOM', async ({ selector, kind, value, read, want }) => {
+    const f = await mount(null);
+    const emitted: (CampaignImplementationDraft | null)[] = [null];
+    f.componentInstance.draftChange.subscribe((d) => (emitted[0] = d));
+
+    const el = (f.nativeElement as HTMLElement).querySelector(selector) as HTMLInputElement | null;
+    expect(el, `no control matched ${selector} — the binding or the test id moved`).not.toBeNull();
+
+    if (kind === 'check') {
+      el!.checked = true;
+      el!.dispatchEvent(new Event('change'));
+    } else {
+      el!.value = value;
+      el!.dispatchEvent(new Event('input'));
+    }
+
+    expect(emitted[0], 'editing the control emitted no draft — the handler does not call emitDraft()').not.toBeNull();
+    expect(read(emitted[0]!)).toBe(want);
+  });
+
   it('carries every per-platform budget through emit and restore', async () => {
     const first = await mount(null);
 

@@ -362,9 +362,11 @@ export interface CampaignImplementationDraft {
    * unconditionally. There is no "not set" state to distinguish, because a draft only ever exists
    * after this component has mounted and seeded these signals.
    *
-   * `redditBudgetUsd` has no input in the template today and so cannot yet diverge from its
-   * default; it is carried anyway because `submit()` already sends it, and a budget that reaches
-   * an ad platform must not be the one field that silently resets when a control is added for it.
+   * Every platform the component can submit is carried, whether or not it currently renders an
+   * editable control. `submit()` already sends each of these to the ad platform, so a budget must
+   * not be the one field that silently resets the moment a control appears for it — LFXV2-3225
+   * adds exactly that for Reddit. Deliberately NOT written as "platform X has no input today":
+   * that is a claim about the template at one moment, and an in-flight PR falsifies it.
    */
   linkedInBudgetUsd: number;
   linkedInLifetimeBudget: boolean;
