@@ -31,7 +31,7 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
-      // My CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
+      // CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
       {
         path: 'clas',
         canMatch: [myClasEnabledGuard],

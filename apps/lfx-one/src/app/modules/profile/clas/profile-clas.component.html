@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 <section class="flex flex-col gap-4" data-testid="my-clas">
   <!-- Header -->
   <div>
-    <h2 class="text-lg font-semibold text-slate-800">My CLAs</h2>
+    <h2 class="text-lg font-semibold text-slate-800">CLAs</h2>
   </div>
 
   @if (error()) {
@@ -25,7 +25,7 @@ SPDX-License-Identifier: MIT
     <lfx-message severity="info" [attr.data-testid]="'my-clas-info-banner'">
       <p class="text-sm">
         Your signed ICLAs (Individual CLA) and ECLAs (Employee CLA), matched to your Identities. Missing one?
-        <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your Email, GitHub, or GitLab accounts →</a>
+        <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your Email or GitHub accounts →</a>
       </p>
     </lfx-message>
 
@@ -34,8 +34,8 @@ SPDX-License-Identifier: MIT
         icon="fa-light fa-file-signature"
         title="No CLAs on file yet"
         subtitle="We haven't found any signed ICLAs or ECLAs for your linked identities."
-        ctaLabel="Learn about My CLAs"
-        [ctaRoute]="['/docs', 'profile', 'my-clas']"
+        ctaLabel="Learn about CLAs"
+        [ctaRoute]="['/docs', 'account', 'my-clas']"
         data-testid="my-clas-empty-state" />
     } @else {
       <lfx-table

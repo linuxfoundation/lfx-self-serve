@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// UI-facing shapes for the read-only "My CLAs" view (Me lens → Profile tab).
+// UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
 // Normalized by the LFX One server from upstream EasyCLA signature records.
 // See specs/001-easycla-ss-integration-fable/m1-my-cla/data-model.md.
 
@@ -18,7 +18,7 @@ export type ClaKind = 'ICLA' | 'ECLA';
  */
 export type ClaStatus = 'valid' | 'superseded' | 'inactive';
 
-/** A single signed CLA shown in the My CLAs list. */
+/** A single signed CLA shown in the CLAs list. */
 export interface MyClaAgreement {
   /** EasyCLA signatureID — also the key for the PDF-URL endpoint. */
   id: string;
@@ -66,7 +66,7 @@ export interface MyClasResponse {
   identity: MyClasIdentitySummary;
 }
 
-/** View state for the My CLAs tab: the last response (or null), plus load/error flags. */
+/** View state for the CLAs tab: the last response (or null), plus load/error flags. */
 export interface MyClasState {
   data: MyClasResponse | null;
   error: boolean;
