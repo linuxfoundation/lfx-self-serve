@@ -90,6 +90,7 @@ import { MeetingResourcesSummaryComponent } from '../components/meeting-resource
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -125,6 +126,9 @@ export class MeetingManageComponent {
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+  // Meetings whose context fallback already retried the ungated detail fetch — the NavigationEnd
+  // re-apply would otherwise repeat the uncached request on every step navigation.
+  private readonly contextFallbackRetried = new Set<string>();
 
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -820,7 +824,7 @@ export class MeetingManageComponent {
             }
             // Mirror writerGuard's resolution order; the active-context fallback covers a meeting
             // carrying neither slug nor uid (the manage component owns that error path).
-            return meeting.project_slug ?? meeting.project_uid ?? this.projectContextService.activeContext()?.slug ?? null;
+            return resolveMeetingWriteSlug(meeting, this.projectContextService.activeContext()?.slug ?? null);
           })
         )
       : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
@@ -834,7 +838,7 @@ export class MeetingManageComponent {
             return of(false);
           }
           return this.projectService.getProject(key, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            map((project) => hasMeetingWriteAccess(project)),
             catchError(() => of(false))
           );
         })
@@ -899,6 +903,12 @@ export class MeetingManageComponent {
    * mismatch. As in syncEntityProjectContext, NavigationEnd re-applies the correction: query-param
    * step navigations re-assert the route's declared kind via syncLensFromRoute without re-running
    * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
+   *
+   * When the uid lookup resolves null — the project GET is relation-gated, so an organizer without
+   * a direct viewer relation gets nothing back — the meeting detail is re-fetched uncached: its
+   * enrichment is query-service backed and not relation-gated, so a fresh payload can carry the
+   * `project_slug` the cached one lacked. Only if that also comes back unenriched is the context
+   * left alone (it self-corrects on the next navigation).
    */
   private initMeetingContextFallback(): void {
     const unresolvedEntity$ = toObservable(this.meetingEntityContext).pipe(
@@ -911,18 +921,57 @@ export class MeetingManageComponent {
     merge(unresolvedEntity$, navigationReapply$)
       .pipe(
         filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
-        switchMap((entity) => this.projectService.getProject(entity.project_uid, false)),
+        switchMap((entity) =>
+          this.projectService.getProject(entity.project_uid, false).pipe(
+            switchMap((project) => {
+              if (!project) {
+                return this.resolveContextFromFreshMeeting(entity);
+              }
+              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+              return of({ context, isFoundation: computeIsFoundation(project) });
+            })
+          )
+        ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((project) => {
-        if (!project) {
+      .subscribe((resolved) => {
+        if (!resolved) {
           return;
         }
-        const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
         // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
         const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-        applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
+        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
       });
+  }
+
+  // Last resort for initMeetingContextFallback: the ungated detail enrichment can supply the
+  // project the relation-gated lookup withheld. Emits null when it can't, leaving context untouched.
+  private resolveContextFromFreshMeeting(entity: EntityWithProject): Observable<{ context: ProjectContext; isFoundation: boolean } | null> {
+    if (this.contextFallbackRetried.has(entity.uid)) {
+      return of(null);
+    }
+    this.contextFallbackRetried.add(entity.uid);
+    return this.meetingService.getMeetingDetail(entity.uid, { skipCache: true }).pipe(
+      map((meeting) => {
+        if (!meeting?.project_slug) {
+          console.warn(`Unable to resolve project context for meeting ${entity.uid}: detail payload carries no project_slug`);
+          return null;
+        }
+        const context: ProjectContext = {
+          uid: meeting.project_uid,
+          name: meeting.project_name || meeting.project_slug,
+          slug: meeting.project_slug,
+        };
+        return { context, isFoundation: meeting.is_foundation === true };
+      }),
+      catchError((error) => {
+        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
+        // NavigationEnd re-apply can attempt the fresh fetch again.
+        this.contextFallbackRetried.delete(entity.uid);
+        console.warn(`Unable to resolve project context for meeting ${entity.uid}:`, error);
+        return of(null);
+      })
+    );
   }
 
   private initializeMeeting() {
