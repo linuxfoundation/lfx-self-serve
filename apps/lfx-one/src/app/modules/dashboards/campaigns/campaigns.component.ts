@@ -369,25 +369,6 @@ export class CampaignsComponent {
   protected readonly emailTemplateQuery = signal('');
   protected readonly emailTemplatesLoading = signal(false);
   /**
-   * Render a HubSpot `updatedAt` for a template row.
-   *
-   * Two templates routinely share a name — the shared interface says so where `updatedAt` is
-   * declared — so without a date two same-name rows are visually identical and the operator
-   * cannot tell which one they are cloning.
-   *
-   * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on
-   * the interface, and a dash in the metadata line would read as a value the portal reported.
-   * Same normalisation as monitoring-tab's formatDate, which handles HubSpot's date-only form.
-   */
-  protected formatTemplateUpdatedAt(value: string | undefined): string {
-    if (!value) return '';
-    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
-    const date = new Date(normalized);
-    if (isNaN(date.getTime())) return '';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  /**
    * Monotonic id for the in-flight template search.
    *
    * Not a signal: nothing renders it, and it must be readable synchronously inside a subscribe
@@ -537,6 +518,25 @@ export class CampaignsComponent {
       }
       this.selectedDeliveryType.set(value);
     });
+  }
+
+  /**
+   * Render a HubSpot `updatedAt` for a template row.
+   *
+   * Two templates routinely share a name — the shared interface says so where `updatedAt` is
+   * declared — so without a date two same-name rows are visually identical and the operator
+   * cannot tell which one they are cloning.
+   *
+   * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on
+   * the interface, and a dash in the metadata line would read as a value the portal reported.
+   * Same normalisation as monitoring-tab's formatDate, which handles HubSpot's date-only form.
+   */
+  protected formatTemplateUpdatedAt(value: string | undefined): string {
+    if (!value) return '';
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   /**
