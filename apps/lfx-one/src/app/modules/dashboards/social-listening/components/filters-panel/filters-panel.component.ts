@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, model, output, Signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, input, model, output, Signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTION_HAS_TITLE_OPTIONS, MENTION_RELEVANCE_OPTIONS, MENTION_SENTIMENT_OPTIONS } from '@lfx-one/shared/constants';
+import { FILTERS_PANEL_FOCUSABLE_SELECTOR, MENTION_HAS_TITLE_OPTIONS, MENTION_RELEVANCE_OPTIONS, MENTION_SENTIMENT_OPTIONS } from '@lfx-one/shared/constants';
 import { capitalizeFirst, formatTag } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -103,11 +103,43 @@ export class FiltersPanelComponent {
     this.filtersCleared.emit();
   }
 
-  /** Signal → form is a non-reactive sink, so it runs off `toObservable` rather than an effect (repo convention). */
+  /** Tab must cycle inside the panel — without this a `role="dialog"` walks focus into the page behind it. */
+  protected trapFocus(event: KeyboardEvent): void {
+    // Bound to plain `keydown` rather than `keydown.tab`: the pseudo-event form types `$event` as
+    // a bare `Event` and never fires for Shift+Tab, since modifiers are part of the matched key.
+    if (event.key !== 'Tab') {
+      return;
+    }
+
+    const container = this.panelContainer()?.nativeElement;
+    if (!container) {
+      return;
+    }
+
+    const focusable = Array.from(container.querySelectorAll<HTMLElement>(FILTERS_PANEL_FOCUSABLE_SELECTOR)).filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) {
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = container.ownerDocument.activeElement;
+
+    if (event.shiftKey && (active === first || active === container)) {
+      event.preventDefault();
+      last.focus();
+      return;
+    }
+
+    if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /** Pushes signal state into the form — a non-reactive sink, which is what `effect()` is for. */
   private bindModelToControl<T>(source: Signal<T>, control: FormControl<T>): void {
-    toObservable(source)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => control.setValue(value, { emitEvent: false }));
+    effect(() => control.setValue(source(), { emitEvent: false }));
   }
 
   private initDisplayedKeywordOptions(): Signal<SocialListeningOption[]> {

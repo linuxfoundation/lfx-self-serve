@@ -125,6 +125,12 @@ export const MENTION_SEARCH_MIN_CHARS = 3;
 /** Plain-text body cap for the forward-by-email mailto: keeps the href under the ~2000-char URL limit mail clients enforce. */
 export const MENTION_FORWARD_EMAIL_BODY_MAX_CHARS = 500;
 
+/** Encoded-length cap for the same body — CJK/emoji expand ~3–9× under `encodeURIComponent`, so the raw cap alone can't bound the href. */
+export const MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS = 1200;
+
+/** Tab-cycle candidates for the filters panel's focus trap — the interactive elements PrimeNG wrappers actually render. */
+export const FILTERS_PANEL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 // ---------------------------------------------------------------------------
 // Query-param keys + defaults
 // ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ import type {
   SocialListeningSentimentDistribution,
   SocialListeningSubProject,
   SocialListeningTagCount,
+  SocialListeningTagsRequest,
   SocialListeningTopProject,
 } from '@lfx-one/shared/interfaces';
 
@@ -67,7 +68,7 @@ export class SocialListeningService {
   }
 
   /** Tags with mention volume, highest first — serves both the tag filter and the analytics top-tags panel. */
-  public getMentionsTags(request: SocialListeningScopedOptionsRequest): Observable<SocialListeningTagCount[]> {
+  public getMentionsTags(request: SocialListeningTagsRequest): Observable<SocialListeningTagCount[]> {
     return this.http.get<SocialListeningTagCount[]>(`${this.baseUrl}/mentions-tags`, { params: this.toParams(request) });
   }
 

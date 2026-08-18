@@ -24,6 +24,12 @@
   @apply relative z-10;
 }
 
+// Lifted above the stretched link so the mention text stays selectable — the overlay would
+// otherwise swallow every mousedown and make copying a quote impossible.
+.mention-body {
+  @apply relative z-10;
+}
+
 // Links inside the rendered markdown are plain <a> tags (no card-interactive class), so they
 // need the same lift to stay clickable above the stretched card link. ::ng-deep is required
 // because [innerHTML] content doesn't carry this component's view-encapsulation attribute.

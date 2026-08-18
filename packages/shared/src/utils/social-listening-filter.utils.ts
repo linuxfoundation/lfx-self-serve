@@ -24,6 +24,7 @@ import type {
   SocialListeningScopeSignals,
   SocialListeningSignals,
 } from '../interfaces/social-listening.interface';
+import { resolvePeriodRange } from './marketing-impact.utils';
 import { normalizeKeywords } from './social-listening.utils';
 
 export function predicateFromSignals(s: SocialListeningSignals): FilterPredicate {
@@ -194,6 +195,11 @@ function coerceLiteral(value: string | undefined, allowed: Set<string>, fallback
   return value && allowed.has(value) ? value : fallback;
 }
 
+/** An unresolvable `?period=` falls back to the default instead of reaching the server as a 400. */
+function coercePeriod(value: string | undefined, defaultPeriod: string): string {
+  return value && resolvePeriodRange(value) ? value : defaultPeriod;
+}
+
 /** Falls back to DEFAULT for any missing key; coerces literals to valid union values. */
 export function decodePredicateFromQueryParams(params: SocialListeningQueryParams, defaultPeriod: string): { predicate: FilterPredicate; scope: ScopeState } {
   const q = SOCIAL_LISTENING_QUERY_PARAMS;
@@ -217,7 +223,7 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
 
   const scope: ScopeState = {
     activeTab,
-    period: asScalar(params[q.period]) || defaultPeriod,
+    period: coercePeriod(asScalar(params[q.period]), defaultPeriod),
     sourceProjectId: asScalar(params[q.sourceProject]) || DEFAULT_MENTION_SCOPE_STATE.sourceProjectId,
     platform: asScalar(params[q.platform]) || DEFAULT_MENTION_SCOPE_STATE.platform,
   };

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, model, output, Signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input, model, output, Signal, untracked, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -64,6 +64,11 @@ export class FeedHeaderComponent {
   /** Resolved per component instance (matches marketing-impact): the month list depends on "now". */
   protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
 
+  private readonly filtersTrigger = viewChild<unknown, ElementRef<HTMLElement>>('filtersTrigger', { read: ElementRef });
+
+  /** Tracks the open→close transition so focus is only restored after the panel actually closed. */
+  private filtersOpened = false;
+
   protected readonly isAnalyticsTab = computed(() => this.activeTab() === 'analytics');
   /** PCC behavior: a foundation with exactly one sub-project shows a static badge, not a select. */
   protected readonly hasSingleProject = computed(() => this.projectOptions().length === 2);
@@ -78,19 +83,12 @@ export class FeedHeaderComponent {
     this.bindModelToControl(this.selectedPlatform, controls.platform);
     this.bindModelToControl(this.searchInput, controls.search);
 
-    // A foundation with a single sub-project locks the select to it (ported from PCC). Latched on
-    // the 'all' default: a refetched option list must not clobber a user's or the URL's selection.
-    effect(() => {
-      const options = this.projectOptions();
-      if (options.length === 2 && untracked(this.selectedProject) === 'all') {
-        this.selectedProject.set(options[1].value);
-      }
-    });
-
     this.headerForm.controls.period.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedPeriod.set(value));
     this.headerForm.controls.sourceProject.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedProject.set(value));
     this.headerForm.controls.platform.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedPlatform.set(value));
     this.headerForm.controls.search.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.searchInput.set(value));
+
+    this.restoreFocusOnFiltersClose();
   }
 
   protected onTabChange(tabId: string): void {
@@ -103,10 +101,25 @@ export class FeedHeaderComponent {
     this.filtersVisible.update((visible) => !visible);
   }
 
-  /** Signal → form is a non-reactive sink, so it runs off `toObservable` rather than an effect (repo convention). */
+  /** Dialog contract: closing the panel (Escape, backdrop, toggle) must hand focus back to its trigger. */
+  private restoreFocusOnFiltersClose(): void {
+    effect(() => {
+      if (this.filtersVisible()) {
+        this.filtersOpened = true;
+        return;
+      }
+
+      if (!this.filtersOpened) {
+        return;
+      }
+
+      this.filtersOpened = false;
+      untracked(() => this.filtersTrigger()?.nativeElement.querySelector('button')?.focus());
+    });
+  }
+
+  /** Pushes signal state into the form — a non-reactive sink, which is what `effect()` is for. */
   private bindModelToControl(source: Signal<string>, control: FormControl<string>): void {
-    toObservable(source)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => control.setValue(value, { emitEvent: false }));
+    effect(() => control.setValue(source(), { emitEvent: false }));
   }
 }

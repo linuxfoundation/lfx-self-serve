@@ -62,6 +62,7 @@
     <!-- Filters trigger (feed tab only) — hover/focus arms the page's lazy option fetches -->
     @if (!isAnalyticsTab()) {
       <lfx-button
+        #filtersTrigger
         icon="fa-light fa-sliders"
         severity="secondary"
         [outlined]="true"

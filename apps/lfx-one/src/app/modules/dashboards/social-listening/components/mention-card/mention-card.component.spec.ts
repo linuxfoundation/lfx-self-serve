@@ -2,18 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Mention } from '@lfx-one/shared/interfaces';
 
 import { MentionCardComponent } from './mention-card.component';
 
-/**
- * Shallow DOM coverage for the mention card's trust boundaries: the `validExternalUrl` pipe gates every
- * external `[href]` (stretched card link, author profile, subreddit, decorative open-original affordance)
- * so a crafted `javascript:` URL can't bind through. The decorative open-original span is also pinned down
- * as non-interactive (`aria-hidden`, no anchor) so the stretched link remains the sole tab stop.
- */
+/** Mention card trust boundaries: validExternalUrl gates every [href]; the open-original span is non-interactive so the stretched link is the sole tab stop. */
 describe('MentionCardComponent', () => {
   function baseMention(overrides: Partial<Mention> = {}): Mention {
     return {
@@ -106,6 +102,42 @@ describe('MentionCardComponent', () => {
     await fixture.whenStable();
 
     expect(querySelector('[data-testid="mention-card-open-original"]')).toBeNull();
+  });
+
+  it('renders the mention image only when its URL passes validation', async () => {
+    setMention(baseMention({ imageUrl: 'https://cdn.example.com/a.png' }));
+    await fixture.whenStable();
+
+    const image = querySelector('[data-testid="mention-card-image"]') as HTMLImageElement;
+    expect(image?.getAttribute('src')).toBe('https://cdn.example.com/a.png');
+
+    setMention(baseMention({ imageUrl: 'javascript:alert(1)' }));
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-image"]')).toBeNull();
+  });
+
+  it('drops the image once it fails to load', async () => {
+    setMention(baseMention({ imageUrl: 'https://cdn.example.com/a.png' }));
+    await fixture.whenStable();
+
+    querySelector('[data-testid="mention-card-image"]')?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-image"]')).toBeNull();
+  });
+
+  it('caps the forward-email body by encoded length, not raw length', async () => {
+    for (const content of ['漢'.repeat(600), '😀'.repeat(600)]) {
+      setMention(baseMention({ content }));
+      await fixture.whenStable();
+
+      const href = (querySelector('[data-testid="mention-card-forward-email"]') as HTMLAnchorElement).getAttribute('href') ?? '';
+      const body = href.split('&body=')[1] ?? '';
+      expect(body.length).toBeLessThanOrEqual(MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS);
+      // The original-post link is the point of the email, so it must survive the trim.
+      expect(decodeURIComponent(body)).toContain('https://reddit.com/r/kubernetes/comments/m1');
+    }
   });
 
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {

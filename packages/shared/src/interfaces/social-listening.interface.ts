@@ -160,6 +160,11 @@ export interface SocialListeningFeedParams extends SocialListeningScopeParams, S
 
 export interface SocialListeningCountParams extends SocialListeningScopeParams, SocialListeningFilterParams {}
 
+/** Tag options: same predicate as the count query, plus a caller-chosen cap (analytics wants the top N, the filter panel wants the full list). */
+export interface SocialListeningTagsParams extends SocialListeningCountParams {
+  limit?: number;
+}
+
 /** Author options cascade off every other filter, but must not filter by themselves. */
 export type SocialListeningAuthorsParams = Omit<SocialListeningCountParams, 'authors' | 'mentionIds'>;
 
@@ -230,6 +235,9 @@ export interface SocialListeningAnalyticsRequest extends MentionFilters {
   limit?: number;
 }
 
+/** Tags back two callers: the filter panel (scope only, explicit cap) and the analytics panel (full predicate, default cap). */
+export type SocialListeningTagsRequest = SocialListeningAnalyticsRequest;
+
 // ---------------------------------------------------------------------------
 // Responses
 // ---------------------------------------------------------------------------
@@ -243,6 +251,11 @@ export interface SocialListeningFeedResponse {
 
 export interface SocialListeningCountResponse {
   total: number;
+}
+
+/** A cached feed window. `complete` distinguishes a fully filled window from one phase 2 has not finished (or never finished) filling. */
+export interface SocialListeningWindowCacheEntry extends SocialListeningFeedResponse {
+  complete: boolean;
 }
 
 // ---------------------------------------------------------------------------

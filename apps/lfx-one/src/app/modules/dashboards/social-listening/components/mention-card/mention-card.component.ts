@@ -6,8 +6,14 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MENTION_FORWARD_EMAIL_BODY_MAX_CHARS, MENTION_PLATFORM_CONFIG, MENTION_RELEVANCE_CONFIG, MENTION_SENTIMENT_CONFIG } from '@lfx-one/shared/constants';
-import { capitalizeFirst, isValidUrl, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
+import {
+  MENTION_FORWARD_EMAIL_BODY_MAX_CHARS,
+  MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS,
+  MENTION_PLATFORM_CONFIG,
+  MENTION_RELEVANCE_CONFIG,
+  MENTION_SENTIMENT_CONFIG,
+} from '@lfx-one/shared/constants';
+import { capitalizeFirst, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
 import { FormatTagPipe } from '@pipes/format-tag.pipe';
 import { ValidExternalUrlPipe } from '@pipes/valid-external-url.pipe';
 import { TooltipModule } from 'primeng/tooltip';
@@ -57,8 +63,6 @@ export class MentionCardComponent {
   public readonly isReddit = computed(() => this.mention().platform === 'reddit');
   public readonly hasTitle = computed(() => !!this.mention().title);
   public readonly timeAgo: Signal<string> = this.initTimeAgo();
-  public readonly hasImage = computed(() => !!this.mention().imageUrl && isValidUrl(this.mention().imageUrl));
-  public readonly isImageVisible = computed(() => this.hasImage() && this.failedImageUrl() !== this.mention().imageUrl);
   /** Pre-filled share message (subject `{Keyword} - Worth sharing`) for the forward-by-email anchor. */
   public readonly forwardEmailHref: Signal<string> = this.initForwardEmailHref();
 
@@ -75,7 +79,8 @@ export class MentionCardComponent {
 
   /** Copies the mention's canonical URL to the clipboard with a transient "Copied!" state. */
   public onCopyLink(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
+    // The Clipboard API is absent on insecure origins and in older browsers, so it can't be assumed.
+    if (!isPlatformBrowser(this.platformId) || !navigator.clipboard?.writeText) return;
 
     navigator.clipboard
       .writeText(this.mention().originalUrl)
@@ -84,13 +89,11 @@ export class MentionCardComponent {
         if (this.copyTimeoutId) clearTimeout(this.copyTimeoutId);
         this.copyTimeoutId = setTimeout(() => this.copied.set(false), COPIED_STATE_MS);
       })
-      .catch(() => {
-        // Clipboard write failed (e.g. permissions denied) — nothing actionable for the user.
-      });
+      .catch(() => this.copied.set(false));
   }
 
-  public onImageError(): void {
-    this.failedImageUrl.set(this.mention().imageUrl);
+  public onImageError(url: string): void {
+    this.failedImageUrl.set(url);
   }
 
   private initTimeAgo(): Signal<string> {
@@ -106,12 +109,51 @@ export class MentionCardComponent {
       const keyword = mention.keyword ? capitalizeFirst(mention.keyword) : 'this project';
       const subject = encodeURIComponent(`${keyword} - Worth sharing`);
       const intro = `I found this post on ${keyword} and thought it was worth sharing.`;
-      // Truncated so the href stays under the ~2000-char URL limit mail clients enforce.
-      const plainContent = mention.content ? stripMarkdown(mention.content).slice(0, MENTION_FORWARD_EMAIL_BODY_MAX_CHARS) : '';
-      const truncated = plainContent.length === MENTION_FORWARD_EMAIL_BODY_MAX_CHARS ? `${plainContent}…` : plainContent;
       const linkSection = mention.originalUrl ? `You can see the original post below:\n${mention.originalUrl}` : '';
-      const body = encodeURIComponent([intro, mention.title, truncated, linkSection].filter(Boolean).join('\n\n'));
+      // Intro, title and link keep their room (plus the separator the excerpt adds); the excerpt gets the rest.
+      const frame = encodeURIComponent([intro, mention.title, linkSection].filter(Boolean).join('\n\n')) + encodeURIComponent('\n\n');
+      const excerpt = this.buildExcerpt(mention.content, MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS - frame.length);
+      const body = encodeURIComponent([intro, mention.title, excerpt, linkSection].filter(Boolean).join('\n\n'));
       return `mailto:?subject=${subject}&body=${body}`;
     });
+  }
+
+  /** Capped twice: raw chars for readability, encoded chars because CJK/emoji expand ~3–9× in the href. */
+  private buildExcerpt(content: string | undefined, encodedBudget: number): string {
+    if (!content) {
+      return '';
+    }
+
+    const plain = stripMarkdown(content);
+    const raw = plain.slice(0, MENTION_FORWARD_EMAIL_BODY_MAX_CHARS);
+    const capped = this.capEncodedLength(raw, encodedBudget - encodeURIComponent('…').length);
+    if (!capped) {
+      return '';
+    }
+
+    return capped.length < plain.length ? `${capped}…` : capped;
+  }
+
+  // Walks code points, not UTF-16 units — slicing mid-surrogate would make `encodeURIComponent` throw.
+  private capEncodedLength(value: string, maxEncoded: number): string {
+    if (maxEncoded <= 0) {
+      return '';
+    }
+
+    if (encodeURIComponent(value).length <= maxEncoded) {
+      return value;
+    }
+
+    let encoded = 0;
+    const kept: string[] = [];
+    for (const char of value) {
+      encoded += encodeURIComponent(char).length;
+      if (encoded > maxEncoded) {
+        break;
+      }
+      kept.push(char);
+    }
+
+    return kept.join('');
   }
 }

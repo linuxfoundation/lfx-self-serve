@@ -264,6 +264,17 @@ describe('option queries', () => {
     expect(withSocialListeningCache).toHaveBeenCalledWith('cncf', 'tags', ['cncf', '2026-01-01', '2026-02-01', 10], 1800, expect.any(Function));
   });
 
+  it('honors a caller-supplied tags limit and clamps it to the filter-value cap', async () => {
+    await service().getMentionsTags(req, { ...SCOPE, limit: 200 });
+    expect(normalize(lastCall().sql)).toContain('LIMIT 200');
+
+    await service().getMentionsTags(req, { ...SCOPE, limit: 5000 });
+    expect(normalize(lastCall().sql)).toContain('LIMIT 200');
+
+    await service().getMentionsTags(req, { ...SCOPE, limit: 0 });
+    expect(normalize(lastCall().sql)).toContain('LIMIT 1');
+  });
+
   it('aliases the tags scope so the LATERAL FLATTEN join is unambiguous', async () => {
     await service().getMentionsTags(req, SCOPE);
 

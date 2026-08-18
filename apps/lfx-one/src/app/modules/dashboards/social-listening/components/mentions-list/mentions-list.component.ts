@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, inject, input, output, PLATFORM_ID } from '@angular/core';
+import { Component, ElementRef, inject, input, output, PLATFORM_ID, viewChild } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { DEFAULT_MENTION_PAGE_SIZE, MENTION_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
@@ -38,10 +38,21 @@ export class MentionsListComponent {
 
   public readonly pageChange = output<{ page: number; rows: number }>();
 
+  private readonly listContainer = viewChild<ElementRef<HTMLElement>>('listContainer');
+
   protected onTablePage(event: { first: number; rows: number }): void {
     this.pageChange.emit({ page: event.rows > 0 ? Math.floor(event.first / event.rows) : 0, rows: event.rows });
-    if (isPlatformBrowser(this.platformId)) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    this.scrollListIntoView();
+  }
+
+  // Scrolls the list, not the window — paging shouldn't yank the user past the page header.
+  private scrollListIntoView(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
     }
+
+    const container = this.listContainer()?.nativeElement;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    container?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 }

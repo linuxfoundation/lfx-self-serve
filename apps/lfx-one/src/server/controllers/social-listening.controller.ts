@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import {
+  MAX_TAGS_LIMIT,
   parseFoundationSlug,
   parseSocialListeningAuthorFilters,
   parseSocialListeningFilters,
@@ -163,7 +164,7 @@ export class SocialListeningController {
 
   /**
    * GET /api/social-listening/mentions-tags — tags with mention volume (tag filter = scope-only; analytics top-tags = full predicate).
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters
+   * Query params: foundationSlug (required), period, sourceProjectId, platform, limit, feed filters
    */
   public async getMentionsTags(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_mentions_tags';
@@ -171,7 +172,11 @@ export class SocialListeningController {
 
     try {
       const scope = parseSocialListeningScope(req, operation);
-      const tags = await this.socialListeningService.getMentionsTags(req, { ...scope, ...parseSocialListeningFilters(req, operation) });
+      const tags = await this.socialListeningService.getMentionsTags(req, {
+        ...scope,
+        ...parseSocialListeningFilters(req, operation),
+        limit: parseSocialListeningLimit(req, operation, MAX_TAGS_LIMIT),
+      });
 
       logger.success(req, operation, startTime, { foundation_slug: scope.foundationSlug, tag_count: tags.length });
 

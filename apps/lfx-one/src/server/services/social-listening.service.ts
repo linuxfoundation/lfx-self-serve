@@ -26,6 +26,7 @@ import {
   SocialListeningSentimentDistribution,
   SocialListeningSubProject,
   SocialListeningTagCount,
+  SocialListeningTagsParams,
   SocialListeningTopProject,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -107,7 +108,7 @@ export class SocialListeningService {
   /** One page of mentions, newest first; `computedAt` is the dbt rebuild timestamp off the newest row (null for an empty page). */
   public async getMentionsFeed(req: Request, params: SocialListeningFeedParams): Promise<SocialListeningFeedResponse> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
     const limit = this.clampInteger(params.limit, 1, MAX_FEED_LIMIT);
     const offset = this.clampInteger(params.offset, 0, MAX_FEED_OFFSET);
 
@@ -135,7 +136,7 @@ export class SocialListeningService {
   /** Total rows matching the same scope + filters as the feed, for the paginator. */
   public async getMentionsCount(req: Request, params: SocialListeningCountParams): Promise<number> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
 
     const sql = `
       SELECT COUNT(*) AS TOTAL
@@ -221,9 +222,11 @@ export class SocialListeningService {
   }
 
   /** Tags with mention volume, highest first; the comma-joined upstream `TAGS` is exploded via `LATERAL FLATTEN`. Serves the tag filter and the analytics top-tags panel. */
-  public async getMentionsTags(req: Request, params: SocialListeningCountParams): Promise<SocialListeningTagCount[]> {
+  public async getMentionsTags(req: Request, params: SocialListeningTagsParams): Promise<SocialListeningTagCount[]> {
     const scope = this.buildScope(params, 'm');
-    const filters = this.buildFilters(params, 'm');
+    const filters = this.buildFilters(req, params, 'm');
+    // Analytics wants the top slice; the filter panel asks for the whole vocabulary it lets users select from.
+    const limit = this.clampInteger(params.limit ?? MENTION_TOP_TAGS_LIMIT, 1, MENTION_FILTER_MAX_VALUES);
 
     const sql = `
       SELECT TRIM(f.VALUE::STRING) AS TAG, COUNT(*) AS TOTAL_COUNT
@@ -235,11 +238,11 @@ export class SocialListeningService {
         AND TRIM(f.VALUE::STRING) != ''
       GROUP BY TRIM(f.VALUE::STRING)
       ORDER BY TOTAL_COUNT DESC, TAG
-      LIMIT ${MENTION_TOP_TAGS_LIMIT}
+      LIMIT ${limit}
     `;
 
-    // The row cap is a compile-time constant, but it still discriminates the cache entry.
-    const cacheBinds: QueryBind[] = [...scope.binds, ...filters.binds, MENTION_TOP_TAGS_LIMIT];
+    // The row cap is interpolated, not bound, so it has to discriminate the cache entry itself.
+    const cacheBinds: QueryBind[] = [...scope.binds, ...filters.binds, limit];
 
     return this.cached(req, params.foundationSlug, 'tags', cacheBinds, async () => {
       const result = await this.snowflakeService.execute<SocialListeningTagCount>(sql, [...scope.binds, ...filters.binds]);
@@ -252,7 +255,7 @@ export class SocialListeningService {
     const scope = this.buildScope(params);
     // `authors` and `mentionIds` are absent from this param type by construction — a multiselect
     // must never filter its own option list.
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
 
     const sql = `
       SELECT AUTHOR, PLATFORM, MENTION_COUNT
@@ -287,7 +290,7 @@ export class SocialListeningService {
     const previous = this.previousWindow(params.startDate, params.endDate);
     // The base CTE spans previous-start → current-end so both windows are read in a single pass.
     const base = this.buildScope({ ...params, startDate: previous.startDate, endDate: params.endDate });
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
 
     const sql = `
       WITH base AS (
@@ -352,7 +355,7 @@ export class SocialListeningService {
   /** Mention volume bucketed by day (windows up to ~2 months) or month (anything longer), split per sub-project. */
   public async getAnalyticsOverTime(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningOverTimePoint[]> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
     const grain = this.resolveGrain(params.startDate, params.endDate);
 
     const sql = `
@@ -377,7 +380,7 @@ export class SocialListeningService {
 
   public async getAnalyticsPlatformDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningPlatformDistribution[]> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
 
     const sql = `
       SELECT SOURCE_PLATFORM,
@@ -401,7 +404,7 @@ export class SocialListeningService {
   /** A null or blank upstream sentiment is bucketed as neutral, matching how the feed renders it. */
   public async getAnalyticsSentimentDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningSentimentDistribution[]> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
 
     const sql = `
       SELECT COALESCE(NULLIF(LOWER(SENTIMENT), ''), 'neutral') AS SENTIMENT,
@@ -421,7 +424,7 @@ export class SocialListeningService {
 
   public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningTopProject[]> {
     const scope = this.buildScope(params);
-    const filters = this.buildFilters(params);
+    const filters = this.buildFilters(req, params);
     const limit = this.clampInteger(params.limit ?? ANALYTICS_TOP_PROJECTS_LIMIT, 1, MAX_ANALYTICS_LIMIT);
 
     const sql = `
@@ -467,7 +470,7 @@ export class SocialListeningService {
    * Feed filters as a fragment appended to an existing `WHERE`; every user value is a bind, arrays are
    * capped, `LIKE` wildcards escaped. `sourceProjectId`/`platform` stay in `buildScope` (applied once).
    */
-  private buildFilters(filters: SocialListeningFilterParams, alias?: string): SqlFragment {
+  private buildFilters(req: Request, filters: SocialListeningFilterParams, alias?: string): SqlFragment {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
     const clauses: string[] = [];
     const binds: QueryBind[] = [];
@@ -493,7 +496,7 @@ export class SocialListeningService {
       clauses.push(`(${col('TITLE')} IS NULL OR ${col('TITLE')} = '')`);
     }
 
-    const keywords = this.capValues(filters.keywords, MENTION_FILTER_MAX_VALUES);
+    const keywords = this.capValues(req, filters.keywords, MENTION_FILTER_MAX_VALUES);
     if (keywords.length > 0) {
       clauses.push(`LOWER(${col('KEYWORD')}) IN (${this.placeholders(keywords.length)})`);
       binds.push(...keywords.map((keyword) => keyword.toLowerCase()));
@@ -501,13 +504,13 @@ export class SocialListeningService {
 
     // TAGS is a comma-joined string upstream, so it is split into exact tokens before comparing —
     // a substring match would let `ai` select mentions tagged `email` or `retail`. ANDed per tag.
-    const tags = this.capValues(filters.tags, MENTION_FILTER_MAX_VALUES);
+    const tags = this.capValues(req, filters.tags, MENTION_FILTER_MAX_VALUES);
     for (const tag of tags) {
       clauses.push(`ARRAY_CONTAINS(?::VARIANT, SPLIT(REGEXP_REPLACE(LOWER(TRIM(${col('TAGS')})), '${TAG_DELIMITER_PATTERN}', ','), ','))`);
       binds.push(tag.toLowerCase());
     }
 
-    const authors = this.capValues(filters.authors, MENTION_FILTER_MAX_VALUES);
+    const authors = this.capValues(req, filters.authors, MENTION_FILTER_MAX_VALUES);
     if (authors.length > 0) {
       clauses.push(`${col('AUTHOR')} IN (${this.placeholders(authors.length)})`);
       binds.push(...authors);
@@ -520,7 +523,7 @@ export class SocialListeningService {
     }
 
     if (filters.mentionIds) {
-      const mentionIds = this.capValues(filters.mentionIds, MENTION_IDS_MAX_VALUES);
+      const mentionIds = this.capValues(req, filters.mentionIds, MENTION_IDS_MAX_VALUES);
       if (mentionIds.length > 0) {
         clauses.push(`${col('_KEY')} IN (${this.placeholders(mentionIds.length)})`);
         binds.push(...mentionIds);
@@ -576,14 +579,14 @@ export class SocialListeningService {
     return withSocialListeningCache(foundationSlug, resource, binds, VALKEY_CACHE.SOCIAL_LISTENING_TTL_SECONDS, fetcher);
   }
 
-  private capValues(values: string[] | undefined, cap: number): string[] {
+  private capValues(req: Request, values: string[] | undefined, cap: number): string[] {
     if (!values) {
       return [];
     }
 
     const normalized = values.map((value) => value.trim()).filter(Boolean);
     if (normalized.length > cap) {
-      logger.warning(undefined, 'social_listening_filter_cap', 'Truncated over-long filter value list', {
+      logger.warning(req, 'social_listening_filter_cap', 'Truncated over-long filter value list', {
         received: normalized.length,
         cap,
       });

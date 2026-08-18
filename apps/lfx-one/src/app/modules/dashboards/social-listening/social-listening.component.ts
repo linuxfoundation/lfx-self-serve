@@ -12,6 +12,7 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_MENTION_PAGE_SIZE,
   DEFAULT_MENTION_PREDICATE,
+  MENTION_FILTER_MAX_VALUES,
   MENTION_MAX_CACHED_WINDOWS,
   MENTION_PAGE_SIZE_OPTIONS,
   MENTION_SEARCH_DEBOUNCE_MS,
@@ -73,6 +74,7 @@ import type {
   SocialListeningSignals,
   SocialListeningSubProject,
   SocialListeningTab,
+  SocialListeningWindowCacheEntry,
 } from '@lfx-one/shared/interfaces';
 
 import { SocialListeningAnalyticsComponent } from './components/analytics/social-listening-analytics.component';
@@ -134,7 +136,7 @@ export class SocialListeningComponent {
   public readonly currentPage = signal(0);
   public readonly pageSize = signal(DEFAULT_MENTION_PAGE_SIZE);
   public readonly rowsPerPageOptions = MENTION_PAGE_SIZE_OPTIONS;
-  private readonly windowCache = signal<Map<number, SocialListeningFeedResponse>>(new Map());
+  private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
   private readonly backgroundLoading = signal(false);
 
   // === Filters panel state (LFXV2-3017) ===
@@ -177,8 +179,9 @@ export class SocialListeningComponent {
   // === Filter-option pipelines (3017): lazy — gated on filtersOpenedOnce, never fire on page load ===
   private readonly languagesState: Signal<LoadableState<string[]>> = this.initLanguagesState();
   private readonly keywordsState: Signal<LoadableState<string[]>> = this.initScopedOptionsState((req) => this.socialListeningService.getMentionsKeywords(req));
+  // The filter panel needs the full tag vocabulary for the scope, not the analytics top-10 default.
   private readonly tagsState: Signal<LoadableState<string[]>> = this.initScopedOptionsState((req) =>
-    this.socialListeningService.getMentionsTags(req).pipe(map((tags) => tags.map((tag) => tag.TAG)))
+    this.socialListeningService.getMentionsTags({ ...req, limit: MENTION_FILTER_MAX_VALUES }).pipe(map((tags) => tags.map((tag) => tag.TAG)))
   );
   private readonly authorsState: Signal<LoadableState<AuthorOption[]>> = this.initAuthorsState();
 
@@ -201,9 +204,11 @@ export class SocialListeningComponent {
   public readonly loading = computed(() => {
     const windowData = this.windowCache().get(this.windowIndex());
     if (!windowData) return this.feedState().loading;
-    // Cached window but the visible page extends past what phase 2 has filled so far.
+    if (windowData.complete) return false;
+    // Partial window: the visible page extends past what phase 2 has filled so far.
     const neededEnd = this.localOffset() + this.pageSize();
-    return neededEnd > windowData.mentions.length && this.backgroundLoading();
+    if (neededEnd <= windowData.mentions.length) return false;
+    return this.backgroundLoading() || this.feedState().loading;
   });
   public readonly error = computed(() => this.feedState().error);
   public readonly first = computed(() => this.currentPage() * this.pageSize());
@@ -222,7 +227,11 @@ export class SocialListeningComponent {
     searchInput: this.searchInput,
   };
 
-  public readonly currentPredicate = computed<FilterPredicate>(() => predicateFromSignals(this.signals), { equal: predicatesEqual });
+  // `search` comes off the debounced, min-length-gated query so the pills, the URL and the fetched
+  // rows all describe the same filter — the raw input would advertise a search that isn't applied yet.
+  public readonly currentPredicate = computed<FilterPredicate>(() => ({ ...predicateFromSignals(this.signals), search: this.searchQuery() }), {
+    equal: predicatesEqual,
+  });
 
   public readonly currentScope = computed<ScopeState>(
     () => ({
@@ -270,6 +279,17 @@ export class SocialListeningComponent {
       });
     });
 
+    // A language the loaded scope carries no rows for (stale URL, rescoped period) is dropped rather
+    // than left advertising a pill nothing can match — only once the option list has actually landed.
+    effect(() => {
+      const state = this.languagesState();
+      if (state.loading || state.data.length === 0) return;
+      const selected = untracked(this.selectedLanguage);
+      if (selected === DEFAULT_MENTION_PREDICATE.language) return;
+      if (state.data.some((language) => language.toLowerCase() === selected.toLowerCase())) return;
+      untracked(() => this.selectedLanguage.set(DEFAULT_MENTION_PREDICATE.language));
+    });
+
     // Leaving the analytics tab destroys the child mid-export, so its own reset can never land —
     // the parent owns clearing the header's loading state.
     effect(() => {
@@ -298,6 +318,18 @@ export class SocialListeningComponent {
         this.selectedPlatform.set('all');
       }
       this.previousFoundationSlug = current;
+    });
+
+    // A foundation with a single sub-project locks the scope to it (ported from PCC). It lives here,
+    // not in the header, so the latch can commit the new scope key — establishing the default scope
+    // is not a user scope change and must not drop keywords/tags supplied by the URL.
+    effect(() => {
+      const options = this.subProjectOptions();
+      if (options.length !== 2 || untracked(this.selectedProject) !== 'all') return;
+      untracked(() => {
+        this.selectedProject.set(options[1].value);
+        this.commitScopeKey();
+      });
     });
 
     // Scope change (foundation / platform / sub-project) rescopes the keyword + tag option lists,
@@ -437,8 +469,9 @@ export class SocialListeningComponent {
           }
 
           const windowIdx = Math.floor((req.offset ?? 0) / this.serverWindowSize);
+          // Only a fully filled window can be served from cache — a partial one would strand the rows phase 2 never wrote.
           const cached = this.windowCache().get(windowIdx);
-          if (cached) {
+          if (cached?.complete) {
             return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: cached });
           }
 
@@ -447,11 +480,12 @@ export class SocialListeningComponent {
 
           return this.socialListeningService.getMentionsFeed(initialReq).pipe(
             switchMap((phase1Data) => {
-              this.updateWindowCache(windowIdx, phase1Data);
+              const remaining = this.serverWindowSize - initialLimit;
+              const phase1Complete = remaining <= 0 || phase1Data.mentions.length < initialLimit;
+              this.updateWindowCache(windowIdx, { ...phase1Data, complete: phase1Complete });
               const phase1State: LoadableState<SocialListeningFeedResponse> = { loading: false, error: null, data: phase1Data };
 
-              const remaining = this.serverWindowSize - initialLimit;
-              if (remaining <= 0 || phase1Data.mentions.length < initialLimit) return of(phase1State);
+              if (phase1Complete) return of(phase1State);
 
               this.backgroundLoading.set(true);
               const backgroundRequest = { ...req, limit: remaining, offset: (req.offset ?? 0) + initialLimit };
@@ -461,6 +495,7 @@ export class SocialListeningComponent {
                   this.updateWindowCache(windowIdx, {
                     mentions: [...(previous?.mentions ?? []), ...backgroundData.mentions],
                     computedAt: backgroundData.computedAt ?? previous?.computedAt ?? null,
+                    complete: true,
                   });
                 }),
                 ignoreElements(),
@@ -651,7 +686,7 @@ export class SocialListeningComponent {
   }
 
   /** Caches a fetched window and prunes entries farther than ±MENTION_MAX_CACHED_WINDOWS from it. */
-  private updateWindowCache(windowIdx: number, data: SocialListeningFeedResponse): void {
+  private updateWindowCache(windowIdx: number, data: SocialListeningWindowCacheEntry): void {
     this.windowCache.update((cache) => {
       const updated = new Map(cache).set(windowIdx, data);
       for (const key of Array.from(updated.keys())) {

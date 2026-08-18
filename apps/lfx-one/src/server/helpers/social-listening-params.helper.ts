@@ -44,6 +44,9 @@ export const MAX_FEED_OFFSET = 100_000;
 /** Ceiling for the caller-supplied `limit` on the analytics top-projects panel. */
 export const MAX_ANALYTICS_LIMIT = 100;
 
+/** Ceiling for the tag-option `limit`: the filter panel needs the whole vocabulary it will let a user select from. */
+export const MAX_TAGS_LIMIT = MENTION_FILTER_MAX_VALUES;
+
 const VALID_SENTIMENTS = MENTION_SENTIMENT_OPTIONS.map((option) => option.value);
 const VALID_RELEVANCES = MENTION_RELEVANCE_OPTIONS.map((option) => option.value);
 const VALID_HAS_TITLE = MENTION_HAS_TITLE_OPTIONS.map((option) => option.value);
@@ -106,13 +109,13 @@ export function parseSocialListeningPagination(req: Request, operation: string):
   };
 }
 
-/** Optional row cap for the analytics top-projects panel; `undefined` lets the service apply its own default. */
-export function parseSocialListeningLimit(req: Request, operation: string): number | undefined {
+/** Optional row cap for the panels that expose one (analytics top-projects, tag options); `undefined` lets the service apply its own default. */
+export function parseSocialListeningLimit(req: Request, operation: string, max: number = MAX_ANALYTICS_LIMIT): number | undefined {
   if (getStringQueryParam(req, 'limit') === undefined) {
     return undefined;
   }
 
-  return parseIntegerParam(req, 'limit', operation, { fallback: MAX_ANALYTICS_LIMIT, min: 1, max: MAX_ANALYTICS_LIMIT });
+  return parseIntegerParam(req, 'limit', operation, { fallback: max, min: 1, max });
 }
 
 /** The window the client lands on before it picks a period — the previous complete calendar month. */
@@ -164,7 +167,8 @@ function parseTextParam(req: Request, name: string, maxLength: number, operation
 
 /**
  * Repeated-key array params (`tags=a&tags=b`) as a bounded string array; a lone key collapses to one
- * element. Over-long lists are rejected, not truncated; a present-but-empty value stays `[]`.
+ * element. Over-long lists are rejected rather than clamped (unlike `parseIntegerParam`) because
+ * silently dropping filter values would return rows the caller's own predicate excludes.
  */
 function parseArrayParam(req: Request, name: string, cap: number, operation: string): string[] | undefined {
   const raw = req.query[name];
@@ -189,7 +193,7 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
   return values;
 }
 
-/** Bounded integer query param. Rejects non-integers outright and clamps in-range values. */
+/** Bounded integer query param. Rejects non-integers outright; out-of-range values clamp to the nearest bound. */
 function parseIntegerParam(req: Request, name: string, operation: string, bounds: { fallback: number; min: number; max: number }): number {
   const raw = getStringQueryParam(req, name);
 

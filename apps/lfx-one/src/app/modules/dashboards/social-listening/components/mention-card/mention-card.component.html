@@ -94,20 +94,20 @@
         </a>
       </div>
 
-      @if (isImageVisible()) {
-        <img
-          [src]="mention.imageUrl"
-          [alt]="mention.title || 'Mention image'"
-          loading="lazy"
-          (error)="onImageError()"
-          class="mb-8 max-h-36 w-48 rounded-lg object-cover"
-          data-testid="mention-card-image" />
+      @if (mention.imageUrl | validExternalUrl; as imageUrl) {
+        @if (failedImageUrl() !== imageUrl) {
+          <img
+            [src]="imageUrl"
+            [alt]="mention.title || 'Mention image'"
+            loading="lazy"
+            (error)="onImageError(imageUrl)"
+            class="mb-8 max-h-36 w-48 rounded-lg object-cover"
+            data-testid="mention-card-image" />
+        }
       }
     </div>
 
-    <!-- Decorative "open original" affordance pinned to the card's bottom-right corner.
-         pointer-events-none lets clicks fall through to the stretched .card-link above;
-         aria-hidden keeps it out of the a11y tree so the stretched link is the sole tab stop. -->
+    <!-- Decorative open-original affordance: pointer-events-none + aria-hidden keep the stretched .card-link as the sole tab stop. -->
     @if (mention.originalUrl | validExternalUrl) {
       <span class="icon-btn pointer-events-none absolute right-5 bottom-5 z-10" aria-hidden="true" data-testid="mention-card-open-original">
         <i class="fa-light fa-arrow-up-right-from-square text-base"></i>
