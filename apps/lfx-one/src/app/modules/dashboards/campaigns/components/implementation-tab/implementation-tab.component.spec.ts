@@ -346,6 +346,39 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     expect(geos).not.toContain('US');
   });
 
+  it('falls back to the country code when the recommended geos are all unusable', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as {
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      redditGeoTargets: { set(v: string[]): void };
+    };
+    // A generated or restored brief can carry a non-empty but unusable recommendation. Choosing
+    // the branch on the RAW list makes it win on length alone, filter to nothing, and block
+    // submit permanently — with a perfectly valid country sitting unread in the form.
+    c.campaignForm.controls['countryCode'].setValue('US');
+    c.redditGeoTargets.set(['USA']);
+    fixture.detectChanges();
+
+    expect(geoChipTexts()).toEqual(['US']);
+    expect(canSubmit()).toBe(true);
+  });
+
+  it('strips an r/ prefix so the preview matches what dispatches', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { redditSubreddits: { set(v: string[]): void } };
+    // 'r/k8s' is a real stored value — campaign-service.service.spec.ts asserts it survives
+    // restore verbatim — and dispatch strips an optional prefix. Rendered under the template's
+    // fixed 'r/' it previewed as 'r/r/k8s', so the section promising to show what will be sent
+    // showed something else.
+    c.redditSubreddits.set(['r/k8s', 'kubernetes']);
+    fixture.detectChanges();
+
+    const chips = Array.from(fixture.nativeElement.querySelectorAll('span')).map((el) => (el as HTMLElement).textContent?.trim());
+    expect(chips).toContain('r/k8s');
+    expect(chips).not.toContain('r/r/k8s');
+    expect(chips).toContain('r/kubernetes');
+  });
+
   it('allows submit once the reddit budget is positive', () => {
     setup(500);
     // The positive case must pass, or the zero case above would be satisfied by any unrelated

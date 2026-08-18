@@ -308,19 +308,28 @@ export class ImplementationTabComponent implements OnInit {
    * ships rather than an empty list for a request that targets somewhere specific.
    */
   protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() => {
-    const recommended = this.redditGeoTargets();
-    const raw = recommended.length > 0 ? recommended : [this.countryCodeValue()];
-    // Shape only: two uppercase letters, the form campaign-service requires before it consults
-    // its ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
-    // lowercase, "USA", a single letter — while never rejecting a valid code.
-    //
-    // Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
-    // assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
-    // would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
-    // unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
-    // porting a real ISO set into the shared package, which the whole app would use.
-    return raw.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
+    // Normalise FIRST, then decide whether to fall back. Choosing the branch on the RAW
+    // recommendation strands the form's country: a brief carrying an unusable ['USA'] is
+    // non-empty, so it wins the branch, filters to nothing, and canSubmit blocks the section
+    // permanently — with a perfectly valid US sitting unread in the form. The fallback is for
+    // "the brief offers no usable geo", and non-empty is not the same test as usable.
+    const recommended = this.normaliseGeoCodes(this.redditGeoTargets());
+    if (recommended.length > 0) return recommended;
+    return this.normaliseGeoCodes([this.countryCodeValue()]);
   });
+  /**
+   * Subreddit names as they will DISPATCH. A restored brief keeps whatever the generator wrote,
+   * and `r/k8s` is a real stored value (campaign-service.service.spec.ts asserts it survives
+   * restore verbatim). The dispatch side strips an optional `r/`, so rendering the raw value
+   * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
+   * what will be sent must not show something else.
+   */
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() =>
+    this.redditSubreddits()
+      .map((sub) => sub.trim().replace(/^\/?r\//i, ''))
+      .filter((sub) => sub.length > 0)
+  );
+
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
@@ -681,7 +690,10 @@ export class ImplementationTabComponent implements OnInit {
               // would let the two disagree: a cleared country code previews nothing and dispatches
               // [''], which the operator cannot see and Reddit cannot use.
               geoTargets: this.redditEffectiveGeoTargets(),
-              subreddits: this.redditSubreddits(),
+              // The normalised list, matching the preview above for the same reason geoTargets
+              // does: dispatch strips an optional `r/`, so sending the raw value would submit
+              // something the operator was never shown.
+              subreddits: this.redditEffectiveSubreddits(),
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
@@ -1003,5 +1015,19 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: '' }
     );
+  }
+  /**
+   * Shape only: two uppercase letters, the form campaign-service requires before it consults its
+   * ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
+   * lowercase, "USA", a single letter — while never rejecting a valid code.
+   *
+   * Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
+   * assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
+   * would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
+   * unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
+   * porting a real ISO set into the shared package, which the whole app would use.
+   */
+  private normaliseGeoCodes(codes: string[]): string[] {
+    return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
   }
 }

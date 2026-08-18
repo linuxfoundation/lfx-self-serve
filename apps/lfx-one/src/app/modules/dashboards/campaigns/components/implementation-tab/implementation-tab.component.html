@@ -471,9 +471,9 @@
 
           @if (redditSubreddits().length > 0) {
             <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditSubreddits().length }})</label>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
               <div class="flex flex-wrap gap-2">
-                @for (sub of redditSubreddits(); track sub) {
+                @for (sub of redditEffectiveSubreddits(); track sub) {
                   <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">r/{{ sub }}</span>
                 }
               </div>
