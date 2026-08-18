@@ -1,47 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The shared barrels transitively reach Angular's partially-compiled @angular/common; under vitest
+// that needs the JIT compiler, so load it before the module under test (mirrors the middleware spec).
+import '@angular/compiler';
+
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-// Mirrors social-listening.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this
-// app's vitest config, so every runtime (non-type-only) shared import needs a stub — including
-// the unrelated ones validation.helper pulls in.
-vi.mock('@lfx-one/shared/constants', () => ({
-  MENTION_FILTER_MAX_VALUES: 200,
-  MENTION_HAS_TITLE_OPTIONS: [
-    { label: 'All', value: 'all' },
-    { label: 'Yes', value: 'yes' },
-    { label: 'No', value: 'no' },
-  ],
-  MENTION_IDS_MAX_VALUES: 500,
-  MENTION_RELEVANCE_OPTIONS: [
-    { label: 'All', value: 'all' },
-    { label: 'High', value: 'high' },
-    { label: 'Low', value: 'low' },
-  ],
-  MENTION_SENTIMENT_OPTIONS: [
-    { label: 'All', value: 'all' },
-    { label: 'Positive', value: 'positive' },
-    { label: 'Neutral', value: 'neutral' },
-    { label: 'Negative', value: 'negative' },
-  ],
-  MENTION_SERVER_WINDOW_SIZE: 100,
-  HEALTH_METRICS_RANGES: [],
-  MONTH_FORMAT_REGEX: /^\d{4}-(0[1-9]|1[0-2])$/,
-  AKRITES_ESCALATION_PATHS: [],
-  AKRITES_INACTIVE_REASON_OPTIONS: [],
-  AKRITES_STEWARD_ROLE_OPTIONS: [],
-  VALID_CLASSIFICATIONS: [],
-  isHealthMetricsRange: () => false,
-}));
-
-// A fixed ytd range keeps an explicit `period=ytd` distinct from the server default window,
-// which — unlike the resolved preset — must include the current month.
-vi.mock('@lfx-one/shared/utils', () => ({
-  resolvePeriodRange: (period: string) =>
-    period === 'ytd' ? { type: 'ytd' as const, startDate: '2025-01-01', endDate: '2025-08-01', label: 'Year to Date (2025)' } : null,
-}));
 
 import { ServiceValidationError } from '../errors';
 import { parseFoundationSlug, parseSocialListeningFilters, parseSocialListeningPagination, parseSocialListeningScope } from './social-listening-params.helper';
@@ -83,7 +48,7 @@ describe('parseFoundationSlug', () => {
 });
 
 describe('parseSocialListeningScope', () => {
-  describe('default period (no period param)', () => {
+  describe('period window', () => {
     beforeEach(() => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2025-08-18T12:00:00Z'));
@@ -100,20 +65,31 @@ describe('parseSocialListeningScope', () => {
       expect(scope.endDate).toBe('2025-08-18');
     });
 
-    it('stays non-empty in January — the resolved ytd preset collapses to [Jan 1, Jan 1)', () => {
+    it('resolves an explicit period=ytd to the same through-today window as the default', () => {
+      const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'ytd' }), 'op');
+
+      expect(scope.startDate).toBe('2025-01-01');
+      expect(scope.endDate).toBe('2025-08-18');
+    });
+
+    it('stays non-empty in January — the month-bounded ytd preset would collapse to [Jan 1, Jan 1)', () => {
       vi.setSystemTime(new Date('2025-01-15T12:00:00Z'));
 
-      const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx' }), 'op');
+      const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'ytd' }), 'op');
 
       expect(scope.startDate).toBe('2025-01-01');
       expect(scope.endDate).toBe('2025-01-15');
     });
 
-    it('uses the resolved period range when period is explicit, not the server default', () => {
-      const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'ytd' }), 'op');
+    it('passes an explicit month through the resolved range untouched', () => {
+      const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: '2025-07' }), 'op');
 
-      expect(scope.startDate).toBe('2025-01-01');
+      expect(scope.startDate).toBe('2025-07-01');
       expect(scope.endDate).toBe('2025-08-01');
+    });
+
+    it('400s an unresolvable period value', () => {
+      expectFieldError(() => parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'bogus' }), 'op'), 'period');
     });
   });
 

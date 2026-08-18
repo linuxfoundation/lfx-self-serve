@@ -65,14 +65,17 @@ export function parseFoundationSlug(req: Request, operation: string): string {
   return foundationSlug;
 }
 
-/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. A missing `period` resolves to the client default, so a bare request is valid. */
+/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — resolves through today, so current-month mentions are included. */
 export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
-  const period = getValidatedPeriod(req, operation) ?? defaultPeriodRange();
+  const period = getValidatedPeriod(req, operation);
+  // A live mention feed reads ytd as through-today; the month-bounded analytics preset excludes the
+  // current month and collapses to an empty window every January.
+  const range = !period || period.type === 'ytd' ? yearToDateThroughToday() : period;
 
   return {
     foundationSlug: parseFoundationSlug(req, operation),
-    startDate: period.startDate,
-    endDate: period.endDate,
+    startDate: range.startDate,
+    endDate: range.endDate,
     sourceProjectId: parseTextParam(req, 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
     platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation),
   };
@@ -117,8 +120,8 @@ export function parseSocialListeningLimit(req: Request, operation: string, max: 
   return parseIntegerParam(req, 'limit', operation, { fallback: max, min: 1, max });
 }
 
-/** The default window when no `period` is sent — year-to-date through today, so current-month mentions are included. */
-function defaultPeriodRange(): ResolvedPeriodRange {
+/** The `ytd` window: Jan 1 through today, so a live feed always includes current-month mentions. */
+function yearToDateThroughToday(): ResolvedPeriodRange {
   const now = new Date();
   const year = now.getUTCFullYear();
 

@@ -68,6 +68,25 @@ describe('requireDashboardAccess', () => {
     expect(verdict(next)).toBe('allow');
   });
 
+  // Upstream slugs are stored verbatim — a mixed-case entry must not 403 a scoped ED.
+  it('allows an ED when the upstream slug is mixed-case', async () => {
+    getPersonas.mockResolvedValue(edFor(['TLF']));
+    const next = vi.fn();
+
+    await requireDashboardAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
+  it('allows an ED when the requested slug is mixed-case', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf']));
+    const next = vi.fn();
+
+    await requireDashboardAccess(buildReq({ foundationSlug: 'TLF' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+  });
+
   // Holding the ED persona somewhere is not authorization for every foundation.
   it('denies an ED requesting a foundation they do not hold the persona for', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf']));
