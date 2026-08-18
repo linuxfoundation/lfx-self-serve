@@ -206,11 +206,15 @@ export class MeetingService {
    * resolution and MeetingManageComponent's initializeMeeting both need the same payload
    * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
    * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
-   * write (updateMeeting/deleteMeeting).
+   * write (updateMeeting/deleteMeeting). Pass `skipCache` to force a fresh fetch when a caller
+   * needs enrichment that a cached payload may predate. `skipCache` replaces the cache entry with
+   * the new `request$` rather than invalidating — callers already subscribed to the prior
+   * `shareReplay(1)` observable continue to completion with the old payload, so racing
+   * `skipCache` callers can still observe a stale result.
    */
-  public getMeetingDetail(id: string): Observable<Meeting> {
+  public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
-    if (cached && Date.now() - cached.cachedAt < MEETING_DETAIL_CACHE_TTL_MS) {
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < MEETING_DETAIL_CACHE_TTL_MS) {
       return cached.observable;
     }
     if (cached) {
@@ -224,6 +228,7 @@ export class MeetingService {
       }),
       shareReplay(1)
     );
+    this.pruneExpiredMeetingDetailCache();
     this.meetingDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
     return request$;
   }
@@ -636,6 +641,16 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  // Opportunistic sweep on insert: entries otherwise linger for the whole session once their TTL lapses.
+  private pruneExpiredMeetingDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.meetingDetailCache) {
+      if (now - entry.cachedAt >= MEETING_DETAIL_CACHE_TTL_MS) {
+        this.meetingDetailCache.delete(key);
+      }
+    }
   }
 
   private pruneExpiredPastMeetingRecordingCache(): void {

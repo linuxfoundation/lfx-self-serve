@@ -58,6 +58,8 @@ export class DashboardMeetingCardComponent {
   public readonly overlappingCount = input<number>(0);
   /** Optional recording URL override — when set, skips the API call and renders the "Watch recording" button directly. */
   public readonly recordingUrl = input<string | null>(null);
+  /** When true, suppresses the join-url fetch and hides the Join button. Pass for past-meeting contexts (e.g. Last Meeting card) where joining is never appropriate. */
+  public readonly pastMeeting = input<boolean>(false);
 
   public readonly joinUrl: Signal<string | null>;
 
@@ -177,6 +179,10 @@ export class DashboardMeetingCardComponent {
 
   private initCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
+      if (this.pastMeeting()) {
+        return false;
+      }
+
       const meeting = this.meeting();
 
       if (meeting.restricted && !meeting.invited) {

@@ -22,6 +22,7 @@ import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -87,7 +88,7 @@ describe('CampaignsComponent brief persistence', () => {
       // calls a new one. Their requests simply stay pending here, which is the loading state.
       // A router is needed because a child tab renders a RouterLink — stubbing the children
       // instead would stop this spec from proving the handoff really mounts the tab.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
@@ -1160,7 +1161,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     fixture.detectChanges();
@@ -1521,7 +1522,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     fixture.detectChanges();

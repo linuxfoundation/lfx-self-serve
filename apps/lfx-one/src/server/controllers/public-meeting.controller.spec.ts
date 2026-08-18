@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import type { Meeting } from '@lfx-one/shared/interfaces';
+import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MEETING_ID = 'meeting-1111';
@@ -36,6 +36,7 @@ const {
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
+    getPastMeetingById: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
   },
@@ -52,7 +53,12 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
+vi.mock('@lfx-one/shared/constants', () => ({
+  HOST_KEY_EARLY_MINUTES: 70,
+  HOST_KEY_LATE_MINUTES: 40,
+  MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  ROOT_PROJECT_SLUG: 'ROOT',
+}));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
 
 vi.mock('../services/meeting.service', () => ({
@@ -119,8 +125,31 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   } as Meeting;
 }
 
-function buildProject() {
-  return { name: 'Proj', slug: 'proj', logo_url: 'logo', uid: PROJECT_UID, parent_uid: 'parent' };
+function buildPastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
+  return {
+    id: MEETING_ID,
+    project_uid: PROJECT_UID,
+    visibility: MeetingVisibility.PUBLIC,
+    restricted: false,
+    committees: [],
+    start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    duration: 60,
+    scheduled_start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    scheduled_end_time: new Date(Date.now() - 30 * 60_000).toISOString(),
+    meeting_id: 'meeting-orig-1111',
+    occurrence_id: 'occurrence-1',
+    platform_meeting_id: 'zoom-1111',
+    sessions: [],
+    ...overrides,
+  } as PastMeeting;
+}
+
+function buildProject(overrides: Record<string, unknown> = {}) {
+  return { name: 'Proj', slug: 'proj', logo_url: 'logo', uid: PROJECT_UID, parent_uid: 'parent', ...overrides };
+}
+
+function buildParentProject(overrides: Record<string, unknown> = {}) {
+  return { name: 'Foundation', slug: 'foundation', logo_url: 'flogo', uid: 'parent', parent_uid: '', ...overrides };
 }
 
 function buildReqRes(authenticated: boolean, hasUserToken = true) {
@@ -288,6 +317,139 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.invited).toBe(true);
     expect(payload.meeting.host_key).toBeUndefined();
+  });
+});
+
+describe('PublicMeetingController.getMeetingById parent project resolution (LFXV2-3266)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('resolves and returns the foundation project', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => (uid === PROJECT_UID ? buildProject() : buildParentProject()));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+  });
+
+  it('returns parent: null when the project has no parent_uid', async () => {
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    // Only the project's own lookup should have run — no parent lookup to skip.
+    expect(projectSvc.getProjectById).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns parent: null and still responds 200 when the parent lookup throws', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => {
+      if (uid === PROJECT_UID) return buildProject();
+      throw new Error('upstream 500');
+    });
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+
+  it('maps a root-slug parent to null', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ slug: 'ROOT' })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+});
+
+describe('PublicMeetingController.getPublicPastMeetingById parent project resolution (LFXV2-3266)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('resolves and returns the foundation project', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => (uid === PROJECT_UID ? buildProject() : buildParentProject()));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+  });
+
+  it('returns parent: null when the project has no parent_uid', async () => {
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    // Only the project's own lookup should have run — no parent lookup to skip.
+    expect(projectSvc.getProjectById).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns parent: null and still responds 200 when the parent lookup throws', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => {
+      if (uid === PROJECT_UID) return buildProject();
+      throw new Error('upstream 500');
+    });
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+
+  it('maps a root-slug parent to null', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ slug: 'ROOT' })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
   });
 });
 
