@@ -9,7 +9,6 @@ import {
   MENTION_SENTIMENT_OPTIONS,
   MENTION_SERVER_WINDOW_SIZE,
 } from '@lfx-one/shared/constants';
-import { getDefaultMarketingImpactPeriod, resolvePeriodRange } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -68,7 +67,7 @@ export function parseFoundationSlug(req: Request, operation: string): string {
 
 /** Foundation + half-open `[startDate, endDate)` window + the two scope selects. A missing `period` resolves to the client default, so a bare request is valid. */
 export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
-  const period = getValidatedPeriod(req, operation) ?? defaultPeriodRange(operation);
+  const period = getValidatedPeriod(req, operation) ?? defaultPeriodRange();
 
   return {
     foundationSlug: parseFoundationSlug(req, operation),
@@ -118,15 +117,17 @@ export function parseSocialListeningLimit(req: Request, operation: string, max: 
   return parseIntegerParam(req, 'limit', operation, { fallback: max, min: 1, max });
 }
 
-/** The window the client lands on before it picks a period — the previous complete calendar month. */
-function defaultPeriodRange(operation: string): ResolvedPeriodRange {
-  const range = resolvePeriodRange(getDefaultMarketingImpactPeriod());
+/** The default window when no `period` is sent — year-to-date through today, so current-month mentions are included. */
+function defaultPeriodRange(): ResolvedPeriodRange {
+  const now = new Date();
+  const year = now.getUTCFullYear();
 
-  if (!range) {
-    throw ServiceValidationError.forField('period', 'period query parameter is required', { operation });
-  }
-
-  return range;
+  return {
+    type: 'ytd',
+    startDate: `${year}-01-01`,
+    endDate: now.toISOString().split('T')[0],
+    label: `Year to Date (${year})`,
+  };
 }
 
 /** Whitelisted single-select value. `all` means "no predicate" and normalizes to `undefined`. */
@@ -141,7 +142,7 @@ function parseEnumParam(req: Request, name: string, allowed: string[], operation
     throw ServiceValidationError.forField(name, `Invalid ${name} value. Allowed: ${allowed.join(', ')}`, { operation });
   }
 
-  return raw === 'all' ? undefined : raw;
+  return raw.toLowerCase() === 'all' ? undefined : raw;
 }
 
 /** Length-bounded free-text value: values that become Snowflake binds can't be whitelisted, so they are bounded instead. */
@@ -154,7 +155,7 @@ function parseTextParam(req: Request, name: string, maxLength: number, operation
 
   const value = raw.trim();
 
-  if (!value || value === 'all') {
+  if (!value || value.toLowerCase() === 'all') {
     return undefined;
   }
 
@@ -190,7 +191,8 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
     throw ServiceValidationError.forField(name, `A ${name} value exceeds the ${FILTER_VALUE_MAX_LENGTH}-character limit`, { operation });
   }
 
-  return values;
+  // A present-but-empty key must read as "no predicate" — a truthy `[]` zeroes the mention feed (`1 = 0`).
+  return values.length === 0 ? undefined : values;
 }
 
 /** Bounded integer query param. Rejects non-integers outright; out-of-range values clamp to the nearest bound. */

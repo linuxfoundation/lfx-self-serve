@@ -162,6 +162,7 @@ export class SocialListeningComponent {
   public readonly hasFoundation = computed(() => !!this.foundationSlug());
 
   private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
+  // The server clamps offset at MAX_FEED_OFFSET (100,000) — past ~1000 windows the response is clamped, not window-accurate.
   private readonly serverOffset = computed(() => this.windowIndex() * this.serverWindowSize);
   private readonly localOffset = computed(() => this.currentPage() * this.pageSize() - this.serverOffset());
 

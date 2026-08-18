@@ -43,8 +43,9 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
       return;
     }
 
-    const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug);
-    if (edSlugs.includes(requestedSlug)) {
+    // Upstream project slugs are verbatim — normalize case on both sides so mixed-case data can't 403 a scoped ED.
+    const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug.toLowerCase());
+    if (edSlugs.includes(requestedSlug.toLowerCase())) {
       next();
       return;
     }
