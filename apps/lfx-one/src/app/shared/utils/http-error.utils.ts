@@ -37,9 +37,14 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
-    const body = error.error as { message?: string; error?: string } | string | null;
+    const body = error.error as { message?: string; error?: string; errors?: { message?: string }[] } | string | null;
     if (typeof body === 'string' && body.trim().length > 0) return body;
     if (body && typeof body === 'object') {
+      // ServiceValidationError's `errors[].message` (server) carries the specific, actionable
+      // detail for the failing field — the top-level message/error is often a generic
+      // "Validation failed for <field>" wrapper, so prefer the field-level detail when present.
+      const fieldDetail = body.errors?.find((e): e is { message: string } => typeof e.message === 'string' && e.message.trim().length > 0);
+      if (fieldDetail) return fieldDetail.message;
       const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
       if (candidate) return candidate;
     }

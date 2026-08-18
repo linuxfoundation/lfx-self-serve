@@ -168,6 +168,11 @@ export class AddMemberDialogComponent {
   private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  /** Bridges the meeting picker's plain FormControl value into a signal so the Import button's
+   * `[disabled]` binding reliably re-evaluates under zoneless change detection. */
+  public readonly selectedMeetingId = toSignal(this.importForm.get('meeting')!.valueChanges.pipe(startWith(this.importForm.get('meeting')!.value)), {
+    initialValue: null as string | null,
+  });
   private readonly orgFormValues = this.initOrgFormValues();
   private readonly orgUrlStatus = toSignal(this.form.get('organization_url')!.statusChanges.pipe(startWith(this.form.get('organization_url')!.status)), {
     initialValue: this.form.get('organization_url')!.status,

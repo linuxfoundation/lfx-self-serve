@@ -369,4 +369,26 @@ describe('MeetingService.getMeetingRegistrants', () => {
 
     await expect(service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true)).rejects.toThrow('query service down');
   });
+
+  it('stops paging once the roster exceeds maxResults, without fetching remaining pages', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a'), registrantRecord('b')], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [registrantRecord('c')], page_token: 'next-2' });
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true, 2);
+
+    // Exceeded maxResults (2) after page 2 (3 accumulated) — page 3 is never requested even
+    // though page_token: 'next-2' would otherwise continue pagination.
+    expect(result).toHaveLength(3);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('pages to completion when the roster stays within maxResults', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true, 50);
+
+    expect(result).toHaveLength(1);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
 });

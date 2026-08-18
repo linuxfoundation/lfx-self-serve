@@ -409,7 +409,10 @@ export class MeetingController {
       // also allowed on invite_only committees — mirroring canSendMemberInvites() client-side — since
       // they're already independently authorized to send invites for that committee (upstream, via
       // their own bearer token, same as createCommitteeInvite always has been), so letting them
-      // populate the invite textarea via import grants no new privilege.
+      // populate the invite textarea via import grants no new privilege. join_mode alone doesn't
+      // prove the caller belongs to the committee, so membership is loaded and checked explicitly —
+      // canSendMemberInvites() requires !isVisitor() (myRole() !== null) client-side; my_role is the
+      // server-side equivalent.
       if (failOnPartial) {
         if (!committeeUid) {
           throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
@@ -419,12 +422,13 @@ export class MeetingController {
         }
 
         const [committee, meeting, isCommitteeWriter] = await Promise.all([
-          this.committeeService.getCommitteeById(req, committeeUid),
+          this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
           this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: false }),
           this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
         ]);
 
-        const canImport = isCommitteeWriter || committee.join_mode === 'invite_only';
+        const isCommitteeMember = !!committee.my_role;
+        const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
         if (!canImport || committee.project_uid !== meeting.project_uid) {
           throw new AuthorizationError('Not authorized to import registrants for this meeting', {
             operation: 'get_meeting_registrants',
@@ -433,17 +437,25 @@ export class MeetingController {
         }
       }
 
-      // Get the meeting registrants
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
-
       // A sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
       // partial-failure states — refuse rather than hand the caller a roster it can't safely act
       // on. Only applies to the import flow (failOnPartial); the 3 partial-tolerant callers render
-      // whatever loaded and are unaffected.
+      // whatever loaded and are unaffected. Bounding the fetch itself (not just the count check
+      // after it) via maxResults keeps a 500-registrant meeting from paging to completion before
+      // being refused — the exact scenario that broke in PCC.
+      const registrants = await this.meetingService.getMeetingRegistrants(
+        req,
+        uid,
+        includeRsvp,
+        occurrenceId,
+        failOnPartial,
+        failOnPartial ? IMPORT_REGISTRANTS_MAX : undefined
+      );
+
       if (failOnPartial && registrants.length > IMPORT_REGISTRANTS_MAX) {
         throw ServiceValidationError.forField(
           'registrants',
-          `This meeting has ${registrants.length} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
+          `This meeting has more than ${IMPORT_REGISTRANTS_MAX} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
           { operation: 'get_meeting_registrants', service: 'meeting_controller' }
         );
       }

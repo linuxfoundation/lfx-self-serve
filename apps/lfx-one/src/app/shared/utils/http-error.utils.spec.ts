@@ -5,10 +5,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { isTransientHttpError, retryTransientHttpError } from './http-error.utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
+}
+
+function httpErrorWithBody(status: number, error: unknown): HttpErrorResponse {
+  return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing', error });
 }
 
 describe('isTransientHttpError', () => {
@@ -82,5 +86,50 @@ describe('retryTransientHttpError', () => {
     const boom = new Error('boom');
 
     await expect(firstValueFrom(throwError(() => boom).pipe(retryTransientHttpError(2)))).rejects.toBe(boom);
+  });
+});
+
+describe('extractErrorMessage', () => {
+  it('prefers the field-level detail in a ServiceValidationError body over the generic top-level message', () => {
+    // Mirrors ServiceValidationError.forField's response shape: a generic top-level `error`
+    // wrapper plus the actionable detail buried in `errors[0].message`.
+    const error = httpErrorWithBody(400, {
+      error: 'Validation failed for registrants',
+      code: 'VALIDATION_ERROR',
+      errors: [{ field: 'registrants', message: 'This meeting has 62 registrants — imports are limited to 50 per meeting.', code: 'FIELD_VALIDATION_ERROR' }],
+    });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('This meeting has 62 registrants — imports are limited to 50 per meeting.');
+  });
+
+  it('falls back to the top-level message when errors is absent', () => {
+    const error = httpErrorWithBody(404, { message: 'Meeting not found' });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Meeting not found');
+  });
+
+  it('falls back to the top-level error when message is absent', () => {
+    const error = httpErrorWithBody(403, { error: 'Not authorized' });
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('Not authorized');
+  });
+
+  it('falls back to the synthesized HttpErrorResponse message when the body has no usable message', () => {
+    // HttpErrorResponse always synthesizes a `.message` ("Http failure response for ..."), so an
+    // empty/unusable body never reaches the caller-provided fallback string for a real HTTP error.
+    const error = httpErrorWithBody(500, {});
+
+    expect(extractErrorMessage(error, 'fallback')).toContain('Http failure response');
+  });
+
+  it('returns a plain string body directly', () => {
+    const error = httpErrorWithBody(500, 'upstream down');
+
+    expect(extractErrorMessage(error, 'fallback')).toBe('upstream down');
+  });
+
+  it('handles a plain Error and an unknown value', () => {
+    expect(extractErrorMessage(new Error('boom'), 'fallback')).toBe('boom');
+    expect(extractErrorMessage('not an error', 'fallback')).toBe('fallback');
   });
 });

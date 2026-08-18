@@ -603,13 +603,18 @@ export class MeetingService {
    *   later page fails. Callers that rely on the complete list for correctness (e.g.
    *   importing every registrant) should set this; default preserves the existing
    *   partial-tolerant behavior for callers that just render whatever loaded.
+   * @param maxResults - If set, stop paging once the accumulated count exceeds this many
+   *   registrants — bounds upstream calls for callers that only need to know "is this over N"
+   *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
+   *   lower bound, not an exact count, once it exceeds `maxResults`.
    */
   public async getMeetingRegistrants(
     req: Request,
     meetingUid: string,
     includeRsvp: boolean = false,
     occurrenceId?: string,
-    failOnPartial: boolean = false
+    failOnPartial: boolean = false,
+    maxResults?: number
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
@@ -627,7 +632,7 @@ export class MeetingService {
           ...params,
           ...(pageToken && { page_token: pageToken }),
         }),
-      { failOnPartial }
+      { failOnPartial, maxResults }
     );
 
     // If include_rsvp is true, fetch RSVP data and attach to registrants.
