@@ -39,9 +39,9 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   // implements ListAdAccounts (campaign-service internal/bootstrap/sysacct.go), so the account id
   // is hand-entered on the connection.
   //
-  // NOTE this gate is the PICKER only. A brief already saved with reddit-ads still restores in
-  // implementation-tab.component.ts and still builds redditConfig — see the PR for why that is
-  // left for the follow-up rather than fixed here.
+  // The picker is not the only gate: implementation-tab.component.ts filters this same `disabled`
+  // flag when restoring a saved brief, because a brief stored BEFORE the flag still names the
+  // platform and the disabled tile leaves the user no way to deselect it.
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;
