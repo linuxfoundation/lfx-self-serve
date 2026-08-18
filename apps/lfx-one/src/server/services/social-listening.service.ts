@@ -3,6 +3,7 @@
 
 import {
   ANALYTICS_TOP_PROJECTS_LIMIT,
+  MENTION_FEED_BODY_MAX_CHARS,
   MENTION_FILTER_MAX_VALUES,
   MENTION_IDS_MAX_VALUES,
   MENTION_TOP_TAGS_LIMIT,
@@ -39,29 +40,35 @@ import { SnowflakeService } from './snowflake.service';
 import { withSocialListeningCache } from './valkey.service';
 
 /**
- * Columns dropped from the feed projection: the upstream source id, the global `BOOKMARKED` flag
- * (deferred — LFXV2-3002), and the `IS_*` range flags (fixed windows; this app uses a resolved range).
+ * Explicit feed projection: renames `_KEY`, drops `SOURCE_ID`/`BOOKMARKED` (deferred) and the `IS_*`
+ * window flags (this app resolves its own range), and caps `BODY` so a page of blog-length posts
+ * can't balloon the response.
  */
-const FEED_EXCLUDED_COLUMNS = [
-  'SOURCE_ID',
-  'BOOKMARKED',
-  'IS_YTD',
-  'IS_7D',
-  'IS_30D',
-  'IS_QUARTER',
-  'IS_90D',
-  'IS_12M',
-  'IS_ALL_TIME',
-  'IS_LAST_COMPLETED_YEAR',
-  'IS_PREV_COMPLETED_YEAR',
-  'IS_3RD_LAST_COMPLETED_YEAR',
-  'IS_4TH_LAST_COMPLETED_YEAR',
-  'IS_PREV_YTD',
-  'IS_PREV_7D',
-  'IS_PREV_30D',
-  'IS_PREV_90D',
-  'IS_PREV_QUARTER',
-  'IS_PREV_12M',
+const FEED_COLUMNS = [
+  '_KEY AS MENTION_ID',
+  'PROJECT_ID',
+  'PROJECT_NAME',
+  'PROJECT_SLUG',
+  'SOURCE_PROJECT_ID',
+  'SOURCE_PROJECT_NAME',
+  'TITLE',
+  `LEFT(BODY, ${MENTION_FEED_BODY_MAX_CHARS}) AS BODY`,
+  'AUTHOR',
+  'AUTHOR_PROFILE_LINK',
+  'SOURCE_PLATFORM',
+  'SOCIAL_NETWORK',
+  'SENTIMENT',
+  'URL',
+  'RELEVANCE_SCORE',
+  'RELEVANCE_COMMENT',
+  'IMAGE_URL',
+  'LANGUAGE',
+  'SUBREDDIT',
+  'VIEW_NAME',
+  'MENTION_TS',
+  'KEYWORD',
+  'TAGS',
+  'COMPUTED_AT',
 ].join(', ');
 
 /** Day-grain buckets stay readable up to roughly two months; anything longer rolls up to months. */
@@ -105,7 +112,7 @@ export class SocialListeningService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** One page of mentions, newest first; `computedAt` is the dbt rebuild timestamp off the newest row (null for an empty page). */
+  /** One page of mentions, newest first; `computedAt` rides the newest row — safe because the backing dbt model is a full-refresh `table` (hourly rebuild stamps every row with the same `COMPUTED_AT`). Null for an empty page. */
   public async getMentionsFeed(req: Request, params: SocialListeningFeedParams): Promise<SocialListeningFeedResponse> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
@@ -113,7 +120,7 @@ export class SocialListeningService {
     const offset = this.clampInteger(params.offset, 0, MAX_FEED_OFFSET);
 
     const sql = `
-      SELECT * EXCLUDE (${FEED_EXCLUDED_COLUMNS}) RENAME _KEY AS MENTION_ID
+      SELECT ${FEED_COLUMNS}
       FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}
       -- MENTION_TS is not unique, so _KEY breaks ties into a total order OFFSET paging can rely on.
@@ -221,7 +228,7 @@ export class SocialListeningService {
     });
   }
 
-  /** Tags with mention volume, highest first; the comma-joined upstream `TAGS` is exploded via `LATERAL FLATTEN`. Serves the tag filter and the analytics top-tags panel. */
+  /** Tags with mention volume, highest first; the comma-joined upstream `TAGS` is exploded via `LATERAL FLATTEN`. Folded to lowercase because the tag filter matches case-insensitively — one listed option must map to one predicate. Serves the tag filter and the analytics top-tags panel. */
   public async getMentionsTags(req: Request, params: SocialListeningTagsParams): Promise<SocialListeningTagCount[]> {
     const scope = this.buildScope(params, 'm');
     const filters = this.buildFilters(req, params, 'm');
@@ -229,14 +236,14 @@ export class SocialListeningService {
     const limit = this.clampInteger(params.limit ?? MENTION_TOP_TAGS_LIMIT, 1, MENTION_FILTER_MAX_VALUES);
 
     const sql = `
-      SELECT TRIM(f.VALUE::STRING) AS TAG, COUNT(*) AS TOTAL_COUNT
+      SELECT LOWER(TRIM(f.VALUE::STRING)) AS TAG, COUNT(*) AS TOTAL_COUNT
       FROM ${socialListeningFeedTable()} AS m,
         LATERAL FLATTEN(input => SPLIT(m.TAGS, ',')) AS f
       WHERE ${scope.clause}${filters.clause}
         AND m.TAGS IS NOT NULL
         AND m.TAGS != ''
         AND TRIM(f.VALUE::STRING) != ''
-      GROUP BY TRIM(f.VALUE::STRING)
+      GROUP BY LOWER(TRIM(f.VALUE::STRING))
       ORDER BY TOTAL_COUNT DESC, TAG
       LIMIT ${limit}
     `;
@@ -250,7 +257,7 @@ export class SocialListeningService {
     });
   }
 
-  /** Author options cascading off every other filter; a multi-platform author is attributed to their busiest one (`PLATFORM_RANK = 1`) for a single icon. */
+  /** Author options cascading off every other filter; a multi-platform author is attributed to their busiest one (`PLATFORM_RANK = 1`), ties broken on the platform name so the icon is stable across runs. */
   public async getMentionsAuthors(req: Request, params: SocialListeningAuthorsParams): Promise<SocialListeningMentionAuthor[]> {
     const scope = this.buildScope(params);
     // `authors` and `mentionIds` are absent from this param type by construction — a multiselect
@@ -263,11 +270,13 @@ export class SocialListeningService {
         SELECT AUTHOR,
                SOURCE_PLATFORM AS PLATFORM,
                SUM(COUNT(*)) OVER (PARTITION BY AUTHOR) AS MENTION_COUNT,
-               ROW_NUMBER() OVER (PARTITION BY AUTHOR ORDER BY COUNT(*) DESC) AS PLATFORM_RANK
+               ROW_NUMBER() OVER (PARTITION BY AUTHOR ORDER BY COUNT(*) DESC, SOURCE_PLATFORM) AS PLATFORM_RANK
         FROM ${socialListeningFeedTable()}
         WHERE ${scope.clause}
           AND AUTHOR IS NOT NULL
-          AND AUTHOR != ''${filters.clause}
+          AND AUTHOR != ''
+          AND SOURCE_PLATFORM IS NOT NULL
+          AND SOURCE_PLATFORM != ''${filters.clause}
         GROUP BY AUTHOR, SOURCE_PLATFORM
       )
       WHERE PLATFORM_RANK = 1
@@ -275,11 +284,10 @@ export class SocialListeningService {
       LIMIT ${MENTION_FILTER_MAX_VALUES}
     `;
 
-    logger.debug(req, 'social_listening_mentions_authors', 'Querying author options', { foundation_slug: params.foundationSlug });
-
-    const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds]);
-
-    return result.rows ?? [];
+    return this.cached(req, params.foundationSlug, 'mentions-authors', [...scope.binds, ...filters.binds], async () => {
+      const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds]);
+      return result.rows ?? [];
+    });
   }
 
   /**
@@ -301,15 +309,15 @@ export class SocialListeningService {
       current_window AS (
         SELECT COUNT(*) AS TOTAL,
                COUNT(DISTINCT SOURCE_PROJECT_ID) AS CHILD_PROJECTS,
-               COUNT_IF(LOWER(SENTIMENT) = 'positive') AS POSITIVE,
-               COUNT_IF(LOWER(SENTIMENT) = 'negative') AS NEGATIVE
+               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'positive') AS POSITIVE,
+               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'negative') AS NEGATIVE
         FROM base
         WHERE MENTION_TS >= TO_DATE(?) AND MENTION_TS < TO_DATE(?)
       ),
       previous_window AS (
         SELECT COUNT(*) AS TOTAL,
-               COUNT_IF(LOWER(SENTIMENT) = 'positive') AS POSITIVE,
-               COUNT_IF(LOWER(SENTIMENT) = 'negative') AS NEGATIVE
+               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'positive') AS POSITIVE,
+               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'negative') AS NEGATIVE
         FROM base
         WHERE MENTION_TS >= TO_DATE(?) AND MENTION_TS < TO_DATE(?)
       )
@@ -476,7 +484,7 @@ export class SocialListeningService {
     const binds: QueryBind[] = [];
 
     if (filters.sentiment && filters.sentiment !== 'all') {
-      clauses.push(`LOWER(${col('SENTIMENT')}) = ?`);
+      clauses.push(`LOWER(TRIM(${col('SENTIMENT')})) = ?`);
       binds.push(filters.sentiment.toLowerCase());
     }
 

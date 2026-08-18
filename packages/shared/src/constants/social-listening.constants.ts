@@ -122,6 +122,9 @@ export const MENTION_TIME_TICK_INTERVAL_MS = 60_000;
 export const MENTION_SEARCH_DEBOUNCE_MS = 500;
 export const MENTION_SEARCH_MIN_CHARS = 3;
 
+/** Server-side feed `BODY` cap (`LEFT(BODY, n)`) — 2× the forward-by-email excerpt budget below, bounding feed payloads; expanded cards truncate past this (product-visible). */
+export const MENTION_FEED_BODY_MAX_CHARS = 1000;
+
 /** Plain-text body cap for the forward-by-email mailto: keeps the href under the ~2000-char URL limit mail clients enforce. */
 export const MENTION_FORWARD_EMAIL_BODY_MAX_CHARS = 500;
 

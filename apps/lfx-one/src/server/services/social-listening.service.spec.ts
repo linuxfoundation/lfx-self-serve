@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@lfx-one/shared/constants', () => ({
   ANALYTICS_TOP_PROJECTS_LIMIT: 5,
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
+  MENTION_FEED_BODY_MAX_CHARS: 1000,
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
   MENTION_TOP_TAGS_LIMIT: 10,
@@ -95,13 +96,15 @@ describe('getMentionsFeed — LIMIT/OFFSET are literals, not binds', () => {
     expect(normalize(lastCall().sql)).toContain('ORDER BY MENTION_TS DESC, _KEY DESC');
   });
 
-  it('renames the identity column and drops the excluded projection columns', async () => {
+  it('projects an explicit column list that renames the identity column, drops the excluded columns, and caps BODY', async () => {
     await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 0 });
 
     const sql = normalize(lastCall().sql);
-    expect(sql).toContain('RENAME _KEY AS MENTION_ID');
-    expect(sql).toContain('BOOKMARKED');
-    expect(sql).toContain('IS_ALL_TIME');
+    expect(sql).not.toContain('SELECT *');
+    expect(sql).toContain('_KEY AS MENTION_ID');
+    expect(sql).toContain('LEFT(BODY, 1000) AS BODY');
+    expect(sql).not.toContain('BOOKMARKED');
+    expect(sql).not.toContain('IS_ALL_TIME');
   });
 
   it('reports the newest row COMPUTED_AT as the watermark, and null for an empty page', async () => {
@@ -181,7 +184,7 @@ describe('buildFilters', () => {
 
     const { sql, binds } = lastCall();
     const normalized = normalize(sql);
-    expect(normalized).toContain('LOWER(SENTIMENT) = ?');
+    expect(normalized).toContain('LOWER(TRIM(SENTIMENT)) = ?');
     expect(normalized).toContain('LOWER(RELEVANCE_SCORE) = ?');
     expect(normalized).toContain('LOWER(LANGUAGE) = ?');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'positive', 'high', 'en']);
@@ -283,6 +286,14 @@ describe('option queries', () => {
     expect(normalized).toContain("LATERAL FLATTEN(input => SPLIT(m.TAGS, ',')) AS f");
   });
 
+  it('folds the tag vocabulary to lowercase so a listed option maps to the case-insensitive tag predicate', async () => {
+    await service().getMentionsTags(req, SCOPE);
+
+    const normalized = normalize(lastCall().sql);
+    expect(normalized).toContain('SELECT LOWER(TRIM(f.VALUE::STRING)) AS TAG');
+    expect(normalized).toContain('GROUP BY LOWER(TRIM(f.VALUE::STRING))');
+  });
+
   it('interpolates the author option cap rather than binding it', async () => {
     await service().getMentionsAuthors(req, SCOPE);
 
@@ -290,6 +301,15 @@ describe('option queries', () => {
     expect(normalize(sql)).toContain('LIMIT 200');
     expect(sql).not.toContain('LIMIT ?');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
+  });
+
+  it('guards author options against null platforms, breaks platform ties deterministically, and caches the result', async () => {
+    await service().getMentionsAuthors(req, SCOPE);
+
+    const normalized = normalize(lastCall().sql);
+    expect(normalized).toContain("SOURCE_PLATFORM IS NOT NULL AND SOURCE_PLATFORM != ''");
+    expect(normalized).toContain('ROW_NUMBER() OVER (PARTITION BY AUTHOR ORDER BY COUNT(*) DESC, SOURCE_PLATFORM)');
+    expect(withSocialListeningCache).toHaveBeenCalledWith('cncf', 'mentions-authors', ['cncf', '2026-01-01', '2026-02-01'], 1800, expect.any(Function));
   });
 
   it('keys the language and keyword caches on the scope binds', async () => {
