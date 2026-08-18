@@ -402,7 +402,10 @@ export class CampaignsComponent {
     // error node already carries role="alert", so returning the same string here would announce
     // the failure twice.
     if (this.emailTemplatesError()) return '';
-    if (this.emailChannelEnabled() === false) return 'HubSpot is not connected for this foundation.';
+    // The SAME computed the visible node renders, not a second copy of the sentence: the two
+    // drifted once already, and an announcement that names no project while the text on screen
+    // names one describes a different failure to a screen-reader user than to a sighted one.
+    if (this.emailChannelEnabled() === false) return this.emailNotConnectedMessage();
     const templates = this.emailTemplates();
     if (templates === null) return '';
     if (templates.length === 0) {
@@ -457,6 +460,37 @@ export class CampaignsComponent {
    * response can settle it, and rendering either answer before one arrives would be a guess.
    */
   protected readonly emailChannelEnabled = signal<boolean | null>(null);
+
+  /**
+   * The project slug the CURRENT template search was issued against.
+   *
+   * Separate from `activeFoundationSlug` on purpose. The "not connected" copy names the project
+   * that was queried, and the foundation is switchable while a response is in flight — reading
+   * the live slug would name whichever foundation the user has since moved to, which is the
+   * opposite of the point. Written at dispatch and only by the generation-current response.
+   */
+  protected readonly emailSearchProjectSlug = signal<string>('');
+
+  /**
+   * Names the project the search actually queried, for the "connect HubSpot" empty state.
+   *
+   * campaign-service answers the same typed 404 for an absent connection row and for a project id
+   * that does not exist (`campaign.interface.ts:1223-1226`), so "not connected" and "no such
+   * project" are indistinguishable here. Naming the slug is what makes a typo visible instead of
+   * being reported as a missing integration.
+   *
+   * The slug — not the display name — because the slug is the identifier that was sent, and it is
+   * the thing that can be mistyped; a name would be resolved from local context and would look
+   * correct even when the queried id was wrong.
+   */
+  protected readonly emailNotConnectedMessage = computed<string>(() => {
+    const slug = this.emailSearchProjectSlug();
+    // The empty-slug search is refused before dispatch, so this is defensive only: naming nothing
+    // is still better than rendering "project ''".
+    return slug
+      ? `HubSpot is not connected for “${slug}”. Connect it for this foundation to stage an email.`
+      : 'Connect HubSpot for this foundation to stage an email.';
+  });
 
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
@@ -553,6 +587,9 @@ export class CampaignsComponent {
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
         this.selectedEmailTemplateId.set('');
+        // Cleared with the rest: it names the project in the "not connected" copy, and the
+        // previous foundation's slug must not survive into a message rendered under the new one.
+        this.emailSearchProjectSlug.set('');
 
         // Reload if the operator is SITTING on the picker. The clears above are correct, but
         // on their own they leave a blank panel in front of someone who never navigated: the
@@ -782,6 +819,10 @@ export class CampaignsComponent {
 
     this.emailTemplateQuery.set(query);
     this.emailTemplateSubmittedQuery.set(query);
+    // Captured at dispatch, alongside the slug actually passed to the request below, so the
+    // "not connected" copy names the project that was queried even if the foundation changes
+    // while the response is in flight.
+    this.emailSearchProjectSlug.set(projectSlug);
     this.emailTemplatesLoading.set(true);
     this.emailTemplatesError.set(null);
     // Reset alongside the error, not only on a foundation switch. The template checks

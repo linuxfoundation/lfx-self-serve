@@ -221,7 +221,7 @@
               </p>
             } @else if (emailChannelEnabled() === false) {
               <!-- Not an error: the steady state wherever HubSpot is not connected. -->
-              <p class="text-sm text-gray-500" data-testid="campaigns-email-not-connected">Connect HubSpot for this foundation to stage an email.</p>
+              <p class="text-sm text-gray-500" data-testid="campaigns-email-not-connected">{{ emailNotConnectedMessage() }}</p>
             } @else if (emailTemplatesError(); as message) {
               <p class="text-sm text-red-600" role="alert" data-testid="campaigns-email-templates-error">{{ message }}</p>
             } @else if (emailTemplates(); as templates) {

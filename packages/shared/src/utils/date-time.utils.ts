@@ -656,5 +656,10 @@ export function formatHubSpotUpdatedAt(value: string | undefined): string {
   }
   const date = new Date(value);
   if (isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // Pinned to UTC for the same reason the date-only branch is: without an explicit `timeZone`,
+  // `toLocaleDateString` renders in the HOST zone, and this is an SSR app. A timestamp near
+  // midnight then formats to one date in the Node process and another in the browser, so the row
+  // text and its accessible label both change during hydration. Pinning also keeps the two
+  // branches agreeing: `2026-08-14` and `2026-08-14T23:30:00Z` must not render different days.
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

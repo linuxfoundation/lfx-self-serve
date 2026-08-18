@@ -1910,6 +1910,30 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(el.querySelector('[data-testid="campaigns-email-template-list"]')).toBeNull();
   });
 
+  /**
+   * campaign-service answers the SAME typed 404 for an absent connection row and for a project id
+   * that does not exist (`campaign.interface.ts:1223-1226`), so this copy is the only place a
+   * mistyped slug can be distinguished from an unconfigured one. Naming nothing reported every
+   * typo as a missing integration.
+   */
+  it('names the project it queried in the connect-HubSpot state', () => {
+    picker().searchEmailTemplates('');
+    respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
+
+    const text = panel().querySelector('[data-testid="campaigns-email-not-connected"]')?.textContent ?? '';
+    expect(text).toContain('tlf');
+  });
+
+  it('announces the same named message it renders', () => {
+    // The visible node and the live region held two separate copies of this sentence. A screen
+    // reader hearing an unnamed message while the screen names one is told a different story.
+    picker().searchEmailTemplates('');
+    respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] });
+
+    const text = panel().querySelector('[data-testid="campaigns-email-not-connected"]')?.textContent?.trim() ?? '';
+    expect(picker().emailTemplatesAnnouncement()).toBe(text);
+  });
+
   it('renders the error state, not an empty portal, when the search failed', () => {
     picker().searchEmailTemplates('');
     respond({ enabled: true, error: 'HubSpot refused the request', possiblyTruncated: false, emails: [] });
