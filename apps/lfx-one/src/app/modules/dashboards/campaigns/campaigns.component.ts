@@ -482,6 +482,12 @@ export class CampaignsComponent {
         // the new foundation — the cross-portal leak this handler exists to prevent, and the
         // one `searchEmailTemplates` documents as the hazard its guard cannot see.
         this.emailSearchGeneration++;
+        // Cleared here too, and this is NOT redundant with the subscribe arms: BOTH of the
+        // set-false calls sit INSIDE their `isCurrent()` guards, so a response the generation
+        // bump above just invalidated returns before either runs. Without this line the
+        // spinner would hang until the user happened to search again — the bump closes the
+        // cross-portal leak and would otherwise open a stuck-loading state in its place.
+        this.emailTemplatesLoading.set(false);
         this.emailTemplates.set(null);
         this.emailTemplateQuery.set('');
         this.emailTemplatesTruncated.set(false);
