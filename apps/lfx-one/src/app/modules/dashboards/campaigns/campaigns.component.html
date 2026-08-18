@@ -251,7 +251,7 @@
                           @if (template.state) {
                             · {{ template.state }}
                           }
-                          @if (formatTemplateUpdatedAt(template.updatedAt); as updated) {
+                          @if (template.updatedAt | hubspotUpdatedAt; as updated) {
                             · Updated {{ updated }}
                           }
                         </span>

@@ -617,3 +617,22 @@ export function formatIsoDateLabel(iso: string): string {
     timeZone: 'UTC',
   });
 }
+
+/**
+ * Render a HubSpot `updatedAt` for a marketing-email row.
+ *
+ * Two templates routinely share a name, so without a date two same-name rows are visually
+ * identical and an operator cannot tell which one they are cloning.
+ *
+ * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on the
+ * interface, and a dash in the metadata line would read as a value the portal reported. HubSpot
+ * also sends a date-only form, which `new Date` would parse as UTC midnight and render as the
+ * previous day in western timezones — normalising to local midnight avoids the off-by-one.
+ */
+export function formatHubSpotUpdatedAt(value: string | undefined): string {
+  if (!value) return '';
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
