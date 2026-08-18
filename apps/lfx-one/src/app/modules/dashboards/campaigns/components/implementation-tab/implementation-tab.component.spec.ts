@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -195,5 +195,64 @@ describe('ImplementationTabComponent submit gate', () => {
     setPersistence({ status: 'off', briefId: null, message: null, approved: false });
 
     expect(canSubmit()).toBe(true);
+  });
+});
+
+/**
+ * A brief saved BEFORE a platform was disabled must not restore that platform.
+ *
+ * The Plan picker gates `disabled` at the tile, but a stored brief reaches `selectedPlatforms`
+ * through `populateFromBrief`, which never consults the picker. Without a filter there, an older
+ * Reddit brief still submits `redditConfig` on brief-derived values the user never saw — and the
+ * now-disabled tile means they cannot deselect it either.
+ */
+describe('ImplementationTabComponent brief restore', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function selectedPlatforms(): string[] {
+    return [...(fixture.componentInstance as unknown as { selectedPlatforms(): Set<string> }).selectedPlatforms()];
+  }
+
+  function restore(platforms: string[]): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: platforms,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('drops a disabled platform from a restored brief', () => {
+    restore(['google-ads', 'reddit-ads']);
+
+    expect(selectedPlatforms()).not.toContain('reddit-ads');
+    // The enabled sibling must SURVIVE — a filter that dropped everything would pass a
+    // not-toContain assertion on its own while silently discarding the user's real choice.
+    expect(selectedPlatforms()).toContain('google-ads');
+  });
+
+  it('leaves the default standing rather than restoring an all-disabled brief', () => {
+    restore(['reddit-ads']);
+
+    // Filtered to empty, the `length` guard skips the set entirely, so the component keeps its
+    // own default instead of substituting a platform the user never chose.
+    expect(selectedPlatforms()).not.toContain('reddit-ads');
+    expect(selectedPlatforms()).toEqual(['google-ads']);
   });
 });

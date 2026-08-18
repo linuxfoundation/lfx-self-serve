@@ -27,28 +27,21 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
   { id: 'optimization', label: 'Optimize', icon: 'fa-light fa-gauge-high' },
 ] as const;
 
-/**
- * Ad channels offered by the Plan tab's multi-select. `disabled` renders "Coming soon".
- *
- * A platform belongs here as ENABLED only when the Implement tab can configure it. Reddit was
- * the counter-example this rule comes from: it was selectable, `showRedditSection` was computed
- * but referenced ZERO times in the template, and `canSubmit` used `redditSelected` only to
- * satisfy the "something is selected" check — no budget floor, no targeting guard. A Reddit
- * campaign therefore dispatched on brief-derived values the user never saw, including a
- * hard-coded 500/day budget signal with no input bound to it. Selectable without a config
- * section is worse than absent: the picker promises a capability the next tab does not have.
- *
- * Microsoft and X/Twitter are disabled for their own reasons — Microsoft until its config
- * builder lands (LFXV2-3312), X because its platform client has no `ListAdAccounts` at all, so
- * no account-discovery endpoint exists and a connection made without an account id fails every
- * dispatch with no way to recover from inside the API.
- */
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
   { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
-  // LFXV2-3225: re-enable once the Implement tab has a Reddit section and canSubmit guards it.
+  // LFXV2-3225: disabled because the Implement tab has no Reddit config section — showRedditSection
+  // is computed but never bound to one, and canSubmit has no Reddit budget floor, so a selection
+  // dispatched on brief-derived values including an unbound 500/day budget signal. Re-enabling
+  // needs that section AND an account id story: neither the Reddit nor the X platform client
+  // implements ListAdAccounts (campaign-service internal/bootstrap/sysacct.go), so the account id
+  // is hand-entered on the connection.
+  //
+  // NOTE this gate is the PICKER only. A brief already saved with reddit-ads still restores in
+  // implementation-tab.component.ts and still builds redditConfig — see the PR for why that is
+  // left for the follow-up rather than fixed here.
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit', disabled: true },
   { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
 ] as const;

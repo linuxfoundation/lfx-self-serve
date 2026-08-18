@@ -13,6 +13,7 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
+  CAMPAIGN_PLATFORMS,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -761,7 +762,19 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     if (brief.selectedPlatforms?.length) {
-      this.selectedPlatforms.set(brief.selectedPlatforms);
+      // A brief saved BEFORE a platform was disabled still names it, and the Plan picker cannot
+      // clear it — the tile is `[disabled]`, so the user has no way to deselect. Restoring it
+      // unfiltered would submit that platform's config on brief-derived values they never saw
+      // and cannot edit, which is the exact defect disabling the picker exists to prevent.
+      //
+      // Filtered to empty, the `?.length` guard below leaves the `google-ads` default standing
+      // rather than substituting silently — the same reason campaign-service.service.ts reports
+      // an all-unrecognised platform list as UNREADABLE instead of defaulting it.
+      const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
+      const restorable = brief.selectedPlatforms.filter((p) => selectable.has(p));
+      if (restorable.length) {
+        this.selectedPlatforms.set(restorable);
+      }
     }
 
     const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
