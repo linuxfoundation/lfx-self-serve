@@ -36,7 +36,7 @@ interface ClaRowStatus {
 }
 
 /**
- * One My CLAs table row, fully resolved before the template sees it. The template binds these
+ * One CLAs table row, fully resolved before the template sees it. The template binds these
  * fields and calls nothing — per the frontend checklist's no-template-functions rule
  * (`docs/reviews/frontend-checklist.md`), which a per-cell `claStatusLabel(...)` /
  * `statusNote(...)` call would re-run on every change-detection pass.
@@ -51,7 +51,7 @@ interface ClaRow {
 }
 
 /**
- * "My CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
+ * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
  * from `/v4/my-clas` with a status column (Valid / Needs attention / Revoked /
  * unknown as plain-text —) and a per-row actions menu. Status and reason are
  * copied from the producer; this component does not derive standing from

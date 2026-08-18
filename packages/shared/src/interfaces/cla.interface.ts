@@ -25,7 +25,7 @@ export type ClaStatus = 'valid' | 'needs_attention' | 'invalidated' | 'unknown' 
 
 export type ClaStatusReason = 'not_on_approval_list' | 'unknown';
 
-/** A single signed CLA shown in the My CLAs list. */
+/** A single signed CLA shown in the CLAs list. */
 export interface MyClaAgreement {
   /** EasyCLA signatureID — also the key for the PDF-URL endpoint. */
   id: string;
