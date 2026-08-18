@@ -322,9 +322,9 @@ export class MktgChatPanelComponent implements OnInit, OnDestroy {
   /**
    * Recover from a failed send: roll back the optimistic bubble (the server never
    * received it), restore the user's draft so they can resend without retyping,
-   * and surface an inline error. The message control is locked while sending (see
-   * the constructor effect), so no new input can have accumulated — restoring the
-   * draft can't clobber anything the user typed.
+   * and surface an inline error. The message control is locked while sending
+   * (`setTyping` → `syncInputLock`), so no new input can have accumulated —
+   * restoring the draft can't clobber anything the user typed.
    */
   private handleSendError(error: unknown, draft: string, optimisticId: string): void {
     console.error('[mktg-chat] failed to send message', error);

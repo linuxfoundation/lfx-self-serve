@@ -78,7 +78,9 @@ export class MktgChatSessionService {
     try {
       const raw = localStorage.getItem(key);
       const parsed = raw ? (JSON.parse(raw) as unknown) : null;
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, T>) : {};
+      // Arrays are objects too, but keyed writes on an array are dropped by
+      // JSON.stringify — treat a corrupted array value as an empty map.
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, T>) : {};
     } catch {
       return {};
     }
