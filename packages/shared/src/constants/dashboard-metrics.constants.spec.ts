@@ -224,6 +224,41 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(sentiment?.caption).toContain('could not be loaded');
   });
 
+  // getBrandReach runs two independent queries and keeps serving web data when only the social
+  // one fails — so the response is PRESENT while its social half is fabricated. That partial
+  // success is the last live path of the original AAIF defect: 17,269 followers rendering as
+  // "0 · 0 platforms" behind an HTTP 200 that no undefined sentinel can catch.
+  it('says the social data is unavailable when only the social query failed', () => {
+    const cards = buildEdEvolutionMetrics(
+      dataWith({
+        brandReach: {
+          socialUnavailable: true,
+          totalSocialFollowers: 0,
+          totalMonthlySessions: 3482,
+          activePlatforms: 0,
+          changePercentage: 0,
+          sessionMomChangePct: 4,
+          trend: 'up',
+          socialPlatforms: [],
+          websiteDomains: [],
+          weeklyTrend: [],
+        },
+      })
+    );
+
+    const social = card(cards, 'ed-evo-brand-reach');
+    expect(social?.value).toBe('—');
+    expect(social?.value).not.toBe('0');
+    expect(social?.subtitle).toContain('could not be loaded');
+    expect(social?.changePercentage).toBeUndefined();
+
+    // The other half of the partial success: web sessions WERE measured, so blanking them
+    // would trade a false zero for a false outage.
+    const web = card(cards, 'ed-evo-web-sessions');
+    expect(web?.value).toBe('3.5K');
+    expect(web?.subtitle).not.toContain('could not be loaded');
+  });
+
   // A foundation that genuinely sent nothing must still read as a measured zero, or the fix
   // trades one wrong answer for another.
   it('renders a genuinely empty email month as zero, not as unavailable', () => {

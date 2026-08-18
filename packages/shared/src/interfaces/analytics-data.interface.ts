@@ -3168,6 +3168,17 @@ export interface BrandReachWeeklyDataPoint {
  * Digital reach across social platforms and owned websites
  */
 export interface BrandReachResponse {
+  /**
+   * True when the SOCIAL half of this response could not be read, while the web half was
+   * measured normally. getBrandReach runs two independent queries and deliberately keeps
+   * serving web data when social fails — without this flag that partial success is
+   * indistinguishable from a foundation with zero followers, which is the reported AAIF
+   * defect (17,269 followers rendering as "0 · 0 platforms").
+   *
+   * A WEB failure has no equivalent flag because it fails the whole request, so the
+   * client's undefined sentinel already covers it.
+   */
+  socialUnavailable?: boolean;
   totalSocialFollowers: number;
   totalMonthlySessions: number;
   activePlatforms: number;

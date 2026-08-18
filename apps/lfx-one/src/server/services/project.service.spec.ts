@@ -939,3 +939,37 @@ describe('ProjectService — a Snowflake failure must not become a zero-filled 2
     });
   }
 });
+
+/**
+ * getBrandReach runs two independent queries. A WEB failure fails the whole request (covered
+ * above), but a SOCIAL failure is deliberately non-fatal so the measured web half still reaches
+ * the user. Without a flag that partial success is indistinguishable from a foundation with no
+ * followers — the reported AAIF defect, behind an HTTP 200 no undefined sentinel can catch.
+ */
+describe('ProjectService — a social-only failure is flagged, not silently zeroed', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('sets socialUnavailable and still returns the measured web half', async () => {
+    // Both WEB queries (domains + daily trend) run in parallel first and must succeed; every
+    // social query after them rejects. Getting this order wrong fails the whole method and the
+    // assertion below would pass for the wrong reason.
+    execute
+      .mockResolvedValueOnce({ rows: [{ LF_SUB_DOMAIN_CLASSIFICATION: 'Docs', TOTAL_SESSIONS: 3482 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValue(new Error('social query failed'));
+
+    const result = await service.getBrandReach('aaif');
+
+    expect(result.socialUnavailable).toBe(true);
+    // The fabricated half must be flagged rather than presented as measured.
+    expect(result.totalSocialFollowers).toBe(0);
+    // The half that DID resolve must survive — blanking it would trade a false zero for a
+    // false outage.
+    expect(result.totalMonthlySessions).toBeGreaterThan(0);
+  });
+});

@@ -6007,6 +6007,9 @@ export class ProjectService {
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, foundationParams),
       ]);
 
+      // Tracks whether the social half failed, so a partial success cannot be mistaken for a
+      // measured zero. See BrandReachResponse.socialUnavailable.
+      let socialUnavailable = false;
       let totalSocialFollowers = 0;
       let followerGrowthPct = 0;
       let socialPlatforms: BrandReachResponse['socialPlatforms'] = [];
@@ -6049,6 +6052,10 @@ export class ProjectService {
           followers: row.FOLLOWERS ?? 0,
         }));
       } catch (socialError) {
+        // Deliberately non-fatal: the web half is independent and was measured fine, so
+        // blanking it would trade a false zero for a false outage. Flag it instead, so the
+        // Social card can say "unavailable" while the Web card keeps its real figure.
+        socialUnavailable = true;
         logger.debug(undefined, 'get_brand_reach', 'Social media query failed, returning web-only data', {
           err: socialError instanceof Error ? socialError : new Error(String(socialError)),
         });
@@ -6080,6 +6087,7 @@ export class ProjectService {
       }
 
       return {
+        socialUnavailable,
         totalSocialFollowers,
         totalMonthlySessions,
         activePlatforms: socialPlatforms.length,

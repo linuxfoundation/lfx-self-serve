@@ -902,6 +902,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // else reports a failure during the initial in-flight window.
   const placeholderCaption = data.pending ? DATA_LOADING_CAPTION : DATA_UNAVAILABLE_CAPTION;
 
+  // The Social card needs BOTH the response and its social half: getBrandReach keeps serving
+  // web data when only the social query fails, so `brandReach` being present does not mean
+  // followers were measured. The Web card deliberately does NOT consult this — its sessions
+  // were measured fine, and blanking them would trade a false zero for a false outage.
+  const socialMeasured = brandReach && !brandReach.socialUnavailable;
+
   // Lifted out of the Web card's subtitle binding: combined with the brandReach-undefined
   // arm it would otherwise be a nested ternary, which .claude/rules/styling.md forbids.
   const webSessionsSubtitle = brandReach && brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)';
@@ -1095,15 +1101,15 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       description: 'Social followers across all platforms.',
       // undefined means the request failed, not that the foundation has no followers —
       // "0 · 0 platforms" would report an outage as a measurement.
-      value: brandReach ? formatNumber(brandReach.totalSocialFollowers) : '—',
-      changePercentage: brandReach ? formatMomChange(brandReach.changePercentage) : undefined,
-      trend: brandReach ? normalizeTrend(brandReach.changePercentage, brandReach.trend) : undefined,
-      subtitle: brandReach ? `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}` : placeholderCaption,
+      value: socialMeasured ? formatNumber(brandReach.totalSocialFollowers) : '—',
+      changePercentage: socialMeasured ? formatMomChange(brandReach.changePercentage) : undefined,
+      trend: socialMeasured ? normalizeTrend(brandReach.changePercentage, brandReach.trend) : undefined,
+      subtitle: socialMeasured ? `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}` : placeholderCaption,
       // No historical follower series available. flatSparklineData renders a nearly
       // flat line at the current total (a constant array collapses Chart.js's Y range
       // and hides the line entirely) — it is a placeholder, not a trend. Website
       // sessions are deliberately not reused here: different metric, different card.
-      chartData: brandReach ? protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]) : EMPTY_CHART_DATA,
+      chartData: socialMeasured ? protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Social followers across all platforms, with month-over-month change.',
       drawerType: DashboardDrawerType.BrandReach,
