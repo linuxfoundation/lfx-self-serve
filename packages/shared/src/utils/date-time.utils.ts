@@ -644,6 +644,16 @@ export function formatHubSpotUpdatedAt(value: string | undefined): string {
     return label === value ? '' : label;
   }
 
+  // A TIMESTAMP carries the same hazard as the date-only form, and the earlier fix guarded only
+  // the latter: `new Date('2026-02-31T10:00:00Z')` rolls over to Mar 3 exactly as the bare date
+  // does, so the fabrication survived in this branch while the spec pinned the other one. Split
+  // the date portion off and round-trip it through the same validator before formatting.
+  const datePart = value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    // formatIsoDateLabel echoes its input when it rejects, so an equal result means the calendar
+    // date does not exist — Feb 31st, year 0001, and the like.
+    return '';
+  }
   const date = new Date(value);
   if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

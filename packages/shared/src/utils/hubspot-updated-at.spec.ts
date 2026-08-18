@@ -21,6 +21,15 @@ describe('formatHubSpotUpdatedAt', () => {
     expect(formatHubSpotUpdatedAt('2026-08-14T10:00:00Z')).toContain('2026');
   });
 
+  it('refuses impossible dates in the TIMESTAMP form too, not only date-only', () => {
+    // The first fix guarded only the date-only branch, so these kept fabricating: JS rolls
+    // 2026-02-31T10:00:00Z to Mar 3 exactly as it does the bare date. The spec pinned the
+    // branch that was fixed and not the one that was not.
+    expect(formatHubSpotUpdatedAt('2026-02-31T10:00:00Z')).toBe('');
+    expect(formatHubSpotUpdatedAt('2026-02-30T00:00:00Z')).toBe('');
+    expect(formatHubSpotUpdatedAt('0001-01-01T00:00:00Z')).toBe('');
+  });
+
   it('renders nothing for absent or unparseable input', () => {
     expect(formatHubSpotUpdatedAt(undefined)).toBe('');
     expect(formatHubSpotUpdatedAt('not-a-date')).toBe('');
