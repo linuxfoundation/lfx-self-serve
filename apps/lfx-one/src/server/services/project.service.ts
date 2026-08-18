@@ -3815,11 +3815,7 @@ export class ProjectService {
         year,
         err: error,
       });
-      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
-      // indistinguishable from a genuine measurement, and the ED card's undefined guard
-      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
-      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
-      throw error;
+      return { year, platforms: [] };
     }
   }
 
