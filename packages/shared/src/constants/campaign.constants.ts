@@ -36,12 +36,21 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
  * treats an absent config key as a ZERO VALUE rather than an error, so a campaign would otherwise
  * dispatch with no budget. Microsoft was enabled when `buildMicrosoftConfig` landed.
  *
- * X / Twitter stays disabled for a different, harder reason: it has no account DISCOVERY. Its
- * platform client has no `ListAdAccounts`, so nothing in campaign-service can tell an operator
- * which account id to use, and a connection made without one fails every dispatch with no way to
- * recover from inside the API. That is a capability gap, not missing plumbing — see
- * `accountDiscoveryProviders` in campaign-service's `internal/bootstrap/sysacct.go`, which
- * documents where each provider stands.
+ * Every paid dispatcher except Google and Meta refuses a connection with no ad-account id — that
+ * is true of Microsoft too, and the id comes from the CONNECTION, not from anything this picker
+ * collects. What separates them is whether an operator can recover from a missing one:
+ * campaign-service exposes account discovery for Microsoft
+ * (`GET /projects/{id}/connection-microsoft-ads/accounts`), so an account-less connection can be
+ * fixed from inside the API.
+ *
+ * X / Twitter cannot. Its platform client has no `ListAdAccounts` at all, so no discovery endpoint
+ * exists and nothing can tell an operator which id to supply — a capability gap rather than
+ * missing plumbing, and the reason it stays disabled here.
+ *
+ * Do not read `accountDiscoveryProviders` in campaign-service's `internal/bootstrap/sysacct.go` as
+ * the list of who has discovery: it gates the bootstrap CLI's credentials-first installs, and
+ * Microsoft's absence from it is a sequencing decision that file documents explicitly, not a
+ * missing capability.
  */
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },

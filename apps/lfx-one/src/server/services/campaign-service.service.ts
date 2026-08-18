@@ -159,15 +159,19 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * An unmapped platform is REFUSED, not waved through.
  *
  * The first version returned true for anything unmapped, reasoning that this should not police the
- * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
- * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
- * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
- * service builds no `twitterConfig` or `microsoftConfig`, so waving those through queued a job
- * whose dispatcher reads an absent key as a zero value — exactly the defect the mapped platforms
- * are protected from.
+ * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: a platform
+ * being `disabled` in `CAMPAIGN_PLATFORMS` is a CLIENT guarantee, while the upstream
+ * `CampaignCreateInput` accepts every platform this service knows about. Waving an unmapped one
+ * through queued a job whose dispatcher reads an absent config key as a ZERO VALUE — exactly the
+ * defect the mapped platforms are protected from.
  *
- * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
- * guard is designed to enforce: map a platform only once something builds its config. Note that a
+ * The map is deliberately the authority rather than the `disabled` flag, so the two cannot drift:
+ * a platform is mapped once something builds its config, and enabling it in the picker without
+ * that builder is refused here rather than dispatched with an empty config.
+ *
+ * `hubspot` joined when `buildHubSpotConfig` landed (LFXV2-3256), and `microsoft-ads` when
+ * `buildMicrosoftConfig` landed (LFXV2-3312), which is the order this guard is designed to
+ * enforce: map a platform only once something builds its config. Note that a
  * mapped `hubspot` is necessary but NOT sufficient to stage an email — the dispatcher also needs
  * the brief's audience to be BUILT (`hubspot.go:432-456`), which it resolves by `brief.ID` rather
  * than from this envelope, so that failure surfaces upstream and not here.
