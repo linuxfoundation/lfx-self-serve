@@ -11,8 +11,9 @@
   sm (a stacked card), full width from sm up to just under 2xl (where the panel's own internal
   layout, profile-panel.component.html, reflows into a header row + metadata grid + side-by-side
   social rows). The 2xl threshold (not lg) accounts for the 348px left sidebar (lg:ml-[348px] on
-  <main>) plus 64px page padding (md:px-8) that also apply once the sidebar shows — at lg that
-  leaves only a 312px content column next to a 300px rail; at 2xl it leaves 728px.
+  <main>) plus 56px page padding (md:px-8, which is 2rem per side at this app's 14px root — not the
+  64px a 16px-root assumption would give) that also apply once the sidebar shows — at lg that leaves
+  only a 320px content column next to a 300px rail; at 2xl it leaves 736px.
 -->
 <div class="flex flex-col" data-testid="profile-layout">
   <!-- Left column -->

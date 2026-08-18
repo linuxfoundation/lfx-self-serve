@@ -12,9 +12,10 @@
  * (390 - 300px gutter - 40px page padding).
  *
  * The breakpoint moved from `lg` (1024px) to `2xl` (1440px) in a LFXV2-3285 follow-up: the hub
- * spends 712px on fixed chrome before any content — 348px left sidebar (lg:ml-[348px] on <main>,
- * unrelated and unchanged by this follow-up) + 300px rail + 64px page padding (md:px-8). At `lg`
- * that left a 312px content column, narrower than the rail beside it; at `2xl` it leaves 728px.
+ * spends 704px on fixed chrome before any content — 348px left sidebar (lg:ml-[348px] on <main>,
+ * unrelated and unchanged by this follow-up) + 300px rail + 56px page padding (md:px-8, which is
+ * 2rem per side at this app's 14px root — not the 64px a 16px-root assumption would give). At `lg`
+ * that left a 320px content column, narrower than the rail beside it; at `2xl` it leaves 736px.
  * Keeping the inline card until `2xl` also covers iPad landscape and split-screen laptop windows.
  *
  * The existing profile specs (profile-edit-drawer.spec.ts, profile-visibility-drawer.spec.ts) pass
@@ -203,11 +204,25 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         // the real root font-size, not the 40px/64px a 16px-root assumption would give (35px/56px
         // here). Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px
         // sidebar also reserves space, and the content column stops growing past max-w-[1024px]
-        // regardless. Both breakpoint checks key off clientWidth, not vp.width — the media queries the
-        // app actually evaluates run against the layout viewport, which a classic desktop scrollbar
-        // shrinks below the requested device width (same reasoning as the scrollWidth check above).
-        const pagePadding = (overflow.clientWidth >= MD_BREAKPOINT ? PAGE_PADDING_REM_AT_MD : PAGE_PADDING_REM_BELOW_MD) * rootFontSize;
-        const sidebar = overflow.clientWidth >= LG_BREAKPOINT ? SIDEBAR_WIDTH : 0;
+        // regardless.
+        //
+        // Whether md:/lg: are actually active is read via matchMedia rather than compared against
+        // clientWidth or vp.width: the matrix's own tablet viewport (768px) sits exactly on
+        // MD_BREAKPOINT, and browser engines don't agree on which viewport metric a min-width query
+        // resolves against when a classic scrollbar is present — Chromium tracks clientWidth (scrollbar
+        // excluded, same reasoning as the scrollWidth check above), but Firefox tracks the
+        // scrollbar-inclusive viewport, so a clientWidth-threshold comparison can read "below md" at
+        // exactly 768px in Firefox while the browser's own CSS has already applied md:px-8. Asking the
+        // engine directly sidesteps the disagreement entirely.
+        const { isMdActive, isLgActive } = await page.evaluate(
+          ([md, lg]) => ({
+            isMdActive: window.matchMedia(`(min-width: ${md}px)`).matches,
+            isLgActive: window.matchMedia(`(min-width: ${lg}px)`).matches,
+          }),
+          [MD_BREAKPOINT, LG_BREAKPOINT]
+        );
+        const pagePadding = (isMdActive ? PAGE_PADDING_REM_AT_MD : PAGE_PADDING_REM_BELOW_MD) * rootFontSize;
+        const sidebar = isLgActive ? SIDEBAR_WIDTH : 0;
         const expectedContentWidth = Math.min(CONTENT_MAX, overflow.clientWidth - sidebar - pagePadding);
         const contentBox = await content.boundingBox();
         expect(contentBox, 'content column should have a bounding box').not.toBeNull();
