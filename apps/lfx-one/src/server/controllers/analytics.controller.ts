@@ -4,7 +4,7 @@
 import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
@@ -3114,7 +3114,7 @@ export class AnalyticsController {
     const unauthorizedSlugs = slugs.filter((slug) => !allPersonaSlugs.has(slug));
 
     if (unauthorizedSlugs.length > 0) {
-      throw ServiceValidationError.forField('slugs', `Not authorized to access foundation(s): ${unauthorizedSlugs.join(', ')}`, {
+      throw new AuthorizationError(`Not authorized to access foundation(s): ${unauthorizedSlugs.join(', ')}`, {
         operation: 'get_multi_foundation_summary',
       });
     }
