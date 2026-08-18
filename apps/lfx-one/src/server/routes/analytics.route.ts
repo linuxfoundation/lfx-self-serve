@@ -143,14 +143,17 @@ router.get('/org-involvement-event-attendance-monthly', (req, res, next) => anal
 router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
-// Web activities summary endpoint (marketing dashboard)
-router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns web activity summary metrics. Shared with LF Staff
+// Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
+router.get('/web-activities-summary', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
 
-// Email CTR endpoint (marketing dashboard)
-router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns email click-through-rate metrics. Shared with LF
+// Staff Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
+router.get('/email-ctr', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getEmailCtr(req, res, next));
 
-// Social reach endpoint (marketing dashboard)
-router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns paid social reach metrics. Shared with LF Staff
+// Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
+router.get('/social-reach', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
 // Keyword performance endpoint (marketing dashboard)
 router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
