@@ -611,149 +611,229 @@ describe('ClaService.getPdfUrl', () => {
   });
 });
 
+
 // ---------------------------------------------------------------------------
-// resolveContributorId — userIds from /v4/my-clas (Sign CLA hand-off, #1251)
+// listGithubAccounts — the picker's options (#1252)
 // ---------------------------------------------------------------------------
 
-describe('ClaService.resolveContributorId', () => {
-  /** Rejects the /v2/user-from-token probe so the userIds bridge behind it is exercised. */
-  function probeUnavailable(): void {
-    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('probe rejected', 401, 'UPSTREAM_ERROR', { service: 'cla_service' }));
-  }
-
-  it('prefers the resolve-or-create endpoint when it accepts our token', async () => {
-    gatewayFetch.mockResolvedValueOnce({ user_id: 'u-created' });
-
-    // Preferred because it mints a record for a first-time signer, which the bridge cannot.
-    expect(await new ClaService().resolveContributorId(req)).toBe('u-created');
-    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+describe('ClaService.listGithubAccounts', () => {
+  beforeEach(() => {
+    getEffectiveSub.mockReturnValue('auth0|abc');
   });
 
-  it('reads the snake_case user_id the legacy backend returns', async () => {
-    // /v2 returns the raw DynamoDB item, not v4's camelCase model — userID would read as absent.
-    gatewayFetch.mockResolvedValueOnce({ userID: 'wrong-case' });
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['from-bridge'] });
+  it('returns the linked GitHub accounts with their numbers and handles', async () => {
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'github', user_id: '12345', profileData: { nickname: 'octocat' } },
+      { provider: 'github', user_id: 'github|67890', profileData: { nickname: 'hubot' } },
+    ]);
 
-    expect(await new ClaService().resolveContributorId(req)).toBe('from-bridge');
+    expect(await new ClaService().listGithubAccounts(req)).toEqual({
+      accounts: [
+        { githubId: '12345', githubUsername: 'octocat' },
+        { githubId: '67890', githubUsername: 'hubot' },
+      ],
+    });
   });
 
-  it('falls back to the bridge when the probe is rejected', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['from-bridge'] });
+  it('excludes identities from other providers', async () => {
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'google-oauth2', user_id: '999', profileData: { nickname: 'someone' } },
+      { provider: 'github', user_id: '12345', profileData: { nickname: 'octocat' } },
+    ]);
 
-    // A rejected probe must not break the hand-off for a contributor who already has a record.
-    expect(await new ClaService().resolveContributorId(req)).toBe('from-bridge');
+    const { accounts } = await new ClaService().listGithubAccounts(req);
+
+    expect(accounts).toEqual([{ githubId: '12345', githubUsername: 'octocat' }]);
   });
 
-  it('resolves the EasyCLA user UUID from the identity search', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['40dc8def-e014-11ec-8750-4225fa2d71d7'] });
+  it('returns an empty list when nothing is linked', async () => {
+    getUserIdentities.mockResolvedValueOnce([]);
 
-    expect(await new ClaService().resolveContributorId(req)).toBe('40dc8def-e014-11ec-8750-4225fa2d71d7');
+    // Genuinely none linked — the caller routes this into account-linking, which is only
+    // correct because the failure case below is NOT reported this way.
+    expect(await new ClaService().listGithubAccounts(req)).toEqual({ accounts: [] });
   });
 
-  it('reads the fallback from /v4/my-clas, never /v4/user-from-token', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'] });
+  it('surfaces an identity-lookup failure instead of reporting zero accounts', async () => {
+    getUserIdentities.mockRejectedValueOnce(new Error('auth service timed out'));
 
-    await new ClaService().resolveContributorId(req);
-
-    // The v4 namesake is an unauthenticated passthrough on the gateway, so it never receives the
-    // X-ACL header the CLA backend's security scheme is keyed on and always 401s.
-    const urls = gatewayFetch.mock.calls.map((call) => (call as [unknown, string])[1]);
-    expect(urls.some((url) => url.includes('/v4/my-clas'))).toBe(true);
-    expect(urls.some((url) => url.includes('/v4/user-from-token'))).toBe(false);
+    // The read path degrades to "no GitHub keys" here and is right to. This path must not:
+    // an empty list sends the contributor into account-linking, and doing that to someone
+    // who has a linked account asks them to fix something that is not broken.
+    await expect(new ClaService().listGithubAccounts(req)).rejects.toThrow();
   });
 
-  it('runs on the default gateway token', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'] });
+  it('drops an identity whose account number cannot be read', async () => {
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'github', user_id: 'not-a-number', profileData: { nickname: 'ghost' } },
+      { provider: 'github', user_id: '12345', profileData: { nickname: 'octocat' } },
+    ]);
 
-    await new ClaService().resolveContributorId(req);
+    // Dropped rather than refused: an unreadable number could never be selected anyway,
+    // because the backend would not attest it either.
+    const { accounts } = await new ClaService().listGithubAccounts(req);
 
-    // apiGatewayToken already carries the signed-in contributor (their own refresh token
-    // exchanged for the gateway audience). Overriding it would resolve someone else.
-    for (const call of gatewayFetch.mock.calls) {
-      const [, , opts] = call as [unknown, string, { bearerToken?: string }];
-      expect(opts.bearerToken).toBeUndefined();
-    }
+    expect(accounts).toEqual([{ githubId: '12345', githubUsername: 'octocat' }]);
   });
 
-  it('refuses to hand off when no record matches the session', async () => {
-    // A first-time signer has no EasyCLA record yet, and with the probe unavailable there is
-    // nothing to mint one. The Console renders "invalid user ID in the URL" for an absent id, so
-    // this must fail here rather than dead-end there (FR-009).
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: [] });
+  it('refuses when the session carries no identity subject', async () => {
+    getEffectiveSub.mockReturnValue(null);
 
-    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
-  });
-
-  it('refuses when the field is missing entirely', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ resultCount: 0 });
-
-    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
-  });
-
-  it('refuses when the upstream returns no body', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce(null);
-
-    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
-  });
-
-  it('ignores blank identifiers rather than handing one off', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['  ', ''] });
-
-    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
-  });
-
-  it('trims a padded identifier', async () => {
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['  u-1  '] });
-
-    expect(await new ClaService().resolveContributorId(req)).toBe('u-1');
-  });
-
-  it('takes the first of several matched records rather than failing', async () => {
-    // An identity can match several EasyCLA records and nothing here can tell which one a
-    // signature belongs against. Refusing a returning contributor helps nobody; the ambiguity is
-    // logged instead, and the resolve-or-create endpoint returns one record.
-    probeUnavailable();
-    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1', 'u-2', 'u-3'] });
-
-    expect(await new ClaService().resolveContributorId(req)).toBe('u-1');
-  });
-
-  it('propagates a failure of the fallback itself', async () => {
-    probeUnavailable();
-    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('boom', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
-
-    await expect(new ClaService().resolveContributorId(req)).rejects.toThrow(MicroserviceError);
+    await expect(new ClaService().listGithubAccounts(req)).rejects.toThrow(MicroserviceError);
   });
 });
 
 // ---------------------------------------------------------------------------
-// getSignHandoff — server-owned halves of the Console URL (#1251)
+// bindSigningIdentity — recording the chosen account (#1252)
 // ---------------------------------------------------------------------------
 
-describe('ClaService.getSignHandoff', () => {
-  const handoffReq = { protocol: 'https', get: (n: string) => (n === 'host' ? 'app.dev.lfx.dev' : undefined) } as unknown as Request;
+describe('ClaService.bindSigningIdentity', () => {
+  const bindReq = reqWithHost('app.dev.lfx.dev');
 
-  it('returns the resolved identifier and an absolute return URL', async () => {
-    gatewayFetch.mockResolvedValueOnce({ user_id: 'u-1' });
+  // The submitted account is matched against the session's linked accounts before anything is
+  // sent upstream, so every test here needs a session that actually has the account it names.
+  beforeEach(() => {
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValue([
+      { provider: 'github', user_id: 'github|12345', connection: 'github', profileData: { nickname: 'octocat' } },
+    ]);
+  });
 
-    expect(await new ClaService().getSignHandoff(handoffReq)).toEqual({
+  it('refuses an account that is not linked to this session', async () => {
+    // The upstream records what it is sent without re-deriving ownership, so this is the check
+    // that keeps a caller from naming somebody else's account by calling the endpoint directly.
+    await expect(new ClaService().bindSigningIdentity(bindReq, '99999')).rejects.toMatchObject({ code: 'CLA_ACCOUNT_NOT_LINKED' });
+
+    expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses rather than proceeding when the linked accounts cannot be read', async () => {
+    // A failure must not read as "no accounts", which would refuse every account including the
+    // contributor's own — but more importantly must never fall through to recording one.
+    getUserIdentities.mockRejectedValueOnce(new Error('NATS TIMEOUT'));
+
+    await expect(new ClaService().bindSigningIdentity(bindReq, '12345')).rejects.toThrow();
+
+    expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('sends the handle from the session, not one supplied by the caller', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
+
+    await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      bindReq,
+      expect.stringContaining('/v4/my-clas/signing-identity'),
+      expect.objectContaining({ body: { githubId: 12345, githubUsername: 'octocat' } })
+    );
+  });
+
+  it('returns the recorded association and the return address together', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345, githubUsername: 'octocat', outcome: 'created' });
+
+    expect(await new ClaService().bindSigningIdentity(bindReq, '12345')).toEqual({
       claUserId: 'u-1',
+      githubId: '12345',
+      githubUsername: 'octocat',
+      // Both halves come back from the binding, so a hand-off URL cannot be assembled
+      // before the association exists.
       redirectUrl: 'https://app.dev.lfx.dev/profile/clas',
     });
   });
 
-  it('does not resolve an identifier when the return URL cannot be derived', async () => {
-    const hostless = { protocol: 'https', get: () => undefined } as unknown as Request;
+  it('posts the account as a number to the signing-identity endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
 
-    await expect(new ClaService().getSignHandoff(hostless)).rejects.toThrow(MicroserviceError);
+    await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      bindReq,
+      expect.stringContaining('/v4/my-clas/signing-identity'),
+      expect.objectContaining({ method: 'POST', body: { githubId: 12345, githubUsername: 'octocat' } })
+    );
+  });
+
+  it('omits the handle rather than sending an empty one', async () => {
+    // A linked account the identity provider has no nickname for.
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|12345', connection: 'github', profileData: {} }]);
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
+
+    await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    // An empty string would be recorded as the contributor's handle, replacing whatever the
+    // record already held with nothing.
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown> }];
+    expect(opts.body).not.toHaveProperty('githubUsername');
+  });
+
+  it('runs on the default gateway token, which is what identifies the caller upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
+
+    await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
+    expect(opts.bearerToken).toBeUndefined();
+  });
+
+  it('returns the account the backend recorded, not the one submitted', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 999, githubUsername: 'recorded' });
+
+    // The caller checks this against what was chosen, so echoing the request back would
+    // defeat the only check that what was recorded is what was picked.
+    const result = await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    expect(result.githubId).toBe('999');
+  });
+
+  it.each([
+    'identity_unavailable',
+    'identity_mismatch',
+    'record_conflict',
+    'record_unclaimed',
+    'duplicate_github_id',
+    'recorded_mismatch',
+  ] as const)('keeps the %s refusal reason distinguishable to the caller', async (reason) => {
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError(`refused: ${reason}`, 403, 'UPSTREAM_ERROR', { service: 'cla_service', errorBody: { error: reason } })
+    );
+
+    // Collapsing these into one failure would lose the only thing that tells the contributor
+    // what to do next — sign in again, choose again, or contact support.
+    await expect(new ClaService().bindSigningIdentity(bindReq, '12345')).rejects.toMatchObject({
+      errorBody: { error: reason },
+    });
+  });
+
+  it('resolves the account list again rather than trusting the caller to have used it', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
+
+    await new ClaService().bindSigningIdentity(bindReq, '12345');
+
+    // The browser resolves the choice against the served list too, but nothing obliges a caller
+    // to go through the browser. Skipping this to save a lookup would leave the account number
+    // unchecked on the one path that records it.
+    expect(getUserIdentities).toHaveBeenCalled();
+  });
+
+  it('refuses an upstream answer with no recorded identifier', async () => {
+    gatewayFetch.mockResolvedValueOnce({ githubId: 12345 });
+
+    await expect(new ClaService().bindSigningIdentity(bindReq, '12345')).rejects.toThrow(MicroserviceError);
+  });
+
+  it('refuses an upstream answer with no recorded account', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1' });
+
+    await expect(new ClaService().bindSigningIdentity(bindReq, '12345')).rejects.toThrow(MicroserviceError);
+  });
+
+  it('does not write an association it could never hand off', async () => {
+    gatewayFetch.mockResolvedValueOnce({ userId: 'u-1', githubId: 12345 });
+
+    await expect(new ClaService().bindSigningIdentity(reqWithHost(undefined), '12345')).rejects.toThrow(MicroserviceError);
+    // An unusable origin dead-ends the flow regardless, so the identity attribute must not
+    // have been recorded on the way to finding that out.
+    expect(gatewayFetch).not.toHaveBeenCalled();
   });
 });

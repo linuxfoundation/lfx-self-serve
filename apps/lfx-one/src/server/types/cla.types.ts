@@ -76,12 +76,21 @@ export interface EasyClaMyClaPdf {
 }
 
 /**
- * Response for `GET /v2/user-from-token` — the legacy backend returns the raw DynamoDB user item,
- * hence snake_case keys rather than v4's camelCase model. Only the field the hand-off needs.
+ * Response for `POST /v4/my-clas/signing-identity` — the association the CLA service
+ * confirmed against the caller's own token and recorded (#1252).
  */
-export interface EasyClaUserFromTokenV2 {
-  /** The user's internal EasyCLA UUID — what the Console decision screen is keyed by. */
-  user_id?: string;
+export interface EasyClaSigningIdentity {
+  /** The EasyCLA record the confirmed account belongs to. Replaces the first-match guess. */
+  userId?: string;
+  /**
+   * The account actually recorded, as a number. Echoed so the caller can check that what
+   * was recorded is what was chosen — a confirmed-ownership answer does not establish that,
+   * because the contributor's other linked accounts would pass an ownership check too.
+   */
+  githubId?: number;
+  githubUsername?: string;
+  /** Which resolution path was taken. Observability only. */
+  outcome?: string;
 }
 
 /**
