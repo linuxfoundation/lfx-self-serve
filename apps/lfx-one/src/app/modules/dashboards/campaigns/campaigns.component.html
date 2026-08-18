@@ -214,8 +214,8 @@
                   a statement about the search rather than about the portal.
                 -->
                 <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-empty">
-                  @if (emailTemplateQuery()) {
-                    No templates match “{{ emailTemplateQuery() }}”.
+                  @if (emailTemplateSubmittedQuery()) {
+                    No templates match “{{ emailTemplateSubmittedQuery() }}”.
                   } @else {
                     This portal has no marketing emails yet.
                   }

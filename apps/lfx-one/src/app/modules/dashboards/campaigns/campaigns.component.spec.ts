@@ -1919,6 +1919,24 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(el.querySelector('[data-testid="campaigns-email-templates-empty"]')).toBeNull();
   });
 
+  it('keeps the empty state naming the query that ran, not what is being typed', () => {
+    picker().searchEmailTemplates('alpha');
+    respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });
+    expect(panel().querySelector('[data-testid="campaigns-email-templates-empty"]')?.textContent).toContain('alpha');
+
+    // Type a new query WITHOUT submitting it. The results on screen are still alpha's, so the
+    // empty state must keep saying alpha — naming beta would assert a search that never ran.
+    const el = panel();
+    const input = el.querySelector('[data-testid="campaigns-email-template-search"]') as HTMLInputElement;
+    input.value = 'beta';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const empty = panel().querySelector('[data-testid="campaigns-email-templates-empty"]');
+    expect(empty?.textContent).toContain('alpha');
+    expect(empty?.textContent).not.toContain('beta');
+  });
+
   it('names the query in the empty state, so it reads as being about the search', () => {
     picker().searchEmailTemplates('nothing-matches');
     respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });

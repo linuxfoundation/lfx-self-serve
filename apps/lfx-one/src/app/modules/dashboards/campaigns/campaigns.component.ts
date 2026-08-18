@@ -376,6 +376,15 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplates = signal<HubSpotMarketingEmail[] | null>(null);
   protected readonly emailTemplateQuery = signal('');
+  /**
+   * The query the CURRENT results were fetched for, as opposed to `emailTemplateQuery`, which is
+   * the draft in the input and changes on every keystroke.
+   *
+   * The empty state names a query, and naming the draft made it a claim about a search that never
+   * ran: typing "beta" after an "alpha" search relabelled alpha's results as
+   * `No templates match "beta"` before any beta request existed.
+   */
+  protected readonly emailTemplateSubmittedQuery = signal('');
   protected readonly emailTemplatesLoading = signal(false);
   /**
    * Monotonic id for the in-flight template search.
@@ -499,6 +508,7 @@ export class CampaignsComponent {
         this.emailTemplatesLoading.set(false);
         this.emailTemplates.set(null);
         this.emailTemplateQuery.set('');
+        this.emailTemplateSubmittedQuery.set('');
         this.emailTemplatesTruncated.set(false);
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
@@ -711,6 +721,7 @@ export class CampaignsComponent {
     }
 
     this.emailTemplateQuery.set(query);
+    this.emailTemplateSubmittedQuery.set(query);
     this.emailTemplatesLoading.set(true);
     this.emailTemplatesError.set(null);
     // Reset alongside the error, not only on a foundation switch. The template checks
