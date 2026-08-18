@@ -2397,7 +2397,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return { totalSessions: 0, totalPageViews: 0, domainGroups: [], dailyData: [], dailyLabels: [] };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -3811,7 +3815,11 @@ export class ProjectService {
         year,
         err: error,
       });
-      return { year, platforms: [] };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -3894,14 +3902,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        renewalRate: 0,
-        netRevenueRetention: 0,
-        changePercentage: 0,
-        trend: 'up',
-        target: 85,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -3998,7 +4003,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return defaultResponse;
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4130,21 +4139,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        totalMembers: 0,
-        changePercentage: 0,
-        trend: 'up',
-        breakdown: {
-          newsletterSubscribers: 0,
-          communityMembers: 0,
-          workingGroupMembers: 0,
-          certifiedIndividuals: 0,
-          webVisitors: 0,
-          codeContributors: 0,
-          trainingEnrollees: 0,
-        },
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4316,22 +4315,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        conversionRate: 0,
-        changePercentage: 0,
-        trend: 'up',
-        funnel: {
-          eventAttendees: 0,
-          convertedToNewsletter: 0,
-          convertedToCommunity: 0,
-          convertedToWorkingGroup: 0,
-          convertedToTraining: 0,
-          convertedToCode: 0,
-          convertedToWeb: 0,
-        },
-        reengagement: emptyReengagement,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 

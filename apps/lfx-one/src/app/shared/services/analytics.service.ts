@@ -1262,7 +1262,7 @@ export class AnalyticsService {
   /**
    * Get event growth metrics for the ED dashboard.
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting event growth totals, YoY changes, and monthly trend (or zeroed defaults on error)
+   * @returns Observable emitting event growth totals, YoY changes, and monthly trend
    */
   public getEventGrowth(foundationSlug: string): Observable<EventGrowthResponse> {
     return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } });
@@ -1279,7 +1279,7 @@ export class AnalyticsService {
    * Get brand reach metrics for the ED dashboard (social followers + web sessions).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend (or zeroed defaults on error)
+   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend
    */
   public getBrandReach(foundationSlug: string, classification?: string): Observable<BrandReachResponse> {
     return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) });
@@ -1295,7 +1295,7 @@ export class AnalyticsService {
   /**
    * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting mention totals, sentiment percentages, and monthly history (or zeroed defaults on error)
+   * @returns Observable emitting mention totals, sentiment percentages, and monthly history
    */
   public getBrandHealth(foundationSlug: string, includeMentions = false, period?: string): Observable<BrandHealthResponse> {
     const params: Record<string, string> = { foundationSlug, ...(includeMentions && { includeMentions: 'true' }), ...(period && { period }) };

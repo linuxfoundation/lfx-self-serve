@@ -20,6 +20,7 @@ import {
   DashboardDrawerType,
   DashboardMetricCard,
   EdEvolutionData,
+  EmailCtrResponse,
   EngagedCommunitySizeResponse,
   EventGrowthResponse,
   FlywheelConversionResponse,
@@ -430,32 +431,30 @@ export class MarketingOverviewComponent {
       foundation$.pipe(
         switchMap((slug) =>
           forkJoin({
-            // getFlywheelConversion is the one service here that swallows its own HTTP error
-            // into of(null), so safe()'s catchError never fires for it and this map is the
-            // real failure path. Coalesce to undefined explicitly rather than through
-            // EMPTY_ED_EVOLUTION_DATA.flywheel — that now IS undefined, which hides the
-            // dependency and lets a later "cleanup" put null into a field typed
-            // FlywheelConversionResponse | undefined.
+            // getFlywheelConversion is the one client method that swallows its own HTTP error into
+            // of(null), so safe()'s catchError never fires for it and this map is the real failure
+            // path. Coalesce to undefined explicitly rather than through EMPTY_ED_EVOLUTION_DATA,
+            // which is only undefined by coincidence.
             flywheel: safe<FlywheelConversionResponse | undefined>(
               'flywheel',
               this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? undefined))
             ),
-            memberAcquisition: safe('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
-            memberRetention: safe('memberRetention', this.analyticsService.getMemberRetention(slug)),
-            engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),
-            eventGrowth: safe('eventGrowth', this.analyticsService.getEventGrowth(slug)),
-            brandReach: safe('brandReach', this.analyticsService.getBrandReach(slug)),
+            memberAcquisition: safe<MemberAcquisitionResponse | undefined>('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
+            memberRetention: safe<MemberRetentionResponse | undefined>('memberRetention', this.analyticsService.getMemberRetention(slug)),
+            engagedCommunity: safe<EngagedCommunitySizeResponse | undefined>('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),
+            eventGrowth: safe<EventGrowthResponse | undefined>('eventGrowth', this.analyticsService.getEventGrowth(slug)),
+            brandReach: safe<BrandReachResponse | undefined>('brandReach', this.analyticsService.getBrandReach(slug)),
             // Period-aware endpoints get the last-6 preset explicitly: their trend
             // sections are designed (and labeled) as 6-month windows, and omitting
             // the period silently falls back to the previous completed month. MoM
             // KPIs are unaffected — both windows share the same period END.
-            brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
+            brandHealth: safe<BrandHealthResponse | undefined>('brandHealth', this.analyticsService.getBrandHealth(slug, false, 'last-6')),
             // Explicit `| undefined` type argument on these two: their error fallback
             // is genuinely undefined (see EMPTY_ED_EVOLUTION_DATA), so letting safe()
             // infer T from the observable alone would type away the failure case that
             // the Paid Media and Attribution cards branch on.
             revenueImpact: safe<RevenueImpactResponse | undefined>('revenueImpact', this.analyticsService.getRevenueImpact(slug, undefined, 'last-6')),
-            emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
+            emailCtr: safe<EmailCtrResponse | undefined>('emailCtr', this.analyticsService.getEmailCtr(slug, undefined, 'last-6')),
             paidCampaign: safe<SocialReachResponse | undefined>('paidCampaign', this.analyticsService.getSocialReach(slug, undefined, 'last-6')),
             // Reuses the Health Metrics training-certification endpoint so the Education
             // card cannot disagree with that card. 'YTD' matches the default range there.

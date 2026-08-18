@@ -898,3 +898,44 @@ describe('ProjectService — paid ads compatibility', () => {
     expect(execute.mock.calls.some(([sql]) => String(sql).includes('SUM(CONV)'))).toBe(true);
   });
 });
+
+/**
+ * The ED dashboard distinguishes "could not measure" from "measured zero" by turning a failed
+ * request into `undefined`, which the card renders as "Data unavailable". That only works if the
+ * failure reaches the client as an HTTP error.
+ *
+ * These five methods used to catch a Snowflake failure and return a zero-filled body with a 200,
+ * so the client saw a success, the undefined sentinel was never reached, and the card printed the
+ * zeros as if measured — the reported AAIF defect, one layer below where it was first fixed.
+ * getEventGrowth / getBrandReach / getBrandHealth already rethrew; these now match.
+ *
+ * A genuine no-data result (`rows.length === 0`) still returns its zero-filled shape — that is a
+ * measurement, and it must stay distinguishable from an outage.
+ */
+describe('ProjectService — a Snowflake failure must not become a zero-filled 200', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  const methods: { name: string; call: (s: ProjectService) => Promise<unknown> }[] = [
+    {
+      name: 'getWebActivitiesSummary',
+      call: (s) => s.getWebActivitiesSummary('aaif', undefined, { type: 'trailing', startDate: '2026-01-01', endDate: '2026-06-30', label: 'Last 6 months' }),
+    },
+    { name: 'getMemberRetention', call: (s) => s.getMemberRetention('aaif') },
+    { name: 'getMemberAcquisition', call: (s) => s.getMemberAcquisition('aaif') },
+    { name: 'getEngagedCommunity', call: (s) => s.getEngagedCommunity('aaif') },
+    { name: 'getFlywheelConversion', call: (s) => s.getFlywheelConversion('aaif') },
+  ];
+
+  for (const { name, call } of methods) {
+    it(`${name} rethrows instead of returning zeros`, async () => {
+      execute.mockRejectedValue(new Error('snowflake unavailable'));
+
+      await expect(call(service)).rejects.toThrow('snowflake unavailable');
+    });
+  }
+});
