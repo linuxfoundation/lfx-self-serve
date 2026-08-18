@@ -90,6 +90,9 @@ interface SqlFragment {
   binds: QueryBind[];
 }
 
+/** Aggregates without GROUP BY always emit one row, so an empty overview result is a driver-level anomaly — thrown through the cache wrapper so the zeroed fallback is never cached for the full TTL. */
+class OverviewNoRowsError extends Error {}
+
 /** Whitelisted `DATE_TRUNC` grain + `TO_CHAR` label format. Never derived from user input. */
 interface TimeGrain {
   unit: 'DAY' | 'MONTH';
@@ -140,7 +143,7 @@ export class SocialListeningService {
     return { mentions, computedAt: mentions[0]?.COMPUTED_AT ?? null };
   }
 
-  /** Total rows matching the same scope + filters as the feed, for the paginator. */
+  /** Total rows matching the same scope + filters as the feed, for the paginator. Count is pagination-invariant, so caching it keeps paging from re-running the same full scan. */
   public async getMentionsCount(req: Request, params: SocialListeningCountParams): Promise<number> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
@@ -151,11 +154,10 @@ export class SocialListeningService {
       WHERE ${scope.clause}${filters.clause}
     `;
 
-    logger.debug(req, 'social_listening_mentions_count', 'Counting mentions', { foundation_slug: params.foundationSlug });
-
-    const result = await this.snowflakeService.execute<{ TOTAL: number }>(sql, [...scope.binds, ...filters.binds]);
-
-    return Number(result.rows?.[0]?.TOTAL ?? 0);
+    return this.cached(req, params.foundationSlug, 'mentions-count', [...scope.binds, ...filters.binds], async () => {
+      const result = await this.snowflakeService.execute<{ TOTAL: number }>(sql, [...scope.binds, ...filters.binds]);
+      return Number(result.rows?.[0]?.TOTAL ?? 0);
+    });
   }
 
   /** Sub-project options, deliberately date-unscoped: narrowing by the current window would make options disappear as the user pages back. */
@@ -342,21 +344,28 @@ export class SocialListeningService {
       const row = result.rows?.[0];
 
       if (!row) {
-        logger.warning(req, 'social_listening_analytics_overview', 'Overview query returned no rows — serving zeroed overview', {
-          foundation_slug: params.foundationSlug,
-        });
-        return {
-          TOTAL_MENTIONS: 0,
-          TOTAL_MENTIONS_CHANGE_PCT: null,
-          CHILD_PROJECTS_COUNT: 0,
-          POSITIVE_SENTIMENT_PERCENT: 0,
-          NEGATIVE_SENTIMENT_PERCENT: 0,
-          POSITIVE_SENTIMENT_CHANGE_PCT: null,
-          NEGATIVE_SENTIMENT_CHANGE_PCT: null,
-        };
+        throw new OverviewNoRowsError();
       }
 
       return row;
+    }).catch((error: unknown) => {
+      if (!(error instanceof OverviewNoRowsError)) {
+        throw error;
+      }
+
+      logger.warning(req, 'social_listening_analytics_overview', 'Overview query returned no rows — serving zeroed overview', {
+        foundation_slug: params.foundationSlug,
+      });
+
+      return {
+        TOTAL_MENTIONS: 0,
+        TOTAL_MENTIONS_CHANGE_PCT: null,
+        CHILD_PROJECTS_COUNT: 0,
+        POSITIVE_SENTIMENT_PERCENT: 0,
+        NEGATIVE_SENTIMENT_PERCENT: 0,
+        POSITIVE_SENTIMENT_CHANGE_PCT: null,
+        NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+      };
     });
   }
 
@@ -477,6 +486,8 @@ export class SocialListeningService {
   /**
    * Feed filters as a fragment appended to an existing `WHERE`; every user value is a bind, arrays are
    * capped, `LIKE` wildcards escaped. `sourceProjectId`/`platform` stay in `buildScope` (applied once).
+   * Binds are canonicalized — arrays sorted, values lowercased only where the predicate is
+   * case-insensitive — so the Valkey discriminator derived from them is order/case-stable.
    */
   private buildFilters(req: Request, filters: SocialListeningFilterParams, alias?: string): SqlFragment {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
@@ -504,21 +515,26 @@ export class SocialListeningService {
       clauses.push(`(${col('TITLE')} IS NULL OR ${col('TITLE')} = '')`);
     }
 
-    const keywords = this.capValues(req, filters.keywords, MENTION_FILTER_MAX_VALUES);
+    const keywords = this.capValues(req, filters.keywords, MENTION_FILTER_MAX_VALUES)
+      .map((keyword) => keyword.toLowerCase())
+      .sort();
     if (keywords.length > 0) {
       clauses.push(`LOWER(${col('KEYWORD')}) IN (${this.placeholders(keywords.length)})`);
-      binds.push(...keywords.map((keyword) => keyword.toLowerCase()));
+      binds.push(...keywords);
     }
 
     // TAGS is a comma-joined string upstream, so it is split into exact tokens before comparing —
     // a substring match would let `ai` select mentions tagged `email` or `retail`. ANDed per tag.
-    const tags = this.capValues(req, filters.tags, MENTION_FILTER_MAX_VALUES);
+    const tags = this.capValues(req, filters.tags, MENTION_FILTER_MAX_VALUES)
+      .map((tag) => tag.toLowerCase())
+      .sort();
     for (const tag of tags) {
       clauses.push(`ARRAY_CONTAINS(?::VARIANT, SPLIT(REGEXP_REPLACE(LOWER(TRIM(${col('TAGS')})), '${TAG_DELIMITER_PATTERN}', ','), ','))`);
-      binds.push(tag.toLowerCase());
+      binds.push(tag);
     }
 
-    const authors = this.capValues(req, filters.authors, MENTION_FILTER_MAX_VALUES);
+    // Authors match verbatim (the predicate is case-sensitive), so they sort but never lowercase.
+    const authors = this.capValues(req, filters.authors, MENTION_FILTER_MAX_VALUES).sort();
     if (authors.length > 0) {
       clauses.push(`${col('AUTHOR')} IN (${this.placeholders(authors.length)})`);
       binds.push(...authors);
@@ -526,12 +542,13 @@ export class SocialListeningService {
 
     if (filters.search) {
       clauses.push(`(${col('TITLE')} ILIKE ? ESCAPE '${LIKE_ESCAPE_CHAR}' OR ${col('BODY')} ILIKE ? ESCAPE '${LIKE_ESCAPE_CHAR}')`);
-      const pattern = `%${escapeSqlLikePattern(filters.search)}%`;
+      // ILIKE is case-insensitive, so lowering the pattern only canonicalizes the cache key.
+      const pattern = `%${escapeSqlLikePattern(filters.search.toLowerCase())}%`;
       binds.push(pattern, pattern);
     }
 
     if (filters.mentionIds) {
-      const mentionIds = this.capValues(req, filters.mentionIds, MENTION_IDS_MAX_VALUES);
+      const mentionIds = this.capValues(req, filters.mentionIds, MENTION_IDS_MAX_VALUES).sort();
       if (mentionIds.length > 0) {
         clauses.push(`${col('_KEY')} IN (${this.placeholders(mentionIds.length)})`);
         binds.push(...mentionIds);

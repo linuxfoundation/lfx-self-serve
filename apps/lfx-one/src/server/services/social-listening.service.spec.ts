@@ -147,6 +147,18 @@ describe('scope clause', () => {
     expect(normalize(sql)).toContain('LOWER(SOURCE_PLATFORM) = ?');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'proj-1', 'reddit']);
   });
+
+  it('caches the count under the scope + filter binds (count is pagination-invariant)', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, sentiment: 'positive' });
+
+    expect(withSocialListeningCache).toHaveBeenCalledWith(
+      'cncf',
+      'mentions-count',
+      ['cncf', '2026-01-01', '2026-02-01', 'positive'],
+      1800,
+      expect.any(Function)
+    );
+  });
 });
 
 describe('tag filter — exact token match, not substring', () => {
@@ -210,7 +222,15 @@ describe('buildFilters', () => {
     expect(normalized).toContain('LOWER(KEYWORD) IN (?, ?)');
     // Author handles are matched verbatim — the column is not lowercased.
     expect(normalized).toContain('AUTHOR IN (?, ?)');
-    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'kubernetes', 'cncf', '@alice', '@bob']);
+    // Keywords lowercase + sort for a canonical cache key; authors sort but keep their case.
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'cncf', 'kubernetes', '@alice', '@bob']);
+  });
+
+  it('canonicalizes array binds so key order and casing produce one cache entry', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, tags: ['Kubernetes', 'AI'], keywords: ['B', 'a'], authors: ['@bob', '@Alice'] });
+
+    // Clause order is keywords → tags → authors; within each, values are sorted (lowercased where the predicate is case-insensitive).
+    expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'a', 'b', 'ai', 'kubernetes', '@Alice', '@bob']);
   });
 
   it('escapes the caller wildcards in the search pattern and binds it twice', async () => {
@@ -219,6 +239,12 @@ describe('buildFilters', () => {
     const { sql, binds } = lastCall();
     expect(normalize(sql)).toContain("(TITLE ILIKE ? ESCAPE '!' OR BODY ILIKE ? ESCAPE '!')");
     expect(binds.slice(3)).toEqual(['%100!%!_off!!%', '%100!%!_off!!%']);
+  });
+
+  it('lowercases the search pattern — ILIKE is case-insensitive, so this only canonicalizes the cache key', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, search: 'Mesh' });
+
+    expect(lastCall().binds.slice(3)).toEqual(['%mesh%', '%mesh%']);
   });
 
   it('treats an explicitly empty mentionIds list as "nothing selected"', async () => {
@@ -357,6 +383,15 @@ describe('analytics', () => {
       POSITIVE_SENTIMENT_CHANGE_PCT: null,
       NEGATIVE_SENTIMENT_CHANGE_PCT: null,
     });
+  });
+
+  it('never caches the zeroed overview — the fetcher rejects, so the read-through write is skipped', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await service().getAnalyticsOverview(req, SCOPE);
+
+    const fetcher = withSocialListeningCache.mock.calls.at(-1)?.at(-1) as () => Promise<unknown>;
+    await expect(fetcher()).rejects.toThrow();
   });
 
   it.each([
