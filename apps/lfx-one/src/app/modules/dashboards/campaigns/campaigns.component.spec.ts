@@ -2058,15 +2058,17 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
   it('renders each template updated date', () => {
     openEmailImplementationTab();
     picker().searchEmailTemplates('');
-    httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').flush({
-      enabled: true,
-      error: null,
-      possiblyTruncated: false,
-      emails: [
-        { id: '1', name: 'KubeCon promo', updatedAt: '2026-08-14T10:00:00Z' },
-        { id: '2', name: 'KubeCon promo' },
-      ],
-    });
+    httpMock
+      .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+      .flush({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: '1', name: 'KubeCon promo', updatedAt: '2026-08-14T10:00:00Z' },
+          { id: '2', name: 'KubeCon promo' },
+        ],
+      });
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
