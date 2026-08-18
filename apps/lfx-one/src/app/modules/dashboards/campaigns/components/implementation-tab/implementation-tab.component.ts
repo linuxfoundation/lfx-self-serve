@@ -110,6 +110,23 @@ export class ImplementationTabComponent implements OnInit {
   public readonly draft = input<CampaignImplementationDraft | null>(null);
 
   /**
+   * The HubSpot marketing-email id chosen in the email template picker, or '' when none is.
+   *
+   * Threaded through so the picker's selection reaches `hubspotConfig.sourceEmailId` on create.
+   * Until now `selectedEmailTemplateId` was write-only — set by the picker, read only for
+   * `aria-pressed` and row styling — so the choice never left the parent component.
+   *
+   * **This input is not yet reachable from the email UI.** The picker lives in the parent's Email
+   * container and this component renders only under Paid Marketing (`[style.display]` keyed on
+   * `isEmail()`), and its own `selectedPlatforms` is typed `CampaignPlatform[]`, which by
+   * construction excludes `'hubspot'` — only the wider `CampaignAnyPlatform` on the request
+   * admits it. There is therefore no email create trigger anywhere in the app today. The wiring
+   * below is the seam: it carries the value correctly the moment a trigger binds this input, and
+   * costs nothing while nothing does.
+   */
+  public readonly sourceEmailId = input<string>('');
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -608,6 +625,15 @@ export class ImplementationTabComponent implements OnInit {
             },
           }
         : {}),
+      // Gated on the id, NOT on `platforms.includes('hubspot')`. `selectedPlatforms` is typed
+      // `CampaignPlatform[]`, whose union has no 'hubspot' member, so a platform test here could
+      // never be true and would silently drop the value the day a trigger appears.
+      //
+      // Trimmed before the emptiness test so a whitespace-only id is treated as absent rather
+      // than sent as a present-but-blank config. The server applies the same rule
+      // (`buildHubSpotConfig` trims and returns null — UNCONFIGURED — when blank), so the two
+      // sides agree instead of the client sending something the server then has to reject.
+      ...(this.sourceEmailId().trim() ? { hubspotConfig: { sourceEmailId: this.sourceEmailId().trim() } } : {}),
     };
 
     // Read once, here, and carry it into the poll rather than re-reading per request. The

@@ -6,7 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core'
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
@@ -17,11 +17,14 @@ import type {
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
+  HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
 
+import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
+import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
@@ -30,7 +33,16 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 
 @Component({
   selector: 'lfx-campaigns',
-  imports: [ReactiveFormsModule, SelectComponent, PlanningTabComponent, ImplementationTabComponent, MonitoringTabComponent, OptimizationTabComponent],
+  imports: [
+    ReactiveFormsModule,
+    SelectComponent,
+    PlanningTabComponent,
+    ImplementationTabComponent,
+    MonitoringTabComponent,
+    OptimizationTabComponent,
+    HubSpotUpdatedAtPipe,
+    HubSpotTemplateLabelPipe,
+  ],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
 })
@@ -379,6 +391,173 @@ export class CampaignsComponent {
    */
   protected readonly emailBriefOutput = signal<CampaignBriefOutput | null>(null);
 
+  /**
+   * The HubSpot marketing emails a user can clone as the template for this send.
+   *
+   * `null` means NOT SEARCHED, which is distinct from `[]` (searched, portal returned nothing)
+   * for the same reason it is on the campaign list: an empty array asserts the portal has no
+   * matching templates, and only a completed search can support that claim. A failed search must
+   * not be rendered as an empty portal.
+   */
+  protected readonly emailTemplates = signal<HubSpotMarketingEmail[] | null>(null);
+  protected readonly emailTemplateQuery = signal('');
+  /**
+   * The query the CURRENT results were fetched for, as opposed to `emailTemplateQuery`, which is
+   * the draft in the input and changes on every keystroke.
+   *
+   * The empty state names a query, and naming the draft made it a claim about a search that never
+   * ran: typing "beta" after an "alpha" search relabelled alpha's results as
+   * `No templates match "beta"` before any beta request existed.
+   */
+  protected readonly emailTemplateSubmittedQuery = signal('');
+
+  /**
+   * What a screen reader announces about the template search.
+   *
+   * A computed feeding a PERSISTENT region, matching the pattern in implementation-tab: an
+   * aria-live element inserted with its text already present is not reliably announced, so
+   * the region must exist first and then have its CONTENTS change. Search progress and
+   * results were previously silent — the picker rendered them visually only.
+   */
+  protected readonly emailTemplatesAnnouncement = computed<string>(() => {
+    if (this.emailTemplatesLoading()) return 'Searching templates';
+    // The error case is deliberately ABSENT, matching briefPersistenceAnnouncement: the visible
+    // error node already carries role="alert", so returning the same string here would announce
+    // the failure twice.
+    if (this.emailTemplatesError()) return '';
+    // The SAME computed the visible node renders, not a second copy of the sentence: the two
+    // drifted once already, and an announcement that names no project while the text on screen
+    // names one describes a different failure to a screen-reader user than to a sighted one.
+    if (this.emailChannelEnabled() === false) return this.emailNotConnectedMessage();
+    const templates = this.emailTemplates();
+    if (templates === null) return '';
+    if (templates.length === 0) {
+      const q = this.emailTemplateSubmittedQuery();
+      // Quoted to match the visible copy character-for-character. Without the delimiters the
+      // query dissolves into the sentence it sits in: a search for "no templates" announced as
+      // "No templates match no templates." Sighted users get the boundary from the quote marks;
+      // this is the only place the two texts said different things.
+      return q ? `No templates match “${q}”.` : 'This portal has no marketing emails yet.';
+    }
+    const count = `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
+    // The truncation cue must carry over, for the same reason the sibling appends its reload
+    // instruction: announcing the count alone gives the reassurance without the instruction, and
+    // the instruction is the part a screen-reader user cannot recover on their own — nothing else
+    // says the list may be partial.
+    //
+    // "MAY be", not "is": `possiblyTruncated` records when the 500 cap MIGHT have bitten, and a
+    // portal holding exactly 500 emails sets the same flag on a complete listing — the shared
+    // interface says a capped 500 is byte-identical to a complete one. Asserting a partial list
+    // as fact would send someone hunting for a template that does not exist.
+    // The render cap must carry over for the same reason the truncation cue does: a
+    // screen-reader user hears "4000 templates found" and then reaches the 100th button with no
+    // way to discover that the rest were never drawn. Stated as fact — unlike the truncation
+    // hedge below, both numbers here are known exactly.
+    const capped = this.emailTemplatesRenderCapped() ? ` ${this.emailTemplatesRenderCapMessage()}` : '';
+    return this.emailTemplatesTruncated() ? `${count}${capped} This may be a partial list. Search to narrow it.` : `${count}${capped}`;
+  });
+  protected readonly emailTemplatesLoading = signal(false);
+  /**
+   * Monotonic id for the in-flight template search.
+   *
+   * Not a signal: nothing renders it, and it must be readable synchronously inside a subscribe
+   * callback to decide whether that response is still the current one. A plain counter is the
+   * whole mechanism — a response whose generation no longer matches writes nothing.
+   */
+  private emailSearchGeneration = 0;
+  protected readonly emailTemplatesError = signal<string | null>(null);
+
+  /**
+   * Whether the listing may have been cut off by the service's unfiltered cap.
+   *
+   * Only ever true for an EMPTY query, where a complete portal listing and a truncated first
+   * screen are indistinguishable on the wire. A filtered search is complete-or-error, so this
+   * stays false there — telling someone to narrow a search that was already exhaustive would
+   * send them looking for a template that does not exist.
+   */
+  protected readonly emailTemplatesTruncated = signal(false);
+
+  /**
+   * The rows the picker actually DRAWS — the first `HUBSPOT_TEMPLATE_RENDER_LIMIT` of them.
+   *
+   * A computed rather than a slice in the template: `frontend-checklist.md` §4 allows only signal
+   * reads, computed values and pipes in a template, and `templates.slice(...)` there would be a
+   * method call re-run on every change-detection pass.
+   *
+   * The full list is NOT discarded — `emailTemplates` still holds every row, which is what
+   * `emailTemplateRenderTotal` reports. Capping the render without saying so would present a cut
+   * list as a complete one; `emailTemplatesRenderCapped` drives the copy that says otherwise.
+   */
+  protected readonly emailTemplatesRendered = computed<HubSpotMarketingEmail[]>(() => {
+    const templates = this.emailTemplates();
+    if (templates === null) return [];
+    return templates.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? templates.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : templates;
+  });
+
+  /** How many rows the search returned, as opposed to how many are drawn. */
+  protected readonly emailTemplateRenderTotal = computed<number>(() => this.emailTemplates()?.length ?? 0);
+
+  /** Whether the render cap actually bit — i.e. rows were fetched that are not on screen. */
+  protected readonly emailTemplatesRenderCapped = computed<boolean>(() => this.emailTemplateRenderTotal() > HUBSPOT_TEMPLATE_RENDER_LIMIT);
+
+  /**
+   * The "showing the first N of M" line.
+   *
+   * States the cap as FACT, unlike the `possiblyTruncated` banner beside it, which says "may be"
+   * because a capped 500 and a complete 500 are indistinguishable upstream. Here both numbers are
+   * known exactly — the list in hand was measured before slicing — so hedging would understate a
+   * certainty. The two are independent and can both show: an unfiltered search can be cut
+   * upstream at 500 AND cut again here at the render limit.
+   */
+  protected readonly emailTemplatesRenderCapMessage = computed<string>(() =>
+    this.emailTemplatesRenderCapped()
+      ? `Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
+      : ''
+  );
+
+  /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
+  protected readonly selectedEmailTemplateId = signal<string>('');
+
+  /**
+   * Whether the channel is usable at all for this project.
+   *
+   * `enabled: false` is the steady state wherever HubSpot is not connected, not a failure, so it
+   * renders as "connect HubSpot" rather than an error. Starts null meaning UNKNOWN — only a
+   * response can settle it, and rendering either answer before one arrives would be a guess.
+   */
+  protected readonly emailChannelEnabled = signal<boolean | null>(null);
+
+  /**
+   * The project slug the CURRENT template search was issued against.
+   *
+   * Separate from `activeFoundationSlug` on purpose. The "not connected" copy names the project
+   * that was queried, and the foundation is switchable while a response is in flight — reading
+   * the live slug would name whichever foundation the user has since moved to, which is the
+   * opposite of the point. Written at dispatch and only by the generation-current response.
+   */
+  protected readonly emailSearchProjectSlug = signal<string>('');
+
+  /**
+   * Names the project the search actually queried, for the "connect HubSpot" empty state.
+   *
+   * campaign-service answers the same typed 404 for an absent connection row and for a project id
+   * that does not exist (`campaign.interface.ts:1223-1226`), so "not connected" and "no such
+   * project" are indistinguishable here. Naming the slug is what makes a typo visible instead of
+   * being reported as a missing integration.
+   *
+   * The slug — not the display name — because the slug is the identifier that was sent, and it is
+   * the thing that can be mistyped; a name would be resolved from local context and would look
+   * correct even when the queried id was wrong.
+   */
+  protected readonly emailNotConnectedMessage = computed<string>(() => {
+    const slug = this.emailSearchProjectSlug();
+    // The empty-slug search is refused before dispatch, so this is defensive only: naming nothing
+    // is still better than rendering "project ''".
+    return slug
+      ? `HubSpot is not connected for “${slug}”. Connect it for this foundation to stage an email.`
+      : 'Connect HubSpot for this foundation to stage an email.';
+  });
+
   protected readonly activeProgramTypeConfig = computed(() => this.programTypes.find((pt) => pt.id === this.selectedProgramType()) ?? this.programTypes[0]);
   protected readonly activeDeliveryTypeConfig = computed(() => this.deliveryTypes.find((dt) => dt.id === this.selectedDeliveryType()) ?? this.deliveryTypes[0]);
 
@@ -445,6 +624,48 @@ export class CampaignsComponent {
         // nothing, which is exactly the distinction that counter exists to draw.
         this.briefPersistenceGeneration++;
         this.briefPersistence.set(this.idlePersistence);
+
+        // The picker is per-FOUNDATION and must not survive a switch. `searchEmailTemplates`
+        // already refuses a MISSING slug so one portal's templates cannot stand in for another's
+        // — but a CHANGED slug is the same hazard and that guard does not see it: the results are
+        // already on screen, labelled with whichever foundation is now selected.
+        //
+        // `selectedEmailTemplateId` is the one that must not be missed. It becomes
+        // `hubspotConfig.sourceEmailId` on create, so a stale selection stages a send that clones
+        // foundation A's email into foundation B's portal — 404 if the user cannot reach it, and
+        // silently wrong if they can.
+        // Bumping the search generation is what makes the clears below STICK. Clearing the
+        // signals alone cannot stop a request already in flight for the previous foundation:
+        // it resolves afterwards, still passes `isCurrent()`, and repopulates the list under
+        // the new foundation — the cross-portal leak this handler exists to prevent, and the
+        // one `searchEmailTemplates` documents as the hazard its guard cannot see.
+        this.emailSearchGeneration++;
+        // Cleared here too, and this is NOT redundant with the subscribe arms: BOTH of the
+        // set-false calls sit INSIDE their `isCurrent()` guards, so a response the generation
+        // bump above just invalidated returns before either runs. Without this line the
+        // spinner would hang until the user happened to search again — the bump closes the
+        // cross-portal leak and would otherwise open a stuck-loading state in its place.
+        this.emailTemplatesLoading.set(false);
+        this.emailTemplates.set(null);
+        this.emailTemplateQuery.set('');
+        this.emailTemplateSubmittedQuery.set('');
+        this.emailTemplatesTruncated.set(false);
+        this.emailChannelEnabled.set(null);
+        this.emailTemplatesError.set(null);
+        this.selectedEmailTemplateId.set('');
+        // Cleared with the rest: it names the project in the "not connected" copy, and the
+        // previous foundation's slug must not survive into a message rendered under the new one.
+        this.emailSearchProjectSlug.set('');
+
+        // Reload if the operator is SITTING on the picker. The clears above are correct, but
+        // on their own they leave a blank panel in front of someone who never navigated: the
+        // entry load lives in `selectTab`, which only runs on a tab transition. Nothing else
+        // re-evaluates it after a switch, so the picker stayed empty until they navigated
+        // away and back. Guarded, so a switch into a foundation whose channel is off still
+        // renders that answer rather than looping on it.
+        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
+          this.loadEmailTemplatesIfNeverAnswered();
+        }
       });
 
     // Mirror the program control into the signal. A program switch changes the whole
@@ -480,6 +701,20 @@ export class CampaignsComponent {
         return;
       }
       this.selectedDeliveryType.set(value);
+
+      // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
+      // documents one condition over: resetting a guard's inputs does nothing if nothing runs it.
+      // The switch handler's reload is gated on `selectedDeliveryType()` AS IT READS AT THAT
+      // MOMENT, so a foundation switch made while the user is on Paid clears the picker and
+      // skips the reload — and no later event re-checked it. Coming back to email/Implement then
+      // showed a permanently blank panel: `selectTab` never runs (no tab transition), so nothing
+      // reloaded until the user navigated tabs or searched by hand.
+      //
+      // The same never-answered guard, so a channel-off or failed answer is not retried on every
+      // round-trip and a healthy list is not re-fetched.
+      if (value === 'email' && this.selectedEmailTab() === 'implementation') {
+        this.loadEmailTemplatesIfNeverAnswered();
+      }
     });
   }
 
@@ -499,6 +734,15 @@ export class CampaignsComponent {
       // exclusion exists to catch, so it must not be asserted away.
       if (tab !== 'optimization') {
         this.selectedEmailTab.set(tab);
+        // Load on ENTRY, not only on proceed. The only other call site is
+        // `onEmailProceedToImplementation`, so arriving at this tab any other way — clicking
+        // it directly, or returning after a foundation switch cleared the list — left an
+        // empty box, which this file's own comment calls out as reading like a broken
+        // channel. Guarded on `null` so it fires once and does not re-run over a list the
+        // operator is already searching, and skipped while a request is in flight.
+        if (tab === 'implementation') {
+          this.loadEmailTemplatesIfNeverAnswered();
+        }
       }
       return;
     }
@@ -614,6 +858,151 @@ export class CampaignsComponent {
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
     this.selectedEmailTab.set('implementation');
+    // Load the picker's options on ARRIVAL rather than on first keystroke, so the tab opens with
+    // the portal's most recently updated templates already listed. Someone staging a send usually
+    // wants a recent one, and an empty box with no options reads as a broken channel.
+    this.searchEmailTemplates('');
+  }
+
+  /**
+   * Search the project's HubSpot marketing emails for one to clone.
+   *
+   * Debounce is deliberately absent: this is called on ARRIVAL and on an explicit Search press,
+   * not per keystroke. campaign-service walks every page and matches in-process, so a filtered
+   * search is genuinely expensive — firing one per character would be the wrong trade.
+   */
+
+  protected searchEmailTemplates(rawQuery: string): void {
+    // Trimmed to match what the SERVER actually searches: the controller trims `q` before
+    // calling upstream, so a whitespace-only input runs the UNFILTERED portal search. Storing
+    // it raw made the empty state read `No templates match "   "` about a search that had no
+    // filter at all — the same class of lie as naming the draft query, one boundary further in.
+    const query = rawQuery.trim();
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '') {
+      // The page is reachable by an ED of any foundation and templates are per-project, so a
+      // missing slug must not fall back to some other portal's templates.
+      this.emailTemplates.set(null);
+      // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
+      // this message, because the template checks the channel flag first.
+      this.emailChannelEnabled.set(null);
+      this.emailTemplatesError.set('Select a foundation before searching for a template.');
+      return;
+    }
+
+    this.emailTemplateQuery.set(query);
+    this.emailTemplateSubmittedQuery.set(query);
+    // Captured at dispatch, alongside the slug actually passed to the request below, so the
+    // "not connected" copy names the project that was queried even if the foundation changes
+    // while the response is in flight.
+    this.emailSearchProjectSlug.set(projectSlug);
+    this.emailTemplatesLoading.set(true);
+    this.emailTemplatesError.set(null);
+    // Reset alongside the error, not only on a foundation switch. The template checks
+    // `emailChannelEnabled() === false` BEFORE the error branch, so a stale false from an earlier
+    // response outranks a real failure: after one "not connected" answer, a later transport error
+    // still rendered "Connect HubSpot for this foundation" and the user never saw "Could not load
+    // templates." Null means "not yet known for this search", which is the truth at this point.
+    this.emailChannelEnabled.set(null);
+
+    // Generation guard. Every call is an independent subscribe, so a slow earlier response can
+    // land after a newer one and overwrite the list, truncation flag and error while
+    // `emailTemplateQuery` already shows the later search. The foundation-switch handler clears
+    // these signals but cannot stop an in-flight response from refilling them — under the NEW
+    // foundation — which is the cross-portal leak that handler exists to prevent.
+    const generation = ++this.emailSearchGeneration;
+    const isCurrent = (): boolean => generation === this.emailSearchGeneration;
+
+    this.campaignService
+      .searchHubSpotEmails(projectSlug, query)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.emailTemplatesLoading.set(false);
+          this.emailChannelEnabled.set(result.enabled);
+          if (!result.enabled) {
+            // Not an error: HubSpot simply is not connected for this project, which is the steady
+            // state everywhere the channel is not set up.
+            this.emailTemplates.set(null);
+            return;
+          }
+          if (result.error) {
+            // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
+            // empty — an empty list would claim the portal has no templates.
+            this.emailTemplates.set(null);
+            this.emailTemplatesError.set(result.error);
+            return;
+          }
+          // A row with no id cannot be selected — `sourceEmailId` takes that value — so it is
+          // dropped rather than rendered as a choice that cannot be made.
+          const selectable = result.emails.filter((e) => !!e?.id);
+          if (selectable.length === 0 && result.emails.length > 0) {
+            // The response CARRIED rows and every one of them was unusable. Reporting that as an
+            // empty list would render "This portal has no marketing emails yet" — a claim about
+            // the portal, made from a response that proves the opposite. The server already drops
+            // id-less rows (campaign-service.service.ts), so reaching here means the contract was
+            // violated somewhere upstream; that is a read failure, not an empty portal.
+            //
+            // NULL rather than [], for the same reason the error arms use null: only a search
+            // that genuinely came back with nothing can support the empty-portal claim.
+            this.emailTemplates.set(null);
+            this.emailTemplatesError.set('Could not load templates. Try again.');
+            return;
+          }
+          this.emailTemplates.set(selectable);
+          this.emailTemplatesTruncated.set(result.possiblyTruncated);
+        },
+        error: () => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.emailTemplatesLoading.set(false);
+          // NULL, not []. A failed search says nothing about what the portal holds.
+          this.emailTemplates.set(null);
+          this.emailTemplatesError.set('Could not load templates. Try again.');
+        },
+      });
+  }
+
+  /**
+   * Track what is TYPED, not only what was last searched.
+   *
+   * Without this the input is one-way and `emailTemplateQuery` only changes inside
+   * `searchEmailTemplates` — so typing "kubecon" and clicking Search re-ran the PREVIOUS query
+   * (empty on arrival), returning the full listing while the box still read "kubecon". The user
+   * concludes their search matched everything. It also let the empty-state copy name a different
+   * string than the box held.
+   */
+  protected onEmailTemplateQueryInput(value: string): void {
+    this.emailTemplateQuery.set(value);
+  }
+
+  /**
+   * The single entry point for a USER-initiated search — both the button and Enter.
+   *
+   * The gate lives here rather than on the button, because `[disabled]` only ever covered the
+   * button: Enter called `searchEmailTemplates` directly, so holding it down fired a full portal
+   * walk per repeat while the button next to it was visibly disabled. The generation counter
+   * discards the late responses but does NOT cancel the requests — each one still walks every
+   * page server-side (the interface documents `q` as matched in-process, page by page), so the
+   * cost is paid upstream regardless of which answer the UI keeps.
+   *
+   * Refusing while a search is in flight is safe rather than lossy: the request already running
+   * is for whatever the box held when it started, and the operator can search again the moment
+   * it answers.
+   */
+  protected onEmailTemplateSearchSubmit(): void {
+    if (this.emailTemplatesLoading()) {
+      return;
+    }
+    this.searchEmailTemplates(this.emailTemplateQuery());
+  }
+
+  protected onSelectEmailTemplate(id: string): void {
+    this.selectedEmailTemplateId.set(id);
   }
 
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
@@ -712,6 +1101,25 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
         },
       });
+  }
+
+  /**
+   * Load the picker when it holds no answer for the current foundation.
+   *
+   * Called from BOTH paths that can leave it blank: entering the Implementation tab, and a
+   * foundation switch while that tab is already open. Fixing only the first left the second
+   * broken — the switch handler clears the signals, and nothing re-evaluated a guard that
+   * lived inside `selectTab`. Resetting a guard's inputs does nothing if nothing runs it.
+   *
+   * The four-signal condition distinguishes "never answered" from "answered with a refusal":
+   * a channel-off or failed search also leaves `emailTemplates` null, and re-firing on those
+   * would retry a refusal on every entry and overwrite the error the operator needs to read.
+   */
+
+  private loadEmailTemplatesIfNeverAnswered(): void {
+    if (this.emailTemplates() === null && !this.emailTemplatesLoading() && this.emailChannelEnabled() === null && this.emailTemplatesError() === null) {
+      this.searchEmailTemplates(this.emailTemplateQuery());
+    }
   }
 
   /**

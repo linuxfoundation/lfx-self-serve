@@ -160,36 +160,167 @@
       }
     </div>
 
+    <!--
+      Template-search status, mounted OUTSIDE the @switch below.
+
+      An aria-live element inserted with its text already present is not reliably announced — the
+      region has to exist first and then have its CONTENTS change. Inside the @case this region
+      could never satisfy that rule: BOTH entry paths (`onEmailProceedToImplementation` and
+      `selectTab`) call `searchEmailTemplates` synchronously BEFORE the case renders, so the node
+      was created with "Searching templates" already in it and the first search — the main path —
+      announced nothing at all. Kept here it survives every tab transition, so only its text
+      changes. Same placement as implementation-tab's brief-status region, which sits above its
+      own @switch for exactly this reason.
+
+      It stays in the DOM on the other email tabs, which is harmless: the computed reads signals
+      that are only written by a search, so it is empty unless one is running or has answered.
+    -->
+    <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
+
     @switch (selectedEmailTab()) {
       @case ('implementation') {
         <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
           <!--
-            The staging form is the half of this channel that still needs a service endpoint:
-            campaign create clones a caller-specified source email and `sourceEmailId` has no
-            default, so the form cannot be built until the template picker has something to
-            list (LFXV2-3197 → LFXV2-3198). Said plainly rather than as "coming soon", which
-            would repeat the claim this PR exists to correct — the channel IS implemented in
-            campaign-service; what is missing is one route and the form over it.
+            The template picker. Staging an email CLONES one of the project's HubSpot marketing
+            emails, and `sourceEmailId` has no default, so a chosen template is REQUIRED before a
+            send can be staged.
+
+            It is not yet SUFFICIENT, and an earlier version of this comment wrongly said it was.
+            There is no create trigger on the email side at all: the only `createCampaign` call
+            site is in the implementation tab, which renders solely under Paid, and
+            `CampaignPlatform` has no `hubspot` member — so the type system forbids this path from
+            reaching create even if a button existed. The selection is threaded through to
+            `hubspotConfig.sourceEmailId` so it flows the moment a trigger lands; wiring that
+            trigger is LFXV2-3201.
+
+            Four states, kept distinct because collapsing any pair states something false:
+            channel not connected, search failed, searched-and-empty, and results.
           -->
-          <div
-            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-            data-testid="campaigns-email-implementation-pending">
-            <i class="fa-light fa-envelope-open-text text-3xl text-gray-400" aria-hidden="true"></i>
-            <h2 class="text-base font-semibold text-gray-900">Email staging is not wired up yet</h2>
-            <!--
-              The brief sentence is gated on there BEING a brief. This tab is directly clickable
-              with no disabled binding, so it is reachable before anything has been generated —
-              and "Your brief is ready" is then simply false, told to someone who has not started.
-              The rest of the panel is true either way: it explains what is missing from the
-              channel, which does not depend on the user's progress.
-            -->
-            <p class="max-w-md text-sm text-gray-500">
-              @if (emailBriefOutput()) {
-                Your brief is ready.
+          <div class="flex flex-col gap-4" data-testid="campaigns-email-implementation">
+            <div class="flex flex-col gap-1">
+              <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
+              <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <input
+                type="search"
+                [value]="emailTemplateQuery()"
+                (input)="onEmailTemplateQueryInput($any($event.target).value)"
+                (keyup.enter)="onEmailTemplateSearchSubmit()"
+                placeholder="Search by name or subject"
+                aria-label="Search HubSpot marketing emails"
+                class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                data-testid="campaigns-email-template-search" />
+              <button
+                type="button"
+                (click)="onEmailTemplateSearchSubmit()"
+                [disabled]="emailTemplatesLoading()"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                data-testid="campaigns-email-template-search-button">
+                Search
+              </button>
+            </div>
+
+            @if (emailTemplatesLoading()) {
+              <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-loading">
+                <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                Loading templates…
+              </p>
+            } @else if (emailChannelEnabled() === false) {
+              <!-- Not an error: the steady state wherever HubSpot is not connected. -->
+              <p class="text-sm text-gray-500" data-testid="campaigns-email-not-connected">{{ emailNotConnectedMessage() }}</p>
+            } @else if (emailTemplatesError(); as message) {
+              <p class="text-sm text-red-600" role="alert" data-testid="campaigns-email-templates-error">{{ message }}</p>
+            } @else if (emailTemplates(); as templates) {
+              @if (templates.length === 0) {
+                <!--
+                  Only reachable when the search SUCCEEDED. The copy names the query so it reads as
+                  a statement about the search rather than about the portal.
+                -->
+                <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-empty">
+                  @if (emailTemplateSubmittedQuery()) {
+                    No templates match “{{ emailTemplateSubmittedQuery() }}”.
+                  } @else {
+                    This portal has no marketing emails yet.
+                  }
+                </p>
+              } @else {
+                @if (emailTemplatesTruncated()) {
+                  <!--
+                    Only ever set for an EMPTY query, where a complete listing and a truncated
+                    first screen are indistinguishable. Telling someone to narrow an already
+                    exhaustive search would send them hunting for a template that does not exist.
+                  -->
+                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">This may be a partial list. Search to narrow it.</p>
+                }
+                @if (emailTemplatesRenderCapped()) {
+                  <!--
+                    Stated as FACT, unlike the `possiblyTruncated` banner above, which hedges
+                    because a capped 500 and a complete 500 are indistinguishable on the wire.
+                    Both numbers here were measured on the list in hand before it was sliced.
+
+                    Both can show at once: an unfiltered search can be cut upstream at 500 and
+                    cut again here at the render limit.
+                  -->
+                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
+                }
+                <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
+                  @for (template of emailTemplatesRendered(); track template.id) {
+                    <li>
+                      <button
+                        type="button"
+                        (click)="onSelectEmailTemplate(template.id)"
+                        [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
+                        [attr.aria-label]="template | hubspotTemplateLabel"
+                        [class]="
+                          selectedEmailTemplateId() === template.id
+                            ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'
+                            : 'flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2 text-left hover:bg-gray-50'
+                        "
+                        [attr.data-testid]="'campaigns-email-template-' + template.id">
+                        <span class="flex w-full items-center gap-2">
+                          <span class="min-w-0 flex-1 text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
+                          <!--
+                            The non-colour half of the selected state (WCAG 1.4.1): the border and
+                            background above are colour ONLY, so a colour-blind user, or anyone on
+                            a low-contrast display, had nothing to go on. Same treatment as
+                            project-selector and org-selector — an opacity-toggled check rather
+                            than an @if, so the row's width does not shift as the selection moves.
+
+                            aria-hidden while unselected keeps it out of the accessible name;
+                            aria-pressed on the button already tells assistive tech the state, so
+                            the label would otherwise be announced twice.
+                          -->
+                          <i
+                            class="fa-light fa-check shrink-0 text-blue-500 transition-opacity"
+                            [class.opacity-100]="selectedEmailTemplateId() === template.id"
+                            [class.opacity-0]="selectedEmailTemplateId() !== template.id"
+                            [attr.aria-hidden]="selectedEmailTemplateId() !== template.id"
+                            [attr.aria-label]="selectedEmailTemplateId() === template.id ? 'Selected' : null"></i>
+                        </span>
+                        <span class="text-xs text-gray-500">
+                          <!--
+                            Only when it is not ALREADY the primary label above. With no `name`,
+                            the primary falls through to `subject`, and rendering it again here
+                            printed the same string twice on one row.
+                          -->
+                          @if (template.subject && template.name) {
+                            {{ template.subject }}
+                          }
+                          @if (template.state) {
+                            · {{ template.state }}
+                          }
+                          @if (template.updatedAt | hubspotUpdatedAt; as updated) {
+                            · Updated {{ updated }}
+                          }
+                        </span>
+                      </button>
+                    </li>
+                  }
+                </ul>
               }
-              Staging an email clones one of your HubSpot marketing emails as its template, and choosing that template needs an endpoint that is still in
-              review.
-            </p>
+            }
           </div>
         </div>
       }

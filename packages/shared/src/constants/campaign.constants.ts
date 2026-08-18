@@ -265,3 +265,24 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
  * module the cutover exists to retire.
  */
 export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation process. Please try again.';
+
+/**
+ * How many HubSpot template rows the picker will RENDER at once.
+ *
+ * The upstream 500-row cap does not bound this list. `HubSpotEmailSearchResult` documents that a
+ * FILTERED search is exempt from that cap — truncating one would report an email that exists as
+ * absent — so a broad query ("a") walks up to 200 pages and can answer with thousands of rows,
+ * each of which the template renders as a button.
+ *
+ * This caps the RENDER, not the result: `emailTemplates` keeps every row it was given, so the
+ * count the picker reports is the true total. The list is not silently shortened — the template
+ * states "Showing the first N of M" whenever this bites, because a list that is quietly cut off
+ * reads as a complete answer and sends someone hunting for a template that was fetched but never
+ * drawn.
+ *
+ * A cap rather than virtual scrolling: nothing in this repo virtualises a list today (no
+ * `cdk-virtual-scroll-viewport` anywhere in `apps/lfx-one`), and introducing the first one here
+ * would be a new pattern rather than a followed one. Narrowing the search is also the action the
+ * user actually wants — scrolling 4,000 rows is not.
+ */
+export const HUBSPOT_TEMPLATE_RENDER_LIMIT = 100;
