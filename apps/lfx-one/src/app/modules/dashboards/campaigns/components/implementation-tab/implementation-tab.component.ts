@@ -484,10 +484,12 @@ export class ImplementationTabComponent implements OnInit {
 
   protected setLinkedInLifetimeBudget(value: boolean): void {
     this.linkedInLifetimeBudget.set(value);
+    this.emitDraft();
   }
 
   protected setLinkedInBudget(value: number): void {
     this.linkedInBudgetUsd.set(value);
+    this.emitDraft();
   }
 
   protected setLinkedInAccount(accountId: string): void {
@@ -504,20 +506,31 @@ export class ImplementationTabComponent implements OnInit {
     select.value = '';
   }
 
+  // Each of the four handlers below emits the draft after writing its signal (LFXV2-3315).
+  //
+  // Restoring these fields in `applyDraft` is only half the fix, and the missing half is here:
+  // `emitDraft` is otherwise driven ENTIRELY by `campaignForm.valueChanges`, which these signals
+  // are not part of. A user who edited nothing but the Meta budget therefore produced no emission
+  // at all, so the parent still held the pre-edit draft and the restore faithfully replayed the
+  // old number — the budget would still have been lost, just via a different route.
   protected onLinkedInBudgetInput(event: Event): void {
     this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   protected onLinkedInLifetimeBudgetChange(event: Event): void {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected onMetaBudgetInput(event: Event): void {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected submit(): void {
@@ -686,6 +699,20 @@ export class ImplementationTabComponent implements OnInit {
       includeDemandGen: draft.includeDemandGen,
     });
 
+    // The per-platform budgets, restored unconditionally (LFXV2-3315).
+    //
+    // No `?? this.linkedInBudgetUsd()` or `|| 500` guard, deliberately. These fields are required
+    // on the draft, so every draft that reaches here carries a real number — and a nullish guard
+    // would be worse than redundant: `draft.metaBudgetUsd || 500` treats a deliberate 0 as absent
+    // and puts the default back, which is the bug rather than the fix. Assigned after the
+    // `patchValue` above purely for readability; these are signals, so they touch neither the form
+    // nor `valueChanges`.
+    this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
+    this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
+    this.redditBudgetUsd.set(draft.redditBudgetUsd);
+    this.metaBudgetUsd.set(draft.metaBudgetUsd);
+    this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
+
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
     // emits per control, so letting these through would fire `campaignName`'s recompute once per
     // headline for no gain. The single patch above is enough to settle every derived signal.
@@ -739,6 +766,15 @@ export class ImplementationTabComponent implements OnInit {
       endDate: form.endDate,
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
+      // Read straight off the signals, with no `|| default` — a budget the user cleared reads 0
+      // here (see `onMetaBudgetInput`, which coerces a blank input to 0), and 0 is a value the
+      // draft must carry rather than a hole to fill. Substituting 500 for it would restore a
+      // number the user never typed, which is the very defect this snapshot exists to close.
+      linkedInBudgetUsd: this.linkedInBudgetUsd(),
+      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
+      redditBudgetUsd: this.redditBudgetUsd(),
+      metaBudgetUsd: this.metaBudgetUsd(),
+      metaLifetimeBudget: this.metaLifetimeBudget(),
       eventSlug: form.eventSlug,
     });
   }

@@ -321,11 +321,12 @@ export interface CampaignBriefPersistenceState {
  * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
  * against the brief on screen so one event's edits cannot replay onto another's.
  *
- * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
- * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
- * user-editable and are still discarded, because they live in signals rather than this form and
- * would need their own plumbing. The Google copy and budget carried here are the highest-volume
- * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
+ * The per-platform BUDGETS are carried too (LFXV2-3315), even though they live in signals rather
+ * than the form. Money is the field where a silent revert is worst: the operator reviews a budget,
+ * leaves the tab, comes back to a control that reads 500 again, and can submit spend they never
+ * approved. The remaining per-platform signals — LinkedIn geo targets, targeting profile and ad
+ * account; the creative variants — are still discarded (LFXV2-3230); they are mostly
+ * AI-recommended values the user nudges, and none of them commits money.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
@@ -350,6 +351,26 @@ export interface CampaignImplementationDraft {
   endDate: string;
   includeSearch: boolean;
   includeDemandGen: boolean;
+  /**
+   * Per-platform budgets, one per non-Google platform the component can submit (LFXV2-3315).
+   *
+   * REQUIRED rather than optional, and that is the whole point of the field. An optional
+   * `linkedInBudgetUsd?: number` would make an explicitly-typed 0 and an absent field the same
+   * thing at the restore site — `draft.linkedInBudgetUsd ?? 500` would resurrect the default over
+   * a deliberate 0. Required mirrors how `budgetUsd` already behaves: `emitDraft` reads the live
+   * value unconditionally, so every draft carries a number and `applyDraft` can assign it
+   * unconditionally. There is no "not set" state to distinguish, because a draft only ever exists
+   * after this component has mounted and seeded these signals.
+   *
+   * `redditBudgetUsd` has no input in the template today and so cannot yet diverge from its
+   * default; it is carried anyway because `submit()` already sends it, and a budget that reaches
+   * an ad platform must not be the one field that silently resets when a control is added for it.
+   */
+  linkedInBudgetUsd: number;
+  linkedInLifetimeBudget: boolean;
+  redditBudgetUsd: number;
+  metaBudgetUsd: number;
+  metaLifetimeBudget: boolean;
   /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's

@@ -1731,6 +1731,14 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       endDate: '2026-02-01',
       includeSearch: true,
       includeDemandGen: false,
+      // Per-platform budgets are equally stale here, and equally must not be replayed onto
+      // event B (LFXV2-3315). Distinctive values so a broken slug guard shows up as a wrong
+      // BUDGET as well as wrong copy.
+      linkedInBudgetUsd: 111,
+      linkedInLifetimeBudget: true,
+      redditBudgetUsd: 222,
+      metaBudgetUsd: 333,
+      metaLifetimeBudget: true,
       eventSlug: 'event-a',
     });
 
