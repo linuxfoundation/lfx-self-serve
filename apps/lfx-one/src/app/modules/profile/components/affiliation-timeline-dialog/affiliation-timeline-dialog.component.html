@@ -68,66 +68,85 @@
                 @let isOverlapping = overlappingPeriodIds().has(period.id);
                 @let periodYearOptions = availableYearsMap().get(period.id) ?? yearOptions;
                 <div
-                  class="flex items-center gap-2 rounded-md px-2 py-1"
+                  class="flex flex-wrap items-center gap-2 rounded-md px-2 py-1"
                   [class]="isOverlapping ? 'bg-amber-50/50' : ''"
                   [attr.data-testid]="'period-row-' + period.id">
-                  <!-- Start Month -->
-                  <p-select
-                    [options]="monthOptions"
-                    [ngModel]="period.startMonth"
-                    (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Month"
-                    [style]="{ width: '110px' }"
-                    size="small"
-                    appendTo="body"
-                    [attr.data-testid]="'period-start-month-' + period.id" />
+                  <!-- Start label + Start Month/Year, grouped into ONE flex item so flex-wrap on the
+                       enclosing period-row div above can only move the whole pair to the next line, never
+                       orphan the label from its controls. Below sm the month/year grid keeps them
+                       equal-width side by side (2 columns, not stacked); fixed 110px/100px columns at sm
+                       and up so w-full resolves to the original month/year widths instead of shrink-to-fit
+                       sizing. -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium text-slate-500">Start</span>
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
+                      <p-select
+                        [options]="monthOptions"
+                        [ngModel]="period.startMonth"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Month"
+                        [ariaLabel]="'Start month, ' + org.organization + ' period ' + ($index + 1)"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-start-month-' + period.id" />
 
-                  <!-- Start Year -->
-                  <p-select
-                    [options]="periodYearOptions"
-                    [ngModel]="period.startYear"
-                    (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Year"
-                    [style]="{ width: '100px' }"
-                    size="small"
-                    appendTo="body"
-                    [attr.data-testid]="'period-start-year-' + period.id" />
+                      <p-select
+                        [options]="periodYearOptions"
+                        [ngModel]="period.startYear"
+                        (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Year"
+                        [ariaLabel]="'Start year, ' + org.organization + ' period ' + ($index + 1)"
+                        styleClass="w-full"
+                        size="small"
+                        appendTo="body"
+                        [attr.data-testid]="'period-start-year-' + period.id" />
+                    </div>
+                  </div>
 
-                  <span class="text-xs text-slate-400">–</span>
+                  <!-- Hidden below sm — reads as a stray dash between wrapped start/end pairs there -->
+                  <span class="hidden text-xs text-slate-400 sm:inline">–</span>
 
                   <!-- End Date or Present -->
                   @if (period.isPresent) {
-                    <span class="text-xs font-medium text-slate-500">Present</span>
+                    <span class="text-xs font-medium text-slate-500">End: Present</span>
                   } @else {
-                    <!-- End Month -->
-                    <p-select
-                      [options]="monthOptions"
-                      [ngModel]="period.endMonth"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Month"
-                      [style]="{ width: '110px' }"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-end-month-' + period.id" />
+                    <!-- End label + End Month/Year, grouped into ONE flex item — see Start pair comment
+                         above (same flex-wrap-orphan concern, same fixed-column pattern). -->
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-medium text-slate-500">End</span>
+                      <div class="grid grid-cols-2 gap-2 sm:grid-cols-[110px_100px]">
+                        <p-select
+                          [options]="monthOptions"
+                          [ngModel]="period.endMonth"
+                          (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Month"
+                          [ariaLabel]="'End month, ' + org.organization + ' period ' + ($index + 1)"
+                          styleClass="w-full"
+                          size="small"
+                          appendTo="body"
+                          [attr.data-testid]="'period-end-month-' + period.id" />
 
-                    <!-- End Year -->
-                    <p-select
-                      [options]="periodYearOptions"
-                      [ngModel]="period.endYear"
-                      (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
-                      optionLabel="label"
-                      optionValue="value"
-                      placeholder="Year"
-                      [style]="{ width: '100px' }"
-                      size="small"
-                      appendTo="body"
-                      [attr.data-testid]="'period-end-year-' + period.id" />
+                        <p-select
+                          [options]="periodYearOptions"
+                          [ngModel]="period.endYear"
+                          (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Year"
+                          [ariaLabel]="'End year, ' + org.organization + ' period ' + ($index + 1)"
+                          styleClass="w-full"
+                          size="small"
+                          appendTo="body"
+                          [attr.data-testid]="'period-end-year-' + period.id" />
+                      </div>
+                    </div>
                   }
 
                   <!-- Present Checkbox -->
@@ -136,6 +155,7 @@
                       [ngModel]="period.isPresent"
                       (ngModelChange)="updatePeriodField(org.organization, period.id, 'isPresent', $event)"
                       [binary]="true"
+                      [ariaLabel]="'Currently affiliated (present), ' + org.organization + ' period ' + ($index + 1)"
                       [attr.data-testid]="'period-present-' + period.id" />
                     <span class="text-xs font-medium text-slate-600">Present</span>
                   </div>
@@ -145,8 +165,9 @@
                     <button
                       class="ml-auto flex h-7 w-7 cursor-pointer items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                       (click)="removePeriod(org.organization, period.id)"
+                      [attr.aria-label]="'Remove period, ' + org.organization + ' period ' + ($index + 1)"
                       [attr.data-testid]="'period-remove-' + period.id">
-                      <i class="fa-light fa-trash-can text-xs"></i>
+                      <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
                     </button>
                   }
                 </div>
