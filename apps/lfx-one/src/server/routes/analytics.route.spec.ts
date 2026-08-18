@@ -80,23 +80,23 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
 // Every endpoint gated by requireExecutiveDirector (ED-only) — the full registration list,
 // so a missing/deleted gate on any one of them shows up here rather than only in a sample.
 // Middleware branching itself is covered by require-executive-director.middleware.spec.ts.
-const ED_ONLY_GATED = [
-  '/web-activities-summary',
-  '/email-ctr',
-  '/social-reach',
-  '/keyword-performance',
-  '/social-media',
-  '/social-media/monthly',
-  '/events-overview-summary',
-  '/event-roster',
-  '/event-detail',
-];
+const ED_ONLY_GATED = ['/keyword-performance', '/social-media', '/social-media/monthly', '/events-overview-summary', '/event-roster', '/event-detail'];
 
 // Endpoints gated by requireExecutiveDashboardAccess (ED-or-LF-Staff):
 // event-growth, brand-reach, revenue-impact, and marketing-attribution back the LF-Staff-visible
 // executive dashboard (MarketingOverviewComponent + RevenueImpactDrawerComponent).
-// brand-health backs the Social Listening tab, also LF-Staff-visible.
-const ED_OR_LF_STAFF_GATED = ['/event-growth', '/brand-reach', '/revenue-impact', '/marketing-attribution', '/brand-health'];
+// brand-health, web-activities-summary, email-ctr, and social-reach back the LF-Staff-visible
+// marketing dashboard (MarketingOverviewComponent for Executive Dashboard, Social Listening tab).
+const ED_OR_LF_STAFF_GATED = [
+  '/event-growth',
+  '/brand-reach',
+  '/revenue-impact',
+  '/marketing-attribution',
+  '/brand-health',
+  '/web-activities-summary',
+  '/email-ctr',
+  '/social-reach',
+];
 
 const GATED_SAMPLE = [...ED_ONLY_GATED, ...ED_OR_LF_STAFF_GATED];
 
@@ -168,6 +168,17 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
     expect(res.status).not.toBe(403);
   });
 
+  it.each(['/web-activities-summary', '/email-ctr', '/social-reach'])(
+    'admits LF staff without the ED persona on %s (marketing dashboard route)',
+    async (path) => {
+      getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).not.toBe(403);
+    }
+  );
+
   // multi-foundation-summary is ungated at the route level; authorization is enforced server-side
   // by filterSlugsToPersonaScope. Non-ED users are allowed through if they have the requested
   // slugs in their persona projects.
@@ -202,6 +213,22 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
     const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=tlf`);
 
     expect(res.status).toBe(400); // ServiceValidationError from filterSlugsToPersonaScope
+  });
+
+  it('refuses a non-ED user for mixed authorized/unauthorized slugs (prevents partial aggregate)', async () => {
+    const boardMember = {
+      personas: ['board-member'],
+      personaProjects: {
+        'board-member': [{ projectUid: 'uid-cncf', projectSlug: 'cncf', projectName: 'CNCF' }],
+      },
+      isRootWriter: false,
+      isLFStaff: false,
+    };
+    getPersonas.mockResolvedValue(boardMember);
+
+    const res = await fetch(`${baseUrl}/api/analytics/multi-foundation-summary?slugs=cncf,tlf`);
+
+    expect(res.status).toBe(400); // ServiceValidationError: not authorized for tlf
   });
 
   // Regression guard: these endpoints were never in scope for ED gating (personal/org analytics,

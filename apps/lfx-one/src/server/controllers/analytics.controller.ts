@@ -3109,15 +3109,17 @@ export class AnalyticsController {
       }
     }
 
-    const scoped = slugs.filter((slug) => allPersonaSlugs.has(slug));
+    // Check that all requested slugs are within the caller's scope; reject partially-scoped
+    // requests to prevent incomplete aggregates from being misrepresented as complete
+    const unauthorizedSlugs = slugs.filter((slug) => !allPersonaSlugs.has(slug));
 
-    if (scoped.length === 0) {
-      throw ServiceValidationError.forField('slugs', 'None of the requested foundation slugs are within your persona scope', {
+    if (unauthorizedSlugs.length > 0) {
+      throw ServiceValidationError.forField('slugs', `Not authorized to access foundation(s): ${unauthorizedSlugs.join(', ')}`, {
         operation: 'get_multi_foundation_summary',
       });
     }
 
-    return scoped;
+    return slugs;
   }
 
   /**
