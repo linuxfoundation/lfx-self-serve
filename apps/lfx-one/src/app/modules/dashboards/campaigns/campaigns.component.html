@@ -236,7 +236,7 @@
                         type="button"
                         (click)="onSelectEmailTemplate(template.id)"
                         [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
-                        [attr.aria-label]="'Use template ' + (template.name || template.subject || template.id)"
+                        [attr.aria-label]="emailTemplateAccessibleName(template)"
                         [class]="
                           selectedEmailTemplateId() === template.id
                             ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'

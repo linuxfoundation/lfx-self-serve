@@ -1919,6 +1919,49 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     expect(el.querySelector('[data-testid="campaigns-email-templates-empty"]')).toBeNull();
   });
 
+  it('reloads the picker when the foundation changes while it is already open', () => {
+    // The entry load lives in selectTab, which only runs on a tab TRANSITION. An operator
+    // already sitting on the picker who switches foundation never triggers it, so the clears
+    // in the switch handler left a blank panel in front of them.
+    panel();
+    httpMock
+      .expectOne((r) => r.url === '/api/campaigns/hubspot/emails')
+      .flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '1', name: 'TLF promo' }] });
+    fixture.detectChanges();
+
+    ctx.set({ uid: 'u2', name: 'CNCF', slug: 'cncf', logoUrl: '' } as ProjectContext);
+    fixture.detectChanges();
+
+    // The switch must issue a fresh load for the NEW foundation, not leave the panel empty.
+    const req = httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails');
+    req.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '9', name: 'CNCF promo' }] });
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('CNCF promo');
+  });
+
+  it('announces the metadata that disambiguates two same-named templates', () => {
+    // aria-label REPLACES descendant text, so a name-only label made two same-named rows
+    // sound identical — defeating the very date the picker renders to tell them apart.
+    picker().searchEmailTemplates('');
+    respond({
+      enabled: true,
+      error: null,
+      possiblyTruncated: false,
+      emails: [
+        { id: '1', name: 'KubeCon promo', subject: 'Join us', state: 'PUBLISHED', updatedAt: '2026-08-14' },
+        { id: '2', name: 'KubeCon promo', subject: 'Last call', state: 'DRAFT', updatedAt: '2026-08-01' },
+      ],
+    });
+
+    const labels = Array.from(panel().querySelectorAll('[data-testid="campaigns-email-template-list"] button')).map((b) => b.getAttribute('aria-label'));
+    expect(labels.length).toBe(2);
+    // The two rows share a name; their labels must NOT be identical.
+    expect(labels[0]).not.toBe(labels[1]);
+    expect(labels[0]).toContain('Aug 14, 2026');
+    expect(labels[0]).toContain('Join us');
+  });
+
   it('keeps the empty state naming the query that ran, not what is being typed', () => {
     picker().searchEmailTemplates('alpha');
     respond({ enabled: true, error: null, possiblyTruncated: false, emails: [] });

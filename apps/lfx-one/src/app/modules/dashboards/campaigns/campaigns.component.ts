@@ -18,6 +18,7 @@ import type {
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
+import { formatHubSpotUpdatedAt } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
@@ -513,6 +514,16 @@ export class CampaignsComponent {
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
         this.selectedEmailTemplateId.set('');
+
+        // Reload if the operator is SITTING on the picker. The clears above are correct, but
+        // on their own they leave a blank panel in front of someone who never navigated: the
+        // entry load lives in `selectTab`, which only runs on a tab transition. Nothing else
+        // re-evaluates it after a switch, so the picker stayed empty until they navigated
+        // away and back. Guarded, so a switch into a foundation whose channel is off still
+        // renders that answer rather than looping on it.
+        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
+          this.loadEmailTemplatesIfNeverAnswered();
+        }
       });
 
     // Mirror the program control into the signal. A program switch changes the whole
@@ -573,18 +584,8 @@ export class CampaignsComponent {
         // empty box, which this file's own comment calls out as reading like a broken
         // channel. Guarded on `null` so it fires once and does not re-run over a list the
         // operator is already searching, and skipped while a request is in flight.
-        if (
-          tab === 'implementation' &&
-          this.emailTemplates() === null &&
-          !this.emailTemplatesLoading() &&
-          // A search that already ANSWERED leaves templates null too — when the channel is
-          // off, or when it failed. Re-firing on entry would retry a refusal on every tab
-          // click and overwrite the error the operator needs to read. Only a picker that has
-          // never been answered for this foundation should load.
-          this.emailChannelEnabled() === null &&
-          this.emailTemplatesError() === null
-        ) {
-          this.searchEmailTemplates(this.emailTemplateQuery());
+        if (tab === 'implementation') {
+          this.loadEmailTemplatesIfNeverAnswered();
         }
       }
       return;
@@ -707,6 +708,7 @@ export class CampaignsComponent {
    * not per keystroke. campaign-service walks every page and matches in-process, so a filtered
    * search is genuinely expensive — firing one per character would be the wrong trade.
    */
+
   protected searchEmailTemplates(query: string): void {
     const projectSlug = this.activeFoundationSlug();
     if (projectSlug === '') {
@@ -856,6 +858,47 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Load the picker when it holds no answer for the current foundation.
+   *
+   * Called from BOTH paths that can leave it blank: entering the Implementation tab, and a
+   * foundation switch while that tab is already open. Fixing only the first left the second
+   * broken — the switch handler clears the signals, and nothing re-evaluated a guard that
+   * lived inside `selectTab`. Resetting a guard's inputs does nothing if nothing runs it.
+   *
+   * The four-signal condition distinguishes "never answered" from "answered with a refusal":
+   * a channel-off or failed search also leaves `emailTemplates` null, and re-firing on those
+   * would retry a refusal on every entry and overwrite the error the operator needs to read.
+   */
+  /**
+   * The full accessible name for a template row.
+   *
+   * `aria-label` REPLACES descendant text in the accessible name, so the previous
+   * name-only label meant a screen-reader user heard "Use template KubeCon promo" and
+   * nothing else — no subject, state or date. Those are exactly the fields that exist to
+   * disambiguate: `formatHubSpotUpdatedAt` says so in its own doc comment, because two
+   * templates routinely share a name. Without them the a11y label silently defeated the
+   * feature, and two same-named rows sounded identical.
+   *
+   * A method rather than a template expression because an Angular template cannot pipe
+   * inside a ternary without a parse error, and because the concatenation is long enough
+   * that inlining it obscures what is being announced.
+   */
+  protected emailTemplateAccessibleName(template: HubSpotMarketingEmail): string {
+    const parts = [`Use template ${template.name || template.subject || template.id}`];
+    if (template.subject && template.name) parts.push(`subject ${template.subject}`);
+    if (template.state) parts.push(template.state);
+    const updated = formatHubSpotUpdatedAt(template.updatedAt);
+    if (updated) parts.push(`updated ${updated}`);
+    return parts.join(', ');
+  }
+
+  private loadEmailTemplatesIfNeverAnswered(): void {
+    if (this.emailTemplates() === null && !this.emailTemplatesLoading() && this.emailChannelEnabled() === null && this.emailTemplatesError() === null) {
+      this.searchEmailTemplates(this.emailTemplateQuery());
+    }
   }
 
   /**
