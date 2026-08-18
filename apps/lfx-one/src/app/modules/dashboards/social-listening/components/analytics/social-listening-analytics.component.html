@@ -11,7 +11,7 @@
 
   <!-- Row 2: Mentions Over Time + Mentions by Platform -->
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
-    <lfx-card>
+    <lfx-card styleClass="[&_.p-card-body]:p-5">
       <div class="analytics-panel" data-testid="social-listening-analytics-over-time">
         <h3 class="panel-title">Mentions Over Time</h3>
         @if (overTimeLoading()) {
@@ -33,7 +33,7 @@
       </div>
     </lfx-card>
 
-    <lfx-card>
+    <lfx-card styleClass="[&_.p-card-body]:p-5">
       <div class="analytics-panel" data-testid="social-listening-analytics-platform">
         <h3 class="panel-title">Mentions by Platform</h3>
         @if (platformLoading()) {
@@ -80,7 +80,7 @@
 
   <!-- Row 3: Mentions by Tag + right column (Sentiment Distribution, Top Projects) -->
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
-    <lfx-card>
+    <lfx-card styleClass="[&_.p-card-body]:p-5">
       <div class="analytics-panel" data-testid="social-listening-analytics-tags">
         <h3 class="panel-title">Mentions by Tag</h3>
         @if (tagsLoading()) {
@@ -103,7 +103,7 @@
     </lfx-card>
 
     <div class="flex flex-col gap-4">
-      <lfx-card styleClass="h-full">
+      <lfx-card styleClass="h-full [&_.p-card-body]:p-5">
         <div class="analytics-panel" data-testid="social-listening-analytics-sentiment">
           <h3 class="panel-title">Sentiment Distribution</h3>
           @if (sentimentLoading()) {
@@ -142,7 +142,7 @@
         </div>
       </lfx-card>
 
-      <lfx-card styleClass="h-full">
+      <lfx-card styleClass="h-full [&_.p-card-body]:p-5">
         <div class="analytics-panel" data-testid="social-listening-analytics-top-projects">
           <h3 class="panel-title">Top Projects</h3>
           @if (topProjectsLoading()) {
