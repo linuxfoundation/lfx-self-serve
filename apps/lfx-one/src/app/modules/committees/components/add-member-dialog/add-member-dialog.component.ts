@@ -195,9 +195,13 @@ export class AddMemberDialogComponent {
   });
   /** Org-required direct-add uses one shared organization field — bulk add would mis-assign employers. */
   public readonly directAddRequiresSingleEmail = computed(() => this.organizationRequiredForDirectAdd() && this.categorized().toInvite.length > 1);
+  /** Blocks submit while an import is in flight — otherwise submitting closes the dialog,
+   * destroying the import's subscription and silently dropping the selected meeting's
+   * registrants before they're appended to the textarea. */
   public readonly canSubmit = computed(
     () =>
       !this.submitting() &&
+      !this.importing() &&
       this.categorized().toInvite.length > 0 &&
       !this.directAddRequiresSingleEmail() &&
       !(this.showOrganizationField() && this.orgInvalid())
@@ -337,7 +341,8 @@ export class AddMemberDialogComponent {
     const committeeId = this.committee?.uid;
     const emails = this.categorized().toInvite;
     // Immediate mode POSTs to a committee, so it needs one; collect mode only stages payloads.
-    if ((!this.collectOnly && !committeeId) || emails.length === 0) {
+    // Also refuses while an import is in flight — see canSubmit.
+    if ((!this.collectOnly && !committeeId) || emails.length === 0 || this.importing()) {
       return;
     }
 
