@@ -469,7 +469,10 @@
             </div>
           }
 
-          @if (redditSubreddits().length > 0) {
+          <!-- Gate on the EFFECTIVE list, matching the count and chips below. Gating on the raw
+               list renders "Subreddits (0)" with no chips for a brief whose names all normalise
+               away — the geo and keyword blocks already gate on their effective lists. -->
+          @if (redditEffectiveSubreddits().length > 0) {
             <div class="mb-4">
               <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
               <div class="flex flex-wrap gap-2">

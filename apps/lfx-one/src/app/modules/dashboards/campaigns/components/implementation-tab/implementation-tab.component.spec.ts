@@ -379,6 +379,24 @@ describe('ImplementationTabComponent reddit budget gate', () => {
     expect(chips).toContain('r/kubernetes');
   });
 
+  it('hides the subreddit block when every name normalises away', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { redditSubreddits: { set(v: string[]): void } };
+    // A brief carrying only unusable names: the raw list is non-empty, the effective list is not.
+    // Gating on the raw list renders a "Subreddits (0)" heading above an empty chip row.
+    c.redditSubreddits.set(['r/', '/r/', '   ']);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('Subreddits (0)');
+
+    // And a usable name still renders, or the assertion above would pass by hiding the block
+    // unconditionally.
+    c.redditSubreddits.set(['kubernetes']);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Subreddits (1)');
+  });
+
   it('allows submit once the reddit budget is positive', () => {
     setup(500);
     // The positive case must pass, or the zero case above would be satisfied by any unrelated
