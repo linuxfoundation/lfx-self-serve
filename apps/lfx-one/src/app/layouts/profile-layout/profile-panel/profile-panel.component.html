@@ -2,87 +2,116 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Presentational summary card. The layout wraps this in a fixed full-height right rail; here we
-  fill that rail (h-full) with a white, flush surface and a left border mirroring the left menu,
-  scrolling its own content independently (overflow-y-auto) when the viewport is short.
+  Presentational summary card. Below 2xl it renders inline in the content column as a standalone
+  card (rounded, bordered, own padding) — capped at max-w-md below sm (parent wrapper, see
+  profile-layout.component.html) and full width from sm up. Its own internal layout reflows across
+  three states: a single stacked column below sm, a full-width horizontal layout (header row +
+  2/3-col metadata grid + side-by-side social rows) from sm up to just under 2xl, so it doesn't sit
+  as a narrow left-aligned card with blank space beside it. At 2xl and up the layout wraps this in a
+  fixed full-height right rail, and every sm:/md: reflow class collapses back to the original
+  single-column layout there; we fill that rail (h-full) with a flush surface and a left border
+  mirroring the left menu, scrolling its own content independently (overflow-y-auto) when the
+  viewport is short.
 -->
-<aside class="flex h-full flex-col overflow-y-auto border-l border-gray-200 bg-white px-6 py-7" aria-label="Profile summary" data-testid="profile-panel">
+<aside
+  class="flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-6 2xl:h-full 2xl:overflow-y-auto 2xl:rounded-none 2xl:border-0 2xl:border-l 2xl:px-6 2xl:py-7"
+  aria-label="Profile summary"
+  data-testid="profile-panel">
   @if (loading()) {
     <div class="flex items-center justify-center py-8" role="status" aria-live="polite">
       <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400" aria-hidden="true"></i>
       <span class="sr-only">Loading profile summary</span>
     </div>
   } @else {
-    <!-- Avatar + edit-pencil badge (rounded, not circle) -->
-    <div class="relative mb-3.5 w-24">
-      <div
-        class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-xl font-semibold text-white"
-        data-testid="profile-avatar">
-        @if (showAvatarImage()) {
-          <img
-            [src]="avatarUrl()"
-            [alt]="displayName()"
-            (error)="onAvatarError()"
-            class="h-full w-full rounded-2xl object-cover"
-            data-testid="profile-avatar-image" />
-        } @else {
-          {{ initials() }}
+    <!-- Header: avatar + name/handle + action pills. Row layout from sm up to just under 2xl (the
+         panel is full width in that band, not a narrow rail); back to stacked block flow at 2xl,
+         matching the fixed rail's narrow column. -->
+    <div class="sm:flex sm:items-start sm:gap-5 2xl:block">
+      <!-- Avatar + edit-pencil badge (rounded, not circle). mb-3.5 only applies below sm and at 2xl
+           (stacked states) — in the sm-2xl row it would leave 14px of dead space under the avatar. -->
+      <div class="relative mb-3.5 w-24 sm:mb-0 2xl:mb-3.5">
+        <div
+          class="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 text-xl font-semibold text-white"
+          data-testid="profile-avatar">
+          @if (showAvatarImage()) {
+            <img
+              [src]="avatarUrl()"
+              [alt]="displayName()"
+              (error)="onAvatarError()"
+              class="h-full w-full rounded-2xl object-cover"
+              data-testid="profile-avatar-image" />
+          } @else {
+            {{ initials() }}
+          }
+        </div>
+        <!--
+          Decorative duplicate of the "Edit profile" pill below. A plain span (not a button) so it is
+          never focusable, keeping it out of both the a11y tree (aria-hidden) and tab/focus order:
+          screen-reader and keyboard users get a single actionable control (the labeled pill) for one
+          destination. Stays mouse-clickable; while impersonating, pointer-events-none blocks the click
+          (onEdit() is a no-op then anyway) and opacity-40 mirrors the disabled look.
+        -->
+        <span
+          (click)="onEdit()"
+          aria-hidden="true"
+          [class.pointer-events-none]="impersonating()"
+          [class.opacity-40]="impersonating()"
+          class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+          data-testid="profile-panel-edit-badge">
+          <i class="fa-light fa-pencil text-xs"></i>
+        </span>
+      </div>
+
+      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width in
+           the sm-2xl row (the flex default is min-width: auto, which would instead force the row to
+           overflow if displayName() falls back to a long, unbreakable username); break-words lets a
+           long name wrap instead of pushing the fixed-width pills container past the card edge. -->
+      <div class="min-w-0">
+        <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
+        @if (username()) {
+          <p class="mb-4 break-words text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
         }
       </div>
-      <!--
-        Decorative duplicate of the "Edit profile" pill below. A plain span (not a button) so it is
-        never focusable, keeping it out of both the a11y tree (aria-hidden) and tab/focus order:
-        screen-reader and keyboard users get a single actionable control (the labeled pill) for one
-        destination. Stays mouse-clickable; while impersonating, pointer-events-none blocks the click
-        (onEdit() is a no-op then anyway) and opacity-40 mirrors the disabled look.
-      -->
-      <span
-        (click)="onEdit()"
-        aria-hidden="true"
-        [class.pointer-events-none]="impersonating()"
-        [class.opacity-40]="impersonating()"
-        class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
-        data-testid="profile-panel-edit-badge">
-        <i class="fa-light fa-pencil text-xs"></i>
-      </span>
+
+      <!-- Action pills — pushed to the row's trailing edge at sm+ (ml-auto), fixed-width so they don't
+           stretch to fill the row; sm:shrink-0 keeps them at their full sm:w-56 even if the name above
+           is long enough to want the space; back to full-width stacked at 2xl. -->
+      <div class="sm:ml-auto sm:flex sm:flex-col sm:shrink-0 sm:gap-2.5 2xl:ml-0 2xl:w-full">
+        <!-- Edit profile pill -->
+        <button
+          type="button"
+          (click)="onEdit()"
+          [disabled]="impersonating()"
+          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+          class="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:mb-0 sm:w-56 2xl:w-full"
+          data-testid="profile-edit-button">
+          <i class="fa-light fa-pencil text-xs"></i>
+          Edit profile
+        </button>
+
+        <!-- Public profile visibility (LFXV2-2629) -->
+        <button
+          type="button"
+          (click)="onVisibility()"
+          [disabled]="impersonating()"
+          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+          class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:w-56 2xl:w-full"
+          data-testid="profile-visibility-button">
+          <i class="fa-light fa-eye text-xs"></i>
+          Public profile settings
+        </button>
+      </div>
     </div>
-
-    <!-- Name + handle -->
-    <p class="text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
-    @if (username()) {
-      <p class="mb-4 text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
-    }
-
-    <!-- Edit profile pill -->
-    <button
-      type="button"
-      (click)="onEdit()"
-      [disabled]="impersonating()"
-      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
-      class="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-      data-testid="profile-edit-button">
-      <i class="fa-light fa-pencil text-xs"></i>
-      Edit profile
-    </button>
-
-    <!-- Public profile visibility (LFXV2-2629) -->
-    <button
-      type="button"
-      (click)="onVisibility()"
-      [disabled]="impersonating()"
-      [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
-      class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-      data-testid="profile-visibility-button">
-      <i class="fa-light fa-eye text-xs"></i>
-      Public profile settings
-    </button>
 
     <div class="my-5 h-px bg-slate-200"></div>
 
-    <!-- Fields — each renders only when its value is present -->
-    <div class="flex flex-col gap-5">
+    <!-- Fields — each renders only when its value is present. Stacked below sm; a 2-col grid from sm,
+         3-col from md, so the reflowed panel doesn't leave a lone populated cell in a mostly-empty
+         row (grid auto-flow packs however many fields exist); back to a single stacked column at 2xl
+         to fit the fixed rail's width. -->
+    <div class="flex flex-col gap-5 sm:grid sm:grid-cols-2 sm:gap-x-8 sm:gap-y-5 md:grid-cols-3 2xl:flex 2xl:flex-col">
       @if (aboutMe()) {
-        <div data-testid="profile-panel-about">
+        <div class="sm:col-span-2 md:col-span-3" data-testid="profile-panel-about">
           <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
             <i class="fa-light fa-file-lines"></i>
             <span>About me</span>
@@ -150,10 +179,12 @@
       }
     </div>
 
-    <!-- Social rows — GitHub is wired from the user's connected identities; LinkedIn is stubbed. Each renders only when present. -->
+    <!-- Social rows — GitHub is wired from the user's connected identities; LinkedIn is stubbed. Each
+         renders only when present. Side by side at sm+ (the reflowed panel has the width for it);
+         back to stacked at 2xl to fit the fixed rail. -->
     @if (githubHandle() || linkedinHandle()) {
       <div class="my-1 h-px bg-slate-200"></div>
-      <div class="flex flex-col gap-2 pt-4">
+      <div class="flex flex-col gap-2 pt-4 sm:flex-row sm:gap-6 2xl:flex-col 2xl:gap-2">
         @if (githubHandle()) {
           <div class="flex items-center gap-2 text-[12.5px] text-slate-700" data-testid="profile-panel-github">
             <i class="fa-brands fa-github text-slate-800"></i>

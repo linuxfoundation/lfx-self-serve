@@ -17,6 +17,8 @@ import {
   GetWeeklyBriefActionItemsResponse,
   Newsletter,
   NewsletterSendResult,
+  PaginatedResponse,
+  QueryServiceResponse,
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
@@ -141,14 +143,23 @@ export function __resetMockBriefStateForTesting(): void {
   mockBriefByCommittee.clear();
 }
 
-function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
+/**
+ * Builds a mock WeeklyBrief shifted by `windowOffsetWeeks` relative to the current window.
+ * Pass 0 for the current week, -1 for last week, -2 for two weeks ago, etc.
+ * Used by both `buildMockBrief` (current-week mock) and `listBriefs` (archive mocks).
+ */
+function buildMockWeeklyBrief(committeeId: string, windowOffsetWeeks: number, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
   const nowIso = new Date().toISOString();
-  const { window_start, window_end } = briefWindow();
+  const base = briefWindow();
+  const offsetMs = windowOffsetWeeks * 7 * 24 * 60 * 60 * 1000;
+  const windowStart = new Date(new Date(base.window_start).getTime() + offsetMs).toISOString();
+  const windowEnd = new Date(new Date(base.window_end).getTime() + offsetMs).toISOString();
+  const indexSuffix = String(Math.abs(windowOffsetWeeks)).padStart(2, '0');
   return {
-    uid: 'wb_mock_00000000-0000-0000-0000-000000000001',
+    uid: `wb_mock_00000000-0000-0000-0000-0000000000${indexSuffix}`,
     committee_uid: committeeId,
-    window_start,
-    window_end,
+    window_start: windowStart,
+    window_end: windowEnd,
     state: 'generated',
     brief_text:
       'This week the working group made steady progress across collaboration and delivery streams. ' +
@@ -179,6 +190,10 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
     revision: 1,
     ...overrides,
   };
+}
+
+function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
+  return buildMockWeeklyBrief(committeeId, 0, overrides);
 }
 
 /**
@@ -232,6 +247,53 @@ export class WeeklyBriefService {
       );
     }
     return this.withCallerRating(req, committeeId, response);
+  }
+
+  /**
+   * GET /committees/:committeeId/weekly-briefs (paginated archive list)
+   *
+   * Live mode: queries the query-service `group_weekly_brief` index filtered by
+   * `committee_uid` tag. Access is gated at the controller layer via `assertCommitteeRead`
+   * before this method is called — do not invoke without a prior access check.
+   *
+   * Mock mode: returns three canned past briefs (previous three weeks) so the archive
+   * drawer is fully exercisable locally without standing up the upstream index.
+   */
+  public async listBriefs(req: Request, committeeId: string, query: { limit?: string; page_token?: string } = {}): Promise<PaginatedResponse<WeeklyBrief>> {
+    if (!this.isLive(req)) {
+      logger.debug(req, 'list_weekly_briefs', 'Returning mock brief archive', { committee_id: committeeId });
+      const isSecondPage = !!query['page_token'];
+      return {
+        data: isSecondPage
+          ? [buildMockWeeklyBrief(committeeId, -4), buildMockWeeklyBrief(committeeId, -5), buildMockWeeklyBrief(committeeId, -6)]
+          : [buildMockWeeklyBrief(committeeId, -1), buildMockWeeklyBrief(committeeId, -2), buildMockWeeklyBrief(committeeId, -3)],
+        page_token: isSecondPage ? undefined : 'mock-cursor-page-2',
+      };
+    }
+
+    logger.debug(req, 'list_weekly_briefs', 'Querying group_weekly_brief index', { committee_id: committeeId });
+
+    const rawLimit = parseInt(query['limit'] ?? '', 10);
+    const limit = !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 20;
+
+    const params: Record<string, string | undefined> = {
+      type: 'group_weekly_brief',
+      tags: `committee_uid:${committeeId}`,
+      page_size: String(limit),
+      ...(query['page_token'] && { page_token: query['page_token'] }),
+    };
+
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<WeeklyBrief>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    // Exclude the current week's brief (window hasn't closed yet) — the card already shows it.
+    const now = new Date();
+    return { data: resources.map((r) => r.data).filter((b) => new Date(b.window_end) < now), page_token };
   }
 
   /**

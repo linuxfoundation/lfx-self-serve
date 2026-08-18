@@ -66,6 +66,10 @@ export default {
     'bg-gray-100',
   ],
   theme: {
+    // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does
+    // NOT affect the `sm:`/`md:`/.../`2xl:` responsive variant prefixes used throughout the app
+    // (those come from `theme.screens` below, which Tailwind otherwise defaults independently).
+    // Kept in sync with `theme.screens` so both mean the same breakpoints.
     container: {
       center: true,
       screens: {
@@ -75,6 +79,17 @@ export default {
         xl: '1280px',
         '2xl': '1440px',
       },
+    },
+    // Overrides Tailwind's default `2xl` (1536px) to 1440px so `2xl:` variant classes — e.g. the
+    // Profile & Account hub's rail breakpoint (LFXV2-3285) — actually fire at 1440px. sm/md/lg/xl
+    // match Tailwind's own defaults, listed explicitly since `screens` fully replaces the defaults
+    // rather than merging with them.
+    screens: {
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1440px',
     },
     extend: {
       colors: lfxColors,

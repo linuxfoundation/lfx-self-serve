@@ -11,7 +11,7 @@ import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
- * CanMatch guard for the Profile "My CLAs" tab (`/profile/clas`), gating the
+ * CanMatch guard for the Profile "CLAs" tab (`/profile/clas`), gating the
  * read-only EasyCLA view behind the `my-clas-enabled` flag. SSR defers to the
  * browser; the browser waits up to 5 s for the flag provider to be READY, then
  * fails open (allows the route) if LD is unreachable so users aren't silently
