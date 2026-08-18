@@ -28,12 +28,12 @@ describe('buildProfileTabs', () => {
     expect(buildProfileTabs(false)).toBe(PROFILE_TABS);
   });
 
-  it('inserts the My CLAs tab immediately before Transactions when the flag is on', () => {
+  it('inserts the CLAs tab immediately before Transactions when the flag is on', () => {
     const tabs = buildProfileTabs(true);
     const ids = tabs.map((t) => t.id);
     expect(ids).toContain('clas');
     expect(ids.indexOf('clas')).toBe(ids.indexOf('transactions') - 1);
-    expect(tabs.find((t) => t.id === 'clas')).toEqual({ id: 'clas', label: 'My CLAs', route: 'clas' });
+    expect(tabs.find((t) => t.id === 'clas')).toEqual({ id: 'clas', label: 'CLAs', route: 'clas' });
   });
 
   it('does not mutate the shared PROFILE_TABS constant', () => {

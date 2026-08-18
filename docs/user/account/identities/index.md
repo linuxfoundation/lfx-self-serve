@@ -70,6 +70,6 @@ The **Linux.com email** section, at the bottom of the Identities tab, lets Indiv
 ## Related
 
 - [Account overview](../) — all account areas and navigation
-- [My CLAs](../my-clas/) — linked Email and GitHub identities are how signed CLAs are matched to you
+- [CLAs](../my-clas/) — linked Email and GitHub identities are how signed CLAs are matched to you
 - [Settings](../settings/) — add and verify email addresses, manage your password and API token
 - [Account FAQ](../faq/) — short answers about identities, settings, and CLAs

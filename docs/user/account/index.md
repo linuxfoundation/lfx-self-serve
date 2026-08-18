@@ -34,7 +34,7 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 | Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     | [Work history & Affiliations](./work-history/)    |
 | Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work    | [Identities](./identities/)                       |
 | Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan       | [Individual Enrollment](./individual-enrollment/) |
-| My CLAs                     | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) | [My CLAs](./my-clas/)                             |
+| CLAs                        | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) | [CLAs](./my-clas/)                                |
 | Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                         | [Transactions](./transactions/)                   |
 | Settings                    | `/profile/settings`              | Email addresses, password, and developer API token             | [Settings](./settings/)                           |
 
@@ -46,6 +46,6 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 - [Work history & Affiliations](./work-history/) — record your employment history and review how contributions are attributed
 - [Identities](./identities/) — link, verify, and remove GitHub, social, and email identities, and claim a Linux.com alias
 - [Individual Enrollment](./individual-enrollment/) — enroll in an Individual Supporter membership and manage auto-renew
-- [My CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage
+- [CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage
 - [Transactions](./transactions/) — your Linux Foundation purchase history
 - [Settings](./settings/) — email, password, and developer API token

@@ -19,7 +19,7 @@ import { TableComponent } from '@components/table/table.component';
 import { MyClasService } from '@services/my-clas.service';
 
 /**
- * Read-only "My CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs
+ * Read-only "CLAs" Profile tab (Me lens). Renders the user's currently-valid signed CLAs
  * (ICLA + ECLA) from `/v4/my-clas` in a single table (Project / Type / Signed / Document) per
  * the approved M1 mockup — no status column, because the BFF filters to valid-only so every row
  * is valid. Agreements are resolved server-side from the session identity; ICLA PDFs download via
