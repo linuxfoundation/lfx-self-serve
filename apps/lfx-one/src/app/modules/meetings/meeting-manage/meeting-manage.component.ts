@@ -959,7 +959,7 @@ export class MeetingManageComponent {
         }
         const context: ProjectContext = {
           uid: meeting.project_uid,
-          name: meeting.project_name ?? meeting.project_slug,
+          name: meeting.project_name || meeting.project_slug,
           slug: meeting.project_slug,
         };
         return { context, isFoundation: meeting.is_foundation === true };
