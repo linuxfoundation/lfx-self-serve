@@ -143,31 +143,31 @@
             <lfx-card styleClass="flex-1 min-w-[100px]">
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-500">Sends</span>
-                <span class="text-2xl font-semibold text-gray-900">{{ emailTotalSends() }}</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalSends() }}</span>
               </div>
             </lfx-card>
             <lfx-card styleClass="flex-1 min-w-[100px]">
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-500">Opens</span>
-                <span class="text-2xl font-semibold text-gray-900">{{ emailTotalOpens() }}</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalOpens() }}</span>
               </div>
             </lfx-card>
             <lfx-card styleClass="flex-1 min-w-[100px]">
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-500">Open Rate</span>
-                <span class="text-2xl font-semibold text-gray-900">{{ emailOpenRate() | number: '1.1-1' }}%</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailOpenRate() }}</span>
               </div>
             </lfx-card>
             <lfx-card styleClass="flex-1 min-w-[100px]">
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-500">Clicks</span>
-                <span class="text-2xl font-semibold text-gray-900">{{ emailTotalClicks() }}</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalClicks() }}</span>
               </div>
             </lfx-card>
             <lfx-card styleClass="flex-1 min-w-[100px]">
               <div class="flex flex-col gap-1">
                 <span class="text-sm text-gray-500">CTR</span>
-                <span class="text-2xl font-semibold text-gray-900">{{ emailAvgCtr() | number: '1.1-1' }}%</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailAvgCtr() }}</span>
               </div>
             </lfx-card>
           </div>
@@ -248,6 +248,17 @@
                   }
                 }
               }
+            </div>
+          } @else if (breakdownUnavailable()) {
+            <!-- Without this branch a failed breakdown renders NOTHING here, which reads as
+                 "this foundation runs no campaigns" — the same fabricated finding as a zero,
+                 stated by omission instead of by number. -->
+            <div
+              class="flex flex-col gap-1 items-center justify-center py-8 border border-gray-200 rounded-lg"
+              role="status"
+              data-testid="email-ctr-drawer-breakdown-unavailable">
+              <span class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</span>
+              <span class="text-sm text-gray-500">{{ unavailableBody }}</span>
             </div>
           }
         </div>

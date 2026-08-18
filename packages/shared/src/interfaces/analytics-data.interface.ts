@@ -2924,6 +2924,13 @@ export interface EmailTypeBreakdown {
  * API response for Email CTR query
  */
 export interface EmailCtrResponse {
+  /**
+   * True when the optional campaign-breakdown query failed while the primary CTR read
+   * succeeded. The drawer's Sends/Opens/Open-Rate/CTR tiles reduce() over emailTypeBreakdown,
+   * so an empty array from a FAILURE sums to 0 and is indistinguishable from a month with no
+   * campaigns — the same fabricated zero this contract exists to prevent, on a partial path.
+   */
+  breakdownUnavailable?: boolean;
   currentCtr: number;
   changePercentage: number;
   momChangePercentage: number | null;

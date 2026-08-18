@@ -2479,6 +2479,8 @@ export class ProjectService {
       // email is published once per month — it is not one row per recipient delivery.
       // Filtered on PUBLISHED_DATE rather than PUBLISHED_MONTH_DATE so a mid-month range boundary
       // includes only the sends that actually fall inside it, instead of every send in that month.
+      // See EmailCtrResponse.breakdownUnavailable — set when the optional query below fails.
+      let breakdownUnavailable = false;
       const campaignPerfQuery = `
         SELECT
           MARKETING_EMAIL_NAME,
@@ -2521,6 +2523,13 @@ export class ProjectService {
             CTR: number;
           }>(campaignPerfQuery, [resolved.startDate, resolved.endDate, ...foundationParams])
           .catch((error) => {
+            // Non-fatal by design — the primary CTR read is independent, so rethrowing here would
+            // trade a partial outage for a total one and blank a measurement that did succeed.
+            // But the empty array below is NOT a measurement: the drawer's Sends/Opens/Open Rate/
+            // CTR tiles reduce() over it, so an unflagged failure renders as a confident 0. The
+            // flag is what keeps a failed read distinguishable from a genuinely campaign-less
+            // period — the same contract the rethrowing methods above enforce with an HTTP error.
+            breakdownUnavailable = true;
             logger.warning(undefined, 'get_email_ctr', 'Optional campaign breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
               err: error,
@@ -2551,6 +2560,10 @@ export class ProjectService {
           campaignGroups: [],
           monthlySends: [],
           monthlyOpens: [],
+          // Carried on this path too: the breakdown query runs before this branch, so it can
+          // have failed even when the primary reads came back genuinely empty. Omitting it here
+          // would report "no campaigns" for a period whose breakdown was never actually read.
+          breakdownUnavailable,
         };
       }
 
@@ -2767,6 +2780,7 @@ export class ProjectService {
         campaignGroups,
         monthlySends,
         monthlyOpens,
+        breakdownUnavailable,
         emailTypeBreakdown,
         campaignInsightText,
       };

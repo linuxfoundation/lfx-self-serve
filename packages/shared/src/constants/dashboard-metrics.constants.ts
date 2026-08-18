@@ -743,6 +743,14 @@ export const DRAWER_UNAVAILABLE_BODY = 'Please try again.';
 export const DRAWER_LOADING_HEADING = 'Loading…';
 
 /**
+ * The placeholder a single tile renders when its own source could not be read, while the rest
+ * of the drawer stays measured. Used for PARTIAL failures — where blanking the whole drawer
+ * would trade a real outage for a false one — so it deliberately matches the em dash the card
+ * layer already uses for an unmeasured value rather than introducing a second vocabulary.
+ */
+export const TILE_UNAVAILABLE_PLACEHOLDER = '—';
+
+/**
  * A dual-signal row for a card whose data could not be fetched.
  *
  * Renders an em-dash instead of a number, with no sparkline and no trend pill, so a

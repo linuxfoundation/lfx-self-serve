@@ -259,6 +259,25 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     expect(web?.subtitle).not.toContain('could not be loaded');
   });
 
+  // Attribution and Paid Media are the two cards whose fields were ALREADY undefined-sentinel
+  // before this branch, so their guards predate the rest and had no assertions at all — the
+  // highest-risk gap, because a regression there looks exactly like the original defect.
+  it('says the data is unavailable when the attribution request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ revenueImpact: undefined }));
+
+    const attribution = card(cards, 'ed-evo-attribution');
+    expect(attribution?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(attribution?.caption).toContain('could not be loaded');
+  });
+
+  it('says the data is unavailable when the paid-media request failed', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ paidCampaign: undefined }));
+
+    const paid = card(cards, 'ed-evo-paid-media');
+    expect(paid?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(paid?.caption).toContain('could not be loaded');
+  });
+
   // A foundation that genuinely sent nothing must still read as a measured zero, or the fix
   // trades one wrong answer for another.
   it('renders a genuinely empty email month as zero, not as unavailable', () => {
@@ -355,5 +374,66 @@ describe('buildEdEvolutionMetrics — a failed request must not render as a meas
     for (const testId of ['ed-evo-event-growth', 'ed-evo-member-growth', 'ed-evo-flywheel-conversion', 'ed-evo-engaged-community']) {
       expect(card(cards, testId)?.subtitle).not.toContain('could not be loaded');
     }
+  });
+
+  /**
+   * Attribution and Paid Media are the two self-guarded cards: they are special-cased out of
+   * `withPendingPlaceholder` and build their own unavailable arm inline, which makes them the
+   * highest-risk guards here and — until now — the only regression-relevant ones with no
+   * assertion on either side. The base fixture pins both to `undefined`, so every other case in
+   * this file renders them in their unavailable arm incidentally without ever asserting it;
+   * reverting either guard to emit zeros left the whole suite green.
+   */
+  const ZERO_PAID_CAMPAIGN = {
+    totalReach: 0,
+    roas: 0,
+    totalSpend: 0,
+    totalRevenue: 0,
+    changePercentage: 0,
+    trend: 'up' as const,
+    monthlyData: [0],
+    monthlyLabels: ['Jan'],
+    monthlyRoas: [0],
+    monthlySpend: [0],
+    channelGroups: [],
+  };
+
+  const ZERO_REVENUE_IMPACT = {
+    pipelineInfluenced: 0,
+    revenueAttributed: 0,
+    matchRate: 0,
+    changePercentage: 0,
+    trend: 'up' as const,
+    attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
+    engagementTypes: [],
+    paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
+    attributionChannels: [],
+    projectBreakdown: [],
+    eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
+  };
+
+  it('reports a failed Attribution and Paid Media read as unavailable, not as $0', () => {
+    const cards = buildEdEvolutionMetrics(dataWith({ revenueImpact: undefined, paidCampaign: undefined }));
+
+    // Both cards are dual-signal, so the em dash must reach EVERY row — a guard that blanked
+    // only the headline would still fabricate the second figure.
+    expect(card(cards, 'ed-evo-attribution')?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(card(cards, 'ed-evo-paid-media')?.dualSignals?.map((row) => row.value)).toEqual(['—', '—']);
+    expect(card(cards, 'ed-evo-attribution')?.caption).toContain('could not be loaded');
+    expect(card(cards, 'ed-evo-paid-media')?.caption).toContain('could not be loaded');
+  });
+
+  it('renders genuinely zero Attribution and Paid Media as the measurements they are', () => {
+    // The counter-assertion. Without it, a guard that suppressed these cards unconditionally
+    // would pass the test above — reporting a foundation that genuinely spent nothing as an
+    // outage, which is the same defect inverted.
+    const cards = buildEdEvolutionMetrics(dataWith({ revenueImpact: ZERO_REVENUE_IMPACT, paidCampaign: ZERO_PAID_CAMPAIGN }));
+
+    expect(card(cards, 'ed-evo-attribution')?.dualSignals?.every((row) => row.value !== '—')).toBe(true);
+    expect(card(cards, 'ed-evo-paid-media')?.dualSignals?.every((row) => row.value !== '—')).toBe(true);
+    // ROAS is the figure that must read as a measured 0.0x rather than a dash.
+    expect(card(cards, 'ed-evo-paid-media')?.dualSignals?.[1]?.value).toBe('0.0x');
+    expect(card(cards, 'ed-evo-attribution')?.caption).not.toContain('could not be loaded');
+    expect(card(cards, 'ed-evo-paid-media')?.caption).not.toContain('could not be loaded');
   });
 });

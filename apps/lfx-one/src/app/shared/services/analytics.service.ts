@@ -875,12 +875,12 @@ export class AnalyticsService {
   }
 
   /**
+   * Get web activities summary grouped by domain category.
+   *
    * Errors PROPAGATE deliberately — see getBrandReach. The Website drawer sets its own
    * unavailable flag inside a catchError, and a swallow here makes that flag unreachable:
    * the drawer would render "No website traffic detected" for a failed request.
-   */
-  /**
-   * Get web activities summary grouped by domain category
+   *
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable of web activities summary response. Errors are NOT caught — a failed
@@ -970,36 +970,45 @@ export class AnalyticsService {
   // North Star Metrics
 
   /**
+   * Get member retention metrics from Snowflake North Star views.
+   *
    * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
    * response here makes the ED card's undefined guard unreachable, and the card renders the
    * zeros as if measured.
-   */
-  /**
-   * Get member retention metrics from Snowflake North Star views
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getMemberRetention(foundationSlug: string): Observable<MemberRetentionResponse> {
     return this.http.get<MemberRetentionResponse>('/api/analytics/member-retention', { params: { foundationSlug } });
   }
 
   /**
+   * Get member acquisition rate metrics from Snowflake North Star views.
+   *
    * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
    * response here makes the ED card's undefined guard unreachable, and the card renders the
    * zeros as if measured.
-   */
-  /**
-   * Get member acquisition rate metrics from Snowflake North Star views
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getMemberAcquisition(foundationSlug: string): Observable<MemberAcquisitionResponse> {
     return this.http.get<MemberAcquisitionResponse>('/api/analytics/member-acquisition', { params: { foundationSlug } });
   }
 
   /**
+   * Get engaged community size metrics from Snowflake North Star views.
+   *
    * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
    * response here makes the ED card's undefined guard unreachable, and the card renders the
    * zeros as if measured.
-   */
-  /**
-   * Get engaged community size metrics from Snowflake North Star views
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getEngagedCommunity(foundationSlug: string): Observable<EngagedCommunitySizeResponse> {
     return this.http.get<EngagedCommunitySizeResponse>('/api/analytics/engaged-community', { params: { foundationSlug } });
@@ -1159,13 +1168,15 @@ export class AnalyticsService {
 
   /**
    * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
-   * Emits null on error so the drawer shows its empty state.
-   */
-  /**
-   * Event detail for one event. `foundationSlug` is required and server-enforced: the event id
-   * alone carries no ownership, so the query is scoped to the foundation rather than trusting it.
-   * Resolves to `null` for a genuinely missing event and throws on transport/authorization
-   * failures, so the drawer can tell "no such event" apart from "we could not load it".
+   *
+   * `foundationSlug` is required and server-enforced: the event id alone carries no ownership,
+   * so the query is scoped to the foundation rather than trusting it. Resolves to `null` for a
+   * genuinely missing event and THROWS on transport/authorization failures, so the drawer can
+   * tell "no such event" apart from "we could not load it".
+   *
+   * The removed second block claimed it "emits null on error so the drawer shows its empty
+   * state" — the opposite of the throw above, and exactly the reasoning that turns a failed
+   * read back into a rendered measurement.
    */
   public getEventDetail(eventId: string, foundationSlug: string): Observable<EventDetailResponse | null> {
     return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId, foundationSlug } });
@@ -1254,14 +1265,14 @@ export class AnalyticsService {
   }
 
   /**
+   * Get event growth metrics for the ED dashboard.
+   *
    * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
    * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
    * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
    * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
    * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
-   */
-  /**
-   * Get event growth metrics for the ED dashboard.
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @returns Observable emitting event growth totals, YoY changes, and monthly trend. Errors
    * are NOT caught — see the propagation note above; the caller's guard needs the failure.
@@ -1271,14 +1282,14 @@ export class AnalyticsService {
   }
 
   /**
+   * Get brand reach metrics for the ED dashboard (social followers + web sessions).
+   *
    * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
    * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
    * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
    * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
    * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
-   */
-  /**
-   * Get brand reach metrics for the ED dashboard (social followers + web sessions).
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Observable emitting reach totals, platform breakdowns, and weekly trend. Errors
@@ -1289,14 +1300,14 @@ export class AnalyticsService {
   }
 
   /**
+   * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
+   *
    * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
    * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
    * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
    * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
    * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
-   */
-  /**
-   * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @returns Observable emitting mention totals, sentiment percentages, and monthly history.
    * Errors are NOT caught — see the propagation note above; the caller's guard needs the failure.

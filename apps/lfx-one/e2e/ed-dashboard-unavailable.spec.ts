@@ -107,7 +107,46 @@ async function seedEdPersona(page: Page): Promise<void> {
 }
 
 /**
- * Fail exactly one analytics endpoint with a real 500 and let every other one through.
+ * A measured, non-zero Events response. Non-zero deliberately: the E3 assertion is that a
+ * neighbour still renders its MEASUREMENT, and a zero-filled stub cannot tell a surviving
+ * measurement from a suppressed one — the same blind spot that let two drawers ship their
+ * stats above the "unavailable" banner in an earlier round of this PR.
+ */
+const MEASURED_EVENT_GROWTH = {
+  totalAttendees: 8421,
+  totalRegistrants: 12345,
+  totalEvents: 17,
+  totalRevenue: 250000,
+  revenuePerAttendee: 29.7,
+  attendeeYoyChange: 12.5,
+  registrantYoyChange: 8.1,
+  revenueYoyChange: 15.2,
+  trend: 'up',
+  monthlyData: [{ month: '2026-01', value: 12345 }],
+  topEvents: [],
+};
+
+/**
+ * Pin the neighbour endpoints this spec asserts against to deterministic 200s.
+ *
+ * Without this the spec fails ONE endpoint and lets the other ~22 in the dashboard's request
+ * burst reach the configured environment. That burst is documented as intermittently 500-ing or
+ * leaving requests undispatched, either of which can make a neighbour card report unavailable —
+ * so E3 could fail while the code under test behaved correctly. A guard for exactly this failure
+ * mode is the last test that can afford to flake.
+ *
+ * Only endpoints the assertions depend on are stubbed. `failEndpoint` is always registered
+ * AFTER this, and Playwright matches the most recently added route first, so the 500 still wins
+ * for its own URL even if the two patterns ever overlap.
+ */
+async function stubNeighborAnalytics(page: Page): Promise<void> {
+  await page.route('**/api/analytics/event-growth*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MEASURED_EVENT_GROWTH) })
+  );
+}
+
+/**
+ * Fail exactly one analytics endpoint with a real 500.
  *
  * The 500 matters: the whole chain keys off an HTTP error reaching the client. A stub that
  * returned 200 with a zero-filled body would reproduce the original defect rather than test the
@@ -125,6 +164,7 @@ test.describe('ED Marketing Overview — failed reads render as unavailable, not
     skipWhenAuthMissing(page);
 
     await seedEdPersona(page);
+    await stubNeighborAnalytics(page);
     await failEndpoint(page, 'engaged-community');
 
     await page.goto(`/foundation/overview?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
@@ -152,6 +192,7 @@ test.describe('ED Marketing Overview — failed reads render as unavailable, not
     skipWhenAuthMissing(page);
 
     await seedEdPersona(page);
+    await stubNeighborAnalytics(page);
     // Only this one fails — the guard must be scoped to its own response, not blank the section.
     await failEndpoint(page, 'engaged-community');
 
@@ -159,9 +200,13 @@ test.describe('ED Marketing Overview — failed reads render as unavailable, not
     skipWhenAuthMissing(page);
 
     await expect(page.getByTestId('ed-evo-engaged-community')).toContainText('Data unavailable', { timeout: LOAD_TIMEOUT });
-    // A neighbouring card that resolved normally must not inherit the failure.
+    // A neighbouring card that resolved normally must not inherit the failure. Asserting the
+    // stubbed FIGURE, not just the absence of the banner: a card blanked to an em dash also
+    // lacks the phrase "Data unavailable", so the negative assertion alone would pass against
+    // a guard that over-suppressed the whole section.
     const events = page.getByTestId('ed-evo-event-growth');
     await expect(events).toBeVisible({ timeout: LOAD_TIMEOUT });
     await expect(events).not.toContainText('Data unavailable');
+    await expect(events).toContainText('12.3K');
   });
 });

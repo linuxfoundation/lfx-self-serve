@@ -973,3 +973,70 @@ describe('ProjectService — a social-only failure is flagged, not silently zero
     expect(result.totalMonthlySessions).toBeGreaterThan(0);
   });
 });
+
+describe('ProjectService — a failed OPTIONAL email breakdown is flagged, not silently zeroed', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  const EMAIL_CTR_PERIOD: ResolvedPeriodRange = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' };
+
+  /**
+   * `getEmailCtr` fires four queries in one Promise.all — summary, monthly, campaign, then the
+   * per-send breakdown. Only the LAST is optional: it `.catch()`es to `rows: []` so a breakdown
+   * outage does not blank the CTR that was genuinely measured. But an unflagged empty array is
+   * indistinguishable from a period with no campaigns, and the drawer reduce()s over it — so the
+   * degradation has to be reported, not just survived.
+   *
+   * Mock order is load-bearing: rejecting an earlier query would fail the whole method and the
+   * assertions below would pass for the wrong reason rather than binding the optional path.
+   */
+  it('sets breakdownUnavailable and still returns the measured primary CTR', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_NAME: 'TLF', CTR_LAST_COMPLETED_MONTH: 2.5 }] })
+      .mockResolvedValueOnce({ rows: [{ PUBLISHED_MONTH: 'Mar', PUBLISHED_MONTH_DATE: '2026-03-01', TOTAL_SENDS: 1000, TOTAL_OPENS: 250 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error('breakdown query failed'));
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(true);
+    // The breakdown is empty because it FAILED, and the flag is the only thing that says so.
+    expect(result.emailTypeBreakdown ?? []).toEqual([]);
+    // The independent primary read must survive — rethrowing here would trade a partial
+    // outage for a total one and blank a figure that was actually measured.
+    expect(result.currentCtr).toBeGreaterThan(0);
+  });
+
+  it('leaves breakdownUnavailable false when every query succeeds', async () => {
+    // The other side of the contract: an empty breakdown that was genuinely READ must not be
+    // reported as an outage, or the fix trades a fabricated zero for a fabricated failure.
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_NAME: 'TLF', CTR_LAST_COMPLETED_MONTH: 2.5 }] })
+      .mockResolvedValueOnce({ rows: [{ PUBLISHED_MONTH: 'Mar', PUBLISHED_MONTH_DATE: '2026-03-01', TOTAL_SENDS: 1000, TOTAL_OPENS: 250 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(false);
+  });
+
+  it('reports the breakdown failure even when the primary reads come back genuinely empty', async () => {
+    // The early-return path: `summaryResult`/`monthlyResult` empty short-circuits before the
+    // breakdown is ever mapped. The flag has to be carried there too — otherwise a period whose
+    // breakdown was never read reports as a confident "no campaigns".
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error('breakdown query failed'));
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(true);
+  });
+});
