@@ -5,7 +5,7 @@ audience: [all]
 product_area: Trainings
 tags: [trainings, enrollments, manage, status]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-19
 intercom_collection: Trainings
 ---
 
@@ -27,11 +27,12 @@ Tabs:
 - **Certifications** — certifications you have earned
 - **Enrolled Trainings** — courses you are currently enrolled in
 - **Rewards** — rewards associated with your learning activity
-- **Useful links** — links to the LF Training Portal, LF Education & Certification, and Certification Verification Tool
+
+A **Useful links** section in the right sidebar provides links to the LF Training Portal, LF Education & Certification, and Certification Verification Tool.
 
 ## Resume or enroll in a training
 
-Enrollment in new training courses is handled on the Linux Foundation training platform, not within LFX Self Serve. To resume a course or enroll in a new one, go to the **Useful links** tab and select **LF Training Portal** to open [https://training.linuxfoundation.org](https://training.linuxfoundation.org).
+Enrollment in new training courses is handled on the Linux Foundation training platform, not within LFX Self Serve. To resume a course or enroll in a new one, go to the **Useful links** section in the right sidebar and select **LF Training Portal** to open [https://training.linuxfoundation.org](https://training.linuxfoundation.org).
 
 ## Empty state
 

@@ -5,7 +5,7 @@ audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, create, governance]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-19
 intercom_collection: Committees
 ---
 
@@ -19,7 +19,7 @@ Make sure you have the correct project or foundation selected in the lens switch
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Groups** from the left navigation sidebar.
-3. Select the option to create a new committee (route: `/groups/manage`).
+3. Select the option to create a new committee (route: `/groups/create`).
 4. Fill in the required fields:
    - **Committee name** — the display name for your committee
    - **Description** — a brief explanation of the committee's purpose and scope

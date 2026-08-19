@@ -4,7 +4,7 @@ description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
 last_generated: 2026-05-22
-last_updated: 2026-08-10
+last_updated: 2026-08-19
 intercom_collection: Meetings
 ---
 
@@ -21,7 +21,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
-For a meeting that's part of a recurring series, an edit currently applies only to that single occurrence — there's no option to apply it to the whole series or to future occurrences. This is separate from the delete/cancel scope below, which does let you act on the whole series.
+For a meeting that's part of a recurring series, you'll be asked what to edit: **Edit only this occurrence** (changes apply to just that meeting instance) or **Edit this and all future occurrences** (changes apply to this meeting and all later meetings in the series).
 
 ## Manage guests and registrants
 

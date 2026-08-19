@@ -5,7 +5,7 @@ audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
 last_generated: 2026-05-22
-last_updated: 2026-05-23
+last_updated: 2026-08-19
 intercom_collection: Votes
 ---
 
@@ -23,7 +23,7 @@ The Votes section lets you create and manage polls for formal project governance
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Votes** from the left navigation sidebar. The votes dashboard (route: `/votes`) lists all polls for your active project context. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**.
+Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists all polls for your active project context. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**.
 
 ## Key concepts
 

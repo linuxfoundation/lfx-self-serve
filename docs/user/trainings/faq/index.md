@@ -15,7 +15,7 @@ Use <https://training.linuxfoundation.org/about/contact-us/>
 
 ## How do I enroll in a training course?
 
-Enrollment is handled on the Linux Foundation training platform ([training.linuxfoundation.org](https://training.linuxfoundation.org)). LFX Self Serve shows your enrolled courses in read-only view. Go to the **Useful links** tab on the Training & Certifications page and select **LF Training Portal** to access the training catalog.
+Enrollment is handled on the Linux Foundation training platform ([training.linuxfoundation.org](https://training.linuxfoundation.org)). LFX Self Serve shows your enrolled courses in read-only view. In the **Useful links** section (right sidebar) on the Training & Certifications page, select **LF Training Portal** to access the training catalog.
 
 ## Why don't I see a training I enrolled in?
 
@@ -45,4 +45,4 @@ Open the **Rewards** tab on the Training & Certifications page. In the **My Coup
 
 ## Where can I find a list of available training courses?
 
-Visit the Linux Foundation training catalog at [https://training.linuxfoundation.org](https://training.linuxfoundation.org). You can also use the **LF Training Portal** link on the **Useful links** tab of the Training & Certifications page.
+Visit the Linux Foundation training catalog at [https://training.linuxfoundation.org](https://training.linuxfoundation.org). You can also use the **LF Training Portal** link in the **Useful links** section (right sidebar) of the Training & Certifications page.

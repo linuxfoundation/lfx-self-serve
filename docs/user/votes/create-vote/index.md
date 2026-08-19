@@ -5,7 +5,7 @@ audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, create, poll, governance, elections]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-19
 intercom_collection: Votes
 ---
 
@@ -18,14 +18,14 @@ Confirm you have the correct project selected in the lens switcher. The new poll
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **My Votes** from the left navigation.
+2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation.
 3. Select the option to create a new poll.
 4. Fill in the poll details, including title, description, voting options, end date, and voter eligibility settings.
 5. Save or publish the poll.
 
 ## After creation
 
-The poll appears in the **My Votes** dashboard with an **Active** status. Eligible voters can cast their votes until the poll closes.
+The poll appears in the **Votes** dashboard with an **Active** status. Eligible voters can cast their votes until the poll closes.
 
 ## Permissions
 
