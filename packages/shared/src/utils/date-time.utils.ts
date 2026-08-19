@@ -617,3 +617,49 @@ export function formatIsoDateLabel(iso: string): string {
     timeZone: 'UTC',
   });
 }
+
+/**
+ * Render a HubSpot `updatedAt` for a marketing-email row.
+ *
+ * Two templates routinely share a name, so without a date two same-name rows are visually
+ * identical and an operator cannot tell which one they are cloning.
+ *
+ * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on the
+ * interface, and a dash in the metadata line would read as a value the portal reported. HubSpot
+ * also sends a date-only form, which `new Date` would parse as UTC midnight and render as the
+ * previous day in western timezones — normalising to local midnight avoids the off-by-one.
+ */
+export function formatHubSpotUpdatedAt(value: string | undefined): string {
+  if (!value) return '';
+
+  // A date-only value goes through formatIsoDateLabel, which ROUND-TRIPS year/month/day.
+  // Shape-checking alone is not enough: `2026-02-31` matches the pattern, and JS silently
+  // rolls the excess day into the next month, so `isNaN` never fires and the picker renders
+  // a confident "Mar 3, 2026" for a date that does not exist. An operator uses this value to
+  // tell two same-named templates apart, so a fabricated date is worse than none.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const label = formatIsoDateLabel(value);
+    // formatIsoDateLabel returns its input unchanged when it rejects; render nothing rather
+    // than echoing a raw ISO string into a metadata line that reads as a portal value.
+    return label === value ? '' : label;
+  }
+
+  // A TIMESTAMP carries the same hazard as the date-only form, and the earlier fix guarded only
+  // the latter: `new Date('2026-02-31T10:00:00Z')` rolls over to Mar 3 exactly as the bare date
+  // does, so the fabrication survived in this branch while the spec pinned the other one. Split
+  // the date portion off and round-trip it through the same validator before formatting.
+  const datePart = value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    // formatIsoDateLabel echoes its input when it rejects, so an equal result means the calendar
+    // date does not exist — Feb 31st, year 0001, and the like.
+    return '';
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return '';
+  // Pinned to UTC for the same reason the date-only branch is: without an explicit `timeZone`,
+  // `toLocaleDateString` renders in the HOST zone, and this is an SSR app. A timestamp near
+  // midnight then formats to one date in the Node process and another in the browser, so the row
+  // text and its accessible label both change during hydration. Pinning also keeps the two
+  // branches agreeing: `2026-08-14` and `2026-08-14T23:30:00Z` must not render different days.
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}

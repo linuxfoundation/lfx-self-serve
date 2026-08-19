@@ -5,9 +5,12 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
 
@@ -61,7 +64,13 @@ describe('ImplementationTabComponent submit gate', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ImplementationTabComponent);
@@ -188,5 +197,388 @@ describe('ImplementationTabComponent submit gate', () => {
     setPersistence({ status: 'off', briefId: null, message: null, approved: false });
 
     expect(canSubmit()).toBe(true);
+  });
+});
+
+/**
+ * Reddit needs a budget floor like its siblings.
+ *
+ * Reddit's client rejects a non-positive budget at dispatch ("invalid budget: must be a positive
+ * number"), and creation is ASYNC — so without a local guard that surfaces as a dead job the
+ * operator has to go and read, rather than as a blocked submit button.
+ */
+describe('ImplementationTabComponent reddit budget gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function canSubmit(): boolean {
+    return (fixture.componentInstance as unknown as { canSubmit(): boolean }).canSubmit();
+  }
+
+  /** The rendered geo chips, by their own text — see the note in the ordering spec. */
+  function geoChipTexts(): string[] {
+    const section = fixture.nativeElement.querySelector('[data-testid="implementation-reddit-section"]');
+    const label = [...(section?.querySelectorAll('label') ?? [])].find((l: Element) => l.textContent?.includes('Geo Targets'));
+    const block = label?.parentElement;
+    return [...(block?.querySelectorAll('span') ?? [])].map((el: Element) => (el.textContent ?? '').trim());
+  }
+
+  function setup(budget: number): void {
+    const c = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      redditBudgetUsd: { set(v: number): void };
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    };
+    c.selectedPlatforms.set(['reddit-ads']);
+    c.redditBudgetUsd.set(budget);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('blocks submit when the reddit budget is zero', () => {
+    setup(0);
+    expect(canSubmit()).toBe(false);
+  });
+
+  it('renders the reddit config section when reddit is selected', () => {
+    setup(500);
+
+    // The section's EXISTENCE is the fix: showRedditSection was computed but bound to nothing,
+    // so a Reddit campaign dispatched on values the operator never saw. Query the budget input
+    // specifically — a section that rendered a heading and no inputs would still be unusable.
+    const section = fixture.nativeElement.querySelector('[data-testid="implementation-reddit-section"]');
+    const budget = fixture.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]');
+    expect(section).not.toBeNull();
+    expect(budget).not.toBeNull();
+    expect((budget as HTMLInputElement).value).toBe('500');
+  });
+
+  it('shows the country-code fallback when the brief recommends no geo targets', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { campaignForm: { controls: Record<string, { setValue(v: unknown): void }> } };
+    c.campaignForm.controls['countryCode'].setValue('DE');
+    fixture.detectChanges();
+
+    // submit() falls back to [countryCode] when the brief recommends no geos, so a preview
+    // reading the raw signal would render nothing for a request that targets Germany — the
+    // section would hide the very targeting it exists to surface.
+    const section = fixture.nativeElement.querySelector('[data-testid="implementation-reddit-section"]');
+    expect(section?.textContent).toContain('DE');
+  });
+
+  it.each([
+    ['above the platform cap', 2_000_000_000],
+    ['not finite', Number.POSITIVE_INFINITY],
+  ])('blocks submit when the reddit budget is %s', (_label, budget) => {
+    setup(budget);
+    // Reddit's client rejects both during dispatch. Creation is async, so without a local guard
+    // these become dead jobs the operator has to go and read rather than a blocked button — the
+    // same argument that justifies the floor.
+    expect(canSubmit()).toBe(false);
+  });
+
+  it('blocks submit when the country code is cleared and the brief recommends no geos', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { campaignForm: { controls: Record<string, { setValue(v: unknown): void }> } };
+    // countryCode carries no validator, so clearing it is reachable. submit() previously sent
+    // [''] in that state — a value Reddit cannot target, and one the operator could not see
+    // because the preview correctly renders nothing.
+    c.campaignForm.controls['countryCode'].setValue('');
+    fixture.detectChanges();
+
+    expect(geoChipTexts()).toEqual([]);
+    expect(canSubmit()).toBe(false);
+  });
+
+  it.each([
+    ['lowercase', 'us'],
+    ['too long', 'USA'],
+    ['too short', 'U'],
+  ])('blocks submit when the country code is %s', (_label, code) => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { campaignForm: { controls: Record<string, { setValue(v: unknown): void }> } };
+    c.campaignForm.controls['countryCode'].setValue(code);
+    fixture.detectChanges();
+    // 'us' normalises to 'US' and is fine; the other two have no valid shape and would reach
+    // dispatch as an unusable geo. Asserted per-case rather than as one blanket expectation.
+    expect(canSubmit()).toBe(code === 'us');
+  });
+
+  it('prefers recommended geos even when they arrive after the country code', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as {
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      redditGeoTargets: { set(v: string[]): void };
+    };
+    // The ORDER matters: populateFromBrief patches the form first and assigns recommended geos
+    // afterwards. A derivation keyed only on countryCode's valueChanges reads an empty geo list,
+    // and nothing re-runs it when the real geos land — so the preview would show the fallback
+    // while submit() dispatches the recommended list.
+    c.campaignForm.controls['countryCode'].setValue('US');
+    fixture.detectChanges();
+    c.redditGeoTargets.set(['DE', 'FR']);
+    fixture.detectChanges();
+
+    // Assert on the CHIPS, not the section text: the budget label reads "(USD, lifetime)", so a
+    // not-toContain('US') over the whole section can never pass — it would fail against correct
+    // code and read as a real defect.
+    const geos = geoChipTexts();
+    expect(geos).toContain('DE');
+    expect(geos).toContain('FR');
+    // The fallback must be GONE, not merely joined by the recommended list.
+    expect(geos).not.toContain('US');
+  });
+
+  it('falls back to the country code when the recommended geos are all unusable', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as {
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      redditGeoTargets: { set(v: string[]): void };
+    };
+    // A generated or restored brief can carry a non-empty but unusable recommendation. Choosing
+    // the branch on the RAW list makes it win on length alone, filter to nothing, and block
+    // submit permanently — with a perfectly valid country sitting unread in the form.
+    c.campaignForm.controls['countryCode'].setValue('US');
+    c.redditGeoTargets.set(['USA']);
+    fixture.detectChanges();
+
+    expect(geoChipTexts()).toEqual(['US']);
+    expect(canSubmit()).toBe(true);
+  });
+
+  it('strips an r/ prefix so the preview matches what dispatches', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { redditSubreddits: { set(v: string[]): void } };
+    // 'r/k8s' is a real stored value — campaign-service.service.spec.ts asserts it survives
+    // restore verbatim — and dispatch strips an optional prefix. Rendered under the template's
+    // fixed 'r/' it previewed as 'r/r/k8s', so the section promising to show what will be sent
+    // showed something else.
+    c.redditSubreddits.set(['r/k8s', 'kubernetes']);
+    fixture.detectChanges();
+
+    const chips = Array.from(fixture.nativeElement.querySelectorAll('span')).map((el) => (el as HTMLElement).textContent?.trim());
+    expect(chips).toContain('r/k8s');
+    expect(chips).not.toContain('r/r/k8s');
+    expect(chips).toContain('r/kubernetes');
+  });
+
+  it('hides the subreddit block when every name normalises away', () => {
+    setup(500);
+    const c = fixture.componentInstance as unknown as { redditSubreddits: { set(v: string[]): void } };
+    // A brief carrying only unusable names: the raw list is non-empty, the effective list is not.
+    // Gating on the raw list renders a "Subreddits (0)" heading above an empty chip row.
+    c.redditSubreddits.set(['r/', '/r/', '   ']);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('Subreddits (0)');
+
+    // And a usable name still renders, or the assertion above would pass by hiding the block
+    // unconditionally.
+    c.redditSubreddits.set(['kubernetes']);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Subreddits (1)');
+  });
+
+  it('allows submit once the reddit budget is positive', () => {
+    setup(500);
+    // The positive case must pass, or the zero case above would be satisfied by any unrelated
+    // guard rather than by the budget floor it claims to bind.
+    expect(canSubmit()).toBe(true);
+  });
+});
+
+/**
+ * A brief saved BEFORE a platform was disabled must not restore that platform.
+ *
+ * The Plan picker gates `disabled` at the tile, but a stored brief reaches `selectedPlatforms`
+ * through `populateFromBrief`, which never consults the picker. Without a filter there, a brief
+ * naming a since-disabled platform still submits that platform's config on brief-derived values
+ * the user never saw — and the disabled tile means they cannot deselect it either.
+ *
+ * These cases use `twitter-ads` deliberately: it is disabled for a CAPABILITY reason (its
+ * platform client has no account discovery), so it is the stable example. Reddit was the
+ * original one and stopped being disabled the moment its Implement section landed — a test
+ * keyed to a flag that flips is a test that expires.
+ */
+describe('ImplementationTabComponent brief restore', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function selectedPlatforms(): string[] {
+    return [...(fixture.componentInstance as unknown as { selectedPlatforms(): string[] }).selectedPlatforms()];
+  }
+
+  function restore(platforms: string[]): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: platforms,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('drops a disabled platform from a restored brief', () => {
+    restore(['google-ads', 'twitter-ads']);
+
+    expect(selectedPlatforms()).not.toContain('twitter-ads');
+    // The enabled sibling must SURVIVE — a filter that dropped everything would pass a
+    // not-toContain assertion on its own while silently discarding the user's real choice.
+    expect(selectedPlatforms()).toContain('google-ads');
+  });
+
+  it('selects nothing for an all-disabled brief rather than substituting a default', () => {
+    restore(['twitter-ads']);
+
+    // NOT ['google-ads']. Retaining the default would open a brief for a disabled platform as a
+    // GOOGLE campaign, and submit() builds its request from this signal — the user would
+    // dispatch a platform they never chose. Empty leaves canSubmit() blocking, which is honest.
+    expect(selectedPlatforms()).toEqual([]);
+  });
+});
+
+/**
+ * What the create request actually CARRIES for the email channel.
+ *
+ * The template picker's `selectedEmailTemplateId` was write-only before this: set on click, read
+ * only for `aria-pressed` and row styling, and never placed on a request. These assert the value
+ * reaches `hubspotConfig.sourceEmailId`, which campaign-service requires with no default.
+ */
+describe('ImplementationTabComponent hubspotConfig wiring', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let posted: Record<string, unknown> | null;
+
+  function makeOtherwiseValid(): void {
+    const c = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: {
+        controls: Record<string, { setValue(v: unknown): void }>;
+        get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
+      };
+    };
+    c.selectedPlatforms.set(['google-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['includeSearch'].setValue(true);
+    c.campaignForm.controls['includeDemandGen'].setValue(false);
+    c.campaignForm.get('headlines')?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c.campaignForm.get('descriptions')?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+  }
+
+  /** Drive the real `submit()` and capture the body handed to the service. */
+  function submitAndCapture(): void {
+    (fixture.componentInstance as unknown as { submit(): void }).submit();
+  }
+
+  beforeEach(async () => {
+    posted = null;
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          // Stubbed at the service boundary rather than the HTTP one: the assertion is about the
+          // REQUEST BODY the component builds, and a stub keeps the create from being dispatched
+          // anywhere. Nothing here can reach HubSpot or spend money.
+          provide: CampaignService,
+          useValue: {
+            createCampaign: (request: Record<string, unknown>) => {
+              posted = request;
+              return of({ jobId: '' });
+            },
+            // `ngOnInit` resolves the LinkedIn ad-account list on mount. Stubbed empty because
+            // these tests select google-ads only, so the list is never read.
+            getLinkedInAccounts: () => of([]),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('carries the chosen template id as hubspotConfig.sourceEmailId', () => {
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', 'email-123');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-123' });
+  });
+
+  it('omits hubspotConfig entirely when no template is chosen', () => {
+    // The paid-only path, which is every create today. An empty-but-present config would be a
+    // configured-looking email channel on a campaign that has none.
+    makeOtherwiseValid();
+
+    submitAndCapture();
+
+    expect(posted).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('treats a whitespace-only template id as no selection, matching the server', () => {
+    // `buildHubSpotConfig` trims and returns null (UNCONFIGURED) for a blank id. Sending
+    // `{ sourceEmailId: '   ' }` would claim a template was picked and be refused upstream.
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', '   ');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted).not.toHaveProperty('hubspotConfig');
+  });
+
+  it('trims a padded template id rather than sending the padding', () => {
+    makeOtherwiseValid();
+    fixture.componentRef.setInput('sourceEmailId', '  email-456  ');
+    fixture.detectChanges();
+
+    submitAndCapture();
+
+    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-456' });
   });
 });

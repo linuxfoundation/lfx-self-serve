@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { LensGrantInputs } from '../interfaces/lens.interface';
-import { deriveAllowedLenses } from './lens.utils';
+import { deriveAllowedLenses, isHybridLensUser } from './lens.utils';
 
 const NO_GRANTS: LensGrantInputs = {
   hasBoardRole: false,
@@ -13,6 +13,7 @@ const NO_GRANTS: LensGrantInputs = {
   hasWriterFoundation: false,
   hasWriterProject: false,
   isOrgLensEnabled: false,
+  isLFStaff: false,
 };
 
 const inputs = (overrides: Partial<LensGrantInputs>): LensGrantInputs => ({ ...NO_GRANTS, ...overrides });
@@ -82,5 +83,48 @@ describe('deriveAllowedLenses', () => {
     it('orders org last alongside other grants', () => {
       expect(deriveAllowedLenses(inputs({ isRootWriter: true, isOrgLensEnabled: true }))).toEqual(['me', 'foundation', 'project', 'org']);
     });
+  });
+
+  describe('lf staff', () => {
+    it('grants foundation without a board role', () => {
+      expect(deriveAllowedLenses(inputs({ isLFStaff: true }))).toEqual(['me', 'foundation']);
+    });
+
+    it('does not grant project', () => {
+      expect(deriveAllowedLenses(inputs({ isLFStaff: true }))).not.toContain('project');
+    });
+  });
+});
+
+describe('isHybridLensUser', () => {
+  // Every combination that renders both lens buttons must merge them. Before this was derived
+  // from deriveAllowedLenses, only the board+project role pair did, so LF staff, root writers,
+  // and writer-granted users kept a separate foundation button.
+  it.each([
+    ['board role and project role', { hasBoardRole: true, hasProjectRole: true }],
+    ['lf staff and project role', { isLFStaff: true, hasProjectRole: true }],
+    ['lf staff and a project writer grant', { isLFStaff: true, hasWriterProject: true }],
+    ['a foundation writer grant and project role', { hasWriterFoundation: true, hasProjectRole: true }],
+    ['writer grants on both kinds', { hasWriterFoundation: true, hasWriterProject: true }],
+    ['a root writer alone', { isRootWriter: true }],
+    ['board role and a project writer grant', { hasBoardRole: true, hasWriterProject: true }],
+  ])('is true for %s', (_label, overrides: Partial<LensGrantInputs>) => {
+    expect(isHybridLensUser(inputs(overrides))).toBe(true);
+  });
+
+  it.each([
+    ['no grants at all', {}],
+    ['foundation only, from a board role', { hasBoardRole: true }],
+    ['foundation only, from lf staff', { isLFStaff: true }],
+    ['foundation only, from a writer grant', { hasWriterFoundation: true }],
+    ['project only, from a project role', { hasProjectRole: true }],
+    ['project only, from a writer grant', { hasWriterProject: true }],
+  ])('is false for %s', (_label, overrides: Partial<LensGrantInputs>) => {
+    expect(isHybridLensUser(inputs(overrides))).toBe(false);
+  });
+
+  it('is unaffected by the org lens flag', () => {
+    expect(isHybridLensUser(inputs({ isOrgLensEnabled: true }))).toBe(false);
+    expect(isHybridLensUser(inputs({ isRootWriter: true, isOrgLensEnabled: true }))).toBe(true);
   });
 });

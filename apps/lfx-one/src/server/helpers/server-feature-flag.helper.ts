@@ -151,6 +151,44 @@ export enum ServerFeatureFlag {
   CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
 
   /**
+   * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
+   * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
+   * byte-for-byte.
+   *
+   * This flag buys REACH, not just a different backend. The legacy path is a `switch` over
+   * `meta-ads` and `reddit-ads` whose `default` arm throws, so pause is unavailable for every
+   * other platform no matter what the allowlist says. Turning this on is what makes Google Ads
+   * and LinkedIn pausable at all — and pause is the primary cost-control lever on a mis-targeted
+   * campaign.
+   *
+   * REACH THE API GAINS, not a control the product grows. Turning this on exposes the server path
+   * only: no component calls `CampaignService.updateCampaignStatus`, because pausing needs a
+   * campaign UUID, brief id and ETag and nothing in the UI can obtain them until LFXV2-3099 lands.
+   * Said here as well as in the chart because this doc is what a reader reaches from the code.
+   *
+   * Two counts live here and conflating them invites deleting a guard that is doing its job:
+   * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
+   * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are
+   * dispatchable upstream and simply not offered by this app. See
+   * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
+   *
+   * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
+   * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
+   * well as the flag, and the two id spaces are disjoint: campaign-service keys campaigns by
+   * UUID, while the legacy path's ids are the ad platform's own numeric ids (`NUMERIC_ID_RE`).
+   * A numeric id therefore cannot address a campaign-service row, and a UUID cannot address a
+   * platform one — so no request can be claimed by BOTH paths, which is the condition this
+   * file's header names as requiring a no-overlap rollout. A flag-off pod receiving a UUID
+   * refuses with a clear error instead of dispatching to the wrong backend; it does not answer
+   * a confident falsehood the way an off-pod job poll did.
+   *
+   * The dependency that IS real: a campaign only has a UUID if it was created through
+   * campaign-service, so this is only useful once `CampaignServiceCreate` has been on long
+   * enough to produce rows. Enabling it earlier is harmless but inert.
+   */
+  CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
@@ -158,6 +196,17 @@ export enum ServerFeatureFlag {
    * API caller with ordinary project-writer access could configure or use Slack sharing while the
    * UI still hides it. OFF by default, same as the UI flag, so both must be turned on for the
    * feature to actually be reachable.
+   *
+   * DO NOT ENABLE until lfx-v2-committee-service escapes Slack mrkdwn control characters
+   * (`&`, `<`, `>`) in `brief_text` before sending — as of this writing (LFXV2-3080's
+   * backend-send-ownership migration) it does not: `internal/infrastructure/slack/webhook_sender.go`
+   * posts `brief.BriefText` to Slack verbatim. This BFF used to escape it before every send
+   * (`escapeSlackMrkdwn`, removed when the send moved server-side) specifically because
+   * AI-generated brief text is sourced from meeting/document titles — content editable by a
+   * broader set of users than project writers — so an unescaped `<!channel>`/`<!here>` would page
+   * the entire channel, and `<https://evil.example|label>` would render as a deceptive hyperlink.
+   * That mitigation has no server-side equivalent today. File/track the upstream fix before
+   * flipping this on in any environment that isn't fully trusted content end-to-end.
    */
   WeeklyBriefSlack = 'LFX_WEEKLY_BRIEF_SLACK_ENABLED',
 }

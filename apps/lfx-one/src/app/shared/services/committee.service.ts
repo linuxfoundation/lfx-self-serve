@@ -14,6 +14,7 @@ import {
   CommitteeJoinApplication,
   CommitteeMember,
   CommitteeOrganizationReference,
+  CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
   CreateCommitteeDocumentRequest,
@@ -125,7 +126,10 @@ export class CommitteeService {
     return this.http.post<Committee>('/api/committees', committee).pipe(take(1));
   }
 
-  public updateCommittee(id: string, committee: CommitteeUpdateData): Observable<Committee> {
+  // chat_webhook_url lives on CommitteeSettingsData, not CommitteeUpdateData (LFXV2-3094) — this
+  // one PUT still accepts it alongside base fields in a single merged payload; the BFF routes it
+  // to the settings sub-resource internally (committee.service.ts's updateCommittee).
+  public updateCommittee(id: string, committee: CommitteeUpdateData & Pick<CommitteeSettingsData, 'chat_webhook_url'>): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
   }
 

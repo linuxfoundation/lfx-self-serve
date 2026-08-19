@@ -209,6 +209,7 @@
                 data-testid="weekly-brief-card-share-slack-button" />
             }
           </div>
+
           <!-- Visible hints rather than tooltips on these disabled buttons: a
                disabled native <button> never receives focus/hover, so a
                tooltip-only explanation would be unreachable by keyboard and
@@ -261,5 +262,19 @@
     </lfx-card>
   }
 
+  @if (hasArchiveBriefs()) {
+    <div class="flex">
+      <button
+        type="button"
+        class="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+        (click)="onOpenArchive()"
+        data-testid="weekly-brief-card-past-briefs-button">
+        View past briefs
+      </button>
+    </div>
+  }
+
   <p-confirmDialog />
 }
+
+<lfx-weekly-brief-archive-drawer [(visible)]="archiveVisible" [committeeId]="committee().uid" />

@@ -17,6 +17,8 @@ import type {
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
+  CampaignServiceCampaign,
+  CampaignToggleStatus,
   LinkedInBriefCopy,
   LinkedInCreativeVariant,
   MetaAdVariant,
@@ -130,7 +132,13 @@ interface CampaignServiceBriefEnvelope {
 }
 
 /**
- * True when `jobId` is a job campaign-service could possibly know about.
+ * True when `id` is one campaign-service could possibly know about — a bare UUID.
+ *
+ * TWO callers, two id spaces, one shape test. The name says "job" for its original caller and is
+ * kept for that continuity, but the predicate is a UUID check and the campaign status toggle
+ * (`updateCampaignStatus`) now routes on it too. Read what follows as applying to BOTH: if the
+ * job-id shape ever changes, this function is also what decides where a money-affecting status
+ * toggle is dispatched, and that second caller has no other guard. Do not narrow it to jobs.
  *
  * The flag alone is not a safe router, and this is the reason. Campaign CREATION has not been
  * cut over: `campaign-proxy.service.ts` still mints `job_<epoch>_<rand>` ids into an in-process
@@ -791,6 +799,67 @@ export class CampaignServiceClient {
         error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
       };
     }
+  }
+
+  /**
+   * Pause or resume a campaign on its ad platform, then persist the confirmed state.
+   *
+   * This is a DISPATCHING write, not a row update: campaign-service calls the platform first and
+   * writes the row only once the platform confirms, so a 200 here means the ad platform actually
+   * changed state. That is the whole value of routing through the service — the legacy BFF path
+   * this replaces called the Meta and Reddit SDKs directly and could only ever reach those two,
+   * while six dispatchers implement the toggle UPSTREAM (Google Ads, LinkedIn, Meta, Reddit,
+   * Microsoft, X). That six is campaign-service's capability, NOT this app's reach: the caller
+   * is gated on `CAMPAIGN_SERVICE_STATUS_PLATFORMS`, which admits only the platforms this app
+   * offers. HubSpot is absent from both and always will be: an email send has no run state.
+   *
+   * `If-Match` is REQUIRED, not optional — `toggle-campaign-status` answers a missing header with
+   * 428, so an omitted etag is a guaranteed failure rather than a lenient write. Passing the
+   * caller's etag is what makes a pause safe against a concurrent editor: a 412 means the row
+   * moved since the caller last read it, and the toggle is REFUSED rather than applied to a
+   * campaign whose platform or id the caller may no longer be looking at. Since this dispatches
+   * money-affecting state to an ad platform, refusing is the only correct answer.
+   *
+   * `created_degraded` is the one case where a 200 does NOT carry a changed status. Pausing such a
+   * campaign pauses it upstream and returns the status and ETag UNCHANGED, because that status
+   * records that the campaign's wiring was never verified and the schema has one status column —
+   * writing 'paused' would spend the reconciliation marker to record a run state the platform
+   * already holds. The caller must therefore read the pause's effect from the ad platform, not
+   * from this result. Resuming a degraded campaign is refused outright with 409.
+   */
+  public async toggleCampaignStatus(
+    req: Request,
+    params: { projectSlug: string; briefId: string; campaignId: string; status: CampaignToggleStatus; etag: string }
+  ): Promise<CampaignServiceCampaign> {
+    const path =
+      `/projects/${encodeURIComponent(params.projectSlug)}` +
+      `/briefs/${encodeURIComponent(params.briefId)}` +
+      `/campaigns/${encodeURIComponent(params.campaignId)}/status`;
+
+    // The upstream enum is lowercase ('active' | 'paused'); the shared client type is uppercase.
+    // Converting here rather than at the caller keeps the wire spelling in the one file that owns
+    // the wire contract — a caller that had to know it would be a second place to get it wrong.
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      path,
+      'PATCH',
+      // `query` is the FIFTH argument and `data` the SIXTH. A body passed one position early is
+      // sent as a query string with NO body and no type error, which upstream reads as a missing
+      // required `status` — so the explicit `undefined` here is load-bearing, not noise.
+      undefined,
+      { status: params.status.toLowerCase() },
+      { 'If-Match': params.etag }
+    );
+    // The HEADER is the authoritative validator for the NEXT toggle, and it must not be dropped:
+    // `etag` is an attribute on the upstream `Campaign` type but is NOT in its `Required` list, so
+    // the body may legitimately carry none while `Response(StatusOK, Header("etag:ETag"))` always
+    // does. Discarding it breaks precisely the interaction this feature enables — pause, then
+    // resume — because after a successful toggle the caller's own etag is stale, and a stale
+    // If-Match is answered with 412. Preferring the header over the body is deliberate for the
+    // same reason: where both exist they mirror the same version, and where they disagree the
+    // header is the one the response contract guarantees.
+    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
   }
 
   /**
