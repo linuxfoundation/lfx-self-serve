@@ -9,7 +9,6 @@ import {
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
@@ -45,8 +44,8 @@ export class SidebarNavService {
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Marketing OS agents marketplace; hides the project-lens nav entry when off. */
-  private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** TODO(mktg-os GA): flag gate bypassed for now (Joan, 2026-08-19) — restore getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false) before GA. */
+  private readonly isMktgOsAgentsEnabled: Signal<boolean> = computed(() => true);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
 
