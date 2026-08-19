@@ -29,8 +29,7 @@ denylist_pattern=$(printf '%s\n' "${denylisted_domains[@]}" | sed 's/\./\\./g' |
 violations=""
 
 for file in ${staged_files}; do
-  [ -f "${file}" ] || continue
-  matches=$(grep -EHn "@(${denylist_pattern})" "${file}")
+  matches=$(git show ":${file}" | grep -Ein "@(${denylist_pattern})" | sed "s|^|${file}:|")
   if [ -n "${matches}" ]; then
     violations="${violations}${matches}
 "
