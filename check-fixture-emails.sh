@@ -13,10 +13,13 @@
 # Exits 0 if no denylisted domain appears in staged changes.
 # Exits 1 and prints the offending file:line matches otherwise.
 
+# Intentionally real domains — these ARE the blocklist, sourced from incidents (GH-1674). Do not "scrub" them.
 denylisted_domains=(
   toyota.com
   intel.com
   openai.com
+  linuxfoundation.org
+  contractor.linuxfoundation.org
 )
 
 staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(spec\.ts|fixture\.ts|ndjson)$')
@@ -28,13 +31,16 @@ fi
 denylist_pattern=$(printf '%s\n' "${denylisted_domains[@]}" | sed 's/\./\\./g' | paste -sd '|' -)
 violations=""
 
-for file in ${staged_files}; do
+# Exact-domain match by design (covers @toyota.com, not @sub.toyota.com) — the denylist
+# is seeded from specific incidents, not meant as a comprehensive domain blocklist.
+while IFS= read -r file; do
+  [ -n "${file}" ] || continue
   matches=$(git show ":${file}" | grep -Ein "@(${denylist_pattern})" | sed "s|^|${file}:|")
   if [ -n "${matches}" ]; then
     violations="${violations}${matches}
 "
   fi
-done
+done <<< "${staged_files}"
 
 if [ -n "${violations}" ]; then
   echo "❌ Found email address(es) using a known real customer/vendor domain in staged test/fixture files:"
