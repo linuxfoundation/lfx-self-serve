@@ -22,7 +22,8 @@ import { MeetingManageComponent } from './meeting-manage.component';
 // relation, the meeting detail is re-fetched uncached so its ungated enrichment can supply the
 // project the lookup withheld. Also pins the retry-once guard (a fresh fetch must not repeat on
 // every NavigationEnd step navigation) and the transient-error retry release.
-describe('MeetingManageComponent — context fallback', () => {
+// The nested "owner payload" describe pins the meeting-owner include/omit contract (GH-1673).
+describe('MeetingManageComponent', () => {
   const MEETING_UID = 'meeting-uid-1';
   const PROJECT_UID = 'project-uid-1';
   const PROJECT_SLUG = 'test-project';
@@ -175,5 +176,62 @@ describe('MeetingManageComponent — context fallback', () => {
     await emitNavigationEnd();
     expect(skipCacheCalls().length).toBeGreaterThan(failedAttempts);
     expect(setProject).toHaveBeenCalledWith({ uid: PROJECT_UID, name: 'Test Project', slug: PROJECT_SLUG }, false);
+  });
+
+  // GH-1673: prepareOwnerData / syncHydratedOwnerFromForm are private but carry the owner
+  // include/omit contract — re-sending an unchanged owner would replace the stored object
+  // upstream and drop its profile_picture — so they get direct component-level coverage
+  // rather than relying only on the (skippable) e2e suite.
+  describe('owner payload (GH-1673)', () => {
+    const HYDRATED = { username: 'ghopper', name: 'Grace Hopper', email: 'grace@example.com' };
+
+    const createOwnerComponent = async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      // Private-member access is deliberate: the omit rule is the unit under test.
+      return fixture.componentInstance as any;
+    };
+
+    it('omits owner when every control is empty or whitespace', async () => {
+      const component = await createOwnerComponent();
+      expect(component.prepareOwnerData({ ownerUsername: null, ownerName: '', ownerEmail: '   ' })).toEqual({});
+    });
+
+    it('omits owner when the trimmed values still match the hydrated owner', async () => {
+      const component = await createOwnerComponent();
+      component.hydratedOwner = { ...HYDRATED };
+      expect(component.prepareOwnerData({ ownerUsername: ' ghopper ', ownerName: 'Grace Hopper', ownerEmail: 'grace@example.com' })).toEqual({});
+    });
+
+    it('includes only the non-empty owner fields when the selection changed', async () => {
+      const component = await createOwnerComponent();
+      component.hydratedOwner = { ...HYDRATED };
+      // Manual-entry shape: no username — the key must not appear as an empty string.
+      expect(component.prepareOwnerData({ ownerUsername: '', ownerName: 'Radia Perlman', ownerEmail: 'radia@example.com' })).toEqual({
+        owner: { name: 'Radia Perlman', email: 'radia@example.com' },
+      });
+    });
+
+    it('re-baselines on syncHydratedOwnerFromForm so a repeat save omits the unchanged owner', async () => {
+      const component = await createOwnerComponent();
+      component.form().patchValue({ ownerUsername: HYDRATED.username, ownerName: HYDRATED.name, ownerEmail: HYDRATED.email });
+
+      // First save sends the owner (nothing hydrated yet)…
+      expect(component.prepareOwnerData(component.form().getRawValue())).toEqual({ owner: { ...HYDRATED } });
+
+      // …the success handler re-baselines…
+      component.syncHydratedOwnerFromForm();
+
+      // …so an untouched second save omits the key (upstream keeps the enriched stored owner).
+      expect(component.prepareOwnerData(component.form().getRawValue())).toEqual({});
+    });
+
+    it('keeps the previous baseline when the form is empty — that save omitted the key, so the stored owner is unchanged', async () => {
+      const component = await createOwnerComponent();
+      component.hydratedOwner = { ...HYDRATED };
+      component.syncHydratedOwnerFromForm();
+      expect(component.hydratedOwner).toEqual(HYDRATED);
+    });
   });
 });

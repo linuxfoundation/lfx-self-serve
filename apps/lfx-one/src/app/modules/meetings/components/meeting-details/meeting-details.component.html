@@ -284,6 +284,7 @@
             searchType="meeting_registrant"
             emailControl="ownerEmail"
             usernameControl="ownerUsername"
+            inputId="meeting-organizer"
             placeholder="Search for a user..."
             styleClass="w-full"
             inputStyleClass="w-full text-sm"
@@ -328,7 +329,12 @@
           </div>
         }
         @if (selectedOwnerLabel()) {
-          <p class="mt-1 text-sm text-gray-600" data-testid="meeting-details-organizer-selected">Current organizer: {{ selectedOwnerLabel() }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <p class="text-sm text-gray-600" data-testid="meeting-details-organizer-selected">Current organizer: {{ selectedOwnerLabel() }}</p>
+            <button type="button" class="text-sm text-primary hover:underline" (click)="clearOwnerSelection()" data-testid="meeting-details-organizer-clear">
+              Clear
+            </button>
+          </div>
         }
         <p class="mt-1 text-sm text-gray-500">Defaults to the meeting creator. Clearing this field won't remove a saved organizer.</p>
       </div>

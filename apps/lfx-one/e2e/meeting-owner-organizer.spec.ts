@@ -16,6 +16,8 @@
  *   - The search pool only covers indexed meeting registrants, so the picker's "Enter details
  *     manually" affordance lets any name/email be set as owner; manual entry sends
  *     `owner: {name, email}` (no username) and an invalid email blocks the step.
+ *   - The Clear affordance empties a picked/saved owner selection; the following save omits the
+ *     `owner` key (create reverts to the creator default; edit keeps the stored owner).
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -401,6 +403,24 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     // Untouched picker → key omitted → upstream preserves the stored owner (incl. its avatar).
+    expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
+  });
+
+  test('clearing a saved owner empties the selection and the save omits the owner key', async ({ page }) => {
+    const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
+
+    await gotoEditPage(page);
+    await openDetailsStep(page);
+
+    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
+    await page.getByTestId('meeting-details-organizer-clear').click();
+    await expect(page.getByTestId('meeting-details-organizer-selected')).toHaveCount(0);
+
+    await saveFromDetailsStep(page);
+
+    await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
+    // Cleared controls → key omitted → upstream keeps the stored owner (the helper text documents
+    // that clearing does not unset a saved organizer).
     expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
   });
 

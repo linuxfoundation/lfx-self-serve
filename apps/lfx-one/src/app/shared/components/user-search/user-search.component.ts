@@ -40,6 +40,8 @@ export class UserSearchComponent {
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('user-search');
   public disabled = input<boolean>(false);
+  // Forwarded to the underlying p-autocomplete input so an external <label for> can target it.
+  public inputId = input<string>();
 
   // Outputs
   public readonly onUserSelect = output<UserSearchResult>();

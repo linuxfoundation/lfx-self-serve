@@ -1159,8 +1159,10 @@ function sameOrganizer(a: MeetingUserInfo, b: MeetingUserInfo): boolean {
  *   - The primary organizer is the human `owner` when set, replacing the `created_by` slot;
  *     otherwise the human `created_by` (see {@link resolveMeetingOrganizer}).
  *   - When host-flagged candidates are present, they ARE the organizer set (exactly what the
- *     modal badges), sorted by name; the primary organizer is folded in only if it isn't
- *     already one of the hosts.
+ *     modal badges), sorted by name — except the primary organizer always sits at index 0
+ *     (prepended when not among the hosts; its matching host entry moved to the front when it
+ *     is, never duplicated), because {@link buildMeetingOrganizerChip} renders element 0 as
+ *     the primary.
  *   - When no hosts are supplied (e.g. summary cards that don't load the registrant list), the
  *     primary organizer is the sole entry.
  *   - Otherwise an empty array (nothing to display).
@@ -1185,10 +1187,19 @@ export function collectMeetingOrganizers(
     return primary ? [primary] : [];
   }
 
-  if (primary && !hostOrganizers.some((organizer) => sameOrganizer(organizer, primary))) {
+  if (!primary) {
+    return hostOrganizers;
+  }
+
+  const primaryHostIndex = hostOrganizers.findIndex((organizer) => sameOrganizer(organizer, primary));
+  if (primaryHostIndex === -1) {
     return [primary, ...hostOrganizers];
   }
-  return hostOrganizers;
+
+  // The primary is also a host: move that host entry to the front (it can carry richer
+  // registrant-derived data than the owner/created_by record) so the alphabetical sort can't
+  // demote the owner out of the chip's primary slot.
+  return [hostOrganizers[primaryHostIndex], ...hostOrganizers.filter((_, index) => index !== primaryHostIndex)];
 }
 
 /**

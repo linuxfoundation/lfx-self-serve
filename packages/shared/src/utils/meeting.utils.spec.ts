@@ -633,14 +633,16 @@ describe('collectMeetingOrganizers', () => {
     expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
   });
 
-  it('does not duplicate the owner when they are also a host', () => {
+  it('keeps the owner first without duplicating them when they are also a host', () => {
+    // Grace sorts after Alan alphabetically — the owner must still be index 0, because
+    // buildMeetingOrganizerChip renders element 0 as the primary organizer.
     const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
     const hosts = [
       { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
       { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
     ];
 
-    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Alan Turing', 'Grace Hopper']);
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
   });
 
   it('falls back to created_by as primary when the owner is zero-valued', () => {

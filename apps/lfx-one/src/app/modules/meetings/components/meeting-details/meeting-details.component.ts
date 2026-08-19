@@ -252,6 +252,17 @@ export class MeetingDetailsComponent implements OnInit {
     this.ownerManualEntry.set(false);
   }
 
+  // Reverting a selection: lfx-user-search empties its own input right after a pick, so PrimeNG's
+  // in-field clear icon never shows for a committed selection — this button is the clear
+  // affordance instead. Emptying every owner control makes the save omit the `owner` key (create:
+  // upstream defaults to the creator; edit: the stored owner is preserved, as the helper text says).
+  public clearOwnerSelection(): void {
+    const form = this.form();
+    form.get('ownerUsername')?.setValue(null);
+    form.get('ownerName')?.setValue(null);
+    form.get('ownerEmail')?.setValue(null);
+  }
+
   // AI Helper public methods
   public showAiAgendaHelper(): void {
     this.showAiHelper.set(true);

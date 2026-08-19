@@ -642,7 +642,28 @@ export class MeetingManageComponent {
     };
   }
 
+  // Re-baselines the omit comparison after a successful save: the wizard stays alive afterwards
+  // (edit mode routes back to step 5 in this same component instance), so without this a second
+  // untouched save would diff against the pre-save owner, re-send an unchanged `owner`, and
+  // replace the stored object upstream — dropping any server-side enrichment (profile_picture)
+  // the form never carries. All-empty controls leave the baseline alone: that save omitted the
+  // key, upstream kept the stored owner, and the existing baseline still describes it.
+  private syncHydratedOwnerFromForm(): void {
+    const formValue = this.form().getRawValue();
+    const username = (formValue.ownerUsername || '').trim();
+    const name = (formValue.ownerName || '').trim();
+    const email = (formValue.ownerEmail || '').trim();
+
+    if (username || name || email) {
+      this.hydratedOwner = { username, name, email };
+    }
+  }
+
   private handleMeetingSuccess(meeting?: Meeting): void {
+    // The stored owner now matches the submitted form (sent, or preserved via omit) — re-baseline
+    // before any further save from this same wizard instance.
+    this.syncHydratedOwnerFromForm();
+
     // In create mode, set the meeting ID from the response; in edit mode, it's already set
     if (meeting) {
       this.meetingId.set(meeting.id);
