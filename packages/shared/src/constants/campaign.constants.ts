@@ -178,6 +178,24 @@ export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['
 export const RESUMABLE_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'active', 'paused']);
 
 /**
+ * The wire `status` reduced to something string methods are safe on.
+ *
+ * `status` is typed `string`, but that is a compile-time claim about a shape nothing validates:
+ * the BFF spreads index docs through untouched (`listBriefCampaigns`), so a missing or non-string
+ * status reaches the UI intact. Every consumer that lowercases one needs the same guard, so it
+ * lives here once rather than being re-derived per call site — `campaignToggleAction` had it and
+ * `unavailableReasonFor` did not, which put the crash back one function over.
+ *
+ * `''` is the deliberate result for a non-string: it misses every status set and every key in
+ * `CAMPAIGN_UNAVAILABLE_REASONS`, so callers land on their existing unknown-status arm instead of
+ * gaining a new branch. See [[absence-cannot-carry-new-meaning]] — this is a normalizer, not a
+ * signal that something is wrong.
+ */
+export function normalizeCampaignStatus(status: string): string {
+  return typeof status === 'string' ? status.toLowerCase() : '';
+}
+
+/**
  * The status each campaign row is in, as the toggle button must present it.
  *
  * Three states rather than a boolean, because a boolean can only ever mean "Pause or Resume" and
@@ -216,7 +234,7 @@ export function campaignToggleAction(status: string, platform?: string): 'pause'
   // campaigns that are live and spending, which is the direction this pair exists to prevent.
   //
   // `''` already lands on `unavailable` through the two misses below, so no other arm changes.
-  const normalized = typeof status === 'string' ? status.toLowerCase() : '';
+  const normalized = normalizeCampaignStatus(status);
   if (RUNNING_CAMPAIGN_STATUSES.has(normalized)) {
     return 'pause';
   }

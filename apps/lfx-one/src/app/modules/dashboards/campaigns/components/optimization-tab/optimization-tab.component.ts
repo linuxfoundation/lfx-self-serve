@@ -31,9 +31,10 @@ import {
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_UNAVAILABLE_REASONS,
-  campaignToggleAction,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  campaignToggleAction,
+  normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
@@ -193,7 +194,12 @@ export class OptimizationTabComponent implements OnInit {
     const toggleErrors = this.toggleError();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
-      const status = toggled[campaign.id] ?? campaign.status;
+      // Normalized HERE, once, rather than inside each consumer. `status` feeds three of them —
+      // `campaignToggleAction`, `unavailableReasonFor`, and the rendered `status` field — and a
+      // non-string from the unvalidated wire makes any `.toLowerCase()` throw INSIDE this
+      // computed, blanking the whole campaigns section on every change-detection pass. Guarding
+      // one consumer just moves the crash to the next one.
+      const status = normalizeCampaignStatus(toggled[campaign.id] ?? campaign.status);
       // Three states, not two. `campaignToggleAction` derives them from the shared status sets, so
       // a status upstream refuses — `pending`, a partial orphan, or one added after this was
       // written — lands on `unavailable` rather than on the Resume button that would 409.
@@ -658,7 +664,9 @@ export class OptimizationTabComponent implements OnInit {
     if (platformUnsupported) {
       return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
     }
-    return CAMPAIGN_UNAVAILABLE_REASONS[status.toLowerCase()] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;
+    // `status` arrives normalized from `campaignRows`; no `.toLowerCase()` here, which is
+    // exactly the call that threw on a non-string wire value.
+    return CAMPAIGN_UNAVAILABLE_REASONS[status] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;
   }
 
   private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {

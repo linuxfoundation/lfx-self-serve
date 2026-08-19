@@ -130,6 +130,34 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent.trim()).toContain(label);
   });
 
+  // Drives the malformed value through the REAL `campaignRows` computed, not through
+  // `campaignToggleAction` in isolation. That distinction is the whole finding: the shared helper
+  // was already guarded, and the crash simply moved to `unavailableReasonFor`, which the isolated
+  // test could not see. A row-level assertion is what fails when any single consumer regresses.
+  //
+  // The status is typed `string`, so a non-string can only arrive by the route it actually takes
+  // in production — the BFF spreading an unvalidated index doc through — and the cast reproduces
+  // that wire shape rather than inventing a new one.
+  it.each([
+    ['a number', 7],
+    ['null', null],
+    ['undefined', undefined],
+    ['an object', {}],
+  ])('renders every row when status is %s, instead of blanking the section', (_label, bad) => {
+    render([doc({ status: bad as unknown as string }), doc({ id: 'c-2', campaign_name: 'KubeCon NA', status: 'created' })]);
+
+    // The malformed row survives and fails closed...
+    const broken = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(broken).not.toBeNull();
+    expect(broken.disabled).toBe(true);
+    // ...with the unknown-status wording, NOT a new branch of its own.
+    expect(fixture.nativeElement.textContent).toContain('not in a state that can be paused or resumed');
+    // ...and, the point of the finding, the healthy sibling still renders.
+    const healthy = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]');
+    expect(healthy).not.toBeNull();
+    expect(healthy.textContent.trim()).toContain('Pause');
+  });
+
   // The visible text is just "Pause", which is unambiguous beside its row and useless out of
   // context: a screen-reader user moving button-to-button hears "Pause" N times with no way to
   // tell the campaigns apart. The label must NAME the campaign and CONTAIN the visible word, so
