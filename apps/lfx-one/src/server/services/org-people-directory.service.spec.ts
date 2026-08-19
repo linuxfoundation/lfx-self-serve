@@ -122,7 +122,7 @@ function seat(over: Record<string, unknown> = {}): never {
 
 function accessUser(over: Partial<OrgAccessUser> = {}): OrgAccessUser {
   return {
-    email: 'dqualls@linuxfoundation.org',
+    email: 'dqualls@lfx-partner.example',
     username: 'dqualls',
     name: 'Dano Qualls',
     initials: 'DQ',
@@ -182,8 +182,8 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
           lfid: '0032M00003ZzRIsQAN',
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'dqualls@contractor.linuxfoundation.org',
-          emails: ['dqualls@contractor.linuxfoundation.org'],
+          email: 'dqualls@contractor.lfx-partner.example',
+          emails: ['dqualls@contractor.lfx-partner.example'],
           seatsCount: 3,
           boardSeatsCount: 0,
           committeeSeatsCount: 3,
@@ -197,7 +197,7 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].sources).toEqual(expect.arrayContaining(['snowflake', 'access']));
-    expect(rows[0].emails).toEqual(expect.arrayContaining(['dqualls@contractor.linuxfoundation.org', 'dqualls@linuxfoundation.org']));
+    expect(rows[0].emails).toEqual(expect.arrayContaining(['dqualls@contractor.lfx-partner.example', 'dqualls@lfx-partner.example']));
   });
 
   it('merges a committee seat into the stored row on username (the Devon case)', async () => {
@@ -243,8 +243,8 @@ describe('OrgPeopleDirectoryService.merge — access badge is server-attributed'
         storedRow({
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'dqualls@contractor.linuxfoundation.org',
-          emails: ['dqualls@contractor.linuxfoundation.org'],
+          email: 'dqualls@contractor.lfx-partner.example',
+          emails: ['dqualls@contractor.lfx-partner.example'],
         }),
       ])
     );
@@ -280,25 +280,25 @@ describe('OrgPeopleDirectoryService.merge — access badge is server-attributed'
           personKey: 'p-dano',
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'shared@linuxfoundation.org',
-          emails: ['shared@linuxfoundation.org'],
+          email: 'shared@lfx-partner.example',
+          emails: ['shared@lfx-partner.example'],
         }),
         storedRow({
-          personKey: 'p-jim',
-          lfUsername: 'jzemlin',
-          name: 'Jim Zemlin',
-          email: 'shared@linuxfoundation.org',
-          emails: ['shared@linuxfoundation.org'],
+          personKey: 'p-riley',
+          lfUsername: 'rfoster',
+          name: 'Riley Foster',
+          email: 'shared@lfx-partner.example',
+          emails: ['shared@lfx-partner.example'],
         }),
       ])
     );
-    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'shared@linuxfoundation.org', username: 'jzemlin', name: 'Jim Zemlin' })]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'shared@lfx-partner.example', username: 'rfoster', name: 'Riley Foster' })]);
 
     const { rows } = await run();
 
     const dano = rows.find((r) => r.lfUsername === 'dqualls');
-    const jim = rows.find((r) => r.lfUsername === 'jzemlin');
-    expect(jim?.accessBadge).toBe('admin');
+    const riley = rows.find((r) => r.lfUsername === 'rfoster');
+    expect(riley?.accessBadge).toBe('admin');
     expect(dano?.accessBadge).toBeUndefined();
   });
 });
@@ -312,14 +312,14 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
         storedRow({
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'dqualls@contractor.linuxfoundation.org',
-          emails: ['dqualls@contractor.linuxfoundation.org'],
+          email: 'dqualls@contractor.lfx-partner.example',
+          emails: ['dqualls@contractor.lfx-partner.example'],
           seatsCount: 3,
           committeeSeatsCount: 3,
         }),
       ])
     );
-    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'dqualls@contractor.linuxfoundation.org', first_name: 'Dano', last_name: 'Qualls' })]);
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'dqualls@contractor.lfx-partner.example', first_name: 'Dano', last_name: 'Qualls' })]);
 
     const { rows } = await run();
 
@@ -367,10 +367,16 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
           personKey: 'p-a',
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'shared@linuxfoundation.org',
-          emails: ['shared@linuxfoundation.org'],
+          email: 'shared@lfx-partner.example',
+          emails: ['shared@lfx-partner.example'],
         }),
-        storedRow({ personKey: 'p-b', lfUsername: 'jzemlin', name: 'Jim Zemlin', email: 'shared@linuxfoundation.org', emails: ['shared@linuxfoundation.org'] }),
+        storedRow({
+          personKey: 'p-b',
+          lfUsername: 'rfoster',
+          name: 'Riley Foster',
+          email: 'shared@lfx-partner.example',
+          emails: ['shared@lfx-partner.example'],
+        }),
       ])
     );
 
@@ -479,7 +485,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
 
 describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   it('does not merge two different people who share an address', async () => {
-    // The Snowflake address→member index links dqualls@linuxfoundation.org to Jim Zemlin's member
+    // The Snowflake address→member index links dqualls@lfx-partner.example to Riley Foster's member
     // record. Two distinct usernames must never collapse, whatever their addresses say.
     getAllEmployees.mockResolvedValue(
       baseResponse([
@@ -487,15 +493,15 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
           personKey: 'p-dano',
           lfUsername: 'dqualls',
           name: 'Dano Qualls',
-          email: 'dqualls@linuxfoundation.org',
-          emails: ['dqualls@linuxfoundation.org'],
+          email: 'dqualls@lfx-partner.example',
+          emails: ['dqualls@lfx-partner.example'],
         }),
         storedRow({
-          personKey: 'p-jim',
-          lfUsername: 'jzemlin',
-          name: 'Jim Zemlin',
-          email: 'dqualls@linuxfoundation.org',
-          emails: ['dqualls@linuxfoundation.org'],
+          personKey: 'p-riley',
+          lfUsername: 'rfoster',
+          name: 'Riley Foster',
+          email: 'dqualls@lfx-partner.example',
+          emails: ['dqualls@lfx-partner.example'],
         }),
       ])
     );
@@ -503,7 +509,7 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
     const { rows } = await run();
 
     expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.lfUsername).sort()).toEqual(['dqualls', 'jzemlin']);
+    expect(rows.map((r) => r.lfUsername).sort()).toEqual(['dqualls', 'rfoster']);
   });
 
   it('does not merge an access principal into a person with a different username', async () => {
@@ -556,7 +562,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
 
   it('a pending invite is not merged into a person, even when the address matches', async () => {
     getAllEmployees.mockResolvedValue(
-      baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@linuxfoundation.org', emails: ['dqualls@linuxfoundation.org'] })])
+      baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@lfx-partner.example', emails: ['dqualls@lfx-partner.example'] })])
     );
     getAccessPrincipals.mockResolvedValue([accessUser({ username: null, inviteStatus: 'pending', isPending: true })]);
 
