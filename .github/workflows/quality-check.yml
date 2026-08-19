@@ -24,6 +24,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check fixture emails for real customer/vendor PII
+        run: |
+          base_ref="${{ github.event.pull_request.base.ref || 'main' }}"
+          git fetch origin "${base_ref}" --depth=1
+          ./check-fixture-emails.sh "origin/${base_ref}"
 
       - name: Enable Corepack
         run: corepack enable
