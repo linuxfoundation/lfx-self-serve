@@ -314,9 +314,11 @@ export interface CampaignBriefPersistenceState {
  * every page load for a tab the user may never open. Lifting the edits out instead keeps the
  * component cheap to destroy while the user's typing survives (LFXV2-3229).
  *
- * Deliberately a SNAPSHOT of the fields a user TYPES, not the whole component state. Anything
- * re-derived from a fetch (results, progress, the LinkedIn account list) is left to re-derive —
- * restoring those would be restoring a cache, and a stale one.
+ * Deliberately a SNAPSHOT of the fields a user EDITS, not the whole component state. That is
+ * broader than typing: it covers the dropdown, chip list and toggle the LinkedIn picks are chosen
+ * through, because a choice made with the mouse is lost by a tab switch exactly as a typed one is.
+ * Anything re-derived from a fetch (results, progress, the LinkedIn account LIST itself) is left
+ * to re-derive — restoring those would be restoring a cache, and a stale one.
  *
  * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
  * against the brief on screen so one event's edits cannot replay onto another's.

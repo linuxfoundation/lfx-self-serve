@@ -604,8 +604,9 @@ export class ImplementationTabComponent implements OnInit {
           // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
           // response can carry nothing — and a restored id would then survive with no account to
           // match it, dispatching a stale value while the selector shows an empty list. Clearing
-          // is the honest result: `canSubmit` still lets a LinkedIn create through on an empty id,
-          // but the request then fails upstream on a blank account rather than on someone else's.
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
           if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
             this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
           }
