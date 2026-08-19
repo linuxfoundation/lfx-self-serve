@@ -83,6 +83,9 @@ export const MENTION_MAX_CACHED_WINDOWS = 2;
 /** Cap for array-valued filters (keywords / tags / authors) — enforced at the HTTP boundary and in the SQL builder. */
 export const MENTION_FILTER_MAX_VALUES = 200;
 
+/** UI selection cap per array filter — keeps deep-link URLs within the ~8 KB budget common proxies allow; the server cap stays 200. */
+export const MENTION_FILTER_UI_MAX_VALUES = 50;
+
 /** Reserved for the deferred bookmarked-mentions filter (follow-up ticket). */
 export const MENTION_IDS_MAX_VALUES = 500;
 
@@ -138,7 +141,10 @@ export const FILTERS_PANEL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled])
 // Query-param keys + defaults
 // ---------------------------------------------------------------------------
 
-/** URL query-param keys for the predicate + scope round-trip; PCC's `bookmarks`/`read`/`view` keys are dropped (deferred) and `range` is renamed to `period`. */
+/**
+ * URL query-param keys for the predicate + scope round-trip; PCC's `bookmarks`/`read`/`view` keys are dropped (deferred) and `range` is renamed to `period`.
+ * This page must own its route — before any embedded-shell composition, namespace the generic keys (`tab`, `q`, e.g. `slTab`).
+ */
 export const SOCIAL_LISTENING_QUERY_PARAMS = {
   tab: 'tab',
   period: 'period',

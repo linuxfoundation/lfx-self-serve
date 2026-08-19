@@ -12,6 +12,7 @@ import {
   DEFAULT_MENTION_SCOPE_STATE,
   DEFAULT_MENTION_VIEW_SCOPE,
   MENTION_HAS_TITLE_OPTIONS,
+  MENTION_PLATFORM_CONFIG,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SEARCH_MIN_CHARS,
   MENTION_SENTIMENT_OPTIONS,
@@ -178,22 +179,23 @@ function asMultiValue(value: string | string[] | null | undefined): string[] {
 export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeState, defaultPeriod: string): SocialListeningQueryParams {
   const q = SOCIAL_LISTENING_QUERY_PARAMS;
   return {
-    [q.tab]: scope.activeTab !== DEFAULT_MENTION_SCOPE_STATE.activeTab ? scope.activeTab : null,
-    [q.period]: scope.period !== defaultPeriod ? scope.period : null,
-    [q.sourceProject]: scope.sourceProjectId !== DEFAULT_MENTION_SCOPE_STATE.sourceProjectId ? scope.sourceProjectId : null,
-    [q.platform]: scope.platform !== DEFAULT_MENTION_SCOPE_STATE.platform ? scope.platform : null,
-    [q.sentiment]: p.sentiment !== DEFAULT_MENTION_PREDICATE.sentiment ? p.sentiment : null,
-    [q.relevance]: p.relevance !== DEFAULT_MENTION_PREDICATE.relevance ? p.relevance : null,
-    [q.language]: p.language !== DEFAULT_MENTION_PREDICATE.language ? p.language : null,
-    [q.hasTitle]: p.hasTitle !== DEFAULT_MENTION_PREDICATE.hasTitle ? p.hasTitle : null,
+    [q.tab]: scope.activeTab === DEFAULT_MENTION_SCOPE_STATE.activeTab ? null : scope.activeTab,
+    [q.period]: scope.period === defaultPeriod ? null : scope.period,
+    [q.sourceProject]: scope.sourceProjectId === DEFAULT_MENTION_SCOPE_STATE.sourceProjectId ? null : scope.sourceProjectId,
+    [q.platform]: scope.platform === DEFAULT_MENTION_SCOPE_STATE.platform ? null : scope.platform,
+    [q.sentiment]: p.sentiment === DEFAULT_MENTION_PREDICATE.sentiment ? null : p.sentiment,
+    [q.relevance]: p.relevance === DEFAULT_MENTION_PREDICATE.relevance ? null : p.relevance,
+    [q.language]: p.language === DEFAULT_MENTION_PREDICATE.language ? null : p.language,
+    [q.hasTitle]: p.hasTitle === DEFAULT_MENTION_PREDICATE.hasTitle ? null : p.hasTitle,
     [q.keywords]: p.keywords.length > 0 ? [...p.keywords] : null,
     [q.tags]: p.tags.length > 0 ? [...p.tags] : null,
     [q.authors]: p.authors.length > 0 ? [...p.authors] : null,
-    [q.search]: p.search !== DEFAULT_MENTION_PREDICATE.search ? p.search : null,
+    [q.search]: p.search === DEFAULT_MENTION_PREDICATE.search ? null : p.search,
   };
 }
 
 // Derived from the shared option lists (not re-listed) so future option additions propagate.
+const PLATFORM_VALUES = new Set([DEFAULT_MENTION_SCOPE_STATE.platform, ...Object.keys(MENTION_PLATFORM_CONFIG)]);
 const SENTIMENT_VALUES = new Set(MENTION_SENTIMENT_OPTIONS.map((o) => o.value));
 const RELEVANCE_VALUES = new Set(MENTION_RELEVANCE_OPTIONS.map((o) => o.value));
 const HAS_TITLE_VALUES = new Set(MENTION_HAS_TITLE_OPTIONS.map((o) => o.value));
@@ -232,7 +234,7 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
     activeTab,
     period: coercePeriod(asScalar(params[q.period]), defaultPeriod),
     sourceProjectId: asScalar(params[q.sourceProject]) || DEFAULT_MENTION_SCOPE_STATE.sourceProjectId,
-    platform: asScalar(params[q.platform]) || DEFAULT_MENTION_SCOPE_STATE.platform,
+    platform: coerceLiteral(asScalar(params[q.platform]), PLATFORM_VALUES, DEFAULT_MENTION_SCOPE_STATE.platform),
   };
 
   return { predicate, scope };

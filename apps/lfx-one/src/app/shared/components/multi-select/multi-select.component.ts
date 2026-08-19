@@ -25,6 +25,8 @@ export class MultiSelectComponent {
   public readonly optionImage = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
+  /** Max simultaneous selections (PrimeNG `selectionLimit`) — undefined = unbounded. */
+  public readonly selectionLimit = input<number | undefined>(undefined);
   public readonly appendTo = input<any>('body');
   public readonly filter = input<boolean>(true);
   /** Focus the in-panel filter input as soon as the overlay opens (PrimeNG defaults this to false). */

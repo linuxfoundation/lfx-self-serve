@@ -6,7 +6,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FILTERS_PANEL_FOCUSABLE_SELECTOR, MENTION_HAS_TITLE_OPTIONS, MENTION_RELEVANCE_OPTIONS, MENTION_SENTIMENT_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  FILTERS_PANEL_FOCUSABLE_SELECTOR,
+  MENTION_FILTER_UI_MAX_VALUES,
+  MENTION_HAS_TITLE_OPTIONS,
+  MENTION_RELEVANCE_OPTIONS,
+  MENTION_SENTIMENT_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { capitalizeFirst, formatTag } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -65,6 +71,7 @@ export class FiltersPanelComponent {
   protected readonly sentimentOptions = MENTION_SENTIMENT_OPTIONS;
   protected readonly relevanceOptions = MENTION_RELEVANCE_OPTIONS;
   protected readonly hasTitleOptions = MENTION_HAS_TITLE_OPTIONS;
+  protected readonly mentionFilterUiMaxValues = MENTION_FILTER_UI_MAX_VALUES;
 
   // Selected values can fall out of the rescoped option lists (or arrive via URL before the
   // options land) — kept as extra options so the multiselect chips still resolve a label (PCC port).

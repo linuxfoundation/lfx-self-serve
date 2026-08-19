@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_MENTION_PREDICATE, DEFAULT_MENTION_SCOPE_STATE, SOCIAL_LISTENING_QUERY_PARAMS } from '../constants/social-listening.constants';
+import {
+  DEFAULT_MENTION_PREDICATE,
+  DEFAULT_MENTION_SCOPE_STATE,
+  MENTION_FILTER_UI_MAX_VALUES,
+  SOCIAL_LISTENING_QUERY_PARAMS,
+} from '../constants/social-listening.constants';
 import type { FilterPredicate, ScopeState, SocialListeningQueryParams } from '../interfaces/social-listening.interface';
 import {
   countActiveFilters,
@@ -151,6 +156,22 @@ describe('decode coercion', () => {
 
     expect(decoded.scope).toEqual(scope());
     expect(decoded.predicate.language).toBe(DEFAULT_MENTION_PREDICATE.language);
+  });
+
+  it('coerces an off-list platform back to the default', () => {
+    expect(decodePredicateFromQueryParams({ [q.platform]: 'myspace' }, DEFAULT_PERIOD).scope.platform).toBe(DEFAULT_MENTION_SCOPE_STATE.platform);
+    expect(decodePredicateFromQueryParams({ [q.platform]: 'reddit' }, DEFAULT_PERIOD).scope.platform).toBe('reddit');
+  });
+
+  it('falls back on a month-shaped but out-of-range period', () => {
+    expect(decodePredicateFromQueryParams({ [q.period]: '2025-13' }, DEFAULT_PERIOD).scope.period).toBe(DEFAULT_PERIOD);
+  });
+
+  it('round-trips array filters at the UI selection cap', () => {
+    const values = Array.from({ length: MENTION_FILTER_UI_MAX_VALUES }, (_, i) => `tag-${i}`);
+    const encoded = encodePredicateToQueryParams(predicate({ tags: values }), scope(), DEFAULT_PERIOD);
+
+    expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate.tags).toEqual(values);
   });
 });
 
