@@ -354,7 +354,22 @@ export class ImplementationTabComponent implements OnInit {
     { initialValue: this.campaignForm.controls.linkedInAccountId.value }
   );
 
-  protected readonly linkedInGeoTargets = toSignal(
+  /**
+   * Coalesced to `[]` HERE rather than at each reader, because the readers are the whole surface:
+   * `canSubmit`, `availableGeoTargets`, `submit()` and two template blocks all read this, and four
+   * of the five would throw on an absent value (`.length`, `.map`, `@for`). Guarding one call site
+   * leaves the other four, and the crash in `availableGeoTargets` is reached from the TEMPLATE, so
+   * it takes down the tab rather than one control.
+   *
+   * The value can be absent even though `CampaignImplementationDraft` declares it non-optional:
+   * that is a compile-time claim, and `applyDraft` hands `patchValue` whatever the draft holds
+   * while `patchValue` passes `undefined` straight through. Unreachable today — `emitDraft` is the
+   * only non-null producer and the draft is in-memory — but a required TYPE is not what keeps it
+   * safe, so the guard belongs at the boundary the values flow through.
+   */
+  protected readonly linkedInGeoTargets = computed<LinkedInGeoTarget[]>(() => this.linkedInGeoTargetsRaw() ?? []);
+
+  private readonly linkedInGeoTargetsRaw = toSignal(
     this.campaignForm.controls.linkedInGeoTargets.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInGeoTargets.value)),
     { initialValue: this.campaignForm.controls.linkedInGeoTargets.value }
   );
@@ -558,10 +573,15 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
-    // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
-    // types); it does NOT cover the platform signals, which is deliberate — see the draft
-    // interface for why this snapshot is scoped to the fields a user types rather than everything
-    // the component holds.
+    // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
+    // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
+    // targets, targeting profile). Moving those three onto the form is what makes their restore
+    // work: this subscription emits on every pick with no per-handler plumbing.
+    //
+    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
+    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
+    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
+    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();

@@ -1058,6 +1058,34 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect(c.canSubmit()).toBe(false);
   });
 
+  /**
+   * The same gate reached with an ABSENT list rather than an empty one.
+   *
+   * `linkedInGeoTargets` is declared non-optional on `CampaignImplementationDraft`, but nothing
+   * validates a draft on the way in: `applyDraft` hands `patchValue` whatever it holds and
+   * `patchValue` passes `undefined` through untouched. Reading `.length` off that threw inside the
+   * `canSubmit` computed, which the template reads — so instead of disabling one button it took
+   * down the entire tab, re-throwing on every change-detection pass.
+   *
+   * The binding assertion is that it RETURNS false. Asserting merely that it does not throw would
+   * pass on a guard that returned true, which is the fail-open answer — a create dispatched with
+   * no geo targets at all.
+   */
+  it('blocks rather than crashing when the restored geo list is absent', async () => {
+    const f = await mount(draftWith(ACCOUNTS[1].accountId));
+    makeLinkedInOtherwiseValid(f);
+    const c = f.componentInstance as unknown as {
+      canSubmit(): boolean;
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    };
+    expect(c.canSubmit()).toBe(true);
+
+    c.campaignForm.controls['linkedInGeoTargets'].setValue(undefined);
+    f.detectChanges();
+
+    expect(c.canSubmit()).toBe(false);
+  });
+
   /** Satisfy every LinkedIn gate EXCEPT the account one, so that gate is the only variable. */
   function makeLinkedInOtherwiseValid(f: ComponentFixture<ImplementationTabComponent>): void {
     const c = f.componentInstance as unknown as {
