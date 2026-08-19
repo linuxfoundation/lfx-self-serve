@@ -13,14 +13,16 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared';
 import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { UserSearchResult } from '@lfx-one/shared/interfaces';
 import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { finalize, map, merge, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { AgendaTemplateSelectorComponent } from '../agenda-template-selector/agenda-template-selector.component';
 import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern/meeting-recurrence-pattern.component';
@@ -38,6 +40,7 @@ import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern
     SelectComponent,
     TextareaComponent,
     TimePickerComponent,
+    UserSearchComponent,
     TooltipModule,
     AgendaTemplateSelectorComponent,
     MeetingRecurrencePatternComponent,
@@ -83,6 +86,30 @@ export class MeetingDetailsComponent implements OnInit {
       })
     ),
     { initialValue: 0 }
+  );
+
+  // Current organizer (owner) selection shown under the search box — lfx-user-search clears its
+  // own input after a pick, so this label is the only visible confirmation of the selection.
+  public readonly selectedOwnerLabel = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const nameCtrl = f.get('ownerName');
+        const emailCtrl = f.get('ownerEmail');
+        if (!nameCtrl || !emailCtrl) return of('');
+        return merge(nameCtrl.valueChanges, emailCtrl.valueChanges).pipe(
+          startWith(null),
+          map(() => {
+            const name = ((nameCtrl.value as string | null) || '').trim();
+            const email = ((emailCtrl.value as string | null) || '').trim();
+            if (name && email) {
+              return `${name} (${email})`;
+            }
+            return name || email;
+          })
+        );
+      })
+    ),
+    { initialValue: '' }
   );
 
   // Duration options from shared constants
@@ -168,6 +195,32 @@ export class MeetingDetailsComponent implements OnInit {
     if (currentRecurrence === 'custom') {
       this.showCustomRecurrence.set(true);
     }
+
+    // The user-search clear button nulls its bound controls (ownerEmail/ownerUsername) but can't
+    // know about ownerName — it isn't bound (see handleOwnerSelection). Sync it here so a cleared
+    // picker doesn't leave a stale name behind that would submit as a name-only owner.
+    const ownerNameCtrl = this.form().get('ownerName');
+    const ownerEmailCtrl = this.form().get('ownerEmail');
+    const ownerUsernameCtrl = this.form().get('ownerUsername');
+    if (ownerNameCtrl && ownerEmailCtrl && ownerUsernameCtrl) {
+      merge(ownerEmailCtrl.valueChanges, ownerUsernameCtrl.valueChanges)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => {
+          if (!ownerEmailCtrl.value && !ownerUsernameCtrl.value && ownerNameCtrl.value) {
+            ownerNameCtrl.setValue(null);
+          }
+        });
+    }
+  }
+
+  // Owner picker: lfx-user-search patches ownerEmail/ownerUsername through its control bindings;
+  // the display name is composed here instead of binding firstNameControl/lastNameControl, which
+  // would clobber each other writing into the single ownerName control.
+  public handleOwnerSelection(user: UserSearchResult): void {
+    const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+    this.form()
+      .get('ownerName')
+      ?.setValue(fullName || null);
   }
 
   // AI Helper public methods

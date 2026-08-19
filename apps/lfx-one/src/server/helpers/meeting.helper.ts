@@ -4,7 +4,7 @@
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { HOST_KEY_EARLY_MINUTES, HOST_KEY_LATE_MINUTES } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
-import { resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AccessCheckService } from '../services/access-check.service';
@@ -81,31 +81,34 @@ export async function addInvitedStatusToMeetings(req: Request, meetings: Meeting
 }
 
 /**
- * Enriches meetings that lack a human `created_by` by joining back to the live
- * `v1_meeting` index (the only source that carries it). Upcoming meetings key on their
- * own UID; past meetings key on `meeting_id` (the originating series meeting). Meetings
- * that already carry a human creator, or whose series no longer exists, are left untouched
- * so the organizer display is simply omitted.
+ * Enriches meetings that lack a human organizer identity (`created_by` and/or `owner`) by
+ * joining back to the live `v1_meeting` index (the only source that carries them). Upcoming
+ * meetings key on their own UID; past meetings key on `meeting_id` (the originating series
+ * meeting — `v1_past_meeting` never carries `owner`). Meetings that already carry both, or
+ * whose series no longer exists, are left untouched so the organizer display simply falls
+ * back (owner → human created_by → omitted).
  *
  * @param req - Express request object
  * @param meetings - Meetings to enrich (mutated copies returned; input is not modified)
  * @param keyOf - Extracts the live `v1_meeting` UID to look up for a given meeting
- * @returns The meetings with `created_by` populated where it could be resolved
+ * @returns The meetings with `created_by` / `owner` populated where they could be resolved
  */
 export async function enrichMeetingsWithCreatedBy<T extends Meeting>(req: Request, meetings: T[], keyOf: (meeting: T) => string | undefined): Promise<T[]> {
   if (meetings.length === 0) {
     return meetings;
   }
 
-  // Only meetings without a resolvable human creator need the join.
-  const needsEnrichment = (meeting: T): boolean => !resolveMeetingOrganizer(meeting) && !!keyOf(meeting);
+  // A meeting needs the join when either identity is missing: no resolvable organizer at all,
+  // OR no resolvable owner — OR, not AND, because a past meeting with a human created_by must
+  // still pick up the owner so a transferred ownership shows instead of the original creator.
+  const needsEnrichment = (meeting: T): boolean => (!resolveMeetingOrganizer(meeting) || !resolveMeetingOwner(meeting)) && !!keyOf(meeting);
   const uids = meetings.filter(needsEnrichment).map((meeting) => keyOf(meeting)!);
   if (uids.length === 0) {
     return meetings;
   }
 
-  const createdByMap = await meetingService.resolveCreatedByForMeetings(req, uids);
-  if (createdByMap.size === 0) {
+  const identityMap = await meetingService.resolveCreatedByForMeetings(req, uids);
+  if (identityMap.size === 0) {
     return meetings;
   }
 
@@ -113,8 +116,23 @@ export async function enrichMeetingsWithCreatedBy<T extends Meeting>(req: Reques
     if (!needsEnrichment(meeting)) {
       return meeting;
     }
-    const createdBy = createdByMap.get(keyOf(meeting)!);
-    return createdBy ? { ...meeting, created_by: createdBy } : meeting;
+    const identity = identityMap.get(keyOf(meeting)!);
+    if (!identity) {
+      return meeting;
+    }
+    // Fill each field only where the meeting lacks a resolvable value — never clobber an
+    // existing human created_by, and never write a zero-valued or service-account owner.
+    const hasHumanCreatedBy = !!resolveMeetingOrganizer({ created_by: meeting.created_by });
+    const createdBy = !hasHumanCreatedBy && identity.created_by ? identity.created_by : undefined;
+    const owner = !resolveMeetingOwner(meeting) && resolveMeetingOwner({ owner: identity.owner }) ? identity.owner : undefined;
+    if (!createdBy && !owner) {
+      return meeting;
+    }
+    return {
+      ...meeting,
+      ...(createdBy ? { created_by: createdBy } : {}),
+      ...(owner ? { owner } : {}),
+    };
   });
 }
 

@@ -275,6 +275,26 @@
         }
       </div>
 
+      <!-- Meeting Organizer (owner) -->
+      <div>
+        <label for="meeting-organizer" class="block text-neutral-950 mb-2">Meeting Organizer <span class="text-gray-400 text-sm">(optional)</span></label>
+        <lfx-user-search
+          [form]="form()"
+          searchType="meeting_registrant"
+          emailControl="ownerEmail"
+          usernameControl="ownerUsername"
+          placeholder="Search for a user..."
+          styleClass="w-full"
+          inputStyleClass="w-full text-sm"
+          panelStyleClass="w-full"
+          dataTestId="meeting-details-organizer-search"
+          (onUserSelect)="handleOwnerSelection($event)"></lfx-user-search>
+        @if (selectedOwnerLabel()) {
+          <p class="mt-1 text-sm text-gray-600" data-testid="meeting-details-organizer-selected">Current organizer: {{ selectedOwnerLabel() }}</p>
+        }
+        <p class="mt-1 text-sm text-gray-500">Defaults to the meeting creator. Clearing this field won't remove a saved organizer.</p>
+      </div>
+
       <!-- Future Date/Time validation error -->
       @if (form().errors?.['futureDateTime'] && (form().get('startDate')?.touched || form().get('startTime')?.touched)) {
         <p class="text-sm text-red-600">Meeting must be scheduled in the future</p>

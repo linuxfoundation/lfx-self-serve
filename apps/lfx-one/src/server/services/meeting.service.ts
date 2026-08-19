@@ -18,7 +18,6 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
-  MeetingUserInfo,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -393,24 +392,28 @@ export class MeetingService {
   }
 
   /**
-   * Resolves the `created_by` (meeting creator) for a set of live `v1_meeting` UIDs by
-   * querying the indexed projection — the only source that carries it (the ITX detail
-   * payload and webhook-created past meetings do not).
+   * Resolves the organizer identity fields (`created_by` and `owner`) for a set of live
+   * `v1_meeting` UIDs by querying the indexed projection — the only source that carries
+   * them (the ITX detail payload and webhook-created past meetings do not, and
+   * `v1_past_meeting` never carries `owner`).
    *
    * Batches the lookup with the query service's OR-semantics `tags` param so a page of
    * meetings costs one call per chunk rather than N. UIDs that no longer resolve (deleted
    * series) are simply absent from the returned map, so callers omit the organizer display.
    *
-   * @returns Map of meeting UID → `created_by`, only for meetings that carry one.
+   * Values are returned as indexed — zero-valued owners (meetings predating the field) are
+   * NOT filtered here; callers vet them via `resolveMeetingOwner` before writing.
+   *
+   * @returns Map of meeting UID → `{ created_by?, owner? }`, only for meetings carrying at least one.
    */
-  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, MeetingUserInfo>> {
-    const result = new Map<string, MeetingUserInfo>();
+  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>> {
+    const result = new Map<string, Pick<Meeting, 'created_by' | 'owner'>>();
     const uniqueUids = [...new Set(meetingUids.filter(Boolean))];
     if (uniqueUids.length === 0) {
       return result;
     }
 
-    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by from v1_meeting index', {
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by/owner from v1_meeting index', {
       requested: meetingUids.length,
       unique: uniqueUids.length,
     });
@@ -442,8 +445,13 @@ export class MeetingService {
           });
           for (const resource of response.resources) {
             const uid = resource.data?.id || resource.id?.split(':').pop() || resource.id;
-            if (uid && resource.data?.created_by) {
-              result.set(uid, resource.data.created_by);
+            const createdBy = resource.data?.created_by;
+            const owner = resource.data?.owner;
+            if (uid && (createdBy || owner)) {
+              result.set(uid, {
+                ...(createdBy ? { created_by: createdBy } : {}),
+                ...(owner ? { owner } : {}),
+              });
             }
           }
           pageToken = response.page_token;
@@ -463,7 +471,7 @@ export class MeetingService {
 
     // Surface partial-failure completeness: a resolved count below requested means some chunks
     // failed and were skipped (those meetings render without an organizer rather than erroring).
-    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by lookups', {
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by/owner lookups', {
       requested: uniqueUids.length,
       resolved: result.size,
     });

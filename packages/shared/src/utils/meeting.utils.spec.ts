@@ -58,6 +58,7 @@ import {
   isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
+  resolveMeetingOwner,
   resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
@@ -426,7 +427,75 @@ describe('normalizeIndexedMeetingAiSummary', () => {
   });
 });
 
+describe('resolveMeetingOwner', () => {
+  it('normalizes a valid owner to the display shape, keeping profile_picture', () => {
+    const meeting = {
+      owner: { user_id: 'u-1', name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' },
+    } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toEqual({
+      name: 'Ada Lovelace',
+      username: 'alovelace',
+      email: 'ada@example.com',
+      profile_picture: 'https://x/a.jpg',
+    });
+  });
+
+  it('omits profile_picture when the owner has none', () => {
+    const meeting = { owner: { name: 'Ada', username: 'ada', email: 'ada@example.com' } } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
+  });
+
+  it('returns null for a zero-valued owner (meeting predates the field)', () => {
+    const meeting = { owner: { user_id: '', name: '', username: '', email: '', profile_picture: '' } } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toBeNull();
+  });
+
+  it('returns null for service-account owners — ITX defaults owner to the creator, so webhook meetings get zoom.webhooks', () => {
+    expect(resolveMeetingOwner({ owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } } as Meeting)).toBeNull();
+    expect(resolveMeetingOwner({ owner: { name: '', username: '', email: 'zoom.events@zoom.us' } } as Meeting)).toBeNull();
+  });
+
+  it('returns null when the owner is missing entirely', () => {
+    expect(resolveMeetingOwner({} as Meeting)).toBeNull();
+    expect(resolveMeetingOwner(null)).toBeNull();
+    expect(resolveMeetingOwner(undefined)).toBeNull();
+  });
+});
+
 describe('resolveMeetingOrganizer', () => {
+  it('prefers the owner over a human created_by', () => {
+    const meeting = {
+      owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(resolveMeetingOrganizer(meeting)?.name).toBe('Grace Hopper');
+  });
+
+  it('prefers the owner over the host fallback', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Alan', last_name: 'Turing', host: true }];
+
+    expect(resolveMeetingOrganizer(meeting, hosts)?.name).toBe('Grace Hopper');
+  });
+
+  it('falls back to created_by when the owner is zero-valued or a service account', () => {
+    const zeroValued = {
+      owner: { user_id: '', name: '', username: '', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+    const serviceOwner = {
+      owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(resolveMeetingOrganizer(zeroValued)?.name).toBe('Ada Lovelace');
+    expect(resolveMeetingOrganizer(serviceOwner)?.name).toBe('Ada Lovelace');
+  });
+
   it('returns created_by when it is a real human', () => {
     const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' } } as Meeting;
 
@@ -546,6 +615,41 @@ describe('collectMeetingOrganizers', () => {
   it('returns an empty array when nothing resolves', () => {
     expect(collectMeetingOrganizers({} as Meeting)).toEqual([]);
     expect(collectMeetingOrganizers({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toEqual([]);
+  });
+
+  it('shows the owner as the sole organizer instead of created_by — ownership transfer replaces the creator slot', () => {
+    const meeting = {
+      owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' }]);
+  });
+
+  it('folds the owner in before hosts when it is not among them', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true }];
+
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
+  });
+
+  it('does not duplicate the owner when they are also a host', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [
+      { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
+      { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
+    ];
+
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Alan Turing', 'Grace Hopper']);
+  });
+
+  it('falls back to created_by as primary when the owner is zero-valued', () => {
+    const meeting = {
+      owner: { user_id: '', name: '', username: '', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
   });
 });
 
@@ -672,6 +776,21 @@ describe('isMeetingOrganizedByViewer', () => {
     const hosts = [{ first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true }];
     expect(isMeetingOrganizedByViewer(meetingBy(ada), 'ghopper', hosts)).toBe(true);
     expect(isMeetingOrganizedByViewer(meetingBy(ada), 'alovelace', hosts)).toBe(true);
+  });
+
+  it('matches the owner, and a transferred meeting no longer matches its original creator', () => {
+    const transferred = meetingBy(ada, { owner: grace });
+
+    expect(isMeetingOrganizedByViewer(transferred, 'ghopper')).toBe(true);
+    // Owner replaces the creator slot — after transfer the original creator drops out of the filter.
+    expect(isMeetingOrganizedByViewer(transferred, 'alovelace')).toBe(false);
+  });
+
+  it('does not match a service-account owner and falls back to created_by matching', () => {
+    const webhookOwned = meetingBy(ada, { owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } });
+
+    expect(isMeetingOrganizedByViewer(webhookOwned, 'zoom.webhooks')).toBe(false);
+    expect(isMeetingOrganizedByViewer(webhookOwned, 'alovelace')).toBe(true);
   });
 
   it('agrees with the chip: the filter matches exactly when the chip renders an "Organized by you" entry', () => {

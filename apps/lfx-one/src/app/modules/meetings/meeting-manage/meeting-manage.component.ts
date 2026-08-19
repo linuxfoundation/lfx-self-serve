@@ -33,7 +33,9 @@ import {
   ImportantLinkFormValue,
   Meeting,
   MeetingAttachment,
+  MeetingOwnerInput,
   MeetingRegistrant,
+  MeetingUserInfo,
   PendingAttachment,
   PresignAttachmentResponse,
   RegistrantPendingChanges,
@@ -51,6 +53,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  resolveMeetingOwner,
   sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
@@ -135,6 +138,10 @@ export class MeetingManageComponent {
   public meetingId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
   public originalStartTime = signal<string | null>(null);
+  // Owner hydrated from the loaded meeting (edit mode). prepareOwnerData() compares against this
+  // to omit the owner key when the picker is untouched — upstream replaces owner as a whole
+  // object, so re-sending an unchanged owner would silently drop its stored profile_picture.
+  private hydratedOwner: MeetingUserInfo | null = null;
   public registrantUpdates = signal<RegistrantPendingChanges>({
     toAdd: [],
     toUpdate: [],
@@ -603,6 +610,35 @@ export class MeetingManageComponent {
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: sanitizeMeetingCommittees(formValue.committees),
+      ...this.prepareOwnerData(formValue),
+    };
+  }
+
+  // Includes `owner` only when the picker was actually used. Empty controls → key omitted
+  // (create: upstream defaults owner to the creator; update: stored owner is preserved).
+  // An edit whose picker still matches the hydrated owner also omits the key, so upstream
+  // keeps the stored owner object intact — including its profile_picture, which the form
+  // never carries (UserSearchResult has no avatar field).
+  private prepareOwnerData(formValue: any): { owner?: MeetingOwnerInput } {
+    const username = (formValue.ownerUsername || '').trim();
+    const name = (formValue.ownerName || '').trim();
+    const email = (formValue.ownerEmail || '').trim();
+
+    if (!username && !name && !email) {
+      return {};
+    }
+
+    const hydrated = this.hydratedOwner;
+    if (hydrated && hydrated.username === username && hydrated.name === name && hydrated.email === email) {
+      return {};
+    }
+
+    return {
+      owner: {
+        ...(username ? { username } : {}),
+        ...(name ? { name } : {}),
+        ...(email ? { email } : {}),
+      },
     };
   }
 
@@ -1052,6 +1088,11 @@ export class MeetingManageComponent {
       }
     }
 
+    // Hydrate the owner picker from the stored owner; zero-valued and service-account owners
+    // resolve to null, so the picker shows empty and prepareOwnerData() omits the key on save.
+    const ownerInfo = resolveMeetingOwner(meeting);
+    this.hydratedOwner = ownerInfo;
+
     this.form().patchValue({
       title: meeting.title,
       description: meeting.description,
@@ -1061,6 +1102,9 @@ export class MeetingManageComponent {
       duration: meeting.duration || DEFAULT_DURATION,
       timezone: meeting.timezone || getUserTimezone(),
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
+      ownerUsername: ownerInfo?.username || null,
+      ownerName: ownerInfo?.name || null,
+      ownerEmail: ownerInfo?.email || null,
       isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
       visibility: meeting.visibility || MeetingVisibility.PRIVATE,
       restricted: meeting.restricted ?? false,
@@ -1228,6 +1272,11 @@ export class MeetingManageComponent {
         customDuration: new FormControl(''),
         timezone: new FormControl(getUserTimezone(), [Validators.required]),
         early_join_time_minutes: new FormControl(DEFAULT_EARLY_JOIN_TIME, [Validators.min(MIN_EARLY_JOIN_TIME), Validators.max(MAX_EARLY_JOIN_TIME)]),
+        // Optional meeting organizer (owner). No profile_picture control — UserSearchResult
+        // carries no avatar; upstream keeps the stored one when the owner key is omitted.
+        ownerUsername: new FormControl<string | null>(null),
+        ownerName: new FormControl<string | null>(null),
+        ownerEmail: new FormControl<string | null>(null),
         isRecurring: new FormControl(false),
         recurrenceType: new FormControl('none'),
         patternTypeUI: new FormControl('weekly'),
