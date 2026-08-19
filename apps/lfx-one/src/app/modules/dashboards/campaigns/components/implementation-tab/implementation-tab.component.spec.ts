@@ -763,9 +763,11 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * round-trip case here ends with a NON-EMPTY list, so a length-guarded restore passed all of
    * them. Verified by mutation — introducing exactly that fallback left the whole suite green.
    *
-   * `canSubmit()` is asserted too, because an empty list is only safe if it BLOCKS the create. A
-   * restore that silently refilled it would also silently re-enable dispatch to geos the operator
-   * had removed, which is the money-shaped version of this bug.
+   * Deliberately does NOT assert `canSubmit()` here. This suite never resolves
+   * `getLinkedInAccounts`, so the catalog stays empty and the account-membership gate holds
+   * `canSubmit()` false on its own — an assertion here passed even with the geo gate deleted
+   * outright, which makes it a claim about nothing. The geo gate gets its own test in the account
+   * suite below, where a stubbed catalog lets it be the only failing condition.
    */
   it('keeps an emptied geo list empty after a tab round-trip', async () => {
     const first = await mount(null);
@@ -781,7 +783,6 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
     // NOT the brief's [US] recommendation, which is what a length-guarded restore would produce.
     expect(at(second.fixture).linkedInGeoTargets()).toEqual([]);
-    expect((second.fixture.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
   });
 
   it('keeps a chosen ad account after a tab round-trip', async () => {
@@ -1028,6 +1029,31 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     makeLinkedInOtherwiseValid(f);
 
     expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
+  });
+
+  /**
+   * The geo gate, isolated — the only place in the suite where it can be.
+   *
+   * `canSubmit` blocks a LinkedIn create with no geo targets, but that gate was covered NOWHERE:
+   * deleting it left all 460 tests green. The round-trip suite cannot cover it, because it never
+   * resolves the account catalog and the membership gate blocks there regardless. Here the
+   * catalog IS stubbed and every other LinkedIn gate is satisfied, so clearing the geo list is
+   * the single failing condition.
+   */
+  it('blocks a linkedin create when the geo target list is empty', async () => {
+    const f = await mount(draftWith(ACCOUNTS[1].accountId));
+    makeLinkedInOtherwiseValid(f);
+    const c = f.componentInstance as unknown as {
+      canSubmit(): boolean;
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    };
+    // Everything satisfied, including a catalog-confirmed account.
+    expect(c.canSubmit()).toBe(true);
+
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([]);
+    f.detectChanges();
+
+    expect(c.canSubmit()).toBe(false);
   });
 
   /** Satisfy every LinkedIn gate EXCEPT the account one, so that gate is the only variable. */
