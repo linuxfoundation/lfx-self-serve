@@ -5,7 +5,7 @@ audience: [all]
 product_area: Trainings
 tags: [trainings, faq, certifications, enrollments]
 last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-19
 intercom_collection: Trainings
 ---
 
@@ -34,6 +34,14 @@ Training enrollment expiry, if applicable, is shown in the LF Training Portal. C
 Yes. Completing certain Linux Foundation training programs qualifies you for LFX badges. After completing your training or certification, you will receive a separate email with instructions on how to claim your digital badge at our partner Acclaim’s website.
 
 If it has been more than 2 days since you received your Pass notification and you still have not received the email from Credly, please be sure to check your spam folder and then contact the LF Education support team in their support portal at <https://trainingsupport.linuxfoundation.org>
+
+## How do I earn and use training reward points?
+
+You earn reward points by completing training and passing certification exams. Your **Total Reward Points** and progress toward your next reward appear on the **Rewards** tab of the Training & Certifications page. See [Training Rewards and Coupons](../rewards/) for how to claim incentives and redeem coupons, or the [Rewards FAQ](https://training.linuxfoundation.org/tux-rewards/) for how points are earned and how long they last.
+
+## How do I redeem a training coupon?
+
+Open the **Rewards** tab on the Training & Certifications page. In the **My Coupons** column, use **Copy Code** to copy an available coupon, or **Redeem** to redeem one using your reward points, then paste the code at checkout on the Linux Foundation training platform. See [Training Rewards and Coupons](../rewards/) for details.
 
 ## Where can I find a list of available training courses?
 
