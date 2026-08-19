@@ -281,9 +281,11 @@
         @if (!ownerManualEntry()) {
           <lfx-user-search
             [form]="form()"
-            searchType="meeting_registrant"
+            searchType="committee_member"
             emailControl="ownerEmail"
             usernameControl="ownerUsername"
+            [displayValue]="selectedOwnerLabel() || null"
+            [showClear]="true"
             inputId="meeting-organizer"
             placeholder="Search for a user..."
             styleClass="w-full"
@@ -329,15 +331,19 @@
             </div>
           </div>
         }
-        @if (selectedOwnerLabel()) {
+        @if (showSavedOwnerRevert()) {
           <div class="mt-1 flex items-center gap-2">
-            <p class="text-sm text-gray-600" data-testid="meeting-details-organizer-selected">Current organizer: {{ selectedOwnerLabel() }}</p>
-            <button type="button" class="text-sm text-primary hover:underline" (click)="clearOwnerSelection()" data-testid="meeting-details-organizer-clear">
-              Clear
+            <p class="text-sm text-gray-600" data-testid="meeting-details-organizer-saved">
+              Saved organizer: {{ savedOwnerLabel() }} — clearing reverts to this.
+            </p>
+            <button type="button" class="text-sm text-primary hover:underline" (click)="clearOwnerSelection()" data-testid="meeting-details-organizer-revert">
+              Revert
             </button>
           </div>
         }
-        <p class="mt-1 text-sm text-gray-500">Defaults to the meeting creator. Clearing this field won't remove a saved organizer.</p>
+        @if (!savedOwner()) {
+          <p class="mt-1 text-sm text-gray-500">Defaults to the meeting creator.</p>
+        }
       </div>
 
       <!-- Future Date/Time validation error -->

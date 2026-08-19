@@ -9,15 +9,17 @@
  *     owner (meetings predating the field) falls back to the human created_by.
  *   - The "Organized by me" filter follows ownership: a meeting owned by the viewer matches even
  *     when someone else created it, and a meeting the viewer created but transferred away does not.
- *   - The edit wizard's Meeting Details step surfaces the saved owner ("Current organizer: ...");
- *     an untouched save omits the `owner` key entirely so upstream preserves the stored owner
- *     (including profile_picture, which the form never carries).
- *   - Picking a user in the organizer field sends `owner: {username, name, email}` on update.
- *   - The search pool only covers indexed meeting registrants, so the picker's "Enter details
- *     manually" affordance lets any name/email be set as owner; manual entry sends
+ *   - The edit wizard's Meeting Details step renders the saved owner directly in the organizer
+ *     search box (as "Name (email)"); an untouched save omits the `owner` key entirely so upstream
+ *     preserves the stored owner (including profile_picture, which the form never carries).
+ *   - Picking a user in the organizer field sends `owner: {username, name, email}` on update, and
+ *     the box re-renders to show the freshly picked name/email instead of the previous selection.
+ *   - The search pool is the same committee-member directory Invite Guests uses; the picker's
+ *     "Enter details manually" affordance still covers anyone outside it. Manual entry sends
  *     `owner: {name, email}` (no username) and an invalid email blocks the step.
- *   - The Clear affordance empties a picked/saved owner selection; the following save omits the
- *     `owner` key (create reverts to the creator default; edit keeps the stored owner).
+ *   - Clearing (in-field ⊗ or the "Revert" button) restores the saved owner rather than emptying
+ *     the field — upstream has no owner-removal path, so the following save still omits the
+ *     `owner` key (create flow with no saved owner instead empties every control).
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -50,7 +52,8 @@ const PROJECT_SLUG = 'owner-e2e-project';
 const PROJECT_NAME = 'Owner E2E Project';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000e001';
 
-// UserSearchResult shape returned by GET /api/search/users (no avatar field).
+// UserSearchResult shape returned by GET /api/search/users for the committee_member pool the
+// organizer picker now searches (no avatar field).
 const PICKED_USER = {
   uid: 'user-e2e-owner-1',
   email: OWNER.email,
@@ -59,7 +62,8 @@ const PICKED_USER = {
   username: OWNER.username,
   job_title: null,
   organization: null,
-  type: 'meeting_registrant',
+  committee: null,
+  type: 'committee_member',
 };
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
@@ -391,13 +395,17 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await stubWizardContext(page);
   });
 
-  test('shows the saved owner on the details step and an untouched save omits the owner key', async ({ page }) => {
+  test('renders the saved owner directly in the box and an untouched save omits the owner key', async ({ page }) => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
 
     await gotoEditPage(page);
     await openDetailsStep(page);
 
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
+    // The box is the single source of display truth — hydration renders "Name (email)" directly,
+    // no separate confirmation line needed.
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    // Untouched picker → no saved/current mismatch → the revert row stays hidden.
+    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
 
     await saveFromDetailsStep(page);
 
@@ -406,26 +414,33 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
   });
 
-  test('clearing a saved owner empties the selection and the save omits the owner key', async ({ page }) => {
+  test('reverting a fresh pick restores the saved owner in the box and the save omits the owner key', async ({ page }) => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
+    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
     await gotoEditPage(page);
     await openDetailsStep(page);
 
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
-    // The picker's own input seeds from ownerEmail on init (user-search's sync effect)…
-    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(OWNER.email);
-    await page.getByTestId('meeting-details-organizer-clear').click();
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toHaveCount(0);
-    // …and Clear must reset it too, not just the form controls, so the field doesn't keep
-    // displaying the cleared owner's email.
-    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue('');
+    const input = page.getByTestId('meeting-details-organizer-search').locator('input');
+    await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+
+    // Pick a different organizer — the box re-renders with the fresh pick, and the saved-owner row
+    // appears since the picker now disagrees with the saved baseline.
+    await input.fill('Grace');
+    await page.getByRole('option').filter({ hasText: OWNER.name }).click();
+    await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    await expect(page.getByTestId('meeting-details-organizer-saved')).toContainText(`Saved organizer: ${OWNER.name} (${OWNER.email})`);
+
+    // Revert restores the saved owner and hides the row again.
+    await page.getByTestId('meeting-details-organizer-revert').click();
+    await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
 
     await saveFromDetailsStep(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
-    // Cleared controls → key omitted → upstream keeps the stored owner (the helper text documents
-    // that clearing does not unset a saved organizer).
+    // Reverted controls match the hydrated baseline → key omitted → upstream keeps the stored
+    // owner (there is no owner-removal path upstream, hence revert rather than empty).
     expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
   });
 
@@ -436,12 +451,14 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await gotoEditPage(page);
     await openDetailsStep(page);
 
-    // No saved owner → no hydration label until a user is picked.
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toHaveCount(0);
+    // No saved owner → box starts empty.
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue('');
 
     await page.getByTestId('meeting-details-organizer-search').locator('input').fill('Grace');
     await page.getByRole('option').filter({ hasText: OWNER.name }).click();
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    // No saved owner to compare against, so no revert row even though a pick was made.
+    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
 
     await saveFromDetailsStep(page);
 
@@ -449,11 +466,34 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     expect((captured.put as Record<string, unknown>)['owner']).toEqual({ username: OWNER.username, name: OWNER.name, email: OWNER.email });
   });
 
+  test('clearing with no saved owner empties the box and the save omits the owner key', async ({ page }) => {
+    const captured = await stubMeetingEdit(page, buildEditMeeting());
+    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
+
+    await gotoEditPage(page);
+    await openDetailsStep(page);
+
+    const input = page.getByTestId('meeting-details-organizer-search').locator('input');
+    await input.fill('Grace');
+    await page.getByRole('option').filter({ hasText: OWNER.name }).click();
+    await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+
+    // In-field clear on a create-style (no saved-owner) edit empties the box outright — there's
+    // nothing to revert to.
+    await page.getByTestId('meeting-details-organizer-search').locator('.p-autocomplete-clear-icon').click();
+    await expect(input).toHaveValue('');
+
+    await saveFromDetailsStep(page);
+
+    await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
+    expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
+  });
+
   test('manual entry sends owner {name, email} without a username on update', async ({ page }) => {
     const MANUAL_OWNER = { name: 'Radia Perlman', email: 'radia-e2e@example.com' };
     const captured = await stubMeetingEdit(page, buildEditMeeting());
-    // The wanted person is not among the indexed registrants — the results list shows someone
-    // else, and the overlay's "Enter details manually" footer is the way out (the Bugbot case).
+    // The wanted person is not among the committee members returned — the results list shows
+    // someone else, and the overlay's "Enter details manually" footer is the way out.
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
     await gotoEditPage(page);
@@ -477,9 +517,6 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await expect(nextButton).toBeDisabled();
     await emailInput.fill(MANUAL_OWNER.email);
     await expect(nextButton).toBeEnabled();
-
-    // The organizer label reacts to the typed values just like a search pick.
-    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${MANUAL_OWNER.name} (${MANUAL_OWNER.email})`);
 
     await saveFromDetailsStep(page);
 

@@ -33,6 +33,15 @@ export class UserSearchComponent {
   public organizationWebsiteControl = input<string>();
   public usernameControl = input<string>();
 
+  // Parent-composed committed label (e.g. "Name (email)"). When supplied, this becomes the single
+  // source of truth for the input box's text — hydration, selection, and clear all render through
+  // it instead of the box blanking itself after a pick. Consumers that don't supply it (e.g.
+  // registrant-form) keep today's behavior: seed-from-email on hydrate, blank-on-select.
+  public displayValue = input<string | null>(null);
+  // Forwarded to lfx-autocomplete's [showClear]. Only meaningful alongside displayValue — without
+  // a committed label to restore, an in-field clear icon would just blank the box permanently.
+  public showClear = input<boolean>(false);
+
   // UI customization inputs
   public placeholder = input<string>('Search users...');
   public styleClass = input<string>();
@@ -93,8 +102,23 @@ export class UserSearchComponent {
       initialValue: [],
     });
 
-    // Effect to sync the search input with the parent form's email control if provided
+    // Effect to keep the input box in sync with the parent-composed committed label. Writes both
+    // ways: a non-null label renders it (hydration or a fresh pick), and null clears the box —
+    // callers that want a revert-on-clear pass the saved label back through this same input rather
+    // than leaving the box empty.
     effect(() => {
+      const label = this.displayValue();
+      this.userSearchForm.get('userSearch')?.setValue(label ?? '', { emitEvent: false });
+    });
+
+    // Fallback for consumers that don't supply displayValue (e.g. registrant-form): seed the box
+    // from the parent form's email control on hydrate, but never clear it — this consumer's
+    // onUserSelected() still blanks the box itself after a pick.
+    effect(() => {
+      if (this.displayValue() !== null) {
+        return;
+      }
+
       const parentForm = this.form();
       const emailControlName = this.emailControl();
 
@@ -161,11 +185,31 @@ export class UserSearchComponent {
       parentForm.get(usernameControlName)?.setValue(selectedUser.username || null);
     }
 
-    // Clear the search field to show that selection is complete
-    this.userSearchForm.get('userSearch')?.setValue('', { emitEvent: false });
+    // Consumers driving displayValue re-render the box via that input once the parent's controls
+    // (patched above) flow back into its computed label — blanking here would just flash empty
+    // first. Consumers without displayValue still clear immediately, per today's behavior.
+    if (this.displayValue() === null) {
+      this.userSearchForm.get('userSearch')?.setValue('', { emitEvent: false });
+    }
 
     // Emit the selected user - parent component will handle showing individual fields
     this.onUserSelect.emit(selectedUser);
+  }
+
+  // Only meaningful alongside displayValue: arbitrary typed text that was never selected (or
+  // stale text left after a blur without a pick) shouldn't linger — snap back to the committed
+  // label. Consumers without displayValue don't get an onBlur binding in the template, so this
+  // never fires for them.
+  public onSearchBlur(): void {
+    const label = this.displayValue();
+    if (label === null) {
+      return;
+    }
+
+    const current = this.userSearchForm.get('userSearch')?.value ?? '';
+    if (current !== label) {
+      this.userSearchForm.get('userSearch')?.setValue(label, { emitEvent: false });
+    }
   }
 
   public onSearchClear(): void {
