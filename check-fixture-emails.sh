@@ -32,12 +32,16 @@ denylisted_domains=(
 
 denylist_pattern=$(printf '%s\n' "${denylisted_domains[@]}" | sed 's/\./\\./g' | paste -sd '|' -)
 
-# -M/-C detect renames/copies, but --diff-filter=ACMR still needs R explicit alongside them so a
-# rename-with-edits (which git may classify as R rather than M) isn't skipped from the file list.
+# -M detects renames (--diff-filter=ACMR still needs R explicit alongside it so a rename-with-edits,
+# which git may classify as R rather than M, isn't skipped from the file list). Deliberately NOT
+# passing -C (copy detection): a new fixture git considers a "copy" of an existing file is shown
+# with only its edited lines as a diff hunk — any denylisted email copied unchanged would never
+# appear as an added "+" line and would slip past the added-lines-only scan below. Without -C, a
+# new file is classified as a plain add and its full content shows up as added lines instead.
 if [ -n "${base_ref}" ]; then
-  diff_args=(-M -C --diff-filter=ACMR "${base_ref}...HEAD")
+  diff_args=(-M --diff-filter=ACMR "${base_ref}...HEAD")
 else
-  diff_args=(-M -C --diff-filter=ACMR --cached)
+  diff_args=(-M --diff-filter=ACMR --cached)
 fi
 
 changed_files=$(git diff "${diff_args[@]}" --name-only | grep -E '\.(spec\.ts|fixture\.ts|ndjson)$')

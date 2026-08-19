@@ -29,9 +29,26 @@ jobs:
 
       - name: Check fixture emails for real customer/vendor PII
         run: |
-          base_ref="${{ github.event.pull_request.base.ref || 'main' }}"
-          git fetch origin "${base_ref}" --depth=1
-          ./check-fixture-emails.sh "origin/${base_ref}"
+          # Pick the correct pre-change commit per event: for pull_request/merge_group this is the
+          # target base, NOT the current branch tip — on a push/merge_group run, "main" already
+          # points at the just-pushed commit, so diffing origin/main against HEAD would be empty
+          # and the guard would silently no-op on every direct or automated push.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            base_sha="${{ github.event.merge_group.base_sha }}"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            base_sha="${{ github.event.before }}"
+          else
+            base_sha=""
+          fi
+
+          if [ -z "${base_sha}" ]; then
+            echo "No pre-change commit available for this event (e.g. first push to a new branch) — skipping."
+            exit 0
+          fi
+
+          ./check-fixture-emails.sh "${base_sha}"
 
       - name: Enable Corepack
         run: corepack enable
