@@ -400,7 +400,10 @@ export class NewsletterManageComponent {
     () =>
       this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
   );
-  // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
+  // Same gates as canSend (including the block-composer bodyRendered/!isDirty gates
+  // so a scheduled send can't arm on stale, unrendered server-derived body_html —
+  // runSchedule also forces a save+render via ensureSaved$, so this is the UI-side
+  // half of that guarantee), plus a valid armable time. scheduleWindowError() covers
   // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
   // sendMode to 'now' (see initSchedulePastGuard), so it should never surface here.
   public readonly canSchedule = computed(
@@ -408,7 +411,9 @@ export class NewsletterManageComponent {
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
+      this.bodyRendered() &&
       this.bodyFilled() &&
+      !this.isDirty() &&
       this.hasContext() &&
       !this.submitting() &&
       !this.resolvingSend() &&
