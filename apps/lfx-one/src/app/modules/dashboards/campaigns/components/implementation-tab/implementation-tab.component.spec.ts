@@ -979,6 +979,64 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * dispatches the stale value. Clearing is the honest outcome: the create then fails upstream on
    * a blank account rather than silently spending against someone else's.
    */
+  /**
+   * The two windows `ngOnInit`'s reconciliation cannot cover.
+   *
+   * It only runs on a SUCCESSFUL response, so a restored id sits unverified on the form both
+   * before the request returns and permanently if it fails — with `linkedInAccounts()` empty in
+   * each case. Without a submit gate a create would dispatch an account nothing confirmed and the
+   * selector is not showing, which is the divergence the reconciliation exists to prevent,
+   * reached where it does not run.
+   *
+   * `canSubmit` therefore requires catalog MEMBERSHIP rather than a non-empty id.
+   */
+  it('blocks a linkedin create while the account catalog is still loading', async () => {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    // Deliberately do NOT release accountsSubject: the fetch is still in flight.
+
+    makeLinkedInOtherwiseValid(f);
+
+    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
+  });
+
+  it('keeps a linkedin create blocked when the account fetch fails', async () => {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    f.componentRef.setInput('draft', draftWith(ACCOUNTS[1].accountId));
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    // A failed fetch leaves loading false with an empty catalog — the worst case, because
+    // nothing further will ever arrive to correct the restored id.
+    accountsSubject.error(new Error('ad-account endpoint unavailable'));
+    f.detectChanges();
+    await f.whenStable();
+
+    makeLinkedInOtherwiseValid(f);
+
+    expect((f.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
+  });
+
+  /** Satisfy every LinkedIn gate EXCEPT the account one, so that gate is the only variable. */
+  function makeLinkedInOtherwiseValid(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = f.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      linkedInVariants: { set(v: unknown[]): void };
+    };
+    c.selectedPlatforms.set(['linkedin-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    c.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    f.detectChanges();
+  }
+
   it('clears a restored account when the catalog comes back empty', async () => {
     // A SUCCESSFUL response that happens to carry no accounts, released after the restore.
     const f = await mount(draftWith(ACCOUNTS[1].accountId), []);

@@ -416,6 +416,19 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    // The account must be one the CATALOG confirms, not merely a non-empty string.
+    //
+    // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
+    // windows either side of it: before the request returns, and permanently if it fails. In both
+    // the restored id is still on the form while `linkedInAccounts()` is empty, so a create would
+    // dispatch an account nothing has verified and the selector is not displaying — the same
+    // divergence the reconciliation closes, reached where it does not run.
+    //
+    // Membership is the test rather than "loading finished", because a failed fetch leaves
+    // loading false with an empty catalog, which is exactly when this matters most. It also
+    // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
+    // Reddit-only create is unaffected by an ad-account endpoint being down.
+    if (linkedInSelected && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId())) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
