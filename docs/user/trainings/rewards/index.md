@@ -4,6 +4,7 @@ description: View your reward points, claim incentives, and redeem coupons for L
 audience: [all]
 product_area: Trainings
 tags: [trainings, rewards, coupons, points, certifications]
+last_generated: 2026-08-19
 last_updated: 2026-08-19
 intercom_collection: Trainings
 ---
