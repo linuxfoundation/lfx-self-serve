@@ -28,6 +28,16 @@ export const FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY = 8;
 export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH = 3;
 
 /**
+ * Maximum number of sub-foundations {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}'s walk
+ * will discover in total, across the whole tree, before it stops recursing further branches.
+ * The depth cap alone doesn't bound worst-case fan-out: selecting a true umbrella foundation
+ * (e.g. The Linux Foundation itself) as the page's foundation context can have dozens of direct
+ * `computeIsFoundation` children, each contributing its own Snowflake query and rendered table.
+ * This caps the total Snowflake fan-out (and rendered sections) regardless of tree breadth.
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES = 40;
+
+/**
  * Empty-state fallback for the Foundation Projects page's grouped detail request —
  * mirrors {@link DEFAULT_FOUNDATION_PROJECTS_DETAIL}'s role for the flat drawer endpoint.
  */

@@ -33,8 +33,26 @@ vi.mock('@lfx-one/shared/constants', () => ({
   PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
   PROJECT_HEALTH_SCORE_CATEGORIES: [],
   ROOT_PROJECT_SLUG: 'root',
+  // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
+  // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
+  // actual numeric thresholds — not the arbitrary values a bare stub would produce.
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
 }));
-vi.mock('@lfx-one/shared/enums', () => ({}));
+vi.mock('@lfx-one/shared/enums', () => ({
+  // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
+  // runtime, so tests exercising the public/Active visibility gate need the actual string values.
+  ProjectStage: {
+    FormationExploratory: 'Formation - Exploratory',
+    FormationEngaged: 'Formation - Engaged',
+    FormationOnHold: 'Formation - On Hold',
+    FormationDisengaged: 'Formation - Disengaged',
+    FormationConfidential: 'Formation - Confidential',
+    Active: 'Active',
+    Archived: 'Archived',
+    Prospect: 'Prospect',
+  },
+}));
 // computeIsFoundation and summarizeWriterGrants are pulled in from the REAL implementation
 // (not hand-copied) so foundation-classification drift — e.g. a change to computeIsFoundation's
 // Membership/stage rules — fails these tests too. summarizeWriterGrants's own `writer === true`
@@ -1081,5 +1099,129 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
 
     expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
     expect(result.totalCount).toBe(1);
+  });
+
+  it('excludes a discovered sub-foundation from its parent group instead of double-rendering it as a leaf row', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    execute
+      // The cube rolls NeoNephos up under lfeurope's own detail, so the raw root row includes it.
+      .mockResolvedValueOnce({
+        rows: [
+          { PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' },
+          { PROJECT_ID: 'sub-uid', PROJECT_NAME: 'NeoNephos', PROJECT_SLUG: 'neonephos' },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p2', PROJECT_NAME: 'Nephio', PROJECT_SLUG: 'nephio' }] });
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    const rootGroup = result.groups.find((group) => group.foundationSlug === 'lfeurope');
+    expect(rootGroup?.projects.map((p) => p.projectSlug)).toEqual(['envoy']);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('propagates a root foundation detail-fetch failure instead of degrading gracefully', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    execute.mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    await expect(service.getFoundationProjectsDetailGrouped(req, 'lfeurope')).rejects.toThrow('snowflake unavailable');
+  });
+});
+
+describe('ProjectService — discoverSubFoundations', () => {
+  let service: ProjectService;
+
+  /** Minimal fixture satisfying computeIsFoundation AND the stricter public+Active gate. */
+  function foundation(uid: string, slug: string, name: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug,
+      name,
+      public: true,
+      stage: 'Active',
+      legal_entity_type: 'Corporation',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: ['Membership'],
+      ...overrides,
+    } as Project;
+  }
+
+  /** Wires proxyRequest so each `parent: project:<uid>` query resolves to `childrenByParent[uid]` (default: empty page). */
+  function mockChildrenByParent(childrenByParent: Record<string, Project[]>): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      return Promise.resolve(pageOf(childrenByParent[parentUid] ?? []));
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('recurses into a discovered sub-foundation to find its own nested sub-foundations', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid');
+
+    expect(result).toEqual([
+      { uid: 'n1-uid', slug: 'n1-slug', name: 'N1' },
+      { uid: 'n2-uid', slug: 'n2-slug', name: 'N2' },
+    ]);
+  });
+
+  it('stops at the depth cap without fetching the capped level’s own children', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    const n3 = foundation('n3-uid', 'n3-slug', 'N3');
+    const n4 = foundation('n4-uid', 'n4-slug', 'N4');
+    mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2], 'n2-uid': [n3], 'n3-uid': [n4] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid');
+
+    // n4 is never discovered: reaching it would require fetching n3's children at depth 3,
+    // which FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH (3) blocks.
+    expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug', 'n3-slug']);
+    expect(proxyRequest).not.toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', expect.objectContaining({ parent: 'project:n3-uid' }));
+  });
+
+  it('stops discovering once the total node cap is reached, regardless of remaining siblings', async () => {
+    const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`));
+    mockChildrenByParent({ 'root-uid': children });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid');
+
+    // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) caps the total regardless of the 41st sibling existing.
+    expect(result).toHaveLength(40);
+    expect(result[39].slug).toBe('c40-slug');
+  });
+
+  it('excludes non-public and non-Active projects even when they satisfy computeIsFoundation', async () => {
+    const publicActive = foundation('a-uid', 'a-slug', 'A');
+    const privateActive = foundation('b-uid', 'b-slug', 'B', { public: false });
+    const publicFormationEngaged = foundation('c-uid', 'c-slug', 'C', { stage: 'Formation - Engaged' });
+    const notAFoundation = foundation('d-uid', 'd-slug', 'D', { funding: 'Unfunded' as ProjectFunding, funding_model: [] });
+    mockChildrenByParent({ 'root-uid': [publicActive, privateActive, publicFormationEngaged, notAFoundation] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid');
+
+    expect(result).toEqual([{ uid: 'a-uid', slug: 'a-slug', name: 'A' }]);
+  });
+
+  it('does not abort the whole traversal when a single branch’s children fetch fails', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'root-uid') return Promise.resolve(pageOf([n1, n2]));
+      if (parentUid === 'n1-uid') return Promise.reject(new Error('upstream unavailable'));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid');
+
+    expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
   });
 });

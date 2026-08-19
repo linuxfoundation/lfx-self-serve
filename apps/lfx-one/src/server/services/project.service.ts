@@ -7,6 +7,7 @@ import {
   getYearForRange,
   EMAIL_CAMPAIGN_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -16,7 +17,7 @@ import {
   PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
+import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
   BoardMeetingInviteeRow,
   BoardMeetingParticipationSummaryResponse,
@@ -2001,31 +2002,45 @@ export class ProjectService {
 
     const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
     const subFoundations = await this.discoverSubFoundations(req, rootProject.uid);
+    // Every discovered sub-foundation gets its own group/section below, so strip its row out of
+    // whichever parent's detail list it also shows up in (the cube rolls up direct children) —
+    // otherwise it renders both as a leaf project row and as a section header (GH-1607 review).
+    const subFoundationSlugs = new Set(subFoundations.map(({ slug }) => slug));
 
-    const foundationsToFetch = [
-      { uid: rootProject.uid, slug: rootProject.slug, name: rootProject.name },
-      ...subFoundations.map(({ uid, slug, name }) => ({ uid, slug, name })),
-    ];
+    // The root query is not allowed to degrade gracefully like a sub-foundation branch can: a
+    // failed root means no reliable root group to anchor the frontend's grouping fallback, so
+    // let it throw and propagate to the caller instead of returning an incomplete 200 (GH-1607 review).
+    const rootDetail = await this.getFoundationProjectsDetail(rootProject.slug);
+    const rootGroup: FoundationProjectsDetailGroup = {
+      foundationSlug: rootProject.slug,
+      foundationName: rootProject.name,
+      foundationUid: rootProject.uid,
+      projects: rootDetail.projects
+        .filter((project) => !subFoundationSlugs.has(project.projectSlug))
+        .map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name })),
+    };
 
-    const groupResults = await Promise.allSettled(
-      foundationsToFetch.map(async ({ uid, slug, name }) => {
+    const subResults = await Promise.allSettled(
+      subFoundations.map(async ({ uid, slug, name }) => {
         const detail = await this.getFoundationProjectsDetail(slug);
         return {
           foundationSlug: slug,
           foundationName: name,
           foundationUid: uid,
-          projects: detail.projects.map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
+          projects: detail.projects
+            .filter((project) => !subFoundationSlugs.has(project.projectSlug))
+            .map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
         };
       })
     );
 
-    const groups: FoundationProjectsDetailGroup[] = [];
-    for (const [index, result] of groupResults.entries()) {
+    const groups: FoundationProjectsDetailGroup[] = [rootGroup];
+    for (const [index, result] of subResults.entries()) {
       if (result.status === 'fulfilled') {
         groups.push(result.value);
       } else {
-        logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a foundation, omitting it from the response', {
-          foundation_slug: foundationsToFetch[index].slug,
+        logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
+          foundation_slug: subFoundations[index].slug,
           error: result.reason instanceof Error ? result.reason.message : String(result.reason),
         });
       }
@@ -7502,13 +7517,24 @@ export class ProjectService {
 
   /**
    * Recursively discovers nested sub-foundations beneath a foundation (or sub-foundation) UID,
-   * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH. A "sub-foundation" is any child
-   * project that itself satisfies `computeIsFoundation` — e.g. NeoNephos under Linux Foundation
-   * Europe. Reuses the same `parent: project:<uid>` query-service filter as
+   * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone
+   * doesn't bound worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux
+   * Foundation itself, whose direct children are dozens of foundations), also capped in total by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter. A "sub-foundation"
+   * is any child project that itself satisfies `computeIsFoundation` AND is public + Active — the
+   * stricter visibility gate (beyond `computeIsFoundation`, which also accepts non-public/
+   * pre-launch `Formation - Engaged` foundations for other, unrelated callers) keeps GH-1607's
+   * exclusion requirement intact for group metadata (slug/name) that gets serialized straight
+   * into the response. Reuses the same `parent: project:<uid>` query-service filter as
    * `getFoundationProjectUids`/`getChildProjects`, but recurses into each discovered
    * sub-foundation instead of stopping at one level.
    */
-  private async discoverSubFoundations(req: Request, parentUid: string, depth: number = 0): Promise<{ uid: string; slug: string; name: string }[]> {
+  private async discoverSubFoundations(
+    req: Request,
+    parentUid: string,
+    depth: number = 0,
+    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES }
+  ): Promise<{ uid: string; slug: string; name: string }[]> {
     if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
       logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
         parent_uid: parentUid,
@@ -7534,11 +7560,23 @@ export class ProjectService {
 
     const subFoundations: { uid: string; slug: string; name: string }[] = [];
     for (const child of children) {
+      if (budget.remaining <= 0) {
+        logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
+          parent_uid: parentUid,
+          depth,
+          max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+        });
+        break;
+      }
       if (child.slug === ROOT_PROJECT_SLUG || !computeIsFoundation(child)) {
         continue;
       }
+      if (!child.public || child.stage !== ProjectStage.Active) {
+        continue;
+      }
       subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
-      const nested = await this.discoverSubFoundations(req, child.uid, depth + 1);
+      budget.remaining -= 1;
+      const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget);
       subFoundations.push(...nested);
     }
     return subFoundations;

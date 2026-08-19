@@ -26,7 +26,7 @@ import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { bufferTime, catchError, combineLatest, filter, finalize, from, map, mergeMap, Observable, of, scan, startWith, switchMap } from 'rxjs';
+import { bufferTime, catchError, combineLatest, filter, finalize, from, map, mergeMap, Observable, of, scan, startWith, switchMap, toArray } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -259,12 +259,17 @@ export class FoundationProjectsComponent {
           if (foundationUids.length === 0) {
             return of(new Map<string, string>());
           }
-          return combineLatest(
-            foundationUids.map((uid) => {
+          // Concurrency-capped like initProjectCounts below — an umbrella foundation can
+          // discover dozens of sub-foundation groups (bounded by
+          // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES on the BFF), so firing one `getProjects`
+          // call per group unbounded could still burst the browser's connection pool and the
+          // BFF's `/api/projects` endpoint at once.
+          return from(foundationUids).pipe(
+            mergeMap((uid) => {
               const params = new HttpParams().set('parent', `project:${uid}`);
               return this.projectService.getProjects(params).pipe(catchError(() => of([])));
-            })
-          ).pipe(
+            }, FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY),
+            toArray(),
             map((subProjectLists) => {
               const slugToUid = new Map<string, string>();
               for (const subProjects of subProjectLists) {
