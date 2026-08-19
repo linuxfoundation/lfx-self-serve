@@ -330,6 +330,7 @@ export class OrgLensPeopleService {
       SELECT EMAIL
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+      LIMIT 1
     `;
     const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, personKey]);
     return result.rows[0]?.EMAIL ?? null;
