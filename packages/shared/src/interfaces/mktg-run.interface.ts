@@ -140,7 +140,10 @@ export interface MktgRunVersion {
 
 /**
  * Browser-persisted record of an agent run for one project — the Guild session
- * plus the intake answers and every generated version.
+ * plus the intake answers and every generated version. Because the record
+ * carries the session's capability `ownerToken`, persistence is explicitly
+ * time-bounded: records older than `MKTG_RUN_STORAGE_TTL_MS` (measured from
+ * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
   /** Catalog agent id. */
@@ -155,6 +158,8 @@ export interface MktgStoredAgentRun {
   answers: Record<string, string>;
   /** Generated versions, oldest first. */
   versions: MktgRunVersion[];
+  /** ISO-8601 timestamp of the last save — the TTL clock for pruning the persisted record. */
+  savedAt: string;
 }
 
 /**

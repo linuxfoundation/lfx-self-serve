@@ -38,6 +38,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       ownerToken: `token-${projectUid}`,
       answers: {},
       versions: [{ version, document: '# Doc', createdAt: '2026-08-19T00:00:00.000Z' }],
+      savedAt: '2026-08-19T00:00:00.000Z',
     };
   }
 

@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
+import { MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import {
   MktgChatRequest,
   MktgChatResponse,
@@ -39,7 +39,9 @@ import { UserService } from './user.service';
  * the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
  * user-keyed invalidation precedent in user.service.ts), so one user's stored
  * session — whose ownerToken is HMAC-bound to their sub — can never be replayed
- * as another's. If a stored session still turns stale (the server 401/403s the
+ * as another's. Persistence is time-bounded (`MKTG_RUN_STORAGE_TTL_MS`): the
+ * record carries the session's capability ownerToken, so expired records are
+ * pruned on load instead of lingering at rest indefinitely. If a stored session still turns stale (the server 401/403s the
  * follow-up), the run drops it and falls back to a fresh session instead of
  * dead-ending the user.
  */
@@ -99,6 +101,17 @@ export class MktgAgentRunService {
       }
       const parsed = JSON.parse(raw) as MktgStoredAgentRun;
       if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.versions) || !parsed.sessionId || !parsed.ownerToken) {
+        return null;
+      }
+      // TTL prune: the persisted record carries the session's capability
+      // ownerToken, so it must not linger at rest indefinitely. Past
+      // MKTG_RUN_STORAGE_TTL_MS (or with an unreadable savedAt — e.g. a record
+      // written before the TTL existed) the record is removed and the user
+      // simply starts a fresh run. The in-memory cache above is exempt: it
+      // only lives for this page session and its token is actively in use.
+      const savedAtMs = Date.parse(parsed.savedAt ?? '');
+      if (Number.isNaN(savedAtMs) || Date.now() - savedAtMs > MKTG_RUN_STORAGE_TTL_MS) {
+        window.localStorage.removeItem(key);
         return null;
       }
       return parsed;
@@ -218,6 +231,7 @@ export class MktgAgentRunService {
       ownerToken: session.ownerToken,
       answers: { ...request.answers },
       versions: [...(stored?.versions ?? []), version],
+      savedAt: new Date().toISOString(),
     };
     this.saveRun(run);
     return run;

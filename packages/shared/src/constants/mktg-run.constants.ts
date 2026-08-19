@@ -79,10 +79,18 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
 };
 
 /** Running-phase stage checklist labels, in order. */
-export const MKTG_RUN_STAGES: string[] = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'];
+export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
+
+/**
+ * TTL for browser-persisted runs. A stored run carries the session's
+ * capability `ownerToken`, so it must not linger at rest indefinitely —
+ * records older than this are pruned on load and the user simply starts a
+ * fresh run. Generous enough to keep same-day/next-day restore working.
+ */
+export const MKTG_RUN_STORAGE_TTL_MS = 86400000;
 
 /** Validated-result polling cadence while a generation is in flight. */
 export const MKTG_RUN_POLL = {

@@ -59,6 +59,8 @@ export class MktgAgentRunComponent {
   private readonly effectiveUser$ = toObservable(this.userService.user);
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  /** Deferred phase-set timer from completeRun — cleared on destroy so no timer outlives the view. */
+  private phaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
@@ -131,6 +133,14 @@ export class MktgAgentRunComponent {
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
 
   public constructor() {
+    // The deferred phase-set timer must not outlive the view (its callback
+    // only writes a signal today, but an unmanaged timer is a foot-gun).
+    this.destroyRef.onDestroy(() => {
+      if (this.phaseTimer !== null) {
+        clearTimeout(this.phaseTimer);
+        this.phaseTimer = null;
+      }
+    });
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
       this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
@@ -396,7 +406,11 @@ export class MktgAgentRunComponent {
     this.feedbackForm.reset();
     // Let the "Validating required sections" stage register before the result
     // lands — but only if a project switch hasn't reset the page meanwhile.
-    setTimeout(() => {
+    if (this.phaseTimer !== null) {
+      clearTimeout(this.phaseTimer);
+    }
+    this.phaseTimer = setTimeout(() => {
+      this.phaseTimer = null;
       if (this.run() === run) {
         this.phase.set('result');
       }
@@ -410,6 +424,10 @@ export class MktgAgentRunComponent {
     if (lowerDoc.includes(label.toLowerCase())) {
       return true;
     }
+    // Fallback: match the heading without the config label's numbering/appendix
+    // prefix ("1. Project Definition" → "Project Definition", "Appendix A:
+    // Document Architecture" → "Document Architecture") — the agent may render
+    // its own numbering, but the section name itself must appear.
     const core = label.replace(/^\d+\.\s*/, '').replace(/^appendix [a-z]:\s*/i, '');
     return lowerDoc.includes(core.toLowerCase());
   }
