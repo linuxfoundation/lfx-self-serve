@@ -11,7 +11,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink } from '@angular/router';
-import type { ClaGroupOption, ClaGroupSearchResponse, GithubAccountOptions, MyClaAgreement, MyClasResponse, SigningIdentityResponse } from '@lfx-one/shared/interfaces';
+import type {
+  ClaGroupOption,
+  ClaGroupSearchResponse,
+  GithubAccountOptions,
+  MyClaAgreement,
+  MyClasResponse,
+  PrepareSignResponse,
+} from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -250,17 +257,20 @@ describe('ProfileClasComponent', () => {
  *
  * Each picker is a dynamic dialog with its own spec; what matters here is the orchestration —
  * that the action is offered only when it can succeed, that the number of linked accounts
- * decides whether a choice is even presented, that the association is recorded before a URL is
- * built from it, and that a refusal ends the flow rather than quietly picking another account.
- * The template is rendered rather than overridden, because whether the action is offered at all
- * is a template condition.
+ * decides whether a choice is even presented, that the address navigated to is the one the CLA
+ * backend returned rather than one assembled here, and that a refusal ends the flow rather than
+ * quietly picking another account. The template is rendered rather than overridden, because
+ * whether the action is offered at all is a template condition.
  */
 describe('ProfileClasComponent — Sign CLA hand-off and account selection (#1251, #1252)', () => {
   const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test', matchTypes: ['project'], organizations: [] };
   const SEARCH_RESULTS: ClaGroupSearchResponse = { searchTerm: 'venus', resultCount: 1, truncated: false, results: [CLA_GROUP] };
   const EMPTY_CLAS: MyClasResponse = { agreements: [], identity: { matchedUserIds: 1, unmatched: false, githubLinked: true } };
   const HOME = 'https://app.dev.lfx.dev/profile/clas';
-  const CONSOLE_URL = 'https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc';
+  /** Composed by the CLA backend and returned on the prepare, never assembled in this app. */
+  const SIGN_URL = 'https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc';
+  /** The CLA backend's own 403 prose — the single string a refusal is explained with (FR-007). */
+  const OWNERSHIP_REFUSAL = 'the provided identity does not belong to the authenticated user';
 
   const ONE_ACCOUNT: GithubAccountOptions = { accounts: [{ githubId: '12345', githubUsername: 'octocat' }] };
   const TWO_ACCOUNTS: GithubAccountOptions = {
@@ -269,12 +279,12 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       { githubId: '67890', githubUsername: 'hubot' },
     ],
   };
-  const BOUND: SigningIdentityResponse = { claUserId: 'u-1', githubId: '12345', githubUsername: 'octocat', redirectUrl: HOME };
+  const PREPARED: PrepareSignResponse = { userId: 'u-1', signUrl: SIGN_URL, githubId: '12345', githubUsername: 'octocat', skippedIdentities: [] };
 
   let location: { href: string };
   let messageAdd: ReturnType<typeof vi.fn>;
   let getGithubAccounts: ReturnType<typeof vi.fn>;
-  let bindSigningIdentity: ReturnType<typeof vi.fn>;
+  let prepareSign: ReturnType<typeof vi.fn>;
   let buildSignUrlFor: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
@@ -286,7 +296,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     options: {
       impersonating?: boolean;
       accounts?: () => Observable<GithubAccountOptions>;
-      bind?: () => Observable<SigningIdentityResponse>;
+      prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
       accountClosesWith?: string | null;
     } = {}
@@ -295,8 +305,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     messageAdd = vi.fn();
     opened = [];
     getGithubAccounts = vi.fn(options.accounts ?? (() => of(TWO_ACCOUNTS)));
-    bindSigningIdentity = vi.fn(options.bind ?? (() => of(BOUND)));
-    buildSignUrlFor = vi.fn(() => CONSOLE_URL);
+    prepareSign = vi.fn(options.prepare ?? (() => of(PREPARED)));
+    // Kept on the stub purely so a regression to client-side URL construction is assertable
+    // rather than a bare TypeError. Production must never reach it (FR-004).
+    buildSignUrlFor = vi.fn(() => SIGN_URL);
 
     open = vi.fn((component: unknown) => {
       opened.push(component);
@@ -335,7 +347,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
             getPdfUrl: vi.fn(),
             getClaGroupOptions: vi.fn(() => of(SEARCH_RESULTS)),
             getGithubAccounts,
-            bindSigningIdentity,
+            prepareSign,
             buildSignUrlFor,
           },
         },
@@ -362,9 +374,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     await fixture.whenStable();
   }
 
-  /** Rejects the binding with the reason code shape the BFF forwards from upstream. */
-  function refusedWith(reason: string): () => Observable<SigningIdentityResponse> {
-    return () => throwError(() => ({ status: 403, error: { upstreamCode: reason } }));
+  /** Rejects the prepare the way the BFF surfaces an upstream refusal: a status and a message. */
+  function refusedWith(status: number, message: string): () => Observable<PrepareSignResponse> {
+    return () => throwError(() => ({ status, error: { error: message, code: status === 403 ? 'FORBIDDEN' : 'UPSTREAM_ERROR' } }));
   }
 
   beforeEach(() => {
@@ -402,7 +414,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     await sign(fixture);
 
     expect(getGithubAccounts).not.toHaveBeenCalled();
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
   });
 
@@ -415,9 +427,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     expect(opened).toContain(GithubAccountSelectComponent);
     expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: TWO_ACCOUNTS.accounts } });
-    // The account number only. The handle is read from the session by the server, so sending
-    // one from here could only ever contradict it.
-    expect(bindSigningIdentity).toHaveBeenCalledWith('12345');
+    // The account number and the confirmed group, and nothing else. The handle and the return
+    // address are the server's to supply, so sending either from here could only contradict it.
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
   });
 
   it('submits the account chosen, not the first one listed', async () => {
@@ -425,7 +437,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    expect(bindSigningIdentity).toHaveBeenCalledWith('67890');
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '67890', claGroupId: 'cg-1' });
   });
 
   it('does not submit an account that is not in the served list', async () => {
@@ -433,22 +445,22 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    // The served list is what establishes the account is the contributor's, since upstream
-    // records what it is sent. An account from anywhere else must never be submitted.
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    // The served list is what this layer matched the pick against; an account from anywhere
+    // else names something the contributor was never shown.
+    expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
   });
 
-  it('skips the choice but still records it when exactly one account is linked', async () => {
+  it('skips the choice but still prepares when exactly one account is linked', async () => {
     const fixture = await setup({ accounts: () => of(ONE_ACCOUNT) });
 
     await sign(fixture);
 
-    // "No picker" must not become "no binding" — dropping the write here would leave the
-    // single-account contributor on the old, order-dependent resolution.
+    // "No picker" must not become "no prepare" — dropping the call here would leave the
+    // single-account contributor with no signing session and no verified identity.
     expect(opened).not.toContain(GithubAccountSelectComponent);
-    expect(bindSigningIdentity).toHaveBeenCalledWith('12345');
-    expect(location.href).toBe(CONSOLE_URL);
+    expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
+    expect(location.href).toBe(SIGN_URL);
   });
 
   it('routes to account linking rather than showing an empty picker when none are linked', async () => {
@@ -457,7 +469,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     await sign(fixture);
 
     expect(opened).not.toContain(GithubAccountSelectComponent);
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/profile/identities']);
     expect(location.href).toBe(HOME);
   });
@@ -479,63 +491,85 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
   });
 
-  // --- Ordering and identifier provenance (FR-003, FR-007, FR-012) ----------
+  // --- Where the hand-off address comes from (FR-004, FR-006) ---------------
 
-  it('records the association before assembling the hand-off URL', async () => {
-    const pending = new Subject<SigningIdentityResponse>();
-    const fixture = await setup({ bind: () => pending.asObservable() });
+  it('waits for the prepared session before leaving the page', async () => {
+    const pending = new Subject<PrepareSignResponse>();
+    const fixture = await setup({ prepare: () => pending.asObservable() });
 
     await sign(fixture);
 
-    // A URL built from an identifier obtained beforehand could carry a record the binding then
-    // refuses, so nothing may be assembled while the write is still outstanding.
-    expect(buildSignUrlFor).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
 
-    pending.next(BOUND);
+    pending.next(PREPARED);
     await fixture.whenStable();
 
-    expect(location.href).toBe(CONSOLE_URL);
+    expect(location.href).toBe(SIGN_URL);
   });
 
-  it('builds the URL from the binding answer, never from a locally held identifier', async () => {
+  it('navigates to the address the CLA backend returned, never one assembled here', async () => {
     const fixture = await setup();
 
     await sign(fixture);
 
-    // The identifier's only source is what the binding settled on.
-    expect(buildSignUrlFor).toHaveBeenCalledWith('cg-1', BOUND);
+    // Assembling the Console path from a console base, the group id and the user id would ignore
+    // the signing session the prepare just opened, and any later change upstream to that URL.
+    expect(buildSignUrlFor).not.toHaveBeenCalled();
     // Same tab, not a new one: the Console returns the contributor here afterwards.
-    expect(location.href).toBe(CONSOLE_URL);
+    expect(location.href).toBe(SIGN_URL);
   });
 
-  it('stops the hand-off when the recorded account is not the chosen one', async () => {
-    // The picker closes with 12345; the binding answers with a different account. Upstream is
-    // content — it confirmed the record holds the account it was sent — so nothing below this
-    // layer can notice. Only comparing what came back against what went in catches a
-    // signature about to be attributed to an account nobody chose.
+  it('stops the hand-off when the verified account is not the chosen one', async () => {
+    // The picker closes with 12345; the prepare answers with a different account. Upstream is
+    // content — both accounts pass an ownership check when both belong to the contributor — so
+    // nothing below this layer can notice. Only comparing what came back against what went in
+    // catches a signature about to be attributed to an account nobody chose.
     const fixture = await setup({
       accountClosesWith: '12345',
-      bind: () => of({ ...BOUND, githubId: '67890', githubUsername: 'hubot' }),
+      prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }),
     });
 
     await sign(fixture);
 
-    expect(buildSignUrlFor).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Could not start signing' }));
   });
 
-  it('proceeds when the recorded account matches, so the check is not merely blocking everything', async () => {
-    const fixture = await setup({ accountClosesWith: '67890', bind: () => of({ ...BOUND, githubId: '67890', githubUsername: 'hubot' }) });
+  it('proceeds when the verified account matches, so the check is not merely blocking everything', async () => {
+    const fixture = await setup({ accountClosesWith: '67890', prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }) });
 
     await sign(fixture);
 
-    expect(location.href).toBe(CONSOLE_URL);
+    expect(location.href).toBe(SIGN_URL);
+  });
+
+  it('does not hand off a success that skipped the chosen account', async () => {
+    // A 200 that skipped the pick still opened a session — for whatever identity it did verify.
+    // The server refuses this too; the second guard is here because this is the only layer that
+    // saw the picker.
+    const fixture = await setup({
+      accountClosesWith: '12345',
+      prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot', skippedIdentities: ['github-id:12345'] }),
+    });
+
+    await sign(fixture);
+
+    expect(location.href).toBe(HOME);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Could not start signing' }));
+  });
+
+  it('reports a mismatch as a mismatch, not as a failure to open the page', async () => {
+    const fixture = await setup({ accountClosesWith: '12345', prepare: () => of({ ...PREPARED, githubId: '67890' }) });
+
+    await sign(fixture);
+
+    // Nothing upstream went wrong, so "we could not open the CLA signing page" would be a lie
+    // and "try again" is the honest instruction.
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('stopped before signing') }));
   });
 
   it('ignores a second hand-off while one is already in flight', async () => {
@@ -548,63 +582,75 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(getGithubAccounts).toHaveBeenCalledTimes(1);
   });
 
-  // --- Refusals (FR-013, FR-014) -------------------------------------------
+  // --- Refusals (FR-007) ----------------------------------------------------
 
   it('refuses without retrying with a different account', async () => {
-    const fixture = await setup({ bind: refusedWith('record_conflict') });
+    const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);
 
     // Substituting an account the contributor did not choose is the exact failure this
-    // feature removes, so a second binding attempt must not happen.
-    expect(bindSigningIdentity).toHaveBeenCalledTimes(1);
+    // feature removes, so a second prepare must not happen.
+    expect(prepareSign).toHaveBeenCalledTimes(1);
     expect(location.href).toBe(HOME);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 
-  // Account linking is reached only from an empty account list, which is a fact about this
-  // session rather than an upstream answer. Routing a refusal there would send someone who does
-  // have a linked account to fix something that is not broken.
-  it.each(['identity_unavailable', 'record_conflict', 'record_unclaimed', 'lf_record_already_bound', 'recorded_mismatch'] as const)(
-    'does not route the %s refusal into account linking',
-    async (reason) => {
-      const fixture = await setup({ bind: refusedWith(reason) });
-
-      await sign(fixture);
-
-      expect(navigate).not.toHaveBeenCalled();
-    }
-  );
-
-  it.each([
-    ['identity_unavailable', 'sign in again'],
-    ['identity_mismatch', 'sign in again'],
-    ['record_conflict', 'already associated'],
-    ['duplicate_github_id', 'already associated'],
-    // An unclaimed record needs a human to say whose it is, which is the same instruction as a
-    // contested one from the contributor's side, so it deliberately shares that message.
-    ['record_unclaimed', 'already associated'],
-    // Points the other way to the three above — the contributor's own record holds the other
-    // account — so it must not collapse into their message, nor into the generic retry copy for
-    // a refusal that retrying cannot clear.
-    ['lf_record_already_bound', 'second account is not supported'],
-    ['recorded_mismatch', 'stopped before signing'],
-  ])('explains the %s refusal in its own terms', async (reason, expected) => {
-    const fixture = await setup({ bind: refusedWith(reason) });
+  it("explains an ownership refusal in the CLA backend's own words", async () => {
+    const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);
 
+    // The prepare endpoint ships no machine-readable reason, so per-reason copy could only be
+    // guessed from this prose. One honest string beats a family of invented ones.
     expect(location.href).toBe(HOME);
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining(expected) }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Could not start signing', detail: OWNERSHIP_REFUSAL }));
   });
 
-  it('stays on the page when the binding fails without a reason code', async () => {
-    const fixture = await setup({ bind: () => throwError(() => new Error('network down')) });
+  it('shows one message for a refusal, not a reason-coded family', async () => {
+    const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);
 
-    // Navigating on a failed binding would land the contributor on the Console's "invalid user
-    // ID" screen, which reads as a broken product rather than a failed write.
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [404, 'cla group not found'],
+    [400, 'returnUrl must be an absolute https URL'],
+    [502, 'Upstream prepared no usable signing session'],
+  ])('does not dress a %i up as an ownership refusal', async (status, message) => {
+    const fixture = await setup({ prepare: refusedWith(status, message) });
+
+    await sign(fixture);
+
+    // A missing group and a rejected return address are failures to prepare, not statements
+    // about who the contributor is — telling them their identity was rejected would send them
+    // to re-link an account that is fine.
+    expect(location.href).toBe(HOME);
+    const detail = messageAdd.mock.calls[0]?.[0]?.detail as string;
+    expect(detail).not.toBe(OWNERSHIP_REFUSAL);
+    expect(detail).toContain('We could not open the CLA signing page');
+  });
+
+  it('does not route a refusal into account linking', async () => {
+    // Account linking is reached only from an empty account list, which is a fact about this
+    // session rather than an upstream answer. Routing a refusal there would send someone who
+    // does have a linked account to fix something that is not broken.
+    const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
+
+    await sign(fixture);
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('stays on the page when the prepare fails outright', async () => {
+    const fixture = await setup({ prepare: () => throwError(() => new Error('network down')) });
+
+    await sign(fixture);
+
+    // Navigating on a failed prepare would land the contributor on the Console's "invalid user
+    // ID" screen, which reads as a broken product rather than a failed call.
     expect(location.href).toBe(HOME);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });

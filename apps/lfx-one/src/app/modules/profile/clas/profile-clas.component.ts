@@ -5,16 +5,7 @@ import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import type {
-  ClaGroupOption,
-  ClaStatus,
-  GithubAccountOption,
-  MyClaAgreement,
-  MyClasState,
-  SigningIdentityRefusal,
-  SigningIdentityResponse,
-  TagSeverity,
-} from '@lfx-one/shared/interfaces';
+import type { ClaGroupOption, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse, TagSeverity } from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -281,8 +272,8 @@ export class ProfileClasComponent {
   /**
    * Routes on how many accounts are linked.
    *
-   * One account skips the dialog but still binds — the screen is what is unnecessary when
-   * there is nothing to choose between, not the confirmation. Dropping the binding too would
+   * One account skips the dialog but still prepares — the screen is what is unnecessary when
+   * there is nothing to choose between, not the identity step. Dropping the prepare too would
    * leave exactly the contributors this feature was built for on the old unpredictable path.
    */
   private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
@@ -293,7 +284,7 @@ export class ProfileClasComponent {
     }
 
     if (accounts.length === 1) {
-      this.bindThenHandOff(option, accounts[0]);
+      this.prepareThenHandOff(option, accounts[0]);
       return;
     }
 
@@ -313,8 +304,9 @@ export class ProfileClasComponent {
       }
 
       // Resolved from the list the server served rather than taken from the dialog, so the
-      // account submitted is always one of the accounts linked to this session. The upstream
-      // records what it is sent, which is what makes where this value came from matter.
+      // account submitted is always one of the accounts linked to this session. Ownership
+      // verification upstream passes for every account the contributor holds, which is what
+      // makes where this value came from matter.
       const chosen = accounts.find((account) => account.githubId === githubId);
       if (!chosen) {
         this.starting.set(false);
@@ -322,100 +314,82 @@ export class ProfileClasComponent {
         return;
       }
 
-      this.bindThenHandOff(option, chosen);
+      this.prepareThenHandOff(option, chosen);
     });
   }
 
   /**
-   * Records the choice, then navigates with the identifier that came back from it.
+   * Opens the signing session, then navigates to the address that came back from it.
    *
    * A full navigation, not a new tab: the Console returns the contributor here afterwards, which
    * only reads as one continuous flow if they never left this tab.
    */
-  private bindThenHandOff(option: ClaGroupOption, account: GithubAccountOption): void {
+  private prepareThenHandOff(option: ClaGroupOption, account: GithubAccountOption): void {
     this.starting.set(true);
 
     this.myClasService
-      .bindSigningIdentity(account.githubId)
+      .prepareSign({ githubId: account.githubId, claGroupId: option.claGroupId })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (identity: SigningIdentityResponse) => {
+        next: (prepared: PrepareSignResponse) => {
           this.starting.set(false);
 
-          // The account that came back must be the account that went in. Upstream confirms
-          // the record holds the account it was sent, which cannot detect this layer having
-          // sent the wrong one of the contributor's accounts in the first place. This
-          // comparison is the only one that answers "did we sign as the account they
-          // picked", and it is the reason the response carries the account at all.
-          if (identity.githubId !== account.githubId) {
+          // The account that came back must be the account that went in. Upstream verifies the
+          // identity belongs to the caller, which every one of the contributor's own accounts
+          // satisfies — so it cannot detect this layer having sent the wrong one. This
+          // comparison is the only one that answers "will they sign as the account they picked",
+          // and it is the reason the response carries the account at all.
+          if (prepared.githubId !== account.githubId) {
             this.reportRecordedMismatch();
             return;
           }
 
-          this.document.location.href = this.myClasService.buildSignUrlFor(option.claGroupId, identity);
+          // Navigated to as returned. Composing this address from a console base, the group and
+          // the user id would ignore the session the prepare just opened.
+          this.document.location.href = prepared.signUrl;
         },
         error: (error: unknown) => {
           this.starting.set(false);
-          this.reportBindingRefusal(error);
+          this.reportPrepareFailure(error);
         },
       });
   }
 
   /**
-   * Turns a refusal into the message that fits it.
+   * Reports a failed prepare.
    *
-   * Each reason calls for a different response from the contributor, so they are not collapsed
-   * into one failure notice. In particular no refusal is ever recovered from by submitting a
-   * different account — that would record the signature against an account they did not
-   * choose, which is the failure this feature exists to stop.
+   * An ownership refusal is repeated in the CLA backend's own words, because that endpoint ships
+   * no machine-readable reason and inventing per-reason copy from its prose would put words in
+   * its mouth. Every other failure — a missing CLA group, a rejected return address, an outage —
+   * says nothing the contributor can act on differently, so they share one line.
+   *
+   * No refusal is ever recovered from by submitting a different account: that would open the
+   * session against an account they did not choose, which is the failure this feature exists to
+   * stop.
    */
-  private reportBindingRefusal(error: unknown): void {
-    const reason = (error as { error?: { upstreamCode?: SigningIdentityRefusal } } | undefined)?.error?.upstreamCode;
+  private reportPrepareFailure(error: unknown): void {
+    const response = error as { status?: number; error?: { error?: unknown } } | undefined;
+    const refusal = response?.status === 403 ? response.error?.error : undefined;
 
     this.messageService.add({
       severity: 'error',
       summary: 'Could not start signing',
-      detail: this.refusalDetail(reason),
+      detail: typeof refusal === 'string' && refusal.trim() ? refusal : 'We could not open the CLA signing page. Please try again.',
     });
   }
 
   /**
-   * Stops the hand-off when the recorded account is not the chosen one.
+   * Stops the hand-off when the account the CLA backend verified is not the chosen one.
    *
-   * Deliberately the same message the service's own mismatch refusal produces: from the
-   * contributor's side it is the same event, and the difference — which layer noticed —
-   * belongs in the logs rather than on screen.
+   * Its own message rather than the generic failure: nothing upstream went wrong, so telling the
+   * contributor to try again is the honest instruction and "we could not open the page" is not.
    */
   private reportRecordedMismatch(): void {
     this.messageService.add({
       severity: 'error',
       summary: 'Could not start signing',
-      detail: this.refusalDetail('recorded_mismatch'),
+      detail: "We couldn't confirm the account was recorded correctly, so we stopped before signing. Please try again.",
     });
-  }
-
-  private refusalDetail(reason: SigningIdentityRefusal | undefined): string {
-    switch (reason) {
-      case 'identity_unavailable':
-      case 'identity_mismatch':
-        return 'We could not confirm who is signed in. Please sign in again and retry.';
-      case 'record_conflict':
-      case 'duplicate_github_id':
-      case 'record_unclaimed':
-        // Distinct upstream, deliberately one message here. All three mean an existing CLA
-        // record stands in the way and only a human can say whose it is; the contributor can
-        // do nothing differently, so naming the difference would only ask them to.
-        return 'That GitHub account is already associated with a different CLA record. Please contact support.';
-      case 'lf_record_already_bound':
-        // Kept apart from the three above even though it also ends in support, because it points
-        // the opposite way: there the account belongs to another record, here the contributor's
-        // own record already holds a different account. Only one is recordable at a time.
-        return 'Your CLA record already has a different GitHub account. Signing with a second account is not supported yet — please contact support.';
-      case 'recorded_mismatch':
-        return "We couldn't confirm the account was recorded correctly, so we stopped before signing. Please try again.";
-      default:
-        return 'We could not open the CLA signing page. Please try again.';
-    }
   }
 
   private sendToAccountLinking(): void {

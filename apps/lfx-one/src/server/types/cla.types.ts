@@ -110,21 +110,25 @@ export interface EasyClaSearchList {
 }
 
 /**
- * Response for `POST /v4/my-clas/signing-identity` — the association the CLA service
- * confirmed against the caller's own token and recorded (#1252).
+ * Response for `POST /v4/self-serve/prepare-sign` (`#/definitions/prepare-sign`) — the signing
+ * session the CLA service opened, plus the Console address it wants the contributor sent to.
+ *
+ * There is no `githubId` here on purpose: the verified account arrives inside `identity`, as
+ * one `"<type>:<value>"` key among several. Declaring a flat field would invent a shape the
+ * producer does not emit and hide the parse that recovers it.
  */
-export interface EasyClaSigningIdentity {
-  /** The EasyCLA record the confirmed account belongs to. Replaces the first-match guess. */
+export interface EasyClaPrepareSign {
+  /** The EasyCLA record the verified identity resolved to. */
   userId?: string;
-  /**
-   * The account actually recorded, as a number. Echoed so the caller can check that what
-   * was recorded is what was chosen — a confirmed-ownership answer does not establish that,
-   * because the contributor's other linked accounts would pass an ownership check too.
-   */
-  githubId?: number;
+  /** Absolute Contributor Console decision-screen URL, composed upstream. */
+  signUrl?: string;
+  /** Identity keys the service verified as the caller's, formatted `"<type>:<value>"`. */
+  identity?: string[];
+  /** Identity keys the service did not apply. Present only on the 200. */
+  skippedIdentities?: string[];
+  /** True when the record was created rather than matched. Observability only. */
+  userCreated?: boolean;
   githubUsername?: string;
-  /** Which resolution path was taken. Observability only. */
-  outcome?: string;
 }
 
 /**

@@ -8,13 +8,13 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, resolveIdentity, getPdfUrl, searchClaGroups, listGithubAccounts, bindSigningIdentity } = vi.hoisted(() => ({
+const { getMyClas, resolveIdentity, getPdfUrl, searchClaGroups, listGithubAccounts, prepareSign } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   resolveIdentity: vi.fn(),
   getPdfUrl: vi.fn(),
   searchClaGroups: vi.fn(),
   listGithubAccounts: vi.fn(),
-  bindSigningIdentity: vi.fn(),
+  prepareSign: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -25,7 +25,7 @@ vi.mock('../services/cla.service', () => ({
     public getPdfUrl = getPdfUrl;
     public searchClaGroups = searchClaGroups;
     public listGithubAccounts = listGithubAccounts;
-    public bindSigningIdentity = bindSigningIdentity;
+    public prepareSign = prepareSign;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -262,71 +262,96 @@ describe('ClasController.getGithubAccounts', () => {
   });
 });
 
-describe('ClasController.bindSigningIdentity', () => {
-  const bound = { claUserId: 'u-1', githubId: '12345', githubUsername: 'octocat', redirectUrl: 'https://app.dev.lfx.dev/profile/clas' };
+describe('ClasController.prepareSign', () => {
+  const CLA_GROUP_ID = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
+  const prepared = {
+    userId: 'u-1',
+    signUrl: 'https://easycla.dev.communitybridge.org/#/cla/project/cg-1/user/u-1?redirect=enc',
+    githubId: '12345',
+    githubUsername: 'octocat',
+    skippedIdentities: [],
+  };
 
-  it('returns the recorded association and the return address', async () => {
-    bindSigningIdentity.mockResolvedValue(bound);
+  /** The body the browser actually sends: the chosen account and the confirmed group, nothing else. */
+  function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { githubId: '12345', claGroupId: CLA_GROUP_ID, ...overrides };
+  }
+
+  it('returns the prepared session, including the producer address', async () => {
+    prepareSign.mockResolvedValue(prepared);
     const res = buildRes();
 
-    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, res, vi.fn());
+    await new ClasController().prepareSign({ params: {}, query: {}, body: body() } as any, res, vi.fn());
 
-    expect(res.json).toHaveBeenCalledWith(bound);
+    expect(res.json).toHaveBeenCalledWith(prepared);
   });
 
-  it('takes the record identifier from the upstream answer, never from the request', async () => {
-    bindSigningIdentity.mockResolvedValue(bound);
-    const res = buildRes();
-    // An attempt to have the association land on someone else's EasyCLA record.
-    const req = { params: {}, query: { claUserId: 'someone-else' }, body: { githubId: '12345', claUserId: 'someone-else' } } as any;
+  it('passes only the chosen account and the confirmed group to the service', async () => {
+    prepareSign.mockResolvedValue(prepared);
+    const req = { params: {}, query: {}, body: body() } as any;
 
-    await new ClasController().bindSigningIdentity(req, res, vi.fn());
+    await new ClasController().prepareSign(req, buildRes(), vi.fn());
 
-    // Only the chosen account number crosses the boundary. The record identifier is resolved
-    // upstream from the authenticated caller and is never client input.
-    expect(bindSigningIdentity).toHaveBeenCalledWith(req, '12345');
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ claUserId: 'u-1' }));
+    expect(prepareSign).toHaveBeenCalledWith(req, '12345', CLA_GROUP_ID);
   });
 
   it('ignores a handle sent alongside the account number', async () => {
-    bindSigningIdentity.mockResolvedValue(bound);
+    prepareSign.mockResolvedValue(prepared);
 
-    // The service reads the handle from the session's own accounts. Accepting one here would
-    // let a caller pair an account number they own with a handle they do not.
-    const withHandle = { params: {}, query: {}, body: { githubId: '12345', githubUsername: 'someone-else' } } as any;
-    await new ClasController().bindSigningIdentity(withHandle, buildRes(), vi.fn());
+    // The service reads the handle from the session's own accounts. Accepting one here would let
+    // a caller pair an account number they own with a handle they do not — and the CLA service
+    // resolves that handle live through GitHub to admit the number.
+    const req = { params: {}, query: {}, body: body({ githubUsername: 'someone-else' }) } as any;
+    await new ClasController().prepareSign(req, buildRes(), vi.fn());
 
-    expect(bindSigningIdentity).toHaveBeenCalledWith(withHandle, '12345');
+    expect(prepareSign).toHaveBeenCalledWith(req, '12345', CLA_GROUP_ID);
+    expect(prepareSign.mock.calls[0]).toHaveLength(3);
+  });
+
+  it('ignores a return address sent by the caller', async () => {
+    prepareSign.mockResolvedValue(prepared);
+
+    // EasyCLA stores this value and later redirects to it verbatim, so a client-supplied one
+    // would turn the hand-off into an open redirect. It is derived from the request instead.
+    const req = { params: {}, query: {}, body: body({ returnUrl: 'https://attacker.example/steal' }) } as any;
+    await new ClasController().prepareSign(req, buildRes(), vi.fn());
+
+    expect(prepareSign).toHaveBeenCalledWith(req, '12345', CLA_GROUP_ID);
   });
 
   it.each([undefined, '', '   ', 'abc', '12a', '-1', '0', '1.5'])('rejects %p as an account number', async (githubId) => {
     const res = buildRes();
 
-    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId } } as any, res, vi.fn());
+    await new ClasController().prepareSign({ params: {}, query: {}, body: body({ githubId }) } as any, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
   });
 
-  it.each([
-    'identity_unavailable',
-    'identity_mismatch',
-    'record_conflict',
-    'record_unclaimed',
-    'duplicate_github_id',
-    'recorded_mismatch',
-  ] as const)('forwards the %s refusal rather than falling back', async (reason) => {
-    bindSigningIdentity.mockRejectedValue(
-      new MicroserviceError(`refused: ${reason}`, 403, 'UPSTREAM_ERROR', { service: 'cla_service', errorBody: { error: reason } })
+  it.each([undefined, '', '   ', 'cg-1', 'not-a-uuid', '3fee6d72-0c80-4145-99c2', '3fee6d72-0c80-4145-99c2-fb382b3a93fbb'])(
+    'rejects %p as a CLA group id',
+    async (claGroupId) => {
+      const res = buildRes();
+
+      // Required upstream, and the producer 400s a shape it cannot parse — answering here keeps
+      // a malformed group from spending a gateway round trip to learn the same thing.
+      await new ClasController().prepareSign({ params: {}, query: {}, body: body({ claGroupId }) } as any, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(prepareSign).not.toHaveBeenCalled();
+    }
+  );
+
+  it('forwards an upstream refusal rather than falling back to another account', async () => {
+    prepareSign.mockRejectedValue(
+      new MicroserviceError('the provided identity does not belong to the authenticated user', 403, 'FORBIDDEN', { service: 'cla_service' })
     );
     const res = buildRes();
     const next = vi.fn();
 
-    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, res, next);
+    await new ClasController().prepareSign({ params: {}, query: {}, body: body() } as any, res, next);
 
-    // No alternative account is chosen on the contributor's behalf. Silently signing as a
-    // different account than the one picked is exactly the outcome this feature removes.
-    expect(next.mock.calls[0][0]).toMatchObject({ errorBody: { error: reason } });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
     expect(res.json).not.toHaveBeenCalled();
   });
 
@@ -334,9 +359,9 @@ describe('ClasController.bindSigningIdentity', () => {
     getUsernameFromAuth.mockResolvedValue(null);
     const next = vi.fn();
 
-    await new ClasController().bindSigningIdentity({ params: {}, query: {}, body: { githubId: '12345' } } as any, buildRes(), next);
+    await new ClasController().prepareSign({ params: {}, query: {}, body: body() } as any, buildRes(), next);
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
   });
 });

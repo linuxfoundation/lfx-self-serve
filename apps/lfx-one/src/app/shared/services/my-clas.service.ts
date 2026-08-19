@@ -3,11 +3,15 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ClaGroupSearchResponse, GithubAccountOptions, MyClasResponse, PdfUrlResponse, SigningIdentityRequest, SigningIdentityResponse } from '@lfx-one/shared/interfaces';
-import { buildConsoleHandoffUrl } from '@lfx-one/shared/utils';
+import {
+  ClaGroupSearchResponse,
+  GithubAccountOptions,
+  MyClasResponse,
+  PdfUrlResponse,
+  PrepareSignRequest,
+  PrepareSignResponse,
+} from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
-
-import { environment } from '@environments/environment';
 
 /** Client for the read-only "CLAs" server endpoints (Me lens → Profile tab). */
 @Injectable({
@@ -51,27 +55,19 @@ export class MyClasService {
   }
 
   /**
-   * Records the contributor's chosen GitHub account, returning the EasyCLA record identifier
-   * the hand-off uses.
+   * Asks the CLA backend to open a signing session for the chosen account and CLA group, and
+   * returns the Contributor Console address it wants the contributor sent to.
    *
-   * Only the account number is sent. The server matches it against the accounts linked to this
-   * session and reads the handle from the match, so an account that did not come from
-   * `getGithubAccounts` above is refused there rather than recorded.
-   */
-  public bindSigningIdentity(githubId: string): Observable<SigningIdentityResponse> {
-    const body: SigningIdentityRequest = { githubId };
-    return this.http.post<SigningIdentityResponse>('/api/me/clas/signing-identity', body).pipe(take(1));
-  }
-
-  /**
-   * Resolves the Console URL from an association the binding has already confirmed.
+   * Only the account number and the group are sent. The server reads the handle from the
+   * accounts linked to this session and derives the return address from the request, so an
+   * account that did not come from `getGithubAccounts` above is refused there, and neither the
+   * handle nor the return address is this app's to name.
    *
-   * Takes both server-supplied halves from the binding response rather than re-fetching
-   * them, which is what makes it impossible to hand off with an identifier the binding did
-   * not settle on — including the case the older path could not serve at all, a first-time
-   * signer with no record to find yet.
+   * The address comes back rather than being assembled from the answer's parts: the CLA backend
+   * owns the signing session it belongs to, so composing a second one here would ignore whatever
+   * that session carries.
    */
-  public buildSignUrlFor(claGroupId: string, identity: SigningIdentityResponse): string {
-    return buildConsoleHandoffUrl(environment.urls.contributorConsole, claGroupId, identity.claUserId, identity.redirectUrl);
+  public prepareSign(body: PrepareSignRequest): Observable<PrepareSignResponse> {
+    return this.http.post<PrepareSignResponse>('/api/me/clas/prepare-sign', body).pipe(take(1));
   }
 }

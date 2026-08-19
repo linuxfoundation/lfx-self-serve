@@ -175,52 +175,42 @@ export interface GithubAccountOptions {
   accounts: GithubAccountOption[];
 }
 
-/** Request body for `POST /api/me/clas/signing-identity`. */
-export interface SigningIdentityRequest {
+/** Request body for `POST /api/me/clas/prepare-sign`. */
+export interface PrepareSignRequest {
   /**
    * The account the contributor picked. The server matches it against the accounts Auth0
-   * reports as linked to this session and refuses one that is not among them, which is what
-   * establishes the account as the contributor's — see `bindSigningIdentity`.
+   * reports as linked to this session and refuses one that is not among them.
    *
    * The handle is deliberately not accepted alongside it. The server takes that from the
-   * matched account, so a caller cannot pair a number it owns with a handle it does not.
+   * matched account, so a caller cannot pair a number it owns with a handle it does not —
+   * which matters because the CLA backend uses the handle as a GitHub lookup key.
    */
   githubId: string;
+  /** The CLA Group the contributor confirmed in the picker. Required by the CLA backend. */
+  claGroupId: string;
 }
 
 /**
- * Response for `POST /api/me/clas/signing-identity` — the association the service confirmed
- * and recorded, plus the record identifier the hand-off consumes in place of resolving one
- * for itself.
+ * Response for `POST /api/me/clas/prepare-sign` — the signing session the CLA backend
+ * prepared, and the Console address it wants the contributor sent to.
  */
-export interface SigningIdentityResponse {
-  claUserId: string;
-  /** The account actually recorded, so the caller can check it against what was chosen. */
-  githubId: string;
-  githubUsername?: string;
+export interface PrepareSignResponse {
+  /** The EasyCLA record the verified identity resolved to (used or created upstream). */
+  userId: string;
   /**
-   * Absolute URL back to the CLAs view. Absolute because the last hop is a server-side redirect.
-   *
-   * Returned from the binding rather than fetched separately so that the hand-off URL
-   * cannot be assembled before the association is confirmed — the parts to build it with
-   * simply do not exist until then. Ordering here is a correctness property, not a
-   * convenience: a URL built from an identifier obtained beforehand could carry a record
-   * the binding then refuses.
+   * Where to send the contributor. Returned by the CLA backend rather than assembled here:
+   * it owns the signing session this address belongs to, so composing a second address from
+   * its parts would ignore whatever that session carries.
    */
-  redirectUrl: string;
+  signUrl: string;
+  /**
+   * The GitHub account the CLA backend verified, read from its identity keys. Compared
+   * against the chosen account before the hand-off: ownership verification passes for every
+   * account the contributor holds, so it cannot notice this layer having sent the wrong one.
+   */
+  githubId: string;
+  /** Display and logs only. Never matched on — handles get renamed and reclaimed. */
+  githubUsername?: string;
+  /** Identity keys the CLA backend ignored. May be empty. */
+  skippedIdentities: string[];
 }
-
-/**
- * Why the CLA service refused to record an association. Each maps to a different outcome for
- * the contributor, and collapsing them loses information they need — a record that names
- * nobody needs a human to reunite it with its owner, whereas a record already holding another
- * account is the contributor's own to sort out.
- */
-export type SigningIdentityRefusal =
-  | 'identity_unavailable'
-  | 'identity_mismatch'
-  | 'record_conflict'
-  | 'record_unclaimed'
-  | 'duplicate_github_id'
-  | 'lf_record_already_bound'
-  | 'recorded_mismatch';

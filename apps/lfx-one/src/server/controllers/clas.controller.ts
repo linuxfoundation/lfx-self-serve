@@ -16,6 +16,10 @@ import { ClaService } from '../services/cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
+// A CLA Group UUID, hyphenated or not — the two spellings the producer's own pattern accepts.
+// Anchored with fixed-length runs, so it cannot backtrack.
+const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
 export class ClasController {
   private readonly claService = new ClaService();
 
@@ -123,28 +127,29 @@ export class ClasController {
     }
   }
 
-  // POST /api/me/clas/signing-identity
-  // Forwards the contributor's choice and returns the record identifier the hand-off uses.
+  // POST /api/me/clas/prepare-sign
+  // Asks the CLA service to open the signing session and answers with the Console address it
+  // returned. Nothing here composes that address.
   //
-  // Deliberately performs no resolution, no check of the selection against the list this
-  // controller served, and no fallback on refusal. Those judgements belong to the layer
-  // holding the identity provider's attestation; duplicating them here would mean deciding
-  // on weaker evidence, and the only thing a pre-check could achieve is hiding a refusal
-  // that has to stay visible.
+  // Deliberately performs no resolution and no fallback on refusal. Those judgements belong to
+  // the layer holding the identity provider's attestation; duplicating them here would mean
+  // deciding on weaker evidence, and the only thing a pre-check could achieve is hiding a
+  // refusal that has to stay visible.
   //
   // Blocked during impersonation at the route, so there is no impersonation branch here.
-  public async bindSigningIdentity(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'bind_cla_signing_identity');
+  public async prepareSign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'prepare_cla_sign');
 
     try {
       if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'bind_cla_signing_identity' });
+        throw new AuthenticationError('User authentication required', { operation: 'prepare_cla_sign' });
       }
 
-      // The account number is the only thing taken from the body. The handle that accompanies
-      // it is read from the session's own accounts by the service, so there is nothing here for
-      // a caller to influence beyond which of their own accounts they name.
-      const body = req.body as { githubId?: unknown } | undefined;
+      // The chosen account and the confirmed group are the only things taken from the body. The
+      // handle is read from the session's own accounts by the service, and the return address is
+      // derived from the request — EasyCLA stores that value and redirects to it verbatim, so a
+      // client-supplied one would turn the hand-off into an open redirect.
+      const body = req.body as { githubId?: unknown; claGroupId?: unknown } | undefined;
 
       const githubId = String(body?.githubId ?? '').trim();
       if (!/^[1-9][0-9]*$/.test(githubId)) {
@@ -152,9 +157,18 @@ export class ClasController {
         return;
       }
 
-      const result = await this.claService.bindSigningIdentity(req, githubId);
+      // Required upstream, and answered here rather than after a gateway round trip that would
+      // learn the same thing. Hyphens are optional because the producer's own pattern allows
+      // both spellings of the UUID.
+      const claGroupId = String(body?.claGroupId ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
+        res.status(400).json({ message: 'A CLA group identifier is required' });
+        return;
+      }
 
-      logger.success(req, 'bind_cla_signing_identity', startTime);
+      const result = await this.claService.prepareSign(req, githubId, claGroupId);
+
+      logger.success(req, 'prepare_cla_sign', startTime);
       res.json(result);
     } catch (error) {
       next(error);

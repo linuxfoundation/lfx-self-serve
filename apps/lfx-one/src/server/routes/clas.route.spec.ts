@@ -10,24 +10,24 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the read-only-impersonation gate on the signing-identity write (#1252).
+ * Router-level coverage for the read-only-impersonation gate on the prepare-sign write (#1252).
  *
  * The middleware has its own behaviour; what these tests protect is the *registration*. A unit
  * test of the controller would keep passing if the middleware were dropped from the route — which
- * is the regression that matters, because the failure mode is a GitHub account recorded onto the
- * impersonated person's EasyCLA record, attributed to them rather than to the administrator who
- * caused it, with no in-payload trace of who did.
+ * is the regression that matters, because the failure mode is a signing session opened against
+ * the impersonated person's EasyCLA record, attributed to them rather than to the administrator
+ * who caused it, with no in-payload trace of who did.
  *
  * The read routes are asserted alongside it: impersonated *viewing* of CLAs and of the linked
  * accounts must keep working, so a blanket `router.use` would be a bug, not a safer default.
  */
 
-const { getMyClas, getPdfUrl, getClaGroupOptions, getGithubAccounts, bindSigningIdentity } = vi.hoisted(() => ({
+const { getMyClas, getPdfUrl, getClaGroupOptions, getGithubAccounts, prepareSign } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   getPdfUrl: vi.fn(),
   getClaGroupOptions: vi.fn(),
   getGithubAccounts: vi.fn(),
-  bindSigningIdentity: vi.fn(),
+  prepareSign: vi.fn(),
 }));
 const { isImpersonating } = vi.hoisted(() => ({ isImpersonating: vi.fn<() => boolean>(() => false) }));
 
@@ -37,7 +37,7 @@ vi.mock('../controllers/clas.controller', () => ({
     public getPdfUrl = getPdfUrl;
     public getClaGroupOptions = getClaGroupOptions;
     public getGithubAccounts = getGithubAccounts;
-    public bindSigningIdentity = bindSigningIdentity;
+    public prepareSign = prepareSign;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
@@ -89,43 +89,55 @@ beforeEach(() => {
   getPdfUrl.mockImplementation(ok);
   getClaGroupOptions.mockImplementation(ok);
   getGithubAccounts.mockImplementation(ok);
-  bindSigningIdentity.mockImplementation(ok);
+  prepareSign.mockImplementation(ok);
 });
 
-describe('clas router — signing-identity write during impersonation', () => {
+describe('clas router — prepare-sign write during impersonation', () => {
   /** POST helper — the guarded route is a write, so it cannot be reached with a bare fetch. */
-  function bind(): Promise<Response> {
-    return fetch(`${baseUrl}/api/me/clas/signing-identity`, {
+  function prepare(): Promise<Response> {
+    return fetch(`${baseUrl}/api/me/clas/prepare-sign`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ githubId: '12345' }),
+      body: JSON.stringify({ githubId: '12345', claGroupId: '3fee6d72-0c80-4145-99c2-fb382b3a93fb' }),
     });
   }
 
-  it('refuses to record an association while impersonating', async () => {
+  it('refuses to open a signing session while impersonating', async () => {
     isImpersonating.mockReturnValue(true);
 
-    const res = await bind();
+    const res = await prepare();
 
     expect(res.status).toBe(403);
     // Asserted together with the status: a downstream failure could also produce 403, so the
     // status alone would not prove the gate produced it.
-    expect(bindSigningIdentity).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
   });
 
   it('reports the read-only impersonation code, so the UI can explain it', async () => {
     isImpersonating.mockReturnValue(true);
 
-    const res = await bind();
+    const res = await prepare();
 
     expect((await res.json()).code).toBe('IMPERSONATION_READ_ONLY');
   });
 
   it('allows the write in a normal session', async () => {
-    const res = await bind();
+    const res = await prepare();
 
     expect(res.status).toBe(200);
-    expect(bindSigningIdentity).toHaveBeenCalled();
+    expect(prepareSign).toHaveBeenCalled();
+  });
+
+  it('no longer serves the retired signing-identity path', async () => {
+    // The request contract changed (the CLA group is now required), so the old path is removed
+    // rather than quietly given a new required field a leftover caller would omit.
+    const res = await fetch(`${baseUrl}/api/me/clas/signing-identity`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ githubId: '12345' }),
+    });
+
+    expect(res.status).toBe(404);
   });
 
   it.each([

@@ -20,8 +20,7 @@ import {
   MyClaAgreement,
   MyClasResponse,
   PdfUrlResponse,
-  SigningIdentityRefusal,
-  SigningIdentityResponse,
+  PrepareSignResponse,
   type ClaGroupMatchType,
   type ClaGroupOrgSource,
   type ClaStatus,
@@ -32,10 +31,10 @@ import {
   EasyClaMyCla,
   EasyClaMyClaList,
   EasyClaMyClaPdf,
+  EasyClaPrepareSign,
   EasyClaSearchList,
   EasyClaSearchOrg,
   EasyClaSearchResult,
-  EasyClaSigningIdentity,
   ResolvedClaIdentity,
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
@@ -178,6 +177,58 @@ export function claReturnUrl(req: Request): string {
   return `${req.protocol}://${host}${MY_CLAS_PATH}`;
 }
 
+// Identity keys the CLA service reports as `"<type>:<value>"`, both in the verified `identity`
+// list and in `skippedIdentities`.
+const GITHUB_ID_KEY_PREFIX = 'github-id:';
+const GITHUB_USERNAME_KEY_PREFIX = 'github-username:';
+
+/** The GitHub account the CLA service verified, recovered from its identity keys. */
+export interface RecordedGithubIdentity {
+  /** Decimal digits, as the picker's options carry it. */
+  githubId: string;
+  githubUsername?: string;
+}
+
+/**
+ * Reads the verified GitHub account out of a prepare-sign `identity` list.
+ *
+ * Only `github-id:` answers the question this exists for — whether the account the contributor
+ * picked is the account the signing session was opened for. A handle cannot: GitHub lets handles
+ * be renamed and reclaimed, so `github-username:octocat` names whoever holds that handle now
+ * rather than the account that was chosen. The handle is carried for display and returned
+ * alongside, never compared.
+ *
+ * Null means the answer is unusable, not that verification failed — the caller must refuse to
+ * hand off rather than proceed on an unchecked assumption.
+ */
+export function recordedGithubIdentity(identity: readonly string[] | undefined): RecordedGithubIdentity | null {
+  let githubId: string | null = null;
+  let githubUsername: string | undefined;
+
+  for (const key of identity ?? []) {
+    if (key.startsWith(GITHUB_ID_KEY_PREFIX)) {
+      const value = key.slice(GITHUB_ID_KEY_PREFIX.length);
+      if (/^\d+$/.test(value)) githubId = value;
+    } else if (key.startsWith(GITHUB_USERNAME_KEY_PREFIX)) {
+      const value = key.slice(GITHUB_USERNAME_KEY_PREFIX.length).trim();
+      if (value) githubUsername = value;
+    }
+  }
+
+  return githubId === null ? null : { githubId, ...(githubUsername ? { githubUsername } : {}) };
+}
+
+/**
+ * Whether the CLA service listed the chosen account among the identity keys it did *not* apply.
+ *
+ * A prepare that skipped the pick still succeeds — it opened a session for whatever identity it
+ * did verify. Treating that as success for the skipped account would sign against a different
+ * one, so it is a failure here even though the status was 200.
+ */
+export function githubIdWasSkipped(skippedIdentities: readonly string[] | undefined, githubId: string): boolean {
+  return (skippedIdentities ?? []).includes(`${GITHUB_ID_KEY_PREFIX}${githubId}`);
+}
+
 /**
  * Normalizes a linked-identity GitHub ID to the bare numeric form EasyCLA keys on.
  * Auth0 may return either a bare id ("13434323") or a "github|13434323" form —
@@ -296,53 +347,46 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
 }
 
 /**
- * The refusal reasons the CLA service can answer a binding request with. A closed set, in
- * the order they are tested — no reason is a substring of another, so a match is exact
- * even though the search is not anchored.
- */
-const SIGNING_IDENTITY_REFUSALS: readonly SigningIdentityRefusal[] = [
-  'identity_unavailable',
-  'identity_mismatch',
-  'record_conflict',
-  'record_unclaimed',
-  'duplicate_github_id',
-  'lf_record_already_bound',
-  'recorded_mismatch',
-];
-
-/**
- * Finds the refusal reason in an upstream error body.
+ * The message the CLA service sent with an error, or null when it sent nothing usable.
  *
- * The reason has to be recovered from the message text because the CLA service's shared
- * error shape carries only `code`, `message` and a request id, and adding a field to it
- * would change every endpoint that uses it. Searching a closed set of known reasons keeps
- * that safe: an unrecognised body yields null and the error passes through untouched,
- * rather than being guessed into the nearest reason.
+ * The body arrives as raw text: a non-OK response is not parsed on the way through, so the
+ * producer's own words are only reachable from here. Deliberately no reason code is derived
+ * from it — the prepare endpoint ships none, and inventing one from substrings of prose would
+ * invite per-code copy that the producer never promised to keep stable.
  */
-export function signingIdentityRefusalFrom(errorBody: unknown): SigningIdentityRefusal | null {
-  if (!errorBody) return null;
-  const text = typeof errorBody === 'string' ? errorBody : JSON.stringify(errorBody);
-  return SIGNING_IDENTITY_REFUSALS.find((reason) => text.includes(reason)) ?? null;
+export function producerMessageFrom(errorBody: unknown): string | null {
+  const raw = typeof errorBody === 'string' ? errorBody.trim() : null;
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { message?: unknown };
+    return typeof parsed.message === 'string' && parsed.message.trim() ? parsed.message.trim() : null;
+  } catch {
+    // Some refusals ahead of the CLA service (the gateway's own) answer in plain text rather
+    // than the shared error shape. Markup is not a message, though: an error page rendered
+    // into a toast is noise, and the generic failure copy reads better than its first tag.
+    return raw.startsWith('<') ? null : raw;
+  }
 }
 
 /**
- * Re-labels an upstream failure with its refusal reason, so the reason survives to the
- * browser rather than being flattened into a single "conflict".
+ * Re-labels an ownership refusal with the message the CLA service sent, so that message —
+ * rather than "403 Forbidden" — is what the contributor is shown.
  *
- * Carried on `errorBody.error`, which the error response already forwards as
- * `upstreamCode` — the existing route for exactly this, since `code` is derived from the
- * HTTP status and collapses every 409 together.
+ * Scoped to 403 on purpose. That is the one status whose body is a statement about the
+ * contributor's own identity and therefore worth repeating verbatim; relaying the prose of a
+ * 500 would put upstream internals on screen for something they can do nothing about.
  */
-function withSigningIdentityRefusal(error: unknown): unknown {
-  if (!(error instanceof MicroserviceError)) return error;
+function withProducerRefusalMessage(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || error.statusCode !== 403) return error;
 
-  const reason = signingIdentityRefusalFrom(error.errorBody);
-  if (!reason) return error;
+  const message = producerMessageFrom(error.errorBody);
+  if (!message) return error;
 
-  return new MicroserviceError(error.message, error.statusCode, error.code, {
-    operation: 'cla_bind_signing_identity',
+  return new MicroserviceError(message, error.statusCode, error.code, {
+    operation: 'cla_prepare_sign',
     service: SERVICE,
-    errorBody: { error: reason },
+    errorBody: error.errorBody,
   });
 }
 
@@ -563,80 +607,93 @@ export class ClaService {
   }
 
   /**
-   * Submits the contributor's chosen GitHub account and returns the EasyCLA record
-   * identifier the hand-off consumes (#1252).
+   * Asks the CLA service to open a signing session for the contributor's chosen GitHub account,
+   * and returns the Contributor Console address it wants them sent to (#1252).
    *
-   * This layer is where the account is established as the contributor's, and the check that
-   * establishes it is here rather than in the browser. The CLA service records what it is
-   * sent without re-deriving ownership, so the submitted account is matched against the
-   * accounts the identity provider reports for this session before it is relayed. The picker
-   * makes the same match, but a caller can reach this endpoint without going through it.
+   * Ownership is the CLA service's to establish: it verifies the submitted identity belongs to
+   * the caller before it writes anything. This layer still matches the chosen account against
+   * the accounts the identity provider reports for this session, for two narrower reasons — to
+   * fail a number that is not linked without spending an upstream round trip, and to supply the
+   * handle. The handle matters because the producer resolves it live through GitHub and admits
+   * the number only if the two agree, so a caller able to name a handle could pair a number
+   * they own with a handle they do not. A failed lookup throws rather than yielding an empty
+   * list, so this cannot be passed by the session's accounts being unreadable.
    *
-   * It still decides nothing about the outcome: it does not resolve a record and does not
-   * fall back when the upstream refuses, because what the contributor should do next differs
-   * per refusal and a fallback here could only mask one.
+   * It decides nothing about the outcome beyond refusing to hand off an answer that does not
+   * name the chosen account: what the contributor should do next after a refusal is theirs, and
+   * a fallback here could only mask it.
    *
-   * No `bearerToken` override, unlike the read paths above: the default gateway token is
-   * the contributor's own token exchanged for the gateway audience, which is what makes the
-   * caller identifiable upstream. This route is blocked during impersonation instead.
+   * No `bearerToken` override, unlike the read paths above: the default gateway token is the
+   * contributor's own token exchanged for the gateway audience, which is what makes the caller
+   * identifiable upstream. This route is blocked during impersonation instead.
    */
-  public async bindSigningIdentity(req: Request, githubId: string): Promise<SigningIdentityResponse> {
-    const startTime = logger.startOperation(req, 'cla_bind_signing_identity');
+  public async prepareSign(req: Request, githubId: string, claGroupId: string): Promise<PrepareSignResponse> {
+    const startTime = logger.startOperation(req, 'cla_prepare_sign', { cla_group_id: claGroupId });
 
-    // Derived before the write, not after. If the origin is unusable the hand-off cannot
-    // proceed anyway, and this endpoint records an identity attribute on a real record —
-    // so failing afterwards would leave that write behind with nothing to show for it.
-    const redirectUrl = claReturnUrl(req);
+    // Derived before the call, not after. The CLA service stores this value on the signing
+    // session and later redirects to it verbatim, so an unusable origin dead-ends the flow
+    // anyway — and failing afterwards would leave that session behind with nowhere to return to.
+    const returnUrl = claReturnUrl(req);
 
-    // Matched on the account number, and the handle taken from the match rather than from the
-    // request: a handle is never matched on upstream, so accepting the submitted one would let
-    // a correct account be recorded under a handle the contributor does not own. A failed
-    // lookup throws out of here rather than yielding an empty list, so this cannot pass by the
-    // session's accounts being unreadable.
     const { accounts } = await this.listGithubAccounts(req);
     const chosen = accounts.find((account) => account.githubId === githubId);
     if (!chosen) {
       throw new MicroserviceError('The chosen GitHub account is not linked to this session', 403, 'CLA_ACCOUNT_NOT_LINKED', { service: SERVICE });
     }
 
-    let result: EasyClaSigningIdentity | null;
+    let result: EasyClaPrepareSign | null;
     try {
-      result = await gatewayFetch<EasyClaSigningIdentity>(req, `${claServiceBaseUrl()}/v4/my-clas/signing-identity`, {
-        operation: 'cla_bind_signing_identity',
+      result = await gatewayFetch<EasyClaPrepareSign>(req, `${claServiceBaseUrl()}/v4/self-serve/prepare-sign`, {
+        operation: 'cla_prepare_sign',
         service: SERVICE,
-        errorMessage: 'Failed to record the signing GitHub identity',
+        errorMessage: 'Failed to prepare the CLA signing session',
         errorCode: 'UPSTREAM_ERROR',
         method: 'POST',
-        // The account is sent as a number: it is stored and queried as one upstream, and the
-        // endpoint's own model types it as an integer. The handle rides along because it
-        // cannot be derived upstream, and a record without one is unmatchable by the
-        // approval lists that are written against handles.
-        body: { githubId: Number(chosen.githubId), ...(chosen.githubUsername ? { githubUsername: chosen.githubUsername } : {}) },
+        // The account goes as a number: it is stored and queried as one upstream, and the
+        // endpoint's own model types it as an integer.
+        body: {
+          claGroupId,
+          returnUrl,
+          githubId: Number(chosen.githubId),
+          ...(chosen.githubUsername ? { githubUsername: chosen.githubUsername } : {}),
+        },
       });
     } catch (error) {
-      // Refusals pass through as refusals, each keeping its own reason. Rethrown rather
-      // than handled: what the contributor should do next differs per reason, and only
-      // they can act on it.
-      throw withSigningIdentityRefusal(error);
+      throw withProducerRefusalMessage(error);
     }
 
-    const claUserId = result?.userId?.trim();
-    // `== null` rather than `=== undefined`: a JSON null would otherwise reach String() and be
-    // returned as the literal "null", which no account can equal.
-    if (!claUserId || result?.githubId == null) {
-      throw new MicroserviceError('Upstream did not return a recorded signing identity', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
+    const userId = result?.userId?.trim();
+    const signUrl = result?.signUrl?.trim();
+    // The verified account is parsed out of `identity` rather than assumed to be the one sent.
+    // Without it there is nothing to check the pick against, which is not a success.
+    const recorded = recordedGithubIdentity(result?.identity);
+    const skippedIdentities = result?.skippedIdentities ?? [];
+
+    if (!userId || !signUrl || !recorded) {
+      throw new MicroserviceError('Upstream prepared no usable signing session', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
     }
 
-    logger.success(req, 'cla_bind_signing_identity', startTime, { outcome: result.outcome ?? 'unknown' });
+    // A prepare that skipped the chosen account still opened a session — for whatever identity
+    // it did verify. Passing that on as success would sign against an account nobody picked.
+    if (githubIdWasSkipped(skippedIdentities, chosen.githubId)) {
+      throw new MicroserviceError('Upstream did not apply the chosen GitHub account', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
+    }
+
+    const githubUsername = recorded.githubUsername ?? result?.githubUsername;
+
+    logger.success(req, 'cla_prepare_sign', startTime, {
+      cla_group_id: claGroupId,
+      user_created: result?.userCreated === true,
+      skipped_count: skippedIdentities.length,
+    });
     return {
-      claUserId,
-      githubId: String(result.githubId),
-      githubUsername: result.githubUsername,
-      // Returned from the binding rather than fetched by a second call, so the hand-off has
-      // no way to assemble a URL before the association exists. The record this hand-off
-      // belongs to is the one the binding just confirmed — never whichever record an identity
-      // search happens to return first, which is what this endpoint replaced.
-      redirectUrl,
+      userId,
+      // The producer's address, passed through unchanged. It owns the session this belongs to,
+      // so a second address composed here would ignore whatever that session carries.
+      signUrl,
+      githubId: recorded.githubId,
+      ...(githubUsername ? { githubUsername } : {}),
+      skippedIdentities,
     };
   }
 

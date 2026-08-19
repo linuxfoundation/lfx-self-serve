@@ -19,11 +19,11 @@ router.get('/clas/:signatureId/pdf-url', (req, res, next) => clasController.getP
 router.get('/clas/sign-options', (req, res, next) => clasController.getClaGroupOptions(req, res, next));
 
 // GitHub account selection before the hand-off (#1252). Listing the linked accounts is a
-// read and stays available while impersonating; recording the choice is guarded, and more
-// plainly than the hand-off is — this route causes an identity attribute to be written to
-// an EasyCLA record, which is literally the hard-to-retract, externally-visible act with no
-// in-payload caller identity that the read-only rule exists for.
+// read and stays available while impersonating; preparing the signing session is guarded, and
+// more plainly than the hand-off is — this route causes an identity attribute and a signing
+// session to be written against an EasyCLA record, which is literally the hard-to-retract,
+// externally-visible act with no in-payload caller identity that the read-only rule exists for.
 router.get('/clas/github-accounts', (req, res, next) => clasController.getGithubAccounts(req, res, next));
-router.post('/clas/signing-identity', blockDuringImpersonation, (req, res, next) => clasController.bindSigningIdentity(req, res, next));
+router.post('/clas/prepare-sign', blockDuringImpersonation, (req, res, next) => clasController.prepareSign(req, res, next));
 
 export default router;
