@@ -235,6 +235,8 @@ export class DocsArticleComponent {
   }
 
   private initArticle() {
-    return toSignal<DocsArticle | undefined>(this.route.data.pipe(map((d): DocsArticle | undefined => d['article'])), { initialValue: undefined });
+    // `docsArticleResolver` yields `null` on a manifest miss (rendered as the
+    // inline not-found view); include it so the signal type matches the resolver.
+    return toSignal<DocsArticle | null | undefined>(this.route.data.pipe(map((d): DocsArticle | null => d['article'] ?? null)), { initialValue: undefined });
   }
 }
