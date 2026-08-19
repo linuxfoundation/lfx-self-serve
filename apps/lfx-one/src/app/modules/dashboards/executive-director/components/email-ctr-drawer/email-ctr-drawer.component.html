@@ -28,209 +28,241 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="email-ctr-drawer-content">
-    @if (drawerLoading()) {
-      <div class="flex flex-col gap-4">
-        <div class="flex gap-4">
-          <p-skeleton width="100%" height="4rem" />
-          <p-skeleton width="100%" height="4rem" />
+    @if (unavailable()) {
+      <!-- A failed request renders ONLY this. Guarding section-by-section was tried and
+           repeatedly missed one — stats, charts, insight blocks and per-section empty states
+           each assert a measurement, so the whole body has to go, not a list of its parts. -->
+      <div
+        class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="email-ctr-drawer-unavailable">
+        <div class="flex items-start gap-4 px-4 py-4">
+          <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <h3 class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</h3>
+            <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
+          </div>
         </div>
-        <p-skeleton width="100%" height="12rem" />
-        <p-skeleton width="100%" height="12rem" />
-        <p-skeleton width="60%" height="1rem" />
       </div>
     } @else {
-      <!-- Cross-Channel Insights -->
-      @if (attentionActions().length > 0 || attentionInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
-          data-testid="email-ctr-drawer-attention">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-triangle-exclamation text-red-600"></i>
-            <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+      @if (drawerLoading()) {
+        <div class="flex flex-col gap-4">
+          <div class="flex gap-4">
+            <p-skeleton width="100%" height="4rem" />
+            <p-skeleton width="100%" height="4rem" />
           </div>
-
-          @for (action of attentionActions(); track action.title) {
-            <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
-              </div>
-              @if (action.priority === 'high') {
-                <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
-              } @else {
-                <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
-              }
-            </div>
-          }
-
-          @for (insight of attentionInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
+          <p-skeleton width="100%" height="12rem" />
+          <p-skeleton width="100%" height="12rem" />
+          <p-skeleton width="60%" height="1rem" />
         </div>
-      }
-
-      @if (performingActions().length > 0 || performingInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
-          data-testid="email-ctr-drawer-performing">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-check text-green-600"></i>
-            <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
-          </div>
-
-          @for (action of performingActions(); track action.title) {
-            <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
-              </div>
-            </div>
-          }
-
-          @for (insight of performingInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
-        </div>
-      }
-
-      @if (hasNoData()) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
-          role="status"
-          data-testid="email-ctr-drawer-no-data">
-          <div class="flex items-start gap-4 px-4 py-4">
-            <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
-            <div class="flex flex-col gap-1 flex-1 min-w-0">
-              <h3 class="text-sm font-semibold text-gray-900">No email activity detected</h3>
-              <p class="text-sm text-gray-500">Engage with marketing ops to start sending campaigns and tracking results.</p>
-            </div>
-          </div>
-        </div>
-      }
-
-      <div class="flex flex-col gap-5" data-testid="email-ctr-drawer-email-section">
-        <div class="flex items-center gap-2">
-          <i class="fa-light fa-envelope text-blue-500"></i>
-          <h3 class="text-base font-semibold text-gray-900">Email Performance</h3>
-        </div>
-
-        <!-- Email Summary Stats -->
-        <div class="flex flex-wrap gap-4" data-testid="email-ctr-drawer-stats">
-          <lfx-card styleClass="flex-1 min-w-[100px]">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-gray-500">Sends</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalSends() }}</span>
-            </div>
-          </lfx-card>
-          <lfx-card styleClass="flex-1 min-w-[100px]">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-gray-500">Opens</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalOpens() }}</span>
-            </div>
-          </lfx-card>
-          <lfx-card styleClass="flex-1 min-w-[100px]">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-gray-500">Open Rate</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ emailOpenRate() | number: '1.1-1' }}%</span>
-            </div>
-          </lfx-card>
-          <lfx-card styleClass="flex-1 min-w-[100px]">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-gray-500">Clicks</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalClicks() }}</span>
-            </div>
-          </lfx-card>
-          <lfx-card styleClass="flex-1 min-w-[100px]">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-gray-500">CTR</span>
-              <span class="text-2xl font-semibold text-gray-900">{{ emailAvgCtr() | number: '1.1-1' }}%</span>
-            </div>
-          </lfx-card>
-        </div>
-
-        <!-- Campaign Insight Callout -->
-        @if (drawerData().campaignInsightText) {
-          <div class="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg" data-testid="email-ctr-drawer-campaign-insight">
-            <i class="fa-light fa-lightbulb text-blue-500 mt-0.5"></i>
-            <p class="text-sm text-blue-800">{{ drawerData().campaignInsightText }}</p>
-          </div>
-        }
-
-        <!-- Campaign Performance by Type -->
-        @if ((drawerData().emailTypeBreakdown?.length ?? 0) > 0) {
-          <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
-            <div class="flex flex-col gap-1">
-              <h3 class="text-sm font-semibold text-gray-900">Campaign Performance by Type</h3>
-              <p class="text-sm text-gray-600">Email performance grouped by campaign type over the last 6 months</p>
+      } @else {
+        <!-- Cross-Channel Insights -->
+        @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+            data-testid="email-ctr-drawer-attention">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-triangle-exclamation text-red-600"></i>
+              <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
             </div>
 
-            <!-- Table Header -->
-            <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
-              <span class="flex-[2] min-w-[120px]">Type / Campaign</span>
-              <span class="flex-1 text-right">Send Date</span>
-              <span class="flex-1 text-right">Sends</span>
-              <span class="flex-1 text-right">Opens</span>
-              <span class="flex-1 text-right">Open Rate</span>
-              <span class="flex-1 text-right">Clicks</span>
-              <span class="flex-1 text-right">CTR</span>
-              <span class="w-24 text-right">Performance</span>
-            </div>
-
-            <!-- Type Rows -->
-            @for (type of drawerData().emailTypeBreakdown!; track type.emailType) {
-              <!-- Type Summary Row -->
-              <div
-                class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
-                role="button"
-                tabindex="0"
-                [attr.aria-expanded]="expandedTypes().has(type.emailType)"
-                (click)="toggleType(type.emailType)"
-                (keydown.enter)="toggleType(type.emailType)"
-                (keydown.space)="$event.preventDefault(); toggleType(type.emailType)"
-                data-testid="email-ctr-drawer-type-row">
-                <span class="flex-[2] min-w-[120px]">
-                  <lfx-tag [value]="type.emailType | titlecase" severity="warn" [rounded]="true" />
-                </span>
-                <!-- The type row aggregates every send date, so the column is intentionally blank here. -->
-                <span class="flex-1"></span>
-                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalSends) }}</span>
-                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalOpens) }}</span>
-                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.openRate | number: '1.1-1' }}%</span>
-                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalClicks) }}</span>
-                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.ctr | number: '1.1-1' }}%</span>
-                <span class="w-24 flex justify-end">
-                  <lfx-tag [value]="type.performance" [severity]="getPerformanceSeverity(type.performance)" [rounded]="true" />
-                </span>
-              </div>
-
-              <!-- Expanded Campaign Rows -->
-              @if (expandedTypes().has(type.emailType)) {
-                <!-- sendDate in the key and on the row: the breakdown groups by PUBLISHED_DATE, so one
-                     campaign sent twice yields two rows. Without the date they carry duplicate track
-                     keys when the send counts also match, and read as the same row on screen. -->
-                @for (campaign of type.campaigns; track campaign.campaignName + '|' + campaign.sendDate + '|' + campaign.sends) {
-                  <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-campaign-row">
-                    <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
-                    <span class="flex-1 text-right text-xs text-gray-500">{{ campaign.sendDate || '—' }}</span>
-                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.sends) }}</span>
-                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.opens) }}</span>
-                    <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.openRate | number: '1.1-1' }}%</span>
-                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.clicks) }}</span>
-                    <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.ctr | number: '1.1-1' }}%</span>
-                    <span class="w-24"></span>
-                  </div>
+            @for (action of attentionActions(); track action.title) {
+              <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
                 }
-              }
+              </div>
+            }
+
+            @for (insight of attentionInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
             }
           </div>
         }
-      </div>
+
+        @if (performingActions().length > 0 || performingInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+            data-testid="email-ctr-drawer-performing">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-check text-green-600"></i>
+              <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+            </div>
+
+            @for (action of performingActions(); track action.title) {
+              <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+              </div>
+            }
+
+            @for (insight of performingInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        @if (hasNoData()) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+            role="status"
+            data-testid="email-ctr-drawer-no-data">
+            <div class="flex items-start gap-4 px-4 py-4">
+              <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <h3 class="text-sm font-semibold text-gray-900">No email activity detected</h3>
+                <p class="text-sm text-gray-500">Engage with marketing ops to start sending campaigns and tracking results.</p>
+              </div>
+            </div>
+          </div>
+        }
+
+        <div class="flex flex-col gap-5" data-testid="email-ctr-drawer-email-section">
+          <div class="flex items-center gap-2">
+            <i class="fa-light fa-envelope text-blue-500"></i>
+            <h3 class="text-base font-semibold text-gray-900">Email Performance</h3>
+          </div>
+
+          <!-- Email Summary Stats -->
+          <div class="flex flex-wrap gap-4" data-testid="email-ctr-drawer-stats">
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Sends</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalSends() }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Opens</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalOpens() }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Open Rate</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailOpenRate() }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Clicks</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailTotalClicks() }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">CTR</span>
+                <span class="text-2xl font-semibold" [class]="breakdownUnavailable() ? 'text-gray-400' : 'text-gray-900'">{{ emailAvgCtr() }}</span>
+              </div>
+            </lfx-card>
+          </div>
+
+          <!-- Campaign Insight Callout -->
+          @if (drawerData().campaignInsightText) {
+            <div class="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg" data-testid="email-ctr-drawer-campaign-insight">
+              <i class="fa-light fa-lightbulb text-blue-500 mt-0.5"></i>
+              <p class="text-sm text-blue-800">{{ drawerData().campaignInsightText }}</p>
+            </div>
+          }
+
+          <!-- Campaign Performance by Type -->
+          @if ((drawerData().emailTypeBreakdown?.length ?? 0) > 0) {
+            <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
+              <div class="flex flex-col gap-1">
+                <h3 class="text-sm font-semibold text-gray-900">Campaign Performance by Type</h3>
+                <p class="text-sm text-gray-600">Email performance grouped by campaign type over the last 6 months</p>
+              </div>
+
+              <!-- Table Header -->
+              <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                <span class="flex-[2] min-w-[120px]">Type / Campaign</span>
+                <span class="flex-1 text-right">Send Date</span>
+                <span class="flex-1 text-right">Sends</span>
+                <span class="flex-1 text-right">Opens</span>
+                <span class="flex-1 text-right">Open Rate</span>
+                <span class="flex-1 text-right">Clicks</span>
+                <span class="flex-1 text-right">CTR</span>
+                <span class="w-24 text-right">Performance</span>
+              </div>
+
+              <!-- Type Rows -->
+              @for (type of drawerData().emailTypeBreakdown!; track type.emailType) {
+                <!-- Type Summary Row -->
+                <div
+                  class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+                  role="button"
+                  tabindex="0"
+                  [attr.aria-expanded]="expandedTypes().has(type.emailType)"
+                  (click)="toggleType(type.emailType)"
+                  (keydown.enter)="toggleType(type.emailType)"
+                  (keydown.space)="$event.preventDefault(); toggleType(type.emailType)"
+                  data-testid="email-ctr-drawer-type-row">
+                  <span class="flex-[2] min-w-[120px]">
+                    <lfx-tag [value]="type.emailType | titlecase" severity="warn" [rounded]="true" />
+                  </span>
+                  <!-- The type row aggregates every send date, so the column is intentionally blank here. -->
+                  <span class="flex-1"></span>
+                  <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalSends) }}</span>
+                  <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalOpens) }}</span>
+                  <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.openRate | number: '1.1-1' }}%</span>
+                  <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalClicks) }}</span>
+                  <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.ctr | number: '1.1-1' }}%</span>
+                  <span class="w-24 flex justify-end">
+                    <lfx-tag [value]="type.performance" [severity]="getPerformanceSeverity(type.performance)" [rounded]="true" />
+                  </span>
+                </div>
+
+                <!-- Expanded Campaign Rows -->
+                @if (expandedTypes().has(type.emailType)) {
+                  <!-- sendDate in the key and on the row: the breakdown groups by PUBLISHED_DATE, so one
+                       campaign sent twice yields two rows. Without the date they carry duplicate track
+                       keys when the send counts also match, and read as the same row on screen. -->
+                  @for (campaign of type.campaigns; track campaign.campaignName + '|' + campaign.sendDate + '|' + campaign.sends) {
+                    <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-campaign-row">
+                      <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{
+                        campaign.campaignName
+                      }}</span>
+                      <span class="flex-1 text-right text-xs text-gray-500">{{ campaign.sendDate || '—' }}</span>
+                      <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.sends) }}</span>
+                      <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.opens) }}</span>
+                      <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.openRate | number: '1.1-1' }}%</span>
+                      <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.clicks) }}</span>
+                      <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.ctr | number: '1.1-1' }}%</span>
+                      <span class="w-24"></span>
+                    </div>
+                  }
+                }
+              }
+            </div>
+          } @else if (breakdownUnavailable()) {
+            <!-- Without this branch a failed breakdown renders NOTHING here, which reads as
+                 "this foundation runs no campaigns" — the same fabricated finding as a zero,
+                 stated by omission instead of by number. -->
+            <div
+              class="flex flex-col gap-1 items-center justify-center py-8 border border-gray-200 rounded-lg"
+              role="status"
+              data-testid="email-ctr-drawer-breakdown-unavailable">
+              <span class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</span>
+              <span class="text-sm text-gray-500">{{ unavailableBody }}</span>
+            </div>
+          }
+        </div>
+      }
     }
   </div>
 </p-drawer>

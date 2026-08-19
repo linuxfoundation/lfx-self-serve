@@ -28,147 +28,168 @@
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="engaged-community-drawer-content">
-    <!-- Summary Stats -->
-    <div class="flex gap-4" data-testid="engaged-community-drawer-stats">
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Total Engaged</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalMembers() }}</span>
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Growth</span>
-          @if (data().changePercentage !== 0) {
-            <div class="flex items-center gap-2">
-              <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage | number: '1.1-1' }}%
-              </span>
-              <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
-            </div>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-500">0%</span>
-          }
-        </div>
-      </lfx-card>
-    </div>
-
-    @if (hasNoData()) {
+    @if (unavailable() || pending()) {
+      <!-- A failed request renders ONLY this. Guarding section-by-section was tried and
+           repeatedly missed one — stats, charts, insight blocks and per-section empty states
+           each assert a measurement, so the whole body has to go, not a list of its parts. -->
       <div
         class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
         role="status"
-        data-testid="engaged-community-drawer-no-data">
+        aria-live="polite"
+        data-testid="engaged-community-drawer-unavailable">
         <div class="flex items-start gap-4 px-4 py-4">
           <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
           <div class="flex flex-col gap-1 flex-1 min-w-0">
-            <h3 class="text-sm font-semibold text-gray-900">No community engagement activity detected</h3>
-            <p class="text-sm text-gray-500">Engage with marketing ops to activate campaigns and start tracking results.</p>
+            <h3 class="text-sm font-semibold text-gray-900">{{ pending() ? loadingHeading : unavailableHeading }}</h3>
+            @if (!pending()) {
+              <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
+            }
           </div>
         </div>
       </div>
     } @else {
-      <!-- FIRST FOLD: Needs Your Attention -->
-      @if (attentionActions().length > 0 || attentionInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
-          data-testid="engaged-community-drawer-attention">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-triangle-exclamation text-red-600"></i>
-            <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+      <!-- Summary Stats -->
+      <div class="flex gap-4" data-testid="engaged-community-drawer-stats">
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Total Engaged</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalMembers() }}</span>
           </div>
-
-          @for (action of attentionActions(); track action.title) {
-            <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Growth</span>
+            @if (data().changePercentage !== 0) {
+              <div class="flex items-center gap-2">
+                <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                  {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage | number: '1.1-1' }}%
+                </span>
+                <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
               </div>
-              @if (action.priority === 'high') {
-                <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
-              } @else {
-                <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
-              }
-            </div>
-          }
-
-          @for (insight of attentionInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
-        </div>
-      }
-
-      <!-- SECOND FOLD: Performing Well -->
-      @if (performingActions().length > 0 || performingInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
-          data-testid="engaged-community-drawer-performing">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-check text-green-600"></i>
-            <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-500">0%</span>
+            }
           </div>
-
-          @for (action of performingActions(); track action.title) {
-            <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
-              </div>
-            </div>
-          }
-
-          @for (insight of performingInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
-        </div>
-      }
-    }
-
-    <!-- Growth Trend Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-trend-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Community Growth Trend</h3>
-        <p class="text-sm text-gray-600">Total engaged community size over the last 6 months</p>
+        </lfx-card>
       </div>
-      @if (data().monthlyData.length > 1) {
-        <div class="h-[200px]" data-testid="engaged-community-drawer-trend-chart">
-          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+
+      @if (hasNoData()) {
+        <div
+          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+          role="status"
+          data-testid="engaged-community-drawer-no-data">
+          <div class="flex items-start gap-4 px-4 py-4">
+            <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
+              <h3 class="text-sm font-semibold text-gray-900">No community engagement activity detected</h3>
+              <p class="text-sm text-gray-500">{{ noActivityBody }}</p>
+            </div>
+          </div>
         </div>
       } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No trend data available</p>
+        <!-- FIRST FOLD: Needs Your Attention -->
+        @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+            data-testid="engaged-community-drawer-attention">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-triangle-exclamation text-red-600"></i>
+              <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+            </div>
+
+            @for (action of attentionActions(); track action.title) {
+              <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                }
+              </div>
+            }
+
+            @for (insight of attentionInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- SECOND FOLD: Performing Well -->
+        @if (performingActions().length > 0 || performingInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+            data-testid="engaged-community-drawer-performing">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-check text-green-600"></i>
+              <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+            </div>
+
+            @for (action of performingActions(); track action.title) {
+              <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+              </div>
+            }
+
+            @for (insight of performingInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
+            }
+          </div>
+        }
+      }
+
+      <!-- Growth Trend Chart -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-trend-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Community Growth Trend</h3>
+          <p class="text-sm text-gray-600">Total engaged community size over the last 6 months</p>
+        </div>
+        @if (data().monthlyData.length > 1) {
+          <div class="h-[200px]" data-testid="engaged-community-drawer-trend-chart">
+            <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No trend data available</p>
+          </div>
+        }
+      </div>
+
+      <!-- Breakdown Chart -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-breakdown-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Community Breakdown</h3>
+          <p class="text-sm text-gray-600">Members by engagement channel (deduplicated)</p>
+        </div>
+        <div class="h-[220px]" data-testid="engaged-community-drawer-breakdown-chart">
+          <lfx-chart type="bar" [data]="breakdownChartData()" [options]="breakdownChartOptions" height="100%"></lfx-chart>
+        </div>
+      </div>
+
+      <!-- Weekly Sessions Trend -->
+      @if (brandReachData().weeklyTrend.length > 0) {
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-daily-trend">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Weekly Sessions Trend</h3>
+            <p class="text-sm text-gray-600">Website sessions over the last 6 months (weekly)</p>
+          </div>
+          <div class="h-[240px]" data-testid="engaged-community-drawer-daily-chart">
+            <lfx-chart type="line" [data]="dailyTrendData()" [options]="dailyTrendOptions" height="100%"></lfx-chart>
+          </div>
         </div>
       }
-    </div>
-
-    <!-- Breakdown Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-breakdown-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Community Breakdown</h3>
-        <p class="text-sm text-gray-600">Members by engagement channel (deduplicated)</p>
-      </div>
-      <div class="h-[220px]" data-testid="engaged-community-drawer-breakdown-chart">
-        <lfx-chart type="bar" [data]="breakdownChartData()" [options]="breakdownChartOptions" height="100%"></lfx-chart>
-      </div>
-    </div>
-
-    <!-- Weekly Sessions Trend -->
-    @if (brandReachData().weeklyTrend.length > 0) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-daily-trend">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Weekly Sessions Trend</h3>
-          <p class="text-sm text-gray-600">Website sessions over the last 6 months (weekly)</p>
-        </div>
-        <div class="h-[240px]" data-testid="engaged-community-drawer-daily-chart">
-          <lfx-chart type="line" [data]="dailyTrendData()" [options]="dailyTrendOptions" height="100%"></lfx-chart>
-        </div>
-      </div>
     }
   </div>
 </p-drawer>
