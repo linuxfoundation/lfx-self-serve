@@ -638,7 +638,14 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     removeGeoTarget(index: number): void;
     addGeoTarget(urn: string): void;
     setLinkedInTargetingProfile(profile: string): void;
-    setLinkedInAccount(accountId: string): void;
+    /**
+     * The template's `(change)` handler, NOT the `setLinkedInAccount` convenience method.
+     *
+     * `setLinkedInAccount` has no call site in this component's template — only a test ever
+     * reached it — so driving the round-trip through it would leave a regression in the real
+     * handler completely green while live account selections stopped reaching the draft.
+     */
+    onLinkedInAccountChange(event: Event): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
 
@@ -779,7 +786,10 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   it('keeps a chosen ad account after a tab round-trip', async () => {
     const first = await mount(null);
-    at(first.fixture).setLinkedInAccount('urn:li:sponsoredAccount:999');
+    // Through the handler the TEMPLATE binds, so a regression in it fails this test. Calling
+    // `setLinkedInAccount` instead would pass against a broken `(change)` binding, since nothing
+    // in this component's template calls that method.
+    at(first.fixture).onLinkedInAccountChange({ target: { value: 'urn:li:sponsoredAccount:999' } } as unknown as Event);
     first.fixture.detectChanges();
 
     const carried = first.latest();

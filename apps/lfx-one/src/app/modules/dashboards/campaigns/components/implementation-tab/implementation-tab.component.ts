@@ -682,10 +682,10 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInBudgetUsd.set(value);
   }
 
-  protected setLinkedInAccount(accountId: string): void {
-    this.campaignForm.controls.linkedInAccountId.setValue(accountId);
-  }
-
+  // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
+  // called it — only a test did, which made the test pass against a broken `(change)` binding.
+  // `onLinkedInAccountChange` below is the real path and is what the round-trip test now drives.
+  // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
     this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
   }
