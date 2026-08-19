@@ -96,4 +96,40 @@ describe('executeMetaCampaignCreation', () => {
       expect(postPaths(fetchMock).some((p) => p.endsWith('/campaigns'))).toBe(true);
     });
   });
+
+  describe('placement validation ordering', () => {
+    // Same ORDERING defect as the promoted object above, and the same reason a rejection-only
+    // assertion would not catch it: an all-off placement selection always threw, but it threw from
+    // `buildPlacementTargeting` at the ad-set step — after `POST /campaigns` had created a
+    // billable resource. The UI blocks an empty selection, but this service is reachable by any
+    // caller of the create endpoint, so the form's guard is not the boundary.
+    it('issues no mutating POST when every placement is disabled', async () => {
+      const allOff = {
+        facebookFeed: false,
+        instagramFeed: false,
+        stories: false,
+        reels: false,
+        audienceNetwork: false,
+        messengerInbox: false,
+      };
+
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ placements: allOff }))).rejects.toThrow(/At least one placement must be enabled/);
+
+      expect(postPaths(fetchMock)).toEqual([]);
+    });
+
+    it('creates the campaign and reuses the validated placement targeting in the ad set', async () => {
+      await executeMetaCampaignCreation(undefined, baseConfig({ placements: { reels: true } }));
+
+      expect(postPaths(fetchMock).some((p) => p.endsWith('/campaigns'))).toBe(true);
+
+      // Consumed verbatim by the ad set, proving the validation was HOISTED rather than duplicated
+      // — a second, independently built value could diverge from the one that was checked.
+      const adSetCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/adsets'));
+      expect(adSetCall).toBeDefined();
+      const adSetBody = JSON.parse((adSetCall![1] as RequestInit).body as string);
+      expect(adSetBody.targeting.publisher_platforms).toContain('facebook');
+      expect(adSetBody.targeting.facebook_positions).toContain('facebook_reels');
+    });
+  });
 });

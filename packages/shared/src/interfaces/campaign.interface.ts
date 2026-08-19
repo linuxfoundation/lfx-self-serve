@@ -356,6 +356,28 @@ export interface CampaignImplementationDraft {
    * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
    */
   eventSlug: string;
+  /**
+   * Meta settings as edited, and the reason this snapshot is not "the form fields only".
+   *
+   * These four live in component SIGNALS rather than in `campaignForm`, so the
+   * `campaignForm.valueChanges` subscription that drives every other field here never sees them.
+   * The parent destroys this component on a tab switch (`@switch`/`@case` in
+   * `campaigns.component.html`), so without them a user who selects Conversions, enters a pixel,
+   * turns off a placement or edits a geo chip, then glances at Insights, returns to Traffic and
+   * the defaults — silently, and the eventual paid request changes with it.
+   *
+   * `placements` is a full object rather than a list of enabled keys: the "at least one enabled"
+   * guard reads every member, and reconstructing the disabled half from an allow-list would
+   * reintroduce the omission `META_SELECTABLE_PLACEMENTS` exists to prevent.
+   *
+   * OPTIONAL, because a draft persisted before this shipped has none of them. Absent means "this
+   * draft predates Meta fields, keep the seeded values" — never "the user cleared them"; a
+   * present-but-empty `pixelId` is what records a deliberate clear.
+   */
+  metaObjective?: MetaObjective;
+  metaPlacements?: MetaPlacement;
+  metaPixelId?: string;
+  metaGeoTargets?: string[];
 }
 
 /**

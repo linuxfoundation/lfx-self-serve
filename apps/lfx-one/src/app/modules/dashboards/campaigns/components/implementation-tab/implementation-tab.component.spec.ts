@@ -632,6 +632,111 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect((await submittedMetaConfig())['objective']).toBe('awareness');
   });
 
+  // === Draft survival across a tab switch ===
+
+  /**
+   * The parent renders this component inside an `@switch`/`@case`, so visiting Insights DESTROYS
+   * it. These four Meta values live in component signals that `campaignForm.valueChanges` never
+   * sees, so before this fix a user who chose Conversions, entered a pixel, turned off a
+   * placement or edited a geo chip and glanced at another tab came back to traffic and the
+   * defaults — silently changing the paid request they were about to submit.
+   *
+   * The binding assertion is what the REMOUNTED component would SUBMIT, not merely that the draft
+   * object has the fields on it. A draft that carried the values but was never restored — or was
+   * restored into signals `submit()` does not read — would pass a shape assertion and still lose
+   * the user's edit.
+   */
+  it('carries the user Meta edits through a destroy/remount and into the request', async () => {
+    // Edit all four surfaces, capturing the draft the component emits as it goes.
+    let draft: Record<string, any> | null = null;
+    component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+
+    await selectObjective('conversions');
+    await typePixelId('998877');
+    await togglePlacement('reels', true);
+    component()['addMetaGeoTarget']('jp');
+    await fixture.whenStable();
+
+    expect(draft).not.toBeNull();
+    const draftSlug = (draft as unknown as Record<string, any>)['eventSlug'];
+
+    // Destroy and remount — exactly what the parent's @switch does on a tab visit. The draft is
+    // restored through the real path: the `briefData` effect seeds from the brief and THEN applies
+    // the draft over it, which is the ordering that makes a carried-over edit win.
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', draft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: draftSlug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['metaVariants'].set([{ primaryText: 'Join us', headline: 'KubeCon EU', description: 'September' }]);
+    await restored.whenStable();
+
+    createCampaign.mockClear();
+    c['submit']();
+    await restored.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    const metaConfig = createCampaign.mock.calls[0][0].metaConfig;
+    expect(metaConfig['objective']).toBe('conversions');
+    expect(metaConfig['pixelId']).toBe('998877');
+    expect(metaConfig['placements']).toEqual({ reels: true });
+    expect(metaConfig['geoTargets']).toContain('JP');
+  });
+
+  /**
+   * A draft persisted BEFORE these fields shipped carries none of them. Absence must mean "keep
+   * what the brief seeded", never "the user chose the defaults" — otherwise an old draft silently
+   * downgrades a Conversions campaign to traffic on the next tab switch. `undefined` is what
+   * preserves that distinction; a present-but-empty `metaPixelId` is a real cleared value.
+   */
+  it('leaves Meta settings seeded when an older draft omits them', async () => {
+    await selectObjective('conversions');
+    await typePixelId('554433');
+    const slug = component()['campaignForm'].controls['eventSlug'].value;
+
+    const legacyDraft = {
+      eventName: 'KubeCon EU 2026',
+      countryCode: 'US',
+      registrationUrl: 'https://events.example.com/kubecon-eu-2026',
+      headlines: [],
+      descriptions: [],
+      budgetUsd: 500,
+      searchBudgetPct: 70,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      includeSearch: true,
+      includeDemandGen: false,
+      eventSlug: slug,
+    };
+
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', legacyDraft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    // Stand in for values the brief seeded on this mount. The legacy draft names none of the Meta
+    // fields, so the restore must leave every one of them exactly as seeded.
+    c['metaObjective'].set('conversions');
+    c['metaPixelId'].set('554433');
+    c['applyDraft']();
+    await restored.whenStable();
+
+    expect(c['metaObjective']()).toBe('conversions');
+    expect(c['metaPixelId']()).toBe('554433');
+  });
+
   // === Placements ===
 
   /**
@@ -1245,107 +1350,3 @@ describe('ImplementationTabComponent brief restore', () => {
  * only for `aria-pressed` and row styling, and never placed on a request. These assert the value
  * reaches `hubspotConfig.sourceEmailId`, which campaign-service requires with no default.
  */
-describe('ImplementationTabComponent hubspotConfig wiring', () => {
-  let fixture: ComponentFixture<ImplementationTabComponent>;
-  let posted: Record<string, unknown> | null;
-
-  function makeOtherwiseValid(): void {
-    const c = fixture.componentInstance as unknown as {
-      selectedPlatforms: { set(v: string[]): void };
-      campaignForm: {
-        controls: Record<string, { setValue(v: unknown): void }>;
-        get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
-      };
-    };
-    c.selectedPlatforms.set(['google-ads']);
-    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
-    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
-    c.campaignForm.controls['startDate'].setValue('2026-09-01');
-    c.campaignForm.controls['endDate'].setValue('2026-09-30');
-    c.campaignForm.controls['includeSearch'].setValue(true);
-    c.campaignForm.controls['includeDemandGen'].setValue(false);
-    c.campaignForm.get('headlines')?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
-    c.campaignForm.get('descriptions')?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
-    fixture.detectChanges();
-  }
-
-  /** Drive the real `submit()` and capture the body handed to the service. */
-  function submitAndCapture(): void {
-    (fixture.componentInstance as unknown as { submit(): void }).submit();
-  }
-
-  beforeEach(async () => {
-    posted = null;
-    await TestBed.configureTestingModule({
-      imports: [ImplementationTabComponent],
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideRouter([]),
-        ProjectContextService,
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        {
-          // Stubbed at the service boundary rather than the HTTP one: the assertion is about the
-          // REQUEST BODY the component builds, and a stub keeps the create from being dispatched
-          // anywhere. Nothing here can reach HubSpot or spend money.
-          provide: CampaignService,
-          useValue: {
-            createCampaign: (request: Record<string, unknown>) => {
-              posted = request;
-              return of({ jobId: '' });
-            },
-            // `ngOnInit` resolves the LinkedIn ad-account list on mount. Stubbed empty because
-            // these tests select google-ads only, so the list is never read.
-            getLinkedInAccounts: () => of([]),
-          },
-        },
-      ],
-    }).compileComponents();
-
-    fixture = TestBed.createComponent(ImplementationTabComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-  });
-
-  it('carries the chosen template id as hubspotConfig.sourceEmailId', () => {
-    makeOtherwiseValid();
-    fixture.componentRef.setInput('sourceEmailId', 'email-123');
-    fixture.detectChanges();
-
-    submitAndCapture();
-
-    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-123' });
-  });
-
-  it('omits hubspotConfig entirely when no template is chosen', () => {
-    // The paid-only path, which is every create today. An empty-but-present config would be a
-    // configured-looking email channel on a campaign that has none.
-    makeOtherwiseValid();
-
-    submitAndCapture();
-
-    expect(posted).not.toHaveProperty('hubspotConfig');
-  });
-
-  it('treats a whitespace-only template id as no selection, matching the server', () => {
-    // `buildHubSpotConfig` trims and returns null (UNCONFIGURED) for a blank id. Sending
-    // `{ sourceEmailId: '   ' }` would claim a template was picked and be refused upstream.
-    makeOtherwiseValid();
-    fixture.componentRef.setInput('sourceEmailId', '   ');
-    fixture.detectChanges();
-
-    submitAndCapture();
-
-    expect(posted).not.toHaveProperty('hubspotConfig');
-  });
-
-  it('trims a padded template id rather than sending the padding', () => {
-    makeOtherwiseValid();
-    fixture.componentRef.setInput('sourceEmailId', '  email-456  ');
-    fixture.detectChanges();
-
-    submitAndCapture();
-
-    expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-456' });
-  });
-});

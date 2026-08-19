@@ -307,6 +307,14 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   // The value is reused verbatim in the ad set body — the validation is hoisted, not duplicated.
   const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
 
+  // Hoisted for the SAME reason as the promoted object directly above, and it is the same defect:
+  // an all-off placement selection is deterministic input, knowable before anything is spent, yet
+  // this threw from the ad-set step below — after `POST /campaigns` had already created a billable
+  // resource. The UI blocks an empty selection, but this service is reachable by any caller of the
+  // create endpoint, so the form's guard is not the boundary. Reused verbatim in the ad set body,
+  // so the validation is moved rather than duplicated.
+  const placementTargeting = buildPlacementTargeting(config.placements ?? {});
+
   const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
     name: campaignName,
     objective: objParams.campaignObjective,
@@ -321,7 +329,6 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   // Step 3: Create ad set with budget, schedule, geo targeting, and placements
   const budgetCents = Math.round(config.budgetUsd * 100);
   const adSetName = `${config.eventName} - ${META_OBJECTIVE_LABELS[objective]}`;
-  const placementTargeting = buildPlacementTargeting(config.placements ?? {});
 
   const adSetBody: Record<string, unknown> = {
     name: adSetName,

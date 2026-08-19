@@ -728,6 +728,9 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaObjectiveChange(event: Event): void {
     this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
+    // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
+    // without this the parent's draft never learns the edit and a tab switch reverts it.
+    this.emitDraft();
   }
 
   /**
@@ -741,14 +744,17 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.metaSelectablePlacements.includes(key)) return;
     const enabled = (event.target as HTMLInputElement).checked;
     this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
+    this.emitDraft();
   }
 
   protected onMetaPixelIdInput(event: Event): void {
     this.metaPixelId.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
   }
 
   protected removeMetaGeoTarget(index: number): void {
     this.metaGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
   }
 
   /**
@@ -772,6 +778,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected addMetaGeoTarget(code: string): void {
     this.metaGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
+    this.emitDraft();
   }
 
   protected onMetaGeoTargetAdd(event: Event): void {
@@ -973,6 +980,24 @@ export class ImplementationTabComponent implements OnInit {
     // headline for no gain. The single patch above is enough to settle every derived signal.
     this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
     this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
+
+    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
+    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
+    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
+    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
+    // which is exactly the distinction `undefined` preserves and `''` would destroy.
+    if (draft.metaObjective !== undefined) {
+      this.metaObjective.set(draft.metaObjective);
+    }
+    if (draft.metaPlacements !== undefined) {
+      this.metaPlacements.set({ ...draft.metaPlacements });
+    }
+    if (draft.metaPixelId !== undefined) {
+      this.metaPixelId.set(draft.metaPixelId);
+    }
+    if (draft.metaGeoTargets !== undefined) {
+      this.metaGeoTargets.set([...draft.metaGeoTargets]);
+    }
   }
 
   /**
@@ -1022,6 +1047,13 @@ export class ImplementationTabComponent implements OnInit {
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
       eventSlug: form.eventSlug,
+      // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
+      // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
+      // the parent holds a value, not a live view of a signal this component is about to destroy.
+      metaObjective: this.metaObjective(),
+      metaPlacements: { ...this.metaPlacements() },
+      metaPixelId: this.metaPixelId(),
+      metaGeoTargets: [...this.metaGeoTargets()],
     });
   }
 
