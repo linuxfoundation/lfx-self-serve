@@ -13,7 +13,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TableComponent } from '@components/table/table.component';
 import {
   DEFAULT_FOUNDATION_PROJECT_ROW_VIEW,
-  DEFAULT_FOUNDATION_PROJECTS_DETAIL,
+  DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY,
   PRESENCE_PILL_IDS,
   UUID_REGEX,
@@ -31,10 +31,11 @@ import { bufferTime, catchError, combineLatest, filter, finalize, from, map, mer
 import type {
   FilterPillOption,
   FoundationProjectRowView,
-  FoundationProjectsDetailResponse,
+  FoundationProjectsDetailGroupedResponse,
   PresencePill,
   PresenceState,
   ProjectCounts,
+  ProjectTableGroup,
   ProjectTableRow,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
@@ -73,12 +74,17 @@ export class FoundationProjectsComponent {
   // === Computed/toSignal Signals ===
   protected readonly foundationSlug: Signal<string> = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
   protected readonly foundationName: Signal<string> = computed(() => this.projectContextService.selectedFoundation()?.name ?? 'The Linux Foundation');
-  private readonly rawData: Signal<FoundationProjectsDetailResponse> = this.initRawData();
+  private readonly rawData: Signal<FoundationProjectsDetailGroupedResponse> = this.initRawData();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly allProjects: Signal<ProjectTableRow[]> = computed(() => this.rawData().projects);
+  // Flattened across every group (root foundation + discovered sub-foundations) so the existing
+  // filter/count/pill logic below operates on one list, unaware of grouping (GH-1607).
+  protected readonly allProjects: Signal<ProjectTableRow[]> = computed(() => this.rawData().groups.flatMap((group) => group.projects));
   protected readonly totalProjects: Signal<number> = computed(() => this.allProjects().length);
   protected readonly summaryCards: Signal<StatCardItem[]> = this.initSummaryCards();
   protected readonly filteredProjects: Signal<ProjectTableRow[]> = this.initFilteredProjects();
+  // Re-groups the already-filtered flat list back into per-foundation sections for template
+  // rendering, preserving the group order returned by the backend (root foundation first).
+  protected readonly groupedFilteredProjects: Signal<ProjectTableGroup[]> = this.initGroupedFilteredProjects();
   // Canonical project-service UIDs keyed by slug, resolved once per foundation change.
   // Shared between initProjectCounts (upstream count filter) and navigateToProject
   // (lens context uid) so we never fall back to the ambiguous Snowflake PROJECT_ID
@@ -113,7 +119,7 @@ export class FoundationProjectsComponent {
   }
 
   // === Private Initializers ===
-  private initRawData(): Signal<FoundationProjectsDetailResponse> {
+  private initRawData(): Signal<FoundationProjectsDetailGroupedResponse> {
     return toSignal(
       toObservable(this.foundationSlug).pipe(
         switchMap((slug) => {
@@ -128,28 +134,28 @@ export class FoundationProjectsComponent {
           // rawData after the UI switched to the "no foundation selected" state.
           if (!slug) {
             this.loading.set(false);
-            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL);
+            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED);
           }
           // Set loading inside switchMap so that on rapid slug changes the order is:
           // old inner's `finalize(false)` (switchMap cancels it) → new inner's `loading.set(true)`.
           // Putting `loading.set(true)` in an outer `tap` would make the ordering
           // implementation-dependent when new slugs arrive while a request is in flight.
           this.loading.set(true);
-          // Error handling lives in AnalyticsService.getFoundationProjectsDetail,
-          // which returns `{ projects: [], totalCount: 0 }` on failure and evicts
-          // the failed slug from its cache. No component-level catchError needed.
+          // Error handling lives in AnalyticsService.getFoundationProjectsDetailGrouped,
+          // which returns the empty-groups default on failure and evicts the failed slug
+          // from its cache. No component-level catchError needed.
           // `startWith(DEFAULT)` clears rawData immediately on slug change,
           // symmetric with `subProjectUidBySlug`'s own startWith. Without it,
           // `initProjectCounts`'s combineLatest could briefly pair the NEW
           // slug→uid map with the OLD projects list and fire count fetches
           // against the wrong data.
-          return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
-            startWith(DEFAULT_FOUNDATION_PROJECTS_DETAIL),
+          return this.analyticsService.getFoundationProjectsDetailGrouped(slug).pipe(
+            startWith(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: DEFAULT_FOUNDATION_PROJECTS_DETAIL }
+      { initialValue: DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED }
     );
   }
 
@@ -207,37 +213,64 @@ export class FoundationProjectsComponent {
     });
   }
 
-  // Resolve slug → project-service UID for every sub-project of the current foundation.
-  // Snowflake's PROJECT_ID is foundation-specific and may be a Salesforce ID rather
-  // than the canonical project-service UUID used by committee/mailing-list tagging,
-  // so we fetch the sub-projects once per foundation change and build an authoritative
-  // slug→uid map. Used by both initProjectCounts (filter the count queries) and
-  // navigateToProject (set the correct lens context UID).
+  // Re-groups the already-filtered flat list by `groupFoundationSlug`, preserving the group
+  // order (and names) from `rawData()` so a group with zero matching rows after filtering
+  // still renders as an empty section rather than disappearing (GH-1607).
+  private initGroupedFilteredProjects(): Signal<ProjectTableGroup[]> {
+    return computed(() => {
+      const groupOrder = this.rawData().groups;
+      const filtered = this.filteredProjects();
+      const bySlug = new Map<string, ProjectTableRow[]>();
+      for (const project of filtered) {
+        const slug = project.groupFoundationSlug ?? '';
+        const existing = bySlug.get(slug);
+        if (existing) {
+          existing.push(project);
+        } else {
+          bySlug.set(slug, [project]);
+        }
+      }
+      return groupOrder.map((group) => ({
+        foundationSlug: group.foundationSlug,
+        foundationName: group.foundationName,
+        projects: bySlug.get(group.foundationSlug) ?? [],
+      }));
+    });
+  }
+
+  // Resolve slug → project-service UID for every sub-project across the current foundation AND
+  // every discovered sub-foundation (GH-1607). Snowflake's PROJECT_ID is foundation-specific and
+  // may be a Salesforce ID rather than the canonical project-service UUID used by committee/
+  // mailing-list tagging, so we fetch each group's sub-projects once per foundation change and
+  // build an authoritative slug→uid map. Used by both initProjectCounts (filter the count
+  // queries) and navigateToProject (set the correct lens context UID).
   // `startWith(new Map())` inside the inner switchMap clears the map immediately when
   // a new slug arrives so a stale mapping from the previous foundation can't leak
   // through if slugs overlap across foundations.
   private initSubProjectUidBySlug(): Signal<Map<string, string>> {
     return toSignal(
-      toObservable(this.foundationSlug).pipe(
-        switchMap((slug) => {
-          if (!slug) {
+      toObservable(this.rawData).pipe(
+        switchMap((rawData) => {
+          const foundationUids = rawData.groups.map((group) => group.foundationUid);
+          if (foundationUids.length === 0) {
             return of(new Map<string, string>());
           }
-          const foundationUid = this.projectContextService.selectedFoundation()?.uid;
-          if (!foundationUid) {
-            return of(new Map<string, string>());
-          }
-          const params = new HttpParams().set('parent', `project:${foundationUid}`);
-          return this.projectService.getProjects(params).pipe(
-            map((subProjects) => {
+          return combineLatest(
+            foundationUids.map((uid) => {
+              const params = new HttpParams().set('parent', `project:${uid}`);
+              return this.projectService.getProjects(params).pipe(catchError(() => of([])));
+            })
+          ).pipe(
+            map((subProjectLists) => {
               const slugToUid = new Map<string, string>();
-              for (const sub of subProjects) {
-                if (sub.slug && sub.uid) slugToUid.set(sub.slug, sub.uid);
+              for (const subProjects of subProjectLists) {
+                for (const sub of subProjects) {
+                  if (sub.slug && sub.uid) slugToUid.set(sub.slug, sub.uid);
+                }
               }
               return slugToUid;
             }),
-            startWith(new Map<string, string>()),
-            catchError(() => of(new Map<string, string>()))
+            startWith(new Map<string, string>())
           );
         })
       ),

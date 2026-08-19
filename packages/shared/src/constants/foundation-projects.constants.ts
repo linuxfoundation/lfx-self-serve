@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { FoundationProjectsDetailGroupedResponse } from '../interfaces/analytics-data.interface';
 import type { FoundationProjectRowView } from '../interfaces/dashboard-metric.interface';
 
 /**
@@ -14,6 +15,23 @@ import type { FoundationProjectRowView } from '../interfaces/dashboard-metric.in
  * project resolves.
  */
 export const FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY = 8;
+
+/**
+ * Maximum recursion depth when walking a foundation's descendant project tree to discover
+ * nested sub-foundations (e.g. NeoNephos under Linux Foundation Europe) for the Foundation
+ * Projects page (GH-1607). The FOUNDATION_TOTAL_PROJECTS_DETAIL Snowflake cube's
+ * `FOUNDATION_SLUG` column does not roll up multi-level descendants, so the BFF walks the
+ * project-service hierarchy directly instead. A depth of 3 covers every known foundation
+ * shape (foundation → sub-foundation → project) with headroom for one extra level, while
+ * still bounding worst-case fan-out against a pathological or misconfigured tree.
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH = 3;
+
+/**
+ * Empty-state fallback for the Foundation Projects page's grouped detail request —
+ * mirrors {@link DEFAULT_FOUNDATION_PROJECTS_DETAIL}'s role for the flat drawer endpoint.
+ */
+export const DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED: FoundationProjectsDetailGroupedResponse = { groups: [], totalCount: 0 };
 
 /**
  * All valid presence-filter pill IDs on the foundation projects page, in

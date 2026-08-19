@@ -6,6 +6,7 @@ import {
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   EMAIL_CAMPAIGN_LIMIT,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -67,6 +68,7 @@ import {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersMonthlyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailGroupedResponse,
   FoundationProjectsDetailResponse,
   FoundationProjectsDetailRow,
   FoundationProjectsLifecycleDistributionResponse,
@@ -1981,6 +1983,50 @@ export class ProjectService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Get per-project detail rows for a foundation AND every nested sub-foundation, grouped by
+   * which foundation slug they were fetched under (GH-1607). FOUNDATION_TOTAL_PROJECTS_DETAIL's
+   * `FOUNDATION_SLUG` column only rolls up direct-parent projects, not multi-level descendants
+   * (e.g. NeoNephos's projects aren't attributed to Linux Foundation Europe), so this walks the
+   * project-service hierarchy to discover nested sub-foundations and fans out the existing
+   * per-slug Snowflake query across all of them.
+   * @param req - Express request object, needed to walk the project-service descendant tree
+   * @param foundationSlug - Top-level foundation slug to filter by (e.g., 'lfeurope')
+   */
+  public async getFoundationProjectsDetailGrouped(req: Request, foundationSlug: string): Promise<FoundationProjectsDetailGroupedResponse> {
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetching grouped project detail', { foundation_slug: foundationSlug });
+
+    const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
+    const subFoundations = await this.discoverSubFoundations(req, rootProject.uid);
+
+    const foundationsToFetch = [
+      { uid: rootProject.uid, slug: rootProject.slug, name: rootProject.name },
+      ...subFoundations.map(({ uid, slug, name }) => ({ uid, slug, name })),
+    ];
+
+    const groups = await Promise.all(
+      foundationsToFetch.map(async ({ uid, slug, name }) => {
+        const detail = await this.getFoundationProjectsDetail(slug);
+        return {
+          foundationSlug: slug,
+          foundationName: name,
+          foundationUid: uid,
+          projects: detail.projects.map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
+        };
+      })
+    );
+
+    const totalCount = groups.reduce((sum, group) => sum + group.projects.length, 0);
+
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetched grouped project detail', {
+      foundation_slug: foundationSlug,
+      group_count: groups.length,
+      total_count: totalCount,
+    });
+
+    return { groups, totalCount };
   }
 
   /**
@@ -7439,6 +7485,50 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Recursively discovers nested sub-foundations beneath a foundation (or sub-foundation) UID,
+   * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH. A "sub-foundation" is any child
+   * project that itself satisfies `computeIsFoundation` — e.g. NeoNephos under Linux Foundation
+   * Europe. Reuses the same `parent: project:<uid>` query-service filter as
+   * `getFoundationProjectUids`/`getChildProjects`, but recurses into each discovered
+   * sub-foundation instead of stopping at one level.
+   */
+  private async discoverSubFoundations(req: Request, parentUid: string, depth: number = 0): Promise<{ uid: string; slug: string; name: string }[]> {
+    if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+      logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
+        parent_uid: parentUid,
+        depth,
+      });
+      return [];
+    }
+
+    const children = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        parent: `project:${parentUid}`,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    ).catch((error) => {
+      logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
+        parent_uid: parentUid,
+        depth,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [] as Project[];
+    });
+
+    const subFoundations: { uid: string; slug: string; name: string }[] = [];
+    for (const child of children) {
+      if (child.slug === ROOT_PROJECT_SLUG || !computeIsFoundation(child)) {
+        continue;
+      }
+      subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
+      const nested = await this.discoverSubFoundations(req, child.uid, depth + 1);
+      subFoundations.push(...nested);
+    }
+    return subFoundations;
   }
 
   /**
