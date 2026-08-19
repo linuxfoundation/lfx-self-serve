@@ -37,7 +37,7 @@ If it has been more than 2 days since you received your Pass notification and yo
 
 ## How do I earn and use training reward points?
 
-You earn reward points by completing training and passing certification exams. Your **Total Reward Points** and progress toward your next reward appear on the **Rewards** tab of the Training & Certifications page. See [Training Rewards and Coupons](../rewards/) for how to claim incentives and redeem coupons, or the [Rewards FAQ](https://training.linuxfoundation.org/tux-rewards/) for how points are earned and how long they last.
+You earn reward points on eligible Linux Foundation training and certification purchases. Your **Total Reward Points** and progress toward your next reward appear on the **Rewards** tab of the Training & Certifications page. See [Training Rewards and Coupons](../rewards/) for how to claim incentives and redeem coupons, or the [Rewards FAQ](https://training.linuxfoundation.org/tux-rewards/) for how points are earned and how long they last.
 
 ## How do I redeem a training coupon?
 
