@@ -7,7 +7,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { EVENT_GROWTH_TOP_EVENTS_LIMIT, lfxColors } from '@lfx-one/shared/constants';
+import {
+  DRAWER_LOADING_HEADING,
+  DRAWER_UNAVAILABLE_BODY,
+  DRAWER_UNAVAILABLE_HEADING,
+  EVENT_GROWTH_TOP_EVENTS_LIMIT,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import { formatCompact, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -25,6 +31,23 @@ export class EventGrowthDrawerComponent {
   public readonly visible = model<boolean>(false);
 
   // === Inputs ===
+  /**
+   * True when the source request FAILED rather than returning a measured zero. This drawer's
+   * stats already degrade to em dashes, so only the collection empty-states change: they say
+   * the data could not be loaded instead of "not yet available", which is a claim about the
+   * data rather than about the request.
+   */
+  public readonly unavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
+
   public readonly data = input<EventGrowthResponse>({
     totalAttendees: 0,
     totalRegistrants: 0,

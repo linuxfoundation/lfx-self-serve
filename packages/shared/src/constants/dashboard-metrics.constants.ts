@@ -710,6 +710,47 @@ const DATA_UNAVAILABLE_CAPTION = 'Data unavailable — could not be loaded';
 const DATA_LOADING_CAPTION = 'Loading…';
 
 /**
+ * Drawer empty-state copy for a FAILED request, as opposed to a measured absence.
+ *
+ * Each ED drill-down drawer's existing empty state asserts a finding ("No brand mention
+ * activity detected") and advises acting on it ("Engage with marketing ops…"). That copy
+ * is correct for a foundation that genuinely has no activity and wrong for one whose
+ * request failed — it reports an outage as a measurement and then recommends work based
+ * on it. The drawers pick between the two on their `unavailable` input.
+ *
+ * Deliberately terse: this is an executive dashboard, and the failure needs to be honest
+ * rather than loud. The body is a retry instruction and NOT a cause — the failure is
+ * intermittent under the dashboard's concurrent request burst, but that has not been
+ * confirmed as the mechanism, and naming an unproven cause in the UI would repeat the
+ * original defect one level up. The drawer suppresses its own advice paragraph in this
+ * state: advice derived from data that never arrived is the defect, not just its wording.
+ */
+export const DRAWER_UNAVAILABLE_HEADING = 'Data unavailable';
+/**
+ * The other half of the pair: shown when the request SUCCEEDED and the foundation genuinely
+ * has no activity. Extracted alongside the unavailable copy so the two cannot drift — the
+ * drawer alternates between them, and only one of them being centrally editable is how they
+ * end up contradicting each other. The Email drawer keeps its own variant ("start sending
+ * campaigns"), which is deliberately different advice.
+ */
+export const DRAWER_NO_ACTIVITY_BODY = 'Engage with marketing ops to activate campaigns and start tracking results.';
+export const DRAWER_UNAVAILABLE_BODY = 'Please try again.';
+/**
+ * Shown while the request is still in flight. Distinct from the unavailable copy because
+ * nothing has failed yet — the drawer suppresses its body in BOTH states (the zero-filled
+ * fallback is not a measurement in either), but only one of them may claim a failure.
+ */
+export const DRAWER_LOADING_HEADING = 'Loading…';
+
+/**
+ * The placeholder a single tile renders when its own source could not be read, while the rest
+ * of the drawer stays measured. Used for PARTIAL failures — where blanking the whole drawer
+ * would trade a real outage for a false one — so it deliberately matches the em dash the card
+ * layer already uses for an unmeasured value rather than introducing a second vocabulary.
+ */
+export const TILE_UNAVAILABLE_PLACEHOLDER = '—';
+
+/**
  * A dual-signal row for a card whose data could not be fetched.
  *
  * Renders an em-dash instead of a number, with no sparkline and no trend pill, so a
@@ -735,11 +776,17 @@ function attributionCaption(revenueImpact: RevenueImpactResponse): string {
  * Overrides a single-value or dual-signal card's value-bearing fields with the same
  * em-dash placeholder used by unavailableDualSignal, while pending is true.
  *
- * Only Paid Media and Attribution carry an `undefined` sentinel for a failed/pending
- * request — every other card's source field is a non-optional zero-filled object, so
- * without this the pending window renders each of their real-looking values (member
- * counts, session totals, mention counts, etc.) as if they were measured zeros for the
- * newly-selected foundation, the exact defect this PR exists to remove elsewhere.
+ * Now largely redundant, and kept as defence in depth rather than for a known live case.
+ * Every response field on EdEvolutionData is `| undefined`; each card guards on its own
+ * field and renders `placeholderCaption`, which already resolves to "Loading…" while
+ * pending. The pending emission itself (PENDING_ED_EVOLUTION_DATA) carries every field
+ * as undefined and is re-emitted synchronously on each foundation switch, so no card can
+ * be holding a resolved value when pending is true.
+ *
+ * It stays because it is the only enforcement point that does not depend on each card
+ * remembering to consult `pending`: a future card that reads a field without routing its
+ * caption through `placeholderCaption` is still blanked here. Do not narrow it to a list
+ * of card names — that list is what went stale last time.
  */
 function withPendingPlaceholder(card: DashboardMetricCard, pending: boolean): DashboardMetricCard {
   if (!pending) return card;
@@ -863,6 +910,55 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // else reports a failure during the initial in-flight window.
   const placeholderCaption = data.pending ? DATA_LOADING_CAPTION : DATA_UNAVAILABLE_CAPTION;
 
+  // The Social card needs BOTH the response and its social half: getBrandReach keeps serving
+  // web data when only the social query fails, so `brandReach` being present does not mean
+  // followers were measured. The Web card deliberately does NOT consult this — its sessions
+  // were measured fine, and blanking them would trade a false zero for a false outage.
+  const socialMeasured = brandReach && !brandReach.socialUnavailable;
+
+  // Lifted out of the Web card's subtitle binding: combined with the brandReach-undefined
+  // arm it would otherwise be a nested ternary, which .claude/rules/styling.md forbids.
+  const webSessionsSubtitle = brandReach && brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)';
+
+  // Same reason for these three: each already branches on whether a real series exists, so
+  // nesting that inside the undefined arm would add a second level.
+  const eventsSubtitle = !eventGrowth
+    ? ''
+    : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD${eventGrowth.monthlyData.length > 0 ? ' · Trend: quarterly, 3 yrs + upcoming' : ''}`;
+  const eventsSparkline =
+    eventGrowth && eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth?.totalRegistrants ?? 0);
+  // Members reads TWO responses, which is why it needs a combined guard: the value comes from
+  // memberAcquisition and the caption from memberRetention, so either failing makes the card
+  // no longer a measurement.
+  // Note the Members DRAWER binds `unavailable` on either response failing, which is stricter
+  // than this card. That is deliberate, not drift: the drawer renders renewalRate and NRR as
+  // 2xl headline figures, whereas here retention appears only as caption text beside a member
+  // count that is still genuinely measured. Same data, different exposure.
+  const membersLoaded = memberAcquisition && memberRetention;
+  const membersSubtitle = !membersLoaded
+    ? ''
+    : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%${memberAcquisition.totalMembersMonthlyData.length > 0 ? ' · Last 12 months' : ''}`;
+  const membersSparkline =
+    memberAcquisition && memberAcquisition.totalMembersMonthlyData.length > 0
+      ? memberAcquisition.totalMembersMonthlyData
+      : flatSparklineData(memberAcquisition?.totalMembers ?? 0);
+  const flywheelSubtitle = flywheel && flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM';
+  const flywheelSparkline =
+    flywheel && flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel?.reengagement.reengagementRate ?? 0);
+
+  // Same reason again: the Sentiment caption already branches on whether a trend window
+  // exists, so nesting it inside the brandHealth-undefined arm would be a second level.
+  const brandHealthCaption = !brandHealth
+    ? ''
+    : `${formatNumber(brandHealth.totalMentions)} mentions (30d)${brandHealth.monthlyMentions.length > 0 ? ' · trend last 6 months' : ''}`;
+
+  // Same reason: the Adoption sparkline picks between a real series and a flat placeholder,
+  // and that choice nested inside the engagedCommunity-undefined arm would be a third level.
+  const adoptionSparkline =
+    engagedCommunity && engagedCommunity.monthlyData.length > 0
+      ? monthlyValues(engagedCommunity.monthlyData)
+      : flatSparklineData(engagedCommunity?.totalMembers ?? 0);
+
   // Education totals. edX is counted in enrollments but has no revenue column in
   // COURSE_PURCHASES, so it is intentionally absent from the revenue sum — adding a 0
   // would be harmless here but the omission is deliberate and mirrored in the drawer.
@@ -880,17 +976,19 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
     ? education.enrollment.instructorLed + education.enrollment.eLearning + education.enrollment.certExams > 0
     : false;
 
-  // Pre-compute email open rate for the Campaign Performance card
-  const emailTotalSends = emailCtr.monthlySends.reduce((sum, v) => sum + v, 0);
-  const emailTotalOpens = emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0);
+  // Pre-compute email open rate for the Campaign Performance card. These stay computable on a
+  // failed request (summing nothing gives 0) — the card guards on `emailCtr` itself rather than
+  // on these totals, because a summed 0 is exactly the fabricated measurement to avoid showing.
+  const emailTotalSends = emailCtr ? emailCtr.monthlySends.reduce((sum, v) => sum + v, 0) : 0;
+  const emailTotalOpens = emailCtr ? emailCtr.monthlyOpens.reduce((sum, v) => sum + v, 0) : 0;
   const emailOpenRate = emailTotalSends > 0 ? (emailTotalOpens / emailTotalSends) * 100 : 0;
 
   // Per-month open RATE, not send volume. Charting sends here would report an
   // improving trend whenever sends grow faster than opens — the opposite of the
   // truth. Months with no sends contribute 0 and are suppressed by the sends
   // activity guard passed alongside.
-  const emailMonthlyOpenRate = emailCtr.monthlyOpens.map((opens, i) => {
-    const sends = emailCtr.monthlySends[i] ?? 0;
+  const emailMonthlyOpenRate = (emailCtr?.monthlyOpens ?? []).map((opens, i) => {
+    const sends = emailCtr?.monthlySends[i] ?? 0;
     return sends > 0 ? (opens / sends) * 100 : 0;
   });
 
@@ -899,10 +997,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
   // unavailable state in that case and never reads this.
   const paidActivity = paidCampaign ? paidCampaign.monthlyData.map((v, i) => v + (paidCampaign.monthlySpend?.[i] ?? 0)) : [];
 
-  // Paid Media and Attribution already carry their own undefined-sentinel pending
-  // handling above (paidCampaign/revenueImpact), so they're excluded here to avoid
-  // double-applying the placeholder — everything else has no such sentinel and would
-  // otherwise render its zero-filled PENDING_ED_EVOLUTION_DATA fields as measured data.
+  // Paid Media and Attribution build their pending copy inline rather than through a
+  // shared placeholder, so running withPendingPlaceholder over them would overwrite it.
+  // Every other card tolerates the override because it writes the same em dash and
+  // "Loading…" caption those cards already render for an absent field.
   const selfGuardedDrawerTypes = new Set([DashboardDrawerType.MarketingPaidSocialReach, DashboardDrawerType.RevenueImpact]);
 
   return [
@@ -926,17 +1024,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-event-growth',
       description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
-      value: formatNumber(eventGrowth.totalRegistrants),
-      changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
-      trend: trendFromChange(eventGrowth.registrantYoyChange),
-      subtitle:
-        eventGrowth.monthlyData.length > 0
-          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: quarterly, 3 yrs + upcoming`
-          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
-      chartData: protoSparkline(
-        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that the foundation ran no events.
+      value: eventGrowth ? formatNumber(eventGrowth.totalRegistrants) : '—',
+      changePercentage: eventGrowth ? formatYoyChange(eventGrowth.registrantYoyChange) : undefined,
+      trend: eventGrowth ? trendFromChange(eventGrowth.registrantYoyChange) : undefined,
+      subtitle: eventGrowth ? eventsSubtitle : placeholderCaption,
+      chartData: eventGrowth ? protoSparkline(eventsSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Year-to-date event registrants and YoY change.',
       drawerType: DashboardDrawerType.NorthStarEventGrowth,
@@ -976,17 +1069,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-member-growth',
       description: 'Total paying corporate members with quarterly net new count and associated revenue.',
-      value: formatNumber(memberAcquisition.totalMembers),
-      changePercentage: formatMomChange(memberAcquisition.changePercentage),
-      trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
-      subtitle:
-        memberAcquisition.totalMembersMonthlyData.length > 0
-          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 12 months`
-          : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%`,
-      chartData: protoSparkline(
-        memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that the foundation has no paying members.
+      value: memberAcquisition ? formatNumber(memberAcquisition.totalMembers) : '—',
+      changePercentage: memberAcquisition ? formatMomChange(memberAcquisition.changePercentage) : undefined,
+      trend: memberAcquisition ? normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend) : undefined,
+      subtitle: membersLoaded ? membersSubtitle : placeholderCaption,
+      chartData: memberAcquisition ? protoSparkline(membersSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Total paying corporate members with monthly net new over the last 12 months.',
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
@@ -999,14 +1087,13 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-engaged-community',
       description:
         'Unique individuals active across 7 channels — community, working groups, newsletter, training, code, web, and certified — in the last 90 days.',
-      value: formatNumber(engagedCommunity.totalMembers),
-      changePercentage: formatMomChange(engagedCommunity.changePercentage),
-      trend: normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend),
-      subtitle: trendWindow(engagedCommunity.monthlyData.length),
-      chartData: protoSparkline(
-        engagedCommunity.monthlyData.length > 0 ? monthlyValues(engagedCommunity.monthlyData) : flatSparklineData(engagedCommunity.totalMembers),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not that nobody engaged. AAIF has 27,831 engaged
+      // individuals and rendered "0" here when this fell back to a zero-filled response.
+      value: engagedCommunity ? formatNumber(engagedCommunity.totalMembers) : '—',
+      changePercentage: engagedCommunity ? formatMomChange(engagedCommunity.changePercentage) : undefined,
+      trend: engagedCommunity ? normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend) : undefined,
+      subtitle: engagedCommunity ? trendWindow(engagedCommunity.monthlyData.length) : placeholderCaption,
+      chartData: engagedCommunity ? protoSparkline(adoptionSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Unique individuals active across community, working groups, newsletter, training, code, web, and certified in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
@@ -1020,15 +1107,17 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'brand',
       testId: 'ed-evo-brand-reach',
       description: 'Social followers across all platforms.',
-      value: formatNumber(brandReach.totalSocialFollowers),
-      changePercentage: formatMomChange(brandReach.changePercentage),
-      trend: normalizeTrend(brandReach.changePercentage, brandReach.trend),
-      subtitle: `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}`,
+      // undefined means the request failed, not that the foundation has no followers —
+      // "0 · 0 platforms" would report an outage as a measurement.
+      value: socialMeasured ? formatNumber(brandReach.totalSocialFollowers) : '—',
+      changePercentage: socialMeasured ? formatMomChange(brandReach.changePercentage) : undefined,
+      trend: socialMeasured ? normalizeTrend(brandReach.changePercentage, brandReach.trend) : undefined,
+      subtitle: socialMeasured ? `${brandReach.activePlatforms} platform${brandReach.activePlatforms === 1 ? '' : 's'}` : placeholderCaption,
       // No historical follower series available. flatSparklineData renders a nearly
       // flat line at the current total (a constant array collapses Chart.js's Y range
       // and hides the line entirely) — it is a placeholder, not a trend. Website
       // sessions are deliberately not reused here: different metric, different card.
-      chartData: protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]),
+      chartData: socialMeasured ? protoSparkline(flatSparklineData(brandReach.totalSocialFollowers), lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Social followers across all platforms, with month-over-month change.',
       drawerType: DashboardDrawerType.BrandReach,
@@ -1045,20 +1134,24 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'brand',
       testId: 'ed-evo-web-sessions',
       description: 'Rolling 30-day sessions across foundation web properties.',
-      value: formatNumber(brandReach.totalMonthlySessions),
-      changePercentage: formatMomChange(brandReach.sessionMomChangePct),
-      trend: normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down'),
+      // Shares brandReach with the Social card above, so it shares the same contract:
+      // undefined is a failed request, and zero sessions is a real measurement.
+      value: brandReach ? formatNumber(brandReach.totalMonthlySessions) : '—',
+      changePercentage: brandReach ? formatMomChange(brandReach.sessionMomChangePct) : undefined,
+      trend: brandReach ? normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down') : undefined,
       // The value is a rolling 30-day total; the sparkline is a separate weekly series
       // over a fixed six-month range. Label them separately so the 30-day figure is not
       // read as a six-month number. weeklyTrend only holds weeks WITH rows, so its
       // length is not the reporting window and the window is labeled directly.
       // When weeklyTrend is empty, flatSparklineData renders a placeholder at the
       // current total (see the Social card above), not a trend.
-      subtitle: brandReach.weeklyTrend.length > 0 ? 'Sessions (30d) · Trend: last 6 months' : 'Sessions (30d)',
-      chartData: protoSparkline(
-        brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
-        lfxColors.violet[500]
-      ),
+      subtitle: brandReach ? webSessionsSubtitle : placeholderCaption,
+      chartData: brandReach
+        ? protoSparkline(
+            brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : flatSparklineData(brandReach.totalMonthlySessions),
+            lfxColors.violet[500]
+          )
+        : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Rolling 30-day website sessions across foundation web properties, with month-over-month change.',
       drawerType: DashboardDrawerType.MarketingWebsiteVisits,
@@ -1076,30 +1169,36 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-campaign-performance',
       description: 'Email opens with click-through and open rate, and MoM trend.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          // withPendingPlaceholder overrides value/color while pending, but the label
-          // is built here — embedding the live CTR unconditionally would leave a
-          // fabricated "0.0% CTR" on screen next to an em-dash value.
-          pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
-          formatNumber(emailTotalOpens) + ' opens',
-          emailCtr.monthlyOpens,
-          lfxColors.blue[500],
-          seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
-          seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
-        ),
-        protoDualSignal(
-          `Open rate · 6 mo`,
-          `${emailOpenRate.toFixed(0)}%`,
-          emailMonthlyOpenRate,
-          lfxColors.violet[500],
-          // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
-          // that would otherwise read as a real collapse.
-          seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
-          seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
-        ),
-      ],
-      caption: trendWindow(emailCtr.monthlyOpens.length),
+      // undefined means the request failed, not that nobody opened anything. Summing an
+      // absent response gives 0, so falling through would render "0 opens · 0.0% CTR" as a
+      // measurement — which is exactly what AAIF showed while its March campaign sat at 100
+      // opens and a 76.3% CTR.
+      dualSignals: emailCtr
+        ? [
+            protoDualSignal(
+              // withPendingPlaceholder overrides value/color while pending, but the label
+              // is built here — embedding the live CTR unconditionally would leave a
+              // fabricated "0.0% CTR" on screen next to an em-dash value.
+              pending ? 'Opens' : `Opens · ${emailCtr.currentCtr.toFixed(1)}% CTR`,
+              formatNumber(emailTotalOpens) + ' opens',
+              emailCtr.monthlyOpens,
+              lfxColors.blue[500],
+              seriesMomChange(emailCtr.monthlyOpens, emailCtr.monthlySends),
+              seriesTrendDirection(emailCtr.monthlyOpens, emailCtr.monthlySends)
+            ),
+            protoDualSignal(
+              `Open rate · 6 mo`,
+              `${emailOpenRate.toFixed(0)}%`,
+              emailMonthlyOpenRate,
+              lfxColors.violet[500],
+              // Guard on sends, not on the rate itself: a zero-send month has a 0% rate
+              // that would otherwise read as a real collapse.
+              seriesMomChange(emailMonthlyOpenRate, emailCtr.monthlySends),
+              seriesTrendDirection(emailMonthlyOpenRate, emailCtr.monthlySends)
+            ),
+          ]
+        : [unavailableDualSignal('Opens', lfxColors.blue[500]), unavailableDualSignal('Open rate · 6 mo', lfxColors.violet[500])],
+      caption: emailCtr ? trendWindow(emailCtr.monthlyOpens.length) : placeholderCaption,
       tooltipText: 'Email opens with click-through rate, plus sends and the six-month open rate.',
       drawerType: DashboardDrawerType.MarketingEmailCtr,
     } as DashboardMetricCard,
@@ -1192,26 +1291,28 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-brand-health',
       description: 'Total brand mentions with sentiment breakdown.',
       customContentType: 'dual-signal',
-      dualSignals: [
-        protoDualSignal(
-          'Mentions',
-          formatNumber(brandHealth.totalMentions),
-          brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
-          lfxColors.blue[500],
-          // null (no genuine MoM available) renders the same as a flat month:
-          // hidden delta, neutral trend.
-          formatMomChange(brandHealth.mentionMomChangePct ?? 0),
-          normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
-        ),
-        protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
-      ],
+      // undefined means the request failed, not that nobody mentioned the foundation. AAIF
+      // has 80,799 mentions; a zero-filled fallback rendered "0" here, and the drawer went
+      // further and asserted "No brand mention activity detected".
+      dualSignals: brandHealth
+        ? [
+            protoDualSignal(
+              'Mentions',
+              formatNumber(brandHealth.totalMentions),
+              brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
+              lfxColors.blue[500],
+              // null (no genuine MoM available) renders the same as a flat month:
+              // hidden delta, neutral trend.
+              formatMomChange(brandHealth.mentionMomChangePct ?? 0),
+              normalizeTrend(brandHealth.mentionMomChangePct ?? 0, brandHealth.trend)
+            ),
+            protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
+          ]
+        : [unavailableDualSignal('Mentions', lfxColors.blue[500]), unavailableDualSignal('Positive Sentiment', lfxColors.violet[500])],
       // monthlyMentions only holds months WITH rows, so its length is not the
       // reporting window — the ED caller always requests last-6, so the trend
       // window is labeled directly rather than derived from row count.
-      caption:
-        brandHealth.monthlyMentions.length > 0
-          ? `${formatNumber(brandHealth.totalMentions)} mentions (30d) · trend last 6 months`
-          : `${formatNumber(brandHealth.totalMentions)} mentions (30d)`,
+      caption: brandHealth ? brandHealthCaption : placeholderCaption,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
@@ -1224,14 +1325,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       category: 'memberships',
       testId: 'ed-evo-flywheel-conversion',
       description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
-      value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
-      changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
-      chartData: protoSparkline(
-        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
-        lfxColors.blue[500]
-      ),
+      // undefined means the request failed, not a 0.0% conversion rate.
+      value: flywheel ? `${flywheel.reengagement.reengagementRate.toFixed(1)}%` : '—',
+      changePercentage: flywheel ? formatPpMomChange(flywheel.reengagement.reengagementMomChange) : undefined,
+      trend: flywheel ? trendFromChange(flywheel.reengagement.reengagementMomChange) : undefined,
+      subtitle: flywheel ? flywheelSubtitle : placeholderCaption,
+      chartData: flywheel ? protoSparkline(flywheelSparkline, lfxColors.blue[500]) : EMPTY_CHART_DATA,
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText:
         'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
