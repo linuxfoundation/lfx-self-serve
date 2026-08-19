@@ -17,13 +17,14 @@ Make sure you have the correct project or foundation selected in the lens switch
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Groups** from the left navigation sidebar.
-3. Select the option to create a new committee (route: `/groups/create`).
-4. Fill in the required fields:
-   - **Committee name** — the display name for your committee
+2. Switch to your **Project** or **Foundation** lens using the lens switcher — creating a group isn't available in the **Me** lens.
+3. Select **Groups** from the left navigation sidebar.
+4. Select the option to create a new committee (route: `/groups/create`).
+5. Fill in the required fields:
+   - **Group name** — the display name for your committee
    - **Description** — a brief explanation of the committee's purpose and scope
-5. Add initial members if needed.
-6. Save the committee.
+6. Add initial members if needed.
+7. Save the committee.
 
 ## After creation
 

@@ -31,7 +31,7 @@ A **Useful links** section in the right sidebar provides links to the LF Trainin
 
 ## Resume or enroll in a training
 
-Enrollment in new training courses is handled on the Linux Foundation training platform, not within LFX Self Serve. To resume a course or enroll in a new one, go to the **Useful links** section in the right sidebar and select **LF Training Portal** to open [https://training.linuxfoundation.org](https://training.linuxfoundation.org).
+Enrollment in new training courses is handled on the Linux Foundation training platform, not within LFX Self Serve. In the **Useful links** section in the right sidebar, select **LF Training Portal** to resume a course you're already enrolled in ([trainingportal.linuxfoundation.org](https://trainingportal.linuxfoundation.org)), or **LF Education & Certification** to browse the catalog and enroll in a new course ([training.linuxfoundation.org](https://training.linuxfoundation.org)).
 
 ## Empty state
 

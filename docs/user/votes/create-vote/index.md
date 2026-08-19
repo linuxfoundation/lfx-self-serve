@@ -8,11 +8,11 @@ last_updated: 2026-08-19
 intercom_collection: Votes
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** personas. Use this guide to create a new poll for your project's governance decisions.
+This article applies to users with **maintainer**, **board-member**, or **executive-director** personas. Use this guide to create a new poll for your project's or foundation's governance decisions.
 
 ## Before you begin
 
-Confirm you have the correct project selected in the lens switcher. The new poll will be associated with the currently active project context.
+Confirm you have the correct project or foundation selected in the lens switcher. The new poll will be associated with the currently active project or foundation context.
 
 ## Steps
 
@@ -24,7 +24,7 @@ Confirm you have the correct project selected in the lens switcher. The new poll
 
 ## After creation
 
-The poll appears in the **Votes** dashboard with an **Active** status. Eligible voters can cast their votes until the poll closes.
+If you publish the poll (**Open Vote**), it appears in the **Votes** dashboard with an **Active** status, and eligible voters can cast their votes until the poll closes. If you choose **Save as Draft** instead, the poll is saved with a **Draft** status and stays hidden from voters until you open it.
 
 ## Permissions
 
