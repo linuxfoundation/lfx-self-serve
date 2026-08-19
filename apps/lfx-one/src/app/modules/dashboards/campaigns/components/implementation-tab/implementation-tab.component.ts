@@ -17,6 +17,7 @@ import {
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
   META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
@@ -185,7 +186,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
-  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  /**
+   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
+   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
+   * from the picker only. See that constant for why.
+   */
+  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;

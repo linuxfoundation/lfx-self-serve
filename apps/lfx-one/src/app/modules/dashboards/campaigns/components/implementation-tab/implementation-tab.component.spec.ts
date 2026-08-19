@@ -633,11 +633,87 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
   // === Objective ===
 
-  it('renders every objective the shared labels define', () => {
+  /**
+   * Asserted as a LITERAL list. The previous version compared against
+   * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
+   * could never have caught an objective appearing or disappearing from the picker.
+   */
+  it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);
 
-    expect(rendered).toEqual(Object.keys(META_OBJECTIVE_LABELS));
+    expect(rendered).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  /**
+   * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS.leads`), so
+   * offering it would label a traffic campaign "Leads". Hidden until LFXV2-2665 builds
+   * instant-form support.
+   */
+  it('does not offer leads', () => {
+    const select = require<HTMLSelectElement>('implementation-meta-objective');
+    const rendered = Array.from(select.options).map((o) => o.value);
+
+    expect(rendered).not.toContain('leads');
+  });
+
+  /** The label stays defined even though the option is gone — the server names campaigns from it. */
+  it('keeps a label for the hidden leads objective', () => {
+    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
+  });
+
+  /**
+   * A draft persisted before `leads` was hidden restores an objective with no matching
+   * `<option>`. Driven through the REAL draft input rather than by setting the signal directly:
+   * a signal-only test leaves `applyDraft` unexercised, and a coercion added there — mapping the
+   * unrenderable value onto the first option — silently discards the user's stored objective
+   * while passing. That mutation survived until this test went through the draft path.
+   *
+   * `leads` must survive to the wire, where `META_OBJECTIVE_PARAMS` dispatches it as the
+   * website-traffic campaign it has always been.
+   */
+  it('still submits leads when a persisted draft carries it', async () => {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      metaObjective: 'leads',
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('leads');
+  });
+
+  /**
+   * The other half of the same restore: an objective the picker CAN render must still round-trip,
+   * so the assertion above cannot be satisfied by a restore path that ignores the draft entirely.
+   */
+  it('restores a selectable objective from a persisted draft', async () => {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      metaObjective: 'engagement',
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('engagement');
   });
 
   /**

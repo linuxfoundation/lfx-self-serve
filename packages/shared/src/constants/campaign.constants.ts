@@ -219,7 +219,19 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   messengerInbox: false,
 } as const;
 
-/** Display labels for the Meta campaign objectives, in the order the objective selector renders them. */
+/**
+ * Display labels for the Meta campaign objectives.
+ *
+ * TOTAL over `MetaObjective` — every objective that can reach a display path has a label here,
+ * INCLUDING `leads`. This map is no longer what the selector renders; that is
+ * `META_SELECTABLE_OBJECTIVES` below. The split exists because the two questions are different:
+ * "what may a user choose?" and "what do we call the thing this campaign already is?".
+ *
+ * Keeping `leads` here is load-bearing, not tidiness. `buildMetaCampaignName` and the ad-set name
+ * in `meta-ads.service.ts` index this map with whatever objective the request carries, and a
+ * brief or draft persisted before `leads` was hidden still carries it. Dropping the key would put
+ * the literal string `undefined` into a campaign name Meta then bills against.
+ */
 export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   awareness: 'Awareness',
   traffic: 'Traffic',
@@ -227,6 +239,21 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   leads: 'Leads',
   conversions: 'Conversions',
 } as const;
+
+/**
+ * The objectives a user may actually choose, in the order the objective selector renders them.
+ *
+ * `leads` is DELIBERATELY ABSENT. It dispatches as a website-traffic campaign — see the long
+ * comment on `META_OBJECTIVE_PARAMS.leads` for why that mapping is the safe one and must not
+ * change — so offering it would label a traffic campaign "Leads" and let a user act on a wrong
+ * assumption. Hiding it makes that a question someone asks rather than a mistake they ship.
+ * LFXV2-2665 builds instant-form support and restores the option.
+ *
+ * This is the selector's ONLY source. `leads` stays in `MetaObjective`, in
+ * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
+ * dispatches — as traffic — and still renders a name.
+ */
+export const META_SELECTABLE_OBJECTIVES: readonly MetaObjective[] = ['awareness', 'traffic', 'engagement', 'conversions'] as const;
 
 /**
  * The placements a user may actually toggle.
