@@ -20,7 +20,7 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { catchError, concat, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
+import { catchError, concat, exhaustMap, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -173,11 +173,17 @@ export class MktgAgentRunService {
    * degrades to a `pending` tick and the next interval retries; the overall
    * `timeout` still bounds the wait. Non-transient responses (401/403 — the
    * owner token stopped verifying) keep failing fast.
+   *
+   * `exhaustMap` — never `switchMap` — maps the ticks: a tick that fires while
+   * a poll is still in flight is dropped instead of cancelling it. With
+   * `switchMap`, result-endpoint latency consistently above the interval would
+   * abort every attempt before it resolved, timing out a multi-minute
+   * generation whose document may already be ready.
    */
   private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number): Observable<MktgRunResultResponse> {
     const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken };
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      switchMap(() =>
+      exhaustMap(() =>
         this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
           catchError((error: unknown) => {
             if (isTransientHttpError(error)) {

@@ -8,7 +8,7 @@ import { BRAND_KIT_INTAKE, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX } from '@l
 import { MktgGenerateProgress, MktgGenerateRequest, MktgRunResultResponse, MktgStoredAgentRun, User } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { concatMap, of, throwError, timer } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -35,6 +35,8 @@ describe('MktgAgentRunService', () => {
   let httpPost: ReturnType<typeof vi.fn>;
   /** Result-endpoint responses, consumed one per poll (last one repeats). An HttpErrorResponse entry makes that poll attempt error. */
   let resultResponses: (MktgRunResultResponse | HttpErrorResponse)[];
+  /** When > 0, each result-endpoint response resolves only after this many fake-timer ms — simulates a slow poll. */
+  let resultDelayMs: number;
   /** When set, the chat endpoint errors with this instead of succeeding. */
   let chatError: HttpErrorResponse | null;
 
@@ -59,6 +61,7 @@ describe('MktgAgentRunService', () => {
     window.localStorage.clear();
     vi.useFakeTimers();
     resultResponses = [];
+    resultDelayMs = 0;
     chatError = null;
     userSignal = signal<User | null>({ sub: USER_SUB } as User);
     httpPost = vi.fn((url: string) => {
@@ -70,10 +73,8 @@ describe('MktgAgentRunService', () => {
       }
       if (url === BRAND_KIT_INTAKE.endpoints.result) {
         const next = resultResponses.length > 1 ? resultResponses.shift() : resultResponses[0];
-        if (next instanceof HttpErrorResponse) {
-          return throwError(() => next);
-        }
-        return of(next ?? { status: 'pending' });
+        const response$ = next instanceof HttpErrorResponse ? throwError(() => next) : of(next ?? { status: 'pending' });
+        return resultDelayMs > 0 ? timer(resultDelayMs).pipe(concatMap(() => response$)) : response$;
       }
       throw new Error(`Unexpected POST to ${url}`);
     });
@@ -276,6 +277,32 @@ describe('MktgAgentRunService', () => {
     expect(events).toHaveLength(2);
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
     expect(stored.versions).toEqual([expect.objectContaining({ version: 1, document: '# Brand Kit' })]);
+  });
+
+  it('never cancels an in-flight poll — a result endpoint slower than the interval still lands the document', async () => {
+    // Each poll takes longer than the tick interval. With switchMap every tick
+    // would abort the pending POST, no attempt could ever resolve, and the run
+    // would time out even though the document is ready — the tick must be
+    // dropped (exhaustMap) instead.
+    resultDelayMs = MKTG_RUN_POLL.intervalMs + 2000;
+    resultResponses = [{ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 }];
+
+    const events: MktgGenerateProgress[] = [];
+    service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(events).toEqual([{ type: 'submitted' }]);
+
+    // The next tick fires while the first poll is still in flight — it must be
+    // ignored: no second POST, and no cancellation of the first.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.result)).toHaveLength(1);
+    expect(events).toEqual([{ type: 'submitted' }]);
+
+    // The slow first attempt resolves and its document is accepted.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(events).toHaveLength(2);
+    expect(events[1].type).toBe('document');
   });
 
   it('fails a poll fast on a non-transient response — a 403 means the owner token stopped verifying, not a blip', async () => {
