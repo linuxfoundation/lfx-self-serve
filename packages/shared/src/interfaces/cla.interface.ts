@@ -88,21 +88,71 @@ export interface PdfUrlResponse {
   expiresInSeconds: number;
 }
 
+/** Why a CLA Group matched the search term (#1250 `cla-search-result.matchTypes`). */
+export type ClaGroupMatchType = 'claGroup' | 'project' | 'organization' | 'repository';
+
+/** Where a CLA Group's repositories are hosted. */
+export type ClaGroupOrgSource = 'github' | 'gitlab' | 'gerrit';
+
+/**
+ * A repository-hosting organization linked to a CLA Group: a GitHub organization, a GitLab
+ * group, or a Gerrit instance.
+ *
+ * Provenance for display only. An empty `organizations` list does not mean "not on GitHub" —
+ * it means nothing is linked or nothing resolved, so no control flow may be derived from it.
+ */
+export interface ClaGroupOrg {
+  /** Organization, group, or Gerrit instance name. */
+  name: string;
+  source: ClaGroupOrgSource;
+  /** Omitted when the source record carries none. */
+  url?: string;
+}
+
 /**
  * A CLA Group the contributor can choose to sign against (Sign CLA hand-off, #1251).
  *
- * Deliberately minimal: the hand-off needs `claGroupId` and the contributor needs a name
- * to pick by. The real four-source search (#1250) may return more (logo, foundation, match
- * provenance) — consumers MUST ignore unknown fields rather than validate exhaustively, so
- * that search can enrich this without touching the hand-off.
+ * The hand-off needs `claGroupId` and nothing else; every other field is here so the picker
+ * can show which group this is and why it matched. Consumers MUST ignore unknown fields
+ * rather than validate exhaustively, so the search can keep enriching this without touching
+ * the hand-off.
+ *
+ * Both display names are optional because the producer omits each independently: `projectName`
+ * when the group maps to several projects with no foundation marker, `claGroupName` when the
+ * group record could not be resolved. A result with neither is still selectable.
  */
 export interface ClaGroupOption {
   /** Must be a real CLA Group UUID: the Contributor Console fetches the project by it. */
   claGroupId: string;
   /** Primary line in the picker. */
-  projectName: string;
+  projectName?: string;
   /** Secondary line — the CLA group within the project, when it differs from the project name. */
   claGroupName?: string;
+  /** Sorted, may be empty. */
+  matchTypes: ClaGroupMatchType[];
+  /** All linked organizations, sorted by source then name upstream. May be empty. */
+  organizations: ClaGroupOrg[];
+  /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
+  matchedRepositoryName?: string;
+  matchedRepositoryURL?: string;
+}
+
+/**
+ * Response for `GET /api/me/clas/sign-options?q=` — mirrors the producer's `cla-search-list`
+ * (#1250) rather than inventing a third shape.
+ *
+ * Not a bare array: `truncated` describes the result *set*, so it cannot ride inside one of
+ * the results. The hand-off still consumes only the selected option's `claGroupId`.
+ */
+export interface ClaGroupSearchResponse {
+  /** Echo of the term actually searched (trimmed). */
+  searchTerm: string;
+  /** Count of `results`, at most the producer's limit. */
+  resultCount: number;
+  /** True when more groups matched than the limit — ask the contributor to refine the term. */
+  truncated: boolean;
+  /** Best match first, deduplicated by CLA Group upstream. */
+  results: ClaGroupOption[];
 }
 
 /**

@@ -8,22 +8,22 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, resolveIdentity, getPdfUrl, getSignHandoff } = vi.hoisted(() => ({
+const { getMyClas, resolveIdentity, getPdfUrl, getSignHandoff, searchClaGroups } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   resolveIdentity: vi.fn(),
   getPdfUrl: vi.fn(),
   getSignHandoff: vi.fn(),
+  searchClaGroups: vi.fn(),
 }));
-const { listClaGroupOptions } = vi.hoisted(() => ({ listClaGroupOptions: vi.fn() }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
-vi.mock('../services/cla-group-search.stub', () => ({ listClaGroupOptions }));
 vi.mock('../services/cla.service', () => ({
   ClaService: class {
     public getMyClas = getMyClas;
     public resolveIdentity = resolveIdentity;
     public getPdfUrl = getPdfUrl;
     public getSignHandoff = getSignHandoff;
+    public searchClaGroups = searchClaGroups;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -181,32 +181,85 @@ describe('ClasController.getSignHandoff', () => {
 });
 
 describe('ClasController.getClaGroupOptions', () => {
-  it('returns the stubbed selection options', async () => {
-    listClaGroupOptions.mockReturnValue([{ claGroupId: 'cg-1', projectName: 'Venus test' }]);
+  const envelope = {
+    searchTerm: 'cncf',
+    resultCount: 1,
+    truncated: false,
+    results: [{ claGroupId: 'cg-1', projectName: 'CNCF', matchTypes: ['project'], organizations: [] }],
+  };
+
+  it('returns the search envelope, not a bare array of options', async () => {
+    searchClaGroups.mockResolvedValue(envelope);
     const res = buildRes();
 
-    await new ClasController().getClaGroupOptions({ params: {}, query: {} } as any, res, vi.fn());
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'cncf' } } as any, res, vi.fn());
 
-    expect(res.json).toHaveBeenCalledWith([{ claGroupId: 'cg-1', projectName: 'Venus test' }]);
+    // `truncated` describes the result set, so it cannot ride inside an array of results.
+    expect(res.json).toHaveBeenCalledWith(envelope);
+    expect(Array.isArray(res.json.mock.calls[0][0])).toBe(false);
   });
 
-  it('forwards the picker query to the search', async () => {
-    listClaGroupOptions.mockReturnValue([]);
+  it('forwards the picker query to the search as the search term', async () => {
+    searchClaGroups.mockResolvedValue(envelope);
 
-    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'venus' } } as any, buildRes(), vi.fn());
+    const req = { params: {}, query: { q: 'cncf' } } as any;
+    await new ClasController().getClaGroupOptions(req, buildRes(), vi.fn());
 
-    // The query has to survive the route for #1250 to be a drop-in replacement of the search
-    // alone. If the controller dropped it, the picker would silently list everything.
-    expect(listClaGroupOptions).toHaveBeenCalledWith('venus');
+    // If the controller dropped it, the producer would 400 on a missing required term.
+    expect(searchClaGroups).toHaveBeenCalledWith(req, 'cncf');
+  });
+
+  it('trims the query before it becomes the search term', async () => {
+    searchClaGroups.mockResolvedValue(envelope);
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: '  cncf  ' } } as any, buildRes(), vi.fn());
+
+    // Upstream measures minLength against the trimmed term and 400s on the difference.
+    expect(searchClaGroups).toHaveBeenCalledWith(expect.anything(), 'cncf');
+  });
+
+  it('answers a term shorter than three trimmed characters itself, without calling upstream', async () => {
+    const res = buildRes();
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'cn' } } as any, res, vi.fn());
+
+    // Defense in depth behind the picker's own gate: upstream 422s a two-character term, and a
+    // contributor mid-word has made no mistake worth surfacing as an error.
+    expect(searchClaGroups).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ searchTerm: 'cn', resultCount: 0, truncated: false, results: [] });
   });
 
   it('treats a repeated or malformed q as an empty query rather than failing', async () => {
-    listClaGroupOptions.mockReturnValue([]);
+    const res = buildRes();
 
     // Express parses a repeated ?q=&q= into an array; it must not reach the search as one.
-    await new ClasController().getClaGroupOptions({ params: {}, query: { q: ['a', 'b'] } } as any, buildRes(), vi.fn());
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: ['a', 'b'] } } as any, res, vi.fn());
 
-    expect(listClaGroupOptions).toHaveBeenCalledWith('');
+    expect(searchClaGroups).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ searchTerm: '', resultCount: 0, truncated: false, results: [] });
+  });
+
+  it('stays available while impersonating — selection is a read', async () => {
+    searchClaGroups.mockResolvedValue(envelope);
+    const res = buildRes();
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'cncf' }, impersonation: { active: true } } as any, res, vi.fn());
+
+    // The hand-off is impersonation-blocked at the route because signing is a write; searching
+    // for a project to sign is not, and blocking it would make the picker untestable in support.
+    expect(res.json).toHaveBeenCalledWith(envelope);
+  });
+
+  it('forwards an upstream failure to the error handler instead of an empty set', async () => {
+    searchClaGroups.mockRejectedValue(new MicroserviceError('boom', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new ClasController().getClaGroupOptions({ params: {}, query: { q: 'cncf' } } as any, res, next);
+
+    // An empty envelope would render as "no matching projects" — a wrong answer, not an outage.
+    expect(next.mock.calls[0][0]).toBeInstanceOf(MicroserviceError);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('returns 401 (via next) when unauthenticated', async () => {

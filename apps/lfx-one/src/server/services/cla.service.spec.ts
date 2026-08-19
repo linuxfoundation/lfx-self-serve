@@ -33,9 +33,9 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import type { EasyClaMyCla, ResolvedClaIdentity } from '../types/cla.types';
+import type { EasyClaMyCla, EasyClaSearchResult, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
-import { ClaService, claReturnUrl, claServiceBaseUrl, collectClaEmails, normalizeGithubId, toMyClaAgreement } from './cla.service';
+import { ClaService, claReturnUrl, claServiceBaseUrl, collectClaEmails, normalizeGithubId, toClaGroupSearchResponse, toMyClaAgreement } from './cla.service';
 
 const req = {} as unknown as Request;
 
@@ -76,6 +76,9 @@ function ecla(overrides: Partial<EasyClaMyCla> = {}): EasyClaMyCla {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks drops call history but not queued `…Once` values, so a test that queues a
+  // response it never consumes would hand it to whichever test calls the gateway next.
+  gatewayFetch.mockReset();
   // clearAllMocks resets call history but not return-value overrides — restore identity
   // helper defaults so a value set in one test does not leak into the next.
   getEffectiveUsername.mockReturnValue(null);
@@ -85,6 +88,9 @@ beforeEach(() => {
   getUserIdentities.mockResolvedValue([]);
   getUserEmails.mockResolvedValue(null);
   process.env['API_GW_AUDIENCE'] = 'https://api-gw.dev.example.org/';
+  // A developer pointing their laptop BFF at a local cla-backend-go exports this; leaving it set
+  // would silently reroute every asserted upstream URL below.
+  delete process.env['CLA_SERVICE_URL'];
 });
 
 // ---------------------------------------------------------------------------
@@ -314,6 +320,111 @@ describe('toMyClaAgreement', () => {
 
   it('never offers a PDF for an ICLA upstream marked pdfAvailable=false', () => {
     expect(toMyClaAgreement(icla({ pdfAvailable: false })).pdfAvailable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLA-group search mapping (#1250)
+// ---------------------------------------------------------------------------
+
+describe('toClaGroupSearchResponse', () => {
+  /** Minimal producer result from `/v4/cla-group/search` (`#/definitions/cla-search-result`). */
+  function result(overrides: Partial<EasyClaSearchResult> = {}): EasyClaSearchResult {
+    return {
+      claGroupID: 'cg-1',
+      claGroupName: 'CNCF ICLA',
+      projectName: 'CNCF',
+      matchTypes: ['project'],
+      organizations: [{ name: 'cncf', source: 'github', url: 'https://github.com/cncf' }],
+      ...overrides,
+    };
+  }
+
+  it('renames the producer claGroupID to the claGroupId the hand-off already reads', () => {
+    const mapped = toClaGroupSearchResponse({ searchTerm: 'cncf', resultCount: 1, truncated: false, results: [result()] });
+
+    // Forking a second identifier spelling into Angular is what this mapping exists to prevent.
+    expect(mapped.results[0]?.claGroupId).toBe('cg-1');
+    expect(mapped.results[0]).not.toHaveProperty('claGroupID');
+  });
+
+  it('carries the set-level envelope through, including truncated', () => {
+    const mapped = toClaGroupSearchResponse({ searchTerm: 'cn', resultCount: 20, truncated: true, results: [result()] });
+
+    expect(mapped).toMatchObject({ searchTerm: 'cn', resultCount: 20, truncated: true });
+    expect(mapped.results).toHaveLength(1);
+  });
+
+  it('keeps a result whose projectName the producer omitted (multi-project, no foundation marker)', () => {
+    const mapped = toClaGroupSearchResponse({
+      searchTerm: 'cncf',
+      resultCount: 1,
+      truncated: false,
+      results: [result({ projectName: undefined, claGroupName: undefined })],
+    });
+
+    // Both names can be absent upstream; dropping such a row would hide a signable group.
+    expect(mapped.results).toHaveLength(1);
+    expect(mapped.results[0]?.projectName).toBeUndefined();
+    expect(mapped.results[0]?.claGroupName).toBeUndefined();
+  });
+
+  it('normalizes an absent organizations/matchTypes list to an empty array, never undefined', () => {
+    const mapped = toClaGroupSearchResponse({
+      searchTerm: 'cncf',
+      resultCount: 1,
+      truncated: false,
+      results: [result({ organizations: undefined, matchTypes: undefined })],
+    });
+
+    // The picker iterates both; a missing array and an empty one must render identically.
+    expect(mapped.results[0]?.organizations).toEqual([]);
+    expect(mapped.results[0]?.matchTypes).toEqual([]);
+  });
+
+  it('keeps a linked organization the producer named only by URL', () => {
+    const mapped = toClaGroupSearchResponse({
+      searchTerm: 'cncf',
+      resultCount: 1,
+      truncated: false,
+      results: [result({ organizations: [{ source: 'gitlab', url: 'https://gitlab.com/cla_dev_automationgroup' }] })],
+    });
+
+    // Live 2026-08-19: two of the GitLab groups on a CNCF hit carry a URL and no name. Dropping
+    // them would undercount "N linked orgs" and hide the only GitLab provenance on the result.
+    expect(mapped.results[0]?.organizations).toEqual([
+      { name: 'https://gitlab.com/cla_dev_automationgroup', source: 'gitlab', url: 'https://gitlab.com/cla_dev_automationgroup' },
+    ]);
+  });
+
+  it('carries the resolved repository through for a pasted-URL match', () => {
+    const mapped = toClaGroupSearchResponse({
+      searchTerm: 'https://github.com/cncf/foo',
+      resultCount: 1,
+      truncated: false,
+      results: [result({ matchTypes: ['repository'], matchedRepositoryName: 'cncf/foo', matchedRepositoryURL: 'https://github.com/cncf/foo' })],
+    });
+
+    expect(mapped.results[0]).toMatchObject({ matchedRepositoryName: 'cncf/foo', matchedRepositoryURL: 'https://github.com/cncf/foo' });
+  });
+
+  it('drops the producer fields the modal has no use for', () => {
+    const mapped = toClaGroupSearchResponse({
+      searchTerm: 'cncf',
+      resultCount: 1,
+      truncated: false,
+      results: [result({ projectSFID: 'a09', foundationSFID: 'a09f', projectExternalID: 'ext', iclaEnabled: true, cclaEnabled: false })],
+    });
+
+    // Passing these on would invite a later consumer to branch on signing configuration the
+    // picker never asked for and cannot honour.
+    expect(mapped.results[0]).not.toHaveProperty('projectSFID');
+    expect(mapped.results[0]).not.toHaveProperty('iclaEnabled');
+    expect(mapped.results[0]).not.toHaveProperty('cclaEnabled');
+  });
+
+  it('answers an absent upstream body with an empty, non-truncated set for the term', () => {
+    expect(toClaGroupSearchResponse(null, 'cncf')).toEqual({ searchTerm: 'cncf', resultCount: 0, truncated: false, results: [] });
   });
 });
 
@@ -557,6 +668,66 @@ describe('ClaService.getMyClas', () => {
     await new ClaService().getMyClas(req);
 
     expect(gatewayFetch).toHaveBeenCalledWith(req, expect.any(String), expect.objectContaining({ bearerToken: undefined }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// searchClaGroups — /v4/cla-group/search
+// ---------------------------------------------------------------------------
+
+describe('ClaService.searchClaGroups', () => {
+  const upstream = {
+    searchTerm: 'cncf',
+    resultCount: 1,
+    truncated: false,
+    results: [{ claGroupID: 'cg-1', projectName: 'CNCF', matchTypes: ['project'], organizations: [] }],
+  };
+
+  it('queries the four-source search with the term as searchTerm', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstream);
+
+    await new ClaService().searchClaGroups(req, 'cncf');
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    expect(calledUrl).toBe('https://api-gw.dev.example.org/cla-service/v4/cla-group/search?searchTerm=cncf');
+  });
+
+  it('encodes a pasted repository URL rather than splicing it into the query string', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstream);
+
+    await new ClaService().searchClaGroups(req, 'https://github.com/cncf/foo');
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.get('searchTerm')).toBe('https://github.com/cncf/foo');
+  });
+
+  it('runs on the default gateway token, even while impersonating', async () => {
+    isImpersonating.mockReturnValue(true);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce(upstream);
+
+    await new ClaService().searchClaGroups(imperReq, 'cncf');
+
+    // Search carries no identity: it asks which CLA Groups exist, not which are the caller's. The
+    // PDF path's token-juggle is there because that call is scoped to a user — this one is not.
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
+    expect(opts.bearerToken).toBeUndefined();
+  });
+
+  it('maps the upstream body onto the SS envelope, renaming the identifier', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstream, truncated: true, resultCount: 20 });
+
+    const envelope = await new ClaService().searchClaGroups(req, 'cncf');
+
+    expect(envelope).toMatchObject({ searchTerm: 'cncf', resultCount: 20, truncated: true });
+    expect(envelope.results[0]?.claGroupId).toBe('cg-1');
+  });
+
+  it('answers an empty body with an empty set for the term rather than throwing', async () => {
+    gatewayFetch.mockResolvedValueOnce(null);
+
+    expect(await new ClaService().searchClaGroups(req, 'cncf')).toEqual({ searchTerm: 'cncf', resultCount: 0, truncated: false, results: [] });
   });
 });
 

@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ClaGroupOption, ClaSignHandoff, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import { ClaGroupSearchResponse, ClaSignHandoff, MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import { buildConsoleHandoffUrl } from '@lfx-one/shared/utils';
 import { map, Observable, take } from 'rxjs';
 
@@ -27,15 +27,16 @@ export class MyClasService {
   }
 
   /**
-   * CLA Groups matching the picker's query; an empty query lists everything.
+   * CLA Groups matching the picker's query, searched server-side across project names, CLA group
+   * names, linked organizations, and pasted repository URLs (#1250).
    *
-   * Currently served by a stub that substring-matches; #1250 replaces the route's implementation
-   * with the real four-source search. This call site is written to survive that swap unchanged,
-   * which is why the query goes to the server rather than being filtered in the browser.
+   * Returns the producer's envelope rather than a bare list: whether the result set was capped
+   * is a property of the set, so it has nowhere to live inside an array. Callers still only need
+   * `claGroupId` off the option they pick.
    */
-  public getClaGroupOptions(query = ''): Observable<ClaGroupOption[]> {
+  public getClaGroupOptions(query = ''): Observable<ClaGroupSearchResponse> {
     const params = query ? `?q=${encodeURIComponent(query)}` : '';
-    return this.http.get<ClaGroupOption[]>(`/api/me/clas/sign-options${params}`);
+    return this.http.get<ClaGroupSearchResponse>(`/api/me/clas/sign-options${params}`);
   }
 
   /**

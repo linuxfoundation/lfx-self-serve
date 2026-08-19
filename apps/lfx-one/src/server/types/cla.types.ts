@@ -75,6 +75,40 @@ export interface EasyClaMyClaPdf {
   expiresInSeconds?: number;
 }
 
+/** An organization on a search result (`#/definitions/cla-search-org`). */
+export interface EasyClaSearchOrg {
+  name?: string;
+  source?: string;
+  url?: string;
+}
+
+/** One CLA Group matching the search term (`#/definitions/cla-search-result`). */
+export interface EasyClaSearchResult {
+  /** Note the spelling: upstream capitalizes ID, the SS-facing option does not. */
+  claGroupID?: string;
+  claGroupName?: string;
+  projectName?: string;
+  projectSFID?: string;
+  foundationSFID?: string;
+  projectExternalID?: string;
+  iclaEnabled?: boolean;
+  cclaEnabled?: boolean;
+  /** Why it matched: claGroup / project / organization / repository. */
+  matchTypes?: string[];
+  organizations?: EasyClaSearchOrg[];
+  matchedRepositoryName?: string;
+  matchedRepositoryURL?: string;
+}
+
+/** Response for `GET /v4/cla-group/search` (`#/definitions/cla-search-list`). */
+export interface EasyClaSearchList {
+  searchTerm?: string;
+  resultCount?: number;
+  /** True when more groups matched than the limit and the set was capped. */
+  truncated?: boolean;
+  results?: EasyClaSearchResult[];
+}
+
 /**
  * Response for `GET /v2/user-from-token` — the legacy backend returns the raw DynamoDB user item,
  * hence snake_case keys rather than v4's camelCase model. Only the field the hand-off needs.

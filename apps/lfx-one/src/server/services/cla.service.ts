@@ -10,10 +10,31 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { Auth0Identity, ClaSignHandoff, EmailManagementData, MyClaAgreement, MyClasResponse, PdfUrlResponse, type ClaStatus } from '@lfx-one/shared/interfaces';
+import {
+  Auth0Identity,
+  ClaGroupOption,
+  ClaGroupSearchResponse,
+  ClaSignHandoff,
+  EmailManagementData,
+  MyClaAgreement,
+  MyClasResponse,
+  PdfUrlResponse,
+  type ClaGroupMatchType,
+  type ClaGroupOrgSource,
+  type ClaStatus,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { EasyClaMyCla, EasyClaMyClaList, EasyClaMyClaPdf, EasyClaUserFromTokenV2, ResolvedClaIdentity } from '../types/cla.types';
+import {
+  EasyClaMyCla,
+  EasyClaMyClaList,
+  EasyClaMyClaPdf,
+  EasyClaSearchList,
+  EasyClaSearchOrg,
+  EasyClaSearchResult,
+  EasyClaUserFromTokenV2,
+  ResolvedClaIdentity,
+} from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
@@ -42,11 +63,66 @@ const MY_CLAS_PATH = '/profile/clas';
  * (already required to mint the gateway token), mirroring user.service.ts.
  */
 export function claServiceBaseUrl(): string {
+  // Local-only override so a laptop BFF can talk to a standalone cla-backend-go
+  // (see CLA_SERVICE_URL in apps/lfx-one/.env). Do not commit a non-empty value.
+  const override = process.env['CLA_SERVICE_URL'];
+  if (override) {
+    return override.replace(/\/+$/, '');
+  }
   const audience = process.env['API_GW_AUDIENCE'];
   if (!audience) {
     throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', { service: SERVICE });
   }
   return `${audience.replace(/\/+$/, '')}/cla-service`;
+}
+
+// Values the producer's `matchTypes` and `organizations[].source` enums may take. Anything else
+// is out of contract and is dropped rather than forwarded: the picker renders each of these with
+// its own label and icon, so an unrecognised value would reach the template as a bare string.
+const KNOWN_MATCH_TYPES = new Set<string>(['claGroup', 'project', 'organization', 'repository']);
+const KNOWN_ORG_SOURCES = new Set<string>(['github', 'gitlab', 'gerrit']);
+
+/** Maps one upstream search result onto the option the picker and the hand-off consume. */
+function toClaGroupOption(result: EasyClaSearchResult): ClaGroupOption {
+  return {
+    claGroupId: result.claGroupID ?? '',
+    projectName: result.projectName || undefined,
+    claGroupName: result.claGroupName || undefined,
+    matchTypes: (result.matchTypes ?? []).filter((type): type is ClaGroupMatchType => KNOWN_MATCH_TYPES.has(type)),
+    organizations: (result.organizations ?? [])
+      .filter((org): org is EasyClaSearchOrg & { source: ClaGroupOrgSource } => !!org.source && KNOWN_ORG_SOURCES.has(org.source))
+      // Some linked GitLab groups carry a URL but no name upstream. Falling back to the URL keeps
+      // the org — and its source — in the list; dropping it would undercount "N linked orgs" and
+      // hide provenance the contributor is being shown the list to check.
+      .map((org) => ({ name: org.name || org.url || '', source: org.source, ...(org.url ? { url: org.url } : {}) }))
+      .filter((org) => !!org.name),
+    ...(result.matchedRepositoryName ? { matchedRepositoryName: result.matchedRepositoryName } : {}),
+    ...(result.matchedRepositoryURL ? { matchedRepositoryURL: result.matchedRepositoryURL } : {}),
+  };
+}
+
+/**
+ * Maps `GET /v4/cla-group/search` onto the envelope `GET /api/me/clas/sign-options` returns.
+ *
+ * The envelope is mirrored rather than flattened to an array because `truncated` describes the
+ * result *set* — a cap cannot ride inside one of the results. The one field renamed is the
+ * identifier (`claGroupID` → `claGroupId`), so Angular is not made to carry two spellings of the
+ * same UUID. Salesforce ids and the ICLA/CCLA enablement flags are deliberately not carried
+ * across: the modal does not use them, and forwarding them invites a consumer to branch on
+ * signing configuration this route never promised to keep current.
+ *
+ * `searchTerm` falls back to the term the BFF actually sent, so the client can always tell which
+ * query a set belongs to even if the producer echoes nothing.
+ */
+export function toClaGroupSearchResponse(list: EasyClaSearchList | null, searchTerm = ''): ClaGroupSearchResponse {
+  const results = (list?.results ?? []).map(toClaGroupOption);
+
+  return {
+    searchTerm: list?.searchTerm ?? searchTerm,
+    resultCount: list?.resultCount ?? results.length,
+    truncated: list?.truncated === true,
+    results,
+  };
 }
 
 // Hostnames this app is served from. Pinned in code rather than an allowlist env var because the
@@ -329,6 +405,34 @@ export class ClaService {
         githubLinked: identity.githubLinked,
       },
     };
+  }
+
+  /**
+   * Searches CLA Groups by project name, CLA group name, linked organization, or a pasted
+   * repository URL via `GET /v4/cla-group/search` (#1250), and maps the producer's envelope onto
+   * the one `GET /api/me/clas/sign-options` returns.
+   *
+   * Runs on the default gateway token with no impersonation branch. Unlike `/v4/my-clas` and the
+   * PDF download, this call carries no identity: it asks which CLA Groups exist, not which ones
+   * belong to anybody, so there is no ownership check upstream for a token swap to satisfy.
+   *
+   * The caller is responsible for the minimum term length — see `getClaGroupOptions`.
+   */
+  public async searchClaGroups(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
+    const startTime = logger.startOperation(req, 'cla_search_cla_groups');
+
+    const params = new URLSearchParams({ searchTerm });
+    const list = await gatewayFetch<EasyClaSearchList>(req, `${claServiceBaseUrl()}/v4/cla-group/search?${params.toString()}`, {
+      operation: 'cla_search_cla_groups',
+      service: SERVICE,
+      errorMessage: 'Failed to search CLA groups',
+      errorCode: 'UPSTREAM_ERROR',
+    });
+
+    const envelope = toClaGroupSearchResponse(list, searchTerm);
+
+    logger.success(req, 'cla_search_cla_groups', startTime, { result_count: envelope.resultCount, truncated: envelope.truncated });
+    return envelope;
   }
 
   /**

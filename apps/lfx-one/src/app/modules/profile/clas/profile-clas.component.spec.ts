@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink } from '@angular/router';
-import type { ClaGroupOption, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
+import type { ClaGroupOption, ClaGroupSearchResponse, MyClaAgreement, MyClasResponse } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -248,7 +248,8 @@ describe('ProfileClasComponent', () => {
  * because whether the action is offered at all is a template condition.
  */
 describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
-  const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test' };
+  const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test', matchTypes: ['project'], organizations: [] };
+  const SEARCH_RESULTS: ClaGroupSearchResponse = { searchTerm: 'venus', resultCount: 1, truncated: false, results: [CLA_GROUP] };
   const EMPTY_CLAS: MyClasResponse = { agreements: [], identity: { matchedUserIds: 1, unmatched: false, githubLinked: true } };
 
   let location: { href: string };
@@ -288,7 +289,7 @@ describe('ProfileClasComponent — Sign CLA hand-off (#1251)', () => {
         { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
         {
           provide: MyClasService,
-          useValue: { getMyClas: vi.fn(() => of(EMPTY_CLAS)), getPdfUrl: vi.fn(), getClaGroupOptions: vi.fn(() => of([CLA_GROUP])), getSignUrl },
+          useValue: { getMyClas: vi.fn(() => of(EMPTY_CLAS)), getPdfUrl: vi.fn(), getClaGroupOptions: vi.fn(() => of(SEARCH_RESULTS)), getSignUrl },
         },
       ],
     });
