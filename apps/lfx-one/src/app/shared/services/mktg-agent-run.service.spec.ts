@@ -33,8 +33,8 @@ describe('MktgAgentRunService', () => {
   let service: MktgAgentRunService;
   let userSignal: WritableSignal<User | null>;
   let httpPost: ReturnType<typeof vi.fn>;
-  /** Result-endpoint responses, consumed one per poll (last one repeats). */
-  let resultResponses: MktgRunResultResponse[];
+  /** Result-endpoint responses, consumed one per poll (last one repeats). An HttpErrorResponse entry makes that poll attempt error. */
+  let resultResponses: (MktgRunResultResponse | HttpErrorResponse)[];
   /** When set, the chat endpoint errors with this instead of succeeding. */
   let chatError: HttpErrorResponse | null;
 
@@ -70,6 +70,9 @@ describe('MktgAgentRunService', () => {
       }
       if (url === BRAND_KIT_INTAKE.endpoints.result) {
         const next = resultResponses.length > 1 ? resultResponses.shift() : resultResponses[0];
+        if (next instanceof HttpErrorResponse) {
+          return throwError(() => next);
+        }
         return of(next ?? { status: 'pending' });
       }
       throw new Error(`Unexpected POST to ${url}`);
@@ -254,6 +257,71 @@ describe('MktgAgentRunService', () => {
     // The dead session (and its versions) is gone; the fresh run replaces it.
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
     expect(stored.versions).toEqual([expect.objectContaining({ version: 1, document: '# Fresh v1' })]);
+  });
+
+  it('survives a transient poll failure — one 5xx never aborts the generation, the next interval retries', async () => {
+    resultResponses = [new HttpErrorResponse({ status: 500, statusText: 'Server Error' }), { status: 'ready', documentMarkdown: '# Brand Kit', version: 1 }];
+
+    const events: MktgGenerateProgress[] = [];
+    let error: unknown;
+    service.generate(generateRequest()).subscribe({ next: (event) => events.push(event), error: (err) => (error = err) });
+
+    // First poll attempt errors transiently — the stream must stay alive.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(error).toBeUndefined();
+    expect(events).toEqual([{ type: 'submitted' }]);
+
+    // The next interval's poll lands the document.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(events).toHaveLength(2);
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+    expect(stored.versions).toEqual([expect.objectContaining({ version: 1, document: '# Brand Kit' })]);
+  });
+
+  it('fails a poll fast on a non-transient response — a 403 means the owner token stopped verifying, not a blip', async () => {
+    resultResponses = [new HttpErrorResponse({ status: 403, statusText: 'Forbidden' })];
+
+    const events: MktgGenerateProgress[] = [];
+    let error: unknown;
+    service.generate(generateRequest()).subscribe({ next: (event) => events.push(event), error: (err) => (error = err) });
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+    expect(events).toEqual([{ type: 'submitted' }]);
+    expect(error).toBeInstanceOf(HttpErrorResponse);
+    expect((error as HttpErrorResponse).status).toBe(403);
+  });
+
+  it('keeps the run coherent when localStorage persistence fails — the next follow-up rides the in-memory run', async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    try {
+      resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
+      service.generate(generateRequest()).subscribe();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+      // The next submission must be a follow-up on the displayed run's session
+      // with its version gate — never a fresh v1 session that could hand back
+      // the already-displayed draft as if it were the regeneration.
+      resultResponses = [{ status: 'ready', documentMarkdown: '# v2', version: 2 }];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest('Tighten the taglines.')).subscribe((event) => events.push(event));
+
+      expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
+        agentId: 'brand-kit',
+        message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
+        sessionId: 'sess-1',
+        ownerToken: 'token-1',
+      });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(events).toHaveLength(2);
+      expect((events[1] as { type: 'document'; run: MktgStoredAgentRun }).run.versions).toHaveLength(2);
+    } finally {
+      setItemSpy.mockRestore();
+    }
   });
 
   it('propagates a non-auth follow-up failure and keeps the stored run — only 401/403 mean the session is unusable', () => {

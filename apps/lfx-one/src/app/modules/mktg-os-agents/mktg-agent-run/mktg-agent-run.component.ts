@@ -21,13 +21,15 @@ import {
   MktgRunVersion,
   MktgStoredAgentRun,
   ProjectContext,
+  User,
 } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
-import { distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
+import { combineLatest, distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
 
 // Form-first agent run page (approved Marketing OS design): batch intake form
 // → staged running checklist → document result with versions and a
@@ -49,10 +51,12 @@ export class MktgAgentRunComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly runService = inject(MktgAgentRunService);
+  private readonly userService = inject(UserService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
+  private readonly effectiveUser$ = toObservable(this.userService.user);
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
 
@@ -78,6 +82,13 @@ export class MktgAgentRunComponent {
   protected readonly docExpanded = signal(false);
   /** Field keys pre-filled from LFX data this session — drives the "From LFX" chips. */
   protected readonly fromLfx = signal<Record<string, boolean>>({});
+  /**
+   * Field keys whose LFX prefill source resolved WITHOUT a value. Tracked
+   * separately from fromLfx (which only records that a prefill was APPLIED to
+   * an empty control) so the "not set on your LFX project" hint reflects what
+   * LFX actually has — never restored answers or early typing.
+   */
+  protected readonly lfxMissing = signal<Record<string, boolean>>({});
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
@@ -94,8 +105,8 @@ export class MktgAgentRunComponent {
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
   protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running');
   protected readonly regenerateDisabled = computed(() => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running');
-  protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending' }[]> = this.initStages();
-  protected readonly sectionChecklist: Signal<{ label: string; present: boolean }[]> = this.initSectionChecklist();
+  protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
+  protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
 
   // Accent → Tailwind classes, kept as a class field with literal class names so
   // Tailwind's content scan (./src/**/*.ts) generates them.
@@ -113,6 +124,12 @@ export class MktgAgentRunComponent {
     pending: 'text-gray-300',
   };
 
+  // The agent is fixed for the component's lifetime (route param), so its
+  // presentation derives once here — templates bind properties, never call
+  // methods (docs/reviews/frontend-checklist.md §4).
+  protected readonly agentIconClass: string = this.accentIcon[this.agent?.accent ?? 'gray'];
+  protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
+
   public constructor() {
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
@@ -123,14 +140,20 @@ export class MktgAgentRunComponent {
     // project detail), and the project selector reuses this component on a
     // switch (it only rewrites ?project=) — so restore + prefill must re-run,
     // and ALL run state must reset, on every active-context change, never just
-    // the first render (docs/reviews/frontend-checklist.md 14.14). Browser-only
-    // so SSR output stays stable; the first emission lands post-hydration.
+    // the first render (docs/reviews/frontend-checklist.md 14.14). The stream
+    // is keyed by the EFFECTIVE user too: Admin Mode impersonation swaps
+    // `user()` in place with the same project selected, and without a reset the
+    // page would keep rendering the previous effective user's restored run and
+    // an in-flight completion could persist under whichever sub is current when
+    // it finishes (resetForContext cancels the in-flight generation).
+    // Browser-only so SSR output stays stable; the first emission lands
+    // post-hydration.
     if (isPlatformBrowser(this.platformId)) {
-      this.activeContext$
+      combineLatest([this.activeContext$, this.effectiveUser$])
         .pipe(
-          filter((context): context is ProjectContext => !!context),
-          distinctUntilChanged((previous, current) => previous.uid === current.uid),
-          switchMap((context) => {
+          filter((pair): pair is [ProjectContext, User | null] => !!pair[0]),
+          distinctUntilChanged(([previousContext, previousUser], [context, user]) => previousContext.uid === context.uid && previousUser?.sub === user?.sub),
+          switchMap(([context]) => {
             this.resetForContext(context);
             // getProject memoizes per slug and maps errors to null, and
             // switchMap drops a stale in-flight lookup on project change.
@@ -149,14 +172,6 @@ export class MktgAgentRunComponent {
   }
 
   // === Protected methods ===
-  protected iconClass(agent: MktgAgent): string {
-    return this.accentIcon[agent.accent ?? 'gray'];
-  }
-
-  protected tagline(agent: MktgAgent): string {
-    return agent.tags.join(' · ');
-  }
-
   protected onBack(): void {
     this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
@@ -189,10 +204,6 @@ export class MktgAgentRunComponent {
     this.docExpanded.update((expanded) => !expanded);
   }
 
-  protected stageClass(state: 'done' | 'active' | 'pending'): string {
-    return this.stageLabelClass[state];
-  }
-
   protected onDownload(): void {
     // SSR guard: Blob/URL/document are browser-only (ssr-safety rule).
     if (!isPlatformBrowser(this.platformId)) {
@@ -208,7 +219,9 @@ export class MktgAgentRunComponent {
     anchor.href = url;
     anchor.download = `${this.docTitle()} v${current.version}.md`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    // Deferred: some browsers begin the download asynchronously, and revoking
+    // synchronously can invalidate the blob URL before it is consumed.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   // === Private initializers ===
@@ -219,7 +232,7 @@ export class MktgAgentRunComponent {
     });
   }
 
-  private initStages(): Signal<{ label: string; state: 'done' | 'active' | 'pending' }[]> {
+  private initStages(): Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> {
     return computed(() => {
       const current = this.stage();
       return this.stageLabels.map((label, index) => {
@@ -229,16 +242,26 @@ export class MktgAgentRunComponent {
         } else if (index === current) {
           state = 'active';
         }
-        return { label, state };
+        return { label, state, labelClass: this.stageLabelClass[state] };
       });
     });
   }
 
-  private initSectionChecklist(): Signal<{ label: string; present: boolean }[]> {
+  private initSectionChecklist(): Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> {
     return computed(() => {
       const document = this.currentVersion()?.document ?? '';
       const lowerDoc = document.toLowerCase();
-      return (this.intake?.sections ?? []).map((label) => ({ label, present: this.sectionPresent(lowerDoc, label) }));
+      // Present vs missing is conveyed by DISTINCT icons plus screen-reader
+      // text, never color alone.
+      return (this.intake?.sections ?? []).map((label) => {
+        const present = this.sectionPresent(lowerDoc, label);
+        return {
+          label,
+          present,
+          iconClass: present ? 'fa-light fa-circle-check text-emerald-500' : 'fa-light fa-circle-xmark text-gray-400',
+          srText: present ? 'included' : 'missing',
+        };
+      });
     });
   }
 
@@ -276,6 +299,7 @@ export class MktgAgentRunComponent {
     this.errorText.set('');
     this.docExpanded.set(false);
     this.fromLfx.set({});
+    this.lfxMissing.set({});
     this.intakeForm.reset();
     this.feedbackForm.reset();
 
@@ -295,13 +319,24 @@ export class MktgAgentRunComponent {
     this.applyPrefill('project-name', context.name);
   }
 
+  /**
+   * Records what the resolved LFX source actually has — fields whose source
+   * came back empty get the honest "not set on your LFX project" hint — and
+   * fills still-empty controls from it, marking those "From LFX". Availability
+   * is tracked independently of application: restored answers or early typing
+   * must never make an existing LFX value read as missing.
+   */
   private applyPrefill(source: MktgIntakePrefillSource, value: string | null | undefined): void {
-    const trimmedValue = value?.trim();
-    if (!trimmedValue || !this.intake) {
+    if (!this.intake) {
       return;
     }
+    const trimmedValue = value?.trim() ?? '';
     for (const field of this.intake.fields) {
       if (field.prefill !== source) {
+        continue;
+      }
+      this.lfxMissing.update((flags) => ({ ...flags, [field.key]: !trimmedValue }));
+      if (!trimmedValue) {
         continue;
       }
       const control = this.intakeForm.controls[field.key];

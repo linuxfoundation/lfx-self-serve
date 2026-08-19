@@ -14,12 +14,12 @@
             ariaLabel="Back to agents"
             data-testid="mktg-agent-run-back-button"
             (onClick)="onBack()" />
-          <span class="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" [ngClass]="iconClass(agent)">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" [ngClass]="agentIconClass">
             <i [class]="agent.icon" aria-hidden="true"></i>
           </span>
           <div class="flex flex-col min-w-0">
             <span class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ agent.name }}</span>
-            <span class="text-xs text-gray-400 truncate">{{ tagline(agent) }}</span>
+            <span class="text-xs text-gray-400 truncate">{{ agentTagline }}</span>
           </div>
         </div>
         @if (showVersionChips()) {
@@ -95,7 +95,7 @@
                       [placeholder]="field.placeholder ?? ''"
                       [dataTest]="'mktg-intake-' + field.key" />
                   }
-                  @if (field.missingPrefillHint && !fromLfx()[field.key]) {
+                  @if (field.missingPrefillHint && lfxMissing()[field.key]) {
                     <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
                   }
                 </div>
@@ -116,7 +116,7 @@
           <!-- RUNNING phase -->
           @case ('running') {
             <div class="flex flex-col items-center gap-4 px-7 pt-32 pb-16" data-testid="mktg-agent-run-running">
-              <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="iconClass(agent)">
+              <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="agentIconClass">
                 <i [class]="agent.icon + ' text-xl'" aria-hidden="true"></i>
                 <span
                   class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 animate-spin"
@@ -136,7 +136,7 @@
                         <span class="w-2 h-2 rounded-full bg-gray-200" aria-hidden="true"></span>
                       }
                     }
-                    <span class="text-sm" [ngClass]="stageClass(runStage.state)">{{ runStage.label }}</span>
+                    <span class="text-sm" [ngClass]="runStage.labelClass">{{ runStage.label }}</span>
                   </div>
                 }
               </div>
@@ -189,8 +189,9 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-3.5" data-testid="mktg-agent-run-sections">
                   @for (section of sectionChecklist(); track section.label) {
                     <div class="flex items-center gap-2 min-w-0">
-                      <i class="fa-light fa-check text-xs shrink-0" [ngClass]="section.present ? 'text-emerald-500' : 'text-gray-300'" aria-hidden="true"></i>
+                      <i class="text-xs shrink-0" [ngClass]="section.iconClass" aria-hidden="true"></i>
                       <span class="text-xs text-gray-600 truncate">{{ section.label }}</span>
+                      <span class="sr-only">{{ section.srText }}</span>
                     </div>
                   }
                 </div>

@@ -22,6 +22,8 @@ import {
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { catchError, concat, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
 
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
+
 import { UserService } from './user.service';
 
 /**
@@ -46,6 +48,15 @@ export class MktgAgentRunService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
+
+  /**
+   * In-memory runs, keyed exactly like localStorage. The authoritative record
+   * for THIS page session: `loadRun` prefers it, so when `setItem` fails
+   * (quota, disabled storage) the next follow-up still derives its version
+   * directive and poll gate from the run the user is looking at — persistence
+   * loss only ever costs cross-visit restore, never in-session correctness.
+   */
+  private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
   /**
    * Generates (or regenerates) an agent document. Emits `submitted` once the
@@ -76,6 +87,10 @@ export class MktgAgentRunService {
     const key = this.storageKey(projectUid, agentId);
     if (!key) {
       return null;
+    }
+    const cached = this.memoryRuns.get(key);
+    if (cached) {
+      return cached;
     }
     try {
       const raw = window.localStorage.getItem(key);
@@ -151,11 +166,27 @@ export class MktgAgentRunService {
    * newer than the prior draft's. The endpoint surfaces only schema-validated,
    * sha256-verified envelopes, so agent status chatter can never be mistaken
    * for the document — anything else stays `pending`.
+   *
+   * A transient failure of one poll attempt (network drop, 408/429, upstream
+   * 5xx — the app-wide `isTransientHttpError` policy) must never abort a
+   * multi-minute generation whose session may not even be persisted yet, so it
+   * degrades to a `pending` tick and the next interval retries; the overall
+   * `timeout` still bounds the wait. Non-transient responses (401/403 — the
+   * owner token stopped verifying) keep failing fast.
    */
   private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number): Observable<MktgRunResultResponse> {
     const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken };
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      switchMap(() => this.http.post<MktgRunResultResponse>(resultPath, body)),
+      switchMap(() =>
+        this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
+          catchError((error: unknown) => {
+            if (isTransientHttpError(error)) {
+              return of<MktgRunResultResponse>({ status: 'pending' });
+            }
+            return throwError(() => error);
+          })
+        )
+      ),
       filter((result) => result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion),
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs)
@@ -186,7 +217,11 @@ export class MktgAgentRunService {
     return run;
   }
 
-  /** Best-effort persistence — quota/disabled-storage failures never fail the run. */
+  /**
+   * Saves to the in-memory cache (authoritative for this page session), then
+   * best-effort to localStorage — a quota/disabled-storage failure never fails
+   * the run and, thanks to the cache, never desyncs later follow-ups either.
+   */
   private saveRun(run: MktgStoredAgentRun): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
@@ -195,14 +230,15 @@ export class MktgAgentRunService {
     if (!key) {
       return;
     }
+    this.memoryRuns.set(key, run);
     try {
       window.localStorage.setItem(key, JSON.stringify(run));
     } catch {
-      // Ignore — the in-memory result still renders; only cross-visit restore is lost.
+      // Ignore — memoryRuns keeps this session coherent; only cross-visit restore is lost.
     }
   }
 
-  /** Drops a stored run whose session the server no longer accepts. Best-effort, like saveRun. */
+  /** Drops a stored run whose session the server no longer accepts. Storage removal is best-effort, like saveRun. */
   private clearRun(projectUid: string, agentId: string): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
@@ -211,6 +247,7 @@ export class MktgAgentRunService {
     if (!key) {
       return;
     }
+    this.memoryRuns.delete(key);
     try {
       window.localStorage.removeItem(key);
     } catch {
