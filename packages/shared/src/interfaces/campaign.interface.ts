@@ -443,6 +443,44 @@ export interface CampaignImplementationDraft {
    */
   metaBudgetUsd?: number;
   metaLifetimeBudget?: boolean;
+  /**
+   * The LinkedIn budget pair and the ad copy variants, all signal-backed for the same reason as
+   * the Meta block above: `campaignForm.valueChanges` never sees them, so they reach the draft
+   * only because `emitDraft` names them.
+   *
+   * `linkedInVariants` is not "just seeded copy that can be regenerated". `canSubmit` blocks a
+   * LinkedIn campaign with zero variants, so losing them on a tab switch takes a ready form back
+   * to un-submittable with nothing on screen explaining why.
+   */
+  linkedInVariants?: LinkedInCreativeVariant[];
+  linkedInBudgetUsd?: number;
+  linkedInLifetimeBudget?: boolean;
+  /**
+   * The whole Reddit configuration (LFXV2-3315, which named only `redditBudgetUsd` and is closed
+   * by this set).
+   *
+   * Reddit is the platform with NO field on `campaignForm` at all — every value it dispatches
+   * lives in a signal here. Before these were carried, a tab switch reset a Reddit campaign to
+   * $500 with no subreddits, no interests, no keywords, no geos and no ad variants, and
+   * `submit()` reads every one of them.
+   *
+   * The four targeting lists are read through `redditEffective*` computeds that fall back to the
+   * brief's keywords and the form's country code, so a lost list does not render as empty — it
+   * renders as a DIFFERENT, plausible targeting set. That is why they are carried rather than
+   * left to be re-derived.
+   */
+  redditVariants?: RedditAdVariant[];
+  redditSubreddits?: string[];
+  redditInterests?: string[];
+  redditKeywords?: string[];
+  redditGeoTargets?: string[];
+  redditBudgetUsd?: number;
+  /**
+   * Meta ad copy, the one member of the Meta block that was not carried with the other six.
+   * `canSubmit` requires a variant with both a primary text and a headline, so this has the same
+   * blocks-submit consequence as `linkedInVariants`.
+   */
+  metaVariants?: MetaAdVariant[];
 }
 
 /**

@@ -2117,3 +2117,373 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
   });
 });
+
+/**
+ * The remaining signal-backed values, carried across the destroy/remount the parent's
+ * `@switch`/`@case` performs on every tab visit (LFXV2-3230, and LFXV2-3315 for the Reddit
+ * budget it names).
+ *
+ * Every test here asserts what the REMOUNTED component would SUBMIT, not that the emitted draft
+ * object grew a key. A field added to `emitDraft` but never restored in `applyDraft` still loses
+ * the user's edit, and a shape assertion on the draft passes throughout that failure — so the
+ * round trip is the only assertion that means anything.
+ *
+ * Each edited value is deliberately DIFFERENT from both the component default and the brief's
+ * recommendation. Reddit's brief seed is the trap: the component re-runs `populateFromBrief` on
+ * every mount, so asserting the brief's own numbers back would pass with the restore deleted.
+ */
+describe('ImplementationTabComponent per-platform draft round-trip', () => {
+  const EVENT_SLUG = 'kubecon-eu-2026';
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+
+  /**
+   * A brief that seeds all three platforms, so every assertion below has a re-stamped value to
+   * beat. Without the seed a restored value and an unrestored default can look identical.
+   */
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads', 'reddit-ads', 'meta-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: 'cloud-native',
+      },
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  /** Only the members these tests drive; the component's own members stay protected. */
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void; value: unknown }> };
+    selectedPlatforms: { set(v: string[]): void };
+    linkedInVariants: { set(v: unknown[]): void; (): unknown[] };
+    linkedInBudgetUsd: () => number;
+    linkedInLifetimeBudget: () => boolean;
+    redditVariants: { set(v: unknown[]): void; (): unknown[] };
+    redditSubreddits: { set(v: string[]): void; (): string[] };
+    redditInterests: { set(v: string[]): void; (): string[] };
+    redditKeywords: { set(v: string[]): void; (): string[] };
+    redditGeoTargets: { set(v: string[]): void; (): string[] };
+    redditBudgetUsd: () => number;
+    metaVariants: { set(v: unknown[]): void; (): unknown[] };
+    setLinkedInBudget(value: number): void;
+    setLinkedInLifetimeBudget(value: boolean): void;
+    onRedditBudgetInput(event: Event): void;
+    emitDraft(): void;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  /**
+   * Mount as the parent does, carrying ONLY the previous mount's emitted draft — which is all
+   * that survives the component's teardown in production.
+   */
+  async function mount(draft: CampaignImplementationDraft | null): Promise<{
+    fixture: ComponentFixture<ImplementationTabComponent>;
+    latest: () => CampaignImplementationDraft | null;
+  }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  /** Fill the non-platform fields `canSubmit` requires, so `submit()` reaches the service. */
+  function makeSubmittable(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+  }
+
+  /** Drive the real `(input)` binding rather than the signal, so the handler's emit is exercised. */
+  function typeRedditBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]') as HTMLInputElement;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** The config the remounted component would dispatch for one platform. */
+  function sentConfig(key: string): Record<string, unknown> {
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0][key] as Record<string, unknown>;
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  // === Reddit: the whole platform, none of which lives on campaignForm ===
+
+  /**
+   * The budget is the one Reddit control the template binds, and the only one of the six with a
+   * handler. Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set`
+   * directly would stay green with the handler's `emitDraft()` removed, since it never exercises
+   * the emission path a live edit takes.
+   *
+   * 750 is neither the component's 500 default nor anything the brief carries, so the assertion
+   * cannot be satisfied by a re-stamp.
+   */
+  it('carries the reddit budget through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    typeRedditBudget(first.fixture, 750);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditBudgetUsd).toBe(750);
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditBudgetUsd()).toBe(750);
+    expect(sentConfig('redditConfig')['budgetUsd']).toBe(750);
+  });
+
+  /**
+   * The four targeting lists, asserted through what `submit()` SENDS.
+   *
+   * These are read via `redditEffective*` computeds that fall back to the brief's keywords and the
+   * form's country code, so a lost list does not surface as an empty one — it surfaces as a
+   * different, plausible targeting set the operator never chose. Each edited value is distinct
+   * from the brief's recommendation for exactly that reason.
+   */
+  it('carries the reddit targeting lists through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    const c = at(first.fixture);
+    c.redditSubreddits.set(['kubernetes', 'devops']);
+    c.redditInterests.set(['cloud-computing']);
+    c.redditKeywords.set(['service mesh']);
+    c.redditGeoTargets.set(['DE']);
+    c.emitDraft();
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    const config = sentConfig('redditConfig');
+    // NOT the brief's ['briefsub'] / ['brief-interest'] / ['brief-keyword'] / ['US'].
+    expect(config['subreddits']).toEqual(['kubernetes', 'devops']);
+    expect(config['interests']).toEqual(['cloud-computing']);
+    expect(config['keywords']).toEqual(['service mesh']);
+    expect(config['geoTargets']).toEqual(['DE']);
+  });
+
+  it('carries the reddit ad variants through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    at(first.fixture).redditVariants.set([{ headline: 'Edited reddit headline', destinationUrl: 'https://example.com/edited' }]);
+    at(first.fixture).emitDraft();
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(sentConfig('redditConfig')['variants']).toEqual([{ headline: 'Edited reddit headline', destinationUrl: 'https://example.com/edited' }]);
+  });
+
+  // === LinkedIn: the budget pair and the variants ===
+
+  /**
+   * Driven through `setLinkedInBudget` / `setLinkedInLifetimeBudget`, the handlers the template
+   * calls. The budget pair's loss is measured in money — a silent revert puts the campaign back
+   * to $500 daily, a spend decision the operator did not make and the form does not show them
+   * re-making.
+   */
+  it('carries the linkedin budget pair through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    at(first.fixture).setLinkedInBudget(2500);
+    at(first.fixture).setLinkedInLifetimeBudget(true);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInBudgetUsd).toBe(2500);
+    expect(draft?.linkedInLifetimeBudget).toBe(true);
+
+    const second = await mount(draft);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(second.fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    second.fixture.detectChanges();
+    c.submit();
+
+    expect(c.linkedInBudgetUsd()).toBe(2500);
+    expect(c.linkedInLifetimeBudget()).toBe(true);
+    const config = sentConfig('linkedInConfig');
+    expect(config['budgetUsd']).toBe(2500);
+    expect(config['lifetimeBudget']).toBe(true);
+  });
+
+  /**
+   * `canSubmit` blocks a LinkedIn campaign with zero variants, so losing these takes a ready form
+   * back to un-submittable with nothing on screen explaining why.
+   */
+  it('carries the linkedin variants through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    at(first.fixture).linkedInVariants.set([{ headline: 'Edited headline', introText: 'Edited intro', destinationUrl: 'https://example.com/edited' }]);
+    at(first.fixture).emitDraft();
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(draft);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(second.fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    second.fixture.detectChanges();
+    c.submit();
+
+    // NOT the brief's 'Brief headline'.
+    expect(sentConfig('linkedInConfig')['variants']).toEqual([
+      { headline: 'Edited headline', introText: 'Edited intro', destinationUrl: 'https://example.com/edited' },
+    ]);
+  });
+
+  // === Meta: the one member of its block that was not carried ===
+
+  /**
+   * The other six Meta signals shipped with the first pass at LFXV2-3230; `metaVariants` did not.
+   * `canSubmit` requires a variant with both a primary text and a headline, so its loss has the
+   * same blocks-submit consequence as `linkedInVariants`.
+   */
+  it('carries the meta variants through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    at(first.fixture).metaVariants.set([{ primaryText: 'Edited primary', headline: 'Edited meta headline', description: 'Edited description' }]);
+    at(first.fixture).emitDraft();
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(draft);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['meta-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    c.submit();
+
+    // NOT the brief's 'Brief primary' / 'Brief meta headline'.
+    expect(sentConfig('metaConfig')['variants']).toEqual([
+      { primaryText: 'Edited primary', headline: 'Edited meta headline', description: 'Edited description' },
+    ]);
+  });
+
+  // === Handler emission, which naming the field in `emitDraft` does not give you ===
+
+  /**
+   * These three handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
+   * own `emitDraft()` call the parent never learns the edit — and the field is lost despite being
+   * named in the emit.
+   *
+   * Asserted on the draft the component emits DURING the edit, with no manual `emitDraft()`: that
+   * is the only assertion a missing handler emit can fail. The round-trip tests above call
+   * `emitDraft()` by hand where no handler exists, which would mask exactly this defect.
+   */
+  it('emits the draft when the reddit budget handler runs', async () => {
+    const first = await mount(null);
+    typeRedditBudget(first.fixture, 640);
+
+    expect(first.latest()?.redditBudgetUsd).toBe(640);
+  });
+
+  it('emits the draft when the linkedin budget handler runs', async () => {
+    const first = await mount(null);
+    at(first.fixture).setLinkedInBudget(1750);
+
+    expect(first.latest()?.linkedInBudgetUsd).toBe(1750);
+  });
+
+  it('emits the draft when the linkedin lifetime-budget handler runs', async () => {
+    const first = await mount(null);
+    at(first.fixture).setLinkedInLifetimeBudget(true);
+
+    expect(first.latest()?.linkedInLifetimeBudget).toBe(true);
+  });
+
+  /**
+   * An older draft carries none of these fields, and absence must mean "keep what the brief
+   * seeded" rather than "the user chose the defaults" — the same rule the Meta block follows.
+   *
+   * Without it, a draft persisted before this shipped would wipe a Reddit campaign's targeting on
+   * the next tab switch, which would be a strictly worse bug than the one being fixed.
+   */
+  it('leaves the platform values seeded when an older draft omits them', async () => {
+    const first = await mount(null);
+    const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
+    for (const key of [
+      'redditVariants',
+      'redditSubreddits',
+      'redditInterests',
+      'redditKeywords',
+      'redditGeoTargets',
+      'redditBudgetUsd',
+      'linkedInVariants',
+      'linkedInBudgetUsd',
+      'linkedInLifetimeBudget',
+      'metaVariants',
+    ]) {
+      delete legacy[key];
+    }
+    first.fixture.destroy();
+
+    const second = await mount(legacy as unknown as CampaignImplementationDraft);
+    const c = at(second.fixture);
+
+    // Every value is the BRIEF's, re-stamped by `populateFromBrief` and left alone by the restore.
+    expect(c.redditSubreddits()).toEqual(['briefsub']);
+    expect(c.redditInterests()).toEqual(['brief-interest']);
+    expect(c.redditKeywords()).toEqual(['brief-keyword']);
+    expect(c.redditGeoTargets()).toEqual(['US']);
+    expect(c.redditBudgetUsd()).toBe(500);
+    expect(c.linkedInVariants()).toEqual([{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }]);
+    expect(c.metaVariants()).toEqual([{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }]);
+  });
+});

@@ -680,7 +680,18 @@ export class ImplementationTabComponent implements OnInit {
       // if one applied, the brief's copy otherwise. This is what keeps the parent's copy equal
       // to the form at rest, so a tab leave with no typing in between preserves rather than
       // reverts (the defect this line exists to close).
-      this.emitDraft();
+      //
+      // UNTRACKED, for the same reason the `applyDraft` call above is, and it became load-bearing
+      // the moment `emitDraft` started reading the platform signals. `emitDraft` reads every one
+      // of them, so a tracked call here makes each an effect DEPENDENCY: setting
+      // `linkedInVariants` after mount re-runs the whole effect, which re-seeds from the brief and
+      // replays the draft over whatever the user has since changed. That is a silent revert of
+      // exactly the kind this ticket exists to stop — a user picking an ad variant would lose
+      // their geo edits — and it reverts fields this method never touches.
+      //
+      // Found by measurement rather than review: adding `linkedInVariants` to the emit turned
+      // three unrelated LinkedIn tests red, all of them mutating a signal after mount.
+      untracked(() => this.emitDraft());
     });
 
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
@@ -688,10 +699,15 @@ export class ImplementationTabComponent implements OnInit {
     // targets, targeting profile). Moving those three onto the form is what makes their restore
     // work: this subscription emits on every pick with no per-handler plumbing.
     //
-    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
-    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
-    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
-    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
+    // Still OUTSIDE it: every platform value that remains a signal — the Meta block, the LinkedIn
+    // budget pair and variants, and all six Reddit fields. `emitDraft` names each of them, so the
+    // draft carries them; what this subscription cannot do is NOTICE them changing. That is why
+    // each mutation handler calls `emitDraft` itself, and why adding a signal-backed control means
+    // touching both places rather than one.
+    //
+    // Excluded on purpose: `linkedInAccounts` and `linkedInAccountsLoading`, which are re-derived
+    // from a fetch on every mount rather than edited. The snapshot is scoped to what a user EDITS,
+    // which is broader than what they type.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
@@ -804,12 +820,18 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
+  // Every handler below emits, on the same rule the Meta handlers state: these signals are
+  // invisible to `campaignForm.valueChanges`, so a mutation that does not call `emitDraft` never
+  // reaches the parent and the edit dies at the next tab switch. Naming the field in `emitDraft`
+  // is only half of it — a carried field whose handler never emits is still lost.
   protected setLinkedInLifetimeBudget(value: boolean): void {
     this.linkedInLifetimeBudget.set(value);
+    this.emitDraft();
   }
 
   protected setLinkedInBudget(value: number): void {
     this.linkedInBudgetUsd.set(value);
+    this.emitDraft();
   }
 
   // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
@@ -828,10 +850,12 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onLinkedInBudgetInput(event: Event): void {
     this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   protected onLinkedInLifetimeBudgetChange(event: Event): void {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected onMetaBudgetInput(event: Event): void {
@@ -861,6 +885,9 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    // The only Reddit control the template binds. The platform's other five carried values are
+    // brief-derived and have no editor, so this is the one door a Reddit edit comes through.
+    this.emitDraft();
   }
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
@@ -1182,6 +1209,41 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaLifetimeBudget !== undefined) {
       this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
     }
+    if (draft.metaVariants !== undefined) {
+      this.metaVariants.set([...draft.metaVariants]);
+    }
+
+    // Same present-only rule, for the same reason: an older draft omits these, and absence there
+    // means "keep what the brief seeded". An empty ARRAY is a different thing from an absent one
+    // and is restored as the empty list it is.
+    if (draft.linkedInVariants !== undefined) {
+      this.linkedInVariants.set([...draft.linkedInVariants]);
+    }
+    if (draft.linkedInBudgetUsd !== undefined) {
+      this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
+    }
+    if (draft.linkedInLifetimeBudget !== undefined) {
+      this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
+    }
+
+    if (draft.redditVariants !== undefined) {
+      this.redditVariants.set([...draft.redditVariants]);
+    }
+    if (draft.redditSubreddits !== undefined) {
+      this.redditSubreddits.set([...draft.redditSubreddits]);
+    }
+    if (draft.redditInterests !== undefined) {
+      this.redditInterests.set([...draft.redditInterests]);
+    }
+    if (draft.redditKeywords !== undefined) {
+      this.redditKeywords.set([...draft.redditKeywords]);
+    }
+    if (draft.redditGeoTargets !== undefined) {
+      this.redditGeoTargets.set([...draft.redditGeoTargets]);
+    }
+    if (draft.redditBudgetUsd !== undefined) {
+      this.redditBudgetUsd.set(draft.redditBudgetUsd);
+    }
   }
 
   /**
@@ -1247,6 +1309,24 @@ export class ImplementationTabComponent implements OnInit {
       metaGeoTargets: [...this.metaGeoTargets()],
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
+      // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
+      // rather than referenced, and named explicitly rather than spread.
+      //
+      // The arrays are COPIED (`[...]`) for the reason the Meta entries give — the parent holds
+      // this object across this component's teardown, so handing it a live view of a signal that
+      // is about to be destroyed hands it a value that can still change underneath it.
+      metaVariants: [...this.metaVariants()],
+      linkedInVariants: [...this.linkedInVariants()],
+      linkedInBudgetUsd: this.linkedInBudgetUsd(),
+      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
+      // Reddit in full. Nothing this platform dispatches lives on `campaignForm`, so every one of
+      // these six is lost without this block — the bulk of what LFXV2-3230 and LFXV2-3315 report.
+      redditVariants: [...this.redditVariants()],
+      redditSubreddits: [...this.redditSubreddits()],
+      redditInterests: [...this.redditInterests()],
+      redditKeywords: [...this.redditKeywords()],
+      redditGeoTargets: [...this.redditGeoTargets()],
+      redditBudgetUsd: this.redditBudgetUsd(),
     });
   }
 
