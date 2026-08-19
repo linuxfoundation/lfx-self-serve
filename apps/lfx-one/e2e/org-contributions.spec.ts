@@ -42,6 +42,7 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   ],
   events: [],
   training: [],
+  companyEmails: ['aramirez@redhat.com', 'aramirez@redhat.co.uk'],
 };
 
 const BASE_RESPONSE: OrgContributionsResponse = {
@@ -256,5 +257,10 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
     await expect(page.getByTestId('person-detail-drawer-tab-code')).toHaveAttribute('aria-selected', 'true');
+
+    const emailSection = page.getByTestId('person-detail-drawer-email');
+    await expect(emailSection).toBeVisible();
+    await expect(emailSection).toContainText('aramirez@redhat.com');
+    await expect(emailSection).toContainText('aramirez@redhat.co.uk');
   });
 });

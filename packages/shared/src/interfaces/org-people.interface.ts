@@ -173,4 +173,11 @@ export interface OrgAllEmployeeDetail {
   code: OrgAllEmployeeCodeContribution[];
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
+  /**
+   * Email address(es) on this person's LF account affiliated with the company at the domain
+   * level (per Salesforce Account domain(s)), excluding personal/academic addresses. Demo-derived
+   * pending a real Salesforce Account multi-domain + LF SSO multi-email pipeline — see
+   * `deriveDemoCompanyEmails` in org-lens-people.service.ts.
+   */
+  companyEmails: string[];
 }

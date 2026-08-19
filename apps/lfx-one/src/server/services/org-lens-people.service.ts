@@ -129,9 +129,9 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Chevron-expansion detail for one person within an account; four Snowflake queries in parallel, served through the shared per-org cache. */
+  /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
   public async getEmployeeDetail(accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
-    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+    const { committeeRows, codeRows, eventRows, trainingRows, email } = await this.fetchEmployeeDetailRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -164,6 +164,7 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
+      companyEmails: deriveDemoCompanyEmails(email),
     };
   }
 
@@ -280,11 +281,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Cached per-org detail bundle (four raw row arrays); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  /** Cached per-org detail bundle (four raw row arrays plus the roster email); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
   private async fetchEmployeeDetailRaw(
     accountId: string,
     personKey: string
-  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
+  ): Promise<{
+    committeeRows: CommitteeMembershipRow[];
+    codeRows: CodeContributionRow[];
+    eventRows: EventRow[];
+    trainingRows: TrainingRow[];
+    email: string | null;
+  }> {
     if (!isFilterSafeIdentifier(personKey)) {
       return this.runEmployeeDetailFetch(accountId, personKey);
     }
@@ -301,14 +308,31 @@ export class OrgLensPeopleService {
   private async runEmployeeDetailFetch(
     accountId: string,
     personKey: string
-  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
-    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
+  ): Promise<{
+    committeeRows: CommitteeMembershipRow[];
+    codeRows: CodeContributionRow[];
+    eventRows: EventRow[];
+    trainingRows: TrainingRow[];
+    email: string | null;
+  }> {
+    const [committeeRows, codeRows, eventRows, trainingRows, email] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
       this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
+      this.fetchPersonEmail(accountId, personKey),
     ]);
-    return { committeeRows, codeRows, eventRows, trainingRows };
+    return { committeeRows, codeRows, eventRows, trainingRows, email };
+  }
+
+  private async fetchPersonEmail(accountId: string, personKey: string): Promise<string | null> {
+    const query = `
+      SELECT EMAIL
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+    `;
+    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, personKey]);
+    return result.rows[0]?.EMAIL ?? null;
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -483,8 +507,39 @@ function isAllEmployeesRaw(value: unknown): boolean {
 }
 
 function isEmployeeDetailRaw(value: unknown): boolean {
-  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown } | null;
-  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown; email?: unknown } | null;
+  return (
+    !!v &&
+    Array.isArray(v.committeeRows) &&
+    Array.isArray(v.codeRows) &&
+    Array.isArray(v.eventRows) &&
+    Array.isArray(v.trainingRows) &&
+    // Entries cached before `email` was selected are rejected as a miss rather than replayed with a
+    // permanently-empty companyEmails.
+    'email' in v &&
+    (v.email === null || typeof v.email === 'string')
+  );
+}
+
+/**
+ * TEMP-DEMO-ONLY: stands in for a future Salesforce Account multi-domain lookup joined with an
+ * LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's real
+ * local-part so the multi-email UI can be exercised before that pipeline exists. Remove once the
+ * real data source is wired in.
+ */
+function deriveDemoCompanyEmails(email: string | null): string[] {
+  const trimmed = (email ?? '').trim().toLowerCase();
+  const atIndex = trimmed.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === trimmed.length - 1) {
+    return [];
+  }
+
+  const localPart = trimmed.slice(0, atIndex);
+  const domain = trimmed.slice(atIndex + 1);
+  const baseDomain = domain.split('.').slice(-2).join('.');
+  const siblingDomains = [domain, `${baseDomain.split('.')[0]}.co.uk`, `${baseDomain.split('.')[0]}.jp`];
+
+  return Array.from(new Set(siblingDomains)).map((d) => `${localPart}@${d}`);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

@@ -26,6 +26,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
 
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
+  protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
 
   public ngOnDestroy(): void {
     this.drawer.close();
@@ -89,5 +90,12 @@ export class PersonDetailDrawerComponent implements OnDestroy {
       commits: detail.code.reduce((sum, row) => sum + row.totalCommits, 0),
       projects: detail.code.length,
     };
+  }
+
+  private initCompanyEmails(): string[] {
+    if (this.drawer.loading() || this.drawer.error()) {
+      return [];
+    }
+    return this.drawer.detail()?.companyEmails ?? [];
   }
 }

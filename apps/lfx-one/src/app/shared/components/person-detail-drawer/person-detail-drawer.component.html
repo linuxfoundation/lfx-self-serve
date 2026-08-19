@@ -54,6 +54,14 @@
       </div>
     }
 
+    @if (companyEmails().length) {
+      <div class="mb-5 flex flex-col gap-1" data-testid="person-detail-drawer-email">
+        @for (companyEmail of companyEmails(); track companyEmail) {
+          <a class="truncate text-sm text-blue-600 hover:text-blue-700 hover:underline" [href]="'mailto:' + companyEmail">{{ companyEmail }}</a>
+        }
+      </div>
+    }
+
     <!-- Section tabs -->
     <div
       class="flex items-center gap-1 overflow-x-auto border-b border-gray-200"
