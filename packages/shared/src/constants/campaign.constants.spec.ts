@@ -56,9 +56,34 @@ describe('normalizeGeoTargets', () => {
     expect(normalizeGeoTargets([])).toEqual([]);
   });
 
-  /** Shape only — eligibility (sanctioned/regulated markets) is the service's call, not this helper's. */
-  it('keeps a well-shaped code the service may later reject', () => {
-    expect(normalizeGeoTargets(['zz'])).toEqual(['ZZ']);
+  /**
+   * ASSIGNMENT is checked here; ELIGIBILITY is not. `ZZ` is well-shaped but sits in the ISO
+   * user-assigned range, so no ad platform can ever target it — and the create path filters only
+   * regulated markets, so it survived to `geo_locations` and Meta rejected it at AD-SET creation,
+   * after the campaign POST had already created a billable resource.
+   */
+  it('drops a well-shaped code that is not an assigned country', () => {
+    expect(normalizeGeoTargets(['zz'])).toEqual([]);
+    expect(normalizeGeoTargets(['XA', 'QM', 'AA'])).toEqual([]);
+  });
+
+  /**
+   * Reserved-but-not-assigned codes are the ones most likely to be typed in good faith: `UK` for
+   * the United Kingdom (assigned code `GB`) and `EU` for the bloc. Both must be refused rather
+   * than passed through to fail at the ad set.
+   */
+  it('drops reserved codes that look plausible', () => {
+    expect(normalizeGeoTargets(['UK', 'EU'])).toEqual([]);
+    expect(normalizeGeoTargets(['GB'])).toEqual(['GB']);
+  });
+
+  /**
+   * Eligibility remains the SERVICE's call: a sanctioned or regulated market is officially
+   * assigned, so it must still pass this helper and be filtered upstream where that list lives.
+   * A guard that swept these out here would silently duplicate — and then drift from — that list.
+   */
+  it('keeps an assigned country the service may later filter', () => {
+    expect(normalizeGeoTargets(['sg', 'kr', 'tw'])).toEqual(['SG', 'KR', 'TW']);
   });
 
   it('does not mutate its input', () => {

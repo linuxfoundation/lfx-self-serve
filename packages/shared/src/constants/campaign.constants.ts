@@ -18,6 +18,7 @@ import type {
   RedditObjective,
   RedditObjectiveParams,
 } from '../interfaces/campaign.interface';
+import { COUNTRIES } from './countries.constants';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
@@ -249,6 +250,15 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
 /**
+ * The officially assigned ISO 3166-1 alpha-2 codes, derived from `COUNTRIES`.
+ *
+ * A Set rather than a repeated `.some()` scan: `normalizeGeoTargets` runs per code per keystroke
+ * on the chip path, and `COUNTRIES` holds 249 entries. Derived rather than re-listed so it cannot
+ * fall out of step with the dropdown the user picks from.
+ */
+export const ASSIGNED_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((c) => c.value));
+
+/**
  * Normalise a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
  *
  * The single owner of geo normalisation. Every entry point — the chip add path, the brief seed
@@ -258,9 +268,19 @@ export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
  * normalised, the seed path did not, and the server uppercased without de-duping, so `["us","US"]`
  * reached Meta as `["US","US"]`.
  *
- * De-duping is FIRST-SEEN order, matching campaign-service. Shape only — which COUNTRIES Meta
- * accepts is the service's call, since it additionally drops sanctioned and regulated markets;
- * duplicating that list here would only let it drift.
+ * De-duping is FIRST-SEEN order, matching campaign-service.
+ *
+ * Validation is ASSIGNMENT, not eligibility, and the line between them is deliberate. A code must
+ * be an officially assigned ISO 3166-1 alpha-2 value (`COUNTRIES`, which excludes the
+ * user-assigned `AA`/`QM-QZ`/`XA-XZ`/`ZZ` ranges and the reserved `EU`/`UK`/... codes and
+ * documents itself as safe for exactly this use). A shape-only `/^[A-Z]{2}$/` check accepted `ZZ`,
+ * which no ad platform can ever target: `executeMetaCampaignCreation` filters only the regulated
+ * markets, so `ZZ` survived to `geo_locations` and Meta rejected it at AD-SET creation — after the
+ * campaign POST had already created a billable resource. Assignment is a closed, stable fact, so
+ * checking it here cannot drift.
+ *
+ * Which of the assigned countries Meta will actually accept remains the service's call, since it
+ * additionally drops sanctioned and regulated markets; duplicating THAT list here would drift.
  */
 export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
   const seen = new Set<string>();
@@ -268,7 +288,7 @@ export function normalizeGeoTargets(codes: readonly string[] | null | undefined)
   for (const code of codes ?? []) {
     if (typeof code !== 'string') continue;
     const upper = code.trim().toUpperCase();
-    if (!META_GEO_CODE_PATTERN.test(upper) || seen.has(upper)) continue;
+    if (!META_GEO_CODE_PATTERN.test(upper) || !ASSIGNED_COUNTRY_CODES.has(upper) || seen.has(upper)) continue;
     seen.add(upper);
     normalized.push(upper);
   }
