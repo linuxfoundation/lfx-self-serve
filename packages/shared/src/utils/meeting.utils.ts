@@ -1136,17 +1136,27 @@ function hostToOrganizer(host: MeetingHostCandidate): MeetingUserInfo {
   };
 }
 
-/** Whether two organizers refer to the same person (by username, then email, then name). */
+/**
+ * Whether two organizers refer to the same person. A username match wins outright; otherwise a
+ * shared email reconciles records whose usernames disagree (an owner picked long ago can carry a
+ * stale LFID while the host record has the current one — without the email check that person
+ * would be listed twice). The name fallback only applies when neither identifier can arbitrate:
+ * names are not identifiers, so two records with distinct usernames and no email pair stay
+ * distinct people even when the display names collide.
+ */
 function sameOrganizer(a: MeetingUserInfo, b: MeetingUserInfo): boolean {
   const usernameA = normalizeUsername(a.username);
   const usernameB = normalizeUsername(b.username);
-  if (usernameA && usernameB) {
-    return usernameA === usernameB;
+  if (usernameA && usernameB && usernameA === usernameB) {
+    return true;
   }
   const emailA = a.email?.trim().toLowerCase();
   const emailB = b.email?.trim().toLowerCase();
   if (emailA && emailB) {
     return emailA === emailB;
+  }
+  if (usernameA && usernameB) {
+    return false;
   }
   const nameA = a.name?.trim().toLowerCase();
   const nameB = b.name?.trim().toLowerCase();
@@ -1251,12 +1261,21 @@ function normalizeUsername(username: string | null | undefined): string {
 /**
  * Whether a resolved organizer IS the current viewer — the single comparison behind both the
  * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
- * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
+ * A username match wins; otherwise the viewer's email arbitrates — a manually-entered owner is
+ * saved as name+email with no username, so without the email fallback that meeting's own
+ * organizer would never see "you" or match "Organized by me". Best-effort by design: a manual
+ * entry typed with one of the viewer's non-primary email aliases still won't match. An
+ * absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
  * meeting).
  */
-function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string | null): boolean {
+function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string | null, viewerEmail?: string | null): boolean {
   const viewer = normalizeUsername(viewerUsername);
-  return !!viewer && normalizeUsername(organizer.username) === viewer;
+  if (viewer && normalizeUsername(organizer.username) === viewer) {
+    return true;
+  }
+  const email = viewerEmail?.trim().toLowerCase();
+  const organizerEmail = organizer.email?.trim().toLowerCase();
+  return !!email && !!organizerEmail && email === organizerEmail;
 }
 
 /**
@@ -1275,13 +1294,15 @@ function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string |
  * @param meeting - Any object carrying optional `owner` / `created_by` (Meeting / PastMeeting).
  * @param viewerUsername - The current user's username/LFID (prefix-tolerant, case-insensitive).
  * @param hosts - Optional host candidates, when the surface has them (see collectMeetingOrganizers).
+ * @param viewerEmail - The viewer's primary email, matching organizer records that carry no username.
  */
 export function isMeetingOrganizedByViewer(
   meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined,
   viewerUsername?: string | null,
-  hosts?: ReadonlyArray<MeetingHostCandidate>
+  hosts?: ReadonlyArray<MeetingHostCandidate>,
+  viewerEmail?: string | null
 ): boolean {
-  return collectMeetingOrganizers(meeting, hosts).some((organizer) => isViewerOrganizer(organizer, viewerUsername));
+  return collectMeetingOrganizers(meeting, hosts).some((organizer) => isViewerOrganizer(organizer, viewerUsername, viewerEmail));
 }
 
 /**
@@ -1292,18 +1313,20 @@ export function isMeetingOrganizedByViewer(
  * @param organizers - Resolved organizers (see {@link collectMeetingOrganizers}).
  * @param viewerUsername - The current user's username, for the "you" variant (never linked).
  * @param mailtoContext - Meeting title / formatted date / details URL for the mailto subject+body.
+ * @param viewerEmail - The viewer's primary email, matching organizer records that carry no username.
  */
 export function buildMeetingOrganizerChip(
   organizers: ReadonlyArray<MeetingUserInfo>,
   viewerUsername?: string | null,
-  mailtoContext: { meetingTitle?: string | null; meetingDate?: string | null; detailUrl?: string | null } = {}
+  mailtoContext: { meetingTitle?: string | null; meetingDate?: string | null; detailUrl?: string | null } = {},
+  viewerEmail?: string | null
 ): MeetingOrganizerChipModel | null {
   if (!organizers.length) {
     return null;
   }
 
   const toLink = (organizer: MeetingUserInfo, index: number): MeetingOrganizerLink => {
-    const isYou = isViewerOrganizer(organizer, viewerUsername);
+    const isYou = isViewerOrganizer(organizer, viewerUsername, viewerEmail);
     const name = getMeetingOrganizerDisplayName(organizer);
     return {
       // Suffix the identity with its position so two name-only organizers sharing a display name

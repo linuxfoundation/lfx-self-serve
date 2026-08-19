@@ -66,6 +66,13 @@ export class UserService {
    * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.
    */
   public readonly viewerUsername: Signal<string | null> = this.initViewerUsername();
+  /**
+   * The viewer's primary email from the OIDC claims — the fallback identity for organizer records
+   * that carry no username (a manually-entered meeting owner is saved as name+email only). Paired
+   * with {@link viewerUsername} everywhere viewer identity is compared, so the "Organized by you"
+   * chip and the "Organized by me" filter can't resolve identity differently.
+   */
+  public readonly viewerEmail: Signal<string | null> = computed(() => this.user()?.email || null);
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 

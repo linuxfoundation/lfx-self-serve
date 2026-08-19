@@ -1433,4 +1433,6 @@ export interface MeLensMeetingFilters {
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
+  /** Viewer primary email — matches `organizerOnly` against owner records that carry no username. */
+  viewerEmail: string | null;
 }
