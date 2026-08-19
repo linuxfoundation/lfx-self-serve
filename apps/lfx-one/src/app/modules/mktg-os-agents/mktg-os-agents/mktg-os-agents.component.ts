@@ -2,38 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { ProjectContextService } from '@services/project-context.service';
 
-import { BrandKitFormComponent } from '../brand-kit-form/brand-kit-form.component';
-
-// Marketplace landing for the Marketing OS marketplace (LFXAI-98). Renders the
-// catalog tiles, client-side search, and the placeholder Alerts / Agents-in-Process
-// sections from the mockup. Tile clicks open a per-agent chat surface — wired here
-// as a signal-driven selection (`selectedAgentId`) rather than a route param,
-// because the chat panel (LFXAI-99) is an in-page side panel, not a separate page.
+// Marketplace landing for the Marketing OS marketplace (approved form-first
+// design): catalog grid with client-side search, "Coming soon" tags on
+// disabled cards, and a "vN generated" badge on agents with stored output.
+// Card clicks route to the per-agent run page (/:agentId) — the form-first
+// run shell that replaced the earlier in-page chat-panel approach.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, TagComponent, EmptyStateComponent, BrandKitFormComponent],
+  imports: [NgClass, ReactiveFormsModule, InputTextComponent, TagComponent, EmptyStateComponent],
   templateUrl: './mktg-os-agents.component.html',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MktgOsAgentsComponent {
+  // === Injections ===
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly runService = inject(MktgAgentRunService);
+
   // === Constants ===
   protected readonly labels = MKTG_OS_AGENTS_LABEL;
-
-  // Placeholder feed content from the mockup — replaced by real data in a later
-  // story once Alerts / in-progress sessions have a backend.
-  protected readonly alerts: string[] = ['No new marketing alerts.'];
-  protected readonly agentsInProcess: string[] = ['No agents are currently running.'];
 
   // === Forms ===
   protected readonly searchForm = new FormGroup({
@@ -41,19 +40,14 @@ export class MktgOsAgentsComponent {
   });
 
   // === Signals ===
+  // Stored-output version count per agent id for the active project. Read from
+  // localStorage after hydration only, so SSR output stays badge-free and stable.
+  protected readonly storedVersions = signal<Record<string, number>>({});
+
   private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
-  // Agent whose chat surface is open; null = grid view. The chat panel lands in LFXAI-99.
-  protected readonly selectedAgentId = signal<string | null>(null);
 
   // === Computed ===
   protected readonly tiles: Signal<{ agent: MktgAgent; iconClass: string; borderClass: string }[]> = this.initTiles();
-  protected readonly selectedAgent = computed(() => MKTG_AGENTS.find((agent) => agent.id === this.selectedAgentId()) ?? null);
-  // The in-page surface the selected agent opens: the Brand Kit one-page form
-  // (dec-brand-kit-intake-form) or the default chat stub.
-  protected readonly selectedSurface = computed(() => {
-    const agent = this.selectedAgent();
-    return agent && agent.status === 'active' ? (agent.surface ?? 'chat') : null;
-  });
 
   // Accent → Tailwind classes. Kept as class fields (not module-level) with literal
   // class names so Tailwind's content scan (./src/**/*.ts) generates them.
@@ -74,17 +68,17 @@ export class MktgOsAgentsComponent {
     gray: 'border-l-gray-300',
   };
 
+  public constructor() {
+    afterNextRender(() => this.loadStoredVersions());
+  }
+
   // === Protected methods ===
   protected onSelectAgent(agent: MktgAgent): void {
-    // Only `active` agents have a chat surface; `coming-soon` tiles are inert.
+    // Only `active` agents have a run page; `coming-soon` tiles are inert.
     if (agent.status !== 'active') {
       return;
     }
-    this.selectedAgentId.set(agent.id);
-  }
-
-  protected clearSelection(): void {
-    this.selectedAgentId.set(null);
+    this.router.navigate([agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   // === Private initializers ===
@@ -105,5 +99,21 @@ export class MktgOsAgentsComponent {
         return { agent, iconClass: this.accentIcon[accent], borderClass: this.accentBorder[accent] };
       });
     });
+  }
+
+  // === Private helpers ===
+  private loadStoredVersions(): void {
+    const projectUid = this.projectContext.activeContextUid();
+    if (!projectUid) {
+      return;
+    }
+    const counts: Record<string, number> = {};
+    for (const agent of MKTG_AGENTS) {
+      const run = this.runService.loadRun(projectUid, agent.id);
+      if (run && run.versions.length > 0) {
+        counts[agent.id] = run.versions[run.versions.length - 1].version;
+      }
+    }
+    this.storedVersions.set(counts);
   }
 }

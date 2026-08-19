@@ -79,6 +79,7 @@ export * from './due-date.constants';
 export * from './akrites.constants';
 export * from './crowdfunding.constants';
 export * from './mktg-os-agents.constants';
+export * from './mktg-run.constants';
 
 export * from './project-context.constants';
 export * from './project-staff.constants';

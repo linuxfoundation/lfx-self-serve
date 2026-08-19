@@ -1,0 +1,236 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (agent && intake) {
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 mt-3" data-testid="mktg-agent-run-page">
+    <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-gray-200">
+        <div class="flex items-center gap-3 min-w-0">
+          <lfx-button
+            icon="fa-light fa-arrow-left"
+            [text]="true"
+            size="small"
+            ariaLabel="Back to agents"
+            data-testid="mktg-agent-run-back-button"
+            (onClick)="onBack()" />
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg shrink-0" [ngClass]="iconClass(agent)">
+            <i [class]="agent.icon" aria-hidden="true"></i>
+          </span>
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ agent.name }}</span>
+            <span class="text-xs text-gray-400 truncate">{{ tagline(agent) }}</span>
+          </div>
+        </div>
+        @if (showVersionChips()) {
+          <div class="flex items-center gap-1.5 shrink-0" data-testid="mktg-agent-run-version-chips">
+            @for (version of versions(); track version.version) {
+              <button
+                type="button"
+                class="rounded-full border px-2.5 py-1 text-xs font-medium"
+                [ngClass]="
+                  version.version === currentVersion()?.version
+                    ? 'border-blue-300 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                "
+                [attr.data-testid]="'mktg-agent-run-version-chip-' + version.version"
+                (click)="onPickVersion(version.version)">
+                v{{ version.version }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Body -->
+      <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
+        @if (errorText()) {
+          <div class="max-w-2xl mx-auto w-full px-8 pt-6">
+            <lfx-message severity="error" [text]="errorText()" data-testid="mktg-agent-run-error" />
+          </div>
+        }
+
+        @switch (phase()) {
+          <!-- FORM phase -->
+          @case ('form') {
+            <form
+              class="max-w-2xl mx-auto w-full px-8 pt-7 pb-10 flex flex-col gap-5"
+              [formGroup]="intakeForm"
+              (ngSubmit)="onSubmit()"
+              data-testid="mktg-agent-run-form">
+              <div>
+                <h1 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-form-title">{{ formTitle() }}</h1>
+                <p class="mt-1 text-sm leading-relaxed text-gray-500">{{ intake.intro }}</p>
+              </div>
+
+              @for (field of intake.fields; track field.key) {
+                <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <label class="text-sm font-medium text-gray-700" [for]="'mktg-intake-' + field.key">
+                      {{ field.question }}
+                      <span class="text-red-600">*</span>
+                    </label>
+                    @if (fromLfx()[field.key]) {
+                      <span
+                        class="inline-flex items-center gap-1 border border-blue-200 bg-blue-50 text-blue-600 text-xs font-medium px-2 py-0.5 rounded-full"
+                        [attr.data-testid]="'mktg-agent-run-from-lfx-' + field.key">
+                        <i class="fa-light fa-check" aria-hidden="true"></i>
+                        From LFX
+                      </span>
+                    }
+                  </div>
+                  @if (field.kind === 'textarea') {
+                    <lfx-textarea
+                      [id]="'mktg-intake-' + field.key"
+                      [form]="intakeForm"
+                      [control]="field.key"
+                      [rows]="field.rows ?? 2"
+                      [placeholder]="field.placeholder ?? ''"
+                      [dataTest]="'mktg-intake-' + field.key" />
+                  } @else {
+                    <lfx-input-text
+                      [id]="'mktg-intake-' + field.key"
+                      [form]="intakeForm"
+                      [control]="field.key"
+                      [placeholder]="field.placeholder ?? ''"
+                      [dataTest]="'mktg-intake-' + field.key" />
+                  }
+                  @if (field.missingPrefillHint && !fromLfx()[field.key]) {
+                    <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
+                  }
+                </div>
+              }
+
+              <div class="flex items-center gap-3 mt-2">
+                <lfx-button
+                  type="submit"
+                  [label]="submitLabel()"
+                  icon="fa-light fa-sparkles"
+                  [disabled]="submitDisabled()"
+                  data-testid="mktg-agent-run-submit-button" />
+                <span class="text-xs text-gray-400">* required — answers are open-ended, in your own words</span>
+              </div>
+            </form>
+          }
+
+          <!-- RUNNING phase -->
+          @case ('running') {
+            <div class="flex flex-col items-center gap-4 px-7 pt-32 pb-16" data-testid="mktg-agent-run-running">
+              <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="iconClass(agent)">
+                <i [class]="agent.icon + ' text-xl'" aria-hidden="true"></i>
+                <span
+                  class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 animate-spin"
+                  aria-hidden="true"></span>
+              </span>
+              <div class="flex flex-col gap-2" role="status" aria-live="polite">
+                @for (runStage of stages(); track runStage.label) {
+                  <div class="flex items-center gap-2">
+                    @switch (runStage.state) {
+                      @case ('done') {
+                        <i class="fa-light fa-check text-xs text-gray-400" aria-hidden="true"></i>
+                      }
+                      @case ('active') {
+                        <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" aria-hidden="true"></span>
+                      }
+                      @default {
+                        <span class="w-2 h-2 rounded-full bg-gray-200" aria-hidden="true"></span>
+                      }
+                    }
+                    <span class="text-sm" [ngClass]="stageClass(runStage.state)">{{ runStage.label }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- RESULT phase -->
+          @case ('result') {
+            <div class="max-w-2xl mx-auto w-full px-8 pt-7 pb-10 flex flex-col gap-4" data-testid="mktg-agent-run-result">
+              <!-- Document card -->
+              <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
+                    <span class="text-sm font-medium text-gray-700 truncate" data-testid="mktg-agent-run-doc-title">{{ docTitle() }}</span>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 shrink-0" data-testid="mktg-agent-run-doc-version">
+                      v{{ currentVersion()?.version }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <lfx-button
+                      label="View"
+                      icon="fa-light fa-eye"
+                      [outlined]="true"
+                      size="small"
+                      data-testid="mktg-agent-run-view-button"
+                      (onClick)="onToggleDocument()" />
+                    <lfx-button
+                      label="Download"
+                      icon="fa-light fa-download"
+                      [outlined]="true"
+                      size="small"
+                      data-testid="mktg-agent-run-download-button"
+                      (onClick)="onDownload()" />
+                  </div>
+                </div>
+
+                @if (feedbackNote()) {
+                  <div class="px-4 py-2 border-b border-gray-100 bg-blue-50 text-xs text-blue-700" data-testid="mktg-agent-run-feedback-note">
+                    Incorporates your feedback: “{{ feedbackNote() }}”
+                  </div>
+                }
+
+                @if (docExpanded()) {
+                  <div class="px-4 py-4 border-b border-gray-100 max-h-96 overflow-y-auto" data-testid="mktg-agent-run-doc-preview">
+                    <lfx-markdown-renderer [content]="currentVersion()?.document ?? ''" />
+                  </div>
+                }
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-3.5" data-testid="mktg-agent-run-sections">
+                  @for (section of sectionChecklist(); track section.label) {
+                    <div class="flex items-center gap-2 min-w-0">
+                      <i class="fa-light fa-check text-xs shrink-0" [ngClass]="section.present ? 'text-emerald-500' : 'text-gray-300'" aria-hidden="true"></i>
+                      <span class="text-xs text-gray-600 truncate">{{ section.label }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <!-- Request changes -->
+              <form class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [formGroup]="feedbackForm" (ngSubmit)="onRegenerate()">
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-sm font-medium text-gray-700">Request changes</span>
+                  <span class="text-xs text-gray-400"
+                    >Feedback regenerates the document as v{{ nextVersion() }}. Your intake answers are kept — edit them anytime.</span
+                  >
+                </div>
+                <lfx-textarea
+                  id="mktg-agent-run-feedback"
+                  [form]="feedbackForm"
+                  control="feedback"
+                  [rows]="3"
+                  placeholder="What should change in this draft?"
+                  dataTest="mktg-agent-run-feedback" />
+                <div class="flex items-center gap-3">
+                  <lfx-button
+                    type="submit"
+                    [label]="'Regenerate as v' + nextVersion()"
+                    icon="fa-light fa-rotate-right"
+                    [disabled]="regenerateDisabled()"
+                    data-testid="mktg-agent-run-regenerate-button" />
+                  <lfx-button
+                    label="Edit inputs"
+                    icon="fa-light fa-pen"
+                    [outlined]="true"
+                    data-testid="mktg-agent-run-edit-inputs-button"
+                    (onClick)="onEditInputs()" />
+                </div>
+                <span class="text-xs text-gray-400">Foundation agents re-run quarterly — regenerate anytime to keep this current.</span>
+              </form>
+            </div>
+          }
+        }
+      </div>
+    </div>
+  </div>
+}
