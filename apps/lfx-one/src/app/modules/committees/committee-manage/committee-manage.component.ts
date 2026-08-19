@@ -598,7 +598,7 @@ export class CommitteeManageComponent {
   private computeSucceededOperations(results: MemberOperationResult[]): SucceededMemberOperations {
     const succeeded = results.filter((result) => result.success);
     const normalizedEmails = (type: MemberOperationType) =>
-      new Set(succeeded.filter((result) => result.type === type).map((result) => result.identifier.trim().toLowerCase()));
+      new Set(succeeded.filter((result) => result.type === type).map((result) => (result.identifier ?? '').trim().toLowerCase()));
 
     return {
       addedEmails: normalizedEmails('add'),
