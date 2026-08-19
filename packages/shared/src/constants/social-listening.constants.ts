@@ -187,3 +187,22 @@ export const DEFAULT_MENTION_SCOPE_STATE: ScopeState = {
   sourceProjectId: 'all',
   platform: 'all',
 };
+
+// ---------------------------------------------------------------------------
+// Per-user preference names (v1 user-service, LFXV2-3002 Block 0)
+// ---------------------------------------------------------------------------
+
+/** Kept as `'PCC'` so preferences written by PCC Social Listening resolve in Self Serve verbatim. */
+export const SOCIAL_LISTENING_PREFERENCE_APP_NAME = 'PCC';
+
+// Exact PCC name strings — upstream uniqueness is case-insensitive, so the builder must not paraphrase them.
+export const SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX = 'Social Listening Bookmarks';
+export const SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX = 'Social Listening Read State';
+export const SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX = 'Social Listening Saved Filters';
+
+/** Allowlist the BFF preference proxy validates `:name` against. */
+export const SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES = [
+  SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX,
+  SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX,
+  SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX,
+] as const;

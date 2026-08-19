@@ -3,9 +3,11 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 
 import type {
+  PreferenceReadResponse,
+  PreferenceUpsertRequest,
   SocialListeningAnalyticsOverview,
   SocialListeningAnalyticsRequest,
   SocialListeningAuthorsRequest,
@@ -28,7 +30,7 @@ import type {
 
 /**
  * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`,
- * dashboard-access-gated server-side: ED + LF Staff). Pure-read: errors propagate to the page's `toSignal` pipelines.
+ * dashboard-access-gated server-side: ED + LF Staff). All methods return Observables; the preference store adapts them to the Promise-based `UserPreferenceTransport` contract.
  */
 @Injectable({
   providedIn: 'root',
@@ -100,6 +102,22 @@ export class SocialListeningService {
   /** Top sub-projects by mention volume (analytics tab, LFXV2-3018). */
   public getAnalyticsTopProjects(request: SocialListeningAnalyticsRequest): Observable<SocialListeningTopProject[]> {
     return this.http.get<SocialListeningTopProject[]>(`${this.baseUrl}/analytics-top-projects`, { params: this.toParams(request) });
+  }
+
+  /** Reads one preference value for the current user (`null` when unset) — `UserPreferenceStore` transport. */
+  public getPreference(name: string): Observable<string | null> {
+    return this.http.get<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`).pipe(map((response) => response.value));
+  }
+
+  /** Upserts one preference value (stringified JSON) for the current user. */
+  public upsertPreference(name: string, value: string): Observable<void> {
+    const body: PreferenceUpsertRequest = { value };
+    return this.http.put<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`, body).pipe(map(() => undefined));
+  }
+
+  /** Deletes one preference for the current user (idempotent server-side). */
+  public deletePreference(name: string): Observable<void> {
+    return this.http.delete<PreferenceReadResponse>(`${this.baseUrl}/preferences/${encodeURIComponent(name)}`).pipe(map(() => undefined));
   }
 
   /** Serializes a request to query params: arrays become repeated params (`tags=a&tags=b` — commas inside a value survive); empty values are omitted. */

@@ -327,3 +327,6 @@ export * from './brand-kit.interface';
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
+
+// Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
+export * from './user-preference.interface';

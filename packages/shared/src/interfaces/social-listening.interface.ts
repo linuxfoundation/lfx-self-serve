@@ -3,6 +3,7 @@
 
 /** Social Listening domain contracts — shared by the Angular app and the Express server (PCC port). Types only; runtime values live in the constants file. */
 
+import type { SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES } from '../constants/social-listening.constants';
 import type { TagSeverity } from './components.interface';
 
 // ---------------------------------------------------------------------------
@@ -16,6 +17,9 @@ export type MentionSentiment = 'positive' | 'neutral' | 'negative';
 export type MentionRelevance = 'high' | 'low';
 
 export type SocialListeningTab = 'feed' | 'analytics';
+
+/** Preference-name prefixes the BFF proxy accepts — derived from the constants tuple so the two can never drift. */
+export type SocialListeningPreferenceNamePrefix = (typeof SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES)[number];
 
 // ---------------------------------------------------------------------------
 // Snowflake row shapes (UPPER_SNAKE, as returned by ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED)

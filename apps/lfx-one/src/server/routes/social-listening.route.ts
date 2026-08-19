@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { SocialListeningController } from '../controllers/social-listening.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
 
 const router = Router();
@@ -34,5 +35,10 @@ router.get('/analytics-over-time', (req, res, next) => socialListeningController
 router.get('/analytics-platform-distribution', (req, res, next) => socialListeningController.getAnalyticsPlatformDistribution(req, res, next));
 router.get('/analytics-sentiment-distribution', (req, res, next) => socialListeningController.getAnalyticsSentimentDistribution(req, res, next));
 router.get('/analytics-top-projects', (req, res, next) => socialListeningController.getAnalyticsTopProjects(req, res, next));
+
+// Per-user preferences (LFXV2-3002 Block 0) — writes blocked during impersonation, mirroring profile visibility
+router.get('/preferences/:name', (req, res, next) => socialListeningController.getPreference(req, res, next));
+router.put('/preferences/:name', blockDuringImpersonation, (req, res, next) => socialListeningController.upsertPreference(req, res, next));
+router.delete('/preferences/:name', blockDuringImpersonation, (req, res, next) => socialListeningController.deletePreference(req, res, next));
 
 export default router;

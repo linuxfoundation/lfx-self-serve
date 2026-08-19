@@ -14,6 +14,7 @@ import {
   MENTION_SENTIMENT_CONFIG,
   MENTION_SENTIMENT_OPTIONS,
   SOCIAL_LISTENING_CHART_PALETTE,
+  SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES,
 } from '../constants/social-listening.constants';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -28,6 +29,7 @@ import type {
   SocialListeningMentionAuthor,
   SocialListeningOption,
   SocialListeningOverTimePoint,
+  SocialListeningPreferenceNamePrefix,
   SocialListeningPlatform,
   SocialListeningPlatformDistribution,
   SocialListeningPlatformRow,
@@ -371,4 +373,18 @@ export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOp
     pills.push(pill('search', 'Search', predicate.search));
   }
   return pills;
+}
+
+// ---------------------------------------------------------------------------
+// Per-user preference names (LFXV2-3002 Block 0)
+// ---------------------------------------------------------------------------
+
+/** Builds the exact `<prefix> - <projectId>` preference name PCC writes (ASCII separator — upstream uniqueness is case-insensitive). */
+export function socialListeningPreferenceName(prefix: SocialListeningPreferenceNamePrefix, projectId: string): string {
+  return `${prefix} - ${projectId}`;
+}
+
+/** Server-side allowlist gate: known prefix + `" - "` + non-empty project suffix. */
+export function isSocialListeningPreferenceName(name: string): boolean {
+  return SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES.some((prefix) => name.startsWith(`${prefix} - `) && name.length > `${prefix} - `.length);
 }

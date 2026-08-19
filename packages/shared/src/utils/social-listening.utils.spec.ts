@@ -3,16 +3,24 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MENTION_SENTIMENT_CONFIG } from '../constants/social-listening.constants';
+import {
+  MENTION_SENTIMENT_CONFIG,
+  SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX,
+  SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES,
+  SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX,
+  SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX,
+} from '../constants/social-listening.constants';
 import type { SocialListeningMention } from '../interfaces/social-listening.interface';
 import {
   buildMentionFilters,
   formatTag,
+  isSocialListeningPreferenceName,
   mapRawToMention,
   mergeSelectedAuthors,
   normalizeKeywords,
   normalizePlatformKey,
   normalizeSentiment,
+  socialListeningPreferenceName,
 } from './social-listening.utils';
 
 function rawMention(overrides: Partial<SocialListeningMention> = {}): SocialListeningMention {
@@ -210,5 +218,32 @@ describe('small helpers', () => {
     const merged = mergeSelectedAuthors(options, ['@alice', '@bob']);
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({ AUTHOR: '@bob', PLATFORM: '', MENTION_COUNT: 0 });
+  });
+});
+
+describe('preference name builder + validator', () => {
+  const sfid = '001ABC0000XYZDEFAAA';
+
+  it('builds the exact PCC name strings with the ASCII " - " separator', () => {
+    expect(socialListeningPreferenceName(SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX, sfid)).toBe(`Social Listening Bookmarks - ${sfid}`);
+    expect(socialListeningPreferenceName(SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX, sfid)).toBe(`Social Listening Read State - ${sfid}`);
+    expect(socialListeningPreferenceName(SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX, sfid)).toBe(`Social Listening Saved Filters - ${sfid}`);
+  });
+
+  it('accepts every allowlisted prefix with a non-empty suffix', () => {
+    for (const prefix of SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES) {
+      expect(isSocialListeningPreferenceName(`${prefix} - ${sfid}`)).toBe(true);
+    }
+  });
+
+  it.each([
+    { label: 'an unknown name', name: 'visibility' },
+    { label: 'a PCC name with an em dash separator', name: `Social Listening Bookmarks — ${sfid}` },
+    { label: 'an empty suffix', name: 'Social Listening Bookmarks - ' },
+    { label: 'the bare prefix', name: 'Social Listening Bookmarks' },
+    { label: 'a prefixed lookalike', name: 'Social Listening BookmarksLite - x' },
+    { label: 'empty', name: '' },
+  ])('rejects $label', ({ name }) => {
+    expect(isSocialListeningPreferenceName(name)).toBe(false);
   });
 });

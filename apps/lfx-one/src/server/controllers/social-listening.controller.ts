@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SOCIAL_LISTENING_PREFERENCE_APP_NAME } from '@lfx-one/shared/constants';
+import { isSocialListeningPreferenceName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import {
   MAX_TAGS_LIMIT,
   parseFoundationSlug,
@@ -14,6 +17,9 @@ import {
 } from '../helpers/social-listening-params.helper';
 import { logger } from '../services/logger.service';
 import { SocialListeningService } from '../services/social-listening.service';
+import { UserPreferenceService } from '../services/user-preference.service';
+
+import type { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
 
 /**
  * Social Listening HTTP boundary (LFXV2-3002): query params are validated via
@@ -21,9 +27,75 @@ import { SocialListeningService } from '../services/social-listening.service';
  */
 export class SocialListeningController {
   private readonly socialListeningService: SocialListeningService;
+  private readonly userPreferenceService: UserPreferenceService;
 
   public constructor() {
     this.socialListeningService = new SocialListeningService();
+    this.userPreferenceService = new UserPreferenceService();
+  }
+
+  /**
+   * GET /api/social-listening/preferences/:name — one preference value for the current user.
+   * `:name` is the URL-encoded full preference name; names outside the allowlist are 400s.
+   */
+  public async getPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_social_listening_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const name = this.parsePreferenceName(req, operation);
+      const value = await this.userPreferenceService.getPreference(req, SOCIAL_LISTENING_PREFERENCE_APP_NAME, name);
+
+      logger.success(req, operation, startTime, { found: value !== null });
+
+      const response: PreferenceReadResponse = { name, value };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/social-listening/preferences/:name — upsert one preference value for the current user.
+   * Body must be `{ value: string }` where value is stringified JSON (AppName/Type stay server-pinned).
+   */
+  public async upsertPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'upsert_social_listening_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const name = this.parsePreferenceName(req, operation);
+      const value = this.parsePreferenceValue(req, operation);
+      await this.userPreferenceService.upsertPreference(req, SOCIAL_LISTENING_PREFERENCE_APP_NAME, name, value);
+
+      logger.success(req, operation, startTime);
+
+      const response: PreferenceReadResponse = { name, value };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/social-listening/preferences/:name — remove one preference for the current user.
+   * Idempotent: deleting an absent preference succeeds with `value: null`.
+   */
+  public async deletePreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'delete_social_listening_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const name = this.parsePreferenceName(req, operation);
+      await this.userPreferenceService.deletePreference(req, SOCIAL_LISTENING_PREFERENCE_APP_NAME, name);
+
+      logger.success(req, operation, startTime);
+
+      const response: PreferenceReadResponse = { name, value: null };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
   }
 
   /**
@@ -322,5 +394,31 @@ export class SocialListeningController {
     } catch (error) {
       next(error);
     }
+  }
+
+  private parsePreferenceName(req: Request, operation: string): string {
+    const name = req.params['name'] ?? '';
+
+    if (!isSocialListeningPreferenceName(name)) {
+      throw ServiceValidationError.forField('name', 'Unknown social-listening preference name', { operation });
+    }
+
+    return name;
+  }
+
+  private parsePreferenceValue(req: Request, operation: string): string {
+    const body = req.body as PreferenceUpsertRequest | undefined;
+
+    if (typeof body?.value !== 'string') {
+      throw ServiceValidationError.forField('value', 'Request body must be { value: string }', { operation });
+    }
+
+    try {
+      JSON.parse(body.value);
+    } catch {
+      throw ServiceValidationError.forField('value', 'value must be valid JSON', { operation });
+    }
+
+    return body.value;
   }
 }
