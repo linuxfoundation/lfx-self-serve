@@ -384,13 +384,8 @@ export class SocialListeningComponent {
     this.pageSize.set(event.rows);
   }
 
-  /** Manual retry of a phase-2-failed window: clears the flag, and the tick re-runs the fetch pipeline. */
+  /** Manual retry of a phase-2-failed window: the tick re-runs the fetch pipeline; a successful refetch overwrites the flagged cache entry (clearing it here would flash the bare empty state for a frame). */
   public retryWindow(): void {
-    const windowIdx = this.windowIndex();
-    const entry = this.windowCache().get(windowIdx);
-    if (entry?.phase2Failed) {
-      this.windowCache.update((cache) => new Map(cache).set(windowIdx, { ...entry, phase2Failed: false }));
-    }
     this.feedRetryTick.update((tick) => tick + 1);
   }
 

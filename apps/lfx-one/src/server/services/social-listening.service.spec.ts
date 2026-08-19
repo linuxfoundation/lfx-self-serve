@@ -214,6 +214,21 @@ describe('buildFilters', () => {
     expect(normalize(lastCall().sql)).toContain("(TITLE IS NULL OR TITLE = '')");
   });
 
+  it('discriminates the cache key by hasTitle — yes, no, and unset each get their own entry', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, hasTitle: 'yes' });
+    const yes = withSocialListeningCache.mock.calls.at(-1)?.[2];
+
+    await service().getMentionsCount(req, { ...SCOPE, hasTitle: 'no' });
+    const no = withSocialListeningCache.mock.calls.at(-1)?.[2];
+
+    await service().getMentionsCount(req, SCOPE);
+    const unset = withSocialListeningCache.mock.calls.at(-1)?.[2];
+
+    expect(yes).toEqual(['cncf', '2026-01-01', '2026-02-01', 'hasTitle=yes']);
+    expect(no).toEqual(['cncf', '2026-01-01', '2026-02-01', 'hasTitle=no']);
+    expect(unset).toEqual(['cncf', '2026-01-01', '2026-02-01']);
+  });
+
   it('builds one placeholder per keyword and author', async () => {
     await service().getMentionsCount(req, { ...SCOPE, keywords: ['Kubernetes', 'CNCF'], authors: ['@alice', '@bob'] });
 

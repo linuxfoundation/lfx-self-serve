@@ -158,9 +158,11 @@ describe('decode coercion', () => {
     expect(decoded.predicate.language).toBe(DEFAULT_MENTION_PREDICATE.language);
   });
 
-  it('coerces an off-list platform back to the default', () => {
-    expect(decodePredicateFromQueryParams({ [q.platform]: 'myspace' }, DEFAULT_PERIOD).scope.platform).toBe(DEFAULT_MENTION_SCOPE_STATE.platform);
+  it('passes the platform through verbatim — the values are live upstream SOURCE_PLATFORM strings, not config keys', () => {
+    // `X` (Twitter's upstream value) must round-trip; coercing off-list values to the default silently widens the feed.
+    expect(decodePredicateFromQueryParams({ [q.platform]: 'X' }, DEFAULT_PERIOD).scope.platform).toBe('X');
     expect(decodePredicateFromQueryParams({ [q.platform]: 'reddit' }, DEFAULT_PERIOD).scope.platform).toBe('reddit');
+    expect(decodePredicateFromQueryParams({}, DEFAULT_PERIOD).scope.platform).toBe(DEFAULT_MENTION_SCOPE_STATE.platform);
   });
 
   it('falls back on a month-shaped but out-of-range period', () => {

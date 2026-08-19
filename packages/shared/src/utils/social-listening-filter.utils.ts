@@ -12,7 +12,6 @@ import {
   DEFAULT_MENTION_SCOPE_STATE,
   DEFAULT_MENTION_VIEW_SCOPE,
   MENTION_HAS_TITLE_OPTIONS,
-  MENTION_PLATFORM_CONFIG,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SEARCH_MIN_CHARS,
   MENTION_SENTIMENT_OPTIONS,
@@ -195,7 +194,6 @@ export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeSta
 }
 
 // Derived from the shared option lists (not re-listed) so future option additions propagate.
-const PLATFORM_VALUES = new Set([DEFAULT_MENTION_SCOPE_STATE.platform, ...Object.keys(MENTION_PLATFORM_CONFIG)]);
 const SENTIMENT_VALUES = new Set(MENTION_SENTIMENT_OPTIONS.map((o) => o.value));
 const RELEVANCE_VALUES = new Set(MENTION_RELEVANCE_OPTIONS.map((o) => o.value));
 const HAS_TITLE_VALUES = new Set(MENTION_HAS_TITLE_OPTIONS.map((o) => o.value));
@@ -234,7 +232,8 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
     activeTab,
     period: coercePeriod(asScalar(params[q.period]), defaultPeriod),
     sourceProjectId: asScalar(params[q.sourceProject]) || DEFAULT_MENTION_SCOPE_STATE.sourceProjectId,
-    platform: coerceLiteral(asScalar(params[q.platform]), PLATFORM_VALUES, DEFAULT_MENTION_SCOPE_STATE.platform),
+    // Platform values are live upstream SOURCE_PLATFORM strings (e.g. `X`), not config keys — pass through like sourceProjectId.
+    platform: asScalar(params[q.platform]) || DEFAULT_MENTION_SCOPE_STATE.platform,
   };
 
   return { predicate, scope };

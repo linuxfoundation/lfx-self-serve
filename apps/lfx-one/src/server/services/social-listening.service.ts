@@ -88,6 +88,8 @@ type QueryBind = string | number;
 interface SqlFragment {
   clause: string;
   binds: QueryBind[];
+  /** Cache-key discriminator: binds plus markers for literal clauses that carry no bind, so their variants can't share one cache entry. */
+  discriminator: QueryBind[];
 }
 
 /** Aggregates without GROUP BY always emit one row, so an empty overview result is a driver-level anomaly — thrown through the cache wrapper so the zeroed fallback is never cached for the full TTL. */
@@ -154,7 +156,7 @@ export class SocialListeningService {
       WHERE ${scope.clause}${filters.clause}
     `;
 
-    return this.cached(req, params.foundationSlug, 'mentions-count', [...scope.binds, ...filters.binds], async () => {
+    return this.cached(req, params.foundationSlug, 'mentions-count', [...scope.discriminator, ...filters.discriminator], async () => {
       const result = await this.snowflakeService.execute<{ TOTAL: number }>(sql, [...scope.binds, ...filters.binds]);
       return Number(result.rows?.[0]?.TOTAL ?? 0);
     });
@@ -251,7 +253,7 @@ export class SocialListeningService {
     `;
 
     // The row cap is interpolated, not bound, so it has to discriminate the cache entry itself.
-    const cacheBinds: QueryBind[] = [...scope.binds, ...filters.binds, limit];
+    const cacheBinds: QueryBind[] = [...scope.discriminator, ...filters.discriminator, limit];
 
     return this.cached(req, params.foundationSlug, 'tags', cacheBinds, async () => {
       const result = await this.snowflakeService.execute<SocialListeningTagCount>(sql, [...scope.binds, ...filters.binds]);
@@ -286,7 +288,7 @@ export class SocialListeningService {
       LIMIT ${MENTION_FILTER_MAX_VALUES}
     `;
 
-    return this.cached(req, params.foundationSlug, 'mentions-authors', [...scope.binds, ...filters.binds], async () => {
+    return this.cached(req, params.foundationSlug, 'mentions-authors', [...scope.discriminator, ...filters.discriminator], async () => {
       const result = await this.snowflakeService.execute<SocialListeningMentionAuthor>(sql, [...scope.binds, ...filters.binds]);
       return result.rows ?? [];
     });
@@ -338,8 +340,16 @@ export class SocialListeningService {
     `;
 
     const binds: QueryBind[] = [...base.binds, ...filters.binds, params.startDate, params.endDate, previous.startDate, previous.endDate];
+    const discriminator: QueryBind[] = [
+      ...base.discriminator,
+      ...filters.discriminator,
+      params.startDate,
+      params.endDate,
+      previous.startDate,
+      previous.endDate,
+    ];
 
-    return this.cached(req, params.foundationSlug, 'analytics-overview', binds, async () => {
+    return this.cached(req, params.foundationSlug, 'analytics-overview', discriminator, async () => {
       const result = await this.snowflakeService.execute<SocialListeningAnalyticsOverview>(sql, binds);
       const row = result.rows?.[0];
 
@@ -389,7 +399,7 @@ export class SocialListeningService {
       ORDER BY DATE_TRUNC('${grain.unit}', MENTION_TS)
     `;
 
-    return this.cached(req, params.foundationSlug, `analytics-over-time-${grain.unit}`, [...scope.binds, ...filters.binds], async () => {
+    return this.cached(req, params.foundationSlug, `analytics-over-time-${grain.unit}`, [...scope.discriminator, ...filters.discriminator], async () => {
       const result = await this.snowflakeService.execute<SocialListeningOverTimePoint>(sql, [...scope.binds, ...filters.binds]);
       return result.rows ?? [];
     });
@@ -412,7 +422,7 @@ export class SocialListeningService {
       ORDER BY MENTIONS_COUNT DESC
     `;
 
-    return this.cached(req, params.foundationSlug, 'analytics-platform-distribution', [...scope.binds, ...filters.binds], async () => {
+    return this.cached(req, params.foundationSlug, 'analytics-platform-distribution', [...scope.discriminator, ...filters.discriminator], async () => {
       const result = await this.snowflakeService.execute<SocialListeningPlatformDistribution>(sql, [...scope.binds, ...filters.binds]);
       return result.rows ?? [];
     });
@@ -433,7 +443,7 @@ export class SocialListeningService {
       ORDER BY MENTION_COUNT DESC
     `;
 
-    return this.cached(req, params.foundationSlug, 'analytics-sentiment-distribution', [...scope.binds, ...filters.binds], async () => {
+    return this.cached(req, params.foundationSlug, 'analytics-sentiment-distribution', [...scope.discriminator, ...filters.discriminator], async () => {
       const result = await this.snowflakeService.execute<SocialListeningSentimentDistribution>(sql, [...scope.binds, ...filters.binds]);
       return result.rows ?? [];
     });
@@ -456,7 +466,7 @@ export class SocialListeningService {
     `;
 
     // `limit` is interpolated rather than bound, so it has to stay in the cache key explicitly.
-    const cacheBinds: QueryBind[] = [...scope.binds, ...filters.binds, limit];
+    const cacheBinds: QueryBind[] = [...scope.discriminator, ...filters.discriminator, limit];
 
     return this.cached(req, params.foundationSlug, 'analytics-top-projects', cacheBinds, async () => {
       const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, [...scope.binds, ...filters.binds]);
@@ -480,7 +490,7 @@ export class SocialListeningService {
       binds.push(params.platform.toLowerCase());
     }
 
-    return { clause: clauses.join('\n        AND '), binds };
+    return { clause: clauses.join('\n        AND '), binds, discriminator: binds };
   }
 
   /**
@@ -493,6 +503,8 @@ export class SocialListeningService {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
     const clauses: string[] = [];
     const binds: QueryBind[] = [];
+    // Literal clauses carry no bind, so they must mark the cache discriminator explicitly.
+    const markers: QueryBind[] = [];
 
     if (filters.sentiment && filters.sentiment !== 'all') {
       clauses.push(`LOWER(TRIM(${col('SENTIMENT')})) = ?`);
@@ -511,8 +523,10 @@ export class SocialListeningService {
 
     if (filters.hasTitle === 'yes') {
       clauses.push(`${col('TITLE')} IS NOT NULL AND ${col('TITLE')} != ''`);
+      markers.push('hasTitle=yes');
     } else if (filters.hasTitle === 'no') {
       clauses.push(`(${col('TITLE')} IS NULL OR ${col('TITLE')} = '')`);
+      markers.push('hasTitle=no');
     }
 
     const keywords = this.capValues(req, filters.keywords, MENTION_FILTER_MAX_VALUES)
@@ -558,7 +572,7 @@ export class SocialListeningService {
       }
     }
 
-    return { clause: clauses.map((clause) => `\n        AND ${clause}`).join(''), binds };
+    return { clause: clauses.map((clause) => `\n        AND ${clause}`).join(''), binds, discriminator: [...binds, ...markers] };
   }
 
   /**
