@@ -13,6 +13,7 @@ import type {
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
+  SelectableMetaObjective,
   MetaPlacement,
   ParsedCampaignName,
   RedditObjective,
@@ -227,10 +228,11 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
  * `META_SELECTABLE_OBJECTIVES` below. The split exists because the two questions are different:
  * "what may a user choose?" and "what do we call the thing this campaign already is?".
  *
- * Keeping `leads` here is load-bearing, not tidiness. `buildMetaCampaignName` and the ad-set name
- * in `meta-ads.service.ts` index this map with whatever objective the request carries, and a
- * brief or draft persisted before `leads` was hidden still carries it. Dropping the key would put
- * the literal string `undefined` into a campaign name Meta then bills against.
+ * Keeping `leads` here is load-bearing, not tidiness. Every display path in `meta-ads.service.ts`
+ * — the campaign name, the ad-set name, the progress steps — indexes this map with whatever
+ * objective the REQUEST carries, and a brief or draft persisted before `leads` was hidden still
+ * carries it. Dropping the key would put the literal string `undefined` into a campaign name Meta
+ * then bills against. Described as a shape rather than a list of call sites, which drifts.
  */
 export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   awareness: 'Awareness',
@@ -253,7 +255,26 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
  * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
  * dispatches — as traffic — and still renders a name.
  */
-export const META_SELECTABLE_OBJECTIVES: readonly MetaObjective[] = ['awareness', 'traffic', 'engagement', 'conversions'] as const;
+export const META_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'engagement', 'conversions'] as const satisfies readonly SelectableMetaObjective[];
+
+/**
+ * Compile-time exhaustiveness: every `SelectableMetaObjective` must appear in the list above.
+ *
+ * The element type alone only stops a WRONG entry; it cannot catch a MISSING one. Without this,
+ * adding an objective to `MetaObjective` compiles cleanly and passes every test while never
+ * appearing in the picker — the two sibling maps are total and hard-fail, so this list would be
+ * the only one that drifts silently.
+ *
+ * Written as an assignment FROM a union of the array's members TO the full union: no cast, no
+ * `Object.fromEntries`. Both defeat the check by widening the type back to something assignable.
+ * A missing objective makes the target union unsatisfied and TypeScript names it.
+ */
+const _assertEverySelectableObjectiveIsListed: (typeof META_SELECTABLE_OBJECTIVES)[number] extends SelectableMetaObjective
+  ? SelectableMetaObjective extends (typeof META_SELECTABLE_OBJECTIVES)[number]
+    ? true
+    : { ERROR: 'META_SELECTABLE_OBJECTIVES is missing an objective'; missing: Exclude<SelectableMetaObjective, (typeof META_SELECTABLE_OBJECTIVES)[number]> }
+  : { ERROR: 'META_SELECTABLE_OBJECTIVES contains a hidden or unknown objective' } = true;
+void _assertEverySelectableObjectiveIsListed;
 
 /**
  * The placements a user may actually toggle.

@@ -114,6 +114,19 @@ describe('META_SELECTABLE_OBJECTIVES', () => {
       expect(META_OBJECTIVE_PARAMS[objective]).toBeDefined();
     }
   });
+
+  /**
+   * Partitions the objective union: every `MetaObjective` is either selectable or deliberately
+   * hidden, never silently neither. The compile-time guard beside the constant is what enforces
+   * this — a new objective that reaches neither list fails `tsc`, naming the omitted member —
+   * and this pins the runtime half so the partition cannot drift unnoticed.
+   */
+  it('together with the hidden objectives, covers every objective the params map defines', () => {
+    const hidden = ['leads'];
+    const covered = [...META_SELECTABLE_OBJECTIVES, ...hidden].sort();
+
+    expect(covered).toEqual(Object.keys(META_OBJECTIVE_PARAMS).sort());
+  });
 });
 
 /**
