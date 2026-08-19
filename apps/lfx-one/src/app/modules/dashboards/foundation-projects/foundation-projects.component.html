@@ -36,9 +36,10 @@
         data-testid="foundation-projects-search" />
     </div>
 
+    @let groupsCount = groupedFilteredProjects().length;
     @for (group of groupedFilteredProjects(); track group.foundationSlug) {
       <div class="flex flex-col gap-3" [attr.data-testid]="'foundation-projects-group-' + group.foundationSlug">
-        @if (groupedFilteredProjects().length > 1) {
+        @if (groupsCount > 1) {
           <h2 class="text-base font-semibold text-gray-900">{{ group.foundationName }}</h2>
         }
 
