@@ -303,6 +303,39 @@ export const CAMPAIGN_UNAVAILABLE_PLATFORM_REASON = 'Pause and resume are not av
  */
 export const CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON = 'Pause and resume are not enabled for this deployment.';
 
+/**
+ * What a toggle refused with 412 tells the operator to do: REFRESH, not retry.
+ *
+ * A 412 means another editor moved this campaign since the list was read, so the validator this
+ * row holds is dead. Retrying replays the same dead validator and earns the same 412 — the fresh
+ * etag is only written on the success arm, so a failed toggle leaves the row falling back to the
+ * one it was read with. "Try again", which is what every failure used to say, therefore names the
+ * one action that provably cannot work here.
+ *
+ * Says nothing about which way the campaign is now pointing, unlike the per-direction copy below.
+ * That is the honest answer: after a concurrent edit this view no longer knows the campaign's
+ * status, and the direction wording is only true when the toggle failed WITHOUT anything moving.
+ */
+export const CAMPAIGN_TOGGLE_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it. Refresh the campaign list to see its current status before trying again.';
+
+/**
+ * Why a toggle failed when the campaign did NOT move — worded per direction.
+ *
+ * The outcome differs by direction and both are about money. A failed pause leaves the campaign
+ * RUNNING; a failed resume leaves it PAUSED. Stating "it has not been paused" after a failed
+ * resume is the exact inversion of the truth: it describes a campaign that is spending when the
+ * campaign is in fact dark.
+ *
+ * Only correct for failures where nothing moved — a transport drop, a 5xx, a refusal upstream.
+ * The 412 case gets `CAMPAIGN_TOGGLE_CONFLICT_MESSAGE` instead, because there the premise of both
+ * sentences ("it is still …") is exactly what stopped being true.
+ */
+export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<'pause' | 'resume', string>> = {
+  pause: 'Could not pause this campaign. It is still running — try again.',
+  resume: 'Could not resume this campaign. It is still paused — try again.',
+};
+
 /** The button's visible word per action. `unavailable` still names an action — the button is disabled, not blank. */
 export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<'pause' | 'resume' | 'unavailable', string>> = {
   pause: 'Pause',

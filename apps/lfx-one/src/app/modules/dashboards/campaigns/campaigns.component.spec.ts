@@ -54,8 +54,12 @@ describe('CampaignsComponent brief persistence', () => {
   }
 
   /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
-  function restore(b: CampaignBriefOutput, briefId: string): void {
-    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string): void }).onRestoreSavedBrief(b, briefId);
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false): void {
+    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string, approved: boolean): void }).onRestoreSavedBrief(
+      b,
+      briefId,
+      approved
+    );
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -1003,6 +1007,32 @@ describe('CampaignsComponent brief persistence', () => {
           ...over,
         }) as CampaignIndexDoc;
 
+      /**
+       * Enter Optimize the way the tab bar does — `selectTab`, which is what calls
+       * `loadBriefCampaigns` on entry. Driving `loadBriefCampaigns` directly would skip the
+       * transition and, more importantly, never render the panel these assertions read.
+       */
+      function openOptimize(): void {
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('optimization', 'paid-marketing');
+        fixture.detectChanges();
+      }
+
+      /** The Optimize panel's rendered text — what the operator can actually read. */
+      function optimizeText(): string {
+        return (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-optimization-panel"]')?.textContent ?? '';
+      }
+
+      /**
+       * The campaign ids that currently have a LIVE toggle button. The stale-render bug is only
+       * expensive because these exist: each one posts its id against whatever `briefId` the parent
+       * is binding at the time.
+       */
+      function toggleButtonIds(): string[] {
+        return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="optimization-campaign-toggle-"]')).map((el) =>
+          (el.getAttribute('data-testid') ?? '').replace('optimization-campaign-toggle-', '')
+        );
+      }
+
       /** Put a real brief id on the component so `loadBriefCampaigns` gets past its own guard. */
       async function withSavedBrief(): Promise<void> {
         persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: '"1"', created: true, approved: true }));
@@ -1068,6 +1098,51 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(campaigns()).toEqual([]);
         expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * A BRIEF switch inside ONE foundation. The foundation-switch effect is the only other
+       * clear, so nothing cleared this state on the path a user actually takes to change briefs:
+       * restore a saved brief → proceed → enter Optimize.
+       *
+       * Asserted on the RENDERED tab, not on the signal. `briefCampaigns` being null is a means;
+       * what makes the bug expensive is that the previous brief's rows stay on screen with live
+       * toggle buttons while the parent has already re-bound `briefId` to the new brief — so a
+       * click in that window sends brief A's campaignId to brief B's address. A signal-only
+       * assertion passes even if the template still paints the old rows.
+       */
+      it('stops rendering the previous brief campaigns while the next brief is still loading', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true }));
+        await withSavedBrief();
+        openOptimize();
+        await fixture.whenStable();
+        // The precondition the assertion below depends on: brief A really did render clickable
+        // rows. Without this the test would pass on a tab that never renders anything.
+        expect(optimizeText()).toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual(['c-1']);
+
+        // Brief B, same foundation. The response is withheld so the assertion lands INSIDE the
+        // round trip — the window the fix is about.
+        const pending = new Subject<CampaignListResult>();
+        list.mockReturnValue(pending);
+        restore(otherBrief, 'brief-b');
+        await fixture.whenStable();
+        openOptimize();
+        await fixture.whenStable();
+
+        // Brief B's id is already the address on screen; brief A's rows must not be beside it.
+        expect(state().briefId).toBe('brief-b');
+        expect(optimizeText()).not.toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual([]);
+        expect(campaigns()).toBeNull();
+
+        // And the new brief's own answer still lands, so the clear is a window, not a wipe.
+        pending.next({ campaigns: [indexed({ id: 'c-2', campaign_name: 'Brief B campaign' })], possiblyStale: false, statusToggleEnabled: true });
+        await fixture.whenStable();
+        expect(optimizeText()).toContain('Brief B campaign');
+        expect(toggleButtonIds()).toEqual(['c-2']);
       });
 
       it('clears a previous failure when the foundation changes', async () => {

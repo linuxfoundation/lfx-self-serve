@@ -1160,14 +1160,31 @@ export class CampaignsComponent {
     const generation = ++this.briefCampaignsGeneration;
     const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
 
+    // Cleared on EVERY entry, before dispatch — not only on the early return below.
+    //
+    // The generation counter fixes the LATE response; it does nothing about the window before any
+    // response. `briefId` is reachable from `onRestoreSavedBrief` → `onProceedToImplementation` →
+    // Optimize entry WITHOUT a foundation change, and the foundation-switch effect is the only
+    // other place that clears this state — so within one foundation nothing cleared it at all.
+    // For the whole round trip the tab rendered brief A's rows while the parent bound brief B's
+    // `briefId` beside them, and those rows are CLICKABLE: `campaignRows` derives `action` purely
+    // from the docs, so a toggle in that window sends A's campaignId against B's brief — a
+    // money-affecting write to an address that does not describe it.
+    //
+    // A brief blank panel on re-entry is the accepted cost. The list is re-fetched on every entry
+    // by design (see `selectTab`), so there was never a cached render to preserve; what changes is
+    // that the interim shows "not loaded" instead of the previous answer. Showing another brief's
+    // clickable rows is not a trade worth a flicker.
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(false);
+
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
       // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
-      // instead of asserting the brief has no campaigns.
-      this.briefCampaigns.set(null);
-      this.briefCampaignsStale.set(false);
-      this.briefCampaignsUnavailable.set(false);
-      this.briefCampaignsToggleEnabled.set(false);
+      // instead of asserting the brief has no campaigns. The clear above is what leaves it that
+      // way; this arm only stops here.
       return;
     }
 

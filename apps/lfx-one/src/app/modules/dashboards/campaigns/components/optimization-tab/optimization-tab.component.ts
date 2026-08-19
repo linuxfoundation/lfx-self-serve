@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type {
@@ -26,6 +27,8 @@ import type {
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import {
+  CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
+  CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_LABELS,
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
@@ -107,6 +110,19 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly togglePending = signal<Record<string, boolean>>({});
   protected readonly toggleError = signal<Record<string, string>>({});
+
+  /**
+   * True once any toggle has been refused with 412 — someone else moved a campaign under this view.
+   *
+   * NOT keyed per campaign, unlike the two above, and that is the point: a 412 is evidence about
+   * the LIST, not about one row. It proves this view was read before a write it did not see, so
+   * every row's etag is suspect, not only the one that was clicked.
+   *
+   * Drives the refresh affordance rather than an automatic re-read. The remedy the 412 copy names
+   * has to be reachable, but reloading silently would replace the rows under whoever is mid-click
+   * — the same class of surprise the stale-render fix on the parent exists to prevent.
+   */
+  protected readonly campaignsConflicted = signal(false);
 
   /**
    * The status each campaign holds after any toggle this session, keyed by campaign id.
@@ -341,7 +357,12 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
 
-    const status: CampaignToggleStatus = row.action === 'pause' ? 'PAUSED' : 'ACTIVE';
+    // Narrowed to the two DIRECTIONS here, once. `row.action` is still typed with `'unavailable'`
+    // even though the guard above returned for it, and the error handler below reads a per-
+    // direction message map — so pinning the direction in a local is what lets that lookup be
+    // total instead of cast.
+    const direction: Exclude<CampaignToggleAction, 'unavailable'> = row.action;
+    const status: CampaignToggleStatus = direction === 'pause' ? 'PAUSED' : 'ACTIVE';
     this.togglePending.update((p) => ({ ...p, [campaign.id]: true }));
     this.toggleError.update((e) => {
       const next = { ...e };
@@ -376,22 +397,32 @@ export class OptimizationTabComponent implements OnInit {
             this.toggledEtag.update((e) => ({ ...e, [campaign.id]: result.etag as string }));
           }
         },
-        error: () => {
+        // The error is BOUND, not discarded. An argument-less handler is structurally incapable of
+        // telling a 412 from a 500 or a dropped connection, so every failure got the same "try
+        // again" — including the one failure for which retrying provably cannot work.
+        error: (err: unknown) => {
           this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
           // Deliberately NOT optimistic: nothing about the row's status is changed on failure, so
           // the button still offers the action that did not happen. Claiming the pause landed
           // would be the expensive lie here — someone would stop watching a campaign that is
           // still spending.
           //
-          // Worded PER DIRECTION, because the outcome differs by direction and both are about
-          // money. A failed pause leaves the campaign RUNNING; a failed resume leaves it PAUSED.
-          // Stating "it has not been paused" after a failed resume is the exact inversion of the
-          // truth — it describes a campaign that is spending when the campaign is in fact dark.
-          const message =
-            row.action === 'pause'
-              ? 'Could not pause this campaign. It is still running — try again.'
-              : 'Could not resume this campaign. It is still paused — try again.';
+          // Branched on the HTTP STATUS, not on the error `code`. The BFF's error middleware
+          // writes the upstream status verbatim (`res.status(error.statusCode)`), so a 412 raised
+          // by campaign-service's If-Match check arrives here as an `HttpErrorResponse` with
+          // `status === 412`. Its `code` field is the generic `'CLIENT_ERROR'` that every 4xx
+          // carries, so branching on that would fire on 405 and 409 too.
+          const conflict = err instanceof HttpErrorResponse && err.status === 412;
+          const message = conflict ? CAMPAIGN_TOGGLE_CONFLICT_MESSAGE : CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
           this.toggleError.update((e) => ({ ...e, [campaign.id]: message }));
+          // A 412 also makes the LIST stale, not just this row: it is the index's proof that the
+          // campaign moved under someone else's write. Surfacing the existing re-read affordance
+          // is why the copy can send the operator to a refresh — without it the message would name
+          // a remedy the tab does not offer. Deliberately an OFFER rather than an automatic
+          // re-fetch: a silent reload would swap the rows out from under whoever is mid-click.
+          if (conflict) {
+            this.campaignsConflicted.set(true);
+          }
         },
       });
   }

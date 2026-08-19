@@ -63,6 +63,36 @@
   }
 
   <!--
+    A CONCURRENT EDIT, stated once for the whole list. Reached only after a toggle was refused with
+    412, which is proof this view was read before a write it never saw — so the remedy is a re-read,
+    not another click. It reuses the same `retryCampaigns` output as the failed-read banner above,
+    because "re-read this brief's campaigns" is exactly the action needed; inventing a second
+    refresh path would give the tab two ways to do one thing.
+
+    Rendered ALONGSIDE the rows rather than replacing them: the rows are stale, not wrong, and
+    blanking a list of possibly-spending campaigns to report a conflict would hide more than it
+    explains.
+  -->
+  @if (campaignsConflicted()) {
+    <section class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert" data-testid="optimization-campaigns-conflict">
+      <h3 class="text-sm font-semibold text-amber-900">This list is out of date</h3>
+      <p class="text-sm text-amber-800">
+        At least one campaign was changed by someone else while this page was open, so the statuses below may not match the ad platform. Refresh the list before
+        pausing or resuming anything.
+      </p>
+      <div>
+        <button
+          type="button"
+          (click)="retryCampaigns.emit()"
+          class="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+          data-testid="optimization-campaigns-refresh">
+          Refresh campaigns
+        </button>
+      </div>
+    </section>
+  }
+
+  <!--
     Per-campaign pause/resume. `campaignRows()` is null until the list loads OR when the read
     failed, and the section renders nothing at all for that — an empty state here would assert the
     brief has no campaigns, which is a claim a failed read cannot support. The failed case is

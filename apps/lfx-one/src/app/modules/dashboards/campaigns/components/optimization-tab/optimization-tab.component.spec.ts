@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CampaignIndexDoc } from '@lfx-one/shared/interfaces';
@@ -315,6 +316,88 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     // The inversion, named: a failed resume must never claim anything about a pause.
     expect(message).not.toContain('has not been paused');
     expect(message).not.toContain('still running');
+  });
+
+  /**
+   * A 412 is the ONE failure for which "try again" names an action that provably cannot work.
+   *
+   * The fresh etag is written only on the success arm, so after a refused toggle the row falls
+   * back to `toggledEtag()[id] ?? campaign.etag` — the same dead validator the server just
+   * rejected. Clicking again replays it and earns the same 412. The remedy is a re-read, and the
+   * copy has to say so.
+   *
+   * Note this is the THIRD-PARTY concurrent edit only. The self-inflicted 412 (pause-then-resume
+   * replaying this row's read-time etag) is already prevented by the `toggledEtag` cache, which
+   * has its own tests above.
+   */
+  it('tells the user to refresh, not retry, when the toggle is refused with 412', () => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+    render([doc({ status: 'created' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain('Someone else changed this campaign');
+    expect(message).toContain('Refresh');
+    // The whole point: the futile instruction must be GONE, not merely accompanied.
+    expect(message).not.toContain('It is still running — try again.');
+  });
+
+  /**
+   * The named remedy has to be reachable. Copy that says "refresh the campaign list" while the tab
+   * offers no refresh is a different flavour of the same defect — it moves the dead end one step
+   * later. Wired to the EXISTING `retryCampaigns` output, which is the parent's re-read path.
+   */
+  it('offers the list re-read the 412 copy tells the user to perform', () => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+    render([doc({ status: 'created' })]);
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+    const retry = vi.fn();
+    fixture.componentInstance.retryCampaigns.subscribe(retry);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-refresh"]').click();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The other half of the branch, and the reason it must be asserted separately: a fix that simply
+   * replaced the per-direction copy with the conflict copy would pass the 412 test above while
+   * telling someone whose pause failed on a 500 that a stranger moved their campaign.
+   */
+  it.each([
+    [500, 'created', 'Could not pause this campaign. It is still running — try again.'],
+    [0, 'created', 'Could not pause this campaign. It is still running — try again.'],
+    [500, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
+  ])('keeps the per-direction copy for a %s failure on a %s campaign', (status, campaignStatus, expected) => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope' })));
+    render([doc({ status: campaignStatus })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain(expected);
+    // And no conflict banner: nothing proved this list is stale.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // A non-HTTP failure — a thrown TypeError, an rxjs error with no status — must not be mistaken
+  // for a concurrent edit. `err.status` on a plain Error is `undefined`, and a fix that read the
+  // property without the type guard would compare `undefined === 412` and land here by luck
+  // rather than by design; this pins the behaviour either way.
+  it('does not claim a concurrent edit for a failure that carries no HTTP status', () => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new Error('upstream unavailable')));
+    render([doc({ status: 'created' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain('still running');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
   });
 
   // The class this finding is about, not the instance. Every status campaign-service refuses with
