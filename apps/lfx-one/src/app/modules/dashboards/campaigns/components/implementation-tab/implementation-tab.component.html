@@ -383,19 +383,143 @@
             </div>
           </div>
 
-          <!-- Geo Targets -->
-          @if (metaGeoTargets().length > 0) {
-            <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
-              <div class="flex flex-wrap gap-2">
-                @for (geo of metaGeoTargets(); track geo) {
-                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    {{ geo }}
-                  </span>
+          <!-- Objective -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="meta-objective">Objective</label>
+              <select
+                id="meta-objective"
+                [value]="metaObjective()"
+                (change)="onMetaObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-meta-objective">
+                @for (objective of metaObjectiveOptions; track objective) {
+                  <option [value]="objective">{{ metaObjectiveLabels[objective] }}</option>
+                }
+              </select>
+            </div>
+
+            <!--
+              Shown only under `conversions`, which is the only objective whose promoted object is
+              a pixel. Under the others campaign-service promotes a page id or nothing, so the
+              field would be collected and then ignored.
+            -->
+            @if (metaRequiresPixel()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-pixel-id">Meta Pixel ID</label>
+                <input
+                  id="meta-pixel-id"
+                  type="text"
+                  inputmode="numeric"
+                  [value]="metaPixelId()"
+                  (input)="onMetaPixelIdInput($event)"
+                  placeholder="e.g. 123456789012345"
+                  [attr.aria-invalid]="metaPixelValid() ? null : 'true'"
+                  [attr.aria-describedby]="metaPixelValid() ? null : 'meta-pixel-id-error'"
+                  class="rounded-md border px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1"
+                  [class.border-gray-300]="metaPixelValid()"
+                  [class.focus:border-blue-500]="metaPixelValid()"
+                  [class.focus:ring-blue-500]="metaPixelValid()"
+                  [class.border-red-400]="!metaPixelValid()"
+                  [class.focus:border-red-500]="!metaPixelValid()"
+                  [class.focus:ring-red-500]="!metaPixelValid()"
+                  data-testid="implementation-meta-pixel-id" />
+                @if (!metaPixelValid()) {
+                  <p id="meta-pixel-id-error" class="text-xs text-red-600" data-testid="implementation-meta-pixel-error">
+                    A numeric Meta Pixel ID is required for the Conversions objective.
+                  </p>
                 }
               </div>
+            }
+          </div>
+
+          <!-- Placements -->
+          <fieldset
+            class="mb-4"
+            [attr.aria-invalid]="metaHasPlacement() ? null : 'true'"
+            [attr.aria-describedby]="metaHasPlacement() ? null : 'meta-placement-error'">
+            <legend class="mb-2 block text-xs font-medium text-gray-700">Placements</legend>
+            <div class="flex flex-wrap gap-x-4 gap-y-2">
+              @for (placement of metaSelectablePlacements; track placement) {
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    [checked]="metaPlacements()[placement]"
+                    (change)="onMetaPlacementChange(placement, $event)"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-meta-placement-' + placement" />
+                  {{ metaPlacementLabels[placement] }}
+                </label>
+              }
+              <!--
+                Rendered disabled rather than omitted, so the absence of a placement someone
+                expects to find reads as a deliberate answer instead of a missing feature. It is
+                bound to nothing: `metaSelectablePlacements` excludes the key, and the change
+                handler refuses it, so no interaction can put `messengerInbox: true` on the wire.
+              -->
+              <label class="flex cursor-not-allowed items-center gap-2 text-sm text-gray-400" [title]="metaMessengerInboxReason">
+                <input type="checkbox" disabled class="rounded border-gray-200" data-testid="implementation-meta-placement-messengerInbox" />
+                {{ metaPlacementLabels.messengerInbox }}
+                <span class="text-xs italic">({{ metaMessengerInboxReason }})</span>
+              </label>
             </div>
-          }
+            @if (!metaHasPlacement()) {
+              <p id="meta-placement-error" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-meta-placement-error">
+                At least one placement must be enabled.
+              </p>
+            }
+          </fieldset>
+
+          <!-- Geo Targets -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="meta-geo-add">Geo Targets (AI-recommended)</label>
+            <div class="flex flex-wrap items-center gap-2">
+              @for (geo of metaGeoTargets(); track geo; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo }}
+                  <button
+                    type="button"
+                    (click)="removeMetaGeoTarget(i)"
+                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + geo"
+                    [attr.data-testid]="'implementation-meta-geo-remove-' + geo">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              <!--
+                A free-text box rather than LinkedIn's dropdown, because the two platforms take
+                different data. LinkedIn geos are URNs drawn from a fixed resolve map, so a select
+                can enumerate them; Meta takes ISO-2 country codes, and the eligible set is decided
+                by campaign-service (which also drops sanctioned and regulated markets). A select
+                here would need a local country list that could only drift from that.
+
+                No maxlength: normalizeGeoTargets trims BEFORE it validates, so a browser-side cap
+                of 2 would clip padded input (" jp " to " j") into something the ISO-2 pattern then
+                rejects. The pattern decides what is valid here, not the markup.
+              -->
+              <input
+                id="meta-geo-add"
+                type="text"
+                placeholder="+ ISO code"
+                (change)="onMetaGeoTargetAdd($event)"
+                (keydown.enter)="onMetaGeoTargetAdd($event); $event.preventDefault()"
+                class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                data-testid="implementation-meta-geo-add" />
+              <!--
+                Reads the SAME computed `submit()` sends, so the line cannot name one country while
+                the request buys another. The empty arm is a real state — nothing usable was
+                supplied — and `canSubmit` blocks there rather than letting the server default.
+              -->
+              @if (metaGeoTargets().length === 0) {
+                @if (metaEffectiveGeoTargets().length > 0) {
+                  <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ metaEffectiveGeoTargets().join(', ') }}</span>
+                } @else {
+                  <span class="text-xs text-red-500" data-testid="implementation-meta-geo-none">Add at least one geo target — no usable country is set.</span>
+                }
+              }
+            </div>
+          </div>
 
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {
