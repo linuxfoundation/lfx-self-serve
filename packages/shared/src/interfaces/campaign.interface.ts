@@ -321,11 +321,32 @@ export interface CampaignBriefPersistenceState {
  * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
  * against the brief on screen so one event's edits cannot replay onto another's.
  *
- * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
- * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
- * user-editable and are still discarded, because they live in signals rather than this form and
- * would need their own plumbing. The Google copy and budget carried here are the highest-volume
- * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
+ * The LinkedIn ad account, geo targets and targeting profile are carried too (LFXV2-3230). They
+ * were moved from component signals onto `campaignForm`, which is what makes the RESTORE work:
+ * `applyDraft`'s existing `patchValue` replays them, and `valueChanges` emits on every pick with
+ * no per-handler plumbing. They were form state in everything but name — three controls the user
+ * picks from, whose only distinction was living in a signal.
+ *
+ * Moving them onto the form did NOT save this interface three members, and it is worth being
+ * precise about why. `emitDraft` builds an object LITERAL rather than spreading `getRawValue()`,
+ * so a control that is not named there never reaches the draft at all. The form buys the restore
+ * half and the emission trigger; the snapshot still has to list what it carries. Anyone extending
+ * this pays one line here either way.
+ *
+ * What the form DOES buy is that the value has exactly one home. A signal-backed field is written
+ * in a handler, read in `submit`, seeded in `populateFromBrief` and mirrored here — four places to
+ * keep in step. A form-backed one is stored once and derived everywhere else.
+ *
+ * TWO approaches therefore coexist in the Implementation tab, split by owner rather than by
+ * principle. The per-platform BUDGETS live only in signals and are mirrored onto this interface
+ * (LFXV2-3315); the three LinkedIn controls live on the form (LFXV2-3230). Both shipped in the
+ * same window from separate tickets and neither converted the other's fields, because unpicking a
+ * committed sibling branch costs more than the uniformity buys. Unifying them is follow-up work:
+ * move the budget signals onto `campaignForm`, keeping their members here.
+ *
+ * The remaining per-platform signals — the creative variants, and the Reddit targeting rendered
+ * read-only for review — are still discarded, and correctly so: nothing on screen edits them.
+ * Values the user cannot change do not need carrying; they re-derive from the brief identically.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
@@ -350,6 +371,23 @@ export interface CampaignImplementationDraft {
   endDate: string;
   includeSearch: boolean;
   includeDemandGen: boolean;
+  /**
+   * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
+   * the geo target list, and the targeting profile.
+   *
+   * REQUIRED, not optional, and an empty `linkedInGeoTargets` is a meaningful value rather than a
+   * hole — the user removed every chip, and `canSubmit` blocks a LinkedIn campaign on exactly
+   * that. Optional members would make "cleared" and "not set" indistinguishable at the restore
+   * site, and the natural `?? recommendedGeoTargets` fallback would then put the AI's list back
+   * over a deliberate clearance, which is the defect rather than the fix.
+   *
+   * `linkedInAccountId` is '' before the ad-account fetch resolves. That is carried as-is: the
+   * account list is re-fetched on every mount, and `ngOnInit` fills the first account in only
+   * when the restored value is still blank, so a real choice is never overwritten by the default.
+   */
+  linkedInAccountId: string;
+  linkedInGeoTargets: LinkedInGeoTarget[];
+  linkedInTargetingProfile: LinkedInTargetingProfile;
   /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's

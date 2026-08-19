@@ -5,11 +5,11 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefOutput, CampaignBriefPersistenceState } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -580,5 +580,335 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
     submitAndCapture();
 
     expect(posted?.['hubspotConfig']).toEqual({ sourceEmailId: 'email-456' });
+  });
+});
+
+/**
+ * The tab round-trip for the three LinkedIn controls (LFXV2-3230).
+ *
+ * `ImplementationTabComponent` sits inside the parent's structural `@switch`, so every visit to
+ * another tab DESTROYS it and every signal it owns. The ad account, geo targets and targeting
+ * profile lived only in component-local signals, so a tab switch discarded them — and
+ * `populateFromBrief` then re-stamped the brief's recommendation over the gap on remount, which
+ * is why the loss was SILENT. The fields simply read what the AI suggested, and an operator who
+ * had removed a geo or switched profile had no signal that their choice was gone.
+ *
+ * Simulated the way the parent actually does it: emit a draft from one component, then hand it to
+ * a SECOND, freshly created one. Mutating a single fixture would prove nothing, because the whole
+ * defect is that the first instance's state no longer exists.
+ *
+ * Every test here asserts the EDIT survived, never merely that the field holds a value. The
+ * distinction is the point: the brief below recommends `['urn:li:geo:US']` and `cloud-native`, so
+ * an assertion like "geo targets are non-empty" or "profile is cloud-native" passes against the
+ * BROKEN code — `populateFromBrief` sets exactly those. Each case therefore edits AWAY from the
+ * recommendation and asserts the edited value, so only a working restore can satisfy it.
+ */
+describe('ImplementationTabComponent linkedin round-trip across a tab switch', () => {
+  /** Matches the slug on the brief below — `applyDraft` ignores a draft keyed to another event. */
+  const EVENT_SLUG = 'kubecon-eu-2026';
+
+  /** Two real URNs from the shared resolve map, so `addGeoTarget` can find them. */
+  const US_GEO = { urn: 'urn:li:geo:103644278', label: 'United States' };
+  const DE_GEO = { urn: 'urn:li:geo:101165590', label: 'Germany' };
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['google-ads', 'linkedin-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Attend KubeCon', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }],
+        // The values the component would re-stamp on remount. Every assertion below edits away
+        // from these so a passing test cannot be explained by the re-stamp.
+        recommendedGeoTargets: [US_GEO],
+        recommendedTargetingProfile: 'cloud-native',
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  /** The three fields are form controls now; read them the way `submit()` does. */
+  interface Internals {
+    campaignForm: { controls: Record<string, { value: unknown; setValue(v: unknown): void }> };
+    linkedInAccountId(): string;
+    linkedInGeoTargets(): { urn: string; label: string }[];
+    linkedInTargetingProfile(): string;
+    removeGeoTarget(index: number): void;
+    addGeoTarget(urn: string): void;
+    setLinkedInTargetingProfile(profile: string): void;
+    setLinkedInAccount(accountId: string): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  /**
+   * Mount a component on the brief exactly as the parent does, capturing what it emits.
+   *
+   * The captured draft is the ONLY thing carried to the next mount — same as production, where
+   * the parent's signal is all that survives the component's teardown.
+   */
+  async function mount(draft: CampaignImplementationDraft | null): Promise<{
+    fixture: ComponentFixture<ImplementationTabComponent>;
+    latest: () => CampaignImplementationDraft | null;
+  }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+  });
+
+  /**
+   * A removal must survive, and proving that needs a SECOND geo on the form.
+   *
+   * Removing the brief's only recommendation leaves `[]`, and `[]` is also what a component with
+   * no restore at all shows before its seed runs — so asserting an empty list passes whether or
+   * not the restore works. (Verified, not assumed: with the `applyDraft` restore deleted, that
+   * version of this test still passed while its three siblings failed.)
+   *
+   * Adding Germany first and then removing the US entry makes the expected value `[DE]`, which is
+   * neither the brief's recommendation (`[US]`) nor the empty default. Only a working restore can
+   * produce it.
+   */
+  it('keeps a removed geo target removed after a tab round-trip', async () => {
+    const first = await mount(null);
+    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    first.fixture.detectChanges();
+    // Drop the brief's US recommendation, keeping the user's own addition.
+    at(first.fixture).removeGeoTarget(0);
+    first.fixture.detectChanges();
+    expect(
+      at(first.fixture)
+        .linkedInGeoTargets()
+        .map((g) => g.urn)
+    ).toEqual([DE_GEO.urn]);
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    // NOT [US] (the re-stamped recommendation) and NOT [US, DE] (a restore that ignored the
+    // removal). The removal and the addition both survived.
+    expect(
+      at(second.fixture)
+        .linkedInGeoTargets()
+        .map((g) => g.urn)
+    ).toEqual([DE_GEO.urn]);
+  });
+
+  it('keeps an added geo target after a tab round-trip', async () => {
+    const first = await mount(null);
+    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    first.fixture.detectChanges();
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    // Both the recommendation AND the addition, in that order — asserting only that Germany is
+    // present would also pass if the restore had dropped the brief's own US entry.
+    expect(
+      at(second.fixture)
+        .linkedInGeoTargets()
+        .map((g) => g.urn)
+    ).toEqual([US_GEO.urn, DE_GEO.urn]);
+  });
+
+  it('keeps a switched targeting profile after a tab round-trip', async () => {
+    const first = await mount(null);
+    // Away from the brief's `cloud-native`, so the re-stamp cannot produce this value.
+    at(first.fixture).setLinkedInTargetingProfile('mcp');
+    first.fixture.detectChanges();
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    expect(at(second.fixture).linkedInTargetingProfile()).toBe('mcp');
+  });
+
+  it('keeps a chosen ad account after a tab round-trip', async () => {
+    const first = await mount(null);
+    at(first.fixture).setLinkedInAccount('urn:li:sponsoredAccount:999');
+    first.fixture.detectChanges();
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    expect(at(second.fixture).linkedInAccountId()).toBe('urn:li:sponsoredAccount:999');
+  });
+
+  /**
+   * The seed must still run when there is NOTHING to restore, which is the other half of making
+   * `populateFromBrief` conditional. A guard that skipped seeding unconditionally would leave a
+   * first-time user with an empty geo list and `canSubmit` permanently blocking the LinkedIn
+   * section — a worse bug than the one being fixed, and invisible to every test above.
+   */
+  it('still seeds from the brief on a first visit with no draft', async () => {
+    const first = await mount(null);
+
+    expect(
+      at(first.fixture)
+        .linkedInGeoTargets()
+        .map((g) => g.urn)
+    ).toEqual([US_GEO.urn]);
+    expect(at(first.fixture).linkedInTargetingProfile()).toBe('cloud-native');
+  });
+
+  /**
+   * A draft keyed to a DIFFERENT event must neither restore nor suppress the seed.
+   *
+   * `hasDraftForThisBrief()` gates both halves, so this is where they could disagree: if the seed
+   * skipped on "a draft exists" while `applyDraft` declined on "wrong slug", the fields would be
+   * neither seeded nor restored and the section would open blank.
+   */
+  it('seeds from the brief when the carried draft belongs to another event', async () => {
+    const first = await mount(null);
+    at(first.fixture).removeGeoTarget(0);
+    first.fixture.detectChanges();
+
+    const foreign = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'some-other-event' };
+    first.fixture.destroy();
+
+    const second = await mount(foreign);
+
+    // The BRIEF's recommendation, not the foreign draft's empty list.
+    expect(
+      at(second.fixture)
+        .linkedInGeoTargets()
+        .map((g) => g.urn)
+    ).toEqual([US_GEO.urn]);
+  });
+});
+
+/**
+ * The ad-account fetch versus a restored choice (LFXV2-3230).
+ *
+ * `ngOnInit` resolves the LinkedIn ad-account list on EVERY mount — that network call is the whole
+ * reason this tab is destroyed on a tab switch rather than kept alive. Its response defaults the
+ * selection to the first account, and that default has to lose to a restored draft: the response
+ * lands after the constructor effect has already replayed the user's choice onto the form, so an
+ * unguarded assignment would overwrite it on every single return to the tab.
+ *
+ * The guard is `!this.linkedInAccountId()`. The suites above leave `CampaignService` unstubbed, so
+ * the list resolves empty and the guard is never exercised — deleting it kept all 35 tests green.
+ * These two stub a real list so the branch is actually reached.
+ */
+describe('ImplementationTabComponent linkedin account defaulting', () => {
+  const EVENT_SLUG = 'kubecon-eu-2026';
+  const ACCOUNTS = [
+    { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' },
+    { accountId: 'urn:li:sponsoredAccount:222', label: 'Second Account', orgId: 'urn:li:organization:2', status: 'ACTIVE' },
+  ];
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads'],
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  const draftWith = (accountId: string): CampaignImplementationDraft =>
+    ({
+      eventName: 'KubeCon EU 2026',
+      countryCode: 'US',
+      registrationUrl: 'https://example.com/kubecon',
+      headlines: [],
+      descriptions: [],
+      budgetUsd: 500,
+      searchBudgetPct: 70,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      includeSearch: true,
+      includeDemandGen: true,
+      linkedInAccountId: accountId,
+      linkedInGeoTargets: [],
+      linkedInTargetingProfile: 'cloud-native',
+      eventSlug: EVENT_SLUG,
+    }) as CampaignImplementationDraft;
+
+  /**
+   * Release the ad-account response by hand, so the test controls WHEN it lands.
+   *
+   * This is the whole point of the suite. A synchronous `of(ACCOUNTS)` resolves inside
+   * `ngOnInit` — before the constructor effect has replayed the draft — so the default is applied
+   * to an empty form and `applyDraft` overwrites it a moment later. The guard is then unreachable
+   * and deleting it changes nothing. (Confirmed by mutation: with a synchronous stub, removing the
+   * guard left all tests green.)
+   *
+   * Production is the other order: the response is an HTTP round-trip that lands well AFTER the
+   * effect has restored the user's account. A `Subject` reproduces that, and it is the only
+   * arrangement in which the guard does any work.
+   */
+  let accountsSubject: Subject<typeof ACCOUNTS>;
+
+  async function mount(draft: CampaignImplementationDraft | null): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    // The restore has already run; only now does the ad-account list arrive.
+    accountsSubject.next(ACCOUNTS);
+    accountsSubject.complete();
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  const accountId = (f: ComponentFixture<ImplementationTabComponent>): string =>
+    (f.componentInstance as unknown as { linkedInAccountId(): string }).linkedInAccountId();
+
+  beforeEach(async () => {
+    accountsSubject = new Subject<typeof ACCOUNTS>();
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { getLinkedInAccounts: () => accountsSubject.asObservable() } },
+      ],
+    }).compileComponents();
+  });
+
+  it('defaults to the first account when nothing is restored', async () => {
+    const fixture = await mount(null);
+
+    expect(accountId(fixture)).toBe(ACCOUNTS[0].accountId);
+  });
+
+  /** The guard's reason for existing: a restored choice must outlive the fetch that follows it. */
+  it('keeps a restored account rather than defaulting over it', async () => {
+    const fixture = await mount(draftWith(ACCOUNTS[1].accountId));
+
+    expect(accountId(fixture)).toBe(ACCOUNTS[1].accountId);
   });
 });
