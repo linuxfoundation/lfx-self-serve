@@ -189,9 +189,9 @@
                   icon="fa-light fa-pen"
                   [text]="true"
                   styleClass="text-gray-400 hover:text-blue-600"
-                  pTooltip="Edit"
+                  [pTooltip]="member.state === 'deleted' ? 'Retries automatically on next save' : 'Edit'"
                   tooltipPosition="top"
-                  [disabled]="mutationsDisabled()"
+                  [disabled]="mutationsDisabled() || member.state === 'deleted'"
                   data-testid="edit-member-button"
                   (click)="openEditMemberDialog(member)">
                 </lfx-button>
