@@ -522,10 +522,10 @@ function isEmployeeDetailRaw(value: unknown): boolean {
 }
 
 /**
- * TEMP-DEMO-ONLY: stands in for a future Salesforce Account multi-domain lookup joined with an
- * LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's real
- * local-part so the multi-email UI can be exercised before that pipeline exists. Remove once the
- * real data source is wired in.
+ * TEMP-DEMO-ONLY (GH-1655): stands in for a future Salesforce Account multi-domain lookup joined
+ * with an LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's
+ * real local-part so the multi-email UI can be exercised before that pipeline exists. Remove once
+ * the real data source is wired in.
  */
 function deriveDemoCompanyEmails(email: string | null): string[] {
   const trimmed = (email ?? '').trim().toLowerCase();
@@ -536,8 +536,8 @@ function deriveDemoCompanyEmails(email: string | null): string[] {
 
   const localPart = trimmed.slice(0, atIndex);
   const domain = trimmed.slice(atIndex + 1);
-  const baseDomain = domain.split('.').slice(-2).join('.');
-  const siblingDomains = [domain, `${baseDomain.split('.')[0]}.co.uk`, `${baseDomain.split('.')[0]}.jp`];
+  const company = domain.split('.')[0];
+  const siblingDomains = [domain, `${company}.co.uk`, `${company}.jp`];
 
   return Array.from(new Set(siblingDomains)).map((d) => `${localPart}@${d}`);
 }
