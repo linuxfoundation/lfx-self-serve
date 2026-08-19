@@ -136,7 +136,7 @@ test.describe('Org People — avatar consistency', () => {
     // Surface 2 — the reassign picker suggestion renders the same photo for the same person.
     await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await expect(page.getByTestId('org-people-committee-modal-reassign')).toBeVisible();
-    await page.getByTestId('org-people-committee-modal-reassign-email-input').fill('wang');
+    await page.getByTestId('org-people-committee-modal-reassign-email-input').fill('morgan');
     const option = page.getByTestId(`org-people-committee-modal-reassign-employee-option-${MORGAN_EMAIL}`);
     await expect(option).toBeVisible();
     await expect(option.getByTestId('person-avatar-image')).toBeVisible();
