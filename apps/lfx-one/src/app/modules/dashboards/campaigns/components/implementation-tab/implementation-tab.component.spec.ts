@@ -361,6 +361,22 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(metaGeoTargets()).toEqual(['US']);
   });
 
+  /**
+   * `maxlength="2"` used to sit on this input, and it defeated half of `normalizeGeoTargets`.
+   * The normaliser trims BEFORE it validates, precisely so a padded paste survives — but the
+   * browser applies maxlength to the RAW keystrokes, clipping " jp " to " j" before the change
+   * handler ever runs. The ISO-2 pattern then rejects it and the code is silently dropped.
+   *
+   * This asserts the ATTRIBUTE is absent rather than typing a padded value, deliberately: jsdom
+   * does not enforce maxlength on a programmatic `.value` assignment, so a value-setting test
+   * would pass with the cap still on the element and prove nothing about a real browser.
+   */
+  it('puts no maxlength on the add input, so padded input reaches the normaliser', async () => {
+    await setMetaGeoTargets([]);
+
+    expect(geoAddInput().hasAttribute('maxlength')).toBe(false);
+  });
+
   it('clears the add input after a successful add', async () => {
     await setMetaGeoTargets([]);
 

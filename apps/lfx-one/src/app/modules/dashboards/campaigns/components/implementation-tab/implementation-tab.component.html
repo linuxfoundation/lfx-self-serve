@@ -488,11 +488,14 @@
                 can enumerate them; Meta takes ISO-2 country codes, and the eligible set is decided
                 by campaign-service (which also drops sanctioned and regulated markets). A select
                 here would need a local country list that could only drift from that.
+
+                No maxlength: normalizeGeoTargets trims BEFORE it validates, so a browser-side cap
+                of 2 would clip padded input (" jp " to " j") into something the ISO-2 pattern then
+                rejects. The pattern decides what is valid here, not the markup.
               -->
               <input
                 id="meta-geo-add"
                 type="text"
-                maxlength="2"
                 placeholder="+ ISO code"
                 (change)="onMetaGeoTargetAdd($event)"
                 class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
