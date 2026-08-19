@@ -13,6 +13,9 @@
  *     an untouched save omits the `owner` key entirely so upstream preserves the stored owner
  *     (including profile_picture, which the form never carries).
  *   - Picking a user in the organizer field sends `owner: {username, name, email}` on update.
+ *   - The search pool only covers indexed meeting registrants, so the picker's "Enter details
+ *     manually" affordance lets any name/email be set as owner; manual entry sends
+ *     `owner: {name, email}` (no username) and an invalid email blocks the step.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -419,5 +422,44 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     expect((captured.put as Record<string, unknown>)['owner']).toEqual({ username: OWNER.username, name: OWNER.name, email: OWNER.email });
+  });
+
+  test('manual entry sends owner {name, email} without a username on update', async ({ page }) => {
+    const MANUAL_OWNER = { name: 'Radia Perlman', email: 'radia-e2e@example.com' };
+    const captured = await stubMeetingEdit(page, buildEditMeeting());
+    // The wanted person is not among the indexed registrants — the results list shows someone
+    // else, and the overlay's "Enter details manually" footer is the way out (the Bugbot case).
+    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
+
+    await gotoEditPage(page);
+    await openDetailsStep(page);
+
+    await page.getByTestId('meeting-details-organizer-search').locator('input').fill('Radia');
+    await page.getByRole('button', { name: 'Enter details manually' }).click();
+
+    // Manual mode swaps the search out for name/email inputs.
+    await expect(page.getByTestId('meeting-details-organizer-manual')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('meeting-details-organizer-search')).toHaveCount(0);
+
+    const nameInput = page.getByTestId('meeting-details-organizer-name-input').locator('input');
+    const emailInput = page.getByTestId('meeting-details-organizer-email-input').locator('input');
+    await nameInput.fill(MANUAL_OWNER.name);
+
+    // An invalid email must gate the step (Validators.email feeds isStepValid). The disabled
+    // state lives on the wrapper's inner native button, not the lfx-button host the testid is on.
+    const nextButton = page.getByTestId('meeting-manage-next-btn').locator('button');
+    await emailInput.fill('not-an-email');
+    await expect(nextButton).toBeDisabled();
+    await emailInput.fill(MANUAL_OWNER.email);
+    await expect(nextButton).toBeEnabled();
+
+    // The organizer label reacts to the typed values just like a search pick.
+    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${MANUAL_OWNER.name} (${MANUAL_OWNER.email})`);
+
+    await saveFromDetailsStep(page);
+
+    await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
+    // No username: a hand-typed identity is name+email only.
+    expect((captured.put as Record<string, unknown>)['owner']).toEqual({ name: MANUAL_OWNER.name, email: MANUAL_OWNER.email });
   });
 });

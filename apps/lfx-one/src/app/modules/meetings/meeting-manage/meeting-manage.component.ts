@@ -1234,6 +1234,7 @@ export class MeetingManageComponent {
           form.get('title')?.valid &&
           form.get('startDate')?.valid &&
           form.get('startTime')?.valid &&
+          (form.get('ownerEmail')?.valid ?? true) &&
           !form.errors?.['futureDateTime']
         );
 
@@ -1276,7 +1277,7 @@ export class MeetingManageComponent {
         // carries no avatar; upstream keeps the stored one when the owner key is omitted.
         ownerUsername: new FormControl<string | null>(null),
         ownerName: new FormControl<string | null>(null),
-        ownerEmail: new FormControl<string | null>(null),
+        ownerEmail: new FormControl<string | null>(null, [Validators.email]),
         isRecurring: new FormControl(false),
         recurrenceType: new FormControl('none'),
         patternTypeUI: new FormControl('weekly'),

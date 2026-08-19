@@ -278,17 +278,55 @@
       <!-- Meeting Organizer (owner) -->
       <div>
         <label for="meeting-organizer" class="block text-neutral-950 mb-2">Meeting Organizer <span class="text-gray-400 text-sm">(optional)</span></label>
-        <lfx-user-search
-          [form]="form()"
-          searchType="meeting_registrant"
-          emailControl="ownerEmail"
-          usernameControl="ownerUsername"
-          placeholder="Search for a user..."
-          styleClass="w-full"
-          inputStyleClass="w-full text-sm"
-          panelStyleClass="w-full"
-          dataTestId="meeting-details-organizer-search"
-          (onUserSelect)="handleOwnerSelection($event)"></lfx-user-search>
+        @if (!ownerManualEntry()) {
+          <lfx-user-search
+            [form]="form()"
+            searchType="meeting_registrant"
+            emailControl="ownerEmail"
+            usernameControl="ownerUsername"
+            placeholder="Search for a user..."
+            styleClass="w-full"
+            inputStyleClass="w-full text-sm"
+            panelStyleClass="w-full"
+            dataTestId="meeting-details-organizer-search"
+            (onUserSelect)="handleOwnerSelection($event)"
+            (onManualEntry)="switchToOwnerManualEntry()"></lfx-user-search>
+        } @else {
+          <div class="flex flex-col gap-3" data-testid="meeting-details-organizer-manual">
+            <button
+              type="button"
+              class="self-start text-sm text-primary hover:underline"
+              (click)="backToOwnerSearch()"
+              data-testid="meeting-details-organizer-back-to-search">
+              ← Back to search
+            </button>
+            <div class="flex flex-col gap-1">
+              <label for="organizer-name" class="block text-neutral-950 text-sm">Name</label>
+              <lfx-input-text
+                [form]="form()"
+                size="small"
+                control="ownerName"
+                id="organizer-name"
+                placeholder="Enter organizer name"
+                styleClass="w-full"
+                data-testid="meeting-details-organizer-name-input"></lfx-input-text>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="organizer-email" class="block text-neutral-950 text-sm">Email</label>
+              <lfx-input-text
+                [form]="form()"
+                size="small"
+                control="ownerEmail"
+                id="organizer-email"
+                placeholder="Enter organizer email"
+                styleClass="w-full"
+                data-testid="meeting-details-organizer-email-input"></lfx-input-text>
+              @if (form().get('ownerEmail')?.errors?.['email'] && form().get('ownerEmail')?.touched) {
+                <p class="text-sm text-red-600" role="alert" data-testid="meeting-details-organizer-email-error">Enter a valid email address</p>
+              }
+            </div>
+          </div>
+        }
         @if (selectedOwnerLabel()) {
           <p class="mt-1 text-sm text-gray-600" data-testid="meeting-details-organizer-selected">Current organizer: {{ selectedOwnerLabel() }}</p>
         }
