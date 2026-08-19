@@ -4,7 +4,6 @@ description: Frequently asked questions about mailing lists in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, faq, subscribe]
-last_generated: 2026-05-22
 last_updated: 2026-08-17
 intercom_collection: Mailing Lists
 ---

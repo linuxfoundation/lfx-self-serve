@@ -4,7 +4,6 @@ description: How to create a new committee for your project in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, create, governance]
-last_generated: 2026-05-22
 last_updated: 2026-08-19
 intercom_collection: Committees
 ---

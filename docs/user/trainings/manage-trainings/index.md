@@ -4,7 +4,6 @@ description: How to view and manage your training enrollments in LFX Self Serve.
 audience: [all]
 product_area: Trainings
 tags: [trainings, enrollments, manage, status]
-last_generated: 2026-05-22
 last_updated: 2026-08-19
 intercom_collection: Trainings
 ---

@@ -4,7 +4,6 @@ description: How to join a project meeting via the public LFX meeting link.
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, public, attendee]
-last_generated: 2026-05-22
 last_updated: 2026-08-10
 intercom_collection: Meetings
 ---

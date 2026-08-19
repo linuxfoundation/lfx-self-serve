@@ -4,7 +4,6 @@ description: Create polls, cast votes, and view results for project governance d
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
-last_generated: 2026-05-22
 last_updated: 2026-08-19
 intercom_collection: Votes
 ---

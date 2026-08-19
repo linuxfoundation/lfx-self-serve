@@ -3,7 +3,6 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_generated: 2026-05-22
 last_updated: 2026-08-19
 intercom_collection: Meetings
 ---

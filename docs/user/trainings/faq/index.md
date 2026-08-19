@@ -4,7 +4,6 @@ description: Frequently asked questions about training enrollments in LFX Self S
 audience: [all]
 product_area: Trainings
 tags: [trainings, faq, certifications, enrollments]
-last_generated: 2026-05-22
 last_updated: 2026-08-19
 intercom_collection: Trainings
 ---
