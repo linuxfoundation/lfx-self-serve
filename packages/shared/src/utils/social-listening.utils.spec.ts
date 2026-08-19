@@ -189,8 +189,9 @@ describe('buildMentionFilters', () => {
 });
 
 describe('small helpers', () => {
-  it('lowercases and dedupes keywords, preserving first-seen order', () => {
+  it('trims, lowercases, and dedupes keywords, preserving first-seen order', () => {
     expect(normalizeKeywords(['B', 'a', 'b', 'A'])).toEqual(['b', 'a']);
+    expect(normalizeKeywords([' ai ', 'ai', '  ', ''])).toEqual(['ai']);
     expect(normalizeKeywords([])).toEqual([]);
   });
 

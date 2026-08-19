@@ -234,13 +234,15 @@ export class SocialListeningAnalyticsComponent {
   private initStatCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const overview = this.overviewState().data;
+      const projectCount = overview?.CHILD_PROJECTS_COUNT ?? 0;
+      const projectNoun = projectCount === 1 ? 'project' : 'projects';
       return [
         {
           icon: 'fa-light fa-ear-listen',
           iconContainerClass: 'bg-blue-100 text-blue-600',
           label: 'Total Mentions',
           value: overview ? overview.TOTAL_MENTIONS.toLocaleString('en-US') : '0',
-          subLine: overview ? `across ${overview.CHILD_PROJECTS_COUNT} projects` : undefined,
+          subLine: overview ? `across ${projectCount} ${projectNoun}` : undefined,
           delta: buildAnalyticsDelta(overview?.TOTAL_MENTIONS_CHANGE_PCT ?? null),
         },
         {

@@ -39,14 +39,14 @@ import type {
 import type { StatCardDelta, StatCardDeltaDirection } from '../interfaces/stat-card.interface';
 import { capitalizeFirst } from './string.utils';
 
-/** Lowercases + dedupes keywords so filter state and payloads stay canonical. */
-export const normalizeKeywords = (keywords: string[]): string[] => [...new Set(keywords.map((keyword) => keyword.toLowerCase()))];
+/** Trims, lowercases + dedupes keywords so filter state and payloads stay canonical (the server trims at its boundary too). */
+export const normalizeKeywords = (keywords: string[]): string[] => [...new Set(keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean))];
 
 /**
  * Normalizes a raw Snowflake platform/network value to a `MentionPlatform` key (`'X'` → twitter).
  * `Object.hasOwn` (not `in`) so prototype keys like `'constructor'` can't pass the check.
  */
-export function normalizePlatformKey(network: string): MentionPlatform {
+export function normalizePlatformKey(network: string | null): MentionPlatform {
   const normalized = (network || '').toLowerCase().trim().replace(/\s/g, '');
   if (normalized === 'x') return 'twitter';
   if (Object.hasOwn(MENTION_PLATFORM_CONFIG, normalized)) return normalized as MentionPlatform;
@@ -294,7 +294,8 @@ export function mapSentimentRows(rows: SocialListeningSentimentDistribution[]): 
  * value (PCC parity), `inverted` flips colors where an increase is bad. Undefined = no delta line.
  */
 export function buildAnalyticsDelta(changePct: number | null, inverted = false): StatCardDelta | undefined {
-  if (changePct === null) return undefined;
+  // isFinite also rejects NaN/Infinity, which a 0-mention previous window can produce upstream.
+  if (changePct === null || !Number.isFinite(changePct)) return undefined;
   let direction: StatCardDeltaDirection = 'flat';
   if (changePct > 0) direction = 'up';
   else if (changePct < 0) direction = 'down';
@@ -302,7 +303,7 @@ export function buildAnalyticsDelta(changePct: number | null, inverted = false):
   return { label: `${sign}${Math.abs(changePct).toFixed(1)}% vs last period`, direction, inverted };
 }
 
-function buildTags(tagsStr: string): string[] {
+function buildTags(tagsStr: string | null): string[] {
   if (!tagsStr) {
     return [];
   }
@@ -312,7 +313,7 @@ function buildTags(tagsStr: string): string[] {
     .filter(Boolean);
 }
 
-function mapRelevance(score: string): MentionRelevance {
+function mapRelevance(score: string | null): MentionRelevance {
   const normalized = (score || '').toLowerCase().trim();
   if (normalized === 'high' || normalized === 'low') {
     return normalized;

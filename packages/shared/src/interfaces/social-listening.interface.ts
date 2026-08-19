@@ -21,7 +21,10 @@ export type SocialListeningTab = 'feed' | 'analytics';
 // Snowflake row shapes (UPPER_SNAKE, as returned by ANALYTICS.PLATINUM.SOCIAL_LISTENING_FEED)
 // ---------------------------------------------------------------------------
 
-/** Raw feed row. PCC's `BOOKMARKED` (deferred follow-up) and index signature (defeats excess-property checking) are deliberately not ported. */
+/**
+ * Raw feed row. PCC's `BOOKMARKED` (deferred follow-up) and index signature (defeats excess-property checking) are deliberately not ported.
+ * Columns `mapRawToMention` absorbs with `|| ''` are typed nullable — Snowflake emits NULLs (e.g. `TITLE IS NULL` is a supported filter).
+ */
 export interface SocialListeningMention {
   MENTION_ID: string;
   PROJECT_ID: string;
@@ -29,24 +32,24 @@ export interface SocialListeningMention {
   PROJECT_SLUG: string;
   SOURCE_PROJECT_ID: string;
   SOURCE_PROJECT_NAME: string;
-  TITLE: string;
-  BODY: string;
-  AUTHOR: string;
-  AUTHOR_PROFILE_LINK: string;
-  SOURCE_PLATFORM: string;
-  SOCIAL_NETWORK: string;
+  TITLE: string | null;
+  BODY: string | null;
+  AUTHOR: string | null;
+  AUTHOR_PROFILE_LINK: string | null;
+  SOURCE_PLATFORM: string | null;
+  SOCIAL_NETWORK: string | null;
   SENTIMENT: string | null;
-  RELEVANCE_SCORE: string;
-  RELEVANCE_COMMENT: string;
-  URL: string;
-  IMAGE_URL: string;
-  SUBREDDIT: string;
+  RELEVANCE_SCORE: string | null;
+  RELEVANCE_COMMENT: string | null;
+  URL: string | null;
+  IMAGE_URL: string | null;
+  SUBREDDIT: string | null;
   VIEW_NAME: string;
-  MENTION_TS: string;
-  KEYWORD: string;
-  LANGUAGE: string;
+  MENTION_TS: string | null;
+  KEYWORD: string | null;
+  LANGUAGE: string | null;
   /** Comma-separated tag list — split client-side in mapRawToMention. */
-  TAGS: string;
+  TAGS: string | null;
   COMPUTED_AT?: string;
 }
 
