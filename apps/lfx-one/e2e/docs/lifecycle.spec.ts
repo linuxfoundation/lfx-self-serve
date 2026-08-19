@@ -41,9 +41,7 @@ test.describe('Docs portal — content lifecycle (US6)', () => {
 
     // On a miss the not-found view renders inline at the original URL (no
     // redirect); SSR emits a real 404 there via the render-context flag.
-    if (response) {
-      expect(response.status()).toBe(404);
-    }
+    expect(response?.status()).toBe(404);
     await expect(page).toHaveURL(/\/docs\/this-article-was-renamed$/);
     await expect(page.getByTestId('docs-not-found')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
