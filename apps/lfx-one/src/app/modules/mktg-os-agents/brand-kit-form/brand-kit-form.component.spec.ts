@@ -295,4 +295,26 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
     vi.advanceTimersByTime(POLL_INTERVAL_MS * 10);
     expect(getResult).toHaveBeenCalledTimes(4);
   });
+
+  it('caps success-path persistence retries at 1 + 3 polls when every ready response is receipt-less', () => {
+    // Every poll succeeds with a receipt-less ready — no error is ever thrown,
+    // so only the ready-branch guard (`persistRetries >= PERSIST_RETRY_MAX_ATTEMPTS`)
+    // can end the loop. This is the bucket-intentionally-unconfigured
+    // environment: bounded retries, then stop (PR #1442 round-3 finding).
+    getResult.mockReturnValue(of(READY_WITHOUT_RECEIPT));
+
+    submitForm();
+    expect(getResult).toHaveBeenCalledTimes(1);
+    expect(resultSignal()).toEqual(READY_WITHOUT_RECEIPT);
+
+    // 3 bounded background retries fire; the 4th response arrives with the
+    // budget spent and schedules nothing — no 5th call, ever.
+    vi.advanceTimersByTime(POLL_INTERVAL_MS * 10);
+    expect(getResult).toHaveBeenCalledTimes(4);
+
+    // The document stays displayed and no error surfaces on this path.
+    expect(resultSignal()).toEqual(READY_WITHOUT_RECEIPT);
+    const errorMessage = (fixture.componentInstance as unknown as { errorMessage: () => string }).errorMessage();
+    expect(errorMessage).toBe('');
+  });
 });

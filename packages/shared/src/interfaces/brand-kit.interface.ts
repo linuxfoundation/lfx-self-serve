@@ -99,6 +99,9 @@ export type BrandKitResultRequest = MktgRunResultBody;
  * Receipt of a successful Brand Kit persistence write (dec-brand-kit-storage-v2).
  * Carries exactly the fields needed for later Artifact metadata minting
  * (deferred behind wi-lfx-one-service-actor) — no graph writes happen now.
+ * Field names are snake_case (unlike the camelCase enclosing response) on
+ * purpose: they mirror the downstream Artifact contract verbatim so minting
+ * needs no normalization layer — do not camelCase them.
  */
 export interface BrandKitPersistReceipt {
   /** Content-addressed object key: brand-kit/{project}/{content_sha256}.md. */
@@ -118,9 +121,11 @@ export interface BrandKitPersistReceipt {
  * `pending` until the session emits a valid envelope; then `ready` with the
  * validated document. On `ready` the BFF also persists the document to
  * versioned object storage (the dec-brand-kit-storage-v2 write path) and
- * reports the receipt; a missing `persistence` on a `ready` response means
- * the write failed and will be retried on the next poll (content-addressed
- * keys make retries idempotent).
+ * reports the receipt. A missing `persistence` on a `ready` response has two
+ * causes: the write failed and will be retried on the next poll
+ * (content-addressed keys make retries idempotent), or the document exceeds
+ * `BRAND_KIT_MAX_DOCUMENT_BYTES` and is excluded from persistence — a
+ * permanent condition no retry resolves.
  * Extends the generic run-flow result (status/documentMarkdown/version) the
  * form-first run shell polls, adding brand-kit envelope provenance fields.
  */
