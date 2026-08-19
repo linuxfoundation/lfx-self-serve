@@ -2182,9 +2182,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditGeoTargets: { set(v: string[]): void; (): string[] };
     redditBudgetUsd: () => number;
     metaVariants: { set(v: unknown[]): void; (): unknown[] };
-    setLinkedInBudget(value: number): void;
-    setLinkedInLifetimeBudget(value: boolean): void;
-    onRedditBudgetInput(event: Event): void;
     emitDraft(): void;
     submit(): void;
   }
@@ -2217,11 +2214,35 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
   }
 
-  /** Drive the real `(input)` binding rather than the signal, so the handler's emit is exercised. */
+  /**
+   * Drive the REAL template bindings rather than the signals or any `set*` convenience method.
+   *
+   * This is the whole point of these three. The template binds `(input)`/`(change)` to
+   * `onLinkedInBudgetInput` and `onLinkedInLifetimeBudgetChange`; a test driving a `set*` helper
+   * instead stays green while `emitDraft()` is missing from the LIVE handler, leaving the
+   * production regression path uncovered. That trap already cost this file once — see the note at
+   * the removed `setLinkedInAccount`, which only a test ever called.
+   */
   function typeRedditBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
     const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]') as HTMLInputElement;
     input.value = String(value);
     input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function typeLinkedInBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-linkedin-budget"]') as HTMLInputElement;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** The lifetime-budget checkbox carries no testid; it is the checkbox beside the budget input. */
+  function toggleLinkedInLifetimeBudget(f: ComponentFixture<ImplementationTabComponent>, checked: boolean): void {
+    const budget = f.nativeElement.querySelector('[data-testid="implementation-linkedin-budget"]') as HTMLInputElement;
+    const box = budget.closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    box.checked = checked;
+    box.dispatchEvent(new Event('change'));
     f.detectChanges();
   }
 
@@ -2334,15 +2355,15 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   // === LinkedIn: the budget pair and the variants ===
 
   /**
-   * Driven through `setLinkedInBudget` / `setLinkedInLifetimeBudget`, the handlers the template
-   * calls. The budget pair's loss is measured in money — a silent revert puts the campaign back
+   * Driven through the template's own `(input)` and `(change)` bindings. The budget pair's loss
+   * is measured in money — a silent revert puts the campaign back
    * to $500 daily, a spend decision the operator did not make and the form does not show them
    * re-making.
    */
   it('carries the linkedin budget pair through a tab round-trip and into the request', async () => {
     const first = await mount(null);
-    at(first.fixture).setLinkedInBudget(2500);
-    at(first.fixture).setLinkedInLifetimeBudget(true);
+    typeLinkedInBudget(first.fixture, 2500);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
     const draft = first.latest();
     first.fixture.destroy();
 
@@ -2436,14 +2457,14 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   it('emits the draft when the linkedin budget handler runs', async () => {
     const first = await mount(null);
-    at(first.fixture).setLinkedInBudget(1750);
+    typeLinkedInBudget(first.fixture, 1750);
 
     expect(first.latest()?.linkedInBudgetUsd).toBe(1750);
   });
 
   it('emits the draft when the linkedin lifetime-budget handler runs', async () => {
     const first = await mount(null);
-    at(first.fixture).setLinkedInLifetimeBudget(true);
+    toggleLinkedInLifetimeBudget(first.fixture, true);
 
     expect(first.latest()?.linkedInLifetimeBudget).toBe(true);
   });

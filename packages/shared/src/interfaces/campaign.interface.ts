@@ -414,7 +414,7 @@ export interface CampaignImplementationDraft {
   /**
    * Meta settings as edited, and the reason this snapshot is not "the form fields only".
    *
-   * These four live in component SIGNALS rather than in `campaignForm`, so the
+   * These live in component SIGNALS rather than in `campaignForm`, so the
    * `campaignForm.valueChanges` subscription that drives every other field here never sees them.
    * The parent destroys this component on a tab switch (`@switch`/`@case` in
    * `campaigns.component.html`), so without them a user who selects Conversions, enters a pixel,
@@ -464,10 +464,21 @@ export interface CampaignImplementationDraft {
    * $500 with no subreddits, no interests, no keywords, no geos and no ad variants, and
    * `submit()` reads every one of them.
    *
-   * The four targeting lists are read through `redditEffective*` computeds that fall back to the
-   * brief's keywords and the form's country code, so a lost list does not render as empty — it
-   * renders as a DIFFERENT, plausible targeting set. That is why they are carried rather than
-   * left to be re-derived.
+   * Several of the targeting lists reach `submit()` through a FALLBACK rather than directly — a
+   * `redditEffective*` computed for geos and subreddits, an inline `briefKeywords` substitution
+   * for keywords. Described by shape rather than counted, because the set of fields with a
+   * fallback has already changed once and a number here would quietly go stale.
+   *
+   * The fallback is what makes the loss dangerous: a dropped list does not render as EMPTY, it
+   * renders as a DIFFERENT, plausible targeting set the operator never chose. That is why these
+   * are carried rather than left to be re-derived.
+   *
+   * Carried even though most of them currently have no editor in the template, and "the brief
+   * re-seeds them on every remount anyway" does NOT make that redundant: the seed is CONDITIONAL
+   * (`populateFromBrief` writes them only under `if (redditCopy)` / `if (brief.redditCopy)`), so a
+   * brief carrying neither re-seeds nothing and an unrestored value is simply gone. The restore
+   * also has to run AFTER the seed for an edit to win over it, which is the ordering the
+   * constructor effect implements.
    */
   redditVariants?: RedditAdVariant[];
   redditSubreddits?: string[];
@@ -476,7 +487,7 @@ export interface CampaignImplementationDraft {
   redditGeoTargets?: string[];
   redditBudgetUsd?: number;
   /**
-   * Meta ad copy, the one member of the Meta block that was not carried with the other six.
+   * Meta ad copy, the one member of the Meta block that shipped without the rest of it.
    * `canSubmit` requires a variant with both a primary text and a headline, so this has the same
    * blocks-submit consequence as `linkedInVariants`.
    */

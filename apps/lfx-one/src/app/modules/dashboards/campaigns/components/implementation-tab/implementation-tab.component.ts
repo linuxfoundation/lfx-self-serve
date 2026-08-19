@@ -820,19 +820,12 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
-  // Every handler below emits, on the same rule the Meta handlers state: these signals are
-  // invisible to `campaignForm.valueChanges`, so a mutation that does not call `emitDraft` never
-  // reaches the parent and the edit dies at the next tab switch. Naming the field in `emitDraft`
-  // is only half of it — a carried field whose handler never emits is still lost.
-  protected setLinkedInLifetimeBudget(value: boolean): void {
-    this.linkedInLifetimeBudget.set(value);
-    this.emitDraft();
-  }
-
-  protected setLinkedInBudget(value: number): void {
-    this.linkedInBudgetUsd.set(value);
-    this.emitDraft();
-  }
+  // `setLinkedInBudget` and `setLinkedInLifetimeBudget` were removed here (LFXV2-3230), for the
+  // same reason `setLinkedInAccount` was: nothing called them. The template binds `(input)` and
+  // `(change)` to `onLinkedInBudgetInput` / `onLinkedInLifetimeBudgetChange` below, and no spec
+  // reached the setters either. Adding this ticket's `emitDraft()` call to a dead method would
+  // have made the round-trip look covered while the LIVE handler stayed unfixed — the exact trap
+  // the `setLinkedInAccount` note describes, so the tests now drive the real bindings instead.
 
   // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
   // called it — only a test did, which made the test pass against a broken `(change)` binding.
@@ -848,6 +841,10 @@ export class ImplementationTabComponent implements OnInit {
     select.value = '';
   }
 
+  // Every handler below emits, on the same rule the Meta handlers state: these signals are
+  // invisible to `campaignForm.valueChanges`, so a mutation that does not call `emitDraft` never
+  // reaches the parent and the edit dies at the next tab switch. Naming the field in `emitDraft`
+  // is only half of it — a carried field whose handler never emits is still lost.
   protected onLinkedInBudgetInput(event: Event): void {
     this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
     this.emitDraft();
@@ -885,8 +882,9 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
-    // The only Reddit control the template binds. The platform's other five carried values are
-    // brief-derived and have no editor, so this is the one door a Reddit edit comes through.
+    // The only Reddit control the template binds today, so this is the one door a Reddit edit
+    // comes through. Deliberately not enumerating the platform's other carried values — a count
+    // here is a claim the next editor added to the template falsifies.
     this.emitDraft();
   }
 
