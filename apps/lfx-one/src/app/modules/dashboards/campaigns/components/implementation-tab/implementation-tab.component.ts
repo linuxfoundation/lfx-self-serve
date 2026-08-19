@@ -13,6 +13,14 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
+  META_DEFAULT_PLACEMENTS,
+  META_MESSENGER_INBOX_RETIRED_REASON,
+  META_NUMERIC_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_PLACEMENT_LABELS,
+  META_SELECTABLE_PLACEMENTS,
+  META_INELIGIBLE_COUNTRIES,
+  normalizeGeoTargets,
   CAMPAIGN_PLATFORMS,
   REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
@@ -36,6 +44,8 @@ import type {
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   MetaAdVariant,
+  MetaObjective,
+  MetaPlacement,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -174,6 +184,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
+  protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
+  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
+  protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
+  protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
@@ -279,6 +294,23 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
   protected readonly metaLifetimeBudget = signal(false);
+  /**
+   * Meta campaign objective. Defaults to `traffic`, matching what campaign-service assumes when
+   * the field is absent, so turning the selector on does not silently change any existing
+   * caller's campaign.
+   */
+  protected readonly metaObjective = signal<MetaObjective>('traffic');
+  /**
+   * Placement toggles, seeded from the shared defaults so the initial state is the one the
+   * service would have applied anyway.
+   *
+   * Typed `MetaPlacement` (complete), not `Partial`, because the UI holds a definite answer for
+   * every key it renders. Only the entries that DIFFER from the defaults are sent — placements
+   * merge per-field upstream, so an override-only payload is both correct and smaller.
+   */
+  protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
+  /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
+  protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
@@ -347,7 +379,79 @@ export class ImplementationTabComponent implements OnInit {
       .filter((sub) => sub.length > 0)
   );
 
+  /**
+   * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
+   *
+   * They were derived separately, and that is what let them disagree: the preview printed
+   * `countryCode` raw while `submit()` sent `[countryCode]` through the server's normaliser. With
+   * `countryCode` blank (it carries no validator) the preview read "defaults to " and the request
+   * carried `['']`, which the server resolved to `US` — a paid US-targeted campaign the operator
+   * was never shown. Deriving both from here means the screen cannot claim one target while the
+   * request buys another.
+   *
+   * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
+   * blocks on it rather than letting the server pick a country on the operator's behalf.
+   */
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = normalizeGeoTargets(this.metaGeoTargets());
+    const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+    if (eligibleChips.length > 0) return eligibleChips;
+    return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  });
+
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
+
+  /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
+  protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
+
+  /**
+   * Whether at least one SELECTABLE placement is on.
+   *
+   * Mirrors campaign-service's `buildPlacementTargeting`, which refuses a request whose
+   * `publisher_platforms` list comes out empty. `messengerInbox` is excluded from the count
+   * because it cannot contribute a platform there either — it is rejected outright before the
+   * emptiness check is even reached — so counting it would let the UI pass a config the service
+   * fails twice over.
+   */
+  protected readonly metaHasPlacement = computed(() => {
+    const placements = this.metaPlacements();
+    return this.metaSelectablePlacements.some((key) => placements[key]);
+  });
+
+  /**
+   * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
+   * needs to carry: campaign-service merges the override map field-by-field over the same
+   * defaults, so an omitted key and a key repeating the default are indistinguishable upstream.
+   *
+   * `messengerInbox` can never appear. It is `false` in the defaults and no code path sets it
+   * `true`, so the difference filter drops it — the payload cannot carry the one value the
+   * service rejects outright.
+   */
+  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => {
+    const placements = this.metaPlacements();
+    const overrides: Partial<MetaPlacement> = {};
+    for (const key of Object.keys(placements) as (keyof MetaPlacement)[]) {
+      if (placements[key] !== META_DEFAULT_PLACEMENTS[key]) overrides[key] = placements[key];
+    }
+    return overrides;
+  });
+
+  /**
+   * Whether the pixel id is acceptable for the CURRENT objective.
+   *
+   * True whenever no pixel is required, because a stale value left in the box after switching
+   * away from `conversions` is not sent and cannot fail. Under `conversions` the id must be
+   * non-empty AND numeric: campaign-service's `buildPromotedObject` applies exactly these two
+   * checks, and it applies them BEFORE any mutating call — so catching a malformed id here
+   * changes nothing about the outcome, only about whether the user waits for a round trip to
+   * hear it. Trimmed first because upstream trims before both checks, so `' '` must read as
+   * empty here too rather than passing a truthiness test locally and being refused there.
+   */
+  protected readonly metaPixelValid = computed(() => {
+    if (!this.metaRequiresPixel()) return true;
+    const trimmed = this.metaPixelId().trim();
+    return trimmed !== '' && META_NUMERIC_ID_PATTERN.test(trimmed);
+  });
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -371,6 +475,10 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
+    // would otherwise carry nothing and let the server default to US — spending on a country the
+    // operator neither chose nor saw.
+    if (metaSelected && this.metaEffectiveGeoTargets().length === 0) return false;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
@@ -386,6 +494,8 @@ export class ImplementationTabComponent implements OnInit {
     // reachable by clearing one optional field.
     if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+    if (metaSelected && !this.metaHasPlacement()) return false;
+    if (metaSelected && !this.metaPixelValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -611,6 +721,7 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaBudgetInput(event: Event): void {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   /**
@@ -639,6 +750,72 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
+  }
+
+  protected onMetaObjectiveChange(event: Event): void {
+    this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
+    // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
+    // without this the parent's draft never learns the edit and a tab switch reverts it.
+    this.emitDraft();
+  }
+
+  /**
+   * Toggle one placement.
+   *
+   * Refuses any key outside `META_SELECTABLE_PLACEMENTS`, which is what keeps `messengerInbox`
+   * unsettable even if a future template change bound a live control to it. The template renders
+   * that toggle disabled, but a disabled input is a presentation guarantee, not a state one.
+   */
+  protected onMetaPlacementChange(key: keyof MetaPlacement, event: Event): void {
+    if (!this.metaSelectablePlacements.includes(key)) return;
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
+    this.emitDraft();
+  }
+
+  protected onMetaPixelIdInput(event: Event): void {
+    this.metaPixelId.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
+  }
+
+  protected removeMetaGeoTarget(index: number): void {
+    this.metaGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one Meta geo target, normalised through the shared `normalizeGeoTargets`.
+   *
+   * Runs the WHOLE list through the helper rather than just the new code, so an already-seeded
+   * chip list is normalised on first add too. Both the seed path and the server's
+   * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
+   * to one chip and one wire entry no matter which door they came through.
+   *
+   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `acceptedMetaGeos`.
+   * Eligibility is checked at every door rather than only at this one: a chip the operator can
+   * SEE must be a chip the request will BUY. `metaEffectiveGeoTargets` filters ineligible codes
+   * out of the dispatch, so a code displayed but not dispatched is precisely the display/dispatch
+   * divergence that computed exists to prevent.
+   *
+   * COMPLIANCE remains the service's call — it additionally drops regulated markets via
+   * `REGULATED_COUNTRIES`, and duplicating that list here would only let it drift.
+   */
+  protected addMetaGeoTarget(code: string): void {
+    // Ineligible codes are refused at the chip rather than accepted and dropped later. `IR`, `CU`
+    // and the uninhabited territories are ASSIGNED, so `normalizeGeoTargets` passes them, but Meta
+    // will not target them — and on the legacy path that rejection lands at the ad set, after the
+    // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
+    // which path runs.
+    if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
+    this.metaGeoTargets.update((targets) => this.acceptedMetaGeos([...targets, code]));
+    this.emitDraft();
+  }
+
+  protected onMetaGeoTargetAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMetaGeoTarget(input.value);
+    input.value = '';
   }
 
   protected submit(): void {
@@ -729,8 +906,16 @@ export class ImplementationTabComponent implements OnInit {
               lifetimeBudget: this.metaLifetimeBudget(),
               startDate: form.startDate,
               endDate: form.endDate,
-              geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
+              // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
+              geoTargets: this.metaEffectiveGeoTargets(),
               variants: this.metaVariants(),
+              objective: this.metaObjective(),
+              placements: this.metaPlacementOverrides(),
+              // Sent only under `conversions`. Under every other objective the promoted object is
+              // a page id or nothing at all, so an id left in the box from an earlier selection
+              // would be a field the service ignores — and one a reader of the payload would
+              // reasonably take as meaningful. Trimmed to match the upstream trim.
+              ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -791,6 +976,24 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
+  /**
+   * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
+   *
+   * Every path that WRITES `metaGeoTargets` routes through here: the chip add, the brief seed and
+   * the draft restore. Previously only the chip add checked eligibility, so a brief recommending
+   * `IR` — or a draft carrying one — rendered a chip that `metaEffectiveGeoTargets` then filtered
+   * out of the request. The empty-state warning is gated on `metaGeoTargets().length === 0`, so a
+   * surviving ineligible chip suppressed it, and `canSubmit` passed on the `countryCode` fallback:
+   * the operator read `IR` on screen and bought a US campaign.
+   *
+   * Eligibility belongs on the WRITE rather than only on the read so the two cannot disagree.
+   * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
+   * reads, and a guard there costs nothing.
+   */
+  private acceptedMetaGeos(codes: readonly string[]): string[] {
+    return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
   private applyDraft(): void {
     const draft = this.draft();
     if (!draft) return;
@@ -827,6 +1030,30 @@ export class ImplementationTabComponent implements OnInit {
     // headline for no gain. The single patch above is enough to settle every derived signal.
     this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
     this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
+
+    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
+    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
+    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
+    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
+    // which is exactly the distinction `undefined` preserves and `''` would destroy.
+    if (draft.metaObjective !== undefined) {
+      this.metaObjective.set(draft.metaObjective);
+    }
+    if (draft.metaPlacements !== undefined) {
+      this.metaPlacements.set({ ...draft.metaPlacements });
+    }
+    if (draft.metaPixelId !== undefined) {
+      this.metaPixelId.set(draft.metaPixelId);
+    }
+    if (draft.metaGeoTargets !== undefined) {
+      this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
+    }
+    if (draft.metaBudgetUsd !== undefined) {
+      this.metaBudgetUsd.set(draft.metaBudgetUsd);
+    }
+    if (draft.metaLifetimeBudget !== undefined) {
+      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
+    }
   }
 
   /**
@@ -876,6 +1103,15 @@ export class ImplementationTabComponent implements OnInit {
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
       eventSlug: form.eventSlug,
+      // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
+      // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
+      // the parent holds a value, not a live view of a signal this component is about to destroy.
+      metaObjective: this.metaObjective(),
+      metaPlacements: { ...this.metaPlacements() },
+      metaPixelId: this.metaPixelId(),
+      metaGeoTargets: [...this.metaGeoTargets()],
+      metaBudgetUsd: this.metaBudgetUsd(),
+      metaLifetimeBudget: this.metaLifetimeBudget(),
     });
   }
 
@@ -969,10 +1205,10 @@ export class ImplementationTabComponent implements OnInit {
         }))
       );
       const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
+      this.metaGeoTargets.set(this.acceptedMetaGeos(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
     } else if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
+      this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
     this.briefKeywords.set(brief.keywords);
