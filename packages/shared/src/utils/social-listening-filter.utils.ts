@@ -13,6 +13,7 @@ import {
   DEFAULT_MENTION_VIEW_SCOPE,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_RELEVANCE_OPTIONS,
+  MENTION_SEARCH_MIN_CHARS,
   MENTION_SENTIMENT_OPTIONS,
   SOCIAL_LISTENING_QUERY_PARAMS,
 } from '../constants/social-listening.constants';
@@ -51,6 +52,12 @@ export function applyPredicateToSignals(p: FilterPredicate, s: SocialListeningSi
   s.selectedTags.set([...p.tags]);
   s.selectedAuthors.set([...p.authors]);
   s.searchInput.set(p.search);
+}
+
+/** Trims and applies the min-chars gate — below `MENTION_SEARCH_MIN_CHARS` the search is treated as absent. */
+export function normalizeMentionSearch(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length >= MENTION_SEARCH_MIN_CHARS ? trimmed : '';
 }
 
 export function viewScopeFromSignals(s: SocialListeningScopeSignals): SavedViewScope {

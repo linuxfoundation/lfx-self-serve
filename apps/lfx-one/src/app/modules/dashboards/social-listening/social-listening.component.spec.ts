@@ -207,7 +207,7 @@ describe('SocialListeningComponent', () => {
       expect(mentionIds()[0]).toBe('m120');
     });
 
-    it('gives up after one auto-refetch when the phase-2 fill keeps failing', async () => {
+    it('flags the window for manual retry when the phase-2 fill keeps failing, and retry recovers it', async () => {
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
         req.offset === 120 ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
       );
@@ -215,9 +215,19 @@ describe('SocialListeningComponent', () => {
       fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
       await settle();
 
-      // One failed fill + one failed refetch, then no further attempts — the window stays evicted.
+      // One failed fill + one failed refetch — then the partial window stays cached, flagged for manual retry.
       expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
-      expect(cachedWindows()).toEqual([0]);
+      expect(cachedWindows()).toEqual([0, 1]);
+      expect(fixture.componentInstance.phase2Failed()).toBe(true);
+
+      // Manual retry clears the flag and re-runs the window fetch, recovering the window.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => of(feedResponse(req)));
+      fixture.componentInstance.retryWindow();
+      await settle();
+
+      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(3);
+      expect(fixture.componentInstance.phase2Failed()).toBe(false);
+      expect(mentionIds()[0]).toBe('m100');
     });
   });
 
@@ -272,6 +282,30 @@ describe('SocialListeningComponent', () => {
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(currentParams['authors']).toEqual(['Last, First']);
       expect(fixture.componentInstance.selectedAuthors()).toEqual(['Last, First']);
+    });
+
+    it('seeds the first fetch from a deep-linked ?q= — no unfiltered flash or refire', async () => {
+      // Rebuild the component with the deep link already in the URL (the seed reads the snapshot at construction).
+      fixture.destroy();
+      currentParams = { q: 'mesh' };
+      queryParams$.next(currentParams);
+      getMentionsFeed.mockClear();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      // Phase 1 already carries the search — no unfiltered first fetch.
+      expect(feedCalls()).toEqual([
+        expect.objectContaining({ limit: 20, offset: 0, search: 'mesh' }),
+        expect.objectContaining({ limit: 80, offset: 20, search: 'mesh' }),
+      ]);
+      expect(fixture.componentInstance.searchInput()).toBe('mesh');
+
+      // Past the debounce window the seeded value is unchanged — no second fire.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await settle();
+      expect(getMentionsFeed).toHaveBeenCalledTimes(2);
+      expect(currentParams['q']).toBe('mesh');
     });
 
     it('keeps a deep-linked ?search= in the URL while the debounced query catches up', async () => {

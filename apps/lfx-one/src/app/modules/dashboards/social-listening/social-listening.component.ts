@@ -34,6 +34,7 @@ import {
   mapRawToMention,
   mapSubProjectsToOptions,
   mergeSelectedAuthors,
+  normalizeMentionSearch,
   predicatesEqual,
   predicateFromSignals,
   queryParamsEqual,
@@ -115,13 +116,15 @@ export class SocialListeningComponent {
 
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
   private readonly serverWindowSize = MENTION_SERVER_WINDOW_SIZE;
+  /** Deep-linked search, decoded once — seeds the input and the debounced query so the first fetch is already filtered. */
+  private readonly initialSearch = decodePredicateFromQueryParams(this.route.snapshot.queryParams, this.defaultPeriod).predicate.search;
 
   // === Model signals (two-way bound by the feed header) ===
   public readonly activeTab = signal<SocialListeningTab>('feed');
   public readonly selectedPeriod = signal(this.defaultPeriod);
   public readonly selectedProject = signal('all');
   public readonly selectedPlatform = signal('all');
-  public readonly searchInput = signal('');
+  public readonly searchInput = signal(this.initialSearch);
 
   // === Filter signals (wired into the predicate now; the filters panel UI lands in LFXV2-3017) ===
   public readonly selectedSentiment = signal('all');
@@ -221,6 +224,8 @@ export class SocialListeningComponent {
     return this.backgroundLoading() || this.feedState().loading;
   });
   public readonly error = computed(() => this.feedState().error);
+  /** Current window's background fill failed past its automatic retry — the list swaps the empty state for a retry row. */
+  public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
   public readonly first = computed(() => this.currentPage() * this.pageSize());
   public readonly mentions: Signal<Mention[]> = this.initMentions();
   public readonly dataComputedAt: Signal<Date | null> = this.initDataComputedAt();
@@ -379,6 +384,16 @@ export class SocialListeningComponent {
     this.pageSize.set(event.rows);
   }
 
+  /** Manual retry of a phase-2-failed window: clears the flag, and the tick re-runs the fetch pipeline. */
+  public retryWindow(): void {
+    const windowIdx = this.windowIndex();
+    const entry = this.windowCache().get(windowIdx);
+    if (entry?.phase2Failed) {
+      this.windowCache.update((cache) => new Map(cache).set(windowIdx, { ...entry, phase2Failed: false }));
+    }
+    this.feedRetryTick.update((tick) => tick + 1);
+  }
+
   /** Arms the deferred filter-option fetches on hover/focus so the round-trip hides behind the intent→click gap (PCC port). */
   public prefetchFilterOptions(): void {
     if (!this.filtersOpenedOnce()) {
@@ -425,17 +440,12 @@ export class SocialListeningComponent {
   }
 
   private initSearchQuery(): Signal<string> {
-    return toSignal(
-      toObservable(this.searchInput).pipe(
-        debounceTime(MENTION_SEARCH_DEBOUNCE_MS),
-        map((value) => {
-          const trimmed = value.trim();
-          return trimmed.length >= MENTION_SEARCH_MIN_CHARS ? trimmed : '';
-        }),
-        distinctUntilChanged()
-      ),
-      { initialValue: '' }
-    );
+    // Seeded from the deep link so the first feed+count already carry `search` — waiting out the
+    // debounce would fire an unfiltered fetch and flash unfiltered rows.
+    const seeded = normalizeMentionSearch(this.initialSearch);
+    return toSignal(toObservable(this.searchInput).pipe(debounceTime(MENTION_SEARCH_DEBOUNCE_MS), map(normalizeMentionSearch), distinctUntilChanged()), {
+      initialValue: seeded,
+    });
   }
 
   private initCurrentFilters(): Signal<MentionFilters> {
@@ -530,15 +540,16 @@ export class SocialListeningComponent {
                   });
                 }),
                 ignoreElements(),
-                // Drop the half-filled window, then force one refetch — in-window paging never re-emits
-                // feedRequest, so without the tick the window's later pages stay empty until a revisit.
-                // A stale window's failure must not consume the live filter set's one retry.
+                // First failure: evict and force one refetch (in-window paging never re-emits feedRequest); a
+                // second keeps the partial window flagged for manual retry. Stale failures skip both.
                 catchError(() => {
                   if (cacheKey === untracked(this.feedCacheKey)) {
-                    this.evictWindowCache(windowIdx);
                     if (!this.retriedWindows.has(windowIdx)) {
                       this.retriedWindows.add(windowIdx);
+                      this.evictWindowCache(windowIdx);
                       this.feedRetryTick.update((tick) => tick + 1);
+                    } else {
+                      this.flagWindowFailed(windowIdx, cacheKey);
                     }
                   }
                   return EMPTY;
@@ -548,8 +559,13 @@ export class SocialListeningComponent {
 
               return merge(of(phase1State), phase2$);
             }),
-            catchError((err) =>
-              of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: err?.message || 'Failed to load mentions', data: EMPTY_FEED_RESPONSE })
+            // Friendly copy at the write site — the raw HttpErrorResponse text ("500 OK") means nothing to users.
+            catchError(() =>
+              of<LoadableState<SocialListeningFeedResponse>>({
+                loading: false,
+                error: "Mentions couldn't be loaded. Try again or widen the filters.",
+                data: EMPTY_FEED_RESPONSE,
+              })
             ),
             startWith<LoadableState<SocialListeningFeedResponse>>({ loading: true, error: null, data: EMPTY_FEED_RESPONSE })
           );
@@ -723,6 +739,17 @@ export class SocialListeningComponent {
       if (!timestamp) return null;
       const date = new Date(timestamp);
       return isNaN(date.getTime()) ? null : date;
+    });
+  }
+
+  /** Keeps the partial window but flags it, so the list offers a retry row instead of a bare empty state. */
+  private flagWindowFailed(windowIdx: number, cacheKey: string): void {
+    const previous = this.windowCache().get(windowIdx);
+    this.updateWindowCache(windowIdx, cacheKey, {
+      mentions: previous?.mentions ?? [],
+      computedAt: previous?.computedAt ?? null,
+      complete: false,
+      phase2Failed: true,
     });
   }
 

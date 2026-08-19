@@ -256,6 +256,8 @@ export interface SocialListeningCountResponse {
 /** A cached feed window. `complete` distinguishes a fully filled window from one phase 2 has not finished (or never finished) filling. */
 export interface SocialListeningWindowCacheEntry extends SocialListeningFeedResponse {
   complete: boolean;
+  /** Phase 2 failed past its one automatic retry — the partial window is kept so the list can offer a manual retry. */
+  phase2Failed?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -35,8 +35,14 @@ export class MentionsListComponent {
   public readonly dataComputedAt = input<Date | null>(null);
   /** Shared relative-time heartbeat from the page, passed through to each card. */
   public readonly timeTick = input(0);
+  /** Current window's background fill failed past its auto-retry — the empty state swaps to a retry row. */
+  public readonly phase2Failed = input(false);
+  /** Count endpoint failed while the feed has rows — keeps the paginator visible so the user isn't stranded. */
+  public readonly countError = input(false);
 
   public readonly pageChange = output<{ page: number; rows: number }>();
+  /** Manual retry of a phase-2-failed window. */
+  public readonly retry = output<void>();
 
   private readonly listContainer = viewChild<ElementRef<HTMLElement>>('listContainer');
 

@@ -11,6 +11,7 @@ import {
   encodePredicateToQueryParams,
   isDefaultViewScope,
   isEmptyPredicate,
+  normalizeMentionSearch,
   normalizePredicate,
   normalizeViewScope,
   predicatesEqual,
@@ -209,6 +210,13 @@ describe('predicate helpers', () => {
     expect(normalizePredicate('not an object')).toEqual(predicate());
     expect(normalizePredicate([])).toEqual(predicate());
     expect(normalizePredicate({ sentiment: 42, tags: ['ai', 7, null], keywords: 'nope' })).toEqual(predicate({ tags: ['ai'] }));
+  });
+
+  it('normalizeMentionSearch trims and enforces the min-chars gate', () => {
+    expect(normalizeMentionSearch('  mesh  ')).toBe('mesh');
+    expect(normalizeMentionSearch('ab')).toBe('');
+    expect(normalizeMentionSearch('   ')).toBe('');
+    expect(normalizeMentionSearch('')).toBe('');
   });
 });
 

@@ -80,16 +80,22 @@
             <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
           }
 
-          <lfx-mentions-list
-            [mentions]="mentions()"
-            [loading]="loading()"
-            [totalMentions]="totalRecords()"
-            [first]="first()"
-            [rows]="pageSize()"
-            [rowsPerPageOptions]="rowsPerPageOptions"
-            [dataComputedAt]="dataComputedAt()"
-            [timeTick]="timeTick()"
-            (pageChange)="onPageChange($event)" />
+          <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
+          @if (!error()) {
+            <lfx-mentions-list
+              [mentions]="mentions()"
+              [loading]="loading()"
+              [totalMentions]="totalRecords()"
+              [first]="first()"
+              [rows]="pageSize()"
+              [rowsPerPageOptions]="rowsPerPageOptions"
+              [dataComputedAt]="dataComputedAt()"
+              [timeTick]="timeTick()"
+              [phase2Failed]="phase2Failed()"
+              [countError]="countError() !== null"
+              (pageChange)="onPageChange($event)"
+              (retry)="retryWindow()" />
+          }
 
           <!-- Octolens data attribution (legal requirement — ported verbatim from PCC) -->
           <p class="text-center text-xs text-gray-400" data-testid="social-listening-attribution">

@@ -30,7 +30,7 @@
     [rowsPerPageOptions]="rowsPerPageOptions()"
     [showCurrentPageReport]="true"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
-    [alwaysShowPaginator]="totalMentions() > 0"
+    [alwaysShowPaginator]="totalMentions() > 0 || countError()"
     [skeletonColumns]="1"
     [skeletonRows]="3"
     styleClass="mentions-table"
@@ -80,11 +80,22 @@
     <ng-template #emptymessage>
       <tr>
         <td class="border-0 p-0">
-          <lfx-empty-state
-            icon="fa-light fa-ear-listen"
-            title="No mentions found"
-            subtitle="No mentions match the current scope and filters. Try widening the period or clearing the search."
-            data-testid="mentions-list-empty-state" />
+          @if (phase2Failed()) {
+            <lfx-empty-state
+              icon="fa-light fa-triangle-exclamation"
+              title="Couldn't load this page"
+              subtitle="This page of mentions failed to load. Try again."
+              ctaLabel="Retry"
+              ctaIcon="fa-light fa-arrow-rotate-left"
+              (ctaClick)="retry.emit()"
+              data-testid="mentions-list-window-error" />
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-ear-listen"
+              title="No mentions found"
+              subtitle="No mentions match the current scope and filters. Try widening the period or clearing the search."
+              data-testid="mentions-list-empty-state" />
+          }
         </td>
       </tr>
     </ng-template>
