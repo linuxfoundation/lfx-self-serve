@@ -33,7 +33,7 @@ Registration is handled externally. The Events page displays events you are alre
 
 ## Filter events
 
-Filter by **All Foundations**, **All Roles**, **All Statuses** using the dropdown menus. Use the tabs to switch between **Upcoming**, **Past**, **Visa Letters**, and **Travel Funding**.
+Filter by **All Foundations**, **All Roles**, **All Statuses** using the dropdown menus. Use the tabs to switch between **Upcoming**, **Past**, [**Visa Letters**](../visa-letters/), and [**Travel Funding**](../travel-funding/).
 
 ## Register for an event
 
@@ -46,4 +46,7 @@ If no events appear, your current project context may not have any scheduled eve
 ## Related
 
 - [Events overview](../) — an overview of the Events section
+- [Request a Visa Support Letter](../visa-letters/) — travel documentation support for international attendees
+- [Apply for Travel Funding](../travel-funding/) — request funding to attend an event
+- [Download an Attendance Certificate](../attendance-certificates/) — get your certificate after an event
 - [Meetings](../../meetings/) — for internal project meetings, go to the Meetings section

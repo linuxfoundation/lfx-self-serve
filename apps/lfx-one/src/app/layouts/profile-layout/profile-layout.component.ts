@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -33,9 +33,10 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
  * - Content column: page head, subtab navigation, and the router outlet for child pages
- * - A fixed, full-height 300px profile rail (lfx-profile-panel) pinned to the right edge at every
- *   screen size — never stacks above the content, never changes width, and sits above page content
- *   (z-40); MainLayoutComponent reserves a matching right gutter so content/footer stay clear of it
+ * - A profile rail (lfx-profile-panel) that is inline in the content column below 2xl, and a fixed,
+ *   full-height 300px rail pinned to the right edge at 2xl and up — never stacks above the content,
+ *   never changes width, and sits above page content (z-40) at that breakpoint; MainLayoutComponent
+ *   reserves a matching right gutter (2xl and up only) so content/footer stay clear of it
  *
  * The layout owns the profile data fetch, optimistic updates, the edit drawer, and the
  * Flow C (management-token) auth-return handling; the panel is presentational and emits
@@ -43,7 +44,7 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  imports: [NgClass, RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
   // is left; each drawer child shares this injector instance via the providers below. MessageService
   // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from

@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, TILE_UNAVAILABLE_PLACEHOLDER } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -15,7 +16,7 @@ import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
-import type { EmailCtrResponse, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
+import type { EmailCtrResponse, EmailTypeBreakdown, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-email-ctr-drawer',
@@ -47,35 +48,40 @@ export class EmailCtrDrawerComponent {
   // True once all three data sources have resolved (not still loading)
   private readonly dataResolved: Signal<boolean> = computed(() => !this.drawerLoading());
 
+  /**
+   * Set when this drawer's own request fails. Unlike the parent-fed drawers there is no
+   * `unavailable` input here: the fetch lives in this component and catchError resolves
+   * to a zero-filled default, which would otherwise render as "No email activity
+   * detected" — an outage stated as a measurement.
+   */
+  protected readonly unavailable = signal(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
 
   protected readonly expandedTypes = signal<Set<string>>(new Set());
 
-  protected readonly emailTotalSends: Signal<string> = computed(() => {
-    const types = this.drawerData().emailTypeBreakdown ?? [];
-    return formatNumber(types.reduce((sum, t) => sum + t.totalSends, 0));
-  });
-  protected readonly emailTotalOpens: Signal<string> = computed(() => {
-    const types = this.drawerData().emailTypeBreakdown ?? [];
-    return formatNumber(types.reduce((sum, t) => sum + t.totalOpens, 0));
-  });
-  protected readonly emailTotalClicks: Signal<string> = computed(() => {
-    const types = this.drawerData().emailTypeBreakdown ?? [];
-    return formatNumber(types.reduce((sum, t) => sum + t.totalClicks, 0));
-  });
-  protected readonly emailOpenRate: Signal<number> = computed(() => {
-    const types = this.drawerData().emailTypeBreakdown ?? [];
-    const sends = types.reduce((sum, t) => sum + t.totalSends, 0);
-    const opens = types.reduce((sum, t) => sum + t.totalOpens, 0);
-    return sends > 0 ? Math.round(((opens * 100.0) / sends) * 10) / 10 : 0;
-  });
+  /**
+   * True when the optional campaign-breakdown query failed while the primary CTR read
+   * succeeded. Every tile below reduce()s over emailTypeBreakdown, so without this an empty
+   * array from a FAILURE sums to a confident-looking 0 — the fabricated zero this PR exists
+   * to remove, on a partial-failure path that returns HTTP 200.
+   */
+  protected readonly breakdownUnavailable: Signal<boolean> = computed(() => this.drawerData().breakdownUnavailable === true);
+
+  /**
+   * The five tiles below are rendered as a single unit: each returns the em dash placeholder
+   * when the breakdown is unavailable, so the template needs no per-tile `@if`. Guarding in the
+   * template instead would enumerate the tiles, and enumerating is what let earlier rounds of
+   * this PR miss a section every time — the same reason the drawers wrap their whole body in
+   * one `@else` rather than suppressing section by section.
+   */
+  protected readonly emailTotalSends: Signal<string> = computed(() => this.sumTile((t) => t.totalSends));
+  protected readonly emailTotalOpens: Signal<string> = computed(() => this.sumTile((t) => t.totalOpens));
+  protected readonly emailTotalClicks: Signal<string> = computed(() => this.sumTile((t) => t.totalClicks));
+  protected readonly emailOpenRate: Signal<string> = computed(() => this.rateTile((t) => t.totalOpens));
   /** Clicks÷sends — follows HubSpot's CTR convention (not clicks÷opens). */
-  protected readonly emailAvgCtr: Signal<number> = computed(() => {
-    const types = this.drawerData().emailTypeBreakdown ?? [];
-    const sends = types.reduce((sum, t) => sum + t.totalSends, 0);
-    const clicks = types.reduce((sum, t) => sum + t.totalClicks, 0);
-    return sends > 0 ? Math.round(((clicks * 100.0) / sends) * 10) / 10 : 0;
-  });
+  protected readonly emailAvgCtr: Signal<string> = computed(() => this.rateTile((t) => t.totalClicks));
 
   protected onClose(): void {
     this.visible.set(false);
@@ -107,8 +113,36 @@ export class EmailCtrDrawerComponent {
     return 'secondary';
   }
 
+  /**
+   * A breakdown-derived total. Returns the placeholder rather than 0 when the breakdown query
+   * failed: reduce() over an empty array is 0 whether the period had no campaigns or the read
+   * never happened, and only one of those is a measurement.
+   */
+  private sumTile(pick: (t: EmailTypeBreakdown) => number): string {
+    if (this.breakdownUnavailable()) return TILE_UNAVAILABLE_PLACEHOLDER;
+    const types = this.drawerData().emailTypeBreakdown ?? [];
+    return formatNumber(types.reduce((sum, t) => sum + pick(t), 0));
+  }
+
+  /**
+   * A breakdown-derived rate, already formatted to one decimal place with its percent sign so a
+   * failure can render the placeholder in the same slot. Returning a bare number could only
+   * signal failure as 0 — the fabricated measurement this drawer exists to stop.
+   */
+  private rateTile(pick: (t: EmailTypeBreakdown) => number): string {
+    if (this.breakdownUnavailable()) return TILE_UNAVAILABLE_PLACEHOLDER;
+    const types = this.drawerData().emailTypeBreakdown ?? [];
+    const sends = types.reduce((sum, t) => sum + t.totalSends, 0);
+    const numerator = types.reduce((sum, t) => sum + pick(t), 0);
+    const rate = sends > 0 ? Math.round(((numerator * 100.0) / sends) * 10) / 10 : 0;
+    return `${rate.toFixed(1)}%`;
+  }
+
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) {
+        return true;
+      }
       if (!this.dataResolved()) {
         return false;
       }
@@ -137,12 +171,16 @@ export class EmailCtrDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        tap(() => this.drawerLoading.set(true)),
+        tap(() => {
+          this.drawerLoading.set(true);
+          this.unavailable.set(false);
+        }),
         switchMap((foundationSlug) =>
           this.analyticsService.getEmailCtr(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
+              this.unavailable.set(true);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',

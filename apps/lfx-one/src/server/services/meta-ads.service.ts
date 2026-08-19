@@ -15,7 +15,15 @@ import type {
   MetaPlacement,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_PACING_THRESHOLDS, META_DEFAULT_PLACEMENTS, META_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_PACING_THRESHOLDS,
+  META_DEFAULT_PLACEMENTS,
+  META_NUMERIC_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_OBJECTIVE_PARAMS,
+  META_INELIGIBLE_COUNTRIES,
+  normalizeGeoTargets,
+} from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -75,11 +83,34 @@ function validateRegistrationUrl(url: string): void {
   }
 }
 
-const GEO_CODE_RE = /^[A-Z]{2}$/;
-
+/**
+ * The geo targets this create will actually send, or a refusal.
+ *
+ * De-duping is the point of routing through the shared helper rather than mapping inline: the
+ * previous map/filter uppercased without collapsing repeats, so a list carrying both `us` and
+ * `US` was sent to Meta as `["US","US"]`. Sharing one helper with the client keeps the two layers
+ * from disagreeing about what a geo target is.
+ *
+ * Three-stage, and the stages answer different questions: `normalizeGeoTargets` settles SHAPE and
+ * ISO ASSIGNMENT, `META_INELIGIBLE_COUNTRIES` settles Meta ELIGIBILITY, and the caller's later
+ * `REGULATED_COUNTRIES` filter settles compliance. Mirrors the ordering in
+ * `lfx-v2-campaign-service`'s Meta client so the same input cannot succeed on one path and fail on
+ * the other purely because the cutover flag is dark.
+ *
+ * The US fallback applies ONLY to an empty request — "the caller named no geo", where defaulting
+ * is the documented behaviour. An explicitly supplied list that loses every entry is REFUSED
+ * instead, matching the Go path's "refusing to silently fall back to US": those two cases look
+ * identical by the time they reach this line, and collapsing them would spend an operator's budget
+ * on a country they did not ask for after discarding every country they did.
+ */
 function validateGeoTargets(geoTargets: string[]): string[] {
-  const valid = geoTargets.map((g) => g.trim().toUpperCase()).filter((g) => GEO_CODE_RE.test(g));
-  return valid.length > 0 ? valid : ['US'];
+  const assigned = normalizeGeoTargets(geoTargets);
+  const eligible = assigned.filter((code) => !META_INELIGIBLE_COUNTRIES.has(code));
+  if (eligible.length > 0) return eligible;
+  if (geoTargets.length === 0) return ['US'];
+  throw new Error(
+    `No usable geo targets: every supplied code (${geoTargets.join(', ')}) is malformed, not an assigned ISO 3166-1 alpha-2 country, or not eligible for Meta ad targeting — refusing to silently fall back to US.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +124,16 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
     if (typeof pixelId !== 'string' || !pixelId.trim()) {
       throw new Error(`pixelId must be a non-empty string for '${objective}' objective`);
     }
-    return { pixel_id: pixelId.trim(), custom_event_type: 'PURCHASE' };
+    // Shape is re-checked here, not just in the form. The component enforces
+    // META_NUMERIC_ID_PATTERN before submit, but this service is reachable by any caller of the
+    // create endpoint, and a malformed id would otherwise be spent discovering that Meta rejects
+    // it AFTER the campaign — a paid resource — already exists. That protection only holds
+    // because the caller invokes this before the first mutating POST; see the call site.
+    const trimmed = pixelId.trim();
+    if (!META_NUMERIC_ID_PATTERN.test(trimmed)) {
+      throw new Error(`pixelId must be a numeric string for '${objective}' objective`);
+    }
+    return { pixel_id: trimmed, custom_event_type: 'PURCHASE' };
   }
   return null;
 }
@@ -103,7 +143,6 @@ function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<str
   const publisherPlatforms: string[] = [];
   const facebookPositions: string[] = [];
   const instagramPositions: string[] = [];
-  const messengerPositions: string[] = [];
 
   if (pl.facebookFeed) {
     if (!publisherPlatforms.includes('facebook')) publisherPlatforms.push('facebook');
@@ -126,19 +165,33 @@ function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<str
     instagramPositions.push('reels');
   }
   if (pl.audienceNetwork) publisherPlatforms.push('audience_network');
+  // Messenger Inbox was removed as a Meta ad placement in November 2025: `messenger` /
+  // `messenger_home` are no longer valid on Graph API v25.0. They would pass here and fail at the
+  // AD SET, after `POST /campaigns` has already created a billable resource. Refused up front, and
+  // refused the same way the Go client refuses it (`internal/platform/meta/client.go`) so the same
+  // request cannot succeed on one path and fail on the other purely because the cutover flag is
+  // dark. The UI cannot set this — the checkbox is disabled and the handler drops the key — but
+  // this function is reachable by any other caller of the create endpoint, which is the boundary
+  // the pixel and empty-placement checks were hoisted here to defend.
   if (pl.messengerInbox) {
-    publisherPlatforms.push('messenger');
-    messengerPositions.push('messenger_home');
+    throw new Error('messengerInbox placement is no longer supported by Meta Ads (removed November 2025); do not enable it');
   }
 
   if (publisherPlatforms.length === 0) {
-    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, audienceNetwork, or messengerInbox)');
+    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, or audienceNetwork)');
+  }
+
+  // Audience Network cannot be the SOLE publisher platform — Meta documents that
+  // `publisher_platforms: ['audience_network']` may not be selected by itself. It passes the
+  // non-empty check above and the UI's `metaHasPlacement` guard, then fails at the ad set: the
+  // same create-then-orphan shape the checks above exist to prevent.
+  if (publisherPlatforms.length === 1 && publisherPlatforms[0] === 'audience_network') {
+    throw new Error('Audience Network cannot be the only placement — enable at least one Facebook or Instagram placement alongside it');
   }
 
   const targeting: Record<string, unknown> = { publisher_platforms: publisherPlatforms };
   if (facebookPositions.length > 0) targeting['facebook_positions'] = facebookPositions;
   if (instagramPositions.length > 0) targeting['instagram_positions'] = instagramPositions;
-  if (messengerPositions.length > 0) targeting['messenger_positions'] = messengerPositions;
   return targeting;
 }
 
@@ -178,18 +231,10 @@ function resolveRegion(geoTargets: string[]): string {
   return GEO_TO_REGION[primaryGeo] || 'Global';
 }
 
-const OBJECTIVE_LABELS = {
-  awareness: 'Awareness',
-  traffic: 'Traffic',
-  engagement: 'Engagement',
-  leads: 'Leads',
-  conversions: 'Conversions',
-} as const satisfies Record<MetaObjective, string>;
-
 function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
-  const objective = OBJECTIVE_LABELS[config.objective ?? 'traffic'];
+  const objective = META_OBJECTIVE_LABELS[config.objective ?? 'traffic'];
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | MoFU`;
 }
@@ -286,6 +331,20 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   }
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
+  // Built BEFORE the first mutating call, not at the ad set where it is consumed. This throws on a
+  // malformed pixel id, and the campaign POST below creates a billable resource: validating after it
+  // would leave an orphaned paid campaign behind on exactly the input the check exists to catch.
+  // The value is reused verbatim in the ad set body — the validation is hoisted, not duplicated.
+  const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
+
+  // Hoisted for the SAME reason as the promoted object directly above, and it is the same defect:
+  // an all-off placement selection is deterministic input, knowable before anything is spent, yet
+  // this threw from the ad-set step below — after `POST /campaigns` had already created a billable
+  // resource. The UI blocks an empty selection, but this service is reachable by any caller of the
+  // create endpoint, so the form's guard is not the boundary. Reused verbatim in the ad set body,
+  // so the validation is moved rather than duplicated.
+  const placementTargeting = buildPlacementTargeting(config.placements ?? {});
+
   const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
     name: campaignName,
     objective: objParams.campaignObjective,
@@ -295,12 +354,11 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   });
   const campaignId = campaignResp.id;
   if (!campaignId) throw new Error('Meta campaign creation succeeded but returned no campaign ID');
-  steps.push(`Campaign created: ${campaignId} (${OBJECTIVE_LABELS[objective]}, PAUSED)`);
+  steps.push(`Campaign created: ${campaignId} (${META_OBJECTIVE_LABELS[objective]}, PAUSED)`);
 
   // Step 3: Create ad set with budget, schedule, geo targeting, and placements
   const budgetCents = Math.round(config.budgetUsd * 100);
-  const adSetName = `${config.eventName} - ${OBJECTIVE_LABELS[objective]}`;
-  const placementTargeting = buildPlacementTargeting(config.placements ?? {});
+  const adSetName = `${config.eventName} - ${META_OBJECTIVE_LABELS[objective]}`;
 
   const adSetBody: Record<string, unknown> = {
     name: adSetName,
@@ -317,7 +375,6 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     end_time: `${config.endDate}T23:59:59+0000`,
   };
 
-  const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
   if (promotedObject) {
     adSetBody['promoted_object'] = promotedObject;
   }

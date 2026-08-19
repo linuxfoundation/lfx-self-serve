@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, model, Signal } fr
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MARKETING_SOCIAL_PLATFORM_MAP } from '@lfx-one/shared/constants';
+import { DRAWER_LOADING_HEADING, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING, MARKETING_SOCIAL_PLATFORM_MAP } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -23,6 +23,30 @@ export class BrandReachDrawerComponent {
   public readonly visible = model<boolean>(false);
 
   // === Inputs ===
+  /**
+   * True when the source request FAILED rather than returning a measured zero. This drawer's
+   * stats already degrade to em dashes, so only the collection empty-states change: they say
+   * the data could not be loaded instead of "not yet available", which is a claim about the
+   * data rather than about the request.
+   */
+  public readonly unavailable = input<boolean>(false);
+  /**
+   * True when only the SOCIAL half of the response failed. getBrandReach keeps serving web data
+   * in that case, so the whole drawer must not be blanked — the sessions and domains below were
+   * measured. Only the social stats and the platform list are suppressed, matching how the
+   * Social card and Web card diverge on the same response.
+   */
+  public readonly socialUnavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
+
   public readonly data = input<BrandReachResponse>({
     totalSocialFollowers: 0,
     totalMonthlySessions: 0,

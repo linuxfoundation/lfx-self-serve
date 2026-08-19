@@ -11,17 +11,17 @@ const TOAST_TIMEOUT = 10_000;
 
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Toyota';
-const MOCK_ACCOUNT_SLUG = 'toyota';
+const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
-const MASAKI_EMAIL = 'masaki.isetani@toyota.com';
-const KENSUKE_EMAIL = 'kensuke.hanaoka@toyota.com';
-const REPLACEMENT_EMAIL = 'cara.dev@toyota.com';
+const ALEX_EMAIL = 'alex.chen@acme-motors.example';
+const JORDAN_EMAIL = 'jordan.reyes@acme-motors.example';
+const REPLACEMENT_EMAIL = 'cara.dev@acme-motors.example';
 
-const MASAKI = { email: MASAKI_EMAIL, firstName: 'Masaki', lastName: 'Isetani', fullName: 'Masaki Isetani', jobTitle: 'Senior Manager', initials: 'MI' };
-const KENSUKE = { email: KENSUKE_EMAIL, firstName: 'Kensuke', lastName: 'Hanaoka', fullName: 'Kensuke Hanaoka', jobTitle: 'Engineer', initials: 'KH' };
+const ALEX = { email: ALEX_EMAIL, firstName: 'Alex', lastName: 'Chen', fullName: 'Alex Chen', jobTitle: 'Senior Manager', initials: 'AC' };
+const JORDAN = { email: JORDAN_EMAIL, firstName: 'Jordan', lastName: 'Reyes', fullName: 'Jordan Reyes', jobTitle: 'Engineer', initials: 'JR' };
 
-function masakiSeat(uid: string, foundationName: string, foundationSlug: string, projectUid: string, votingStatus: string) {
+function alexSeat(uid: string, foundationName: string, foundationSlug: string, projectUid: string, votingStatus: string) {
   return {
     seatId: uid,
     memberUid: uid,
@@ -36,7 +36,7 @@ function masakiSeat(uid: string, foundationName: string, foundationSlug: string,
     appointedBy: 'Membership Entitlement',
     isOrgEditable: true,
     reason: null,
-    person: MASAKI,
+    person: ALEX,
   };
 }
 
@@ -44,12 +44,12 @@ function boardMembersResponse() {
   return {
     orgUid: MOCK_UID,
     assignments: [
-      masakiSeat('m-masaki-agl', 'Automotive Grade Linux', 'automotive-grade-linux', 'agl-root', 'Voting'),
-      masakiSeat('m-masaki-hl', 'Hyperledger Foundation', 'hyperledger-foundation', 'hl-root', 'Non-voting'),
+      alexSeat('m-alex-agl', 'Automotive Grade Linux', 'automotive-grade-linux', 'agl-root', 'Voting'),
+      alexSeat('m-alex-hl', 'Hyperledger Foundation', 'hyperledger-foundation', 'hl-root', 'Non-voting'),
       {
-        seatId: 'm-kensuke',
-        memberUid: 'm-kensuke',
-        committeeUid: 'c-kensuke',
+        seatId: 'm-jordan',
+        memberUid: 'm-jordan',
+        committeeUid: 'c-jordan',
         committeeName: 'Steering Committee',
         committeeCategory: 'Board',
         projectUid: 'agl-root',
@@ -60,7 +60,7 @@ function boardMembersResponse() {
         appointedBy: 'Board Election',
         isOrgEditable: false,
         reason: "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
-        person: KENSUKE,
+        person: JORDAN,
       },
     ],
     stats: { totalBoardMembers: 2, votingCount: 1, nonVotingCount: 2, foundationsCovered: 2 },
@@ -69,7 +69,7 @@ function boardMembersResponse() {
 
 const MOCK_EMPLOYEES = [
   { email: REPLACEMENT_EMAIL, firstName: 'Cara', lastName: 'Dev', fullName: 'Cara Dev', jobTitle: 'Senior Engineer', initials: 'CD' },
-  { email: 'evan.qa@toyota.com', firstName: 'Evan', lastName: 'QA', fullName: 'Evan QA', jobTitle: 'QA Lead', initials: 'EQ' },
+  { email: 'evan.qa@acme-motors.example', firstName: 'Evan', lastName: 'QA', fullName: 'Evan QA', jobTitle: 'QA Lead', initials: 'EQ' },
 ];
 
 function skipWhenAuthMissing(page: Page): void {
@@ -138,7 +138,7 @@ function reassignedSeatBody(seatId: string) {
   return {
     orgUid: MOCK_UID,
     seat: {
-      ...masakiSeat(seatId, 'Automotive Grade Linux', 'automotive-grade-linux', 'agl-root', 'Voting'),
+      ...alexSeat(seatId, 'Automotive Grade Linux', 'automotive-grade-linux', 'agl-root', 'Voting'),
       person: { email: REPLACEMENT_EMAIL, firstName: 'Cara', lastName: 'Dev', fullName: 'Cara Dev', jobTitle: null, initials: 'CD' },
     },
   };
@@ -167,7 +167,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
 
     const modal = page.getByTestId('org-people-board-modal-reassign');
     await expect(modal).toBeVisible();
@@ -183,8 +183,8 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-modal-reassign-role-checkbox-m-masaki-hl').click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-modal-reassign-role-checkbox-m-alex-hl').click();
     await expect(page.getByTestId('org-people-board-modal-reassign-primary-button')).toContainText('Save Changes (1 role)');
   });
 
@@ -194,7 +194,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
     await expect(page.getByTestId('org-people-board-modal-reassign-primary-button')).toBeDisabled();
   });
 
@@ -211,7 +211,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     });
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
     await page.getByTestId('org-people-board-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-board-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-board-modal-reassign-last-name-input').fill('Dev');
@@ -227,7 +227,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     await stubEmployees(page);
     await stubReassignPatch(page, (route) => {
       const url = route.request().url();
-      if (url.includes('/m-masaki-hl/')) {
+      if (url.includes('/m-alex-hl/')) {
         return route.fulfill({
           status: 409,
           contentType: 'application/json',
@@ -239,7 +239,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     });
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
     await page.getByTestId('org-people-board-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-board-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-board-modal-reassign-last-name-input').fill('Dev');
@@ -258,7 +258,7 @@ test.describe('Org People → Board — Reassign Board Roles modal (US3)', () =>
     );
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
     await page.getByTestId('org-people-board-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-board-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-board-modal-reassign-last-name-input').fill('Dev');
@@ -277,14 +277,14 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-edit-m-masaki-agl').click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-edit-m-alex-agl').click();
 
     const modal = page.getByTestId('org-people-board-modal-edit');
     await expect(modal).toBeVisible();
     await expect(page.getByTestId('org-people-board-modal-edit-title')).toHaveText('Edit Board Role');
     await expect(page.getByTestId('org-people-board-modal-edit-chips')).toContainText('Automotive Grade Linux');
-    await expect(page.getByTestId('org-people-board-modal-edit-current')).toContainText('Masaki Isetani');
+    await expect(page.getByTestId('org-people-board-modal-edit-current')).toContainText('Alex Chen');
   });
 
   test('Save fires exactly one PATCH and shows a success toast', async ({ page }) => {
@@ -294,12 +294,12 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     let patchCount = 0;
     await stubReassignPatch(page, (route) => {
       patchCount += 1;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reassignedSeatBody('m-masaki-agl')) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reassignedSeatBody('m-alex-agl')) });
     });
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-edit-m-masaki-agl').click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-edit-m-alex-agl').click();
     await page.getByTestId('org-people-board-modal-edit-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-board-modal-edit-first-name-input').fill('Cara');
     await page.getByTestId('org-people-board-modal-edit-last-name-input').fill('Dev');
@@ -318,8 +318,8 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     );
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-edit-m-masaki-agl').click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-edit-m-alex-agl').click();
     await page.getByTestId('org-people-board-modal-edit-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-board-modal-edit-first-name-input').fill('Cara');
     await page.getByTestId('org-people-board-modal-edit-last-name-input').fill('Dev');
@@ -336,9 +336,9 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}`).click();
-    await expect(page.getByTestId('org-people-board-why-m-kensuke')).toBeVisible();
-    await expect(page.getByTestId('org-people-board-edit-m-kensuke')).toHaveCount(0);
+    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}`).click();
+    await expect(page.getByTestId('org-people-board-why-m-jordan')).toBeVisible();
+    await expect(page.getByTestId('org-people-board-edit-m-jordan')).toHaveCount(0);
   });
 
   test('ArrowDown + Enter on the employee combobox selects the highlighted option (keyboard a11y)', async ({ page }) => {
@@ -347,11 +347,11 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-edit-m-masaki-agl').click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-edit-m-alex-agl').click();
 
     const emailInput = page.getByTestId('org-people-board-modal-edit-email-input');
-    await emailInput.fill('toyota.com');
+    await emailInput.fill('acme-motors.example');
     await emailInput.press('ArrowDown');
 
     // The first option in the listbox is highlighted; aria-activedescendant on the input points to its id.
@@ -371,10 +371,10 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     await stubEmployees(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-reassign-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-reassign-${ALEX_EMAIL}`).click();
 
     const emailInput = page.getByTestId('org-people-board-modal-reassign-email-input');
-    await emailInput.fill('toyota.com');
+    await emailInput.fill('acme-motors.example');
     await emailInput.press('ArrowDown');
     await expect(emailInput).toHaveAttribute('aria-activedescendant', 'reassign-board-employee-option-0');
 
@@ -391,12 +391,12 @@ test.describe('Org People → Board — Edit Board Role modal (US4)', () => {
     let patchCount = 0;
     await stubReassignPatch(page, (route) => {
       patchCount += 1;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reassignedSeatBody('m-masaki-agl')) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reassignedSeatBody('m-alex-agl')) });
     });
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
-    await page.getByTestId('org-people-board-edit-m-masaki-agl').click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
+    await page.getByTestId('org-people-board-edit-m-alex-agl').click();
     await expect(page.getByTestId('org-people-board-modal-edit')).toBeVisible();
 
     await page.getByTestId('org-people-board-modal-edit-cancel').click();

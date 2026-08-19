@@ -139,10 +139,9 @@ export class WeeklyBriefCardComponent {
   public readonly ratingPending = signal(false);
 
   // Archive drawer visibility and availability signals.
-  // `hasArchiveBriefs` starts false and is set by a limit=1 preflight that fires once
-  // the current brief becomes available — avoids showing a "Past Briefs" button that
-  // opens to an empty drawer (LFXV2-3046 requirement: hide the affordance when < 2 briefs
-  // total exist, i.e. no archived past weeks).
+  // `hasArchiveBriefs` starts false and is set by a limit=1 preflight that fires as soon
+  // as the committee is known — avoids showing a "Past Briefs" button that opens to an
+  // empty drawer (LFXV2-3046: hide the affordance when no past briefs exist).
   public readonly archiveVisible = signal(false);
   public readonly hasArchiveBriefs = signal(false);
 
@@ -174,10 +173,6 @@ export class WeeklyBriefCardComponent {
   // a fresh, never-cleaned-up effect (Angular releases it only on component destroy) on
   // every single generate/regenerate/load-into-generating call, not just once.
   private readonly committee$ = toObservable(this.committee);
-
-  // Observable mirror of briefResponse for use in reactive pipelines that need to react
-  // to the brief loading (e.g. the archive-available preflight).
-  private readonly briefResponse$ = toObservable(this.briefResponse);
 
   // Guards against starting a second concurrent poll — pollUntilTerminal is reachable
   // both from onGenerate and from the initial-load pipeline (a page load / navigation
@@ -569,19 +564,13 @@ export class WeeklyBriefCardComponent {
       this.archiveVisible.set(false);
     });
 
-    // Archive preflight — fires once per committee when the current brief first becomes
-    // available. A limit=1 fetch confirms at least one past brief exists before the
-    // "Past Briefs" button is shown, per LFXV2-3046's "< 2 total → hide affordance" rule.
+    // Archive preflight — fires once per committee as soon as the uid is known,
+    // independently of the current brief. A limit=1 fetch confirms at least one past
+    // shareable brief exists before the "Past Briefs" button is shown.
     committeeUid$
       .pipe(
         switchMap((uid) =>
-          this.briefResponse$.pipe(
-            filter((r): r is WeeklyBriefCurrentResponse => !!r?.brief),
-            take(1),
-            switchMap(() =>
-              this.weeklyBriefService.listWeeklyBriefs(uid, { limit: 1 }).pipe(catchError(() => of(null as PaginatedResponse<WeeklyBrief> | null)))
-            )
-          )
+          this.weeklyBriefService.listWeeklyBriefs(uid, { limit: 1 }).pipe(catchError(() => of(null as PaginatedResponse<WeeklyBrief> | null)))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
