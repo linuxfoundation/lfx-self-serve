@@ -37,13 +37,22 @@ export class ObjectStoreService {
    * backends where the app must never create buckets. Otherwise a HeadBucket-only check,
    * so a missing bucket in deployed envs surfaces as a permissions/config error, not a
    * silently masked "not ready yet".
+   *
+   * `options.degradable` controls the failure log level: callers that catch and degrade
+   * gracefully (e.g. `putObjectIfAbsent` consumers like Brand Kit persistence) pass true so a
+   * readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
+   * would page on a recovered path. Non-degradable callers (avatar upload) keep ERROR. The
+   * severity is captured when the memoized check is created; concurrent callers of the same
+   * purpose share that promise and its single log line, which is exact today because each
+   * purpose has a single caller class (avatars → uploadProfilePicture, marketing-os-artifacts →
+   * putObjectIfAbsent).
    */
-  public async ensureBucket(purpose: ObjectStorePurpose = 'avatars'): Promise<void> {
+  public async ensureBucket(purpose: ObjectStorePurpose = 'avatars', options: { degradable?: boolean } = {}): Promise<void> {
     if (!this.ensureBucketPromises[purpose]) {
       // Reset only happens here, inside the settled .catch — so concurrent callers made while a
       // check is in flight all share this same pending promise and see the same outcome, and a
       // retry is only possible on the next call after this one has already rejected.
-      this.ensureBucketPromises[purpose] = this.doEnsureBucket(purpose).catch((error) => {
+      this.ensureBucketPromises[purpose] = this.doEnsureBucket(purpose, options.degradable === true).catch((error) => {
         this.ensureBucketPromises[purpose] = undefined;
         throw error;
       });
@@ -82,7 +91,10 @@ export class ObjectStoreService {
     contentType: string,
     cacheControl: string
   ): Promise<boolean> {
-    await this.ensureBucket(purpose);
+    // degradable: a readiness failure here rethrows to consumers that catch and degrade
+    // gracefully (same rationale as the WARN in the catch below), so it must log WARN — not
+    // ERROR — or a transient S3 outage on a successfully-degraded request would still page.
+    await this.ensureBucket(purpose, { degradable: true });
 
     const bucket = this.getBucket(purpose);
     const client = this.getClient();
@@ -205,7 +217,7 @@ export class ObjectStoreService {
     return region;
   }
 
-  private async doEnsureBucket(purpose: ObjectStorePurpose): Promise<void> {
+  private async doEnsureBucket(purpose: ObjectStorePurpose, degradable: boolean): Promise<void> {
     const bucket = this.getBucket(purpose);
     const client = this.getClient();
     const startTime = logger.startOperation(undefined, 'object_store_ensure_bucket', { bucket });
@@ -220,7 +232,19 @@ export class ObjectStoreService {
       const isConfirmedNotFound = error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
 
       if (!isConfirmedNotFound || process.env['S3_CREATE_MISSING_BUCKET'] !== 'true') {
-        logger.error(undefined, 'object_store_ensure_bucket', startTime, error, { bucket });
+        if (degradable) {
+          // WARN, not ERROR: the caller declared it catches this rejection and degrades
+          // gracefully (graceful-degradation rule in logging-patterns.md) — the recovering
+          // caller owns the operational WARN, and an unrecovered rethrow still reaches the
+          // centralized apiErrorHandler, which logs at ERROR.
+          logger.warning(undefined, 'object_store_ensure_bucket', 'Bucket readiness check failed — rethrowing for the caller to handle', {
+            bucket,
+            duration: Date.now() - startTime,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } else {
+          logger.error(undefined, 'object_store_ensure_bucket', startTime, error, { bucket });
+        }
         throw error;
       }
 

@@ -107,6 +107,15 @@ describe('ObjectStoreService', () => {
       await expect(service.ensureBucket()).rejects.toThrow('Forbidden');
       expect(sendMock).toHaveBeenCalledOnce();
     });
+
+    it('logs a readiness failure at ERROR for non-degradable callers (avatar path keeps its severity)', async () => {
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.ensureBucket()).rejects.toThrow('Forbidden');
+
+      expect(logger.error).toHaveBeenCalledWith(undefined, 'object_store_ensure_bucket', expect.anything(), expect.anything(), expect.anything());
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
   });
 
   describe('readiness', () => {
@@ -201,6 +210,24 @@ describe('ObjectStoreService', () => {
         'object_store_put_if_absent',
         expect.any(String),
         expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'Forbidden' })
+      );
+    });
+
+    it('logs a bucket-readiness failure at WARN — never ERROR — on this degradable path (graceful-degradation rule)', async () => {
+      // ensureBucket HeadBucket fails with a non-404 (403 / timeout / 5xx class)
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
+        'Forbidden'
+      );
+      // A bucket-readiness outage reached via the graceful-degrade persist path must not page:
+      // Brand Kit catches the rejection and degrades at WARN, so no ERROR line is allowed here.
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        undefined,
+        'object_store_ensure_bucket',
+        expect.any(String),
+        expect.objectContaining({ bucket: 'marketing-os-artifacts-test', error: 'Forbidden' })
       );
     });
 
