@@ -294,6 +294,40 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(metaGeoTargets()).toEqual(['US', 'JP']);
   });
 
+  /**
+   * Enter must add the code. The input previously listened only for `(change)`, so a user who
+   * typed a code and pressed Enter — the reflex for a chip input — saw nothing happen, and the
+   * code was silently dropped if they then clicked away to a non-blurring target.
+   */
+  it('adds a geo target when Enter is pressed in the add input', async () => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = 'JP';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US', 'JP']);
+  });
+
+  /**
+   * Enter clears the box, so the `change` event that fires on the subsequent blur carries an empty
+   * value. Were the handler not clearing — or normalisation not deduping — the same code would land
+   * twice from a single entry.
+   */
+  it('does not double-add when Enter is followed by a change event', async () => {
+    await setMetaGeoTargets(['US']);
+
+    const input = geoAddInput();
+    input.value = 'JP';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await fixture.whenStable();
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['US', 'JP']);
+  });
+
   /** Normalised to match campaign-service's `validateGeoTargets`, which uppercases and trims. */
   it('uppercases and trims an entered code', async () => {
     await setMetaGeoTargets([]);
@@ -646,6 +680,43 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
     expect(canSubmit()).toBe(false);
     expect(query('implementation-meta-placement-error')).not.toBeNull();
+  });
+
+  /**
+   * The checkbox group is a `fieldset`/`legend`, not a `div`/`span`. Without it a screen-reader
+   * user hears each checkbox as an unrelated control, can switch the last placement off, and
+   * reaches a disabled Create button with nothing announcing why — the group's error is not
+   * associated with any control they visited.
+   */
+  it('groups the placements in a fieldset whose legend names the group', async () => {
+    const legend: HTMLLegendElement | null = fixture.nativeElement.querySelector('fieldset > legend');
+
+    expect(legend).not.toBeNull();
+    expect(legend!.textContent?.trim()).toBe('Placements');
+  });
+
+  it('marks the placement fieldset invalid and points it at the error when none is enabled', async () => {
+    const fieldset = (): HTMLFieldSetElement => {
+      const el = fixture.nativeElement.querySelector('fieldset');
+      expect(el).not.toBeNull();
+      return el as HTMLFieldSetElement;
+    };
+
+    expect(fieldset().getAttribute('aria-invalid')).toBeNull();
+    expect(fieldset().getAttribute('aria-describedby')).toBeNull();
+
+    await togglePlacement('facebookFeed', false);
+    await togglePlacement('instagramFeed', false);
+
+    expect(fieldset().getAttribute('aria-invalid')).toBe('true');
+    const describedBy = fieldset().getAttribute('aria-describedby');
+    expect(describedBy).toBe('meta-placement-error');
+    // The id must actually resolve, or the association announces nothing.
+    const error: HTMLElement | null = fixture.nativeElement.querySelector(`#${describedBy}`);
+    expect(error).not.toBeNull();
+    // aria-describedby alone is only read when focus reaches the group; role="alert" is what
+    // announces the error at the moment the last placement is switched off.
+    expect(error!.getAttribute('role')).toBe('alert');
   });
 
   it('re-enables submit when a placement is turned back on', async () => {

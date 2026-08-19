@@ -110,7 +110,8 @@ function buildPromotedObject(objective: MetaObjective, pageId: string, pixelId?:
     // Shape is re-checked here, not just in the form. The component enforces
     // META_NUMERIC_ID_PATTERN before submit, but this service is reachable by any caller of the
     // create endpoint, and a malformed id would otherwise be spent discovering that Meta rejects
-    // it AFTER the campaign — a paid resource — already exists.
+    // it AFTER the campaign — a paid resource — already exists. That protection only holds
+    // because the caller invokes this before the first mutating POST; see the call site.
     const trimmed = pixelId.trim();
     if (!META_NUMERIC_ID_PATTERN.test(trimmed)) {
       throw new Error(`pixelId must be a numeric string for '${objective}' objective`);
@@ -300,6 +301,12 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
   }
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
+  // Built BEFORE the first mutating call, not at the ad set where it is consumed. This throws on a
+  // malformed pixel id, and the campaign POST below creates a billable resource: validating after it
+  // would leave an orphaned paid campaign behind on exactly the input the check exists to catch.
+  // The value is reused verbatim in the ad set body — the validation is hoisted, not duplicated.
+  const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
+
   const campaignResp = await metaRequest<MetaCreateResponse>(req, 'POST', `/${accountId}/campaigns`, {
     name: campaignName,
     objective: objParams.campaignObjective,
@@ -331,7 +338,6 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     end_time: `${config.endDate}T23:59:59+0000`,
   };
 
-  const promotedObject = buildPromotedObject(objective, account.pageId, config.pixelId);
   if (promotedObject) {
     adSetBody['promoted_object'] = promotedObject;
   }
