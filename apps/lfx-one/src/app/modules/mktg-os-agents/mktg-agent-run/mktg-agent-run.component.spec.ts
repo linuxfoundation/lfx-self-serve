@@ -140,6 +140,35 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('textarea field styling — full-width, never collapsed', () => {
+    beforeEach(async () => configure());
+
+    it('renders every intake textarea with the full-width field classes (w-full, min-height, resize-y)', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const textareas = Array.from(host().querySelectorAll<HTMLTextAreaElement>('textarea[data-test^="mktg-intake-"]'));
+      expect(textareas.length).toBeGreaterThan(0);
+      for (const textarea of textareas) {
+        expect(textarea.classList.contains('w-full')).toBe(true);
+        expect(textarea.classList.contains('min-h-20')).toBe(true);
+        expect(textarea.classList.contains('resize-y')).toBe(true);
+      }
+    });
+
+    it('renders the request-changes textarea with the same full-width field classes', async () => {
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'My Name' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const feedback = host().querySelector<HTMLTextAreaElement>('textarea[data-test="mktg-agent-run-feedback"]');
+      expect(feedback).not.toBeNull();
+      expect(feedback?.classList.contains('w-full')).toBe(true);
+      expect(feedback?.classList.contains('min-h-20')).toBe(true);
+      expect(feedback?.classList.contains('resize-y')).toBe(true);
+    });
+  });
+
   describe('section checklist — prefix-tolerant heading matcher', () => {
     beforeEach(async () => configure());
 
