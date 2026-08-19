@@ -10,4 +10,9 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     loadComponent: () => import('./mktg-os-agents/mktg-os-agents.component').then((m) => m.MktgOsAgentsComponent),
     canActivate: [authGuard],
   },
+  {
+    path: ':agentId',
+    loadComponent: () => import('./mktg-agent-run/mktg-agent-run.component').then((m) => m.MktgAgentRunComponent),
+    canActivate: [authGuard],
+  },
 ];

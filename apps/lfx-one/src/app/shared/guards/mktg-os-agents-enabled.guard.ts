@@ -1,41 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { inject, PLATFORM_ID } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { CanMatchFn, Router } from '@angular/router';
-import { MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
+import { CanMatchFn } from '@angular/router';
 
-import { FeatureFlagService } from '../services/feature-flag.service';
-
-/** CanMatch guard for /project|foundation/mktg-os-agents gating the dark-launched Marketing OS marketplace behind the `mktg-os-agents-enabled` flag; SSR defers to browser, browser waits for provider READY then fails closed. */
-export const mktgOsAgentsEnabledGuard: CanMatchFn = async () => {
-  const platformId = inject(PLATFORM_ID);
-
-  // On the server LaunchDarkly is unavailable — let the route match and let the
-  // browser-side run of this guard make the real decision after hydration.
-  if (!isPlatformBrowser(platformId)) {
-    return true;
-  }
-
-  const featureFlagService = inject(FeatureFlagService);
-  const router = inject(Router);
-
-  if (!featureFlagService.providerReady()) {
-    const ready = await firstValueFrom(
-      toObservable(featureFlagService.providerReady).pipe(
-        filter((isReady): isReady is true => isReady === true),
-        timeout(5000),
-        catchError(() => of(false))
-      )
-    );
-    // Provider never became ready (no client id / LD unreachable) → fail closed.
-    if (!ready) {
-      return router.parseUrl('/');
-    }
-  }
-
-  return featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false)() ? true : router.parseUrl('/');
-};
+/**
+ * CanMatch guard for /project|foundation/mktg-os-agents.
+ *
+ * TODO(mktg-os GA): flag gate bypassed for now (Joan, 2026-08-19) — the
+ * marketplace ships visible while it iterates. Restore the LaunchDarkly
+ * `mktg-os-agents-enabled` check (provider-READY wait, fail closed) from git
+ * history before GA hardening.
+ */
+export const mktgOsAgentsEnabledGuard: CanMatchFn = () => true;
