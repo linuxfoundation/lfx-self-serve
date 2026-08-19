@@ -413,8 +413,13 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await openDetailsStep(page);
 
     await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
+    // The picker's own input seeds from ownerEmail on init (user-search's sync effect)…
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(OWNER.email);
     await page.getByTestId('meeting-details-organizer-clear').click();
     await expect(page.getByTestId('meeting-details-organizer-selected')).toHaveCount(0);
+    // …and Clear must reset it too, not just the form controls, so the field doesn't keep
+    // displaying the cleared owner's email.
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue('');
 
     await saveFromDetailsStep(page);
 

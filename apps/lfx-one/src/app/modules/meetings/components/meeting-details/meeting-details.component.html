@@ -291,6 +291,7 @@
             panelStyleClass="w-full"
             dataTestId="meeting-details-organizer-search"
             (onUserSelect)="handleOwnerSelection($event)"
+            (onClear)="handleOwnerSearchCleared()"
             (onManualEntry)="switchToOwnerManualEntry()"></lfx-user-search>
         } @else {
           <div class="flex flex-col gap-3" data-testid="meeting-details-organizer-manual">

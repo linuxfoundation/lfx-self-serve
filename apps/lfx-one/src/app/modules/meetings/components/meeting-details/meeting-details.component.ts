@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -74,6 +74,10 @@ export class MeetingDetailsComponent implements OnInit {
 
   // Owner (organizer) picker signals
   public readonly ownerManualEntry = signal<boolean>(false);
+
+  // The single organizer picker instance — needed to reset its internal input text on Clear
+  // (the box seeds itself from ownerEmail on init, and nulling the bound controls doesn't empty it).
+  private readonly ownerSearch = viewChild(UserSearchComponent);
 
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
@@ -199,27 +203,14 @@ export class MeetingDetailsComponent implements OnInit {
       this.showCustomRecurrence.set(true);
     }
 
-    // The user-search clear button nulls its bound controls (ownerEmail/ownerUsername) but can't
-    // know about ownerName — it isn't bound (see handleOwnerSelection). Sync it here so a cleared
-    // picker doesn't leave a stale name behind that would submit as a name-only owner. Skipped in
-    // manual mode: there the name is typed directly and emptying the email field must not wipe it
-    // (a deliberate name-only owner is valid upstream).
+    // A hand-edited name/email can no longer be tied to an LFID, so the first actual edit in
+    // manual mode drops any username left from a search pick or hydration. Clearing on edit
+    // (not on mode switch) keeps an accidental "manual → back to search" round trip a no-op —
+    // prepareOwnerData still sees the hydrated owner unchanged and omits the key.
     const ownerNameCtrl = this.form().get('ownerName');
     const ownerEmailCtrl = this.form().get('ownerEmail');
     const ownerUsernameCtrl = this.form().get('ownerUsername');
     if (ownerNameCtrl && ownerEmailCtrl && ownerUsernameCtrl) {
-      merge(ownerEmailCtrl.valueChanges, ownerUsernameCtrl.valueChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          if (!this.ownerManualEntry() && !ownerEmailCtrl.value && !ownerUsernameCtrl.value && ownerNameCtrl.value) {
-            ownerNameCtrl.setValue(null);
-          }
-        });
-
-      // A hand-edited name/email can no longer be tied to an LFID, so the first actual edit in
-      // manual mode drops any username left from a search pick or hydration. Clearing on edit
-      // (not on mode switch) keeps an accidental "manual → back to search" round trip a no-op —
-      // prepareOwnerData still sees the hydrated owner unchanged and omits the key.
       merge(ownerNameCtrl.valueChanges, ownerEmailCtrl.valueChanges)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe(() => {
@@ -249,7 +240,23 @@ export class MeetingDetailsComponent implements OnInit {
   }
 
   public backToOwnerSearch(): void {
+    // An invalid manual email would keep gating the step invisibly after the switch — its error
+    // message only renders in manual mode, and the remounted search box is a separate control that
+    // can't edit ownerEmail. Drop it; a typed name stays (name-only owners are valid upstream) and
+    // remains visible/clearable via the "Current organizer" row.
+    const ownerEmailCtrl = this.form().get('ownerEmail');
+    if (ownerEmailCtrl?.invalid) {
+      ownerEmailCtrl.setValue(null);
+    }
     this.ownerManualEntry.set(false);
+  }
+
+  // lfx-user-search binds ownerEmail/ownerUsername but not ownerName (composed in
+  // handleOwnerSelection), so its clear can't reach the name — sync it on the explicit clear event
+  // instead of inferring "cleared" from empty bound controls, which could misread an edit
+  // hydration that patches the name before an empty email emits.
+  public handleOwnerSearchCleared(): void {
+    this.form().get('ownerName')?.setValue(null);
   }
 
   // Reverting a selection: lfx-user-search empties its own input right after a pick, so PrimeNG's
@@ -261,6 +268,9 @@ export class MeetingDetailsComponent implements OnInit {
     form.get('ownerUsername')?.setValue(null);
     form.get('ownerName')?.setValue(null);
     form.get('ownerEmail')?.setValue(null);
+    // The search box seeds its own input text from ownerEmail on init; nulling the controls
+    // doesn't empty it, so reset the picker itself too (absent in manual mode, where no box shows).
+    this.ownerSearch()?.onSearchClear();
   }
 
   // AI Helper public methods

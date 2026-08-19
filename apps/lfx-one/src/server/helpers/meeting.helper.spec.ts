@@ -111,6 +111,19 @@ describe('enrichMeetingsWithCreatedBy', () => {
     expect(result[0]).toBe(meetings[0]);
   });
 
+  it('skips the join when a human owner is present without created_by — owner replaces the creator in every consumer', async () => {
+    // Deliberate: display is owner-first everywhere (collectMeetingOrganizers puts the owner in
+    // the created_by slot), so backfilling created_by here would spend a query on a field nothing
+    // reads. Upstream also defaults owner to the creator on create, so the creator identity still
+    // arrives via `owner` for meetings that were never transferred.
+    const meetings = [{ id: 'm-1', owner } as Meeting];
+
+    const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);
+
+    expect(resolveCreatedByForMeetings).not.toHaveBeenCalled();
+    expect(result[0]).toBe(meetings[0]);
+  });
+
   it('never writes a zero-valued owner from the index', async () => {
     resolveCreatedByForMeetings.mockResolvedValue(new Map([['m-1', { created_by: human, owner: zeroValuedOwner }]]));
     const meetings = [{ id: 'm-1' } as Meeting];

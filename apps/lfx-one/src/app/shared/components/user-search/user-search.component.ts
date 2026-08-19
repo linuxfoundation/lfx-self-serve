@@ -46,6 +46,9 @@ export class UserSearchComponent {
   // Outputs
   public readonly onUserSelect = output<UserSearchResult>();
   public readonly onManualEntry = output<void>();
+  // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
+  // display-name control composed by the parent) in the same tick as the bound-control resets.
+  public readonly onClear = output<void>();
 
   // Internal form for the search input
   protected readonly userSearchForm = new FormGroup({
@@ -185,6 +188,8 @@ export class UserSearchComponent {
         parentForm.get(controlName)?.setValue(null);
       }
     });
+
+    this.onClear.emit();
   }
 
   public onEnterManually(): void {
