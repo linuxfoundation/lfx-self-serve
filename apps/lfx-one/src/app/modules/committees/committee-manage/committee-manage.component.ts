@@ -21,7 +21,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { BehaviorSubject, catchError, concat, EMPTY, filter, finalize, from, map, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { catchError, concat, EMPTY, filter, finalize, from, map, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
@@ -63,7 +63,12 @@ export class CommitteeManageComponent {
 
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
-  public memberUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
+  /**
+   * uids of members whose delete failed on the most recent flush, owned here (rather than in the
+   * members-manager child) so the failure survives the child remounting when the PrimeNG step
+   * panel destroys/recreates it on navigation away from and back to step 4 (GH-1608 review).
+   */
+  public failedDeleteUids = signal<string[]>([]);
   // Reference to the mounted members-manager child so a partial flush failure can prune
   // successfully-applied items out of its local state without navigating away (GH-1608).
   private readonly membersManager = viewChild(CommitteeMembersManagerComponent);
@@ -256,6 +261,7 @@ export class CommitteeManageComponent {
         // Don't navigate away while any staged item failed — re-entering the wizard would lose
         // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
         if (results.some((result) => !result.success)) {
+          this.failedDeleteUids.set(results.filter((result) => result.type === 'delete' && !result.success).map((result) => result.identifier));
           this.membersManager()?.pruneSucceeded(this.computeSucceededOperations(results));
           return;
         }
@@ -333,6 +339,9 @@ export class CommitteeManageComponent {
           // Don't navigate away while any staged item failed — re-entering the wizard would lose
           // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
           if (memberResults.some((memberResult) => !memberResult.success)) {
+            this.failedDeleteUids.set(
+              memberResults.filter((memberResult) => memberResult.type === 'delete' && !memberResult.success).map((memberResult) => memberResult.identifier)
+            );
             this.membersManager()?.pruneSucceeded(this.computeSucceededOperations(memberResults));
             return;
           }
@@ -619,9 +628,9 @@ export class CommitteeManageComponent {
 
     return {
       addedMembers: new Map(
-        succeeded
-          .filter((result) => result.type === 'add' && result.createdMember)
-          .map((result) => [(result.identifier ?? '').trim().toLowerCase(), result.createdMember!])
+        succeeded.flatMap((result) =>
+          result.type === 'add' && result.createdMember ? [[(result.identifier ?? '').trim().toLowerCase(), result.createdMember] as const] : []
+        )
       ),
       updatedUids: new Set(succeeded.filter((result) => result.type === 'update').map((result) => result.identifier)),
       deletedUids: new Set(succeeded.filter((result) => result.type === 'delete').map((result) => result.identifier)),

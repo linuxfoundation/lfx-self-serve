@@ -209,9 +209,9 @@
                   icon="fa-light fa-trash"
                   [text]="true"
                   styleClass="text-gray-400 hover:text-red-600"
-                  pTooltip="Remove"
+                  [pTooltip]="member.state === 'deleted' ? 'Retries automatically on next save' : 'Remove'"
                   tooltipPosition="top"
-                  [disabled]="mutationsDisabled()"
+                  [disabled]="mutationsDisabled() || member.state === 'deleted'"
                   (click)="handleMemberDelete(member.uid || member.tempId || '')">
                 </lfx-button>
               </div>

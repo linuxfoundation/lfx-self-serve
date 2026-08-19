@@ -30,7 +30,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
+import { catchError, finalize, of, take, tap } from 'rxjs';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
@@ -64,7 +64,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // Input signals
   public committeeId = input.required<string | null>();
   public memberUpdates = input<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
-  public refresh = input<BehaviorSubject<void>>();
+  /**
+   * uids of members whose delete failed on the most recent flush, owned by the parent
+   * (`committee-manage`) so the failure survives this component remounting when the PrimeNG step
+   * panel destroys/recreates it on navigation away from and back to step 4 — otherwise the
+   * "Failed to remove" row silently vanishes on return (GH-1608 review).
+   */
+  public failedDeleteUids = input<string[]>([]);
   /**
    * Live Step 3 draft values for the org-required flags. In edit mode these can differ from the
    * persisted `committee()` snapshot until the wizard is submitted — overridden onto it before
@@ -115,13 +121,15 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
 
-  // uids of members whose delete failed on the last flush. Members in this state stay in state
-  // 'deleted' (so emitMemberUpdates() keeps re-queuing the delete on the next flush) but must
-  // remain visible — otherwise a failed delete silently vanishes from the roster (GH-1608).
-  private readonly failedDeleteUids = signal<Set<string>>(new Set());
-
   // Simple computed signals
-  public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted' || this.failedDeleteUids().has(m.uid)));
+  // Members in state 'deleted' stay in membersWithState (so emitMemberUpdates() keeps re-queuing
+  // the delete on the next flush) but must remain visible when their delete failed — otherwise a
+  // failed delete silently vanishes from the roster (GH-1608). Sourced from the failedDeleteUids
+  // input rather than local state so the failure survives this component remounting.
+  public readonly visibleMembers = computed(() => {
+    const failedDeletes = new Set(this.failedDeleteUids());
+    return this.membersWithState().filter((m) => m.state !== 'deleted' || failedDeletes.has(m.uid));
+  });
   public readonly memberCount = computed(() => this.visibleMembers().length);
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
   /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
@@ -170,13 +178,6 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
     this.initializeMembers();
     this.loadCommittee();
-
-    this.refresh()
-      ?.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.initializeMembers();
-        this.loadCommittee();
-      });
   }
 
   public openInviteByEmailDialog(): void {
@@ -329,19 +330,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
    * editable (GH-1608).
    */
   public pruneSucceeded(succeeded: SucceededMemberOperations): void {
-    const failedDeleteUids = new Set<string>();
-
     this.membersWithState.update((members) =>
       members
-        .filter((m) => {
-          if (m.state === 'deleted') {
-            if (succeeded.deletedUids.has(m.uid)) {
-              return false;
-            }
-            failedDeleteUids.add(m.uid);
-          }
-          return true;
-        })
+        .filter((m) => m.state !== 'deleted' || !succeeded.deletedUids.has(m.uid))
         .map((m) => {
           if (m.state === 'new') {
             const createdMember = succeeded.addedMembers.get((m.email ?? '').trim().toLowerCase());
@@ -353,8 +344,6 @@ export class CommitteeMembersManagerComponent implements OnInit {
           return m;
         })
     );
-
-    this.failedDeleteUids.set(failedDeleteUids);
 
     this.pendingInvites.update((current) => current.filter((invite) => !succeeded.invitedEmails.has((invite.invitee_email ?? '').trim().toLowerCase())));
 
