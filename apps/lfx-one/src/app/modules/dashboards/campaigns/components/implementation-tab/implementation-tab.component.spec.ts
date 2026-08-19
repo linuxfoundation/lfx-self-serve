@@ -372,8 +372,13 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     expect(metaGeoTargets()).toEqual(['US']);
   });
 
-  /** A well-shaped but Meta-ineligible code still reaches the service, which owns that call. */
-  it('accepts a well-shaped code the service may later reject', async () => {
+  /**
+   * `ZZ` is well-shaped but sits in the ISO user-assigned range, so no ad platform can ever target
+   * it. The create path filters only regulated markets, so it used to survive to `geo_locations`
+   * and be rejected by Meta at AD-SET creation — after `POST /campaigns` had already created a
+   * billable resource. Refused at the chip now, where it costs nothing.
+   */
+  it('refuses a well-shaped but unassigned code', async () => {
     await setMetaGeoTargets([]);
 
     const input = geoAddInput();
@@ -381,7 +386,24 @@ describe('ImplementationTabComponent Meta geo targets', () => {
     input.dispatchEvent(new Event('change'));
     await fixture.whenStable();
 
-    expect(metaGeoTargets()).toEqual(['ZZ']);
+    expect(metaGeoTargets()).toEqual([]);
+  });
+
+  /**
+   * The counterpart, and the one that stops the guard over-broadening. ELIGIBILITY remains the
+   * SERVICE's call: a regulated market like `SG` is officially assigned, so it must still be
+   * addable here and filtered upstream where that list lives. Without this, a guard that rejected
+   * every country would pass the test above while breaking geo targeting entirely.
+   */
+  it('still accepts an assigned country the service may later filter', async () => {
+    await setMetaGeoTargets([]);
+
+    const input = geoAddInput();
+    input.value = 'SG';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(metaGeoTargets()).toEqual(['SG']);
   });
 
   it('ignores a blank entry', async () => {
