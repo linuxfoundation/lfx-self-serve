@@ -94,6 +94,15 @@ export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
   { id: 'engagement', label: 'Engagement' },
 ] as const;
 
+/**
+ * Reddit's own budget ceiling, mirrored from campaign-service.
+ *
+ * `internal/platform/reddit/client.go` caps `BudgetUSD` at this value to stay below the int64
+ * micro-dollar overflow, rejecting anything larger during dispatch. Creation is async, so an
+ * unguarded over-cap budget becomes a dead job rather than a refused request.
+ */
+export const REDDIT_MAX_BUDGET_USD = 1_000_000_000;
+
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**
