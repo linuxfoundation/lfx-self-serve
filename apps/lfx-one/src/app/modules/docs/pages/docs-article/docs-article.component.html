@@ -85,5 +85,7 @@
     </div>
   </article>
 } @else {
-  <p class="text-gray-500" data-testid="docs-article-empty">Article not found.</p>
+  <!-- Miss: render the not-found page inline at the original URL (no redirect). SSR emits a
+       real HTTP 404 via the render-context flag set in docsArticleResolver. -->
+  <lfx-docs-not-found />
 }

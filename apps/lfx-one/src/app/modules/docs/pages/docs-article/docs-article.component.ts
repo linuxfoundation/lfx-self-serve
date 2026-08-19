@@ -13,6 +13,7 @@ import { map } from 'rxjs/operators';
 
 import { DocsSearchComponent } from '../../components/docs-search/docs-search.component';
 import { DocsManifestService } from '../../services/docs-manifest.service';
+import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.component';
 
 /**
  * Renders one documentation article.
@@ -51,7 +52,7 @@ import { DocsManifestService } from '../../services/docs-manifest.service';
 @Component({
   selector: 'lfx-docs-article',
   standalone: true,
-  imports: [RouterLink, DatePipe, DocsSearchComponent],
+  imports: [RouterLink, DatePipe, DocsSearchComponent, DocsNotFoundComponent],
   templateUrl: './docs-article.component.html',
 })
 export class DocsArticleComponent {
@@ -64,7 +65,7 @@ export class DocsArticleComponent {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly location = inject(Location);
 
-  /** Article resolved by `docsArticleResolver` — guaranteed non-null on a successful navigation. */
+  /** Article resolved by `docsArticleResolver`: the `DocsArticle` on a hit, or `null` on a miss (renders the inline not-found view). */
   protected readonly article = this.initArticle();
 
   /** Sibling articles in the same topic, denormalized for cheap renders. Consumed only by `topicArticles`. */
@@ -234,6 +235,8 @@ export class DocsArticleComponent {
   }
 
   private initArticle() {
-    return toSignal<DocsArticle | undefined>(this.route.data.pipe(map((d): DocsArticle | undefined => d['article'])), { initialValue: undefined });
+    // `docsArticleResolver` yields `null` on a manifest miss (rendered as the
+    // inline not-found view); include it so the signal type matches the resolver.
+    return toSignal<DocsArticle | null | undefined>(this.route.data.pipe(map((d): DocsArticle | null => d['article'] ?? null)), { initialValue: undefined });
   }
 }
