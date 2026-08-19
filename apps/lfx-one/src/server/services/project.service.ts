@@ -68,6 +68,7 @@ import {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersMonthlyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailGroup,
   FoundationProjectsDetailGroupedResponse,
   FoundationProjectsDetailResponse,
   FoundationProjectsDetailRow,
@@ -2006,7 +2007,7 @@ export class ProjectService {
       ...subFoundations.map(({ uid, slug, name }) => ({ uid, slug, name })),
     ];
 
-    const groups = await Promise.all(
+    const groupResults = await Promise.allSettled(
       foundationsToFetch.map(async ({ uid, slug, name }) => {
         const detail = await this.getFoundationProjectsDetail(slug);
         return {
@@ -2017,6 +2018,18 @@ export class ProjectService {
         };
       })
     );
+
+    const groups: FoundationProjectsDetailGroup[] = [];
+    for (const [index, result] of groupResults.entries()) {
+      if (result.status === 'fulfilled') {
+        groups.push(result.value);
+      } else {
+        logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a foundation, omitting it from the response', {
+          foundation_slug: foundationsToFetch[index].slug,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
+    }
 
     const totalCount = groups.reduce((sum, group) => sum + group.projects.length, 0);
 

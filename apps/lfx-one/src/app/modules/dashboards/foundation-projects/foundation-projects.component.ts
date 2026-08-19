@@ -219,10 +219,14 @@ export class FoundationProjectsComponent {
   private initGroupedFilteredProjects(): Signal<ProjectTableGroup[]> {
     return computed(() => {
       const groupOrder = this.rawData().groups;
+      // The grouped endpoint always stamps groupFoundationSlug on every row, but fall back to the
+      // root group rather than an unmatched key — an unmatched key would silently drop the row
+      // from every rendered group instead of just mis-grouping it under the root foundation.
+      const rootSlug = groupOrder[0]?.foundationSlug ?? '';
       const filtered = this.filteredProjects();
       const bySlug = new Map<string, ProjectTableRow[]>();
       for (const project of filtered) {
-        const slug = project.groupFoundationSlug ?? '';
+        const slug = project.groupFoundationSlug ?? rootSlug;
         const existing = bySlug.get(slug);
         if (existing) {
           existing.push(project);
