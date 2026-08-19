@@ -58,18 +58,18 @@ describe('parseSocialListeningScope', () => {
       vi.useRealTimers();
     });
 
-    it('defaults to year-to-date through today (UTC), including the current month', () => {
+    it('defaults to year-to-date ending at tomorrow (UTC) — the exclusive bound that includes today', () => {
       const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx' }), 'op');
 
       expect(scope.startDate).toBe('2025-01-01');
-      expect(scope.endDate).toBe('2025-08-18');
+      expect(scope.endDate).toBe('2025-08-19');
     });
 
     it('resolves an explicit period=ytd to the same through-today window as the default', () => {
       const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'ytd' }), 'op');
 
       expect(scope.startDate).toBe('2025-01-01');
-      expect(scope.endDate).toBe('2025-08-18');
+      expect(scope.endDate).toBe('2025-08-19');
     });
 
     it('stays non-empty in January — the month-bounded ytd preset would collapse to [Jan 1, Jan 1)', () => {
@@ -78,7 +78,7 @@ describe('parseSocialListeningScope', () => {
       const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', period: 'ytd' }), 'op');
 
       expect(scope.startDate).toBe('2025-01-01');
-      expect(scope.endDate).toBe('2025-01-15');
+      expect(scope.endDate).toBe('2025-01-16');
     });
 
     it('passes an explicit month through the resolved range untouched', () => {

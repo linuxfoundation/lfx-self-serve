@@ -65,7 +65,7 @@ export function parseFoundationSlug(req: Request, operation: string): string {
   return foundationSlug;
 }
 
-/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — resolves through today, so current-month mentions are included. */
+/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — ends at tomorrow's UTC date so today's mentions fall inside the exclusive bound. */
 export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
   const period = getValidatedPeriod(req, operation);
   // A live mention feed reads ytd as through-today; the month-bounded analytics preset excludes the
@@ -120,15 +120,17 @@ export function parseSocialListeningLimit(req: Request, operation: string, max: 
   return parseIntegerParam(req, 'limit', operation, { fallback: max, min: 1, max });
 }
 
-/** The `ytd` window: Jan 1 through today, so a live feed always includes current-month mentions. */
+/** The `ytd` window: Jan 1 through today. Consumers treat `endDate` as exclusive, so it resolves to tomorrow's UTC date. */
 function yearToDateThroughToday(): ResolvedPeriodRange {
   const now = new Date();
   const year = now.getUTCFullYear();
+  // Date.UTC rolls month/year boundaries, so Dec 31 resolves to Jan 1 of next year.
+  const tomorrow = new Date(Date.UTC(year, now.getUTCMonth(), now.getUTCDate() + 1));
 
   return {
     type: 'ytd',
     startDate: `${year}-01-01`,
-    endDate: now.toISOString().split('T')[0],
+    endDate: tomorrow.toISOString().split('T')[0],
     label: `Year to Date (${year})`,
   };
 }
