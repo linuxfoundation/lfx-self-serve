@@ -630,23 +630,6 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * The button's `aria-describedby`, or null when there is nothing to point at.
-   *
-   * Computed per row inside `campaignRows` and carried ON the row, NOT called from the template:
-   * `docs/reviews/frontend-checklist.md` §4 permits only signal reads, computed values and pipes
-   * in bindings, and as a template method this also re-ran for every row on every change
-   * detection pass while reading `toggleError()` internally.
-   *
-   * A helper rather than an inline expression because the choice is three-way, which inline would
-   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
-   * at once (a disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
-   * other. A dangling reference to an element that renders conditionally is worse than none, so
-   * each id is included only when its element is actually drawn.
-   *
-   * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
-   */
-  /**
    * Why a row's toggle is disabled, in the order the reasons OVERRIDE one another.
    *
    * Deployment first, then platform, then status — strongest refusal wins, because a row can be
@@ -669,6 +652,23 @@ export class OptimizationTabComponent implements OnInit {
     return CAMPAIGN_UNAVAILABLE_REASONS[status] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;
   }
 
+  /**
+   * The button's `aria-describedby`, or null when there is nothing to point at.
+   *
+   * Computed per row inside `campaignRows` and carried ON the row, NOT called from the template:
+   * `docs/reviews/frontend-checklist.md` §4 permits only signal reads, computed values and pipes
+   * in bindings, and as a template method this also re-ran for every row on every change
+   * detection pass while reading `toggleError()` internally.
+   *
+   * A helper rather than an inline expression because the choice is three-way, which inline would
+   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
+   * at once (a disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
+   * other. A dangling reference to an element that renders conditionally is worse than none, so
+   * each id is included only when its element is actually drawn.
+   *
+   * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
+   */
   private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
     const ids: string[] = [];
     if (toggleErrors[campaignId]) {

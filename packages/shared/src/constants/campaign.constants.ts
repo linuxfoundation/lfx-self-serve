@@ -8,6 +8,7 @@ import type {
   CampaignPlatformOption,
   CampaignProgramTypeOption,
   CampaignStatus,
+  CampaignToggleAction,
   CampaignTabOption,
   CampaignToggleStatus,
   LinkedInGeoTarget,
@@ -211,7 +212,7 @@ export function normalizeCampaignStatus(status: string): string {
  * is ever consulted. It is optional so the status-only question remains askable, and an omitted
  * platform is not read as an unsupported one.
  */
-export function campaignToggleAction(status: string, platform?: string): 'pause' | 'resume' | 'unavailable' {
+export function campaignToggleAction(status: string, platform?: string): CampaignToggleAction {
   // Platform is checked FIRST and independently of status, because it is the stronger refusal:
   // a `created` Microsoft row is pausable upstream but not through this app's BFF, so deciding on
   // status alone would hand it an enabled button whose every click 400s on the platform check.
@@ -247,10 +248,13 @@ export function campaignToggleAction(status: string, platform?: string): 'pause'
 /**
  * Why a row's toggle is disabled, in words the operator can act on.
  *
- * Named per status rather than a single "cannot be changed": the three reachable cases have
- * genuinely different remedies. `pending` resolves itself when the dispatch settles; the two
- * partial-orphan statuses need reconciliation before the platform will accept anything. A generic
+ * Named per status rather than a single "cannot be changed": these cases have genuinely different
+ * remedies. `pending` resolves itself when the dispatch settles; the partial-orphan statuses need
+ * reconciliation before the platform will accept anything; `deleted` is terminal. A generic
  * message would send someone to look for a problem that is about to disappear on its own.
+ *
+ * Deliberately not enumerated by count here — a doc that says "the three cases" goes stale the
+ * moment a key is added, and the keys below are the list.
  */
 export const CAMPAIGN_UNAVAILABLE_REASONS: Readonly<Record<string, string>> = {
   pending: 'Still being created. Pause and resume become available once it finishes.',
