@@ -354,7 +354,7 @@ export class CampaignServiceClient {
       // programming error, and it is exactly the false absence this field exists to prevent. The
       // HTTP path never reaches this (the controller refuses both blanks first), so this guards
       // direct callers, where an unqualified "no campaigns" is the most expensive thing to say.
-      return { campaigns: [], possiblyStale: true };
+      return { campaigns: [], possiblyStale: true, statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle) };
     }
 
     const docs = await fetchAllQueryResources<CampaignIndexDoc>(
@@ -389,7 +389,15 @@ export class CampaignServiceClient {
     // An empty result is ambiguous by construction: indexing is asynchronous, so "not indexed
     // yet" and "none exist" are the same answer here. Say so rather than letting the caller read
     // absence as proof.
-    return { campaigns, possiblyStale: campaigns.length === 0 };
+    // Reported with the list because the client cannot infer it: this read is ungated, while the
+    // toggle route refuses every UUID when the flag is off — so a default deployment would render
+    // controls that can only fail. Read at request time rather than cached, so a flag flip does
+    // not need a redeploy of this process to take effect on the next list.
+    return {
+      campaigns,
+      possiblyStale: campaigns.length === 0,
+      statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+    };
   }
 
   /**

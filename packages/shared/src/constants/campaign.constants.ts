@@ -136,10 +136,18 @@ export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<Camp
  * it out is therefore the expensive mistake in both directions — the UI would offer the one action
  * upstream rejects, on exactly the campaign where an operator most needs the pause lever.
  *
+ * `enabled` is deliberately ABSENT. It is a Google Ads platform-level status word, never a value
+ * campaign-service writes to `campaigns.status` — the service's status vocabulary is the
+ * `CampaignStatus*`/`CampaignRun*` constants in `internal/domain/model/campaign.go`, and the
+ * string `"enabled"` does not appear in that package at all. Listing it here mapped a value the
+ * index never produces onto Pause, which is the fail-OPEN direction this pair exists to avoid: an
+ * unknown status must land on `unavailable`, not on a button. `RESUMABLE_CAMPAIGN_STATUSES` never
+ * listed it, so the two sets now agree about which vocabulary they are speaking.
+ *
  * Compared case-insensitively against `CampaignIndexDoc.status`, which is a free string sourced
  * from the index rather than a closed enum.
  */
-export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'created_degraded', 'active', 'enabled']);
+export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'created_degraded', 'active']);
 
 /**
  * The statuses campaign-service will accept a RESUME (`ACTIVE`) for.
@@ -169,8 +177,24 @@ export const RESUMABLE_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(
  *
  * Derived from the two status sets rather than hand-listed, so adding a status upstream cannot
  * quietly re-expose the doomed button: anything outside both sets lands on `unavailable`.
+ *
+ * `platform` is the second, independent reason to refuse: a campaign on a platform this app does
+ * not offer is unavailable at ANY status, because the BFF rejects the platform before the status
+ * is ever consulted. It is optional so the status-only question remains askable, and an omitted
+ * platform is not read as an unsupported one.
  */
-export function campaignToggleAction(status: string): 'pause' | 'resume' | 'unavailable' {
+export function campaignToggleAction(status: string, platform?: string): 'pause' | 'resume' | 'unavailable' {
+  // Platform is checked FIRST and independently of status, because it is the stronger refusal:
+  // a `created` Microsoft row is pausable upstream but not through this app's BFF, so deciding on
+  // status alone would hand it an enabled button whose every click 400s on the platform check.
+  //
+  // An ABSENT platform is not treated as unsupported. `platform` is optional so the status-only
+  // question stays askable, and a row whose platform this UI cannot read must not be silently
+  // demoted to `unavailable` — that would fail closed on a campaign that is probably fine. The
+  // row-building caller always passes it; the BFF remains the enforcing boundary either way.
+  if (platform !== undefined && !TOGGLEABLE_CAMPAIGN_PLATFORMS.has(platform)) {
+    return 'unavailable';
+  }
   const normalized = status.toLowerCase();
   if (RUNNING_CAMPAIGN_STATUSES.has(normalized)) {
     return 'pause';
@@ -198,6 +222,43 @@ export const CAMPAIGN_UNAVAILABLE_REASONS: Readonly<Record<string, string>> = {
 
 /** Fallback for a status this UI has never seen — see `campaignToggleAction` on failing closed. */
 export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a state that can be paused or resumed.';
+
+/**
+ * The platforms whose campaigns this app can actually toggle.
+ *
+ * DERIVED from `CAMPAIGN_PLATFORMS` rather than hand-listed, and it is the same derivation the
+ * BFF performs for `CAMPAIGN_SERVICE_STATUS_PLATFORMS` (`campaign.controller.ts`) — one shared
+ * rule, so the control the UI offers and the request the server accepts cannot drift apart. A
+ * platform joins by flipping `disabled` in the constant above, which is one edit rather than
+ * three.
+ *
+ * `disabled: true` entries (currently Microsoft and X) have working toggle dispatchers upstream,
+ * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
+ * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
+ * and platform are therefore two independent reasons a toggle is unavailable, and the row must
+ * consider both.
+ */
+export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id));
+
+/**
+ * Why a row's toggle is disabled because of its PLATFORM rather than its status.
+ *
+ * Separate from `CAMPAIGN_UNAVAILABLE_REASONS` because the remedy is different in kind: a status
+ * reason describes something that changes on its own or after reconciliation, whereas this one
+ * will not change until the platform ships in this app. Telling an operator to wait would be
+ * false.
+ */
+export const CAMPAIGN_UNAVAILABLE_PLATFORM_REASON = 'Pause and resume are not available for this platform in LFX One yet.';
+
+/**
+ * Why the toggle is disabled when the DEPLOYMENT has not enabled status changes.
+ *
+ * A third kind of reason, and the only one that is about the environment rather than the campaign:
+ * `/list` is ungated while the toggle route refuses every UUID with
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` unset. Worded as a deployment capability so an
+ * operator escalates to whoever owns the flag instead of hunting for a fault in the campaign.
+ */
+export const CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON = 'Pause and resume are not enabled for this deployment.';
 
 /** The button's visible word per action. `unavailable` still names an action — the button is disabled, not blank. */
 export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<'pause' | 'resume' | 'unavailable', string>> = {

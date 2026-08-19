@@ -9,6 +9,7 @@ import type {
   CampaignMonitorResponse,
   CampaignPlatform,
   CampaignRow,
+  CampaignToggleAction,
   CampaignToggleStatus,
   DateRangeOption,
   KeywordActionType,
@@ -27,9 +28,12 @@ import type {
 import {
   CAMPAIGN_TOGGLE_LABELS,
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
+  CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
+  CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_UNAVAILABLE_REASONS,
   campaignToggleAction,
   PLATFORM_BRAND_COLORS,
+  TOGGLEABLE_CAMPAIGN_PLATFORMS,
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
@@ -69,6 +73,20 @@ export class OptimizationTabComponent implements OnInit {
    * the tab say so, and offer the retry, for campaigns that may still be spending.
    */
   public readonly campaignsUnavailable = input(false);
+
+  /**
+   * Whether this deployment can service a pause/resume at all, reported by the server with the
+   * list (`CampaignListResult.statusToggleEnabled`).
+   *
+   * The list read is ungated while the toggle route refuses every UUID unless
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on, and the chart leaves it unset by default.
+   * Without this the tab renders a row of controls whose every click 400s, which an operator reads
+   * as the campaign refusing to stop rather than as a capability nobody enabled.
+   *
+   * Defaults to `false`: withholding a control for one request is cheap, offering a doomed one on
+   * a spending campaign is not.
+   */
+  public readonly statusToggleEnabled = input(false);
 
   /** Emitted when the operator asks to re-read a failed campaign list; the parent owns the read. */
   public readonly retryCampaigns = output<void>();
@@ -170,18 +188,30 @@ export class OptimizationTabComponent implements OnInit {
       return null;
     }
     const toggled = this.toggledStatus();
+    // Read here so the row's `describedBy` recomputes when an error appears or clears. Reading it
+    // inside a template method instead was the frontend-checklist §4 violation this replaces.
+    const toggleErrors = this.toggleError();
+    const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
       const status = toggled[campaign.id] ?? campaign.status;
       // Three states, not two. `campaignToggleAction` derives them from the shared status sets, so
       // a status upstream refuses — `pending`, a partial orphan, or one added after this was
       // written — lands on `unavailable` rather than on the Resume button that would 409.
-      const action = campaignToggleAction(status);
+      // Deployment capability first, then platform, then status — in refusal strength order. A
+      // flag-off deployment cannot toggle ANY row, so no status or platform makes a button work.
+      // Platform then status for the same reason: each is sufficient on its own to refuse.
+      const action = deploymentDisabled ? 'unavailable' : campaignToggleAction(status, campaign.platform);
+      // The platform reason wins when it applies, because it is the one the operator cannot act
+      // on. A Microsoft row in `pending` is BOTH not-yet-created and not-supported-here; telling
+      // them it "resolves itself once it finishes" would promise a button that never arrives.
+      const platformUnsupported = !TOGGLEABLE_CAMPAIGN_PLATFORMS.has(campaign.platform);
       return {
         campaign,
         status,
         action,
-        unavailableReason: action === 'unavailable' ? (CAMPAIGN_UNAVAILABLE_REASONS[status.toLowerCase()] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON) : '',
+        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
+        describedBy: this.describedByFor(campaign.id, action, toggleErrors),
       };
     });
   });
@@ -358,27 +388,6 @@ export class OptimizationTabComponent implements OnInit {
           this.toggleError.update((e) => ({ ...e, [campaign.id]: message }));
         },
       });
-  }
-
-  /**
-   * The button's `aria-describedby`, or null when there is nothing to point at.
-   *
-   * A method rather than a template expression because there are two candidate elements and the
-   * choice is a three-way one — a nested ternary in the template, which this repo forbids. Both
-   * ids may be present at once (a disabled row can still hold an error from a click that raced the
-   * status), and `aria-describedby` takes a LIST, so both are named rather than one silently
-   * shadowing the other. A dangling reference to an element that renders conditionally is worse
-   * than none, so each id is included only when its element is actually drawn.
-   */
-  protected toggleDescribedBy(row: CampaignRow): string | null {
-    const ids: string[] = [];
-    if (this.toggleError()[row.campaign.id]) {
-      ids.push(`campaign-error-${row.campaign.id}`);
-    }
-    if (row.action === 'unavailable') {
-      ids.push(`campaign-unavailable-${row.campaign.id}`);
-    }
-    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -612,5 +621,54 @@ export class OptimizationTabComponent implements OnInit {
           });
         },
       });
+  }
+
+  /**
+   * The button's `aria-describedby`, or null when there is nothing to point at.
+   *
+   * Computed per row inside `campaignRows` and carried ON the row, NOT called from the template:
+   * `docs/reviews/frontend-checklist.md` §4 permits only signal reads, computed values and pipes
+   * in bindings, and as a template method this also re-ran for every row on every change
+   * detection pass while reading `toggleError()` internally.
+   *
+   * A helper rather than an inline expression because the choice is three-way, which inline would
+   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
+   * at once (a disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
+   * other. A dangling reference to an element that renders conditionally is worse than none, so
+   * each id is included only when its element is actually drawn.
+   *
+   * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
+   */
+  /**
+   * Why a row's toggle is disabled, in the order the reasons OVERRIDE one another.
+   *
+   * Deployment first, then platform, then status — strongest refusal wins, because a row can be
+   * refused for several reasons at once and only the most fundamental one is actionable. A
+   * `pending` Microsoft row on a flag-off deployment is all three; telling that operator it
+   * "resolves itself once it finishes" would promise a button that no amount of waiting produces.
+   *
+   * Ordered `if`s rather than a chained ternary: the repo forbids nested ternaries, and the
+   * precedence is the whole point of this function rather than an incidental shape.
+   */
+  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean): string {
+    if (deploymentDisabled) {
+      return CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON;
+    }
+    if (platformUnsupported) {
+      return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
+    }
+    return CAMPAIGN_UNAVAILABLE_REASONS[status.toLowerCase()] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;
+  }
+
+  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
+    const ids: string[] = [];
+    if (toggleErrors[campaignId]) {
+      ids.push(`campaign-error-${campaignId}`);
+    }
+    if (action === 'unavailable') {
+      ids.push(`campaign-unavailable-${campaignId}`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 }

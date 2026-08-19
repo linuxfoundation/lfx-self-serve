@@ -1366,6 +1366,15 @@ export interface CampaignRow {
    * template is exactly the construct this repo forbids.
    */
   toggleLabel: string;
+  /**
+   * The button's `aria-describedby` value, or `null` when there is nothing to point at.
+   *
+   * Carried on the row rather than computed by a template method: templates may only read
+   * signals, computed values and pipes (`docs/reviews/frontend-checklist.md` §4), and the method
+   * form re-ran for every row on every change detection pass. Space-separated because
+   * `aria-describedby` takes a LIST and a row can hold both an error and an unavailable reason.
+   */
+  describedBy: string | null;
 }
 
 /**
@@ -1396,6 +1405,20 @@ export interface CampaignListResult {
    * something this layer does not — whether it just created campaigns.
    */
   possiblyStale: boolean;
+  /**
+   * Whether THIS deployment can actually service a pause/resume.
+   *
+   * Returned with the list because the two routes are gated differently and the client cannot
+   * infer it: `/list` is ungated (it reads the Query Service index), while the toggle route
+   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on — and the chart
+   * leaves that flag unset by default. Without this field a default deployment renders a row of
+   * buttons whose every click fails, which reads to an operator as the campaign refusing to stop
+   * rather than as a capability that was never switched on.
+   *
+   * A server fact, so it is reported by the server rather than mirrored into a client-side flag
+   * that would drift from the deployment it describes.
+   */
+  statusToggleEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

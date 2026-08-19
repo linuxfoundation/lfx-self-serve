@@ -74,10 +74,14 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.componentRef.setInput('briefId', 'b-1');
   });
 
-  function render(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false): void {
+  // `toggleEnabled` defaults to TRUE here so the existing cases keep testing what they were
+  // written to test — status and platform behaviour — rather than all collapsing onto the new
+  // deployment gate. The flag-off case is asserted explicitly by its own test below.
+  function render(campaigns: CampaignIndexDoc[] | null, stale = false, unavailable = false, toggleEnabled = true): void {
     fixture.componentRef.setInput('briefCampaigns', campaigns);
     fixture.componentRef.setInput('campaignsPossiblyStale', stale);
     fixture.componentRef.setInput('campaignsUnavailable', unavailable);
+    fixture.componentRef.setInput('statusToggleEnabled', toggleEnabled);
     fixture.detectChanges();
   }
 
@@ -114,10 +118,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]')).not.toBeNull();
   });
 
+  // `enabled` is deliberately absent: it is a Google Ads platform word, not a status
+  // campaign-service ever writes, so it belongs with the unknown statuses that fail closed.
   it.each([
     ['created', 'Pause'],
     ['active', 'Pause'],
-    ['enabled', 'Pause'],
     ['paused', 'Resume'],
   ])('offers %s → %s', (status, label) => {
     render([doc({ status })]);
@@ -336,6 +341,77 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(button.disabled).toBe(false);
     expect(button.textContent).toContain('Pause');
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
+  });
+
+  // `enabled` is a Google Ads platform word; campaign-service never writes it to `campaigns.status`
+  // (the string does not appear in internal/domain/model at all). Listing it as running mapped a
+  // value the index cannot produce onto Pause — the fail-OPEN direction. It must fail closed like
+  // any other unknown status. Asserting the button is disabled is not enough on its own: the
+  // assertion that binds is that a click DISPATCHES NOTHING.
+  it('treats enabled as unknown rather than running, dispatching nothing', () => {
+    render([doc({ status: 'enabled' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).not.toContain('Pause');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).not.toBeNull();
+
+    button.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  // Platform, not just status. Microsoft and X are `disabled: true` in CAMPAIGN_PLATFORMS, so the
+  // BFF's CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses them outright — a `created` row of theirs is
+  // pausable UPSTREAM but not through this app, and status alone would enable a doomed button.
+  it.each(['microsoft-ads', 'twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
+    render([doc({ platform, status: 'created' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).not.toContain('Pause');
+
+    // The reason must name the PLATFORM. The status reason would tell an operator to wait for
+    // something that resolves itself, which is false here — no waiting produces the button.
+    const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]');
+    expect(reason.textContent).toContain('not available for this platform');
+
+    button.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  // The platform guard must not swallow the platforms this app DOES offer — the mutation that
+  // makes every row unavailable would pass the test above while breaking the feature entirely.
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads'])('still offers Pause on the supported platform %s', (platform) => {
+    render([doc({ platform, status: 'created' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('Pause');
+
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'PAUSED' }));
+  });
+
+  // The list read is UNGATED while the toggle route refuses every UUID unless
+  // LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE is on — and the chart leaves it unset. So the
+  // default deployment is precisely the one that would render controls that can only 400.
+  // The binding assertion is that the click DISPATCHES NOTHING, not merely that a flag is set.
+  it('disables every toggle when the deployment has not enabled status changes', () => {
+    render([doc({ status: 'created' }), doc({ id: 'c-2', status: 'paused' })], false, false, false);
+
+    const pauseRow = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    const resumeRow = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]');
+    expect(pauseRow.disabled).toBe(true);
+    expect(resumeRow.disabled).toBe(true);
+
+    // The reason must name the DEPLOYMENT. A status or platform reason would send the operator
+    // hunting for a fault in a campaign that is perfectly healthy.
+    const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]');
+    expect(reason.textContent).toContain('not enabled for this deployment');
+
+    pauseRow.click();
+    resumeRow.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
   // Failure-as-absence. A null list means "not loaded" AND "the read failed", and rendering

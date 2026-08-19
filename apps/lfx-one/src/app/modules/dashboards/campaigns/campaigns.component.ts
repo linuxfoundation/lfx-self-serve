@@ -384,6 +384,17 @@ export class CampaignsComponent {
   protected readonly briefCampaignsUnavailable = signal(false);
 
   /**
+   * Whether this DEPLOYMENT can service a pause/resume, as reported by the server with the list.
+   *
+   * Defaults to `false` — the safe direction. The list read is ungated while the toggle route is
+   * flag-gated, so assuming "enabled" until told otherwise is what renders buttons that can only
+   * fail; assuming "disabled" until the server confirms merely withholds a control for one
+   * request. Reset on a foundation switch alongside the rows it describes, because it is a fact
+   * about the response those rows came from.
+   */
+  protected readonly briefCampaignsToggleEnabled = signal(false);
+
+  /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
    * reused rather than reinvented.
    *
@@ -694,6 +705,7 @@ export class CampaignsComponent {
         this.briefCampaignsGeneration++;
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
+        this.briefCampaignsToggleEnabled.set(false);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -1155,6 +1167,7 @@ export class CampaignsComponent {
       this.briefCampaigns.set(null);
       this.briefCampaignsStale.set(false);
       this.briefCampaignsUnavailable.set(false);
+      this.briefCampaignsToggleEnabled.set(false);
       return;
     }
 
@@ -1169,6 +1182,7 @@ export class CampaignsComponent {
           this.briefCampaigns.set(result.campaigns);
           this.briefCampaignsStale.set(result.possiblyStale);
           this.briefCampaignsUnavailable.set(false);
+          this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
         },
         error: () => {
           if (!isCurrent()) {
@@ -1179,6 +1193,7 @@ export class CampaignsComponent {
           this.briefCampaigns.set(null);
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
+          this.briefCampaignsToggleEnabled.set(false);
         },
       });
   }

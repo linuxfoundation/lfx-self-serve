@@ -2260,11 +2260,15 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   // Indexing is asynchronous, so "not indexed yet" and "none exist" are the same answer here.
   // A caller that read absence as proof would tell a user their campaigns do not exist.
   it('marks an empty result possiblyStale rather than asserting emptiness', async () => {
+    // Pinned rather than inherited: `vi.clearAllMocks()` does not reset IMPLEMENTATIONS, so this
+    // exact-equality assertion would otherwise depend on whichever flag state an earlier test in
+    // the file happened to leave behind. The claim under test is about `possiblyStale`.
+    isServerFeatureEnabled.mockImplementation(() => false);
     proxyRequest.mockResolvedValueOnce({ resources: [] });
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -2286,6 +2290,28 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(result.possiblyStale).toBe(false);
   });
 
+  // The list read is UNGATED while the toggle route refuses every UUID with the flag off, so the
+  // client cannot infer this — a default deployment would render controls that can only 400.
+  // Asserted in BOTH directions: a field hardcoded to either constant would pass one of these.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('reports the deployment status-toggle capability as %s with the list', async (flagOn, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => flag === ServerFeatureFlag.CampaignServiceStatusToggle && flagOn);
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.statusToggleEnabled).toBe(expected);
+    } finally {
+      // `vi.clearAllMocks()` in this file's beforeEach clears CALLS but not IMPLEMENTATIONS, so a
+      // stray mockImplementation here would silently re-answer every later flag question in the
+      // suite. Restored to the file's default rather than left for the next test to discover.
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -2301,11 +2327,13 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     ['no project', '', 'b-1'],
     ['no brief id', 'tlf', ''],
   ])('refuses a request with %s without calling the query service', async (_label, slug, brief) => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+
     const result = await new CampaignServiceClient().listBriefCampaigns(req, slug, brief);
 
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
   });
 });

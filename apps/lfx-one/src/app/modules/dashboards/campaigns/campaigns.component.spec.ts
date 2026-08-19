@@ -1011,13 +1011,15 @@ describe('CampaignsComponent brief persistence', () => {
       }
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
-        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false }));
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
         await withSavedBrief();
         load();
         await fixture.whenStable();
         expect(campaigns()).toHaveLength(1);
 
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
         selectFoundation('cncf');
         await fixture.whenStable();
 
@@ -1037,7 +1039,7 @@ describe('CampaignsComponent brief persistence', () => {
 
         // The response the switch invalidated. Clearing the signal alone cannot stop this — the
         // request was already in flight and lands afterwards.
-        late.next({ campaigns: [indexed()], possiblyStale: false });
+        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true });
         await fixture.whenStable();
 
         expect(campaigns()).toBeNull();
@@ -1059,7 +1061,7 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       it('does not mark a genuinely empty list as unavailable', async () => {
-        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [], possiblyStale: false }));
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
         await withSavedBrief();
         load();
         await fixture.whenStable();
@@ -1118,7 +1120,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
         expect(unavailable()).toBe(true);
 
-        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false }));
+        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
         load();
         await fixture.whenStable();
 
