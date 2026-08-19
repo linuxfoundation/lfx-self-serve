@@ -47,11 +47,18 @@ export class MeetingOrganizerComponent {
       const meeting = this.meeting();
       const organizers = collectMeetingOrganizers(meeting, this.hosts());
 
-      return buildMeetingOrganizerChip(organizers, this.userService.viewerUsername(), {
-        meetingTitle: meeting.title,
-        meetingDate: this.formatMeetingDate(meeting),
-        detailUrl: this.buildDetailUrl(meeting),
-      });
+      return buildMeetingOrganizerChip(
+        organizers,
+        this.userService.viewerUsername(),
+        {
+          meetingTitle: meeting.title,
+          meetingDate: this.formatMeetingDate(meeting),
+          detailUrl: this.buildDetailUrl(meeting),
+        },
+        // Email is the only identity a manually-entered owner carries — without it the meeting's
+        // own organizer would never get the "you" variant on their card.
+        this.userService.viewerEmail()
+      );
     });
   }
 

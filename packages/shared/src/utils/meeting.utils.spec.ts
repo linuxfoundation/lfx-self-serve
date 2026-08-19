@@ -653,6 +653,26 @@ describe('collectMeetingOrganizers', () => {
 
     expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
   });
+
+  it('dedupes the owner against a host whose username disagrees but email matches — stale LFIDs must not double-list a person', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper-old', email: 'grace@example.com' } } as Meeting;
+    const hosts = [
+      { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
+      { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
+    ];
+
+    // One Grace, still primary (index 0), carried by the richer host record.
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.username)).toEqual(['ghopper', 'aturing']);
+  });
+
+  it('keeps organizers with distinct usernames separate even when their display names collide', () => {
+    // Names are not identifiers: with no email pair to arbitrate, two records with different
+    // usernames stay two people, no matter what they are called.
+    const meeting = { owner: { name: 'Alex Kim', username: 'akim1', email: '' } } as Meeting;
+    const hosts = [{ first_name: 'Alex', last_name: 'Kim', username: 'akim2', email: '', host: true }];
+
+    expect(collectMeetingOrganizers(meeting, hosts)).toHaveLength(2);
+  });
 });
 
 describe('buildMeetingOrganizerMailto', () => {
@@ -721,6 +741,13 @@ describe('buildMeetingOrganizerChip', () => {
 
   it('marks the viewer as "you" and never links their name', () => {
     const chip = buildMeetingOrganizerChip([ada], 'auth0|alovelace', ctx);
+    expect(chip?.primary.isYou).toBe(true);
+    expect(chip?.primary.mailto).toBeNull();
+  });
+
+  it('marks a username-less owner as "you" via the viewer email — manual entries carry no username', () => {
+    const manualOwner = { name: 'Radia Perlman', username: '', email: 'radia@example.com' };
+    const chip = buildMeetingOrganizerChip([manualOwner], 'rperlman', ctx, 'radia@example.com');
     expect(chip?.primary.isYou).toBe(true);
     expect(chip?.primary.mailto).toBeNull();
   });
@@ -795,20 +822,39 @@ describe('isMeetingOrganizedByViewer', () => {
     expect(isMeetingOrganizedByViewer(webhookOwned, 'alovelace')).toBe(true);
   });
 
+  it('matches a username-less owner by the viewer email — manual entries are saved as name+email only', () => {
+    const manuallyOwned = meetingBy(ada, { owner: { name: 'Radia Perlman', username: '', email: 'radia@example.com' } });
+
+    expect(isMeetingOrganizedByViewer(manuallyOwned, 'rperlman', undefined, 'radia@example.com')).toBe(true);
+    // Case-insensitive on both sides.
+    expect(isMeetingOrganizedByViewer(manuallyOwned, 'rperlman', undefined, 'Radia@Example.com')).toBe(true);
+    // A different viewer email must not match, and without a viewer email the username-less owner
+    // has no identity to compare — the meeting drops out of the filter rather than over-matching.
+    expect(isMeetingOrganizedByViewer(manuallyOwned, 'ghopper', undefined, 'grace@example.com')).toBe(false);
+    expect(isMeetingOrganizedByViewer(manuallyOwned, 'rperlman')).toBe(false);
+  });
+
   it('agrees with the chip: the filter matches exactly when the chip renders an "Organized by you" entry', () => {
-    const cases: { meeting: Meeting; viewer: string | null }[] = [
+    const cases: { meeting: Meeting; viewer: string | null; viewerEmail?: string | null }[] = [
       { meeting: meetingBy(ada), viewer: 'alovelace' },
       { meeting: meetingBy(ada), viewer: 'auth0|alovelace' },
       { meeting: meetingBy(grace), viewer: 'alovelace' },
       { meeting: meetingBy(grace, { organizer: true }), viewer: 'alovelace' },
       { meeting: meetingBy({ name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' }), viewer: 'zoom.webhooks' },
       { meeting: meetingBy(ada), viewer: null },
+      // Manual (username-less) owner recognized by email on both surfaces, and by neither without it.
+      {
+        meeting: meetingBy(ada, { owner: { name: 'Radia Perlman', username: '', email: 'radia@example.com' } }),
+        viewer: 'rperlman',
+        viewerEmail: 'radia@example.com',
+      },
+      { meeting: meetingBy(ada, { owner: { name: 'Radia Perlman', username: '', email: 'radia@example.com' } }), viewer: 'rperlman', viewerEmail: null },
     ];
 
-    for (const { meeting, viewer } of cases) {
-      const chip = buildMeetingOrganizerChip(collectMeetingOrganizers(meeting), viewer);
+    for (const { meeting, viewer, viewerEmail } of cases) {
+      const chip = buildMeetingOrganizerChip(collectMeetingOrganizers(meeting), viewer, {}, viewerEmail);
       const chipSaysYou = !!chip && [chip.primary, ...chip.overflow].some((link) => link.isYou);
-      expect(isMeetingOrganizedByViewer(meeting, viewer)).toBe(chipSaysYou);
+      expect(isMeetingOrganizedByViewer(meeting, viewer, undefined, viewerEmail)).toBe(chipSaysYou);
     }
   });
 });

@@ -16,6 +16,9 @@
  *   - The search pool only covers indexed meeting registrants, so the picker's "Enter details
  *     manually" affordance lets any name/email be set as owner; manual entry sends
  *     `owner: {name, email}` (no username) and an invalid email blocks the step.
+ *   - "Back to search" keeps a valid manual draft but discards an invalid one wholesale — a
+ *     surviving name-only trio would be sent as `owner` and replace the stored organizer upstream,
+ *     so the abandoned draft must leave all-empty controls and the save must omit the key.
  *   - The Clear affordance empties a picked/saved owner selection; the following save omits the
  *     `owner` key (create reverts to the creator default; edit keeps the stored owner).
  *
@@ -478,6 +481,12 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await emailInput.fill(MANUAL_OWNER.email);
     await expect(nextButton).toBeEnabled();
 
+    // A VALID draft survives "Back to search" — only an invalid one is discarded (covered in the
+    // next test). The remounted search box seeds from the kept ownerEmail, and the save below
+    // proves the kept draft is what actually ships.
+    await page.getByTestId('meeting-details-organizer-back-to-search').click();
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(MANUAL_OWNER.email);
+
     // The organizer label reacts to the typed values just like a search pick.
     await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${MANUAL_OWNER.name} (${MANUAL_OWNER.email})`);
 
@@ -486,5 +495,41 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     // No username: a hand-typed identity is name+email only.
     expect((captured.put as Record<string, unknown>)['owner']).toEqual({ name: MANUAL_OWNER.name, email: MANUAL_OWNER.email });
+  });
+
+  test('back to search discards an invalid manual draft so the save omits owner', async ({ page }) => {
+    const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
+    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
+
+    await gotoEditPage(page);
+    await openDetailsStep(page);
+    await expect(page.getByTestId('meeting-details-organizer-selected')).toContainText(`Current organizer: ${OWNER.name}`);
+
+    // The overlay footer is the only path into manual mode — type to open it.
+    await page.getByTestId('meeting-details-organizer-search').locator('input').fill('Radia');
+    await page.getByRole('button', { name: 'Enter details manually' }).click();
+    await expect(page.getByTestId('meeting-details-organizer-manual')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    // Start a draft over the hydrated owner (the first manual edit drops the username), then
+    // abandon it while the email is invalid and gating the step.
+    const nextButton = page.getByTestId('meeting-manage-next-btn').locator('button');
+    await page.getByTestId('meeting-details-organizer-email-input').locator('input').fill('not-an-email');
+    await expect(nextButton).toBeDisabled();
+    await page.getByTestId('meeting-details-organizer-back-to-search').click();
+
+    // The WHOLE draft is discarded, not just the invalid email — a surviving hydrated name would
+    // be sent as a name-only `owner` and replace the stored organizer upstream. The step un-gates,
+    // the search box comes back empty, and no organizer label lingers.
+    await expect(page.getByTestId('meeting-details-organizer-search')).toBeVisible();
+    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue('');
+    await expect(page.getByTestId('meeting-details-organizer-selected')).toHaveCount(0);
+    await expect(nextButton).toBeEnabled();
+
+    await saveFromDetailsStep(page);
+
+    await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
+    // All-empty controls → key omitted → the stored owner (incl. username and avatar) survives,
+    // exactly like Clear.
+    expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
   });
 });

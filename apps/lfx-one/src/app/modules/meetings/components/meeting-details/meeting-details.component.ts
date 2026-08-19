@@ -242,11 +242,13 @@ export class MeetingDetailsComponent implements OnInit {
   public backToOwnerSearch(): void {
     // An invalid manual email would keep gating the step invisibly after the switch — its error
     // message only renders in manual mode, and the remounted search box is a separate control that
-    // can't edit ownerEmail. Drop it; a typed name stays (name-only owners are valid upstream) and
-    // remains visible/clearable via the "Current organizer" row.
-    const ownerEmailCtrl = this.form().get('ownerEmail');
-    if (ownerEmailCtrl?.invalid) {
-      ownerEmailCtrl.setValue(null);
+    // can't edit ownerEmail. Discard the WHOLE abandoned draft, not just the email: the username is
+    // already gone (dropped on the first manual edit), so keeping the name would leave a valid
+    // name-only trio that a later save sends as `owner` — replacing the stored organizer's
+    // email/username/profile_picture upstream. All-empty controls omit the key instead, exactly
+    // like Clear, so the stored owner survives (as the helper text says). A valid draft is kept.
+    if (this.form().get('ownerEmail')?.invalid) {
+      this.clearOwnerSelection();
     }
     this.ownerManualEntry.set(false);
   }

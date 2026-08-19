@@ -378,9 +378,11 @@ export class MeetingsDashboardComponent {
     const projectFilter$ = toObservable(this.projectFilter);
     const pendingRsvpOnly$ = toObservable(this.pendingRsvpOnly);
     const organizerOnly$ = toObservable(this.organizerOnly);
-    // The viewer LFID backs the "Organized by me" predicate and can resolve after the meetings do,
-    // so it participates in the stream — otherwise the first filtered emission would use a null viewer.
+    // The viewer identity (LFID + primary email) backs the "Organized by me" predicate and can
+    // resolve after the meetings do, so it participates in the stream — otherwise the first
+    // filtered emission would use a null viewer.
     const viewerUsername$ = toObservable(this.userService.viewerUsername);
+    const viewerEmail$ = toObservable(this.userService.viewerEmail);
     const meLens$ = combineLatest([
       lens$,
       timeFilter$,
@@ -392,22 +394,26 @@ export class MeetingsDashboardComponent {
       pendingRsvpOnly$,
       organizerOnly$,
       viewerUsername$,
+      viewerEmail$,
     ]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername]) => {
-        if (lens !== 'me' || timeFilter !== 'upcoming') {
-          return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
+      switchMap(
+        ([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, viewerEmail]) => {
+          if (lens !== 'me' || timeFilter !== 'upcoming') {
+            return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
+          }
+          const filtered = this.filterMeLensMeetings(rawMeetings, {
+            searchQuery,
+            meetingType,
+            foundation,
+            project,
+            pendingRsvpOnly,
+            organizerOnly,
+            viewerUsername,
+            viewerEmail,
+          });
+          return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
         }
-        const filtered = this.filterMeLensMeetings(rawMeetings, {
-          searchQuery,
-          meetingType,
-          foundation,
-          project,
-          pendingRsvpOnly,
-          organizerOnly,
-          viewerUsername,
-        });
-        return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
-      })
+      )
     );
 
     // Project/foundation lens: server-side filtering with pagination
@@ -483,6 +489,7 @@ export class MeetingsDashboardComponent {
     const pastProjectFilter$ = toObservable(this.projectFilter);
     const pastOrganizerOnly$ = toObservable(this.organizerOnly);
     const pastViewerUsername$ = toObservable(this.userService.viewerUsername);
+    const pastViewerEmail$ = toObservable(this.userService.viewerEmail);
     const meLens$ = combineLatest([
       lens$,
       timeFilter$,
@@ -493,8 +500,9 @@ export class MeetingsDashboardComponent {
       pastProjectFilter$,
       pastOrganizerOnly$,
       pastViewerUsername$,
+      pastViewerEmail$,
     ]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawPastMeetings, foundation, project, organizerOnly, viewerUsername]) => {
+      switchMap(([lens, timeFilter, searchQuery, meetingType, rawPastMeetings, foundation, project, organizerOnly, viewerUsername, viewerEmail]) => {
         if (lens !== 'me' || timeFilter !== 'past') {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
         }
@@ -507,6 +515,7 @@ export class MeetingsDashboardComponent {
           pendingRsvpOnly: false,
           organizerOnly,
           viewerUsername,
+          viewerEmail,
         });
         return of<PageResult<PastMeeting>>({ data: filtered, page_token: undefined, reset: true });
       })
@@ -668,7 +677,7 @@ export class MeetingsDashboardComponent {
   }
 
   private filterMeLensMeetings<T extends Meeting>(items: T[], filters: MeLensMeetingFilters): T[] {
-    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername } = filters;
+    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, viewerEmail } = filters;
     let filtered = items;
 
     if (project) {
@@ -698,7 +707,8 @@ export class MeetingsDashboardComponent {
       // (MeetingRegistrantsDisplayComponent → resolvedHostsChange), so matching it here would mean
       // fetching registrants for every meeting in the list up front — real new API cost this
       // client-side filter (LFXV2-2824) doesn't take on.
-      filtered = filtered.filter((m) => isMeetingOrganizedByViewer(m, viewerUsername));
+      // No hosts (see above); the email matches owner records that carry no username (manual entry).
+      filtered = filtered.filter((m) => isMeetingOrganizedByViewer(m, viewerUsername, undefined, viewerEmail));
     }
 
     return this.filterBySearchAndType(filtered, searchQuery, meetingType);
@@ -999,6 +1009,7 @@ export class MeetingsDashboardComponent {
               pendingRsvpOnly: this.pendingRsvpOnly(),
               organizerOnly: this.organizerOnly(),
               viewerUsername: this.userService.viewerUsername(),
+              viewerEmail: this.userService.viewerEmail(),
             })
           : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
       return filtered.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
