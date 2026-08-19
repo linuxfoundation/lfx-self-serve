@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgAgentAccent } from '@lfx-one/shared/interfaces';
+import { MktgAgent, MktgAgentAccent, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { distinctUntilChanged, filter } from 'rxjs';
 
 // Marketplace landing for the Marketing OS marketplace (approved form-first
 // design): catalog grid with client-side search, "Coming soon" tags on
@@ -26,10 +27,15 @@ import { ProjectContextService } from '@services/project-context.service';
 })
 export class MktgOsAgentsComponent {
   // === Injections ===
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly runService = inject(MktgAgentRunService);
+
+  // toObservable needs the injection context — created here, subscribed
+  // (browser only) in the constructor. Same pattern as the run page.
+  private readonly activeContext$ = toObservable(this.projectContext.activeContext);
 
   // === Constants ===
   protected readonly labels = MKTG_OS_AGENTS_LABEL;
@@ -69,7 +75,28 @@ export class MktgOsAgentsComponent {
   };
 
   public constructor() {
-    afterNextRender(() => this.loadStoredVersions());
+    // Stored-run badges read localStorage per project, and the project selector
+    // reuses this component on a switch (it only rewrites ?project= via
+    // Location.replaceState — no navigation), so the badges must follow the
+    // active context, never a one-shot first render: a one-shot would keep the
+    // previous project's versions after a switch and would never load at all
+    // when the context resolves after the first render. Browser-only so SSR
+    // output stays badge-free and stable; the first emission lands
+    // post-hydration. Same pattern as the run page's restore/prefill.
+    if (isPlatformBrowser(this.platformId)) {
+      this.activeContext$
+        .pipe(
+          filter((context): context is ProjectContext => !!context),
+          distinctUntilChanged((previous, current) => previous.uid === current.uid),
+          takeUntilDestroyed()
+        )
+        .subscribe((context) => {
+          // Clear first so a project with no stored runs never keeps the
+          // previous project's badges.
+          this.storedVersions.set({});
+          this.loadStoredVersions(context.uid);
+        });
+    }
   }
 
   // === Protected methods ===
@@ -102,11 +129,7 @@ export class MktgOsAgentsComponent {
   }
 
   // === Private helpers ===
-  private loadStoredVersions(): void {
-    const projectUid = this.projectContext.activeContextUid();
-    if (!projectUid) {
-      return;
-    }
+  private loadStoredVersions(projectUid: string): void {
     const counts: Record<string, number> = {};
     for (const agent of MKTG_AGENTS) {
       const run = this.runService.loadRun(projectUid, agent.id);
