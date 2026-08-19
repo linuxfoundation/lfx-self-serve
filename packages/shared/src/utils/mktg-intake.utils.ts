@@ -6,12 +6,16 @@ import { MktgAgentIntake } from '../interfaces';
 /**
  * Renders a batch intake submission into the structured chat message a
  * Marketing OS agent's form mode expects — the agent's batch preamble, then
- * every question (verbatim) with its answer in order, then an optional
- * feedback block for regeneration.
+ * every question (verbatim) with its answer in order, then a version
+ * directive whenever a prior draft exists.
  *
- * The Q/A and feedback wording mirrors the brand-kit agent's own
- * `renderFormMessage` (marketing-os-agents `agents/brand-kit-ts/src/form.ts`)
- * so the message parses identically whether composed there or here.
+ * The version directive is emitted for EVERY follow-up, not only feedback
+ * regenerations: an edit-inputs resubmit must also instruct the agent to
+ * finalize as version N+1, because the result endpoint only accepts an
+ * envelope strictly newer than the prior draft. The Q/A and feedback wording
+ * mirrors the brand-kit agent's own `renderFormMessage` (marketing-os-agents
+ * `agents/brand-kit-ts/src/form.ts`) so the message parses identically
+ * whether composed there or here.
  */
 export function renderMktgIntakeMessage(intake: MktgAgentIntake, answers: Record<string, string>, feedback?: string, priorVersion?: number): string {
   const lines: string[] = [...intake.batchPreamble, ''];
@@ -22,10 +26,15 @@ export function renderMktgIntakeMessage(intake: MktgAgentIntake, answers: Record
     lines.push('');
   });
 
-  if (feedback !== undefined) {
+  const hasFeedback = feedback !== undefined && feedback.trim() !== '';
+  if (hasFeedback || priorVersion !== undefined) {
     const prior = priorVersion ?? 1;
-    lines.push(`FEEDBACK on draft v${prior} — regenerate incorporating it and finalize as version ${prior + 1}:`);
-    lines.push(feedback);
+    if (hasFeedback) {
+      lines.push(`FEEDBACK on draft v${prior} — regenerate incorporating it and finalize as version ${prior + 1}:`);
+      lines.push(feedback);
+    } else {
+      lines.push(`REVISED INTAKE — the answers above replace draft v${prior}; regenerate from the updated answers and finalize as version ${prior + 1}.`);
+    }
     lines.push('');
   }
 

@@ -171,8 +171,11 @@ export interface MktgGenerateRequest {
   intake: MktgAgentIntake;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
-  /** Feedback on the prior draft; present only when regenerating. */
+  /**
+   * Feedback on the prior draft; present only for "Request changes"
+   * regenerations. The prior draft's version is NOT part of the request — the
+   * run service derives it from the stored run so the follow-up message's
+   * version directive and the result poll gate can never disagree.
+   */
   feedback?: string;
-  /** Version of the prior draft being revised; present only when regenerating. */
-  priorVersion?: number;
 }

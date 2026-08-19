@@ -28,13 +28,21 @@ describe('MktgAgentRunService', () => {
   /** Result-endpoint responses, consumed one per poll (last one repeats). */
   let resultResponses: MktgRunResultResponse[];
 
-  const generateRequest = (feedback?: string, priorVersion?: number): MktgGenerateRequest => ({
+  const generateRequest = (feedback?: string): MktgGenerateRequest => ({
     agentId: 'brand-kit',
     projectUid: 'proj-1',
     intake: BRAND_KIT_INTAKE,
     answers: ANSWERS,
     feedback,
-    priorVersion,
+  });
+
+  const storedV1Run = (): MktgStoredAgentRun => ({
+    agentId: 'brand-kit',
+    projectUid: 'proj-1',
+    sessionId: 'sess-1',
+    ownerToken: 'token-1',
+    answers: ANSWERS,
+    versions: [{ version: 1, document: '# v1', createdAt: '2026-08-19T00:00:00.000Z' }],
   });
 
   beforeEach(() => {
@@ -106,16 +114,8 @@ describe('MktgAgentRunService', () => {
     expect(stored).toMatchObject({ sessionId: 'sess-1', ownerToken: 'token-1', answers: ANSWERS });
   });
 
-  it('regenerates as a chat follow-up on the stored session (full form + feedback + prior_version) and rejects the stale prior draft', async () => {
-    const priorRun: MktgStoredAgentRun = {
-      agentId: 'brand-kit',
-      projectUid: 'proj-1',
-      sessionId: 'sess-1',
-      ownerToken: 'token-1',
-      answers: ANSWERS,
-      versions: [{ version: 1, document: '# v1', createdAt: '2026-08-19T00:00:00.000Z' }],
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(priorRun));
+  it('regenerates as a chat follow-up on the stored session (full form + feedback + derived prior version) and rejects the stale prior draft', async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
     // The session's prior envelope is still `ready` at v1 — only v2 may count.
     resultResponses = [
       { status: 'ready', documentMarkdown: '# v1', version: 1 },
@@ -123,8 +123,9 @@ describe('MktgAgentRunService', () => {
     ];
 
     const events: MktgGenerateProgress[] = [];
-    service.generate(generateRequest('Tighten the taglines.', 1)).subscribe((event) => events.push(event));
+    service.generate(generateRequest('Tighten the taglines.')).subscribe((event) => events.push(event));
 
+    // prior_version is derived from the STORED run, never passed by the caller.
     expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
       agentId: 'brand-kit',
       message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
@@ -142,5 +143,40 @@ describe('MktgAgentRunService', () => {
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
     expect(stored.versions).toHaveLength(2);
     expect(stored.versions[1]).toMatchObject({ version: 2, document: '# v2', feedback: 'Tighten the taglines.' });
+  });
+
+  it('bumps the version on an edit-inputs resubmit WITHOUT feedback so the poll gate can be satisfied', async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    resultResponses = [
+      { status: 'ready', documentMarkdown: '# v1', version: 1 },
+      { status: 'ready', documentMarkdown: '# v2', version: 2 },
+    ];
+
+    const events: MktgGenerateProgress[] = [];
+    service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+    // The follow-up message must carry the version directive even with no
+    // feedback — the poll below only accepts > v1, so a message that lets the
+    // agent finalize as v1 again would spin until timeout.
+    const chatCall = httpPost.mock.calls.find(([url]) => url === '/api/mktg-agents/chat');
+    expect(chatCall?.[1]).toEqual({
+      agentId: 'brand-kit',
+      message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, undefined, 1),
+      sessionId: 'sess-1',
+      ownerToken: 'token-1',
+    });
+    expect(chatCall?.[1].message).toContain('finalize as version 2');
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    // Stale v1 poll response — still no document event.
+    expect(events).toEqual([{ type: 'submitted' }]);
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(events).toHaveLength(2);
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+    expect(stored.versions).toHaveLength(2);
+    expect(stored.versions[1]).toMatchObject({ version: 2, document: '# v2' });
+    expect(stored.versions[1].feedback).toBeUndefined();
   });
 });

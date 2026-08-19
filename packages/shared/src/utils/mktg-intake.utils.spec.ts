@@ -29,8 +29,22 @@ describe('renderMktgIntakeMessage', () => {
     });
   });
 
-  it('omits the feedback block when no feedback is given', () => {
-    expect(renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS)).not.toContain('FEEDBACK');
+  it('omits feedback and version directives on a first run', () => {
+    const message = renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS);
+    expect(message).not.toContain('FEEDBACK');
+    expect(message).not.toContain('finalize as version');
+  });
+
+  it('appends the version directive when resubmitting without feedback (edit inputs)', () => {
+    const message = renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, undefined, 2);
+    expect(message).toContain('REVISED INTAKE — the answers above replace draft v2; regenerate from the updated answers and finalize as version 3.');
+    expect(message).not.toContain('FEEDBACK');
+  });
+
+  it('treats blank feedback as a resubmit, not a feedback block', () => {
+    const message = renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, '   ', 1);
+    expect(message).not.toContain('FEEDBACK');
+    expect(message).toContain('finalize as version 2');
   });
 
   it('appends the feedback block with prior_version and the next version', () => {

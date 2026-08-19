@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -20,9 +20,10 @@ import {
   MktgRunPhase,
   MktgRunVersion,
   MktgStoredAgentRun,
+  ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
-import { map } from 'rxjs';
+import { distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -42,11 +43,18 @@ import { ProjectService } from '@services/project.service';
 export class MktgAgentRunComponent {
   // === Injections ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly runService = inject(MktgAgentRunService);
+
+  // toObservable needs the injection context — created here, subscribed (browser
+  // only) in the constructor.
+  private readonly activeContext$ = toObservable(this.projectContext.activeContext);
+  /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
+  private generationSub: Subscription | null = null;
 
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
@@ -112,8 +120,32 @@ export class MktgAgentRunComponent {
       return;
     }
     // Stored runs + LFX prefill read browser state (localStorage, HTTP-backed
-    // project detail) — apply after hydration so SSR output stays stable.
-    afterNextRender(() => this.restoreAndPrefill());
+    // project detail), and the project selector reuses this component on a
+    // switch (it only rewrites ?project=) — so restore + prefill must re-run,
+    // and ALL run state must reset, on every active-context change, never just
+    // the first render (docs/reviews/frontend-checklist.md 14.14). Browser-only
+    // so SSR output stays stable; the first emission lands post-hydration.
+    if (isPlatformBrowser(this.platformId)) {
+      this.activeContext$
+        .pipe(
+          filter((context): context is ProjectContext => !!context),
+          distinctUntilChanged((previous, current) => previous.uid === current.uid),
+          switchMap((context) => {
+            this.resetForContext(context);
+            // getProject memoizes per slug and maps errors to null, and
+            // switchMap drops a stale in-flight lookup on project change.
+            return this.projectService.getProject(context.slug, false);
+          }),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe((project) => {
+          if (!project) {
+            return;
+          }
+          this.applyPrefill('repository-url', project.repository_url);
+          this.applyPrefill('project-description', project.description);
+        });
+    }
   }
 
   // === Protected methods ===
@@ -162,6 +194,10 @@ export class MktgAgentRunComponent {
   }
 
   protected onDownload(): void {
+    // SSR guard: Blob/URL/document are browser-only (ssr-safety rule).
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     const current = this.currentVersion();
     if (!current) {
       return;
@@ -220,11 +256,28 @@ export class MktgAgentRunComponent {
     return new FormGroup(controls);
   }
 
-  private restoreAndPrefill(): void {
-    const context = this.projectContext.activeContext();
-    if (!this.agent || !this.intake || !context) {
+  /**
+   * Resets ALL run state for the (new) active project, then restores that
+   * project's stored run and applies its LFX prefill. Runs on every active
+   * context change so one project's session, answers and versions can never
+   * bleed into another's.
+   */
+  private resetForContext(context: ProjectContext): void {
+    if (!this.agent || !this.intake) {
       return;
     }
+
+    this.generationSub?.unsubscribe();
+    this.generationSub = null;
+    this.run.set(null);
+    this.viewVersion.set(null);
+    this.phase.set('form');
+    this.stage.set(0);
+    this.errorText.set('');
+    this.docExpanded.set(false);
+    this.fromLfx.set({});
+    this.intakeForm.reset();
+    this.feedbackForm.reset();
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
@@ -237,17 +290,9 @@ export class MktgAgentRunComponent {
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
+    // repository-url / project-description follow from the getProject lookup
+    // chained in the constructor.
     this.applyPrefill('project-name', context.name);
-    this.projectService
-      .getProject(context.slug, false)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((project) => {
-        if (!project) {
-          return;
-        }
-        this.applyPrefill('repository-url', project.repository_url);
-        this.applyPrefill('project-description', project.description);
-      });
   }
 
   private applyPrefill(source: MktgIntakePrefillSource, value: string | null | undefined): void {
@@ -281,15 +326,18 @@ export class MktgAgentRunComponent {
     for (const field of this.intake.fields) {
       answers[field.key] = this.intakeForm.controls[field.key].value.trim();
     }
-    const priorVersion = feedback === undefined ? undefined : this.versions().at(-1)?.version;
 
     this.errorText.set('');
     this.docExpanded.set(false);
     this.phase.set('running');
     this.stage.set(0);
 
-    this.runService
-      .generate({ agentId: this.agent.id, projectUid, intake: this.intake, answers, feedback, priorVersion })
+    // The prior draft's version is NOT sent — the run service derives it from
+    // the stored run so the follow-up's version directive always matches the
+    // version its result poll will accept.
+    this.generationSub?.unsubscribe();
+    this.generationSub = this.runService
+      .generate({ agentId: this.agent.id, projectUid, intake: this.intake, answers, feedback })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (progress) => {
@@ -311,8 +359,13 @@ export class MktgAgentRunComponent {
     this.run.set(run);
     this.viewVersion.set(run.versions.at(-1)?.version ?? null);
     this.feedbackForm.reset();
-    // Let the "Validating required sections" stage register before the result lands.
-    setTimeout(() => this.phase.set('result'), 600);
+    // Let the "Validating required sections" stage register before the result
+    // lands — but only if a project switch hasn't reset the page meanwhile.
+    setTimeout(() => {
+      if (this.run() === run) {
+        this.phase.set('result');
+      }
+    }, 600);
   }
 
   private sectionPresent(lowerDoc: string, label: string): boolean {
