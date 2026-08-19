@@ -538,6 +538,12 @@ export type NewsletterFieldSchema = Record<string, NewsletterFieldDefinition>;
  */
 export interface NewsletterFieldEntry extends NewsletterFieldDefinition {
   key: string;
+  /** Precomputed display label (explicit `label` or a humanized `key`), so the
+   * fields-panel template reads a property instead of calling a method per row. */
+  displayLabel: string;
+  /** Precomputed nested entries for an `array` field (empty otherwise), so the
+   * template iterates a property instead of allocating on every change detection. */
+  nested: NewsletterFieldEntry[];
 }
 
 /**

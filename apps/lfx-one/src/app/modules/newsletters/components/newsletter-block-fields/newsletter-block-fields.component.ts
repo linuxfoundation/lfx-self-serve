@@ -64,6 +64,23 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   // The non-slot fields to render, flattened with their key (ordered by schema).
   protected readonly fieldEntries: Signal<NewsletterFieldEntry[]> = this.initFieldEntries();
 
+  // Live per-key FormArray item groups for `array` fields, so the template reads
+  // a signal + property (`arrayControls()[key]`) instead of calling a method that
+  // re-derives the list on every change-detection pass. The mapped value is the
+  // FormArray's own `controls` reference, so in-place add/remove is reflected
+  // without the computed re-running (it only re-runs on a form rebuild).
+  protected readonly arrayControls: Signal<Record<string, FormGroup[]>> = computed(() => {
+    const group = this.form();
+    const map: Record<string, FormGroup[]> = {};
+    if (!group) return map;
+    for (const entry of this.fieldEntries()) {
+      if (entry.type !== 'array') continue;
+      const ctrl = group.get(entry.key);
+      if (ctrl instanceof FormArray) map[entry.key] = ctrl.controls as FormGroup[];
+    }
+    return map;
+  });
+
   // Reserved keys for the universal Spacing controls, surfaced to the template.
   protected readonly paddingKey = NEWSLETTER_SPACING_PADDING_KEY;
   protected readonly marginKey = NEWSLETTER_SPACING_MARGIN_KEY;
@@ -128,25 +145,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
 
   // === Protected Methods (template) ===
 
-  /** A field's display label — explicit `label` or a humanized key. */
-  protected fieldLabel(entry: NewsletterFieldEntry): string {
-    return entry.label ?? humanizeFieldKey(entry.key);
-  }
-
   /** The FormArray backing an `array` field. */
   protected arrayControl(key: string): FormArray | null {
     const ctrl = this.form()?.get(key);
     return ctrl instanceof FormArray ? ctrl : null;
-  }
-
-  /** The per-item FormGroups of an `array` field, for template iteration. */
-  protected arrayItems(key: string): FormGroup[] {
-    return (this.arrayControl(key)?.controls ?? []) as FormGroup[];
-  }
-
-  /** The nested field definitions of an `array` field, flattened with key. */
-  protected nestedEntries(entry: NewsletterFieldEntry): NewsletterFieldEntry[] {
-    return Object.entries(entry.fields ?? {}).map(([key, def]) => ({ key, ...def }));
   }
 
   /** Append an empty item group to an `array` field. */
@@ -172,8 +174,19 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
       if (!schema) return [];
       return Object.entries(schema)
         .filter(([, def]) => def.type !== 'slot')
-        .map(([key, def]) => ({ key, ...def }));
+        .map(([key, def]) => this.toEntry(key, def));
     });
+  }
+
+  /**
+   * Flatten a field definition into a view entry with its precomputed display
+   * label and nested entries, so the fields-panel template reads properties
+   * (`entry.displayLabel`, `entry.nested`) instead of calling methods per row on
+   * every change-detection pass.
+   */
+  private toEntry(key: string, def: NewsletterFieldDefinition): NewsletterFieldEntry {
+    const nested = Object.entries(def.fields ?? {}).map(([nestedKey, nestedDef]) => this.toEntry(nestedKey, nestedDef));
+    return { key, ...def, displayLabel: def.label ?? humanizeFieldKey(key), nested };
   }
 
   // === Private Helpers ===

@@ -15,7 +15,7 @@
             [attr.aria-labelledby]="'nlfld-' + entry.key"
             class="flex flex-col gap-1.5"
             [attr.data-testid]="'newsletter-composer-field-' + entry.key">
-            <label [id]="'nlfld-' + entry.key" class="text-sm font-medium text-gray-700">{{ fieldLabel(entry) }}</label>
+            <label [id]="'nlfld-' + entry.key" class="text-sm font-medium text-gray-700">{{ entry.displayLabel }}</label>
 
             @switch (entry.type) {
               @case ('richtext') {
@@ -52,7 +52,7 @@
               }
               @case ('array') {
                 <div class="flex flex-col gap-3" [attr.data-testid]="'newsletter-composer-field-array-' + entry.key">
-                  @for (item of arrayItems(entry.key); track item; let itemIdx = $index) {
+                  @for (item of arrayControls()[entry.key]; track item; let itemIdx = $index) {
                     <div
                       class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3"
                       [attr.data-testid]="'newsletter-composer-field-array-' + entry.key + '-item-' + $index">
@@ -68,11 +68,9 @@
                           (onClick)="removeItem(entry.key, $index)" />
                       </div>
 
-                      @for (nested of nestedEntries(entry); track trackByKey($index, nested)) {
+                      @for (nested of entry.nested; track trackByKey($index, nested)) {
                         <div role="group" [attr.aria-labelledby]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="flex flex-col gap-1.5">
-                          <label [id]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="text-xs font-medium text-gray-600">{{
-                            fieldLabel(nested)
-                          }}</label>
+                          <label [id]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="text-xs font-medium text-gray-600">{{ nested.displayLabel }}</label>
                           @switch (nested.type) {
                             @case ('richtext') {
                               <lfx-rich-editor
