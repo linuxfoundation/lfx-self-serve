@@ -30,6 +30,7 @@ import type {
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
+  MeetingRegistrant,
   MeetingUserInfo,
   OccurrenceNavItem,
   PastMeeting,
@@ -38,6 +39,7 @@ import type {
   PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
+  RegistrantEmailExtraction,
   SummaryData,
   TranscriptCue,
   User,
@@ -74,6 +76,53 @@ export function isRecurrenceNeverEndSentinel(endDateTime: string | null | undefi
   const end = new Date(endDateTime).getTime();
   if (!Number.isFinite(end)) return false;
   return end - Date.now() >= FIFTY_YEARS_MS;
+}
+
+/**
+ * Pulls invite-ready emails off a meeting's registrant list (LFXV2-2607).
+ * Trims each email, drops blanks (counting them as skipped so the UI can report
+ * "N registrants had no email"), and de-duplicates case-insensitively while
+ * preserving the first-seen casing. The caller feeds `emails` into the existing
+ * invite dedupe/fan-out, so this deliberately does no member/invite matching.
+ */
+export function extractRegistrantEmails(registrants: MeetingRegistrant[] | null | undefined): RegistrantEmailExtraction {
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  let skippedNoEmail = 0;
+
+  for (const registrant of registrants ?? []) {
+    const email = (registrant?.email ?? '').trim();
+    if (!email) {
+      skippedNoEmail++;
+      continue;
+    }
+    const key = email.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    emails.push(email);
+  }
+
+  return { emails, skippedNoEmail };
+}
+
+/** Filters `emails` down to those not already present (case-insensitively) in `alreadyListed`. */
+export function filterUnlistedEmails(emails: string[], alreadyListed: string[]): string[] {
+  const listed = new Set(alreadyListed.map((email) => email.toLowerCase()));
+  return emails.filter((email) => !listed.has(email.toLowerCase()));
+}
+
+/** Compose the import result line: how many were added, already listed, and skipped for no email. */
+export function buildImportSummary(meetingTitle: string, added: number, alreadyListed: number, skippedNoEmail: number): string {
+  const parts: string[] = [added === 1 ? `Added 1 address from "${meetingTitle}"` : `Added ${added} addresses from "${meetingTitle}"`];
+  if (alreadyListed > 0) {
+    parts.push(`${alreadyListed} already listed`);
+  }
+  if (skippedNoEmail > 0) {
+    parts.push(skippedNoEmail === 1 ? '1 registrant had no email and was skipped' : `${skippedNoEmail} registrants had no email and were skipped`);
+  }
+  return `${parts.join(' — ')}.`;
 }
 
 /**
