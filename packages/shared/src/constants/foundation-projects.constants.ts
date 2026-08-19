@@ -38,6 +38,16 @@ export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH = 3;
 export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES = 40;
 
 /**
+ * Max concurrent per-slug `FOUNDATION_TOTAL_PROJECTS_DETAIL` Snowflake queries fanned out across
+ * a foundation's discovered sub-foundations. A wide foundation can have up to
+ * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} sub-foundations; firing all of their detail
+ * queries at once can overflow the shared Snowflake pool's waiting-client queue (see
+ * `ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY` for the same pool-exhaustion concern) and cause
+ * otherwise-healthy queries to be rejected (GH-1607 review).
+ */
+export const FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY = 8;
+
+/**
  * Empty-state fallback for the Foundation Projects page's grouped detail request —
  * mirrors {@link DEFAULT_FOUNDATION_PROJECTS_DETAIL}'s role for the flat drawer endpoint.
  */

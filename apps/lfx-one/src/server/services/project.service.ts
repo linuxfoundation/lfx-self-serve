@@ -8,6 +8,7 @@ import {
   EMAIL_CAMPAIGN_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -2002,47 +2003,63 @@ export class ProjectService {
 
     const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
     const subFoundations = await this.discoverSubFoundations(req, rootProject.uid);
-    // Every discovered sub-foundation gets its own group/section below, so strip its row out of
-    // whichever parent's detail list it also shows up in (the cube rolls up direct children) —
-    // otherwise it renders both as a leaf project row and as a section header (GH-1607 review).
-    const subFoundationSlugs = new Set(subFoundations.map(({ slug }) => slug));
 
     // The root query is not allowed to degrade gracefully like a sub-foundation branch can: a
     // failed root means no reliable root group to anchor the frontend's grouping fallback, so
     // let it throw and propagate to the caller instead of returning an incomplete 200 (GH-1607 review).
     const rootDetail = await this.getFoundationProjectsDetail(rootProject.slug);
+
+    // Fan out through a bounded worker pool rather than firing all N sub-foundation queries at
+    // once: a wide foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them,
+    // which can overflow the shared Snowflake pool's waiting-client queue and cause otherwise
+    // healthy queries to be rejected (GH-1607 review, same pattern as organization.service.ts's
+    // getOrgLensAccountContext).
+    const subDetails: (FoundationProjectsDetailGroup | null)[] = new Array(subFoundations.length).fill(null);
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < subFoundations.length) {
+        const index = cursor++;
+        const { uid, slug, name } = subFoundations[index];
+        try {
+          const detail = await this.getFoundationProjectsDetail(slug);
+          subDetails[index] = {
+            foundationSlug: slug,
+            foundationName: name,
+            foundationUid: uid,
+            projects: detail.projects.map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
+          };
+        } catch (error) {
+          logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
+            foundation_slug: slug,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+    const poolSize = Math.min(FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY, subFoundations.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+    // Only a sub-foundation that actually resolved its own section gets its rows stripped out of
+    // whichever parent's detail list they also show up in (the cube rolls up direct children).
+    // A sub-foundation whose own fetch failed above must NOT be stripped from its parent — it has
+    // no section of its own, so its parent's leaf row is its only remaining representation.
+    // Filtering by the full discovered set regardless of fetch outcome would make a failed
+    // sub-foundation vanish entirely instead of falling back to that parent row (GH-1607 review).
+    const renderedSlugs = new Set(subDetails.filter((group): group is FoundationProjectsDetailGroup => group !== null).map((group) => group.foundationSlug));
+
     const rootGroup: FoundationProjectsDetailGroup = {
       foundationSlug: rootProject.slug,
       foundationName: rootProject.name,
       foundationUid: rootProject.uid,
       projects: rootDetail.projects
-        .filter((project) => !subFoundationSlugs.has(project.projectSlug))
+        .filter((project) => !renderedSlugs.has(project.projectSlug))
         .map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name })),
     };
 
-    const subResults = await Promise.allSettled(
-      subFoundations.map(async ({ uid, slug, name }) => {
-        const detail = await this.getFoundationProjectsDetail(slug);
-        return {
-          foundationSlug: slug,
-          foundationName: name,
-          foundationUid: uid,
-          projects: detail.projects
-            .filter((project) => !subFoundationSlugs.has(project.projectSlug))
-            .map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
-        };
-      })
-    );
-
     const groups: FoundationProjectsDetailGroup[] = [rootGroup];
-    for (const [index, result] of subResults.entries()) {
-      if (result.status === 'fulfilled') {
-        groups.push(result.value);
-      } else {
-        logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
-          foundation_slug: subFoundations[index].slug,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        });
+    for (const group of subDetails) {
+      if (group !== null) {
+        groups.push({ ...group, projects: group.projects.filter((project) => !renderedSlugs.has(project.projectSlug)) });
       }
     }
 

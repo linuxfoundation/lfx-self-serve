@@ -38,6 +38,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // actual numeric thresholds — not the arbitrary values a bare stub would produce.
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
+  // Real value (8, matching foundation-projects.constants.ts): getFoundationProjectsDetailGrouped
+  // uses this to size its worker pool via Math.min(), so it must be a real positive number.
+  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({
   // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
@@ -1118,6 +1121,51 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
     const rootGroup = result.groups.find((group) => group.foundationSlug === 'lfeurope');
     expect(rootGroup?.projects.map((p) => p.projectSlug)).toEqual(['envoy']);
     expect(result.totalCount).toBe(2);
+  });
+
+  it('falls back to the parent leaf row when a sub-foundation whose row appears there fails its own detail fetch', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    execute
+      // The cube rolls NeoNephos up under lfeurope's own detail, same as the successful case above.
+      .mockResolvedValueOnce({
+        rows: [
+          { PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' },
+          { PROJECT_ID: 'sub-uid', PROJECT_NAME: 'NeoNephos', PROJECT_SLUG: 'neonephos' },
+        ],
+      })
+      // NeoNephos's own section fetch fails — it must NOT also be stripped from the root row above,
+      // or it vanishes from the response entirely instead of falling back to its parent's leaf row.
+      .mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
+    const rootGroup = result.groups.find((group) => group.foundationSlug === 'lfeurope');
+    expect(rootGroup?.projects.map((p) => p.projectSlug)).toEqual(['envoy', 'neonephos']);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('never runs more than FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY sub-foundation detail fetches at once', async () => {
+    // 10 sub-foundations vs. a concurrency cap of 8 (mocked above): without the worker-pool fix
+    // this would fire all 10 Snowflake queries simultaneously and risk overflowing the shared pool.
+    const subs = Array.from({ length: 10 }, (_, i) => ({ uid: `sub-${i}-uid`, slug: `sub-${i}`, name: `Sub ${i}` }));
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue(subs);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    execute.mockImplementation(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return { rows: [] };
+    });
+
+    await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    // The root fetch runs alone and resolves before the sub-foundation pool starts, so the only
+    // concurrency to bound is the 10 sub-foundation fetches — capped at 8, never all 10 at once.
+    expect(maxInFlight).toBeLessThanOrEqual(8);
   });
 
   it('propagates a root foundation detail-fetch failure instead of degrading gracefully', async () => {
