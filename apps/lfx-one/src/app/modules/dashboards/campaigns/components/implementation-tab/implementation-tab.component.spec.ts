@@ -987,8 +987,10 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    * malformed (`linkedin-ads.service.ts:39`), so a SUCCESSFUL response can carry nothing. A guard
    * that required `accounts.length > 0` skipped entirely in that case, leaving the restored id on
    * the form with no account to match it — the selector renders empty while `submit()` still
-   * dispatches the stale value. Clearing is the honest outcome: the create then fails upstream on
-   * a blank account rather than silently spending against someone else's.
+   * dispatches the stale value. Clearing is the honest outcome, and `canSubmit`'s membership gate
+   * then holds the create BLOCKED rather than letting it reach LinkedIn: an empty catalog contains
+   * no id, including ''. The operator sees Create disabled beside an empty account list, which is
+   * the true state, instead of a create that fails somewhere they cannot see.
    */
   /**
    * The two windows `ngOnInit`'s reconciliation cannot cover.
