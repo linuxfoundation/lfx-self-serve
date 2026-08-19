@@ -75,18 +75,19 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('maps meeting uid → created_by from the v1_meeting index', async () => {
+  it('maps meeting uid → created_by/owner from the v1_meeting index', async () => {
+    const ownerA = { name: 'Owner a', username: 'ownera', email: 'owner-a@example.com' };
     proxyRequest.mockResolvedValueOnce(
       pageOf([
-        { id: 'a', created_by: human('a') },
+        { id: 'a', created_by: human('a'), owner: ownerA },
         { id: 'b', created_by: human('b') },
       ])
     );
 
     const result = await service.resolveCreatedByForMeetings(req, ['a', 'b']);
 
-    expect(result.get('a')).toEqual(human('a'));
-    expect(result.get('b')).toEqual(human('b'));
+    expect(result.get('a')).toEqual({ created_by: human('a'), owner: ownerA });
+    expect(result.get('b')).toEqual({ created_by: human('b') });
     // Single chunk → single query; the tags param carries the batched OR list.
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'v1_meeting', tags: ['a', 'b'] });
@@ -101,7 +102,7 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
 
     const result = await service.resolveCreatedByForMeetings(req, ['xyz']);
 
-    expect(result.get('xyz')).toEqual(human('xyz'));
+    expect(result.get('xyz')).toEqual({ created_by: human('xyz') });
   });
 
   it('dedupes repeated uids before querying', async () => {
@@ -112,13 +113,26 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     expect(proxyRequest.mock.calls[0][4]).toMatchObject({ tags: ['a'] });
   });
 
-  it('omits meetings that carry no created_by', async () => {
-    proxyRequest.mockResolvedValueOnce(pageOf([{ id: 'a', created_by: human('a') }, { id: 'b' }]));
+  it('omits meetings that carry neither created_by nor owner, and keeps owner-only rows', async () => {
+    const ownerOnly = { name: 'Owner c', username: 'ownerc', email: 'owner-c@example.com' };
+    proxyRequest.mockResolvedValueOnce(pageOf([{ id: 'a', created_by: human('a') }, { id: 'b' }, { id: 'c', owner: ownerOnly }]));
 
-    const result = await service.resolveCreatedByForMeetings(req, ['a', 'b']);
+    const result = await service.resolveCreatedByForMeetings(req, ['a', 'b', 'c']);
 
     expect(result.has('a')).toBe(true);
     expect(result.has('b')).toBe(false);
+    expect(result.get('c')).toEqual({ owner: ownerOnly });
+  });
+
+  it('passes zero-valued owners through unfiltered — vetting happens in the callers', async () => {
+    // Meetings predating the owner field carry an all-empty owner in the index; the map keeps it
+    // so enrichMeetingsWithCreatedBy can vet via resolveMeetingOwner (and never write it).
+    const zeroValuedOwner = { user_id: '', name: '', username: '', email: '', profile_picture: '' };
+    proxyRequest.mockResolvedValueOnce(pageOf([{ id: 'a', owner: zeroValuedOwner }]));
+
+    const result = await service.resolveCreatedByForMeetings(req, ['a']);
+
+    expect(result.get('a')).toEqual({ owner: zeroValuedOwner });
   });
 
   it('batches at the 50-uid chunk boundary', async () => {

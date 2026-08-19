@@ -1028,40 +1028,66 @@ export function normalizeIndexedMeetingAiSummary<T extends Pick<Meeting, 'ai_sum
 }
 
 /**
- * Returns true when a `created_by` value is a service account (e.g. `zoom.webhooks`)
- * or carries no identifying information at all — either way it must not be shown as
- * the meeting organizer.
+ * Returns true when a user identity (`created_by` or `owner`) is a service account
+ * (e.g. `zoom.webhooks`) or carries no identifying information at all — either way it
+ * must not be shown as the meeting organizer. Zero-valued owners (all fields empty —
+ * meetings that predate the field) land here too.
  */
-function isServiceOrEmptyCreatedBy(createdBy: MeetingUserInfo): boolean {
-  const name = createdBy.name?.trim();
-  const username = createdBy.username?.trim().toLowerCase();
-  const email = createdBy.email?.trim().toLowerCase();
+function isServiceOrEmptyIdentity(identity: { name?: string; username?: string; email?: string }): boolean {
+  const name = identity.name?.trim();
+  const username = identity.username?.trim().toLowerCase();
+  const email = identity.email?.trim().toLowerCase();
 
   if (!name && !username && !email) {
     return true;
   }
 
   // `split('@')[0]` takes the local part; safe here because this only runs on trusted upstream
-  // created_by data (a malformed multi-`@` address would just not match a skip identifier).
+  // identity data (a malformed multi-`@` address would just not match a skip identifier).
   const emailLocalPart = email ? email.split('@')[0] : undefined;
   return MEETING_ORGANIZER_SKIP_IDENTIFIERS.some((skip) => username === skip || email === skip || emailLocalPart === skip || name?.toLowerCase() === skip);
 }
 
 /**
+ * Resolves a meeting's `owner` to the organizer display shape, or `null` when the owner
+ * is absent, zero-valued (all fields empty — meetings that predate the field), or a
+ * service account (ITX defaults owner to the creator, so webhook-created meetings carry
+ * `zoom.webhooks`). Callers fall back to the `created_by` display on `null`.
+ */
+export function resolveMeetingOwner(meeting: Pick<Meeting, 'owner'> | null | undefined): MeetingUserInfo | null {
+  const owner = meeting?.owner;
+  if (!owner || isServiceOrEmptyIdentity(owner)) {
+    return null;
+  }
+  return {
+    name: owner.name?.trim() ?? '',
+    username: owner.username?.trim() ?? '',
+    email: owner.email?.trim() ?? '',
+    ...(owner.profile_picture ? { profile_picture: owner.profile_picture } : {}),
+  };
+}
+
+/**
  * Resolves the person to display as a meeting's organizer, in priority order:
- *   1. `meeting.created_by` when it's a real human (not a service account, not empty).
- *   2. The first host among the supplied candidates (rare, but authoritative when present).
- *   3. `null` — nothing resolvable, so the caller omits the organizer display entirely.
+ *   1. `meeting.owner` when set to a real human (see {@link resolveMeetingOwner}).
+ *   2. `meeting.created_by` when it's a real human (not a service account, not empty).
+ *   3. The first host among the supplied candidates (rare, but authoritative when present).
+ *   4. `null` — nothing resolvable, so the caller omits the organizer display entirely.
  *
- * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
+ * @param meeting - Any object carrying optional `owner` / `created_by` (Meeting / PastMeeting).
  * @param hosts - Optional registrant/participant candidates for the host fallback.
  */
 export function resolveMeetingOrganizer(
-  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined,
   hosts?: ReadonlyArray<MeetingHostCandidate>
 ): MeetingUserInfo | null {
+  const owner = resolveMeetingOwner(meeting);
+  if (owner) {
+    return owner;
+  }
+
   const createdBy = meeting?.created_by;
-  if (createdBy && !isServiceOrEmptyCreatedBy(createdBy)) {
+  if (createdBy && !isServiceOrEmptyIdentity(createdBy)) {
     return {
       name: createdBy.name,
       username: createdBy.username,
@@ -1130,21 +1156,26 @@ function sameOrganizer(a: MeetingUserInfo, b: MeetingUserInfo): boolean {
 /**
  * Collects every person to attribute a meeting to, from a single unified source so the
  * "Organized by" chip and the participants/registrants modal never disagree:
+ *   - The primary organizer is the human `owner` when set, replacing the `created_by` slot;
+ *     otherwise the human `created_by` (see {@link resolveMeetingOrganizer}).
  *   - When host-flagged candidates are present, they ARE the organizer set (exactly what the
- *     modal badges), sorted by name; the human `created_by` is folded in only if it isn't
- *     already one of the hosts.
+ *     modal badges), sorted by name — except the primary organizer always sits at index 0
+ *     (prepended when not among the hosts; its matching host entry moved to the front when it
+ *     is, never duplicated), because {@link buildMeetingOrganizerChip} renders element 0 as
+ *     the primary.
  *   - When no hosts are supplied (e.g. summary cards that don't load the registrant list), the
- *     human `created_by` is the sole organizer.
+ *     primary organizer is the sole entry.
  *   - Otherwise an empty array (nothing to display).
  *
  * Surfaces that show BOTH the chip and the modal must pass the same host list to each.
  */
 export function collectMeetingOrganizers(
-  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined,
   hosts?: ReadonlyArray<MeetingHostCandidate>
 ): MeetingUserInfo[] {
-  const createdBy = meeting?.created_by;
-  const humanCreatedBy = createdBy ? resolveMeetingOrganizer({ created_by: createdBy }) : null;
+  // Owner-first, created_by fallback; deliberately no host fallback here — hosts are
+  // collected separately below so the primary never duplicates the host derivation.
+  const primary = resolveMeetingOwner(meeting) ?? resolveMeetingOrganizer({ created_by: meeting?.created_by });
 
   const hostOrganizers = (hosts ?? [])
     .filter((candidate) => candidate?.host)
@@ -1153,13 +1184,22 @@ export function collectMeetingOrganizers(
     .sort((a, b) => getMeetingOrganizerDisplayName(a).localeCompare(getMeetingOrganizerDisplayName(b)));
 
   if (hostOrganizers.length === 0) {
-    return humanCreatedBy ? [humanCreatedBy] : [];
+    return primary ? [primary] : [];
   }
 
-  if (humanCreatedBy && !hostOrganizers.some((organizer) => sameOrganizer(organizer, humanCreatedBy))) {
-    return [humanCreatedBy, ...hostOrganizers];
+  if (!primary) {
+    return hostOrganizers;
   }
-  return hostOrganizers;
+
+  const primaryHostIndex = hostOrganizers.findIndex((organizer) => sameOrganizer(organizer, primary));
+  if (primaryHostIndex === -1) {
+    return [primary, ...hostOrganizers];
+  }
+
+  // The primary is also a host: move that host entry to the front (it can carry richer
+  // registrant-derived data than the owner/created_by record) so the alphabetical sort can't
+  // demote the owner out of the chip's primary slot.
+  return [hostOrganizers[primaryHostIndex], ...hostOrganizers.filter((_, index) => index !== primaryHostIndex)];
 }
 
 /**
@@ -1221,23 +1261,23 @@ function isViewerOrganizer(organizer: MeetingUserInfo, viewerUsername?: string |
 
 /**
  * Whether the viewer is one of the meeting's organizers — the predicate behind the "Organized by
- * me" filter on My Meetings (LFXV2-2824). Deliberately derived from `created_by` (via
+ * me" filter on My Meetings (LFXV2-2824). Deliberately derived from `owner`/`created_by` (via
  * {@link collectMeetingOrganizers}) and NOT from `meeting.organizer`: that flag is a per-viewer FGA
  * access check ("can I manage this") that includes inherited grants, so staff would match meetings
  * they never created — contradicting the "Organized by you" chip on the same card.
  *
  * Callers without a `hosts` list (e.g. the My Meetings list filter, which filters ahead of any
- * per-card registrants fetch) only ever match on `created_by`. A real Zoom co-host who isn't the
- * creator therefore won't match here even though the chip on their own card would recognize them
- * as "you" once that card's registrants drawer resolves hosts — an accepted gap, since matching
- * it at list-filter time would mean fetching registrants for every meeting up front.
+ * per-card registrants fetch) only ever match on `owner`/`created_by`. A real Zoom co-host who
+ * isn't the creator therefore won't match here even though the chip on their own card would
+ * recognize them as "you" once that card's registrants drawer resolves hosts — an accepted gap,
+ * since matching it at list-filter time would mean fetching registrants for every meeting up front.
  *
- * @param meeting - Any object carrying an optional `created_by` (Meeting / PastMeeting).
+ * @param meeting - Any object carrying optional `owner` / `created_by` (Meeting / PastMeeting).
  * @param viewerUsername - The current user's username/LFID (prefix-tolerant, case-insensitive).
  * @param hosts - Optional host candidates, when the surface has them (see collectMeetingOrganizers).
  */
 export function isMeetingOrganizedByViewer(
-  meeting: Pick<Meeting, 'created_by'> | null | undefined,
+  meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined,
   viewerUsername?: string | null,
   hosts?: ReadonlyArray<MeetingHostCandidate>
 ): boolean {
