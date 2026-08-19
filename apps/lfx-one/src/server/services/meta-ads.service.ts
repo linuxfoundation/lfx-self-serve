@@ -84,16 +84,12 @@ function validateRegistrationUrl(url: string): void {
 }
 
 /**
- * Normalise the requested geo targets, falling back to US when nothing usable survives.
+ * The geo targets this create will actually send, or a refusal.
  *
  * De-duping is the point of routing through the shared helper rather than mapping inline: the
  * previous map/filter uppercased without collapsing repeats, so a list carrying both `us` and
- * `US` — which the UI could produce, because its brief-seed path did not normalise — was sent to
- * Meta as `["US","US"]`. Sharing one helper with the client keeps the two layers from disagreeing
- * about what a geo target is.
- */
-/**
- * The geo targets this create will actually send, or a refusal.
+ * `US` was sent to Meta as `["US","US"]`. Sharing one helper with the client keeps the two layers
+ * from disagreeing about what a geo target is.
  *
  * Three-stage, and the stages answer different questions: `normalizeGeoTargets` settles SHAPE and
  * ISO ASSIGNMENT, `META_INELIGIBLE_COUNTRIES` settles Meta ELIGIBILITY, and the caller's later
@@ -147,7 +143,6 @@ function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<str
   const publisherPlatforms: string[] = [];
   const facebookPositions: string[] = [];
   const instagramPositions: string[] = [];
-  const messengerPositions: string[] = [];
 
   if (pl.facebookFeed) {
     if (!publisherPlatforms.includes('facebook')) publisherPlatforms.push('facebook');
@@ -170,19 +165,33 @@ function buildPlacementTargeting(placements: Partial<MetaPlacement>): Record<str
     instagramPositions.push('reels');
   }
   if (pl.audienceNetwork) publisherPlatforms.push('audience_network');
+  // Messenger Inbox was removed as a Meta ad placement in November 2025: `messenger` /
+  // `messenger_home` are no longer valid on Graph API v25.0. They would pass here and fail at the
+  // AD SET, after `POST /campaigns` has already created a billable resource. Refused up front, and
+  // refused the same way the Go client refuses it (`internal/platform/meta/client.go`) so the same
+  // request cannot succeed on one path and fail on the other purely because the cutover flag is
+  // dark. The UI cannot set this — the checkbox is disabled and the handler drops the key — but
+  // this function is reachable by any other caller of the create endpoint, which is the boundary
+  // the pixel and empty-placement checks were hoisted here to defend.
   if (pl.messengerInbox) {
-    publisherPlatforms.push('messenger');
-    messengerPositions.push('messenger_home');
+    throw new Error('messengerInbox placement is no longer supported by Meta Ads (removed November 2025); do not enable it');
   }
 
   if (publisherPlatforms.length === 0) {
-    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, audienceNetwork, or messengerInbox)');
+    throw new Error('At least one placement must be enabled (facebookFeed, instagramFeed, stories, reels, or audienceNetwork)');
+  }
+
+  // Audience Network cannot be the SOLE publisher platform — Meta documents that
+  // `publisher_platforms: ['audience_network']` may not be selected by itself. It passes the
+  // non-empty check above and the UI's `metaHasPlacement` guard, then fails at the ad set: the
+  // same create-then-orphan shape the checks above exist to prevent.
+  if (publisherPlatforms.length === 1 && publisherPlatforms[0] === 'audience_network') {
+    throw new Error('Audience Network cannot be the only placement — enable at least one Facebook or Instagram placement alongside it');
   }
 
   const targeting: Record<string, unknown> = { publisher_platforms: publisherPlatforms };
   if (facebookPositions.length > 0) targeting['facebook_positions'] = facebookPositions;
   if (instagramPositions.length > 0) targeting['instagram_positions'] = instagramPositions;
-  if (messengerPositions.length > 0) targeting['messenger_positions'] = messengerPositions;
   return targeting;
 }
 

@@ -692,6 +692,79 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
+   * The chip add was the ONLY door checking eligibility. The brief seed and the draft restore
+   * wrote `metaGeoTargets` through `normalizeGeoTargets` alone, which settles shape and ISO
+   * assignment but never asks whether Meta will target the country.
+   *
+   * That split is invisible unless you look at both surfaces at once. The chip list renders
+   * `metaGeoTargets()` while `submit()` sends `metaEffectiveGeoTargets()`, which filters
+   * ineligible codes — so a seeded `IR` DISPLAYED a chip the request silently dropped. The
+   * empty-state warning could not catch it either: it is gated on `metaGeoTargets().length === 0`,
+   * and the surviving chip made that false, so `canSubmit` passed on the `countryCode` fallback.
+   * The operator read `IR` on screen and bought a JP-only campaign.
+   *
+   * The binding assertion is that DISPLAY AND DISPATCH AGREE. Asserting only that the request
+   * omits `IR` would pass on the unfixed code too, because `metaEffectiveGeoTargets` already
+   * filtered it — what was broken, and what this pins, is the CHIP LIST.
+   */
+  it('drops a Meta-ineligible geo the brief recommended, on screen as well as on the wire', async () => {
+    const seeded = TestBed.createComponent(ImplementationTabComponent);
+    seeded.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+      metaCopy: { variants: [], recommendedGeos: ['IR', 'JP'] },
+    } as unknown as CampaignBriefOutput);
+    seeded.detectChanges();
+    await seeded.whenStable();
+
+    const c = seeded.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaGeoTargets']()).toEqual(['JP']);
+    expect(c['metaEffectiveGeoTargets']()).toEqual(['JP']);
+  });
+
+  /** The same unguarded door, reached through a restored draft rather than a fresh brief. */
+  it('drops a Meta-ineligible geo carried by a restored draft', async () => {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      metaGeoTargets: ['CU', 'JP'],
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaGeoTargets']()).toEqual(['JP']);
+    expect(c['metaEffectiveGeoTargets']()).toEqual(['JP']);
+  });
+
+  /**
+   * The counterpart that stops the shared filter over-broadening: routing all three doors through
+   * one helper must not start rejecting countries Meta accepts, and must still de-dupe.
+   */
+  it('keeps eligible geos the brief recommended', async () => {
+    const seeded = TestBed.createComponent(ImplementationTabComponent);
+    seeded.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+      metaCopy: { variants: [], recommendedGeos: ['jp', 'de', 'JP'] },
+    } as unknown as CampaignBriefOutput);
+    seeded.detectChanges();
+    await seeded.whenStable();
+
+    const c = seeded.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaGeoTargets']()).toEqual(['JP', 'DE']);
+  });
+
+  /**
    * The display/dispatch divergence. `countryCode` carries no validator, so it can be blank with
    * no chips left; the preview then read "defaults to " while `submit()` sent `['']`, which the
    * server resolved to `US` — a paid US campaign the operator was never shown.

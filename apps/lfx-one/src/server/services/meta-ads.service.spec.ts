@@ -171,5 +171,86 @@ describe('executeMetaCampaignCreation', () => {
       expect(adSetBody.targeting.publisher_platforms).toContain('facebook');
       expect(adSetBody.targeting.facebook_positions).toContain('facebook_reels');
     });
+
+    /**
+     * Messenger Inbox was retired as a Meta placement in November 2025, so `messenger` /
+     * `messenger_home` are invalid on v25.0 — they passed the non-empty check and then failed at
+     * the AD SET, after the campaign POST had created a billable resource.
+     *
+     * The binding assertion is that NO mutating POST is issued, not merely that it rejected: the
+     * broken version rejected too, just one paid resource too late. The UI cannot reach this
+     * (the checkbox is disabled and the handler drops the key), which is exactly why the guard
+     * belongs on the service — any other caller of the create endpoint bypasses the form.
+     */
+    it('issues no mutating POST when the retired messengerInbox placement is requested', async () => {
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ placements: { messengerInbox: true } }))).rejects.toThrow(
+        /messengerInbox placement is no longer supported/
+      );
+
+      expect(postPaths(fetchMock)).toEqual([]);
+    });
+
+    /**
+     * Meta refuses `publisher_platforms: ['audience_network']` on its own. It passes the non-empty
+     * check and the UI's `metaHasPlacement` guard, then fails at the ad set — the same
+     * create-then-orphan shape, reached through a selection the operator CAN make today.
+     */
+    it('issues no mutating POST when audience network is the only placement', async () => {
+      // Every default placement is turned OFF explicitly: `buildPlacementTargeting` merges over
+      // `META_DEFAULT_PLACEMENTS`, which enables both feeds, so a partial `{audienceNetwork:true}`
+      // is a three-platform selection and not the case under test.
+      const audienceNetworkOnly = {
+        facebookFeed: false,
+        instagramFeed: false,
+        stories: false,
+        reels: false,
+        audienceNetwork: true,
+        messengerInbox: false,
+      };
+
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ placements: audienceNetworkOnly }))).rejects.toThrow(
+        /Audience Network cannot be the only placement/
+      );
+
+      expect(postPaths(fetchMock)).toEqual([]);
+    });
+
+    /**
+     * The counterpart that stops the audience-network guard over-broadening: paired with a real
+     * feed placement it is a valid, spendable selection and must still go through.
+     */
+    it('accepts audience network alongside a feed placement', async () => {
+      await executeMetaCampaignCreation(undefined, baseConfig({ placements: { facebookFeed: true, audienceNetwork: true } }));
+
+      const adSetCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/adsets'));
+      expect(adSetCall).toBeDefined();
+      const adSetBody = JSON.parse((adSetCall![1] as RequestInit).body as string);
+      expect(adSetBody.targeting.publisher_platforms).toEqual(expect.arrayContaining(['facebook', 'audience_network']));
+    });
+  });
+
+  /**
+   * `leads` must run the same campaign the Go client runs (`internal/platform/meta/client.go`),
+   * not the one its NAME implies. OUTCOME_LEADS + LEAD_GENERATION needs an instant form neither
+   * path builds, so it would create the campaign and die at the ad set.
+   *
+   * Asserting the wire values rather than the constant: a test reading `META_OBJECTIVE_PARAMS`
+   * back would agree with whatever the constant says and could never fail.
+   */
+  describe('leads objective mapping', () => {
+    it('dispatches leads as a website-traffic campaign with no promoted object', async () => {
+      await executeMetaCampaignCreation(undefined, baseConfig({ objective: 'leads' }));
+
+      const campaignCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/campaigns'));
+      expect(campaignCall).toBeDefined();
+      const campaignBody = JSON.parse((campaignCall![1] as RequestInit).body as string);
+      expect(campaignBody.objective).toBe('OUTCOME_TRAFFIC');
+
+      const adSetCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/adsets'));
+      expect(adSetCall).toBeDefined();
+      const adSetBody = JSON.parse((adSetCall![1] as RequestInit).body as string);
+      expect(adSetBody.optimization_goal).toBe('LINK_CLICKS');
+      expect(adSetBody.promoted_object).toBeUndefined();
+    });
   });
 });

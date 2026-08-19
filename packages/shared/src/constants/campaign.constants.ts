@@ -191,7 +191,21 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   awareness: { campaignObjective: 'OUTCOME_AWARENESS', optimizationGoal: 'REACH', promotedObjectType: 'none' },
   traffic: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   engagement: { campaignObjective: 'OUTCOME_ENGAGEMENT', optimizationGoal: 'POST_ENGAGEMENT', promotedObjectType: 'page_id' },
-  leads: { campaignObjective: 'OUTCOME_LEADS', optimizationGoal: 'LEAD_GENERATION', promotedObjectType: 'page_id' },
+  // `leads` runs a WEBSITE-TRAFFIC campaign, matching `objectiveParams` in
+  // `lfx-v2-campaign-service` (`internal/platform/meta/client.go`) rather than the name.
+  //
+  // OUTCOME_LEADS + LEAD_GENERATION requires the ad's creative to reference an instant form via
+  // `call_to_action.value.lead_gen_form_id`. Neither path builds one — this service creates only
+  // a website-click creative (`object_story_spec.link_data` pointing at the registration URL) —
+  // so LEAD_GENERATION creates the campaign and then fails at the ad set, orphaning a billable
+  // resource. That is the exact create-then-orphan shape the pixel and placement guards exist to
+  // prevent, and the objective selector shipped in this branch is what first makes it reachable.
+  //
+  // OUTCOME_TRAFFIC + LINK_CLICKS with no promoted object is the pairing that always succeeds
+  // end-to-end. OUTCOME_LEADS + LINK_CLICKS is deliberately NOT used: Meta requires a pixel and
+  // `custom_event_type` for it, which this flow does not supply. Full instant-form parity is
+  // tracked as LFXV2-2665.
+  leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
 

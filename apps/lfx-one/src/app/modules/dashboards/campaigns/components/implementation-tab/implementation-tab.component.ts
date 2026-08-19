@@ -792,16 +792,14 @@ export class ImplementationTabComponent implements OnInit {
    * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
    * to one chip and one wire entry no matter which door they came through.
    *
-   * Shape is enforced (two letters) but ELIGIBILITY is not, and the split is deliberate. The
-   * two-letter shape is fixed by ISO 3166-1 alpha-2 and cannot drift, so rejecting `1` or `x9`
-   * here costs nothing and turns a failed campaign into no-op keystrokes. Which COUNTRIES Meta
-   * accepts is a different question and belongs to the service, which additionally drops
-   * sanctioned and regulated markets — duplicating that list locally would only let it drift.
+   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `acceptedMetaGeos`.
+   * Eligibility is checked at every door rather than only at this one: a chip the operator can
+   * SEE must be a chip the request will BUY. `metaEffectiveGeoTargets` filters ineligible codes
+   * out of the dispatch, so a code displayed but not dispatched is precisely the display/dispatch
+   * divergence that computed exists to prevent.
    *
-   * A well-shaped but ineligible code (say `ZZ`, or a sanctioned one) therefore still reaches the
-   * service, which is the intended division. Note the service treats the two cases differently:
-   * it DROPS ineligible entries from a mixed list, but refuses the create outright when nothing
-   * usable survives rather than silently falling back to US.
+   * COMPLIANCE remains the service's call — it additionally drops regulated markets via
+   * `REGULATED_COUNTRIES`, and duplicating that list here would only let it drift.
    */
   protected addMetaGeoTarget(code: string): void {
     // Ineligible codes are refused at the chip rather than accepted and dropped later. `IR`, `CU`
@@ -810,7 +808,7 @@ export class ImplementationTabComponent implements OnInit {
     // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
     // which path runs.
     if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
-    this.metaGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
+    this.metaGeoTargets.update((targets) => this.acceptedMetaGeos([...targets, code]));
     this.emitDraft();
   }
 
@@ -978,6 +976,24 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
+  /**
+   * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
+   *
+   * Every path that WRITES `metaGeoTargets` routes through here: the chip add, the brief seed and
+   * the draft restore. Previously only the chip add checked eligibility, so a brief recommending
+   * `IR` — or a draft carrying one — rendered a chip that `metaEffectiveGeoTargets` then filtered
+   * out of the request. The empty-state warning is gated on `metaGeoTargets().length === 0`, so a
+   * surviving ineligible chip suppressed it, and `canSubmit` passed on the `countryCode` fallback:
+   * the operator read `IR` on screen and bought a US campaign.
+   *
+   * Eligibility belongs on the WRITE rather than only on the read so the two cannot disagree.
+   * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
+   * reads, and a guard there costs nothing.
+   */
+  private acceptedMetaGeos(codes: readonly string[]): string[] {
+    return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
   private applyDraft(): void {
     const draft = this.draft();
     if (!draft) return;
@@ -1030,7 +1046,7 @@ export class ImplementationTabComponent implements OnInit {
       this.metaPixelId.set(draft.metaPixelId);
     }
     if (draft.metaGeoTargets !== undefined) {
-      this.metaGeoTargets.set([...draft.metaGeoTargets]);
+      this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
     }
     if (draft.metaBudgetUsd !== undefined) {
       this.metaBudgetUsd.set(draft.metaBudgetUsd);
@@ -1189,10 +1205,10 @@ export class ImplementationTabComponent implements OnInit {
         }))
       );
       const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(normalizeGeoTargets(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
+      this.metaGeoTargets.set(this.acceptedMetaGeos(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
     } else if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(normalizeGeoTargets(brief.metaCopy.recommendedGeos));
+      this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
     this.briefKeywords.set(brief.keywords);
