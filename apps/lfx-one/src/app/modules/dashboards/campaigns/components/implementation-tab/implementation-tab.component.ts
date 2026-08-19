@@ -563,16 +563,31 @@ export class ImplementationTabComponent implements OnInit {
       .subscribe({
         next: (accounts) => {
           this.linkedInAccounts.set(accounts);
-          // Default to the first account ONLY when nothing is selected yet. The guard predates
-          // LFXV2-3230 but carries more weight now: a restored draft has already put the user's
-          // account on the form by the time this response lands, and dropping the guard would
-          // overwrite their choice with the list's first entry every single mount.
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
           //
-          // Writes through the form rather than a signal, since that is where the value now
-          // lives. `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()`
-          // would send, so the parent's draft has to learn about it; suppressing the event would
-          // leave the draft carrying '' while the form and the request carry a real account.
-          if (accounts.length > 0 && !this.linkedInAccountId()) {
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          if (accounts.length > 0 && !accounts.some((a) => a.accountId === this.linkedInAccountId())) {
             this.campaignForm.controls.linkedInAccountId.setValue(accounts[0].accountId);
           }
           this.linkedInAccountsLoading.set(false);

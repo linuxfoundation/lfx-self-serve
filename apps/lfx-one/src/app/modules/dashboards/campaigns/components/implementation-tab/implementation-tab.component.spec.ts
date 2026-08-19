@@ -747,6 +747,36 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     expect(at(second.fixture).linkedInTargetingProfile()).toBe('mcp');
   });
 
+  /**
+   * Clearing EVERY geo target must survive, and nothing else in this suite pins it.
+   *
+   * Two docblocks argue at length that an empty list is a deliberate user action rather than a
+   * hole, and that a `draft.linkedInGeoTargets.length ? … : recommendation` fallback would be the
+   * defect rather than the fix. That claim was reintroducible without a red test: every other
+   * round-trip case here ends with a NON-EMPTY list, so a length-guarded restore passed all of
+   * them. Verified by mutation — introducing exactly that fallback left the whole suite green.
+   *
+   * `canSubmit()` is asserted too, because an empty list is only safe if it BLOCKS the create. A
+   * restore that silently refilled it would also silently re-enable dispatch to geos the operator
+   * had removed, which is the money-shaped version of this bug.
+   */
+  it('keeps an emptied geo list empty after a tab round-trip', async () => {
+    const first = await mount(null);
+    // The brief recommends exactly one; removing it leaves the list genuinely empty.
+    at(first.fixture).removeGeoTarget(0);
+    first.fixture.detectChanges();
+    expect(at(first.fixture).linkedInGeoTargets()).toEqual([]);
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    // NOT the brief's [US] recommendation, which is what a length-guarded restore would produce.
+    expect(at(second.fixture).linkedInGeoTargets()).toEqual([]);
+    expect((second.fixture.componentInstance as unknown as { canSubmit(): boolean }).canSubmit()).toBe(false);
+  });
+
   it('keeps a chosen ad account after a tab round-trip', async () => {
     const first = await mount(null);
     at(first.fixture).setLinkedInAccount('urn:li:sponsoredAccount:999');
@@ -761,10 +791,17 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   });
 
   /**
-   * The seed must still run when there is NOTHING to restore, which is the other half of making
-   * `populateFromBrief` conditional. A guard that skipped seeding unconditionally would leave a
-   * first-time user with an empty geo list and `canSubmit` permanently blocking the LinkedIn
-   * section — a worse bug than the one being fixed, and invisible to every test above.
+   * The seed must still reach the form when there is nothing to restore.
+   *
+   * `populateFromBrief` seeds UNCONDITIONALLY and `applyDraft` runs after it, so the restore wins
+   * by ordering rather than by a guard. That makes this the case which proves the seed still
+   * works at all: every test above overwrites it, so a seed that silently stopped reaching the
+   * form would be invisible to them. Without it a first-time user opens with an empty geo list
+   * and `canSubmit` blocking the LinkedIn section permanently.
+   *
+   * It is also what pins the seed's EMISSION. The three controls are read through `toSignal`
+   * bridges over `valueChanges`, so writing them with `{ emitEvent: false }` updates the control
+   * while every reader keeps the stale initial value — this test fails on exactly that.
    */
   it('still seeds from the brief on a first visit with no draft', async () => {
     const first = await mount(null);
@@ -778,11 +815,13 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   });
 
   /**
-   * A draft keyed to a DIFFERENT event must neither restore nor suppress the seed.
+   * A draft keyed to a DIFFERENT event must not replay onto this brief.
    *
-   * `hasDraftForThisBrief()` gates both halves, so this is where they could disagree: if the seed
-   * skipped on "a draft exists" while `applyDraft` declined on "wrong slug", the fields would be
-   * neither seeded nor restored and the section would open blank.
+   * `applyDraft` compares the draft's `eventSlug` against the form's and returns early on a
+   * mismatch, so event A's picks cannot overwrite event B's freshly generated recommendation —
+   * the same ownership rule the `(project, event)` keys enforce elsewhere. Since the seed already
+   * ran unconditionally, declining the restore leaves the brief's own values standing, which is
+   * what this asserts.
    */
   it('seeds from the brief when the carried draft belongs to another event', async () => {
     const first = await mount(null);
@@ -867,8 +906,13 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    */
   let accountsSubject: Subject<typeof ACCOUNTS>;
 
+  /** The last draft emitted to the parent, so the emission half can be asserted too. */
+  let lastEmitted: CampaignImplementationDraft | null;
+
   async function mount(draft: CampaignImplementationDraft | null): Promise<ComponentFixture<ImplementationTabComponent>> {
     const f = TestBed.createComponent(ImplementationTabComponent);
+    lastEmitted = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (lastEmitted = d));
     if (draft) f.componentRef.setInput('draft', draft);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -910,5 +954,93 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     const fixture = await mount(draftWith(ACCOUNTS[1].accountId));
 
     expect(accountId(fixture)).toBe(ACCOUNTS[1].accountId);
+  });
+
+  /**
+   * The CORRECTED account must also reach the parent's draft, not just the form.
+   *
+   * `ngOnInit` runs after the constructor effect, so this `setValue` lands outside the `seeding`
+   * window and its emission is what carries the correction to the parent. Nothing else pinned
+   * that, which makes `{ emitEvent: false }` an easy "optimisation" for someone to add later —
+   * and it would silently strand the parent's draft on the stale id while the form and the
+   * request both moved on. The next tab switch would then restore the stale id all over again.
+   */
+  it('emits the corrected account to the parent draft', async () => {
+    await mount(draftWith('urn:li:sponsoredAccount:revoked-999'));
+
+    expect(lastEmitted?.linkedInAccountId).toBe(ACCOUNTS[0].accountId);
+  });
+
+  /**
+   * A restored account this catalog no longer offers must not survive — and what `submit()` SENDS
+   * must match what the page DISPLAYS.
+   *
+   * Persisting the id (LFXV2-3230) made a stale one reachable for the first time: an account can
+   * be revoked or lose permission between mounts, and the list is refetched on every mount. The
+   * DIVERGENCE is the danger rather than the staleness. `selectedLinkedInAccount` resolves the
+   * label and org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>`
+   * cannot render an unmatched value either, so both fall back to the first account — while
+   * `submit()` sends `linkedInAccountId()` verbatim. The operator reads "First Account" and spends
+   * money on the revoked one.
+   *
+   * Asserting only that the id changed would miss the point, since the bug is precisely that two
+   * surfaces disagree. This drives the real `submit()` and compares the dispatched
+   * `linkedInConfig.adAccountId` against the displayed account.
+   */
+  it('does not dispatch to an account the page is not displaying', async () => {
+    let posted: Record<string, unknown> | null = null;
+    // Re-configure with a capturing stub: this is the only case here that reaches `submit()`.
+    TestBed.resetTestingModule();
+    accountsSubject = new Subject<typeof ACCOUNTS>();
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          // Stubbed at the service boundary, matching the hubspotConfig suite above: the assertion
+          // is about the request body, and the stub keeps the create from dispatching anywhere.
+          provide: CampaignService,
+          useValue: {
+            getLinkedInAccounts: () => accountsSubject.asObservable(),
+            createCampaign: (request: Record<string, unknown>) => {
+              posted = request;
+              return of({ jobId: '' });
+            },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = await mount(draftWith('urn:li:sponsoredAccount:revoked-999'));
+
+    const displayed = (fixture.componentInstance as unknown as { selectedLinkedInAccount(): { accountId: string } }).selectedLinkedInAccount();
+    const internals = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+      linkedInVariants: { set(v: unknown[]): void };
+      submit(): void;
+    };
+
+    // Everything `canSubmit` requires for a LinkedIn dispatch, so `submit()` reaches the service.
+    // The geo list matters: `draftWith` carries none, and an empty one blocks the create (:417).
+    internals.selectedPlatforms.set(['linkedin-ads']);
+    internals.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    internals.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    internals.campaignForm.controls['startDate'].setValue('2026-09-01');
+    internals.campaignForm.controls['endDate'].setValue('2026-09-30');
+    internals.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    internals.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    fixture.detectChanges();
+
+    internals.submit();
+
+    const sent = (posted?.['linkedInConfig'] as { adAccountId: string } | undefined)?.adAccountId;
+    expect(sent).toBe(displayed.accountId);
+    // And specifically not the revoked id the draft carried.
+    expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
   });
 });

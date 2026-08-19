@@ -337,16 +337,24 @@ export interface CampaignBriefPersistenceState {
  * in a handler, read in `submit`, seeded in `populateFromBrief` and mirrored here — four places to
  * keep in step. A form-backed one is stored once and derived everywhere else.
  *
- * TWO approaches therefore coexist in the Implementation tab, split by owner rather than by
- * principle. The per-platform BUDGETS live only in signals and are mirrored onto this interface
- * (LFXV2-3315); the three LinkedIn controls live on the form (LFXV2-3230). Both shipped in the
- * same window from separate tickets and neither converted the other's fields, because unpicking a
- * committed sibling branch costs more than the uniformity buys. Unifying them is follow-up work:
- * move the budget signals onto `campaignForm`, keeping their members here.
+ * The per-platform BUDGETS are NOT carried here yet. They remain component-local signals, so a tab
+ * switch still reverts them — the same defect this interface exists to prevent, still open for
+ * that half. LFXV2-3315 addresses it on a separate branch by adding budget members here and
+ * emitting from each budget handler, which is a DIFFERENT mechanism from the form controls above.
+ * Whichever lands second inherits a file with two ways of doing one thing, so unifying them is
+ * worth doing rather than deferring: the form is the better target, since it needs no per-handler
+ * emission and so cannot be forgotten when a control is added.
  *
- * The remaining per-platform signals — the creative variants, and the Reddit targeting rendered
- * read-only for review — are still discarded, and correctly so: nothing on screen edits them.
- * Values the user cannot change do not need carrying; they re-derive from the brief identically.
+ * That drift is not hypothetical — LFXV2-3227/3228 adds four more user-editable Meta controls
+ * (objective, placements, pixel id, geo targets), none of them carried by either mechanism.
+ *
+ * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
+ * fall into two groups with opposite verdicts, and the distinction matters more than the
+ * membership: values the user cannot edit (creative variants, the Reddit targeting rendered
+ * read-only for review) are correctly discarded, since they re-derive from the brief identically;
+ * values the user CAN edit and that are not carried are simply still broken. Deliberately not
+ * enumerated — the second group shrinks as tickets land, and a list of members is exactly the kind
+ * of claim a later change falsifies with nothing to catch it.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
