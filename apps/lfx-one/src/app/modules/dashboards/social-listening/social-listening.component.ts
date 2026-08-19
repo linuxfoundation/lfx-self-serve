@@ -212,11 +212,13 @@ export class SocialListeningComponent {
   public readonly activeFilterCount = computed(() => countActiveFilters(this.currentPredicate()));
   public readonly activeFilterPills = computed(() => buildActiveFilterPills(this.currentPredicate()));
 
-  private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? this.feedState().data);
+  // No feedState fallback: on a cache miss the feed's data belongs to a prior window/filter set, so serving it flashes stale rows.
+  private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? EMPTY_FEED_RESPONSE);
 
   public readonly loading = computed(() => {
     const windowData = this.windowCache().get(this.windowIndex());
-    if (!windowData) return this.feedState().loading;
+    // A miss means the fetch is in flight or queued behind the coalescing debounce — hold loading so stale rows never paint.
+    if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
     if (windowData.complete) return false;
     // Partial window: the visible page extends past what phase 2 has filled so far.
     const neededEnd = this.localOffset() + this.pageSize();
