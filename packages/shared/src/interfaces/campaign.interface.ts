@@ -347,8 +347,10 @@ export interface CampaignBriefPersistenceState {
  * worth doing rather than deferring: the form is the better target, since it needs no per-handler
  * emission and so cannot be forgotten when a control is added.
  *
- * That drift is not hypothetical — LFXV2-3227/3228 adds four more user-editable Meta controls
- * (objective, placements, pixel id, geo targets), none of them carried by either mechanism.
+ * That drift is not hypothetical: LFXV2-3227/3228 added four more user-editable Meta controls and
+ * had to carry them by the per-handler signal mechanism, because they are signal-backed rather
+ * than form-backed. Two mechanisms now coexist in this file exactly as predicted above, which is
+ * the argument for unifying on the form rather than deferring it again.
  *
  * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
  * fall into two groups with opposite verdicts, and the distinction matters more than the
