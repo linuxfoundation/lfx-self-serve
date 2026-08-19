@@ -20,7 +20,7 @@ The Travel Fund helps open-source developers and community members attend Linux 
 4. Select **New Funding Application**.
 5. **Choose an Event** — select the event you want to attend, then continue.
 6. Review the **Terms and Conditions** and continue to accept them.
-7. Complete the **About Me** step with your applicant details. Some events (for example, CNCF and PyTorch events) ask for a few additional details on this step.
+7. Complete the **About Me** step with your applicant details.
 8. Complete the **Expenses** step with your estimated costs.
 9. Submit your application.
 

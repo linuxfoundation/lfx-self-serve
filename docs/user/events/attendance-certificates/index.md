@@ -20,11 +20,12 @@ After you attend a Linux Foundation event, you can download a Certificate of Att
 
 ## When the certificate is available
 
-The **Download Certificate** action appears only for events marked with the **Attended** status. A Certificate of Attendance may take up to two weeks after the event ends to become available for download.
+The **Download Certificate** action appears for events marked with the **Attended** status. A Certificate of Attendance may take up to two weeks after the event ends to become available.
 
-## If the certificate isn't available
+## If you can't download a certificate
 
-If you don't see the **Download Certificate** action for an event you attended, your attendance may not have been recorded yet, or the certificate may not yet be available. Wait until up to two weeks after the event ends, then check again. If it is still missing, contact the event organizer or reach out to LFX support through the Help Center.
+- **The action doesn't appear.** The **Download Certificate** action only shows once the event is marked **Attended**. If your attendance hasn't been recorded yet, the action won't appear — check back later, and if the event stays unmarked, contact the event organizer or reach out to LFX support through the Help Center.
+- **The download fails.** If the action appears but the download doesn't succeed, the certificate may not be ready yet. It can take up to two weeks after the event ends to become available — wait and try again. If it still fails after that, reach out to LFX support through the Help Center.
 
 ## Related
 
